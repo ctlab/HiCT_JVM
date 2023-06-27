@@ -89,9 +89,9 @@ tasks.withType<JavaExec> {
   doFirst {
     environment(
       "LD_LIBRARY_PATH",
-      "\$LD_LIBRARY_PATH:/home/tux/hdf/HDF5-1.14.0-Linux/HDF_Group/HDF5/1.14.0/lib:/home/tux/hdf/HDF5-1.14.0-Linux/HDF_Group/HDF5/1.14.0/lib/plugin"
+      "\$LD_LIBRARY_PATH:/home/tux/hdf/HDF5-1.14.1-Linux/HDF_Group/HDF5/1.14.1/lib:/home/tux/hdf/HDF5-1.14.1-Linux/HDF_Group/HDF5/1.14.1/lib/plugin"
     )
-    environment("HDF5_PLUGIN_PATH", "/home/tux/hdf/HDF5-1.14.0-Linux/HDF_Group/HDF5/1.14.0/lib/plugin")
+    environment("HDF5_PLUGIN_PATH", "/home/tux/hdf/HDF5-1.14.1-Linux/HDF_Group/HDF5/1.14.1/lib/plugin")
     environment("VERTXWEB_ENVIRONMENT", "dev")
   }
   args = listOf(

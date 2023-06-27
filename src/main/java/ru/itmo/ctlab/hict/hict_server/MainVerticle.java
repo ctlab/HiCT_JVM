@@ -4,6 +4,7 @@ import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.json.Json;
 import io.vertx.core.logging.SLF4JLogDelegateFactory;
 import io.vertx.core.shareddata.Shareable;
 import io.vertx.ext.web.Router;
@@ -19,9 +20,14 @@ import java.awt.*;
 import java.awt.image.*;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -43,9 +49,11 @@ public class MainVerticle extends AbstractVerticle {
 
     final var server = vertx.createHttpServer();
     final var router = Router.router(vertx);
+    final Path dataDirectory;
 
     try {
-      final var chunkedFile = new ChunkedFile(Path.of("/home/tux/HiCT/HiCT_Server/data/zanu_male_4DN.mcool.hict.hdf5"));
+      dataDirectory = Paths.get("/home/tux/HiCT/HiCT_Server/data").toAbsolutePath();
+      final var chunkedFile = new ChunkedFile(Path.of("/home/tux/HiCT/HiCT_Server/data/arab_dong_4DN.mcool.hict.hdf5"));
       final var chunkedFileWrapper = new ChunkedFileWrapper(chunkedFile);
 
 
@@ -61,7 +69,6 @@ public class MainVerticle extends AbstractVerticle {
     log.info("Configuring router");
 
     router.get("/get_tile").handler(ctx -> {
-//      ctx.request().setExpectMultipart(true);
       log.info("Entered non-blocking handler");
       ctx.next();
     }).blockingHandler(ctx -> {
@@ -122,6 +129,21 @@ public class MainVerticle extends AbstractVerticle {
       } catch (final IOException e) {
         System.out.println("Cannot write image: " + e.getMessage());
       }
+    });
+
+    router.get("/list_files").handler(ctx -> {
+      log.info("Entered non-blocking handler");
+      ctx.next();
+    }).blockingHandler(ctx -> {
+      log.info("Listing HiCT HDF5 files");
+      final List<Path> files;
+      try (final var stream = Files.walk(dataDirectory)) {
+        files = stream.filter((name) -> name.getFileName().toString().endsWith(".hict.hdf5")).map(Path::normalize).map(Path::toAbsolutePath).map(dataDirectory::relativize).collect(Collectors.toList());
+      } catch (final IOException e) {
+        throw new RuntimeException(e);
+      }
+      final var json = Json.encode(files);
+      ctx.response().putHeader("content-type", "application/json").end(json);
     });
 
     log.info("Starting server");
