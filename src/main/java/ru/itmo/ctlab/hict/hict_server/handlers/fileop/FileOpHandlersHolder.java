@@ -52,15 +52,15 @@ public class FileOpHandlersHolder extends HandlersHolder {
   }
 
   private @NotNull @NonNull OpenFileResponseDTO generateOpenFileResponse(final @NotNull @NonNull ChunkedFile chunkedFile) {
+    final long minResolution = chunkedFile.getResolutionsList().stream().min(Long::compare).orElse(1L);
     return new OpenFileResponseDTO(
       "Opened",
       (String) vertx.sharedData().getLocalMap("hict_server").getOrDefault("transport_dtype", "uint8"),
-      chunkedFile.getResolutions(),
-      chunkedFile.getResolutions().parallelStream().map(r -> r / chunkedFile.getResolutions().stream().min().orElse(1L)),
+      chunkedFile.getResolutionsList(),
+      chunkedFile.getResolutionsList().parallelStream().mapToDouble(r -> (double) r / minResolution).boxed().toList(),
       chunkedFile.getDenseBlockSize(),
       null,
       null
     );
-    return null;
   }
 }

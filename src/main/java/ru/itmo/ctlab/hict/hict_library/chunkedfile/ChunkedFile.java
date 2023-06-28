@@ -14,7 +14,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 @Getter
 public class ChunkedFile {
@@ -63,8 +62,6 @@ public class ChunkedFile {
 
   private void initializeScaffoldTree() {
   }
-
-
 
 
   public long[][] getStripeIntersectionAsDenseMatrix(final long row, final long col, final long resolution) {
@@ -129,31 +126,35 @@ public class ChunkedFile {
   }
 
 
-  private String getBlockLengthDatasetPath(final long resolution) {
+  private static @NotNull @NonNull String getBlockLengthDatasetPath(final long resolution) {
     return String.format("/resolutions/%d/treap_coo/block_length", resolution);
   }
 
-  private String getBlockOffsetDatasetPath(final long resolution) {
+  private static @NotNull @NonNull String getBlockOffsetDatasetPath(final long resolution) {
     return String.format("/resolutions/%d/treap_coo/block_offset", resolution);
   }
 
-  private String getBlockColsDatasetPath(final long resolution) {
+  private static @NotNull @NonNull String getBlockColsDatasetPath(final long resolution) {
     return String.format("/resolutions/%d/treap_coo/block_cols", resolution);
   }
 
-  private String getBlockRowsDatasetPath(final long resolution) {
+  private static @NotNull @NonNull String getBlockRowsDatasetPath(final long resolution) {
     return String.format("/resolutions/%d/treap_coo/block_rows", resolution);
   }
 
-  private String getBlockValuesDatasetPath(final long resolution) {
+  private static @NotNull @NonNull String getBlockValuesDatasetPath(final long resolution) {
     return String.format("/resolutions/%d/treap_coo/block_vals", resolution);
   }
 
-  private String getDenseBlockDatasetPath(final long resolution) {
+  private static @NotNull @NonNull String getDenseBlockDatasetPath(final long resolution) {
     return String.format("/resolutions/%d/treap_coo/dense_blocks", resolution);
   }
 
-  public @NotNull List<@NotNull Long> getResolutions() {
-    return 0;
+  public @NotNull List<@NotNull Long> getResolutionsList() {
+    return Arrays.stream(this.resolutions).boxed().toList();
+  }
+
+  public long @NotNull @NonNull [] getResolutions() {
+    return this.resolutions;
   }
 }
