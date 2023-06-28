@@ -2,24 +2,69 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IndexMap;
+import lombok.Getter;
+import lombok.NonNull;
+import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
+import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
+@Getter
 public class ChunkedFile {
 
-  private final Path hdfFilePath;
+  private final @NotNull @NonNull Path hdfFilePath;
   private final long blockCount;
   private final int denseBlockSize;
+  private final long @NotNull @NonNull [] resolutions;
+  private final Map<@NotNull @NonNull Long, @NotNull @NonNull Integer> resolutionToIndex;
+  private final long @NotNull @NonNull [] matrixSizeBins;
+  private final @NotNull @NonNull ContigTree contigTree;
+  private final @NotNull @NonNull ScaffoldTree scaffoldTree;
 
 
-  public ChunkedFile(final Path hdfFilePath) {
+  public ChunkedFile(final @NotNull @NonNull Path hdfFilePath, final int denseBlockSize) {
     this.hdfFilePath = hdfFilePath;
     // TODO: fix
     this.blockCount = 5;
-    this.denseBlockSize = 256;
+    this.denseBlockSize = denseBlockSize;
+
+    try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
+      this.resolutions = reader.object().getAllGroupMembers("/resolutions").parallelStream().filter(s -> {
+        try {
+          Long.parseLong(s);
+          return true;
+        } catch (final NumberFormatException nfe) {
+          return false;
+        }
+      }).mapToLong(Long::parseLong).toArray();
+
+      this.resolutionToIndex = new ConcurrentHashMap<>();
+      for (int i = 0; i < this.resolutions.length; i++) {
+        this.resolutionToIndex.put(this.resolutions[i], i);
+      }
+
+      this.contigTree = new ContigTree();
+      initializeContigTree();
+      this.scaffoldTree = new ScaffoldTree();
+      initializeScaffoldTree();
+    }
   }
+
+  private void initializeContigTree() {
+
+  }
+
+  private void initializeScaffoldTree() {
+  }
+
+
 
 
   public long[][] getStripeIntersectionAsDenseMatrix(final long row, final long col, final long resolution) {
@@ -108,4 +153,7 @@ public class ChunkedFile {
     return String.format("/resolutions/%d/treap_coo/dense_blocks", resolution);
   }
 
+  public @NotNull List<@NotNull Long> getResolutions() {
+    return 0;
+  }
 }

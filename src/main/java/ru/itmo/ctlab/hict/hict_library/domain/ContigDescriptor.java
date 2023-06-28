@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 @Getter
@@ -17,30 +18,32 @@ public class ContigDescriptor {
   private final @NotNull @NonNull String contigName;
 
   private final long lengthBp;
-  private final @NotNull @NonNull ConcurrentMap<@NotNull @NonNull Long, @NotNull @NonNull Long> lengthBinsAtResolution;
-  private final @NotNull @NonNull ConcurrentMap<@NotNull @NonNull Long, @NotNull @NonNull ContigHideType> presenceAtResolution;
-
-
-  private final @NotNull @NonNull ConcurrentMap<@NotNull @NonNull Long, @NotNull @NonNull List<@NotNull @NonNull ATUDescriptor>> atus;
-  private final @NotNull @NonNull ConcurrentMap<@NotNull @NonNull Long, long[]> atuPrefixSumLengthBins;
+  private final CopyOnWriteArrayList<@NotNull @NonNull Long> lengthBinsAtResolution;
+  private final @NotNull @NonNull CopyOnWriteArrayList<@NotNull @NonNull ContigHideType> presenceAtResolution;
+  private final @NotNull @NonNull List<@NotNull @NonNull ATUDescriptor> @NotNull @NonNull[] atus;
+  private final CopyOnWriteArrayList<@NotNull @NonNull Long>[] atuPrefixSumLengthBins;
 
   public ContigDescriptor(
     final long contigId,
     final @NotNull @NonNull String contigName,
     final long lengthBp,
-    final @NotNull @NonNull Map<@NotNull @NonNull Long, @NotNull @NonNull Long> lengthBinsAtResolution,
-    final @NotNull @NonNull Map<@NotNull @NonNull Long, @NotNull @NonNull ContigHideType> presenceAtResolution,
-    final @NotNull @NonNull Map<@NotNull @NonNull Long, @NotNull @NonNull List<@NotNull @NonNull ATUDescriptor>> atus
+    final @NotNull @NonNull List<@NotNull @NonNull Long> lengthBinsAtResolution,
+    final @NotNull @NonNull List<@NotNull @NonNull ContigHideType> presenceAtResolution,
+    final @NotNull @NonNull List<@NotNull @NonNull ATUDescriptor> @NotNull @NonNull[] atus
   ) {
     this.contigId = contigId;
         this.contigName = contigName;
         this.lengthBp = lengthBp;
-    final @NotNull @NonNull ConcurrentMap<@NotNull @NonNull Long, @NotNull @NonNull Long> newLengthBinsAtResolution = new ConcurrentHashMap<>(lengthBinsAtResolution);
-        newLengthBinsAtResolution.put(0L, this.lengthBp);
-        this.lengthBinsAtResolution = newLengthBinsAtResolution;
-        this.presenceAtResolution = new ConcurrentHashMap<>(presenceAtResolution);
+    final @NotNull @NonNull CopyOnWriteArrayList<@NotNull @NonNull Long> newLengthBinsAtResolution = ;
+
+        this.lengthBinsAtResolution = new CopyOnWriteArrayList<>();
+        this.lengthBinsAtResolution.add(this.lengthBp);
+        this.lengthBinsAtResolution.addAll(lengthBinsAtResolution);
+        this.presenceAtResolution = new CopyOnWriteArrayList<>(presenceAtResolution);
         this.presenceAtResolution.put(0L, ContigHideType.SHOWN);
         this.atus = new ConcurrentHashMap<>(atus);
+//        atuPrefixSumLengthBins
+
         this.atuPrefixSumLengthBins = atus.entrySet().parallelStream().map(longListEntry -> {
             final var resolution = longListEntry.getKey();
             final var atusLengthArray = longListEntry.getValue().parallelStream().map(atu -> atu.end_index_in_stripe_excl - atu.start_index_in_stripe_incl).toArray(Long[]::new);
