@@ -11,7 +11,7 @@ import java.util.stream.Stream;
 
 @Getter
 public class ContigDescriptor {
-  private final long contigId;
+  private final int contigId;
   private final @NotNull
   @NonNull String contigName;
 

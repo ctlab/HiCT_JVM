@@ -39,7 +39,7 @@ public class Initializers {
     final List<ATUDescriptor> result;
     final long[][] basisAtuArray;
 
-    try (final var basisATUDataset = reader.object().openDataSet(getBasisATUDataset(resolution))) {
+    try (final var basisATUDataset = reader.object().openDataSet(getBasisATUDatasetPath(resolution))) {
       basisAtuArray = reader.int64().readMatrix(basisATUDataset.getDataSetPath());
     }
 
@@ -56,21 +56,60 @@ public class Initializers {
     return result;
   }
 
-  public static @NotNull @NonNull List<@NotNull @NonNull ContigTuple> buildContigDescriptors(List<List<ContigDescriptorDataBundle>> contigDescriptorDataBundles) {
-    final var contigCount = contigDescriptorDataBundles.get(0).size();
+  public static @NotNull @NonNull List<@NotNull @NonNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
+    final var resolutions = chunkedFile.getResolutions();
+    final List<List<StripeDescriptor>> resolutionOrderToStripes = new ArrayList<>(resolutions.length);
+    final List<List<ATUDescriptor>> resolutionOrderToBasisATUs = new ArrayList<>(resolutions.length);
+    final List<List<ContigDescriptorDataBundle>> contigDescriptorDataBundles = new ArrayList<>(resolutions.length);
+    final List<ContigDirection> contigDirections;
+    final String[] contigNames;
+    final long[] contigLengthBp;
+
+    final int contigCount;
+    try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
+      try (final ExecutorService executorService = Executors.newFixedThreadPool(8)) {
+        for (int i = 0; i < resolutions.length; ++i) {
+          final int finalI = i;
+          executorService.submit(() -> {
+            final var stripes = readStripeDescriptors(resolutions[finalI], reader);
+            resolutionOrderToStripes.set(finalI, stripes);
+            final var atus = readATL(resolutions[finalI], reader, stripes);
+            resolutionOrderToBasisATUs.set(finalI, atus);
+            final var dataBundles = readContigDataBundles(resolutions[finalI], reader, atus);
+            contigDescriptorDataBundles.set(finalI, dataBundles);
+          });
+        }
+      }
+
+      contigCount = contigDescriptorDataBundles.get(0).size();
+
+      try (final var contigDirectionDataset = reader.object().openDataSet(getContigDirectionDatasetPath())) {
+        contigDirections = Arrays.stream(reader.int64().readArray(contigDirectionDataset.getDataSetPath())).mapToObj(dir -> ContigDirection.values()[dir]).toList();
+      }
+
+      try (final var contigNamesDataset = reader.object().openDataSet(getContigNameDatasetPath())) {
+        contigNames = reader.string().readArray(contigNamesDataset.getDataSetPath());
+      }
+
+      try (final var contigLengthBpDataset = reader.object().openDataSet(getContigLengthBpDatasetPath())) {
+        contigLengthBp = reader.int64().readArray(contigLengthBpDataset.getDataSetPath());
+      }
+
+
+    }
 
 
     final var contigDescriptors = IntStream.range(0, contigCount).parallel().mapToObj(contigId -> new ContigDescriptor(
         contigId,
-        "contigName", // TODO: Read names
-        0L, //TODO: Read length bp
+        contigNames[contigId],
+        contigLengthBp[contigId],
         contigDescriptorDataBundles.stream().mapToLong(bundlesAtResolution -> bundlesAtResolution.get(contigId).lengthBins()).boxed().toList(),
         contigDescriptorDataBundles.stream().map(bundlesAtResolution -> bundlesAtResolution.get(contigId).hideType()).toList(),
         contigDescriptorDataBundles.stream().map(bundlesAtResolution -> bundlesAtResolution.get(contigId).atus()).toList()
       )
     );
 
-    return contigDescriptors.map(contigDescriptor -> new ContigTuple(contigDescriptor, ContigDirection.FORWARD)).toList();
+    return contigDescriptors.map(contigDescriptor -> new ContigTuple(contigDescriptor, contigDirections.get(contigDescriptor.getContigId()))).toList();
   }
 
   public static @NotNull @NonNull List<@NotNull @NonNull ContigDescriptorDataBundle> readContigDataBundles(final long resolution, final @NotNull @NonNull IHDF5Reader reader, final List<ATUDescriptor> basisATUs) {
@@ -80,15 +119,15 @@ public class Initializers {
     final long[][] contigATUMapping;
 
 
-    try (final var basisATUDataset = reader.object().openDataSet(getContigHideTypeDataset(resolution))) {
+    try (final var basisATUDataset = reader.object().openDataSet(getContigHideTypeDatasetPath(resolution))) {
       chtBytes = reader.int8().readArray(basisATUDataset.getDataSetPath());
     }
 
-    try (final var contigLengthBinsDataset = reader.object().openDataSet(getContigLengthBinsDataset(resolution))) {
+    try (final var contigLengthBinsDataset = reader.object().openDataSet(getContigLengthBinsDatasetPath(resolution))) {
       contigLengthBins = reader.int64().readArray(contigLengthBinsDataset.getDataSetPath());
     }
 
-    try (final var contigATLDataset = reader.object().openDataSet(getContigsATLDataset(resolution))) {
+    try (final var contigATLDataset = reader.object().openDataSet(getContigsATLDatasetPath(resolution))) {
       contigATUMapping = reader.int64().readMatrix(contigATLDataset.getDataSetPath());
     }
 
@@ -115,29 +154,21 @@ public class Initializers {
   }
 
   public static void initializeContigTree(final ChunkedFile chunkedFile) {
-    final var resolutions = chunkedFile.getResolutions();
-    final List<List<StripeDescriptor>> resolutionOrderToStripes = new ArrayList<>(resolutions.length);
-    final List<List<ATUDescriptor>> resolutionOrderToBasisATUs = new ArrayList<>(resolutions.length);
-    final List<List<ContigDescriptorDataBundle>> contigDescriptorDataBundles = new ArrayList<>(resolutions.length);
+    final var contigs = buildContigDescriptors(chunkedFile);
+
+    final long[] contigOrder;
     try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
-      try (final ExecutorService executorService = Executors.newFixedThreadPool(8)) {
-        for (int i = 0; i < resolutions.length; ++i) {
-          final int finalI = i;
-          executorService.submit(() -> {
-            final var stripes = readStripeDescriptors(resolutions[finalI], reader);
-            resolutionOrderToStripes.set(finalI, stripes);
-            final var atus = readATL(resolutions[finalI], reader, stripes);
-            resolutionOrderToBasisATUs.set(finalI, atus);
-            final var dataBundles = readContigDataBundles(resolutions[finalI], reader, atus);
-            contigDescriptorDataBundles.set(finalI, dataBundles);
-          });
-        }
+      try (final var contigOrderDataset = reader.object().openDataSet(getContigOrderDatasetPath())) {
+        contigOrder = reader.int64().readArray(contigOrderDataset.getDataSetPath());
       }
     }
 
-    final var contigs = buildContigDescriptors(contigDescriptorDataBundles);
+    final var contigTree = chunkedFile.getContigTree();
 
-
+    for (final var orderLong : contigOrder) {
+      final var order = (int) orderLong;
+      contigTree.appendContig(contigs.get(order).descriptor(), contigs.get(order).direction());
+    }
   }
 
   public static void initializeScaffoldTree(final ChunkedFile chunkedFile) {
