@@ -84,7 +84,7 @@ public class Initializers {
       contigCount = contigDescriptorDataBundles.get(0).size();
 
       try (final var contigDirectionDataset = reader.object().openDataSet(getContigDirectionDatasetPath())) {
-        contigDirections = Arrays.stream(reader.int64().readArray(contigDirectionDataset.getDataSetPath())).mapToObj(dir -> ContigDirection.values()[dir]).toList();
+        contigDirections = Arrays.stream(reader.int64().readArray(contigDirectionDataset.getDataSetPath())).mapToInt(i -> (int) i).mapToObj(dir -> ContigDirection.values()[dir]).toList();
       }
 
       try (final var contigNamesDataset = reader.object().openDataSet(getContigNameDatasetPath())) {

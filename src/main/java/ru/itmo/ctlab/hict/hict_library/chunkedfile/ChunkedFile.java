@@ -5,6 +5,7 @@ import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.Getter;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
@@ -55,7 +56,14 @@ public class ChunkedFile {
     this.contigTree = new ContigTree();
     this.scaffoldTree = new ScaffoldTree();
     Initializers.initializeContigTree(this);
+
+    this.matrixSizeBins = new long[1 + this.resolutions.length];
+    this.matrixSizeBins[0] = this.contigTree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, 0);
+//    for (resol)
+
+
     Initializers.initializeScaffoldTree(this);
+
 
   }
 

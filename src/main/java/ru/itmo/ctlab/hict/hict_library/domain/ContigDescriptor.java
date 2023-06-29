@@ -23,7 +23,7 @@ public class ContigDescriptor {
   private final @NotNull @NonNull List<long @NotNull @NonNull []> atuPrefixSumLengthBins;
 
   public ContigDescriptor(
-    final long contigId,
+    final int contigId,
     final @NotNull @NonNull String contigName,
     final long lengthBp,
     final @NotNull @NonNull List<@NotNull @NonNull Long> lengthBinsAtResolution,
