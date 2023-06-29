@@ -2,8 +2,10 @@ package ru.itmo.ctlab.hict.hict_server;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.logging.SLF4JLogDelegateFactory;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.BodyHandler;
 import lombok.extern.slf4j.Slf4j;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
@@ -33,8 +35,12 @@ public class MainVerticle extends AbstractVerticle {
       System.setProperty("org.vertx.logger-delegate-factory-class-name", SLF4JLogDelegateFactory.class.getName());
     }
 
-    final var server = vertx.createHttpServer();
+    final HttpServerOptions serverOptions = new HttpServerOptions();
+    serverOptions.setCompressionSupported(true);
+    final var server = vertx.createHttpServer(serverOptions);
     final var router = Router.router(vertx);
+
+    router.route().handler(BodyHandler.create());
 
     try {
       log.info("Trying local map");

@@ -3,8 +3,10 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.domain.*;
+import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -14,6 +16,7 @@ import java.util.stream.IntStream;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 
+@Slf4j
 public class Initializers {
   public static @NotNull @NonNull List<@NotNull @NonNull StripeDescriptor> readStripeDescriptors(final long resolution, final @NotNull @NonNull IHDF5Reader reader) {
     final List<StripeDescriptor> result = new ArrayList<>();
@@ -54,11 +57,14 @@ public class Initializers {
     return result;
   }
 
-  public static @NotNull @NonNull List<@NotNull @NonNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
+  public static @NotNull @NonNull List<ContigTree.@NotNull @NonNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
     final var resolutions = chunkedFile.getResolutions();
     final List<List<StripeDescriptor>> resolutionOrderToStripes = new ArrayList<>(resolutions.length);
+    IntStream.range(0, resolutions.length).forEach(idx -> resolutionOrderToStripes.add(null));
     final List<List<ATUDescriptor>> resolutionOrderToBasisATUs = new ArrayList<>(resolutions.length);
+    IntStream.range(0, resolutions.length).forEach(idx -> resolutionOrderToBasisATUs.add(null));
     final List<List<ContigDescriptorDataBundle>> contigDescriptorDataBundles = new ArrayList<>(resolutions.length);
+    IntStream.range(0, resolutions.length).forEach(idx -> contigDescriptorDataBundles.add(null));
     final List<ContigDirection> contigDirections;
     final String[] contigNames;
     final long[] contigLengthBp;
@@ -115,7 +121,7 @@ public class Initializers {
       )
     );
 
-    return contigDescriptors.map(contigDescriptor -> new ContigTuple(contigDescriptor, contigDirections.get(contigDescriptor.getContigId()))).toList();
+    return contigDescriptors.map(contigDescriptor -> new ContigTree.ContigTuple(contigDescriptor, contigDirections.get(contigDescriptor.getContigId()))).toList();
   }
 
   public static @NotNull @NonNull List<@NotNull @NonNull ContigDescriptorDataBundle> readContigDataBundles(final long resolution, final @NotNull @NonNull IHDF5Reader reader, final List<ATUDescriptor> basisATUs) {
@@ -137,14 +143,12 @@ public class Initializers {
       contigATUMapping = reader.int64().readMatrix(contigATLDataset.getDataSetPath());
     }
 
-    final List<List<ATUDescriptor>> contigIdToATUs = new ArrayList<>(contigLengthBins.length);
+    final List<@NotNull List<ATUDescriptor>> contigIdToATUs = new ArrayList<>(contigLengthBins.length);
+    IntStream.range(0, contigLengthBins.length).forEach(idx -> contigIdToATUs.add(new ArrayList<>()));
 
     for (final var row : contigATUMapping) {
       final var contigId = row[0];
       final var atuId = row[1];
-      if (contigIdToATUs.get((int) contigId) == null) {
-        contigIdToATUs.set((int) contigId, new ArrayList<>());
-      }
       contigIdToATUs.get((int) contigId).add(basisATUs.get((int) atuId));
     }
 
@@ -160,6 +164,8 @@ public class Initializers {
   }
 
   public static void initializeContigTree(final ChunkedFile chunkedFile) {
+    log.debug("Chunked file has " + chunkedFile.getResolutions().length + " resolutions");
+
     final var contigs = buildContigDescriptors(chunkedFile);
 
     final long[] contigOrder;
@@ -178,9 +184,6 @@ public class Initializers {
   }
 
   public static void initializeScaffoldTree(final ChunkedFile chunkedFile) {
-  }
-
-  public record ContigTuple(ContigDescriptor descriptor, ContigDirection direction) {
   }
 
   private record ContigDescriptorDataBundle(

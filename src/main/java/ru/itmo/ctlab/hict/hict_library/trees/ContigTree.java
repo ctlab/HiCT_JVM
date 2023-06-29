@@ -9,9 +9,7 @@ import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
@@ -46,6 +44,32 @@ public class ContigTree implements Iterable<ContigTree.Node> {
         }
       };
     }
+  }
+
+  public void traverse(final @NotNull @NonNull Consumer<@NotNull @NonNull Node> traverseFn) {
+    try {
+      this.rootLock.readLock().lock();
+      Node.traverseNode(
+        this.root,
+        traverseFn
+      );
+    } finally {
+      this.rootLock.readLock().unlock();
+    }
+  }
+
+  public List<ContigTuple> getContigList() {
+    final List<ContigTuple> descriptors = new ArrayList<>();
+
+    this.traverse(node -> {
+      descriptors.add(new ContigTuple(
+        node.contigDescriptor,
+        node.getTrueDirection()
+      ));
+
+    });
+
+    return descriptors;
   }
 
   public long getLengthInUnits(final @NotNull QueryLengthUnit units, final @NotNull ResolutionDescriptor resolution) {
@@ -339,8 +363,6 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
 
         final Iterator<Node> rightIterator = (right != null) ? right.iterator() : null;
-
-
       };
     }
 
@@ -423,5 +445,8 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
     public record SplitResult(Node left, Node right) {
     }
+  }
+
+  public record ContigTuple(ContigDescriptor descriptor, ContigDirection direction) {
   }
 }

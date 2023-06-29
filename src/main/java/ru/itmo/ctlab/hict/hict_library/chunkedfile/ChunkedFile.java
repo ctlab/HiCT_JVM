@@ -7,6 +7,7 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
@@ -60,16 +61,14 @@ public class ChunkedFile {
         this.resolutionToIndex.put(this.resolutions[i], i);
       }
     }
-
     this.contigTree = new ContigTree();
-    this.scaffoldTree = new ScaffoldTree();
     Initializers.initializeContigTree(this);
-
     this.matrixSizeBins = new long[1 + this.resolutions.length];
     this.matrixSizeBins[0] = this.contigTree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
     for (int i = 0; i < this.resolutions.length; ++i) {
       this.matrixSizeBins[1 + i] = this.contigTree.getLengthInUnits(QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(1 + i));
     }
+    this.scaffoldTree = new ScaffoldTree(this.matrixSizeBins[0]);
     Initializers.initializeScaffoldTree(this);
   }
 
@@ -142,5 +141,9 @@ public class ChunkedFile {
 
   public long @NotNull @NonNull [] getResolutions() {
     return this.resolutions;
+  }
+
+  public @NotNull @NonNull AssemblyInfo getAssemblyInfo() {
+    return new AssemblyInfo(this.contigTree.getContigList(), this.scaffoldTree.getScaffoldList());
   }
 }

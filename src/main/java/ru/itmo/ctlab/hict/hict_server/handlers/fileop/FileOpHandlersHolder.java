@@ -7,12 +7,15 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.dto.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.OpenFileResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -29,8 +32,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }
       final var dataDirectory = dataDirectoryWrapper.getPath();
 
-      final var filename = ctx.request().getParam("filename", null);
-      final var fastaFilename = ctx.request().getParam("fastaFilename", null);
+      final @NotNull @NonNull var requestBody = ctx.body();
+      final @NotNull @NonNull var requestJSON = requestBody.asJsonObject();
+
+      final @Nullable var filename = requestJSON.getString("filename");
+      final @Nullable var fastaFilename = requestJSON.getString("fastaFilename");
+
+      log.debug("Got filename: " + filename + " and FASTA filename: " + fastaFilename);
 
       if (filename == null) {
         ctx.fail(new RuntimeException("Filename must be specified to open the file"));
@@ -59,8 +67,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
       chunkedFile.getResolutionsList(),
       chunkedFile.getResolutionsList().parallelStream().mapToDouble(r -> (double) r / minResolution).boxed().toList(),
       chunkedFile.getDenseBlockSize(),
-      null,
-      null
+      AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
+      Arrays.stream(chunkedFile.getMatrixSizeBins()).mapToInt(l -> (int) l).boxed().toList()
     );
   }
 }
