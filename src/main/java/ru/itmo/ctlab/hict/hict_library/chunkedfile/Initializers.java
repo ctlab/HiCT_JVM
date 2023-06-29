@@ -9,8 +9,6 @@ import ru.itmo.ctlab.hict.hict_library.domain.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -26,7 +24,7 @@ public class Initializers {
 
     for (int stripeId = 0; stripeId < stripeLengthBins.length; ++stripeId) {
       try (final var stripeBinWeightsDataset = reader.object().openDataSet(getStripeBinWeightsDatasetPath(resolution))) {
-        final var stripeBinWeights = reader.float64().readMDArraySlice(stripeBinWeightsDataset, new long[]{-1L, stripeId});
+        final var stripeBinWeights = reader.float64().readMDArraySlice(stripeBinWeightsDataset, new long[]{stripeId, -1L});
         final var newStripe = new StripeDescriptor(stripeId, stripeLengthBins[stripeId], stripeBinWeights.getAsFlatArray());
         result.add(newStripe);
       }
@@ -67,18 +65,26 @@ public class Initializers {
 
     final int contigCount;
     try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
-      try (final ExecutorService executorService = Executors.newFixedThreadPool(8)) {
-        for (int i = 0; i < resolutions.length; ++i) {
-          final int finalI = i;
-          executorService.submit(() -> {
-            final var stripes = readStripeDescriptors(resolutions[finalI], reader);
-            resolutionOrderToStripes.set(finalI, stripes);
-            final var atus = readATL(resolutions[finalI], reader, stripes);
-            resolutionOrderToBasisATUs.set(finalI, atus);
-            final var dataBundles = readContigDataBundles(resolutions[finalI], reader, atus);
-            contigDescriptorDataBundles.set(finalI, dataBundles);
-          });
-        }
+//      try (final ExecutorService executorService = Executors.newFixedThreadPool(8)) {
+//        for (int i = 0; i < resolutions.length; ++i) {
+//          final int finalI = i;
+//          executorService.submit(() -> {
+//            final var stripes = readStripeDescriptors(resolutions[finalI], reader);
+//            resolutionOrderToStripes.set(finalI, stripes);
+//            final var atus = readATL(resolutions[finalI], reader, stripes);
+//            resolutionOrderToBasisATUs.set(finalI, atus);
+//            final var dataBundles = readContigDataBundles(resolutions[finalI], reader, atus);
+//            contigDescriptorDataBundles.set(finalI, dataBundles);
+//          });
+//        }
+//      }
+      for (int i = 0; i < resolutions.length; ++i) {
+        final var stripes = readStripeDescriptors(resolutions[i], reader);
+        resolutionOrderToStripes.set(i, stripes);
+        final var atus = readATL(resolutions[i], reader, stripes);
+        resolutionOrderToBasisATUs.set(i, atus);
+        final var dataBundles = readContigDataBundles(resolutions[i], reader, atus);
+        contigDescriptorDataBundles.set(i, dataBundles);
       }
 
       contigCount = contigDescriptorDataBundles.get(0).size();
@@ -177,7 +183,7 @@ public class Initializers {
   public record ContigTuple(ContigDescriptor descriptor, ContigDirection direction) {
   }
 
-  private static record ContigDescriptorDataBundle(
+  private record ContigDescriptorDataBundle(
     @NotNull @NonNull List<@NotNull @NonNull ATUDescriptor> atus,
     @NotNull @NonNull ContigHideType hideType,
     long lengthBins

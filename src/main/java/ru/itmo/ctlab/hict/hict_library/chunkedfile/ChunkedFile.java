@@ -4,6 +4,7 @@ import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
@@ -20,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 
 @Getter
+@Slf4j
 public class ChunkedFile {
 
   private final @NotNull @NonNull Path hdfFilePath;
@@ -41,12 +43,17 @@ public class ChunkedFile {
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
       this.resolutions = reader.object().getAllGroupMembers("/resolutions").parallelStream().filter(s -> {
         try {
+          log.debug("Trying to parse " + s);
           Long.parseLong(s);
+          log.debug("OK in " + s);
           return true;
         } catch (final NumberFormatException nfe) {
+          log.debug("Fail in " + s);
           return false;
         }
       }).mapToLong(Long::parseLong).sorted().toArray();
+
+      log.debug("Resolutions count: " + resolutions.length);
 
       this.resolutionToIndex = new ConcurrentHashMap<>();
       for (int i = 0; i < this.resolutions.length; i++) {

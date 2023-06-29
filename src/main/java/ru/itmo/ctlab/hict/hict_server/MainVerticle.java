@@ -23,7 +23,7 @@ public class MainVerticle extends AbstractVerticle {
   public void start(final Promise<Void> startPromise) throws Exception {
     // TODO: This should be in the queries
     final var dataDirectory = Path.of("/home/tux/HiCT/HiCT_Server/data/").normalize();
-    final var chunkedFile = new ChunkedFile(Path.of(dataDirectory.toString(), "zanu_male_4DN.mcool.hict.hdf5"));
+    final var chunkedFile = new ChunkedFile(Path.of(dataDirectory.toString(), "zanu_male_4DN.mcool.hict.hdf5"), 256);
     final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
 
 

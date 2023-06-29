@@ -29,11 +29,11 @@ public class PathGenerators {
   }
 
   public static @NotNull @NonNull String getStripeLengthsBinsDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/stripes/stripeLengthBins", resolution);
+    return String.format("/resolutions/%d/stripes/stripe_length_bins", resolution);
   }
 
   public static @NotNull @NonNull String getStripeBinWeightsDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/stripes/sripes_bin_weights", resolution);
+    return String.format("/resolutions/%d/stripes/stripes_bin_weights", resolution);
   }
 
   public static @NotNull @NonNull String getBasisATUDatasetPath(final long resolution) {
@@ -53,18 +53,18 @@ public class PathGenerators {
   }
 
   public static @NotNull @NonNull String getContigDirectionDatasetPath() {
-    return String.format("/contig_info/contig_direction");
+    return "/contig_info/contig_direction";
   }
 
   public static @NotNull @NonNull String getContigLengthBpDatasetPath() {
-    return String.format("/contig_info/contig_length_bp");
+    return "/contig_info/contig_length_bp";
   }
 
   public static @NotNull @NonNull String getContigNameDatasetPath() {
-    return String.format("/contig_info/contig_name");
+    return "/contig_info/contig_name";
   }
 
   public static @NotNull @NonNull String getContigOrderDatasetPath() {
-    return String.format("/contig_info/ordered_contig_ids");
+    return "/contig_info/ordered_contig_ids";
   }
 }
