@@ -5,6 +5,7 @@ import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.Getter;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
@@ -58,13 +59,11 @@ public class ChunkedFile {
     Initializers.initializeContigTree(this);
 
     this.matrixSizeBins = new long[1 + this.resolutions.length];
-    this.matrixSizeBins[0] = this.contigTree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, 0);
-//    for (resol)
-
-
+    this.matrixSizeBins[0] = this.contigTree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
+    for (int i = 0; i < this.resolutions.length; ++i) {
+      this.matrixSizeBins[1 + i] = this.contigTree.getLengthInUnits(QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(1 + i));
+    }
     Initializers.initializeScaffoldTree(this);
-
-
   }
 
 

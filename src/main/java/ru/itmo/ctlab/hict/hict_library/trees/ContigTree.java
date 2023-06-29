@@ -3,19 +3,19 @@ package ru.itmo.ctlab.hict.hict_library.trees;
 import lombok.Builder;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 
 import java.util.Iterator;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class ContigTree implements Iterable<ContigTree.Node> {
   private static final Random rnd = new Random();
@@ -48,7 +48,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
   }
 
-  public long getLengthInUnits(final @NotNull QueryLengthUnit units, final long resolution,) {
+  public long getLengthInUnits(final @NotNull QueryLengthUnit units, final @NotNull ResolutionDescriptor resolution) {
     try {
       this.rootLock.readLock().lock();
       return this.root.getSubtreeLengthInUnits(units, resolution);
@@ -67,7 +67,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
   }
 
-  public @NonNull Node.ExposedSegment expose(final long resolution, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
+  public @NonNull Node.ExposedSegment expose(final @NotNull ResolutionDescriptor resolution, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
     final Node rootSnapshot;
     try {
       this.rootLock.readLock().lock();
@@ -92,19 +92,19 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
 
     public static @NonNull Node createNodeFromDescriptor(final @NonNull ContigDescriptor contigDescriptor, final @NonNull ContigDirection contigDirection) {
-      return Node.builder().contigDescriptor(contigDescriptor).subtreeCount(1L).needsChangingDirection(false).subtreeLengthBins(contigDescriptor.getLengthBinsAtResolution()).subtreeLengthPixels(contigDescriptor.getLengthBinsAtResolution().entrySet().parallelStream().map(resolutionToLengthBins -> {
-        final @NonNull var resolution = resolutionToLengthBins.getKey();
+      final var resolutionCount = contigDescriptor.getLengthBinsAtResolution().length;
+      return Node.builder().contigDescriptor(contigDescriptor).subtreeCount(1L).needsChangingDirection(false).subtreeLengthBins(contigDescriptor.getLengthBinsAtResolution()).subtreeLengthPixels(IntStream.range(0, resolutionCount).mapToLong(resolutionIdx -> {
         final long length;
-        if (contigDescriptor.getPresenceAtResolution().get(resolution).equals(ContigHideType.SHOWN)) {
-          length = resolutionToLengthBins.getValue();
+        if (contigDescriptor.getPresenceAtResolution().get(resolutionIdx).equals(ContigHideType.SHOWN)) {
+          length = contigDescriptor.getLengthBinsAtResolution()[resolutionIdx];
         } else {
           length = 0L;
         }
-        return Map.entry(resolution, length);
-      }).collect(Collectors.toConcurrentMap(Map.Entry::getKey, Map.Entry::getValue))).yPriority(rnd.nextLong()).contigDirection(contigDirection).left(null).right(null).build();
+        return length;
+      }).toArray()).yPriority(rnd.nextLong()).contigDirection(contigDirection).left(null).right(null).build();
     }
 
-    public static SplitResult splitNodeByLength(final long resolution, final Node t, final long k, final boolean includeEqualToTheLeft, final boolean excludeHiddenContigs) {
+    public static SplitResult splitNodeByLength(final ResolutionDescriptor resolutionDescriptor, final Node t, final long k, final boolean includeEqualToTheLeft, final boolean excludeHiddenContigs) {
       if (t == null) {
         return new SplitResult(null, null);
       }
@@ -112,25 +112,26 @@ public class ContigTree implements Iterable<ContigTree.Node> {
         return new SplitResult(null, t);
       }
       final var newTree = t.push().updateSizes();
+      final int resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
       final long leftLength;
       if (newTree.left != null) {
         if (excludeHiddenContigs) {
-          leftLength = newTree.left.subtreeLengthPixels.get(resolution);
+          leftLength = newTree.left.subtreeLengthPixels[resolutionOrder];
         } else {
-          leftLength = newTree.left.subtreeLengthBins.get(resolution);
+          leftLength = newTree.left.subtreeLengthBins[resolutionOrder];
         }
       } else {
         leftLength = 0L;
       }
 
       if (k <= leftLength) {
-        final @NonNull var sp = splitNodeByLength(resolution, newTree.left, k, includeEqualToTheLeft, excludeHiddenContigs);
+        final @NonNull var sp = splitNodeByLength(resolutionDescriptor, newTree.left, k, includeEqualToTheLeft, excludeHiddenContigs);
 
         final var newRightSplit = newTree.cloneBuilder().left(sp.right).build().updateSizes();
 
         return new SplitResult(sp.left, newRightSplit);
       } else {
-        final var nodeLength = newTree.contigDescriptor.getLengthInUnits(excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, resolution);
+        final var nodeLength = newTree.contigDescriptor.getLengthInUnits(excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, resolutionDescriptor);
         if (k < leftLength + nodeLength) {
           if (includeEqualToTheLeft) {
             final var new_t = newTree.cloneBuilder().right(null).build().updateSizes();
@@ -140,7 +141,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
             return new SplitResult(newTree.left, new_t);
           }
         } else {
-          final var sp = splitNodeByLength(resolution, newTree.right, k - (leftLength + nodeLength), includeEqualToTheLeft, excludeHiddenContigs);
+          final var sp = splitNodeByLength(resolutionDescriptor, newTree.right, k - (leftLength + nodeLength), includeEqualToTheLeft, excludeHiddenContigs);
           final var new_t = newTree.cloneBuilder().right(sp.left).build().updateSizes();
           return new SplitResult(new_t, sp.right);
         }
@@ -174,30 +175,24 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
       if (leftCount >= k) {
         final var sp = splitNodeByCount(newTree.left, k);
-        return new SplitResult(
-          sp.left,
-          newTree.cloneBuilder().left(sp.right).build().updateSizes()
-        );
+        return new SplitResult(sp.left, newTree.cloneBuilder().left(sp.right).build().updateSizes());
       } else {
         final var sp = splitNodeByCount(newTree.right, k - leftCount - 1);
-        return new SplitResult(
-          newTree.cloneBuilder().right(sp.left).build().updateSizes(),
-          sp.right
-        );
+        return new SplitResult(newTree.cloneBuilder().right(sp.left).build().updateSizes(), sp.right);
       }
     }
 
-    public static @NonNull SplitResult splitNodeByLength(final long resolution, final Node t, final long k, final boolean includeEqualToTheLeft, final @NonNull QueryLengthUnit units) {
+    public static @NonNull SplitResult splitNodeByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final Node t, final long k, final boolean includeEqualToTheLeft, final @NonNull QueryLengthUnit units) {
       return switch (units) {
-        case BASE_PAIRS, BINS -> splitNodeByLength(resolution, t, k, includeEqualToTheLeft, false);
-        case PIXELS -> splitNodeByLength(resolution, t, k, includeEqualToTheLeft, true);
+        case BASE_PAIRS, BINS -> splitNodeByLength(resolutionDescriptor, t, k, includeEqualToTheLeft, false);
+        case PIXELS -> splitNodeByLength(resolutionDescriptor, t, k, includeEqualToTheLeft, true);
       };
     }
 
-    public static @NonNull ExposedSegment exposeNodeByLength(final Node node, final long resolution, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
+    public static @NonNull ExposedSegment exposeNodeByLength(final Node node, final @NotNull ResolutionDescriptor resolutionDescriptor, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
       if (node != null) {
-        final var sp1 = splitNodeByLength(resolution, node, endExcl, true, units);
-        final var sp2 = splitNodeByLength(resolution, sp1.left, startIncl, false, units);
+        final var sp1 = splitNodeByLength(resolutionDescriptor, node, endExcl, true, units);
+        final var sp2 = splitNodeByLength(resolutionDescriptor, sp1.left, startIncl, false, units);
         return new ExposedSegment(sp2.left, sp2.right, sp1.right);
       } else {
         return new ExposedSegment(null, null, null);
@@ -213,11 +208,12 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public long getSubtreeLengthInUnits(final @NonNull QueryLengthUnit units, final long resolution) {
+    public long getSubtreeLengthInUnits(final @NonNull QueryLengthUnit units, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor) {
+      final int resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
       return switch (units) {
-        case BASE_PAIRS -> this.subtreeLengthBins.get(0L);
-        case PIXELS -> this.subtreeLengthPixels.get(resolution);
-        case BINS -> this.subtreeLengthBins.get(resolution);
+        case BASE_PAIRS -> this.subtreeLengthBins[0];
+        case PIXELS -> this.subtreeLengthPixels[resolutionOrder];
+        case BINS -> this.subtreeLengthBins[resolutionOrder];
       };
     }
 
@@ -244,18 +240,31 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
     public @NonNull Node updateSizes() {
       final var newSubtreeCount = 1 + ((this.left != null) ? this.left.subtreeCount : 0L) + ((this.right != null) ? this.right.subtreeCount : 0L);
-      final var newLengthBins = this.subtreeLengthBins.keySet().parallelStream().map(resolution -> {
-        final long contigLength = this.contigDescriptor.getLengthBinsAtResolution().get(resolution);
-        final long leftLength = (this.left != null) ? this.left.subtreeLengthBins.get(resolution) : 0L;
-        final long rightLength = (this.right != null) ? this.right.subtreeLengthBins.get(resolution) : 0L;
-        return Map.entry(resolution, contigLength + leftLength + rightLength);
-      }).collect(Collectors.toConcurrentMap(Map.Entry::getKey, Map.Entry::getValue));
-      final var newLengthPixels = this.subtreeLengthBins.keySet().parallelStream().map(resolution -> {
-        final long contigLength = (this.contigDescriptor.getPresenceAtResolution().get(resolution).equals(ContigHideType.SHOWN)) ? this.contigDescriptor.getLengthBinsAtResolution().get(resolution) : 0L;
-        final long leftLength = (this.left != null) ? this.left.subtreeLengthPixels.get(resolution) : 0L;
-        final long rightLength = (this.right != null) ? this.right.subtreeLengthPixels.get(resolution) : 0L;
-        return Map.entry(resolution, contigLength + leftLength + rightLength);
-      }).collect(Collectors.toConcurrentMap(Map.Entry::getKey, Map.Entry::getValue));
+
+      final var resolutionCount = this.subtreeLengthBins.length;
+
+      final var newLengthBins = this.contigDescriptor.getLengthBinsAtResolution().clone();
+      if (this.left != null) {
+        IntStream.range(0, resolutionCount).parallel().forEach(idx -> newLengthBins[idx] += this.left.subtreeLengthBins[idx]);
+      }
+      if (this.right != null) {
+        IntStream.range(0, resolutionCount).parallel().forEach(idx -> newLengthBins[idx] += this.right.subtreeLengthBins[idx]);
+      }
+
+      final long[] newLengthPixels = this.contigDescriptor.getLengthBinsAtResolution().clone();
+
+      IntStream.range(0, resolutionCount).parallel().forEach(resolutionOrder -> {
+        if (!this.contigDescriptor.getPresenceAtResolution().get(resolutionOrder).equals(ContigHideType.SHOWN)) {
+          newLengthPixels[resolutionOrder] = 0L;
+        }
+      });
+
+      if (this.left != null) {
+        IntStream.range(0, resolutionCount).parallel().forEach(idx -> newLengthPixels[idx] += this.left.subtreeLengthPixels[idx]);
+      }
+      if (this.right != null) {
+        IntStream.range(0, resolutionCount).parallel().forEach(idx -> newLengthPixels[idx] += this.right.subtreeLengthPixels[idx]);
+      }
 
       return this.cloneBuilder().subtreeCount(newSubtreeCount).subtreeLengthBins(newLengthBins).subtreeLengthPixels(newLengthPixels).build();
     }
@@ -264,12 +273,12 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       return (this.needsChangingDirection) ? this.contigDirection.inverse() : this.contigDirection;
     }
 
-    public @NonNull SplitResult splitByLength(final long resolution, final long k, final boolean includeEqualToTheLeft, final boolean excludeHiddenContigs) {
-      return splitNodeByLength(resolution, this, k, includeEqualToTheLeft, excludeHiddenContigs);
+    public @NonNull SplitResult splitByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final long k, final boolean includeEqualToTheLeft, final boolean excludeHiddenContigs) {
+      return splitNodeByLength(resolutionDescriptor, this, k, includeEqualToTheLeft, excludeHiddenContigs);
     }
 
-    public @NonNull SplitResult splitByLength(final long resolution, final long k, final boolean includeEqualToTheLeft, final @NonNull QueryLengthUnit units) {
-      return splitNodeByLength(resolution, this, k, includeEqualToTheLeft, units);
+    public @NonNull SplitResult splitByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final long k, final boolean includeEqualToTheLeft, final @NonNull QueryLengthUnit units) {
+      return splitNodeByLength(resolutionDescriptor, this, k, includeEqualToTheLeft, units);
     }
 
     public @NonNull SplitResult splitByCount(final long k) {
@@ -280,7 +289,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       traverseNode(this, f);
     }
 
-    public @NonNull ExposedSegment expose(final long resolution, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
+    public @NonNull ExposedSegment expose(final @NotNull ResolutionDescriptor resolution, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
       return exposeNodeByLength(this, resolution, startIncl, endExcl, units);
     }
 
@@ -324,8 +333,9 @@ public class ContigTree implements Iterable<ContigTree.Node> {
             return rightIterator.next();
           }
           throw new NoSuchElementException();
-        }        final Iterator<Node> leftIterator = (left != null) ? left.iterator() : null;
+        }
 
+        final Iterator<Node> leftIterator = (left != null) ? left.iterator() : null;
 
 
         final Iterator<Node> rightIterator = (right != null) ? right.iterator() : null;
@@ -340,8 +350,8 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       private Node left;
       private Node right;
       private long subtreeCount;
-      private @NonNull Map<@NonNull Long, @NonNull Long> subtreeLengthBins;
-      private @NonNull Map<@NonNull Long, @NonNull Long> subtreeLengthPixels;
+      private long[] subtreeLengthBins;
+      private long[] subtreeLengthPixels;
       private boolean needsChangingDirection;
       private @NonNull ContigDirection contigDirection;
 
@@ -382,12 +392,12 @@ public class ContigTree implements Iterable<ContigTree.Node> {
         return this;
       }
 
-      public NodeCloneBuilder subtreeLengthBins(final @NonNull Map<@NonNull Long, @NonNull Long> subtreeLengthBins) {
+      public NodeCloneBuilder subtreeLengthBins(final long[] subtreeLengthBins) {
         this.subtreeLengthBins = subtreeLengthBins;
         return this;
       }
 
-      public NodeCloneBuilder subtreeLengthPixels(final @NonNull Map<@NonNull Long, @NonNull Long> subtreeLengthPixels) {
+      public NodeCloneBuilder subtreeLengthPixels(final long[] subtreeLengthPixels) {
         this.subtreeLengthPixels = subtreeLengthPixels;
         return this;
       }

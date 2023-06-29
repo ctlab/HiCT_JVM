@@ -3,6 +3,7 @@ package ru.itmo.ctlab.hict.hict_library.domain;
 import lombok.Getter;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 
 import java.util.Arrays;
 import java.util.List;
@@ -53,7 +54,8 @@ public class ContigDescriptor {
     }).toList());
   }
 
-  public long getLengthInUnits(final @NotNull @NonNull QueryLengthUnit units, final int resolutionOrder) {
+  public long getLengthInUnits(final @NotNull @NonNull QueryLengthUnit units, final ResolutionDescriptor resolution) {
+    final int resolutionOrder = resolution.getResolutionOrderInArray();
     return switch (units) {
       case PIXELS -> {
         final var presence = this.presenceAtResolution.get(resolutionOrder);
