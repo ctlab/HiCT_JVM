@@ -45,7 +45,7 @@ public class MainVerticle extends AbstractVerticle {
     try {
       log.info("Trying local map");
       final var map = vertx.sharedData().getLocalMap("hict_server");
-      map.put("chunkedFile", chunkedFileWrapper);
+//      map.put("chunkedFile", chunkedFileWrapper);
       map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataDirectory));
       map.put("tileSize", 256);
       log.info("Added to local map");

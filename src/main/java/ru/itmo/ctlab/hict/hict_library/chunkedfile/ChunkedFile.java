@@ -7,6 +7,7 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
@@ -73,7 +74,9 @@ public class ChunkedFile {
   }
 
 
-  public long[][] getStripeIntersectionAsDenseMatrix(final long row, final long col, final long resolution) {
+  public long[][] getStripeIntersectionAsDenseMatrix(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final long row, final long col) {
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var resolution = this.resolutions[resolutionOrder];
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
       final var blockIndexInDatasets = row * this.blockCount + col;
       final long blockLength;
@@ -134,6 +137,24 @@ public class ChunkedFile {
     }
   }
 
+
+  // TODO: Implement
+  public long[][] getSubmatrix(final @NotNull @NonNull ResolutionDescriptor resolution, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
+
+  }
+
+  // TODO: Implement
+  public List<ATUDescriptor> getATUsForRange(final @NotNull @NonNull ResolutionDescriptor resolution, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
+  }
+
+  // TODO: Implement
+  public MatrixWithWeights getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolution, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU) {
+
+  }
+
+  public record MatrixWithWeights(long @NotNull @NonNull [][] matrix, double @NotNull @NonNull [] rowWeights,
+                                  double @NotNull @NonNull [] colWeights) {
+  }
 
   public @NotNull List<@NotNull Long> getResolutionsList() {
     return Arrays.stream(this.resolutions).boxed().toList();
