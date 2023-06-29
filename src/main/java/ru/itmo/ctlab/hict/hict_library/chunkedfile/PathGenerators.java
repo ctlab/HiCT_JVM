@@ -39,4 +39,16 @@ public class PathGenerators {
   public static @NotNull @NonNull String getBasisATUDataset(final long resolution) {
     return String.format("/resolutions/%d/atl/basis_atu", resolution);
   }
+
+  public static @NotNull @NonNull String getContigsATLDataset(final long resolution) {
+    return String.format("/resolutions/%d/contigs/atl", resolution);
+  }
+
+  public static @NotNull @NonNull String getContigHideTypeDataset(final long resolution) {
+    return String.format("/resolutions/%d/contigs/contig_hide_type", resolution);
+  }
+
+  public static @NotNull @NonNull String getContigLengthBinsDataset(final long resolution) {
+    return String.format("/resolutions/%d/contigs/contig_length_bins", resolution);
+  }
 }
