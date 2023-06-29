@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
+
 @Getter
 public class ChunkedFile {
 
@@ -42,25 +44,19 @@ public class ChunkedFile {
         } catch (final NumberFormatException nfe) {
           return false;
         }
-      }).mapToLong(Long::parseLong).toArray();
+      }).mapToLong(Long::parseLong).sorted().toArray();
 
       this.resolutionToIndex = new ConcurrentHashMap<>();
       for (int i = 0; i < this.resolutions.length; i++) {
         this.resolutionToIndex.put(this.resolutions[i], i);
       }
-
-      this.contigTree = new ContigTree();
-      initializeContigTree();
-      this.scaffoldTree = new ScaffoldTree();
-      initializeScaffoldTree();
     }
-  }
 
-  private void initializeContigTree() {
+    this.contigTree = new ContigTree();
+    this.scaffoldTree = new ScaffoldTree();
+    Initializers.initializeContigTree(this);
+    Initializers.initializeScaffoldTree(this);
 
-  }
-
-  private void initializeScaffoldTree() {
   }
 
 
@@ -93,10 +89,10 @@ public class ChunkedFile {
         final long[] blockCols;
         final long[] blockValues;
 
-        try (final var blockRowsDataset = reader.object().openDataSet(getBlockRowsDatasetPath(resolution))) {
+        try (final var blockRowsDataset = reader.object().openDataSet(PathGenerators.getBlockRowsDatasetPath(resolution))) {
           blockRows = reader.int64().readArrayBlockWithOffset(blockRowsDataset, (int) blockLength, blockOffset);
         }
-        try (final var blockColsDataset = reader.object().openDataSet(getBlockColsDatasetPath(resolution))) {
+        try (final var blockColsDataset = reader.object().openDataSet(PathGenerators.getBlockColsDatasetPath(resolution))) {
           blockCols = reader.int64().readArrayBlockWithOffset(blockColsDataset, (int) blockLength, blockOffset);
         }
         try (final var blockValuesDataset = reader.object().openDataSet(getBlockValuesDatasetPath(resolution))) {
@@ -125,30 +121,6 @@ public class ChunkedFile {
     }
   }
 
-
-  private static @NotNull @NonNull String getBlockLengthDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/treap_coo/block_length", resolution);
-  }
-
-  private static @NotNull @NonNull String getBlockOffsetDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/treap_coo/block_offset", resolution);
-  }
-
-  private static @NotNull @NonNull String getBlockColsDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/treap_coo/block_cols", resolution);
-  }
-
-  private static @NotNull @NonNull String getBlockRowsDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/treap_coo/block_rows", resolution);
-  }
-
-  private static @NotNull @NonNull String getBlockValuesDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/treap_coo/block_vals", resolution);
-  }
-
-  private static @NotNull @NonNull String getDenseBlockDatasetPath(final long resolution) {
-    return String.format("/resolutions/%d/treap_coo/dense_blocks", resolution);
-  }
 
   public @NotNull List<@NotNull Long> getResolutionsList() {
     return Arrays.stream(this.resolutions).boxed().toList();

@@ -18,17 +18,17 @@ public class ATUDescriptor {
     final @NonNull ATUDirection direction;
 
     public static MergeResult merge(final @NonNull ATUDescriptor d1, final @NonNull ATUDescriptor d2) {
-        if (d1.stripe_descriptor.stripe_id() == d2.stripe_descriptor.stripe_id() && d1.direction == d2.direction) {
-            if (d1.end_index_in_stripe_excl == d2.start_index_in_stripe_incl) {
-                assert (
-                        d1.start_index_in_stripe_incl < d2.end_index_in_stripe_excl
-                ) : "L start < R end??";
-                return new MergeResult(new ATUDescriptor(
-                        d1.stripe_descriptor,
-                        d1.start_index_in_stripe_incl,
-                        d2.end_index_in_stripe_excl,
-                        d1.direction
-                ), null);
+        if (d1.stripe_descriptor.stripeId() == d2.stripe_descriptor.stripeId() && d1.direction == d2.direction) {
+          if (d1.end_index_in_stripe_excl == d2.start_index_in_stripe_incl) {
+            assert (
+              d1.start_index_in_stripe_incl < d2.end_index_in_stripe_excl
+            ) : "L start < R end??";
+            return new MergeResult(new ATUDescriptor(
+              d1.stripe_descriptor,
+              d1.start_index_in_stripe_incl,
+              d2.end_index_in_stripe_excl,
+              d1.direction
+            ), null);
             } else if (d2.end_index_in_stripe_excl == d1.start_index_in_stripe_incl) {
                 return ATUDescriptor.merge(d2, d1);
             }
