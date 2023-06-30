@@ -65,6 +65,10 @@ dependencies {
   implementation("io.vertx:vertx-reactive-streams")
   testImplementation("io.vertx:vertx-junit5")
   testImplementation("org.junit.jupiter:junit-jupiter:$junitJupiterVersion")
+
+  // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
+  implementation("org.apache.commons:commons-lang3:3.12.0")
+
 }
 
 java {

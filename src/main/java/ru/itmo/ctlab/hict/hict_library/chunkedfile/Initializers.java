@@ -84,9 +84,10 @@ public class Initializers {
 //          });
 //        }
 //      }
-      for (int i = 0; i < resolutions.length; ++i) {
+      for (int i = 1; i < resolutions.length; ++i) {
         final var stripes = readStripeDescriptors(resolutions[i], reader);
         resolutionOrderToStripes.set(i, stripes);
+        chunkedFile.getResolutions()[i] = stripes.size();
         final var atus = readATL(resolutions[i], reader, stripes);
         resolutionOrderToBasisATUs.set(i, atus);
         final var dataBundles = readContigDataBundles(resolutions[i], reader, atus);
