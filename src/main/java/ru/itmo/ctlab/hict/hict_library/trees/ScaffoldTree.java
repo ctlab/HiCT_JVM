@@ -453,6 +453,15 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       }
     }
 
+    public @NotNull @NonNull Node leftmost() {
+      return leftmost(this);
+    }
+
+    public @NotNull @NonNull Node rightmost() {
+      return rightmost(this);
+    }
+
+
     @Override
     public Iterator<Node> iterator() {
       final Node node = this;

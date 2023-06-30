@@ -9,19 +9,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
-import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
-import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
-import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
-import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
+import ru.itmo.ctlab.hict.hict_library.domain.*;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
@@ -87,8 +83,93 @@ public class ChunkedFile {
 
   }
 
+  public static long clamp(final long x, final long min, final long max) {
+    return Long.max(min, Long.min(x, max));
+  }
+
   // TODO: Implement
-  public List<ATUDescriptor> getATUsForRange(final @NotNull @NonNull ResolutionDescriptor resolution, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
+  public List<ATUDescriptor> getATUsForRange(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
+    final var totalAssemblyLength = excludeHiddenContigs ? (this.contigTree.getLengthInUnits(units, resolutionDescriptor)) : (this.matrixSizeBins[resolutionOrder]);
+    final var startPx = clamp(startPxIncl, 0L, totalAssemblyLength);
+    final var endPx = clamp(endPxExcl, 0L, totalAssemblyLength);
+
+    final var queryLength = endPx - startPx;
+    if (queryLength <= 0) {
+      return List.of();
+    }
+
+    final var es = this.contigTree.expose(resolutionDescriptor, startPx, endPx, units);
+
+    assert (es.segment() != null) : "Non-zero query length but no segment?";
+
+    final var segmentSize = es.segment().getSubtreeLengthInUnits(units, resolutionDescriptor);
+    final long lessSize;
+    if (es.less() != null) {
+      lessSize = es.less().getSubtreeLengthInUnits(units, resolutionDescriptor);
+    } else {
+      lessSize = 0L;
+    }
+
+    final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
+
+    final var atus = new ArrayList<ATUDescriptor>();
+
+    ContigTree.Node.traverseNode(es.segment(), node -> {
+      final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
+      final var contigDirection = node.getTrueDirection();
+      if (contigDirection == ContigDirection.FORWARD) {
+        atus.addAll(contigATUs);
+      } else {
+        final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
+        Collections.reverse(reversedATUs);
+        atus.addAll(reversedATUs);
+      }
+    });
+
+    final var firstContigNodeInSegment = es.segment().leftmost();
+    final var firstContigInSegment = firstContigNodeInSegment.getContigDescriptor();
+
+    final long[] firstContigATUPrefixSum = firstContigInSegment.getAtuPrefixSumLengthBins().get(resolutionOrder);
+    final int indexOfATUContainingStartContig;
+
+
+    if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.FORWARD) {
+      final var insertionPoint = Arrays.binarySearch(
+        firstContigATUPrefixSum,
+        1 + deltaBetweenSegmentFirstContigAndQueryStart
+      );
+      if (insertionPoint >= 0) {
+        indexOfATUContainingStartContig = insertionPoint - 1;
+      } else {
+        indexOfATUContainingStartContig = (-insertionPoint - 1) - 1;
+      }
+    } else {
+      final var topSum = firstContigATUPrefixSum[firstContigATUPrefixSum.length - 1];
+      final var insertionPoint = Arrays.binarySearch(
+        firstContigATUPrefixSum,
+        topSum - deltaBetweenSegmentFirstContigAndQueryStart
+      );
+      if (insertionPoint >= 0) {
+        indexOfATUContainingStartContig = insertionPoint;
+      } else {
+        indexOfATUContainingStartContig = (-insertionPoint - 1);
+      }
+    }
+
+    final var lengthOfATUsBeforeOneContainingStart = (indexOfATUContainingStartContig > 0) ? (firstContigATUPrefixSum[indexOfATUContainingStartContig - 1]) : 0L;
+    final var oldFirstATU = atus.get(indexOfATUContainingStartContig);
+    final ATUDescriptor newFirstATU;
+
+    if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
+      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl() + deltaBetweenSegmentFirstContigAndQueryStart -
+        lengthOfATUsBeforeOneContainingStart, oldFirstATU.getEndIndexInStripeExcl(), oldFirstATU.getDirection());
+    } else {
+      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl(), oldFirstATU.getEndIndexInStripeExcl() - (deltaBetweenSegmentFirstContigAndQueryStart -
+        lengthOfATUsBeforeOneContainingStart), oldFirstATU.getDirection());
+    }
+
   }
 
   public @NotNull @NonNull MatrixWithWeights getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU) {
@@ -97,17 +178,17 @@ public class ChunkedFile {
 
   // TODO: Implement
   public @NotNull @NonNull MatrixWithWeights getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU, final boolean needsTranspose) {
-    if (rowATU.getStripe_descriptor().stripeId() > colATU.getStripe_descriptor().stripeId()) {
+    if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
       return getATUIntersection(resolutionDescriptor, rowATU, colATU, !needsTranspose);
     }
 
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
-    final var rowStripe = rowATU.getStripe_descriptor();
-    final var colStripe = colATU.getStripe_descriptor();
+    final var rowStripe = rowATU.getStripeDescriptor();
+    final var colStripe = colATU.getStripeDescriptor();
     final var rowStripeId = rowStripe.stripeId();
     final var colStripeId = colStripe.stripeId();
-    final var queryRows = (int) (rowATU.getEnd_index_in_stripe_excl() - rowATU.getStart_index_in_stripe_incl());
-    final var queryCols = (int) (colATU.getEnd_index_in_stripe_excl() - colATU.getStart_index_in_stripe_incl());
+    final var queryRows = (int) (rowATU.getEndIndexInStripeExcl() - rowATU.getStartIndexInStripeIncl());
+    final var queryCols = (int) (colATU.getEndIndexInStripeExcl() - colATU.getStartIndexInStripeIncl());
     final var rowWeights = rowStripe.bin_weights();
     final var colWeights = colStripe.bin_weights();
 

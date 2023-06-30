@@ -1,8 +1,10 @@
 package ru.itmo.ctlab.hict.hict_library.trees;
 
 import lombok.Builder;
+import lombok.Getter;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
@@ -103,6 +105,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
   }
 
   @Builder
+  @Getter
   public static class Node implements Iterable<Node> {
     final @NonNull ContigDescriptor contigDescriptor;
     final long yPriority;
@@ -113,6 +116,54 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     final long[] subtreeLengthPixels;
     final boolean needsChangingDirection;
     final @NonNull ContigDirection contigDirection;
+
+
+    public static @Nullable Node leftmost(final @Nullable Node t) {
+      if (t == null) {
+        return null;
+      }
+      var node = t;
+      while (true) {
+        final @Nullable Node candidate;
+        if (node.needsChangingDirection) {
+          candidate = node.right;
+        } else {
+          candidate = node.left;
+        }
+        if (candidate == null) {
+          return node;
+        }
+        node = candidate;
+      }
+    }
+
+    public static @Nullable Node rightmost(final @Nullable Node t) {
+      if (t == null) {
+        return null;
+      }
+      var node = t;
+      while (true) {
+        final @Nullable Node candidate;
+        if (!node.needsChangingDirection) {
+          candidate = node.right;
+        } else {
+          candidate = node.left;
+        }
+        if (candidate == null) {
+          return node;
+        }
+        node = candidate;
+      }
+    }
+
+
+    public @NotNull @NonNull Node leftmost() {
+      return leftmost(this);
+    }
+
+    public @NotNull @NonNull Node rightmost() {
+      return rightmost(this);
+    }
 
 
     public static @NonNull Node createNodeFromDescriptor(final @NonNull ContigDescriptor contigDescriptor, final @NonNull ContigDirection contigDirection) {

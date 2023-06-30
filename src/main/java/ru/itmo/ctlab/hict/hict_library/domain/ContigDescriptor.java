@@ -48,7 +48,7 @@ public class ContigDescriptor {
 
 
     this.atuPrefixSumLengthBins = new CopyOnWriteArrayList<>(atus.parallelStream().map(atusAtResolution -> {
-      final var atusLengthArray = atusAtResolution.parallelStream().mapToLong(atu -> atu.end_index_in_stripe_excl - atu.start_index_in_stripe_incl).toArray();
+      final var atusLengthArray = atusAtResolution.parallelStream().mapToLong(atu -> atu.endIndexInStripeExcl - atu.startIndexInStripeIncl).toArray();
       Arrays.parallelPrefix(atusLengthArray, Long::sum);
       return atusLengthArray;
     }).toList());
