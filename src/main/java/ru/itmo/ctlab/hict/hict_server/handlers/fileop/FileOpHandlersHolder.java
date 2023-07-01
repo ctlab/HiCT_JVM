@@ -60,15 +60,18 @@ public class FileOpHandlersHolder extends HandlersHolder {
   }
 
   private @NotNull @NonNull OpenFileResponseDTO generateOpenFileResponse(final @NotNull @NonNull ChunkedFile chunkedFile) {
-    final long minResolution = chunkedFile.getResolutionsList().stream().min(Long::compare).orElse(1L);
+    final var resolutionsOriginalList = chunkedFile.getResolutionsList();
+    final var resolutionsList = resolutionsOriginalList.subList(1, resolutionsOriginalList.size());
+    final long minResolution = resolutionsList.stream().min(Long::compare).orElse(1L);
+//    Arrays.stream(chunkedFile.getMatrixSizeBins()).forEachOrdered(i -> log.debug("New resolutrion matrix size bins: " + i));
     return new OpenFileResponseDTO(
       "Opened",
       (String) vertx.sharedData().getLocalMap("hict_server").getOrDefault("transport_dtype", "uint8"),
-      chunkedFile.getResolutionsList(),
-      chunkedFile.getResolutionsList().parallelStream().mapToDouble(r -> (double) r / minResolution).boxed().toList(),
+      resolutionsList,
+      resolutionsList.parallelStream().mapToDouble(r -> (double) r / minResolution).boxed().toList(),
       chunkedFile.getDenseBlockSize(),
       AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
-      Arrays.stream(chunkedFile.getMatrixSizeBins()).mapToInt(l -> (int) l).boxed().toList()
+      Arrays.stream(chunkedFile.getMatrixSizeBins()).skip(1L).mapToInt(l -> (int) l).boxed().toList()
     );
   }
 }

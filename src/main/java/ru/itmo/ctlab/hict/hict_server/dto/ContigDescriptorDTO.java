@@ -25,8 +25,8 @@ public record ContigDescriptorDTO(
       ctg.descriptor().getContigName(),
       ctg.direction().ordinal(),
       ctg.descriptor().getLengthBp(),
-      IntStream.range(0, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getLengthBinsAtResolution()[resIdx])),
-      IntStream.range(0, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getPresenceAtResolution().get(resIdx).ordinal()))
+      IntStream.range(1, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getLengthBinsAtResolution()[resIdx])),
+      IntStream.range(1, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getPresenceAtResolution().get(resIdx).ordinal()))
     );
   }
 

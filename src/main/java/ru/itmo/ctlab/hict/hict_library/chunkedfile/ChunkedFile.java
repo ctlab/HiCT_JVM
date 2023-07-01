@@ -28,7 +28,7 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 public class ChunkedFile {
 
   private final @NotNull @NonNull Path hdfFilePath;
-  //  private final long blockCount;
+//  private final long[] blockCount;
   private final int denseBlockSize;
   private final long @NotNull @NonNull [] resolutions;
   private final Map<@NotNull @NonNull Long, @NotNull @NonNull Integer> resolutionToIndex;
@@ -69,10 +69,11 @@ public class ChunkedFile {
     }
     this.contigTree = new ContigTree();
     Initializers.initializeContigTree(this);
-    this.matrixSizeBins = new long[1 + this.resolutions.length];
+    this.matrixSizeBins = new long[this.resolutions.length];
     this.matrixSizeBins[0] = this.contigTree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
-    for (int i = 0; i < this.resolutions.length; ++i) {
-      this.matrixSizeBins[1 + i] = this.contigTree.getLengthInUnits(QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(1 + i));
+    for (int i = 1; i < this.resolutions.length; ++i) {
+      this.matrixSizeBins[i] = this.contigTree.getLengthInUnits(QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(i));
+      log.debug("Matrix size at resolution order=" + i + " is " + this.matrixSizeBins[i]);
     }
     this.scaffoldTree = new ScaffoldTree(this.matrixSizeBins[0]);
     Initializers.initializeScaffoldTree(this);

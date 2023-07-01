@@ -1,8 +1,9 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.Vertx;
-import io.vertx.core.buffer.Buffer;
+import io.vertx.core.json.Json;
 import io.vertx.ext.web.Router;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -16,6 +17,7 @@ import java.awt.image.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.stream.Stream;
 
 @RequiredArgsConstructor
@@ -77,16 +79,31 @@ public class TileHandlersHolder extends HandlersHolder {
 
       log.debug("Created byte stream");
 
+
       try {
         ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
+
+        final byte[] base64 = Base64.getEncoder().encode(baos.toByteArray());
+        final String base64image = new String(base64);
+        final var result = new TileWithRanges(
+          String.format("data:image/png;base64,%s", base64image),
+          new TileSignalRanges(0.0, 1.0)
+        );
         log.debug("Wrote stream to buffer");
         ctx.response()
-          .putHeader("content-type", "image/png")
-          .end(Buffer.buffer(baos.toByteArray()));
+//          .putHeader("content-type", "image/png")
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(result));
         log.debug("Response");
       } catch (final IOException e) {
         log.error("Cannot write tile image: " + e.getMessage());
       }
     });
+  }
+
+  public record TileSignalRanges(double lowerBounds, double upperBounds) {
+  }
+
+  public record TileWithRanges(@NotNull @NonNull String image, @NotNull @NonNull TileSignalRanges ranges) {
   }
 }

@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_library.domain;
 
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 
@@ -11,6 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
 
 @Getter
+@Slf4j
 public class ContigDescriptor {
   private final int contigId;
   private final @NotNull
@@ -46,12 +48,15 @@ public class ContigDescriptor {
     this.atus.add(new CopyOnWriteArrayList<>());
     this.atus.addAll(atus);
 
+    log.debug("ATUs list size: " + this.atus.size());
 
-    this.atuPrefixSumLengthBins = new CopyOnWriteArrayList<>(atus.parallelStream().map(atusAtResolution -> {
+    this.atuPrefixSumLengthBins = new CopyOnWriteArrayList<>(this.atus.parallelStream().map(atusAtResolution -> {
       final var atusLengthArray = atusAtResolution.parallelStream().mapToLong(atu -> atu.endIndexInStripeExcl - atu.startIndexInStripeIncl).toArray();
       Arrays.parallelPrefix(atusLengthArray, Long::sum);
       return atusLengthArray;
     }).toList());
+
+    log.debug("ATU ps list size: " + this.atuPrefixSumLengthBins.size());
   }
 
   public long getLengthInUnits(final @NotNull @NonNull QueryLengthUnit units, final ResolutionDescriptor resolution) {

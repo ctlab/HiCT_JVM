@@ -49,8 +49,8 @@ public class Initializers {
     result = Arrays.stream(basisAtuArray).map(row ->
       new ATUDescriptor(
         stripeDescriptors.get((int) row[0]),
-        row[1],
-        row[2],
+        (int) row[1],
+        (int) row[2],
         ATUDirection.values()[(int) row[3]]
       )
     ).collect(Collectors.toList());
@@ -66,7 +66,8 @@ public class Initializers {
     final List<List<ATUDescriptor>> resolutionOrderToBasisATUs = new ArrayList<>(resolutions.length);
     IntStream.range(0, resolutions.length).forEach(idx -> resolutionOrderToBasisATUs.add(null));
     final List<List<ContigDescriptorDataBundle>> contigDescriptorDataBundles = new ArrayList<>(resolutions.length);
-    IntStream.range(0, resolutions.length).forEach(idx -> contigDescriptorDataBundles.add(null));
+    contigDescriptorDataBundles.add(new ArrayList<>());
+    IntStream.range(1, resolutions.length).forEach(idx -> contigDescriptorDataBundles.add(null));
     final List<ContigDirection> contigDirections;
     final String[] contigNames;
     final long[] contigLengthBp;
@@ -89,14 +90,14 @@ public class Initializers {
       for (int i = 1; i < resolutions.length; ++i) {
         final var stripes = readStripeDescriptors(resolutions[i], reader);
         resolutionOrderToStripes.set(i, stripes);
-        chunkedFile.getResolutions()[i] = stripes.size();
+        chunkedFile.getStripeCount()[i] = stripes.size();
         final var atus = readATL(resolutions[i], reader, stripes);
         resolutionOrderToBasisATUs.set(i, atus);
         final var dataBundles = readContigDataBundles(resolutions[i], reader, atus);
         contigDescriptorDataBundles.set(i, dataBundles);
       }
 
-      contigCount = contigDescriptorDataBundles.get(0).size();
+      contigCount = contigDescriptorDataBundles.get(1).size();
 
       try (final var contigDirectionDataset = reader.object().openDataSet(getContigDirectionDatasetPath())) {
         contigDirections = Arrays.stream(reader.int64().readArray(contigDirectionDataset.getDataSetPath())).mapToInt(i -> (int) i).mapToObj(dir -> ContigDirection.values()[dir]).toList();
@@ -118,9 +119,9 @@ public class Initializers {
         contigId,
         contigNames[contigId],
         contigLengthBp[contigId],
-        contigDescriptorDataBundles.stream().mapToLong(bundlesAtResolution -> bundlesAtResolution.get(contigId).lengthBins()).boxed().toList(),
-        contigDescriptorDataBundles.stream().map(bundlesAtResolution -> bundlesAtResolution.get(contigId).hideType()).toList(),
-        contigDescriptorDataBundles.stream().map(bundlesAtResolution -> bundlesAtResolution.get(contigId).atus()).toList()
+        contigDescriptorDataBundles.stream().skip(1L).mapToLong(bundlesAtResolution -> bundlesAtResolution.get(contigId).lengthBins()).boxed().toList(),
+        contigDescriptorDataBundles.stream().skip(1L).map(bundlesAtResolution -> bundlesAtResolution.get(contigId).hideType()).toList(),
+        contigDescriptorDataBundles.stream().skip(1L).map(bundlesAtResolution -> bundlesAtResolution.get(contigId).atus()).toList()
       )
     );
 
