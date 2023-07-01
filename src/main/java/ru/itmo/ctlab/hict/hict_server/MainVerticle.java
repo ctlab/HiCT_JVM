@@ -15,7 +15,9 @@ import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.LongStream;
 
 @Slf4j
 public class MainVerticle extends AbstractVerticle {
@@ -23,6 +25,14 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
+    {
+      final var a = new long[]{3, 3, 3, 3};
+      final var ps = a.clone();
+      Arrays.parallelPrefix(ps, Long::sum);
+      LongStream.range(0, 12).map(idx -> Arrays.binarySearch(ps, idx)).map(insPoint -> (insPoint >= 0) ? (1 + insPoint) : (-insPoint - 1)).forEachOrdered(pos -> log.debug("Position is " + pos));
+    }
+
+
     // TODO: This should be in the queries
     final var dataDirectory = Path.of("/home/tux/HiCT/HiCT_Server/data/").normalize();
     final var chunkedFile = new ChunkedFile(Path.of(dataDirectory.toString(), "zanu_male_4DN.mcool.hict.hdf5"), 256);

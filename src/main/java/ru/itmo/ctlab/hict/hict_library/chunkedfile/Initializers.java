@@ -40,6 +40,8 @@ public class Initializers {
     final List<ATUDescriptor> result;
     final long[][] basisAtuArray;
 
+    log.debug("Reading ATL for resolution " + resolution);
+
     try (final var basisATUDataset = reader.object().openDataSet(getBasisATUDatasetPath(resolution))) {
       basisAtuArray = reader.int64().readMatrix(basisATUDataset.getDataSetPath());
     }

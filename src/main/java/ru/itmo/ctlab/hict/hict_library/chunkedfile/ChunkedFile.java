@@ -80,7 +80,7 @@ public class ChunkedFile {
 
   // TODO: Implement
   public long[][] getSubmatrix(final @NotNull @NonNull ResolutionDescriptor resolution, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
-
+    throw new RuntimeException("Not yet implemented");
   }
 
   public static long clamp(final long x, final long min, final long max) {
@@ -112,54 +112,44 @@ public class ChunkedFile {
       lessSize = 0L;
     }
 
+
+    final var startContigId = es.segment().leftmost().getContigDescriptor().getContigId();
+    final var endContigId = es.segment().rightmost().getContigDescriptor().getContigId();
+    final var onlyOneContig = (startContigId == endContigId);
+
+
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
-
-    final var atus = new ArrayList<ATUDescriptor>();
-
-    ContigTree.Node.traverseNode(es.segment(), node -> {
-      final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
-      final var contigDirection = node.getTrueDirection();
-      if (contigDirection == ContigDirection.FORWARD) {
-        atus.addAll(contigATUs);
-      } else {
-        final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
-        Collections.reverse(reversedATUs);
-        atus.addAll(reversedATUs);
-      }
-    });
-
     final var firstContigNodeInSegment = es.segment().leftmost();
     final var firstContigInSegment = firstContigNodeInSegment.getContigDescriptor();
+    final var firstContigATUs = firstContigInSegment.getAtus().get(resolutionOrder);
+    final var firstContigATUPrefixSum = firstContigInSegment.getAtuPrefixSumLengthBins().get(resolutionOrder);
 
-    final long[] firstContigATUPrefixSum = firstContigInSegment.getAtuPrefixSumLengthBins().get(resolutionOrder);
-    final int indexOfATUContainingStartContig;
+    final var deltaBetweenRightPxAndExposedSegment = (lessSize + segmentSize) - endPx;
+    final var lastContigNode = es.segment().rightmost();
+    final var lastContigDescriptor = lastContigNode.getContigDescriptor();
+    final var lastContigATUs = lastContigDescriptor.getAtus().get(resolutionOrder);
+    final var lastContigATUPrefixSum = lastContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
 
 
+    final int indexOfATUContainingStartPx;
     if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.FORWARD) {
       final var insertionPoint = Arrays.binarySearch(
         firstContigATUPrefixSum,
-        1 + deltaBetweenSegmentFirstContigAndQueryStart
+        deltaBetweenSegmentFirstContigAndQueryStart
       );
-      if (insertionPoint >= 0) {
-        indexOfATUContainingStartContig = insertionPoint - 1;
-      } else {
-        indexOfATUContainingStartContig = (-insertionPoint - 1) - 1;
-      }
+      indexOfATUContainingStartPx = (insertionPoint >= 0) ? (1 + insertionPoint) : (-insertionPoint - 1);
     } else {
       final var topSum = firstContigATUPrefixSum[firstContigATUPrefixSum.length - 1];
       final var insertionPoint = Arrays.binarySearch(
         firstContigATUPrefixSum,
         topSum - deltaBetweenSegmentFirstContigAndQueryStart
       );
-      if (insertionPoint >= 0) {
-        indexOfATUContainingStartContig = insertionPoint;
-      } else {
-        indexOfATUContainingStartContig = (-insertionPoint - 1);
-      }
+      indexOfATUContainingStartPx = (insertionPoint >= 0) ? insertionPoint : (-insertionPoint - 1);
     }
 
-    final var lengthOfATUsBeforeOneContainingStart = (indexOfATUContainingStartContig > 0) ? (firstContigATUPrefixSum[indexOfATUContainingStartContig - 1]) : 0L;
-    final var oldFirstATU = atus.get(indexOfATUContainingStartContig);
+
+    final var lengthOfATUsBeforeOneContainingStart = (indexOfATUContainingStartPx > 0) ? (firstContigATUPrefixSum[indexOfATUContainingStartPx - 1]) : 0L;
+    final var oldFirstATU = firstContigATUs.get(indexOfATUContainingStartPx);
     final ATUDescriptor newFirstATU;
 
     if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
@@ -170,6 +160,107 @@ public class ChunkedFile {
         lengthOfATUsBeforeOneContainingStart), oldFirstATU.getDirection());
     }
 
+    final int indexOfATUContainingEndPx;
+
+    if (lastContigNode.getTrueDirection() == ContigDirection.FORWARD) {
+      final var lastContigLengthBins = lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1];
+      final var insertionPoint = Arrays.binarySearch(lastContigATUPrefixSum, lastContigLengthBins - deltaBetweenRightPxAndExposedSegment);
+      indexOfATUContainingEndPx = (insertionPoint >= 0) ? insertionPoint : (-insertionPoint - 1);
+    } else {
+      final var insertionPoint = Arrays.binarySearch(
+        firstContigATUPrefixSum,
+        deltaBetweenSegmentFirstContigAndQueryStart
+      );
+      indexOfATUContainingEndPx = (insertionPoint >= 0) ? (1 + insertionPoint) : (-insertionPoint - 1);
+    }
+
+    final long deletedATUsLength;
+    if (indexOfATUContainingEndPx < lastContigATUs.size()) {
+      deletedATUsLength = lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1] - lastContigATUPrefixSum[indexOfATUContainingEndPx];
+    } else {
+      deletedATUsLength = 0L;
+    }
+
+    final ATUDescriptor oldLastATU;
+
+    if (onlyOneContig && indexOfATUContainingStartPx == indexOfATUContainingEndPx) {
+      oldLastATU = newFirstATU;
+    } else {
+      oldLastATU = lastContigATUs.get(indexOfATUContainingEndPx);
+    }
+    final ATUDescriptor newLastATU;
+
+    if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
+      newLastATU = new ATUDescriptor(
+        oldLastATU.getStripeDescriptor(),
+        oldLastATU.getStartIndexInStripeIncl(),
+        oldLastATU.getEndIndexInStripeExcl() + deletedATUsLength - deltaBetweenRightPxAndExposedSegment,
+        oldLastATU.getDirection());
+    } else {
+      newLastATU = new ATUDescriptor(
+        oldLastATU.getStripeDescriptor(),
+        oldLastATU.getStartIndexInStripeIncl() - (deletedATUsLength - deltaBetweenRightPxAndExposedSegment),
+        oldLastATU.getEndIndexInStripeExcl(),
+        oldLastATU.getDirection());
+    }
+
+    final var atus = new ArrayList<ATUDescriptor>();
+
+    atus.add(newFirstATU);
+
+    if (onlyOneContig) {
+      if (indexOfATUContainingStartPx != indexOfATUContainingEndPx) {
+        final var firstContigIntermediateATUs = firstContigInSegment.getAtus().get(resolutionOrder).subList(1 + Integer.min(indexOfATUContainingStartPx, indexOfATUContainingEndPx), Integer.max(indexOfATUContainingStartPx, indexOfATUContainingEndPx));
+        if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.REVERSED) {
+          Collections.reverse(firstContigIntermediateATUs);
+        }
+        atus.addAll(firstContigIntermediateATUs);
+      } else {
+        return atus;
+      }
+    } else {
+      final var firstContigRestATUs = firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
+      if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.REVERSED) {
+        Collections.reverse(firstContigRestATUs);
+      }
+      atus.addAll(firstContigRestATUs);
+
+
+      ContigTree.Node.traverseNode(es.segment(), node -> {
+        final var nodeContigId = node.getContigDescriptor().getContigId();
+        if (nodeContigId != startContigId && nodeContigId != endContigId) {
+          final var contigDirection = node.getTrueDirection();
+          final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
+          if (contigDirection == ContigDirection.FORWARD) {
+            atus.addAll(contigATUs);
+          } else {
+            final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
+            Collections.reverse(reversedATUs);
+            atus.addAll(reversedATUs);
+          }
+        }
+      });
+
+      final var lastContigBeginningATUs = lastContigATUs.subList(0, indexOfATUContainingEndPx);
+      if (lastContigNode.getTrueDirection() == ContigDirection.REVERSED) {
+        Collections.reverse(lastContigBeginningATUs);
+      }
+      atus.addAll(lastContigBeginningATUs);
+    }
+
+    atus.add(newLastATU);
+
+    assert (
+      atus.stream().mapToLong(atu -> atu.getEndIndexInStripeExcl() - atu.getStartIndexInStripeIncl()).sum() == (endPx - startPx)
+    ) : "Wrong total length of ATUs before reduction??";
+
+    final var reducedATUs = ATUDescriptor.reduce(atus);
+
+    assert (
+      reducedATUs.stream().mapToLong(atu -> atu.getEndIndexInStripeExcl() - atu.getStartIndexInStripeIncl()).sum() == (endPx - startPx)
+    ) : "Wrong total length of ATUs after reduction??";
+
+    return reducedATUs;
   }
 
   public @NotNull @NonNull MatrixWithWeights getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU) {
