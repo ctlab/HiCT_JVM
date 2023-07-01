@@ -6,6 +6,7 @@ import io.vertx.ext.web.Router;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
@@ -29,7 +30,7 @@ public class TileHandlersHolder extends HandlersHolder {
       ctx.next();
     }).blockingHandler(ctx -> {
       log.debug("Entered blockingHandler");
-      final var level = Long.parseLong(ctx.request().getParam("level", "0"));
+      final var level = Integer.parseInt(ctx.request().getParam("level", "0"));
       final var row = Long.parseLong(ctx.request().getParam("row", "0"));
       final var col = Long.parseLong(ctx.request().getParam("col", "0"));
       final var version = Long.parseLong(ctx.request().getParam("version", "0"));
@@ -49,7 +50,8 @@ public class TileHandlersHolder extends HandlersHolder {
       }
       final var chunkedFile = chunkedFileWrapper.getChunkedFile();
       log.debug("Got ChunkedFile from map");
-      final var dense = new long[256][256]; // chunkedFile.getStripeIntersectionAsDenseMatrix(row, col, resolution);
+      final var matrixWithWeights = chunkedFile.getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), row, col, row + tileHeight, col + tileWidth, false);
+      final var dense = matrixWithWeights.matrix();
       log.debug("Got dense matrix");
       final var normalized = Arrays.stream(dense).map(arrayRow -> Arrays.stream(arrayRow).mapToDouble(Math::log).mapToLong(Math::round).mapToInt(l -> (int) l).toArray()).toArray(int[][]::new);
       log.debug("Normalized dense matrix");

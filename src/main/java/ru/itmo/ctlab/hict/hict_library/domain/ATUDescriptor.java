@@ -14,8 +14,8 @@ import java.util.List;
 @Builder
 public class ATUDescriptor {
   final @NonNull StripeDescriptor stripeDescriptor;
-  final long startIndexInStripeIncl;
-  final long endIndexInStripeExcl;
+  final int startIndexInStripeIncl;
+  final int endIndexInStripeExcl;
   final @NonNull ATUDirection direction;
 
   public static MergeResult merge(final @NonNull ATUDescriptor d1, final @NonNull ATUDescriptor d2) {
@@ -67,6 +67,10 @@ public class ATUDescriptor {
 
   public @NotNull @NonNull ATUDescriptor copy() {
     return new ATUDescriptor(this.stripeDescriptor, this.startIndexInStripeIncl, this.endIndexInStripeExcl, this.direction);
+  }
+
+  public int getLength() {
+    return this.endIndexInStripeExcl - this.startIndexInStripeIncl;
   }
 
   public record MergeResult(@NonNull ATUDescriptor d1, ATUDescriptor d2) {

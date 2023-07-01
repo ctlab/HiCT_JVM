@@ -17,6 +17,7 @@ import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -79,8 +80,99 @@ public class ChunkedFile {
 
 
   // TODO: Implement
-  public long[][] getSubmatrix(final @NotNull @NonNull ResolutionDescriptor resolution, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
-    throw new RuntimeException("Not yet implemented");
+  public MatrixWithWeights getSubmatrix(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
+    final var totalAssemblyLength = excludeHiddenContigs ? (this.contigTree.getLengthInUnits(units, resolutionDescriptor)) : (this.matrixSizeBins[resolutionOrder]);
+    final var startRow = clamp(startRowIncl, 0L, totalAssemblyLength);
+    final var endRow = clamp(endRowExcl, 0L, totalAssemblyLength);
+    final var startCol = clamp(startColIncl, 0L, totalAssemblyLength);
+    final var endCol = clamp(endColExcl, 0L, totalAssemblyLength);
+    final var symmetricQuery = (startRow == startCol) && (endRow == endCol);
+
+
+    final var rowATUs = getATUsForRange(resolutionDescriptor, startRow, endRow, excludeHiddenContigs);
+    final List<ATUDescriptor> colATUs;
+    if (symmetricQuery) {
+      colATUs = rowATUs;
+    } else {
+      colATUs = getATUsForRange(resolutionDescriptor, startCol, endCol, excludeHiddenContigs);
+    }
+
+    final long[][] result = new long[(int) (endRow - startRow)][(int) (endCol - startCol)];
+
+    int deltaRow = 0;
+    int deltaCol = 0;
+
+    final double[] rowWeights = rowATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
+    final double[] colWeights = colATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
+
+    try (final var pool = Executors.newWorkStealingPool()) {
+      if (symmetricQuery) {
+        final var atuCount = rowATUs.size();
+        for (int i = 0; i < atuCount; ++i) {
+          final var rowATU = rowATUs.get(i);
+          deltaCol = 0;
+          final var rowCount = rowATU.getLength();
+          for (int j = i; j < atuCount; ++j) {
+            final var colATU = colATUs.get(j);
+            final int finalDeltaCol = deltaCol;
+            final int finalDeltaRow = deltaRow;
+            final var colCount = colATU.getLength();
+            pool.submit(() -> {
+              final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
+              for (int k = 0; k < rowCount; k++) {
+                System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
+              }
+              for (int k = 0; k < rowCount; k++) {
+                for (int l = 0; l < colCount; l++) {
+                  result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
+                }
+              }
+            });
+            deltaCol += colCount;
+          }
+          deltaRow += rowCount;
+        }
+      } else {
+        for (final var rowATU : rowATUs) {
+          deltaCol = 0;
+          final var rowCount = rowATU.getLength();
+          for (final var colATU : colATUs) {
+            final int finalDeltaCol = deltaCol;
+            final int finalDeltaRow = deltaRow;
+            final var colCount = colATU.getLength();
+
+            pool.submit(() -> {
+              final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
+              for (int k = 0; k < rowCount; k++) {
+                System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
+              }
+            });
+
+            deltaCol += colCount;
+          }
+          deltaRow += rowCount;
+        }
+      }
+    }
+
+
+    return new MatrixWithWeights(result, rowWeights, colWeights);
+  }
+
+  private double @NotNull @NonNull [] getWeightsByATU(final @NotNull @NonNull ATUDescriptor atu) {
+    return getWeightsByATU(atu, false);
+  }
+
+  private double @NotNull @NonNull [] getWeightsByATU(final @NotNull @NonNull ATUDescriptor atu, final boolean needsReversal) {
+    final var length = atu.getLength();
+    final var weights = new double[length];
+    System.arraycopy(atu.getStripeDescriptor().bin_weights(), atu.getStartIndexInStripeIncl(), weights, 0, length);
+    if ((atu.getDirection() == ATUDirection.REVERSED) ^ needsReversal) {
+      ArrayUtils.reverse(weights);
+    }
+    return weights;
   }
 
   public static long clamp(final long x, final long min, final long max) {
@@ -153,10 +245,10 @@ public class ChunkedFile {
     final ATUDescriptor newFirstATU;
 
     if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
-      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl() + deltaBetweenSegmentFirstContigAndQueryStart -
-        lengthOfATUsBeforeOneContainingStart, oldFirstATU.getEndIndexInStripeExcl(), oldFirstATU.getDirection());
+      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl() + (int) (deltaBetweenSegmentFirstContigAndQueryStart -
+        lengthOfATUsBeforeOneContainingStart), oldFirstATU.getEndIndexInStripeExcl(), oldFirstATU.getDirection());
     } else {
-      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl(), oldFirstATU.getEndIndexInStripeExcl() - (deltaBetweenSegmentFirstContigAndQueryStart -
+      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl(), oldFirstATU.getEndIndexInStripeExcl() - (int) (deltaBetweenSegmentFirstContigAndQueryStart -
         lengthOfATUsBeforeOneContainingStart), oldFirstATU.getDirection());
     }
 
@@ -190,16 +282,18 @@ public class ChunkedFile {
     }
     final ATUDescriptor newLastATU;
 
+    // TODO: Where ATU direction matters, where contigs'?
+
     if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
       newLastATU = new ATUDescriptor(
         oldLastATU.getStripeDescriptor(),
         oldLastATU.getStartIndexInStripeIncl(),
-        oldLastATU.getEndIndexInStripeExcl() + deletedATUsLength - deltaBetweenRightPxAndExposedSegment,
+        oldLastATU.getEndIndexInStripeExcl() + (int) (deletedATUsLength - deltaBetweenRightPxAndExposedSegment),
         oldLastATU.getDirection());
     } else {
       newLastATU = new ATUDescriptor(
         oldLastATU.getStripeDescriptor(),
-        oldLastATU.getStartIndexInStripeIncl() - (deletedATUsLength - deltaBetweenRightPxAndExposedSegment),
+        oldLastATU.getStartIndexInStripeIncl() - (int) (deletedATUsLength - deltaBetweenRightPxAndExposedSegment),
         oldLastATU.getEndIndexInStripeExcl(),
         oldLastATU.getDirection());
     }
@@ -228,7 +322,7 @@ public class ChunkedFile {
 
       ContigTree.Node.traverseNode(es.segment(), node -> {
         final var nodeContigId = node.getContigDescriptor().getContigId();
-        if (nodeContigId != startContigId && nodeContigId != endContigId) {
+        if (nodeContigId != startContigId && nodeContigId != endContigId && node.getContigDescriptor().getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN) {
           final var contigDirection = node.getTrueDirection();
           final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
           if (contigDirection == ContigDirection.FORWARD) {
@@ -263,12 +357,12 @@ public class ChunkedFile {
     return reducedATUs;
   }
 
-  public @NotNull @NonNull MatrixWithWeights getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU) {
+  public long @NotNull @NonNull [][] getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU) {
     return getATUIntersection(resolutionDescriptor, rowATU, colATU, false);
   }
 
   // TODO: Implement
-  public @NotNull @NonNull MatrixWithWeights getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU, final boolean needsTranspose) {
+  public long @NotNull @NonNull [][] getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU, final boolean needsTranspose) {
     if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
       return getATUIntersection(resolutionDescriptor, rowATU, colATU, !needsTranspose);
     }
@@ -278,19 +372,8 @@ public class ChunkedFile {
     final var colStripe = colATU.getStripeDescriptor();
     final var rowStripeId = rowStripe.stripeId();
     final var colStripeId = colStripe.stripeId();
-    final var queryRows = (int) (rowATU.getEndIndexInStripeExcl() - rowATU.getStartIndexInStripeIncl());
-    final var queryCols = (int) (colATU.getEndIndexInStripeExcl() - colATU.getStartIndexInStripeIncl());
-    final var rowWeights = rowStripe.bin_weights();
-    final var colWeights = colStripe.bin_weights();
-
-    if (rowATU.getDirection() == ATUDirection.REVERSED) {
-      ArrayUtils.reverse(rowWeights);
-    }
-
-    if (colATU.getDirection() == ATUDirection.REVERSED) {
-      ArrayUtils.reverse(colWeights);
-    }
-
+    final var queryRows = rowATU.getEndIndexInStripeExcl() - rowATU.getStartIndexInStripeIncl();
+    final var queryCols = colATU.getEndIndexInStripeExcl() - colATU.getStartIndexInStripeIncl();
 
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
       final var blockIndexInDatasets = rowStripeId * this.stripeCount[resolutionOrder] + colStripeId;
@@ -305,11 +388,7 @@ public class ChunkedFile {
       final boolean isEmpty = (blockLength == 0L);
 
       if (isEmpty) {
-        return new MatrixWithWeights(
-          new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols],
-          needsTranspose ? colWeights : rowWeights,
-          needsTranspose ? rowWeights : colWeights
-        );
+        return new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
       }
 
       try (final var blockOffsetDataset = reader.object().openDataSet(getBlockOffsetDatasetPath(resolutionOrder))) {
@@ -372,11 +451,7 @@ public class ChunkedFile {
         }
       }
 
-      return new MatrixWithWeights(
-        denseMatrix,
-        needsTranspose ? colWeights : rowWeights,
-        needsTranspose ? rowWeights : colWeights
-      );
+      return denseMatrix;
     }
   }
 

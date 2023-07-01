@@ -25,6 +25,7 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
+    // TODO: Remove testing code:
     {
       final var a = new long[]{3, 3, 3, 3};
       final var ps = a.clone();
