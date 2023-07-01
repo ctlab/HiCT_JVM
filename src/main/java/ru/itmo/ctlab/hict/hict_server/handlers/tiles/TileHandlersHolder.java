@@ -32,7 +32,7 @@ public class TileHandlersHolder extends HandlersHolder {
       ctx.next();
     }).blockingHandler(ctx -> {
       log.debug("Entered blockingHandler");
-      final var level = Integer.parseInt(ctx.request().getParam("level", "0"));
+
       final var row = Long.parseLong(ctx.request().getParam("row", "0"));
       final var col = Long.parseLong(ctx.request().getParam("col", "0"));
       final var version = Long.parseLong(ctx.request().getParam("version", "0"));
@@ -52,6 +52,9 @@ public class TileHandlersHolder extends HandlersHolder {
       }
       final var chunkedFile = chunkedFileWrapper.getChunkedFile();
       log.debug("Got ChunkedFile from map");
+
+      final var level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+
       final var matrixWithWeights = chunkedFile.getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), row, col, row + tileHeight, col + tileWidth, false);
       final var dense = matrixWithWeights.matrix();
       log.debug("Got dense matrix");

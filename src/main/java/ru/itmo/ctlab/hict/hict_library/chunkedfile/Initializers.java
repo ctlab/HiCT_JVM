@@ -46,13 +46,18 @@ public class Initializers {
       basisAtuArray = reader.int64().readMatrix(basisATUDataset.getDataSetPath());
     }
 
-    result = Arrays.stream(basisAtuArray).map(row ->
-      new ATUDescriptor(
-        stripeDescriptors.get((int) row[0]),
-        (int) row[1],
-        (int) row[2],
-        ATUDirection.values()[(int) row[3]]
-      )
+    result = Arrays.stream(basisAtuArray).map(row -> {
+        final var atu = new ATUDescriptor(
+          stripeDescriptors.get((int) row[0]),
+          (int) row[1],
+          (int) row[2],
+          ATUDirection.values()[1 - (int) row[3]]
+        );
+
+        log.debug("Built ATU: StripeID=" + atu.getStripeDescriptor().stripeId() + " start=" + atu.getStartIndexInStripeIncl() + " end=" + atu.getEndIndexInStripeExcl() + " direction=" + atu.getDirection());
+
+        return atu;
+      }
     ).collect(Collectors.toList());
 
 

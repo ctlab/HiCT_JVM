@@ -111,6 +111,7 @@ public class ChunkedFile {
     try (final var pool = Executors.newWorkStealingPool()) {
       if (symmetricQuery) {
         final var atuCount = rowATUs.size();
+        log.debug("Symmetric query with " + atuCount + " ATUs");
         for (int i = 0; i < atuCount; ++i) {
           final var rowATU = rowATUs.get(i);
           deltaCol = 0;
@@ -128,6 +129,9 @@ public class ChunkedFile {
               for (int k = 0; k < rowCount; k++) {
                 for (int l = 0; l < colCount; l++) {
                   result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
+                  if (dense[k][l] != 0L) {
+                    log.debug("Non-zero pixel is present");
+                  }
                 }
               }
             });
@@ -376,6 +380,8 @@ public class ChunkedFile {
     final var queryRows = rowATU.getEndIndexInStripeExcl() - rowATU.getStartIndexInStripeIncl();
     final var queryCols = colATU.getEndIndexInStripeExcl() - colATU.getStartIndexInStripeIncl();
 
+    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
+
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
       final var blockIndexInDatasets = rowStripeId * this.stripeCount[resolutionOrder] + colStripeId;
       final long blockLength;
@@ -389,6 +395,7 @@ public class ChunkedFile {
       final boolean isEmpty = (blockLength == 0L);
 
       if (isEmpty) {
+        log.debug("Zero ATU intersection");
         return new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
       }
 
@@ -400,6 +407,7 @@ public class ChunkedFile {
       final long[][] denseMatrix;
 
       if (blockOffset >= 0L) {
+        log.debug("Fetching sparse block");
         // Fetch sparse block
         final long[] blockRows;
         final long[] blockCols;
@@ -424,6 +432,7 @@ public class ChunkedFile {
         );
         denseMatrix = sparseMatrix.toDense(needsTranspose ? queryCols : queryRows, needsTranspose ? queryRows : queryCols);
       } else {
+        log.debug("Fetching dense block");
         // Fetch dense block
         final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
         final MDLongArray block;
