@@ -55,7 +55,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
       final var level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
 
-      final var matrixWithWeights = chunkedFile.getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), row, col, row + tileHeight, col + tileWidth, false);
+      final var matrixWithWeights = chunkedFile.getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), row * tileHeight, col * tileWidth, (row + 1) * tileHeight, (col + 1) * tileWidth, true);
       final var dense = matrixWithWeights.matrix();
       log.debug("Got dense matrix");
       final var normalized = Arrays.stream(dense).map(arrayRow -> Arrays.stream(arrayRow).mapToDouble(Math::log).mapToLong(Math::round).mapToInt(l -> (int) l).toArray()).toArray(int[][]::new);

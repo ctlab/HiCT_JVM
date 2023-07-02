@@ -12,6 +12,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescript
 import ru.itmo.ctlab.hict.hict_library.domain.*;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
+import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 
 import java.nio.file.Path;
@@ -28,7 +29,7 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 public class ChunkedFile {
 
   private final @NotNull @NonNull Path hdfFilePath;
-//  private final long[] blockCount;
+  //  private final long[] blockCount;
   private final int denseBlockSize;
   private final long @NotNull @NonNull [] resolutions;
   private final Map<@NotNull @NonNull Long, @NotNull @NonNull Integer> resolutionToIndex;
@@ -100,10 +101,10 @@ public class ChunkedFile {
       colATUs = getATUsForRange(resolutionDescriptor, startCol, endCol, excludeHiddenContigs);
     }
 
-    final long[][] result = new long[(int) (endRow - startRow)][(int) (endCol - startCol)];
+    final long[][] result = new long[(int) (endRowExcl - startRowIncl)][(int) (endColExcl - startColIncl)];
 
-    int deltaRow = 0;
-    int deltaCol = 0;
+    int deltaRow = (int) (startRow - startRowIncl);
+    int deltaCol = (int) (startCol - startColIncl);
 
     final double[] rowWeights = rowATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
     final double[] colWeights = colATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
@@ -114,7 +115,7 @@ public class ChunkedFile {
         log.debug("Symmetric query with " + atuCount + " ATUs");
         for (int i = 0; i < atuCount; ++i) {
           final var rowATU = rowATUs.get(i);
-          deltaCol = 0;
+          deltaCol = (int) (startCol - startColIncl);
           final var rowCount = rowATU.getLength();
           for (int j = i; j < atuCount; ++j) {
             final var colATU = colATUs.get(j);
@@ -130,7 +131,7 @@ public class ChunkedFile {
                 for (int l = 0; l < colCount; l++) {
                   result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
                   if (dense[k][l] != 0L) {
-                    log.debug("Non-zero pixel is present");
+                    log.debug("Non-zero element!");
                   }
                 }
               }
@@ -141,7 +142,7 @@ public class ChunkedFile {
         }
       } else {
         for (final var rowATU : rowATUs) {
-          deltaCol = 0;
+          deltaCol = (int) (startCol - startColIncl);
           final var rowCount = rowATU.getLength();
           for (final var colATU : colATUs) {
             final int finalDeltaCol = deltaCol;
@@ -318,8 +319,11 @@ public class ChunkedFile {
         return atus;
       }
     } else {
-      final var firstContigRestATUs = firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
-      if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.REVERSED) {
+      final List<@NotNull @NonNull ATUDescriptor> firstContigRestATUs;
+      if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.FORWARD) {
+        firstContigRestATUs = firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
+      } else {
+        firstContigRestATUs = firstContigATUs.parallelStream().limit(indexOfATUContainingStartPx).map(ATUDescriptor::reversed).collect(Collectors.toList());
         Collections.reverse(firstContigRestATUs);
       }
       atus.addAll(firstContigRestATUs);
@@ -340,8 +344,11 @@ public class ChunkedFile {
         }
       });
 
-      final var lastContigBeginningATUs = lastContigATUs.subList(0, indexOfATUContainingEndPx);
-      if (lastContigNode.getTrueDirection() == ContigDirection.REVERSED) {
+      final List<@NotNull @NonNull ATUDescriptor> lastContigBeginningATUs;
+      if (lastContigNode.getTrueDirection() == ContigDirection.FORWARD) {
+        lastContigBeginningATUs = lastContigATUs.subList(0, indexOfATUContainingEndPx);
+      } else {
+        lastContigBeginningATUs = lastContigATUs.parallelStream().skip(1 + indexOfATUContainingEndPx).map(ATUDescriptor::reversed).collect(Collectors.toList());
         Collections.reverse(lastContigBeginningATUs);
       }
       atus.addAll(lastContigBeginningATUs);
@@ -373,12 +380,13 @@ public class ChunkedFile {
     }
 
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var resolution = this.resolutions[resolutionOrder];
     final var rowStripe = rowATU.getStripeDescriptor();
     final var colStripe = colATU.getStripeDescriptor();
     final var rowStripeId = rowStripe.stripeId();
     final var colStripeId = colStripe.stripeId();
-    final var queryRows = rowATU.getEndIndexInStripeExcl() - rowATU.getStartIndexInStripeIncl();
-    final var queryCols = colATU.getEndIndexInStripeExcl() - colATU.getStartIndexInStripeIncl();
+    final var queryRows = rowATU.getLength();
+    final var queryCols = colATU.getLength();
 
     log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
 
@@ -387,7 +395,7 @@ public class ChunkedFile {
       final long blockLength;
       final long blockOffset;
 
-      try (final var blockLengthDataset = reader.object().openDataSet(getBlockLengthDatasetPath(this.resolutions[resolutionOrder]))) {
+      try (final var blockLengthDataset = reader.object().openDataSet(getBlockLengthDatasetPath(resolution))) {
         final long[] buf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
         blockLength = buf[0];
       }
@@ -399,7 +407,7 @@ public class ChunkedFile {
         return new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
       }
 
-      try (final var blockOffsetDataset = reader.object().openDataSet(getBlockOffsetDatasetPath(resolutionOrder))) {
+      try (final var blockOffsetDataset = reader.object().openDataSet(getBlockOffsetDatasetPath(resolution))) {
         final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
         blockOffset = buf[0];
       }
@@ -413,15 +421,19 @@ public class ChunkedFile {
         final long[] blockCols;
         final long[] blockValues;
 
-        try (final var blockRowsDataset = reader.object().openDataSet(PathGenerators.getBlockRowsDatasetPath(resolutionOrder))) {
+        try (final var blockRowsDataset = reader.object().openDataSet(PathGenerators.getBlockRowsDatasetPath(resolution))) {
           blockRows = reader.int64().readArrayBlockWithOffset(blockRowsDataset, (int) blockLength, blockOffset);
         }
-        try (final var blockColsDataset = reader.object().openDataSet(PathGenerators.getBlockColsDatasetPath(resolutionOrder))) {
+        try (final var blockColsDataset = reader.object().openDataSet(PathGenerators.getBlockColsDatasetPath(resolution))) {
           blockCols = reader.int64().readArrayBlockWithOffset(blockColsDataset, (int) blockLength, blockOffset);
         }
-        try (final var blockValuesDataset = reader.object().openDataSet(getBlockValuesDatasetPath(resolutionOrder))) {
+        try (final var blockValuesDataset = reader.object().openDataSet(getBlockValuesDatasetPath(resolution))) {
           blockValues = reader.int64().readArrayBlockWithOffset(blockValuesDataset, (int) blockLength, blockOffset);
         }
+
+        final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, rowATU.getStartIndexInStripeIncl());
+        final long rowEndIndex = BinarySearch.leftBinarySearch(blockRows, rowATU.getEndIndexInStripeExcl());
+
 
         final var sparseMatrix = new SparseCOOMatrixLong(
           Arrays.stream(blockRows).mapToInt(l -> (int) l).toArray(),
@@ -436,7 +448,7 @@ public class ChunkedFile {
         // Fetch dense block
         final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
         final MDLongArray block;
-        try (final var denseBlockDataset = reader.object().openDataSet(getDenseBlockDatasetPath(resolutionOrder))) {
+        try (final var denseBlockDataset = reader.object().openDataSet(getDenseBlockDatasetPath(resolution))) {
           block = reader.int64().readSlicedMDArrayBlockWithOffset(denseBlockDataset, new int[]{this.denseBlockSize, this.denseBlockSize}, new long[]{0L, 0L}, idx);
         }
         if (rowStripeId == colStripeId) {
