@@ -90,7 +90,7 @@ public class ChunkedFile {
     final var endRow = clamp(endRowExcl, 0L, totalAssemblyLength);
     final var startCol = clamp(startColIncl, 0L, totalAssemblyLength);
     final var endCol = clamp(endColExcl, 0L, totalAssemblyLength);
-    final var symmetricQuery = false; //(startRow == startCol) && (endRow == endCol);
+    final var symmetricQuery = (startRow == startCol) && (endRow == endCol);
 
 
     final var rowATUs = getATUsForRange(resolutionDescriptor, startRow, endRow, excludeHiddenContigs);
@@ -109,13 +109,14 @@ public class ChunkedFile {
     final double[] rowWeights = rowATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
     final double[] colWeights = colATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
 
-    try (final var pool = Executors.newWorkStealingPool()) {
+    try (final var pool = Executors.newWorkStealingPool(64)) {
       if (symmetricQuery) {
         final var atuCount = rowATUs.size();
         log.debug("Symmetric query with " + atuCount + " ATUs");
+        var startDeltaCol = (int) (startCol - startColIncl);
         for (int i = 0; i < atuCount; ++i) {
           final var rowATU = rowATUs.get(i);
-          deltaCol = (int) (startCol - startColIncl);
+          deltaCol = startDeltaCol;
           final var rowCount = rowATU.getLength();
           for (int j = i; j < atuCount; ++j) {
             final var colATU = colATUs.get(j);
@@ -135,6 +136,7 @@ public class ChunkedFile {
             });
             deltaCol += colCount;
           }
+          startDeltaCol += colATUs.get(i).getLength();
           deltaRow += rowCount;
         }
       } else {
@@ -150,16 +152,16 @@ public class ChunkedFile {
               log.debug("AAA");
             }
 
-//            pool.submit(() -> {
-            try {
-              final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
-              for (int k = 0; k < rowCount; k++) {
-                System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
+            pool.submit(() -> {
+              try {
+                final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
+                for (int k = 0; k < rowCount; k++) {
+                  System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
+                }
+              } catch (final Throwable ex) {
+                throw new RuntimeException("Dense matrix fetch failed");
               }
-            } catch (final Throwable ex) {
-              throw new RuntimeException("Dense matrix fetch failed");
-            }
-//            });
+            });
 
             deltaCol += colCount;
           }
@@ -418,8 +420,8 @@ public class ChunkedFile {
 
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var resolution = this.resolutions[resolutionOrder];
-    final var rowStripe = !needsTranspose ? rowATU.getStripeDescriptor() : colATU.getStripeDescriptor();
-    final var colStripe = !needsTranspose ? colATU.getStripeDescriptor() : rowATU.getStripeDescriptor();
+    final var rowStripe = rowATU.getStripeDescriptor();
+    final var colStripe = colATU.getStripeDescriptor();
     final var rowStripeId = rowStripe.stripeId();
     final var colStripeId = colStripe.stripeId();
     final var queryRows = rowATU.getLength();
@@ -472,8 +474,8 @@ public class ChunkedFile {
           blockValues = reader.int64().readArrayBlockWithOffset(blockValuesDataset, (int) blockLength, blockOffset);
         }
 
-        final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, rowATU.getStartIndexInStripeIncl());
-        final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, rowATU.getEndIndexInStripeExcl());
+        final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
+        final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, Integer.max(rowATU.getEndIndexInStripeExcl(), colATU.getEndIndexInStripeExcl()));
         final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
 
 
@@ -496,7 +498,7 @@ public class ChunkedFile {
           }
         }
       } else {
-//        log.debug("Fetching dense block");
+        log.debug("Fetching dense block");
         // Fetch dense block
         final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
         final MDLongArray block;
