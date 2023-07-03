@@ -2,7 +2,6 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.domain.*;
@@ -18,7 +17,7 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 
 @Slf4j
 public class Initializers {
-  public static @NotNull @NonNull List<@NotNull @NonNull StripeDescriptor> readStripeDescriptors(final long resolution, final @NotNull @NonNull IHDF5Reader reader) {
+  public static @NotNull List<@NotNull StripeDescriptor> readStripeDescriptors(final long resolution, final @NotNull IHDF5Reader reader) {
     final List<StripeDescriptor> result = new ArrayList<>();
     final long[] stripeLengthBins;
     try (final var stripeLengthsBinsDataset = reader.object().openDataSet(getStripeLengthsBinsDatasetPath(resolution))) {
@@ -36,7 +35,7 @@ public class Initializers {
     return result;
   }
 
-  public static @NotNull @NonNull List<@NotNull @NonNull ATUDescriptor> readATL(final long resolution, final @NotNull @NonNull IHDF5Reader reader, final List<StripeDescriptor> stripeDescriptors) {
+  public static @NotNull List<@NotNull ATUDescriptor> readATL(final long resolution, final @NotNull IHDF5Reader reader, final List<StripeDescriptor> stripeDescriptors) {
     final List<ATUDescriptor> result;
     final long[][] basisAtuArray;
 
@@ -64,7 +63,7 @@ public class Initializers {
     return result;
   }
 
-  public static @NotNull @NonNull List<ContigTree.@NotNull @NonNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
+  public static @NotNull List<ContigTree.@NotNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
     final var resolutions = chunkedFile.getResolutions();
     final List<List<StripeDescriptor>> resolutionOrderToStripes = new ArrayList<>(resolutions.length);
     IntStream.range(0, resolutions.length).forEach(idx -> resolutionOrderToStripes.add(null));
@@ -133,7 +132,7 @@ public class Initializers {
     return contigDescriptors.map(contigDescriptor -> new ContigTree.ContigTuple(contigDescriptor, contigDirections.get(contigDescriptor.getContigId()))).toList();
   }
 
-  public static @NotNull @NonNull List<@NotNull @NonNull ContigDescriptorDataBundle> readContigDataBundles(final long resolution, final @NotNull @NonNull IHDF5Reader reader, final List<ATUDescriptor> basisATUs) {
+  public static @NotNull List<@NotNull ContigDescriptorDataBundle> readContigDataBundles(final long resolution, final @NotNull IHDF5Reader reader, final List<ATUDescriptor> basisATUs) {
     final List<ContigDescriptorDataBundle> result;
     final byte[] chtBytes;
     final long[] contigLengthBins;
@@ -196,8 +195,8 @@ public class Initializers {
   }
 
   private record ContigDescriptorDataBundle(
-    @NotNull @NonNull List<@NotNull @NonNull ATUDescriptor> atus,
-    @NotNull @NonNull ContigHideType hideType,
+    @NotNull List<@NotNull ATUDescriptor> atus,
+    @NotNull ContigHideType hideType,
     long lengthBins
   ) {
   }

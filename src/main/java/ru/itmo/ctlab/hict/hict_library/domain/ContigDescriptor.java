@@ -2,7 +2,6 @@ package ru.itmo.ctlab.hict.hict_library.domain;
 
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
@@ -18,22 +17,22 @@ import java.util.stream.Stream;
 public class ContigDescriptor {
   private final int contigId;
   private final @NotNull
-  @NonNull String contigName;
+  String contigName;
 
   private final long lengthBp;
   private final long[] lengthBinsAtResolution;
   private final @NotNull
-  @NonNull List<@NotNull @NonNull ContigHideType> presenceAtResolution;
-  private final @NotNull @NonNull List<@NotNull @NonNull List<@NotNull @NonNull ATUDescriptor>> atus;
-  private final @NotNull @NonNull List<long @NotNull @NonNull []> atuPrefixSumLengthBins;
+  List<@NotNull ContigHideType> presenceAtResolution;
+  private final @NotNull List<@NotNull List<@NotNull ATUDescriptor>> atus;
+  private final @NotNull List<long @NotNull []> atuPrefixSumLengthBins;
 
   public ContigDescriptor(
     final int contigId,
-    final @NotNull @NonNull String contigName,
+    final @NotNull String contigName,
     final long lengthBp,
-    final @NotNull @NonNull List<@NotNull @NonNull Long> lengthBinsAtResolution,
-    final @NotNull @NonNull List<@NotNull @NonNull ContigHideType> presenceAtResolution,
-    final @NotNull @NonNull List<@NotNull @NonNull List<@NotNull @NonNull ATUDescriptor>> atus
+    final @NotNull List<@NotNull Long> lengthBinsAtResolution,
+    final @NotNull List<@NotNull ContigHideType> presenceAtResolution,
+    final @NotNull List<@NotNull List<@NotNull ATUDescriptor>> atus
   ) {
     this.contigId = contigId;
     this.contigName = contigName;
@@ -57,7 +56,7 @@ public class ContigDescriptor {
     }).toList());
   }
 
-  public long getLengthInUnits(final @NotNull @NonNull QueryLengthUnit units, final ResolutionDescriptor resolution) {
+  public long getLengthInUnits(final @NotNull QueryLengthUnit units, final ResolutionDescriptor resolution) {
     final int resolutionOrder = resolution.getResolutionOrderInArray();
     return switch (units) {
       case PIXELS -> {

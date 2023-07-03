@@ -1,7 +1,6 @@
 package ru.itmo.ctlab.hict.hict_library.util.matrix;
 
 import lombok.AllArgsConstructor;
-import lombok.NonNull;
 
 import java.util.Arrays;
 import java.util.function.Function;
@@ -14,25 +13,25 @@ public class SparseCOOMatrixLong {
     private final boolean transposed;
     private final boolean symmetric;
 
-    public @NonNull SparseCOOMatrixLong map(final @NonNull Function<Long, Long> fun) {
-        return new SparseCOOMatrixLong(
-                rowIndices,
-                colIndices,
-                Arrays.stream(values).map(fun::apply).toArray(),
-                transposed,
-                symmetric
-        );
+    public SparseCOOMatrixLong map(final Function<Long, Long> fun) {
+      return new SparseCOOMatrixLong(
+        rowIndices,
+        colIndices,
+        Arrays.stream(values).map(fun::apply).toArray(),
+        transposed,
+        symmetric
+      );
     }
 
-    public @NonNull SparseCOOMatrixLong transpose() {
-        return new SparseCOOMatrixLong(
-                rowIndices,
-                colIndices,
-                values,
-                !transposed,
-                symmetric
-        );
-    }
+  public SparseCOOMatrixLong transpose() {
+    return new SparseCOOMatrixLong(
+      rowIndices,
+      colIndices,
+      values,
+      !transposed,
+      symmetric
+    );
+  }
 
     public long[][] toDense(final int rows, final int cols) {
         final var nonZeroCount = values.length;

@@ -1,17 +1,16 @@
 package ru.itmo.ctlab.hict.hict_library.util;
 
-import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 
 public class BinarySearch {
-  public static int leftBinarySearch(long @NotNull @NonNull [] a, long key) {
+  public static int leftBinarySearch(long @NotNull [] a, long key) {
     // TODO: Parallelize for large arrays?
     return lowerBound(a, key);
   }
 
-  public static int rightBinarySearch(long @NotNull @NonNull [] a, long key) {
+  public static int rightBinarySearch(long @NotNull [] a, long key) {
     // TODO: Parallelize for large arrays?
     return upperBound(a, key);
   }

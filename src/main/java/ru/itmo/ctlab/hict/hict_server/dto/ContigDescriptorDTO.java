@@ -1,6 +1,5 @@
 package ru.itmo.ctlab.hict.hict_server.dto;
 
-import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
@@ -18,7 +17,7 @@ public record ContigDescriptorDTO(
   Map<Long, Integer> contigPresenceAtResolution
 ) {
 
-  public static @NotNull @NonNull ContigDescriptorDTO fromEntity(final @NotNull @NonNull ContigTree.ContigTuple ctg, final @NotNull @NonNull ChunkedFile chunkedFile) {
+  public static @NotNull ContigDescriptorDTO fromEntity(final @NotNull ContigTree.ContigTuple ctg, final @NotNull ChunkedFile chunkedFile) {
     final var resolutions = chunkedFile.getResolutions();
     return new ContigDescriptorDTO(
       ctg.descriptor().getContigId(),

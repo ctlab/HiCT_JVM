@@ -1,6 +1,9 @@
 package ru.itmo.ctlab.hict.hict_library.domain;
 
-import lombok.*;
+import lombok.Builder;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -11,12 +14,12 @@ import java.util.List;
 @Builder
 @EqualsAndHashCode
 public class ATUDescriptor {
-  final @NonNull StripeDescriptor stripeDescriptor;
+  final StripeDescriptor stripeDescriptor;
   final int startIndexInStripeIncl;
   final int endIndexInStripeExcl;
-  final @NonNull ATUDirection direction;
+  final ATUDirection direction;
 
-  public static MergeResult merge(final @NonNull ATUDescriptor d1, final @NonNull ATUDescriptor d2) {
+  public static MergeResult merge(final ATUDescriptor d1, final ATUDescriptor d2) {
     if (d1.stripeDescriptor.stripeId() == d2.stripeDescriptor.stripeId() && d1.direction == d2.direction) {
       if (d1.endIndexInStripeExcl == d2.startIndexInStripeIncl) {
         assert (
@@ -35,7 +38,7 @@ public class ATUDescriptor {
     return new MergeResult(d1, d2);
   }
 
-  public static List<@NonNull ATUDescriptor> reduce(final @NonNull List<@NonNull ATUDescriptor> atus) {
+  public static List<ATUDescriptor> reduce(final List<ATUDescriptor> atus) {
     if (atus.isEmpty()) {
       return List.of();
     }
@@ -59,11 +62,11 @@ public class ATUDescriptor {
     return result;
   }
 
-  public @NotNull @NonNull ATUDescriptor reversed() {
+  public @NotNull ATUDescriptor reversed() {
     return new ATUDescriptor(this.stripeDescriptor, this.startIndexInStripeIncl, this.endIndexInStripeExcl, this.direction.inverse());
   }
 
-  public @NotNull @NonNull ATUDescriptor copy() {
+  public @NotNull ATUDescriptor copy() {
     return new ATUDescriptor(this.stripeDescriptor, this.startIndexInStripeIncl, this.endIndexInStripeExcl, this.direction);
   }
 
@@ -71,6 +74,6 @@ public class ATUDescriptor {
     return this.endIndexInStripeExcl - this.startIndexInStripeIncl;
   }
 
-  public record MergeResult(@NonNull ATUDescriptor d1, ATUDescriptor d2) {
+  public record MergeResult(ATUDescriptor d1, ATUDescriptor d2) {
   }
 }

@@ -1,12 +1,10 @@
 package ru.itmo.ctlab.hict.hict_library.domain;
 
-import lombok.NonNull;
-
 public enum ATUDirection {
   REVERSED, FORWARD;
 
 
-  public static ATUDirection inverse(final @NonNull ATUDirection direction) {
+  public static ATUDirection inverse(final ATUDirection direction) {
     return switch (direction) {
       case FORWARD -> REVERSED;
       case REVERSED -> FORWARD;

@@ -3,7 +3,6 @@ package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.ext.web.Router;
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
@@ -33,8 +32,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }
       final var dataDirectory = dataDirectoryWrapper.getPath();
 
-      final @NotNull @NonNull var requestBody = ctx.body();
-      final @NotNull @NonNull var requestJSON = requestBody.asJsonObject();
+      final @NotNull var requestBody = ctx.body();
+      final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @Nullable var filename = requestJSON.getString("filename");
       final @Nullable var fastaFilename = requestJSON.getString("fastaFilename");
@@ -60,7 +59,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     });
   }
 
-  private @NotNull @NonNull OpenFileResponseDTO generateOpenFileResponse(final @NotNull @NonNull ChunkedFile chunkedFile) {
+  private @NotNull OpenFileResponseDTO generateOpenFileResponse(final @NotNull ChunkedFile chunkedFile) {
     final var resolutionsWithoutZero = Arrays.stream(chunkedFile.getResolutions()).skip(1L).toArray();
     ArrayUtils.reverse(resolutionsWithoutZero);
     final var matrixSizeBins = chunkedFile.getMatrixSizeBins().clone();

@@ -2,7 +2,6 @@ package ru.itmo.ctlab.hict.hict_library.trees;
 
 import lombok.Builder;
 import lombok.Getter;
-import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
@@ -19,7 +18,7 @@ import java.util.stream.IntStream;
 
 public class ContigTree implements Iterable<ContigTree.Node> {
   private static final Random rnd = new Random();
-  private final @NonNull ReadWriteLock rootLock = new ReentrantReadWriteLock();
+  private final ReadWriteLock rootLock = new ReentrantReadWriteLock();
   private Node root;
 
   @Override
@@ -48,7 +47,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
   }
 
-  public void traverse(final @NotNull @NonNull Consumer<@NotNull @NonNull Node> traverseFn) {
+  public void traverse(final @NotNull Consumer<@NotNull Node> traverseFn) {
     try {
       this.rootLock.readLock().lock();
       Node.traverseNode(
@@ -83,7 +82,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
   }
 
-  public void appendContig(final @NonNull ContigDescriptor contigDescriptor, final @NonNull ContigDirection contigDirection) {
+  public void appendContig(final ContigDescriptor contigDescriptor, final ContigDirection contigDirection) {
     final Node newNode = Node.createNodeFromDescriptor(contigDescriptor, contigDirection);
     try {
       this.rootLock.writeLock().lock();
@@ -93,7 +92,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
   }
 
-  public @NonNull Node.ExposedSegment expose(final @NotNull ResolutionDescriptor resolution, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
+  public Node.ExposedSegment expose(final @NotNull ResolutionDescriptor resolution, final long startIncl, final long endExcl, final QueryLengthUnit units) {
     final Node rootSnapshot;
     try {
       this.rootLock.readLock().lock();
@@ -107,7 +106,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
   @Builder
   @Getter
   public static class Node implements Iterable<Node> {
-    final @NonNull ContigDescriptor contigDescriptor;
+    final ContigDescriptor contigDescriptor;
     final long yPriority;
     final Node left;
     final Node right;
@@ -115,7 +114,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     final long[] subtreeLengthBins;
     final long[] subtreeLengthPixels;
     final boolean needsChangingDirection;
-    final @NonNull ContigDirection contigDirection;
+    final ContigDirection contigDirection;
 
 
     public static @Nullable Node leftmost(final @Nullable Node t) {
@@ -156,17 +155,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-
-    public @NotNull @NonNull Node leftmost() {
-      return leftmost(this);
-    }
-
-    public @NotNull @NonNull Node rightmost() {
-      return rightmost(this);
-    }
-
-
-    public static @NonNull Node createNodeFromDescriptor(final @NonNull ContigDescriptor contigDescriptor, final @NonNull ContigDirection contigDirection) {
+    public static Node createNodeFromDescriptor(final ContigDescriptor contigDescriptor, final ContigDirection contigDirection) {
       final var resolutionCount = contigDescriptor.getLengthBinsAtResolution().length;
       return Node.builder().contigDescriptor(contigDescriptor).subtreeCount(1L).needsChangingDirection(false).subtreeLengthBins(contigDescriptor.getLengthBinsAtResolution()).subtreeLengthPixels(IntStream.range(0, resolutionCount).mapToLong(resolutionIdx -> {
         final long length;
@@ -200,7 +189,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
 
       if (k <= leftLength) {
-        final @NonNull var sp = splitNodeByLength(resolutionDescriptor, newTree.left, k, includeEqualToTheLeft, excludeHiddenContigs);
+        final var sp = splitNodeByLength(resolutionDescriptor, newTree.left, k, includeEqualToTheLeft, excludeHiddenContigs);
 
         final var newRightSplit = newTree.cloneBuilder().left(sp.right).build().updateSizes();
 
@@ -223,7 +212,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public static Node mergeNodes(final @NonNull SplitResult sp) {
+    public static Node mergeNodes(final SplitResult sp) {
       if (sp.left == null) {
         return sp.right;
       }
@@ -241,7 +230,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public static @NonNull SplitResult splitNodeByCount(final Node t, final long k) {
+    public static SplitResult splitNodeByCount(final Node t, final long k) {
       if (t == null) {
         return new SplitResult(null, null);
       }
@@ -257,14 +246,14 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public static @NonNull SplitResult splitNodeByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final Node t, final long k, final boolean includeEqualToTheLeft, final @NonNull QueryLengthUnit units) {
+    public static SplitResult splitNodeByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final Node t, final long k, final boolean includeEqualToTheLeft, final QueryLengthUnit units) {
       return switch (units) {
         case BASE_PAIRS, BINS -> splitNodeByLength(resolutionDescriptor, t, k, includeEqualToTheLeft, false);
         case PIXELS -> splitNodeByLength(resolutionDescriptor, t, k, includeEqualToTheLeft, true);
       };
     }
 
-    public static @NonNull ExposedSegment exposeNodeByLength(final Node node, final @NotNull ResolutionDescriptor resolutionDescriptor, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
+    public static ExposedSegment exposeNodeByLength(final Node node, final @NotNull ResolutionDescriptor resolutionDescriptor, final long startIncl, final long endExcl, final QueryLengthUnit units) {
       if (node != null) {
         final var sp1 = splitNodeByLength(resolutionDescriptor, node, endExcl, true, units);
         final var sp2 = splitNodeByLength(resolutionDescriptor, sp1.left, startIncl, false, units);
@@ -272,6 +261,14 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       } else {
         return new ExposedSegment(null, null, null);
       }
+    }
+
+    public @NotNull Node leftmost() {
+      return leftmost(this);
+    }
+
+    public @NotNull Node rightmost() {
+      return rightmost(this);
     }
 
     public static void traverseNode(final Node node, final Consumer<Node> f) {
@@ -329,16 +326,16 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public @NotNull @NonNull Node leftmostVisibleNode(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor) {
+    public @NotNull Node leftmostVisibleNode(final @NotNull ResolutionDescriptor resolutionDescriptor) {
       return leftmostVisibleNode(this, resolutionDescriptor);
     }
 
-    public @NotNull @NonNull Node rightmostVisibleNode(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor) {
+    public @NotNull Node rightmostVisibleNode(final @NotNull ResolutionDescriptor resolutionDescriptor) {
       return rightmostVisibleNode(this, resolutionDescriptor);
     }
 
 
-    public long getSubtreeLengthInUnits(final @NonNull QueryLengthUnit units, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor) {
+    public long getSubtreeLengthInUnits(final QueryLengthUnit units, final @NotNull ResolutionDescriptor resolutionDescriptor) {
       final int resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
       return switch (units) {
         case BASE_PAIRS -> this.subtreeLengthBins[0];
@@ -347,7 +344,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       };
     }
 
-    public @NonNull Node push() {
+    public Node push() {
       if (this.needsChangingDirection) {
         final Node newLeft;
         final Node newRight;
@@ -368,7 +365,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       return this;
     }
 
-    public @NonNull Node updateSizes() {
+    public Node updateSizes() {
       final var newSubtreeCount = 1 + ((this.left != null) ? this.left.subtreeCount : 0L) + ((this.right != null) ? this.right.subtreeCount : 0L);
 
       final var resolutionCount = this.subtreeLengthBins.length;
@@ -403,15 +400,15 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       return (this.needsChangingDirection) ? this.contigDirection.inverse() : this.contigDirection;
     }
 
-    public @NonNull SplitResult splitByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final long k, final boolean includeEqualToTheLeft, final boolean excludeHiddenContigs) {
+    public SplitResult splitByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final long k, final boolean includeEqualToTheLeft, final boolean excludeHiddenContigs) {
       return splitNodeByLength(resolutionDescriptor, this, k, includeEqualToTheLeft, excludeHiddenContigs);
     }
 
-    public @NonNull SplitResult splitByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final long k, final boolean includeEqualToTheLeft, final @NonNull QueryLengthUnit units) {
+    public SplitResult splitByLength(final @NotNull ResolutionDescriptor resolutionDescriptor, final long k, final boolean includeEqualToTheLeft, final QueryLengthUnit units) {
       return splitNodeByLength(resolutionDescriptor, this, k, includeEqualToTheLeft, units);
     }
 
-    public @NonNull SplitResult splitByCount(final long k) {
+    public SplitResult splitByCount(final long k) {
       return splitNodeByCount(this, k);
     }
 
@@ -419,7 +416,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       traverseNode(this, f);
     }
 
-    public @NonNull ExposedSegment expose(final @NotNull ResolutionDescriptor resolution, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
+    public ExposedSegment expose(final @NotNull ResolutionDescriptor resolution, final long startIncl, final long endExcl, final QueryLengthUnit units) {
       return exposeNodeByLength(this, resolution, startIncl, endExcl, units);
     }
 
@@ -473,7 +470,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
 
     private static class NodeCloneBuilder {
-      private @NonNull ContigDescriptor contigDescriptor;
+      private ContigDescriptor contigDescriptor;
       private long yPriority;
       private Node left;
       private Node right;
@@ -481,9 +478,9 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       private long[] subtreeLengthBins;
       private long[] subtreeLengthPixels;
       private boolean needsChangingDirection;
-      private @NonNull ContigDirection contigDirection;
+      private ContigDirection contigDirection;
 
-      public NodeCloneBuilder(final @NonNull Node base) {
+      public NodeCloneBuilder(final Node base) {
         this.contigDescriptor = base.contigDescriptor;
         this.yPriority = base.yPriority;
         this.left = base.left;
@@ -495,7 +492,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
         this.contigDirection = base.contigDirection;
       }
 
-      public NodeCloneBuilder contigDescriptor(final @NonNull ContigDescriptor contigDescriptor) {
+      public NodeCloneBuilder contigDescriptor(final ContigDescriptor contigDescriptor) {
         this.contigDescriptor = contigDescriptor;
         return this;
       }
@@ -535,12 +532,12 @@ public class ContigTree implements Iterable<ContigTree.Node> {
         return this;
       }
 
-      public NodeCloneBuilder contigDirection(final @NonNull ContigDirection contigDirection) {
+      public NodeCloneBuilder contigDirection(final ContigDirection contigDirection) {
         this.contigDirection = contigDirection;
         return this;
       }
 
-      public @NonNull Node build() {
+      public Node build() {
         return new Node(this.contigDescriptor, this.yPriority, this.left, this.right, this.subtreeCount, this.subtreeLengthBins, this.subtreeLengthPixels, this.needsChangingDirection, this.contigDirection);
       }
     }

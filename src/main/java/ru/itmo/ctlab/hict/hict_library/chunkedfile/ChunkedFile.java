@@ -4,7 +4,6 @@ import ch.systemsx.cisd.base.mdarray.MDLongArray;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.Getter;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
@@ -28,18 +27,18 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 @Slf4j
 public class ChunkedFile {
 
-  private final @NotNull @NonNull Path hdfFilePath;
+  private final @NotNull Path hdfFilePath;
   //  private final long[] blockCount;
   private final int denseBlockSize;
-  private final long @NotNull @NonNull [] resolutions;
-  private final Map<@NotNull @NonNull Long, @NotNull @NonNull Integer> resolutionToIndex;
-  private final long @NotNull @NonNull [] matrixSizeBins;
-  private final int @NotNull @NonNull [] stripeCount;
-  private final @NotNull @NonNull ContigTree contigTree;
-  private final @NotNull @NonNull ScaffoldTree scaffoldTree;
+  private final long @NotNull [] resolutions;
+  private final Map<@NotNull Long, @NotNull Integer> resolutionToIndex;
+  private final long @NotNull [] matrixSizeBins;
+  private final int @NotNull [] stripeCount;
+  private final @NotNull ContigTree contigTree;
+  private final @NotNull ScaffoldTree scaffoldTree;
 
 
-  public ChunkedFile(final @NotNull @NonNull Path hdfFilePath, final int denseBlockSize) {
+  public ChunkedFile(final @NotNull Path hdfFilePath, final int denseBlockSize) {
     this.hdfFilePath = hdfFilePath;
     // TODO: fix
 //    this.blockCount = 5;
@@ -82,7 +81,7 @@ public class ChunkedFile {
 
 
   // TODO: Implement
-  public MatrixWithWeights getSubmatrix(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
+  public MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
     final var totalAssemblyLength = excludeHiddenContigs ? (this.contigTree.getLengthInUnits(units, resolutionDescriptor)) : (this.matrixSizeBins[resolutionOrder]);
@@ -174,11 +173,11 @@ public class ChunkedFile {
     return new MatrixWithWeights(result, rowWeights, colWeights);
   }
 
-  private double @NotNull @NonNull [] getWeightsByATU(final @NotNull @NonNull ATUDescriptor atu) {
+  private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu) {
     return getWeightsByATU(atu, false);
   }
 
-  private double @NotNull @NonNull [] getWeightsByATU(final @NotNull @NonNull ATUDescriptor atu, final boolean needsReversal) {
+  private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu, final boolean needsReversal) {
     final var length = atu.getLength();
     final var weights = new double[length];
     System.arraycopy(atu.getStripeDescriptor().bin_weights(), atu.getStartIndexInStripeIncl(), weights, 0, length);
@@ -193,7 +192,7 @@ public class ChunkedFile {
   }
 
   // TODO: Implement
-  public List<ATUDescriptor> getATUsForRange(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
+  public List<ATUDescriptor> getATUsForRange(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
     final var totalAssemblyLength = excludeHiddenContigs ? (this.contigTree.getLengthInUnits(units, resolutionDescriptor)) : (this.matrixSizeBins[resolutionOrder]);
@@ -348,7 +347,7 @@ public class ChunkedFile {
         return atus;
       }
     } else {
-      final List<@NotNull @NonNull ATUDescriptor> firstContigRestATUs;
+      final List<@NotNull ATUDescriptor> firstContigRestATUs;
       if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.FORWARD) {
         firstContigRestATUs = firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
       } else {
@@ -373,7 +372,7 @@ public class ChunkedFile {
         }
       });
 
-      final List<@NotNull @NonNull ATUDescriptor> lastContigBeginningATUs;
+      final List<@NotNull ATUDescriptor> lastContigBeginningATUs;
       if (lastContigNode.getTrueDirection() == ContigDirection.FORWARD) {
         lastContigBeginningATUs = lastContigATUs.subList(0, indexOfATUContainingEndPx);
       } else {
@@ -408,12 +407,12 @@ public class ChunkedFile {
     return reducedATUs;
   }
 
-  public long @NotNull @NonNull [][] getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU) {
+  public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU) {
     return getATUIntersection(resolutionDescriptor, rowATU, colATU, false);
   }
 
   // TODO: Implement
-  public long @NotNull @NonNull [][] getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU, final boolean needsTranspose) {
+  public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU, final boolean needsTranspose) {
     if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
       return getATUIntersection(resolutionDescriptor, colATU, rowATU, !needsTranspose);
     }
@@ -533,19 +532,19 @@ public class ChunkedFile {
     }
   }
 
-  public record MatrixWithWeights(long @NotNull @NonNull [][] matrix, double @NotNull @NonNull [] rowWeights,
-                                  double @NotNull @NonNull [] colWeights) {
+  public long @NotNull [] getResolutions() {
+    return this.resolutions;
   }
 
   public @NotNull List<@NotNull Long> getResolutionsList() {
     return Arrays.stream(this.resolutions).boxed().toList();
   }
 
-  public long @NotNull @NonNull [] getResolutions() {
-    return this.resolutions;
+  public @NotNull AssemblyInfo getAssemblyInfo() {
+    return new AssemblyInfo(this.contigTree.getContigList(), this.scaffoldTree.getScaffoldList());
   }
 
-  public @NotNull @NonNull AssemblyInfo getAssemblyInfo() {
-    return new AssemblyInfo(this.contigTree.getContigList(), this.scaffoldTree.getScaffoldList());
+  public record MatrixWithWeights(long @NotNull [][] matrix, double @NotNull [] rowWeights,
+                                  double @NotNull [] colWeights) {
   }
 }

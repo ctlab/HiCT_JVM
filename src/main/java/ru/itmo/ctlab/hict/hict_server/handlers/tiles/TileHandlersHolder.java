@@ -4,7 +4,6 @@ import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.ext.web.Router;
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -37,8 +36,8 @@ public class TileHandlersHolder extends HandlersHolder {
       final var row = Long.parseLong(ctx.request().getParam("row", "0"));
       final var col = Long.parseLong(ctx.request().getParam("col", "0"));
       final var version = Long.parseLong(ctx.request().getParam("version", "0"));
-      final var tileHeight = Integer.parseInt(ctx.request().getParam("tileSize", "256"));
-      final var tileWidth = Integer.parseInt(ctx.request().getParam("tileSize", "256"));
+      final var tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+      final var tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
       final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
 
       log.debug("Got parameters");
@@ -125,6 +124,6 @@ public class TileHandlersHolder extends HandlersHolder {
   public record TileSignalRanges(double lowerBounds, double upperBounds) {
   }
 
-  public record TileWithRanges(@NotNull @NonNull String image, @NotNull @NonNull TileSignalRanges ranges) {
+  public record TileWithRanges(@NotNull String image, @NotNull TileSignalRanges ranges) {
   }
 }

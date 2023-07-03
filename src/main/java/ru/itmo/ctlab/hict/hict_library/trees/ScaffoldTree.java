@@ -1,7 +1,6 @@
 package ru.itmo.ctlab.hict.hict_library.trees;
 
 import lombok.Builder;
-import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
@@ -15,7 +14,7 @@ import java.util.function.LongFunction;
 public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
   private static final Random rnd = new Random();
-  private final @NonNull ReadWriteLock rootLock = new ReentrantReadWriteLock();
+  private final ReadWriteLock rootLock = new ReentrantReadWriteLock();
   private Node root;
   private long rootScaffoldIdCounter;
 
@@ -56,9 +55,9 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
-  public void commitRoot(final @NotNull @NonNull Node.ExposedSegment exposedSegment) {
+  public void commitRoot(final @NotNull Node.ExposedSegment exposedSegment) {
     final var le = Node.mergeNodes(new Node.SplitResult(exposedSegment.less(), exposedSegment.segment()));
-    final @NonNull var rt = Node.mergeNodes(new Node.SplitResult(le, exposedSegment.greater()));
+    final var rt = Node.mergeNodes(new Node.SplitResult(le, exposedSegment.greater()));
     try {
       this.rootLock.writeLock().lock();
       this.root = rt;
@@ -80,7 +79,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
-  public @NotNull @NonNull ScaffoldDescriptor.ScaffoldBordersBP extendBordersToScaffolds(final long queriedStartBp, final long queriedEndBp) {
+  public @NotNull ScaffoldDescriptor.ScaffoldBordersBP extendBordersToScaffolds(final long queriedStartBp, final long queriedEndBp) {
     try {
       var leftBp = queriedStartBp;
       var rightBp = queriedEndBp;
@@ -89,14 +88,14 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       if (optionalLeftScaffoldDescriptor != null) {
         final var lr = Node.splitNodeBp(this.root, queriedStartBp, false);
         leftBp = (lr.left() != null) ? (lr.left().subtreeLengthBp) : (0L);
-        final @NotNull @NonNull var leftScaffold = Objects.requireNonNull(Node.leftmost(lr.right()));
+        final @NotNull var leftScaffold = Objects.requireNonNull(Node.leftmost(lr.right()));
         assert (leftScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the left?";
       }
       final @Nullable var optionalRightScaffoldDescriptor = getScaffoldAtBp(queriedEndBp);
       if (optionalLeftScaffoldDescriptor != null) {
         final @NotNull var leGr = Node.splitNodeBp(this.root, queriedEndBp, true);
         rightBp = (leGr.left() != null) ? (leGr.left().subtreeLengthBp) : 0L;
-        final @NotNull @NonNull var rightScaffold = Objects.requireNonNull(Node.rightmost(leGr.right()));
+        final @NotNull var rightScaffold = Objects.requireNonNull(Node.rightmost(leGr.right()));
         assert (rightScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the right?";
       }
       return new ScaffoldDescriptor.ScaffoldBordersBP(leftBp, rightBp);
@@ -111,7 +110,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
    * @param scaffoldGenerator A function that accepts one long (minimum unused scaffold ID) and returns new scaffold descriptor. In case this argument is {@code null}, scaffold is constructed automatically with spacer length of 1000 and this ID.
    * @return Descriptor of newly created scaffold after adding it to the tree.
    */
-  public ScaffoldDescriptor rescaffold(final long startBp, final long endBp, final @Nullable LongFunction<@NotNull @NonNull ScaffoldDescriptor> scaffoldGenerator) {
+  public ScaffoldDescriptor rescaffold(final long startBp, final long endBp, final @Nullable LongFunction<@NotNull ScaffoldDescriptor> scaffoldGenerator) {
     if (startBp > endBp) {
       return rescaffold(endBp, startBp, scaffoldGenerator);
     }
@@ -121,9 +120,9 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       ++this.rootScaffoldIdCounter;
       final var oldAssemblyLength = this.root.subtreeLengthBp;
 
-      final @NotNull @NonNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
-      final @NotNull @NonNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
-      final @NotNull @NonNull ScaffoldDescriptor newScaffoldDescriptor;
+      final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
+      final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+      final @NotNull ScaffoldDescriptor newScaffoldDescriptor;
       if (scaffoldGenerator == null) {
         newScaffoldDescriptor = new ScaffoldDescriptor(this.rootScaffoldIdCounter, String.format("scaffold_auto_%d", this.rootScaffoldIdCounter), 1000);
       } else {
@@ -131,7 +130,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       }
       this.rootScaffoldIdCounter = Long.max(this.rootScaffoldIdCounter, newScaffoldDescriptor.scaffoldId());
 
-      final @NotNull @NonNull var newScaffoldNode = new ScaffoldTree.Node(
+      final @NotNull var newScaffoldNode = new ScaffoldTree.Node(
         newScaffoldDescriptor,
         es.segment().subtreeLengthBp,
         es.segment().yPriority,
@@ -161,11 +160,11 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       ++this.rootScaffoldIdCounter;
       final var oldAssemblyLength = this.root.subtreeLengthBp;
 
-      final @NotNull @NonNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
-      final @NotNull @NonNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+      final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
+      final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
 
 
-      final @NotNull @NonNull var emptyNode = new ScaffoldTree.Node(
+      final @NotNull var emptyNode = new ScaffoldTree.Node(
         null,
         es.segment().subtreeLengthBp,
         es.segment().yPriority,
@@ -193,11 +192,11 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       this.rootLock.writeLock().lock();
       final var oldAssemblyLength = this.root.subtreeLengthBp;
 
-      final @NotNull @NonNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
-      final @NotNull @NonNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+      final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
+      final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
 
-      final @NotNull @NonNull var tmp = Node.mergeNodes(new Node.SplitResult(es.less(), es.greater()));
-      final @NotNull @NonNull var nlnr = Node.splitNodeBp(tmp, targetStartBp, false);
+      final @NotNull var tmp = Node.mergeNodes(new Node.SplitResult(es.less(), es.greater()));
+      final @NotNull var nlnr = Node.splitNodeBp(tmp, targetStartBp, false);
 
       commitRoot(new Node.ExposedSegment(nlnr.left(), es.segment(), nlnr.right()));
       assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after moving a region?";
@@ -206,7 +205,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
-  public void traverse(final @NotNull @NonNull Consumer<@NotNull @NonNull Node> traverseFn) {
+  public void traverse(final @NotNull Consumer<@NotNull Node> traverseFn) {
     try {
       this.rootLock.readLock().lock();
       Node.traverseNode(
@@ -244,9 +243,9 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     try {
       this.rootLock.writeLock().lock();
       final var oldAssemblyLength = this.root.subtreeLengthBp;
-      final @NotNull @NonNull var es = Node.expose(this.root, startBpIncl, endBpExcl);
+      final @NotNull var es = Node.expose(this.root, startBpIncl, endBpExcl);
       assert (es.segment() != null) : "Requested segment is not covered by scaffold tree??";
-      final @NotNull @NonNull var segment = Node.optimizeEmptySpace(es.segment());
+      final @NotNull var segment = Node.optimizeEmptySpace(es.segment());
 
       final int[] scaffoldDescriptorCount = {0};
 
@@ -260,7 +259,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       assert (segment.left == null) : "Exposed more than one nodes and there is left??";
       assert (segment.right == null) : "Exposed more than one nodes and there is right??";
 
-      final @NotNull @NonNull var newSegment = segment.cloneBuilder().nodeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).subtreeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).build();
+      final @NotNull var newSegment = segment.cloneBuilder().nodeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).subtreeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).build();
 
       commitRoot(new Node.ExposedSegment(es.less(), newSegment, es.greater()));
 //      assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after removing a region?";
@@ -297,7 +296,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       }
 
       if (expectedLeftSize <= leftSubtreeLength) {
-        final @NonNull var sp = splitNodeBp(newTree.left, expectedLeftSize, includeEqualToTheLeft);
+        final var sp = splitNodeBp(newTree.left, expectedLeftSize, includeEqualToTheLeft);
         final var newRightSplit = newTree.cloneBuilder().left(sp.right).build().updateSizes();
         return new Node.SplitResult(sp.left, newRightSplit);
       } else {
@@ -370,11 +369,11 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       return result;
     }
 
-    public static Node mergeNodes(final @NonNull Node.SplitResult sp) {
+    public static Node mergeNodes(final Node.SplitResult sp) {
       return mergeNodes(sp, false);
     }
 
-    public static Node mergeNodes(final @NonNull Node.SplitResult sp, boolean recursiveEmptySpaceOptimization) {
+    public static Node mergeNodes(final Node.SplitResult sp, boolean recursiveEmptySpaceOptimization) {
       if (sp.left == null) {
         return sp.right;
       }
@@ -392,7 +391,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       }
     }
 
-    public static @NonNull Node.ExposedSegment expose(final Node t, final long startBpIncl, final long endBpExcl) {
+    public static Node.ExposedSegment expose(final Node t, final long startBpIncl, final long endBpExcl) {
       if (t == null) {
         return new ExposedSegment(null, null, null);
       }
@@ -406,7 +405,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       return new ExposedSegment(lsSg.left(), lsSg.right(), leGr.right());
     }
 
-    public static void traverseNode(final Node node, final @NotNull @NonNull Consumer<@NotNull @NonNull Node> f) {
+    public static void traverseNode(final Node node, final @NotNull Consumer<@NotNull Node> f) {
       if (node != null) {
         final var newNode = node.push();
         traverseNode(newNode.left, f);
@@ -453,11 +452,11 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       }
     }
 
-    public @NotNull @NonNull Node leftmost() {
+    public @NotNull Node leftmost() {
       return leftmost(this);
     }
 
-    public @NotNull @NonNull Node rightmost() {
+    public @NotNull Node rightmost() {
       return rightmost(this);
     }
 
@@ -507,7 +506,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       };
     }
 
-    public @NonNull Node push() {
+    public Node push() {
       if (this.needsChangingDirection) {
         final Node newLeft;
         final Node newRight;
@@ -528,7 +527,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       return this;
     }
 
-    public @NonNull Node updateSizes() {
+    public Node updateSizes() {
       final var newSubtreeScaffoldCount = 1 + ((this.left != null) ? this.left.subtreeScaffoldCount : 0L) + ((this.right != null) ? this.right.subtreeScaffoldCount : 0L);
       final var newLengthBp = this.nodeLengthBp + ((this.left != null) ? this.left.subtreeLengthBp : 0L) + ((this.right != null) ? this.right.subtreeLengthBp : 0L);
       return this.cloneBuilder().subtreeCount(newSubtreeScaffoldCount).subtreeLengthBp(newLengthBp).build();
@@ -555,7 +554,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       private long subtreeLengthBp;
       private boolean needsChangingDirection;
 
-      public NodeCloneBuilder(final @NonNull Node base) {
+      public NodeCloneBuilder(final Node base) {
         this.scaffoldDescriptor = base.scaffoldDescriptor;
         this.yPriority = base.yPriority;
         this.left = base.left;
@@ -608,13 +607,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       }
 
 
-      public @NonNull Node build() {
+      public Node build() {
         return new Node(this.scaffoldDescriptor, this.nodeLengthBp, this.yPriority, this.left, this.right, this.subtreeScaffoldCount, this.subtreeLengthBp, this.needsChangingDirection);
       }
     }
   }
 
-  public record ScaffoldTuple(@NotNull @NonNull ScaffoldDescriptor scaffoldDescriptor, @NotNull @NonNull
+  public record ScaffoldTuple(@NotNull ScaffoldDescriptor scaffoldDescriptor, @NotNull
   ScaffoldDescriptor.ScaffoldBordersBP scaffoldBordersBP) {
   }
 
