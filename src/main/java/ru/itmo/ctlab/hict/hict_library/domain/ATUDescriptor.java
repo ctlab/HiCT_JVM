@@ -1,9 +1,6 @@
 package ru.itmo.ctlab.hict.hict_library.domain;
 
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -12,6 +9,7 @@ import java.util.List;
 @Getter
 @RequiredArgsConstructor
 @Builder
+@EqualsAndHashCode
 public class ATUDescriptor {
   final @NonNull StripeDescriptor stripeDescriptor;
   final int startIndexInStripeIncl;

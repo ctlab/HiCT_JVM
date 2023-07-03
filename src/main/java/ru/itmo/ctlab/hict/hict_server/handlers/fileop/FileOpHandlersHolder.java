@@ -6,6 +6,7 @@ import io.vertx.ext.web.Router;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
@@ -60,18 +61,20 @@ public class FileOpHandlersHolder extends HandlersHolder {
   }
 
   private @NotNull @NonNull OpenFileResponseDTO generateOpenFileResponse(final @NotNull @NonNull ChunkedFile chunkedFile) {
-    final var resolutionsOriginalList = chunkedFile.getResolutionsList();
-    final var resolutionsList = resolutionsOriginalList.subList(1, resolutionsOriginalList.size());
-    final long minResolution = resolutionsList.stream().min(Long::compare).orElse(1L);
+    final var resolutionsWithoutZero = Arrays.stream(chunkedFile.getResolutions()).skip(1L).toArray();
+    ArrayUtils.reverse(resolutionsWithoutZero);
+    final var matrixSizeBins = chunkedFile.getMatrixSizeBins().clone();
+    ArrayUtils.reverse(matrixSizeBins);
+    final long minResolution = Arrays.stream(resolutionsWithoutZero).min().orElse(1L);
 //    Arrays.stream(chunkedFile.getMatrixSizeBins()).forEachOrdered(i -> log.debug("New resolutrion matrix size bins: " + i));
     return new OpenFileResponseDTO(
       "Opened",
       (String) vertx.sharedData().getLocalMap("hict_server").getOrDefault("transport_dtype", "uint8"),
-      resolutionsList,
-      resolutionsList.parallelStream().mapToDouble(r -> (double) r / minResolution).boxed().toList(),
+      Arrays.stream(resolutionsWithoutZero).boxed().toList(),
+      Arrays.stream(resolutionsWithoutZero).mapToDouble(r -> (double) r / minResolution).boxed().toList(),
       chunkedFile.getDenseBlockSize(),
       AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
-      Arrays.stream(chunkedFile.getMatrixSizeBins()).skip(1L).mapToInt(l -> (int) l).boxed().toList()
+      Arrays.stream(matrixSizeBins).limit(matrixSizeBins.length - 1).mapToInt(l -> (int) l).boxed().toList()
     );
   }
 }

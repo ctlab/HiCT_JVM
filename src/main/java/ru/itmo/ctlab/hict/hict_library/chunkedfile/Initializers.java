@@ -51,7 +51,7 @@ public class Initializers {
           stripeDescriptors.get((int) row[0]),
           (int) row[1],
           (int) row[2],
-          ATUDirection.values()[1 - (int) row[3]]
+          ATUDirection.values()[(int) row[3]]
         );
 
 //        log.debug("Built ATU: StripeID=" + atu.getStripeDescriptor().stripeId() + " start=" + atu.getStartIndexInStripeIncl() + " end=" + atu.getEndIndexInStripeExcl() + " direction=" + atu.getDirection());
@@ -105,7 +105,7 @@ public class Initializers {
       contigCount = contigDescriptorDataBundles.get(1).size();
 
       try (final var contigDirectionDataset = reader.object().openDataSet(getContigDirectionDatasetPath())) {
-        contigDirections = Arrays.stream(reader.int64().readArray(contigDirectionDataset.getDataSetPath())).mapToInt(i -> (int) i).mapToObj(dir -> ContigDirection.values()[1 - dir]).toList();
+        contigDirections = Arrays.stream(reader.int64().readArray(contigDirectionDataset.getDataSetPath())).mapToInt(i -> (int) i).mapToObj(dir -> ContigDirection.values()[dir]).toList();
       }
 
       try (final var contigNamesDataset = reader.object().openDataSet(getContigNameDatasetPath())) {
@@ -164,7 +164,7 @@ public class Initializers {
     result = IntStream.range(0, contigLengthBins.length).mapToObj(i ->
       new ContigDescriptorDataBundle(
         contigIdToATUs.get(i),
-        ContigHideType.values()[1 - chtBytes[i]],
+        ContigHideType.values()[chtBytes[i]],
         contigLengthBins[i]
       )
     ).collect(Collectors.toList());

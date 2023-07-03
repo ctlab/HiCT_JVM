@@ -1,6 +1,7 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
@@ -38,7 +39,7 @@ public class TileHandlersHolder extends HandlersHolder {
       final var version = Long.parseLong(ctx.request().getParam("version", "0"));
       final var tileHeight = Integer.parseInt(ctx.request().getParam("tileSize", "256"));
       final var tileWidth = Integer.parseInt(ctx.request().getParam("tileSize", "256"));
-      final var resolution = Long.parseLong(ctx.request().getParam("resolution", "0"));
+      final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
 
       log.debug("Got parameters");
 
@@ -84,24 +85,41 @@ public class TileHandlersHolder extends HandlersHolder {
 
 
       try {
-        ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
 
-        final byte[] base64 = Base64.getEncoder().encode(baos.toByteArray());
-        final String base64image = new String(base64);
-        final var result = new TileWithRanges(
-          String.format("data:image/png;base64,%s", base64image),
-          new TileSignalRanges(0.0, 1.0)
-        );
-        log.debug("Wrote stream to buffer");
-        ctx.response()
-//          .putHeader("content-type", "image/png")
-          .putHeader("content-type", "application/json")
-          .end(Json.encode(result));
+        switch (format) {
+          case JSON_PNG_WITH_RANGES -> {
+            ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
+
+            final byte[] base64 = Base64.getEncoder().encode(baos.toByteArray());
+            final String base64image = new String(base64);
+            final var result = new TileWithRanges(
+              String.format("data:image/png;base64,%s", base64image),
+              new TileSignalRanges(0.0, 1.0)
+            );
+            log.debug("Wrote stream to buffer");
+            ctx.response()
+              .putHeader("content-type", "application/json")
+              .end(Json.encode(result));
+          }
+          case PNG -> {
+            ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
+            log.debug("Wrote stream to buffer");
+            ctx.response()
+              .putHeader("content-type", "image/png")
+              .end(Buffer.buffer(baos.toByteArray()));
+          }
+        }
         log.debug("Response");
       } catch (final IOException e) {
         log.error("Cannot write tile image: " + e.getMessage());
       }
     });
+  }
+
+
+  public enum TileFormat {
+    JSON_PNG_WITH_RANGES,
+    PNG
   }
 
   public record TileSignalRanges(double lowerBounds, double upperBounds) {

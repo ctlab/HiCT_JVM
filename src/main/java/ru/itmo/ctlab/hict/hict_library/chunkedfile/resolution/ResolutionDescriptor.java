@@ -3,8 +3,7 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Range;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
-
-import java.util.Arrays;
+import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 
 public abstract class ResolutionDescriptor {
 
@@ -23,7 +22,7 @@ public abstract class ResolutionDescriptor {
     if (bpResolution < 1) {
       resolutionOrder = 0;
     } else {
-      resolutionOrder = 1 + Arrays.binarySearch(chunkedFile.getResolutions(), bpResolution);
+      resolutionOrder = 1 + BinarySearch.leftBinarySearch(chunkedFile.getResolutions(), bpResolution);
     }
 
     return new ResolutionDescriptor() {

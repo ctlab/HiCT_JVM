@@ -130,9 +130,9 @@ public class ChunkedFile {
               for (int k = 0; k < rowCount; k++) {
                 for (int l = 0; l < colCount; l++) {
                   result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
-                  if (dense[k][l] != 0L) {
-                    log.debug("Non-zero element!");
-                  }
+//                  if (dense[k][l] != 0L) {
+//                    log.debug("Non-zero element!");
+//                  }
                 }
               }
             });
@@ -210,44 +210,69 @@ public class ChunkedFile {
       lessSize = 0L;
     }
 
+    final List<ContigTree.Node> debugContigNodes = new ArrayList<>();
+    ContigTree.Node.traverseNode(es.segment(), node -> {
+      if (node.getContigDescriptor().getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN) {
+        debugContigNodes.add(node);
+      }
+    });
 
-    final var startContigId = es.segment().leftmost().getContigDescriptor().getContigId();
-    final var endContigId = es.segment().rightmost().getContigDescriptor().getContigId();
-    final var onlyOneContig = (startContigId == endContigId);
+    final List<ATUDescriptor> debugAllATUs = new ArrayList<>();
+
+    ContigTree.Node.traverseNode(es.segment(), node -> {
+      if (node.getContigDescriptor().getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN) {
+        final var contigDirection = node.getTrueDirection();
+        final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
+        if (contigDirection == ContigDirection.FORWARD) {
+          debugAllATUs.addAll(contigATUs);
+        } else {
+          final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
+          Collections.reverse(reversedATUs);
+          debugAllATUs.addAll(reversedATUs);
+        }
+      }
+    });
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
-    final var firstContigNodeInSegment = es.segment().leftmost();
+    final var firstContigNodeInSegment = es.segment().leftmostVisibleNode(resolutionDescriptor);
     final var firstContigInSegment = firstContigNodeInSegment.getContigDescriptor();
     final var firstContigATUs = firstContigInSegment.getAtus().get(resolutionOrder);
     final var firstContigATUPrefixSum = firstContigInSegment.getAtuPrefixSumLengthBins().get(resolutionOrder);
 
     final var deltaBetweenRightPxAndExposedSegment = (lessSize + segmentSize) - endPx;
-    final var lastContigNode = es.segment().rightmost();
+    final var lastContigNode = es.segment().rightmostVisibleNode(resolutionDescriptor);
     final var lastContigDescriptor = lastContigNode.getContigDescriptor();
     final var lastContigATUs = lastContigDescriptor.getAtus().get(resolutionOrder);
     final var lastContigATUPrefixSum = lastContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
 
+    final var startContigId = firstContigInSegment.getContigId();
+    final var endContigId = lastContigDescriptor.getContigId();
+    final var onlyOneContig = (startContigId == endContigId);
+
 
     final int indexOfATUContainingStartPx;
     if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.FORWARD) {
-      final var insertionPoint = Arrays.binarySearch(
+      indexOfATUContainingStartPx = BinarySearch.rightBinarySearch(
         firstContigATUPrefixSum,
         deltaBetweenSegmentFirstContigAndQueryStart
       );
-      indexOfATUContainingStartPx = (insertionPoint >= 0) ? (1 + insertionPoint) : (-insertionPoint - 1);
     } else {
       final var topSum = firstContigATUPrefixSum[firstContigATUPrefixSum.length - 1];
-      final var insertionPoint = Arrays.binarySearch(
+      indexOfATUContainingStartPx = BinarySearch.leftBinarySearch(
         firstContigATUPrefixSum,
         topSum - deltaBetweenSegmentFirstContigAndQueryStart
       );
-      indexOfATUContainingStartPx = (insertionPoint >= 0) ? insertionPoint : (-insertionPoint - 1);
     }
 
-
-    final var lengthOfATUsBeforeOneContainingStart = (indexOfATUContainingStartPx > 0) ? (firstContigATUPrefixSum[indexOfATUContainingStartPx - 1]) : 0L;
     final var oldFirstATU = firstContigATUs.get(indexOfATUContainingStartPx);
+    final var lengthOfATUsBeforeOneContainingStart = (indexOfATUContainingStartPx == 0) ? 0L : (
+      switch (firstContigNodeInSegment.getTrueDirection()) {
+        case FORWARD -> firstContigATUPrefixSum[indexOfATUContainingStartPx - 1];
+        case REVERSED ->
+          firstContigATUPrefixSum[firstContigATUPrefixSum.length - 1] - firstContigATUPrefixSum[indexOfATUContainingStartPx];
+      }
+    );
     final ATUDescriptor newFirstATU;
 
     if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
@@ -262,22 +287,19 @@ public class ChunkedFile {
 
     if (lastContigNode.getTrueDirection() == ContigDirection.FORWARD) {
       final var lastContigLengthBins = lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1];
-      final var insertionPoint = Arrays.binarySearch(lastContigATUPrefixSum, lastContigLengthBins - deltaBetweenRightPxAndExposedSegment);
-      indexOfATUContainingEndPx = (insertionPoint >= 0) ? insertionPoint : (-insertionPoint - 1);
+      indexOfATUContainingEndPx = BinarySearch.leftBinarySearch(lastContigATUPrefixSum, lastContigLengthBins - deltaBetweenRightPxAndExposedSegment);
     } else {
-      final var insertionPoint = Arrays.binarySearch(
-        firstContigATUPrefixSum,
+      indexOfATUContainingEndPx = BinarySearch.rightBinarySearch(
+        lastContigATUPrefixSum,
         deltaBetweenSegmentFirstContigAndQueryStart
       );
-      indexOfATUContainingEndPx = (insertionPoint >= 0) ? (1 + insertionPoint) : (-insertionPoint - 1);
     }
 
-    final long deletedATUsLength;
-    if (indexOfATUContainingEndPx < lastContigATUs.size()) {
-      deletedATUsLength = lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1] - lastContigATUPrefixSum[indexOfATUContainingEndPx];
-    } else {
-      deletedATUsLength = 0L;
-    }
+    final long deletedATUsLength = switch (lastContigNode.getTrueDirection()) {
+      case FORWARD ->
+        lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1] - lastContigATUPrefixSum[indexOfATUContainingEndPx];
+      case REVERSED -> (indexOfATUContainingEndPx == 0) ? 0L : (lastContigATUPrefixSum[indexOfATUContainingEndPx - 1]);
+    };
 
     final ATUDescriptor oldLastATU;
 
@@ -290,7 +312,7 @@ public class ChunkedFile {
 
     // TODO: Where ATU direction matters, where contigs'?
 
-    if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
+    if (oldLastATU.getDirection() == ATUDirection.FORWARD) {
       newLastATU = new ATUDescriptor(
         oldLastATU.getStripeDescriptor(),
         oldLastATU.getStartIndexInStripeIncl(),
@@ -329,9 +351,9 @@ public class ChunkedFile {
       atus.addAll(firstContigRestATUs);
 
 
-      ContigTree.Node.traverseNode(es.segment(), node -> {
+      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
         final var nodeContigId = node.getContigDescriptor().getContigId();
-        if (nodeContigId != startContigId && nodeContigId != endContigId && node.getContigDescriptor().getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN) {
+        if (nodeContigId != startContigId && nodeContigId != endContigId) {
           final var contigDirection = node.getTrueDirection();
           final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
           if (contigDirection == ContigDirection.FORWARD) {
@@ -356,9 +378,19 @@ public class ChunkedFile {
 
     atus.add(newLastATU);
 
-    assert (
-      atus.stream().mapToLong(atu -> atu.getEndIndexInStripeExcl() - atu.getStartIndexInStripeIncl()).sum() == (endPx - startPx)
-    ) : "Wrong total length of ATUs before reduction??";
+    {
+
+
+      final var sourceATUTotalLength = debugContigNodes.stream().flatMap(node -> node.getContigDescriptor().getAtus().get(resolutionOrder).stream()).mapToInt(ATUDescriptor::getLength).sum();
+
+      assert (segmentSize == sourceATUTotalLength) : "Expose returned more ATUs than segment length??";
+
+      final var collectedATUsTotalLength = atus.stream().mapToLong(ATUDescriptor::getLength).sum();
+
+      assert (
+        collectedATUsTotalLength == (endPx - startPx)
+      ) : "Wrong total length of ATUs before reduction??";
+    }
 
     final var reducedATUs = ATUDescriptor.reduce(atus);
 
@@ -432,17 +464,27 @@ public class ChunkedFile {
         }
 
         final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, rowATU.getStartIndexInStripeIncl());
-        final long rowEndIndex = BinarySearch.leftBinarySearch(blockRows, rowATU.getEndIndexInStripeExcl());
+        final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, rowATU.getEndIndexInStripeExcl());
+        final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
 
 
         final var sparseMatrix = new SparseCOOMatrixLong(
-          Arrays.stream(blockRows).mapToInt(l -> (int) l).toArray(),
-          Arrays.stream(blockCols).mapToInt(l -> (int) l).toArray(),
-          blockValues,
+          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) (l - rowStartIndex)).toArray(),
+          Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
+          Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
           needsTranspose,
           (rowStripeId == colStripeId)
         );
-        denseMatrix = sparseMatrix.toDense(needsTranspose ? queryCols : queryRows, needsTranspose ? queryRows : queryCols);
+        denseMatrix = new long[queryRows][queryCols];
+        final var denseWithMoreColumns = sparseMatrix.toDense(needsTranspose ? (1 + maxCol) : queryRows, needsTranspose ? queryRows : (1 + maxCol));
+        final var deltaCol = colATU.getStartIndexInStripeIncl();
+        if (!needsTranspose) {
+          for (int i = 0; i < queryRows; i++) {
+            System.arraycopy(denseWithMoreColumns[i], deltaCol, denseMatrix[i], 0, queryCols);
+          }
+        } else {
+          System.arraycopy(denseWithMoreColumns, deltaCol, denseMatrix, 0, queryCols);
+        }
       } else {
         log.debug("Fetching dense block");
         // Fetch dense block

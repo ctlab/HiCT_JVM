@@ -8,6 +8,7 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import lombok.extern.slf4j.Slf4j;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
@@ -30,7 +31,10 @@ public class MainVerticle extends AbstractVerticle {
       final var a = new long[]{3, 3, 3, 3};
       final var ps = a.clone();
       Arrays.parallelPrefix(ps, Long::sum);
-      LongStream.range(0, 12).map(idx -> Arrays.binarySearch(ps, idx)).map(insPoint -> (insPoint >= 0) ? (1 + insPoint) : (-insPoint - 1)).forEachOrdered(pos -> log.debug("Position is " + pos));
+      LongStream.range(0, 12).map(idx -> BinarySearch.leftBinarySearch(ps, idx)).forEachOrdered(pos -> log.debug("leftBinarySearch Position is " + pos));
+      LongStream.range(0, 12).map(idx -> BinarySearch.rightBinarySearch(ps, idx)).forEachOrdered(pos -> log.debug("rightBinarySearch Position is " + pos));
+      LongStream.range(0, 12).map(idx -> BinarySearch.leftBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse leftBinarySearch Position is " + pos));
+      LongStream.range(0, 12).map(idx -> BinarySearch.rightBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse rightBinarySearch Position is " + pos));
     }
 
 

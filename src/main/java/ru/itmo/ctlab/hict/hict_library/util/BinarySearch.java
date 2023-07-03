@@ -7,10 +7,44 @@ import java.util.Arrays;
 
 public class BinarySearch {
   public static int leftBinarySearch(long @NotNull @NonNull [] a, long key) {
-    return primitiveLeftBinarySearch(a, key);
+    // TODO: Parallelize for large arrays?
+    return lowerBound(a, key);
   }
 
-  private static int primitiveLeftBinarySearch(long[] a, long key) {
+  public static int rightBinarySearch(long @NotNull @NonNull [] a, long key) {
+    // TODO: Parallelize for large arrays?
+    return upperBound(a, key);
+  }
+
+  private static int lowerBound(long[] a, long key) {
+    var l = 0;
+    var h = a.length;
+    while (l < h) {
+      int mid = l + (h - l) / 2;
+      if (a[mid] < key) {
+        l = mid + 1;
+      } else {
+        h = mid;
+      }
+    }
+    return l;
+  }
+
+  private static int upperBound(long[] a, long key) {
+    var l = 0;
+    var h = a.length;
+    while (l < h) {
+      int mid = l + (h - l) / 2;
+      if (a[mid] <= key) {
+        l = mid + 1;
+      } else {
+        h = mid;
+      }
+    }
+    return l;
+  }
+
+  private static int trivialLeftBinarySearch(long[] a, long key) {
     final var insertionPoint = Arrays.binarySearch(a, key);
     int index;
     if (insertionPoint >= 0) {
