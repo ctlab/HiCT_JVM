@@ -1,9 +1,7 @@
 package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
 import ch.systemsx.cisd.base.mdarray.MDLongArray;
-import ch.systemsx.cisd.hdf5.HDF5DataSet;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
-import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -23,12 +21,11 @@ import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
-import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.getBlockLengthDatasetPath;
-import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.getDenseBlockDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 
 @Getter
 @Slf4j
-public class ChunkedFile implements AutoCloseable {
+public class ChunkedFile {
 
   private final @NotNull Path hdfFilePath;
   //  private final long[] blockCount;
@@ -39,9 +36,6 @@ public class ChunkedFile implements AutoCloseable {
   private final int @NotNull [] stripeCount;
   private final @NotNull ContigTree contigTree;
   private final @NotNull ScaffoldTree scaffoldTree;
-  private final IHDF5Reader reader;
-
-  private final @NotNull HDF5DataSet @NotNull [] blockLengthDataset, blockOffsetDataset, blockRowsDataset, blockColsDataset, blockValuesDataset, denseBlockDataset;
 
 
   public ChunkedFile(final @NotNull Path hdfFilePath, final int denseBlockSize) {
@@ -50,47 +44,29 @@ public class ChunkedFile implements AutoCloseable {
 //    this.blockCount = 5;
     this.denseBlockSize = denseBlockSize;
 
-    reader = HDF5Factory.openForReading(this.hdfFilePath.toFile());
+    try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
 
-    this.resolutions = LongStream.concat(LongStream.of(0L), reader.object().getAllGroupMembers("/resolutions").parallelStream().filter(s -> {
-      try {
-        log.debug("Trying to parse " + s + " as a resolution");
-        Long.parseLong(s);
-        log.debug("Found new resolution: " + s);
-        return true;
-      } catch (final NumberFormatException nfe) {
-        log.debug("Not a resolution: " + s);
-        return false;
+      this.resolutions = LongStream.concat(LongStream.of(0L), reader.object().getAllGroupMembers("/resolutions").parallelStream().filter(s -> {
+        try {
+          log.debug("Trying to parse " + s + " as a resolution");
+          Long.parseLong(s);
+          log.debug("Found new resolution: " + s);
+          return true;
+        } catch (final NumberFormatException nfe) {
+          log.debug("Not a resolution: " + s);
+          return false;
+        }
+      }).mapToLong(Long::parseLong)).sorted().toArray();
+
+      log.debug("Resolutions count: " + resolutions.length);
+
+      this.stripeCount = new int[resolutions.length];
+
+      this.resolutionToIndex = new ConcurrentHashMap<>();
+      for (int i = 0; i < this.resolutions.length; i++) {
+        this.resolutionToIndex.put(this.resolutions[i], i);
       }
-    }).mapToLong(Long::parseLong)).sorted().toArray();
-
-    log.debug("Resolutions count: " + resolutions.length);
-
-    this.stripeCount = new int[resolutions.length];
-
-    this.resolutionToIndex = new ConcurrentHashMap<>();
-    for (int i = 0; i < this.resolutions.length; i++) {
-      this.resolutionToIndex.put(this.resolutions[i], i);
     }
-
-    blockLengthDataset = new HDF5DataSet[this.resolutions.length];
-    blockOffsetDataset = new HDF5DataSet[this.resolutions.length];
-    blockRowsDataset = new HDF5DataSet[this.resolutions.length];
-    blockColsDataset = new HDF5DataSet[this.resolutions.length];
-    blockValuesDataset = new HDF5DataSet[this.resolutions.length];
-    denseBlockDataset = new HDF5DataSet[this.resolutions.length];
-
-    for (int i = 1; i < this.resolutions.length; ++i) {
-      final var resolution = this.resolutions[i];
-      blockLengthDataset[i] = reader.object().openDataSet(getBlockLengthDatasetPath(resolution));
-      blockOffsetDataset[i] = reader.object().openDataSet(getBlockLengthDatasetPath(resolution));
-      blockRowsDataset[i] = reader.object().openDataSet(getBlockLengthDatasetPath(resolution));
-      blockColsDataset[i] = reader.object().openDataSet(getBlockLengthDatasetPath(resolution));
-      blockValuesDataset[i] = reader.object().openDataSet(getBlockLengthDatasetPath(resolution));
-      denseBlockDataset[i] = reader.object().openDataSet(getDenseBlockDatasetPath(resolution));
-    }
-
-
     this.contigTree = new ContigTree();
     Initializers.initializeContigTree(this);
     this.matrixSizeBins = new long[this.resolutions.length];
@@ -101,8 +77,6 @@ public class ChunkedFile implements AutoCloseable {
     }
     this.scaffoldTree = new ScaffoldTree(this.matrixSizeBins[0]);
     Initializers.initializeScaffoldTree(this);
-
-
   }
 
 
@@ -454,59 +428,59 @@ public class ChunkedFile implements AutoCloseable {
 
 //    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
 
-//    try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
-    final var blockIndexInDatasets = rowStripeId * this.stripeCount[resolutionOrder] + colStripeId;
-    final long blockLength;
-    final long blockOffset;
+    try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
+      final var blockIndexInDatasets = rowStripeId * this.stripeCount[resolutionOrder] + colStripeId;
+      final long blockLength;
+      final long blockOffset;
 
-    {
-      final long[] buf = reader.int64().readArrayBlockWithOffset(this.blockLengthDataset[resolutionOrder], 1, blockIndexInDatasets);
-      blockLength = buf[0];
-    }
-
-    final boolean isEmpty = (blockLength == 0L);
-    final long[][] denseMatrix = new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
-
-    if (isEmpty) {
-      log.debug("Zero ATU intersection");
-      return denseMatrix;
-    }
-
-    final var firstRow = rowATU.getStartIndexInStripeIncl();
-    final var firstCol = colATU.getStartIndexInStripeIncl();
-    final var lastRow = rowATU.getEndIndexInStripeExcl();
-    final var lastCol = colATU.getEndIndexInStripeExcl();
-
-    {
-      final long[] buf = reader.int64().readArrayBlockWithOffset(this.blockOffsetDataset[resolutionOrder], 1, blockIndexInDatasets);
-      blockOffset = buf[0];
-    }
-
-    if (blockOffset >= 0L) {
-      log.debug("Fetching sparse block");
-      // Fetch sparse block
-      final long[] blockRows;
-      final long[] blockCols;
-      final long[] blockValues;
-
-      {
-        blockRows = reader.int64().readArrayBlockWithOffset(this.blockRowsDataset[resolutionOrder], (int) blockLength, blockOffset);
-      }
-      {
-        blockCols = reader.int64().readArrayBlockWithOffset(this.blockColsDataset[resolutionOrder], (int) blockLength, blockOffset);
-      }
-      {
-        blockValues = reader.int64().readArrayBlockWithOffset(this.blockValuesDataset[resolutionOrder], (int) blockLength, blockOffset);
+      try (final var blockLengthDataset = reader.object().openDataSet(getBlockLengthDatasetPath(resolution))) {
+        final long[] buf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
+        blockLength = buf[0];
       }
 
-      final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
-      final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, Integer.max(rowATU.getEndIndexInStripeExcl(), colATU.getEndIndexInStripeExcl()));
-      final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
+      final boolean isEmpty = (blockLength == 0L);
+      final long[][] denseMatrix = new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
+
+      if (isEmpty) {
+        log.debug("Zero ATU intersection");
+        return denseMatrix;
+      }
+
+      final var firstRow = rowATU.getStartIndexInStripeIncl();
+      final var firstCol = colATU.getStartIndexInStripeIncl();
+      final var lastRow = rowATU.getEndIndexInStripeExcl();
+      final var lastCol = colATU.getEndIndexInStripeExcl();
+
+      try (final var blockOffsetDataset = reader.object().openDataSet(getBlockOffsetDatasetPath(resolution))) {
+        final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
+        blockOffset = buf[0];
+      }
+
+      if (blockOffset >= 0L) {
+        log.debug("Fetching sparse block");
+        // Fetch sparse block
+        final long[] blockRows;
+        final long[] blockCols;
+        final long[] blockValues;
+
+        try (final var blockRowsDataset = reader.object().openDataSet(PathGenerators.getBlockRowsDatasetPath(resolution))) {
+          blockRows = reader.int64().readArrayBlockWithOffset(blockRowsDataset, (int) blockLength, blockOffset);
+        }
+        try (final var blockColsDataset = reader.object().openDataSet(PathGenerators.getBlockColsDatasetPath(resolution))) {
+          blockCols = reader.int64().readArrayBlockWithOffset(blockColsDataset, (int) blockLength, blockOffset);
+        }
+        try (final var blockValuesDataset = reader.object().openDataSet(getBlockValuesDatasetPath(resolution))) {
+          blockValues = reader.int64().readArrayBlockWithOffset(blockValuesDataset, (int) blockLength, blockOffset);
+        }
+
+        final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
+        final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, Integer.max(rowATU.getEndIndexInStripeExcl(), colATU.getEndIndexInStripeExcl()));
+        final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
 
 
-      final var sparseMatrix = new SparseCOOMatrixLong(
-        Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-        Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
+        final var sparseMatrix = new SparseCOOMatrixLong(
+          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
+          Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
           Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
           needsTranspose,
           (rowStripeId == colStripeId)
@@ -523,22 +497,22 @@ public class ChunkedFile implements AutoCloseable {
           }
         }
       } else {
-      log.debug("Fetching dense block");
-      // Fetch dense block
-      final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
-      final MDLongArray block;
-      {
-        block = reader.int64().readSlicedMDArrayBlockWithOffset(this.denseBlockDataset[resolutionOrder], new int[]{this.denseBlockSize, this.denseBlockSize}, new long[]{0L, 0L}, idx);
-      }
-      final long[][] denseBlock;
-      if (rowStripeId == colStripeId) {
-        denseBlock = block.toMatrix();
-        for (int i = 0; i < denseBlock.length; ++i) {
-          for (int j = 1 + i; j < denseBlock.length; ++j) {
-            denseBlock[j][i] = denseBlock[i][j];
-          }
+        log.debug("Fetching dense block");
+        // Fetch dense block
+        final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
+        final MDLongArray block;
+        try (final var denseBlockDataset = reader.object().openDataSet(getDenseBlockDatasetPath(resolution))) {
+          block = reader.int64().readSlicedMDArrayBlockWithOffset(denseBlockDataset, new int[]{this.denseBlockSize, this.denseBlockSize}, new long[]{0L, 0L}, idx);
         }
-      } else {
+        final long[][] denseBlock;
+        if (rowStripeId == colStripeId) {
+          denseBlock = block.toMatrix();
+          for (int i = 0; i < denseBlock.length; ++i) {
+            for (int j = 1 + i; j < denseBlock.length; ++j) {
+              denseBlock[j][i] = denseBlock[i][j];
+            }
+          }
+        } else {
           denseBlock = block.toMatrix();
         }
         if (needsTranspose) {
@@ -555,7 +529,7 @@ public class ChunkedFile implements AutoCloseable {
       }
 
       return denseMatrix;
-//    }
+    }
   }
 
   public long @NotNull [] getResolutions() {
@@ -568,19 +542,6 @@ public class ChunkedFile implements AutoCloseable {
 
   public @NotNull AssemblyInfo getAssemblyInfo() {
     return new AssemblyInfo(this.contigTree.getContigList(), this.scaffoldTree.getScaffoldList());
-  }
-
-  @Override
-  public void close() {
-    for (int i = 1; i < this.resolutions.length; ++i) {
-      this.blockLengthDataset[i].close();
-      this.blockOffsetDataset[i].close();
-      this.blockRowsDataset[i].close();
-      this.blockColsDataset[i].close();
-      this.blockValuesDataset[i].close();
-      this.denseBlockDataset[i].close();
-    }
-    this.reader.close();
   }
 
   public record MatrixWithWeights(long @NotNull [][] matrix, double @NotNull [] rowWeights,

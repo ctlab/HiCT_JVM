@@ -45,7 +45,6 @@ public class FileOpHandlersHolder extends HandlersHolder {
         return;
       }
 
-
       final var chunkedFile = new ChunkedFile(
         Path.of(dataDirectory.toString(), filename),
         (int) vertx.sharedData().getLocalMap("hict_server").getOrDefault("tileSize", 256)
@@ -54,12 +53,6 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
       log.info("Putting chunkedFile into the local map");
       final var map = vertx.sharedData().getLocalMap("hict_server");
-      map.computeIfPresent("chunkedFile", (k, f) -> {
-        if (f instanceof ShareableWrappers.ChunkedFileWrapper) {
-          ((ShareableWrappers.ChunkedFileWrapper) f).getChunkedFile().close();
-        }
-        return null;
-      });
       map.put("chunkedFile", chunkedFileWrapper);
 
       ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
