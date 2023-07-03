@@ -266,7 +266,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
     public static @NonNull ExposedSegment exposeNodeByLength(final Node node, final @NotNull ResolutionDescriptor resolutionDescriptor, final long startIncl, final long endExcl, final @NonNull QueryLengthUnit units) {
       if (node != null) {
-        final var sp1 = splitNodeByLength(resolutionDescriptor, node, endExcl - 1, true, units);
+        final var sp1 = splitNodeByLength(resolutionDescriptor, node, endExcl, true, units);
         final var sp2 = splitNodeByLength(resolutionDescriptor, sp1.left, startIncl, false, units);
         return new ExposedSegment(sp2.left, sp2.right, sp1.right);
       } else {
@@ -314,12 +314,12 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
     public static @Nullable Node rightmostVisibleNode(final Node node, final ResolutionDescriptor resolutionDescriptor) {
       if (node != null) {
-        final @Nullable var rightSonVisibleNode = leftmostVisibleNode(node.needsChangingDirection ? node.left : node.right, resolutionDescriptor);
+        final @Nullable var rightSonVisibleNode = rightmostVisibleNode(node.needsChangingDirection ? node.left : node.right, resolutionDescriptor);
         if (rightSonVisibleNode == null) {
           if (ContigHideType.SHOWN.equals(node.getContigDescriptor().getPresenceAtResolution().get(resolutionDescriptor.getResolutionOrderInArray()))) {
             return node;
           } else {
-            return leftmostVisibleNode(node.needsChangingDirection ? node.right : node.left, resolutionDescriptor);
+            return rightmostVisibleNode(node.needsChangingDirection ? node.right : node.left, resolutionDescriptor);
           }
         } else {
           return rightSonVisibleNode;

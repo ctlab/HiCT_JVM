@@ -90,7 +90,7 @@ public class ChunkedFile {
     final var endRow = clamp(endRowExcl, 0L, totalAssemblyLength);
     final var startCol = clamp(startColIncl, 0L, totalAssemblyLength);
     final var endCol = clamp(endColExcl, 0L, totalAssemblyLength);
-    final var symmetricQuery = (startRow == startCol) && (endRow == endCol);
+    final var symmetricQuery = false; //(startRow == startCol) && (endRow == endCol);
 
 
     final var rowATUs = getATUsForRange(resolutionDescriptor, startRow, endRow, excludeHiddenContigs);
@@ -130,9 +130,6 @@ public class ChunkedFile {
               for (int k = 0; k < rowCount; k++) {
                 for (int l = 0; l < colCount; l++) {
                   result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
-//                  if (dense[k][l] != 0L) {
-//                    log.debug("Non-zero element!");
-//                  }
                 }
               }
             });
@@ -149,12 +146,20 @@ public class ChunkedFile {
             final int finalDeltaRow = deltaRow;
             final var colCount = colATU.getLength();
 
-            pool.submit(() -> {
+            if (finalDeltaRow > finalDeltaCol) {
+              log.debug("AAA");
+            }
+
+//            pool.submit(() -> {
+            try {
               final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
               for (int k = 0; k < rowCount; k++) {
                 System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
               }
-            });
+            } catch (final Throwable ex) {
+              throw new RuntimeException("Dense matrix fetch failed");
+            }
+//            });
 
             deltaCol += colCount;
           }
@@ -211,25 +216,21 @@ public class ChunkedFile {
     }
 
     final List<ContigTree.Node> debugContigNodes = new ArrayList<>();
-    ContigTree.Node.traverseNode(es.segment(), node -> {
-      if (node.getContigDescriptor().getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN) {
-        debugContigNodes.add(node);
-      }
+    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
+      debugContigNodes.add(node);
     });
 
     final List<ATUDescriptor> debugAllATUs = new ArrayList<>();
 
-    ContigTree.Node.traverseNode(es.segment(), node -> {
-      if (node.getContigDescriptor().getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN) {
-        final var contigDirection = node.getTrueDirection();
-        final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
-        if (contigDirection == ContigDirection.FORWARD) {
-          debugAllATUs.addAll(contigATUs);
-        } else {
-          final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
-          Collections.reverse(reversedATUs);
-          debugAllATUs.addAll(reversedATUs);
-        }
+    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
+      final var contigDirection = node.getTrueDirection();
+      final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
+      if (contigDirection == ContigDirection.FORWARD) {
+        debugAllATUs.addAll(contigATUs);
+      } else {
+        final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
+        Collections.reverse(reversedATUs);
+        debugAllATUs.addAll(reversedATUs);
       }
     });
 
@@ -283,6 +284,8 @@ public class ChunkedFile {
         lengthOfATUsBeforeOneContainingStart), oldFirstATU.getDirection());
     }
 
+    assert (newFirstATU.getLength() > 0) : "Incorrect new first ATU??";
+
     final int indexOfATUContainingEndPx;
 
     if (lastContigNode.getTrueDirection() == ContigDirection.FORWARD) {
@@ -325,6 +328,8 @@ public class ChunkedFile {
         oldLastATU.getEndIndexInStripeExcl(),
         oldLastATU.getDirection());
     }
+
+    assert (newLastATU.getLength() > 0) : "Incorrect new last ATU??";
 
     final var atus = new ArrayList<ATUDescriptor>();
 
@@ -408,19 +413,19 @@ public class ChunkedFile {
   // TODO: Implement
   public long @NotNull @NonNull [][] getATUIntersection(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ATUDescriptor rowATU, final @NotNull @NonNull ATUDescriptor colATU, final boolean needsTranspose) {
     if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
-      return getATUIntersection(resolutionDescriptor, rowATU, colATU, !needsTranspose);
+      return getATUIntersection(resolutionDescriptor, colATU, rowATU, !needsTranspose);
     }
 
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var resolution = this.resolutions[resolutionOrder];
-    final var rowStripe = rowATU.getStripeDescriptor();
-    final var colStripe = colATU.getStripeDescriptor();
+    final var rowStripe = !needsTranspose ? rowATU.getStripeDescriptor() : colATU.getStripeDescriptor();
+    final var colStripe = !needsTranspose ? colATU.getStripeDescriptor() : rowATU.getStripeDescriptor();
     final var rowStripeId = rowStripe.stripeId();
     final var colStripeId = colStripe.stripeId();
     final var queryRows = rowATU.getLength();
     final var queryCols = colATU.getLength();
 
-    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
+//    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
 
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
       final var blockIndexInDatasets = rowStripeId * this.stripeCount[resolutionOrder] + colStripeId;
@@ -433,18 +438,22 @@ public class ChunkedFile {
       }
 
       final boolean isEmpty = (blockLength == 0L);
+      final long[][] denseMatrix = new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
 
       if (isEmpty) {
         log.debug("Zero ATU intersection");
-        return new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
+        return denseMatrix;
       }
+
+      final var firstRow = rowATU.getStartIndexInStripeIncl();
+      final var firstCol = colATU.getStartIndexInStripeIncl();
+      final var lastRow = rowATU.getEndIndexInStripeExcl();
+      final var lastCol = colATU.getEndIndexInStripeExcl();
 
       try (final var blockOffsetDataset = reader.object().openDataSet(getBlockOffsetDatasetPath(resolution))) {
         final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
         blockOffset = buf[0];
       }
-
-      final long[][] denseMatrix;
 
       if (blockOffset >= 0L) {
         log.debug("Fetching sparse block");
@@ -469,48 +478,51 @@ public class ChunkedFile {
 
 
         final var sparseMatrix = new SparseCOOMatrixLong(
-          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) (l - rowStartIndex)).toArray(),
+          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
           Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
           Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
           needsTranspose,
           (rowStripeId == colStripeId)
         );
-        denseMatrix = new long[queryRows][queryCols];
-        final var denseWithMoreColumns = sparseMatrix.toDense(needsTranspose ? (1 + maxCol) : queryRows, needsTranspose ? queryRows : (1 + maxCol));
-        final var deltaCol = colATU.getStartIndexInStripeIncl();
+        final var denseSquarePartial = sparseMatrix.toDense(this.denseBlockSize, this.denseBlockSize);
+
         if (!needsTranspose) {
-          for (int i = 0; i < queryRows; i++) {
-            System.arraycopy(denseWithMoreColumns[i], deltaCol, denseMatrix[i], 0, queryCols);
+          for (int i = firstRow; i < lastRow; ++i) {
+            System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
           }
         } else {
-          System.arraycopy(denseWithMoreColumns, deltaCol, denseMatrix, 0, queryCols);
+          for (int i = firstCol; i < lastCol; ++i) {
+            System.arraycopy(denseSquarePartial[i], firstRow, denseMatrix[i - firstCol], 0, queryRows);
+          }
         }
       } else {
-        log.debug("Fetching dense block");
+//        log.debug("Fetching dense block");
         // Fetch dense block
         final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
         final MDLongArray block;
         try (final var denseBlockDataset = reader.object().openDataSet(getDenseBlockDatasetPath(resolution))) {
           block = reader.int64().readSlicedMDArrayBlockWithOffset(denseBlockDataset, new int[]{this.denseBlockSize, this.denseBlockSize}, new long[]{0L, 0L}, idx);
         }
+        final long[][] denseBlock;
         if (rowStripeId == colStripeId) {
-          denseMatrix = block.toMatrix();
-          for (int i = 0; i < denseMatrix.length; ++i) {
-            for (int j = 1 + i; j < denseMatrix.length; ++j) {
-              denseMatrix[j][i] = denseMatrix[i][j];
+          denseBlock = block.toMatrix();
+          for (int i = 0; i < denseBlock.length; ++i) {
+            for (int j = 1 + i; j < denseBlock.length; ++j) {
+              denseBlock[j][i] = denseBlock[i][j];
             }
           }
         } else {
-          if (needsTranspose) {
-            final var dT = block.toMatrix();
-            denseMatrix = new long[dT[0].length][dT.length];
-            for (int i = 0; i < dT.length; ++i) {
-              for (int j = 0; j < dT[0].length; ++j) {
-                denseMatrix[j][i] = dT[i][j];
-              }
+          denseBlock = block.toMatrix();
+        }
+        if (needsTranspose) {
+          for (int i = firstRow; i < lastRow; ++i) {
+            for (int j = firstCol; j < lastCol; ++j) {
+              denseMatrix[j - firstCol][i - firstRow] = denseBlock[i][j];
             }
-          } else {
-            denseMatrix = block.toMatrix();
+          }
+        } else {
+          for (int i = firstRow; i < lastRow; ++i) {
+            System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
           }
         }
       }
