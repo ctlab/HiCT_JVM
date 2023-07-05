@@ -1,6 +1,7 @@
-package ru.itmo.ctlab.hict.hict_server.dto;
+package ru.itmo.ctlab.hict.hict_server.dto.response.fileop;
 
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 
 import java.util.List;
 

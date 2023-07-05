@@ -13,21 +13,17 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import lombok.extern.slf4j.Slf4j;
-import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
-import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.LongStream;
 
 @Slf4j
 public class MainVerticle extends AbstractVerticle {
@@ -81,7 +77,7 @@ public class MainVerticle extends AbstractVerticle {
         log.info("Finished configuration write to maps");
       }
 
-      log.info("Using " + dataDirectory.toString() + " as data directory");
+      log.info("Using " + dataDirectory + " as data directory");
       log.info("Using tile size " + tileSize);
       log.info("Server will start on port " + port);
       try {
@@ -132,6 +128,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new FSHandlersHolder(vertx));
     handlersHolders.add(new TileHandlersHolder(vertx));
     handlersHolders.add(new FileOpHandlersHolder(vertx));
+    handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
 
 
     log.info("Configuring router");

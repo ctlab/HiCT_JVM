@@ -1,4 +1,4 @@
-package ru.itmo.ctlab.hict.hict_server.dto;
+package ru.itmo.ctlab.hict.hict_server.dto.response.assembly;
 
 
 import org.jetbrains.annotations.NotNull;

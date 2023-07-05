@@ -10,8 +10,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
-import ru.itmo.ctlab.hict.hict_server.dto.AssemblyInfoDTO;
-import ru.itmo.ctlab.hict.hict_server.dto.OpenFileResponseDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.OpenFileResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.nio.file.Path;

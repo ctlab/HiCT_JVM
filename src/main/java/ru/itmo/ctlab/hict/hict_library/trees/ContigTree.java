@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_library.trees;
 
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
@@ -18,7 +19,9 @@ import java.util.stream.IntStream;
 
 public class ContigTree implements Iterable<ContigTree.Node> {
   private static final Random rnd = new Random();
+  @Getter
   private final ReadWriteLock rootLock = new ReentrantReadWriteLock();
+  @Getter
   private Node root;
 
   @Override
@@ -56,6 +59,26 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       );
     } finally {
       this.rootLock.readLock().unlock();
+    }
+  }
+
+  public void commitExposedSegment(final @NotNull @NonNull Node.ExposedSegment exposedSegment) {
+    final var le = Node.mergeNodes(new Node.SplitResult(exposedSegment.less(), exposedSegment.segment()));
+    final var sg = Node.mergeNodes(new Node.SplitResult(le, exposedSegment.greater()));
+    try {
+      this.rootLock.writeLock().lock();
+      this.root = sg;
+    } finally {
+      this.rootLock.writeLock().unlock();
+    }
+  }
+
+  public void commitRoot(final @NotNull @NonNull Node newRoot) {
+    try {
+      this.rootLock.writeLock().lock();
+      this.root = newRoot;
+    } finally {
+      this.rootLock.writeLock().unlock();
     }
   }
 
@@ -469,7 +492,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       };
     }
 
-    private static class NodeCloneBuilder {
+    public static class NodeCloneBuilder {
       private ContigDescriptor contigDescriptor;
       private long yPriority;
       private Node left;
