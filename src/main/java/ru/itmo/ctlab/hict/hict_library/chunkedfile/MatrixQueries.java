@@ -1,7 +1,6 @@
 package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
 import ch.systemsx.cisd.base.mdarray.MDLongArray;
-import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,8 +22,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
-
-import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -58,7 +55,7 @@ public class MatrixQueries {
     final double[] rowWeights = rowATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
     final double[] colWeights = colATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
 
-    try (final var pool = Executors.newWorkStealingPool(64)) {
+    try (final var pool = Executors.newWorkStealingPool()) {
       if (symmetricQuery) {
         final var atuCount = rowATUs.size();
         log.debug("Symmetric query with " + atuCount + " ATUs");
@@ -370,12 +367,15 @@ public class MatrixQueries {
 
 //    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
 
-    try (final var reader = HDF5Factory.openForReading(this.chunkedFile.getHdfFilePath().toFile())) {
+
+    try (final var dsBundle = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder).borrowObject()) {
+      final var reader = dsBundle.getReader();
       final var blockIndexInDatasets = rowStripeId * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
       final long blockLength;
       final long blockOffset;
 
-      try (final var blockLengthDataset = reader.object().openDataSet(getBlockLengthDatasetPath(resolution))) {
+      {
+        final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
         final long[] buf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
         blockLength = buf[0];
       }
@@ -393,7 +393,8 @@ public class MatrixQueries {
       final var lastRow = rowATU.getEndIndexInStripeExcl();
       final var lastCol = colATU.getEndIndexInStripeExcl();
 
-      try (final var blockOffsetDataset = reader.object().openDataSet(getBlockOffsetDatasetPath(resolution))) {
+      {
+        final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
         final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
         blockOffset = buf[0];
       }
@@ -405,14 +406,14 @@ public class MatrixQueries {
         final long[] blockCols;
         final long[] blockValues;
 
-        try (final var blockRowsDataset = reader.object().openDataSet(PathGenerators.getBlockRowsDatasetPath(resolution))) {
-          blockRows = reader.int64().readArrayBlockWithOffset(blockRowsDataset, (int) blockLength, blockOffset);
+        {
+          blockRows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset);
         }
-        try (final var blockColsDataset = reader.object().openDataSet(PathGenerators.getBlockColsDatasetPath(resolution))) {
-          blockCols = reader.int64().readArrayBlockWithOffset(blockColsDataset, (int) blockLength, blockOffset);
+        {
+          blockCols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset);
         }
-        try (final var blockValuesDataset = reader.object().openDataSet(getBlockValuesDatasetPath(resolution))) {
-          blockValues = reader.int64().readArrayBlockWithOffset(blockValuesDataset, (int) blockLength, blockOffset);
+        {
+          blockValues = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset);
         }
 
         final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
@@ -446,8 +447,8 @@ public class MatrixQueries {
         // Fetch dense block
         final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
         final MDLongArray block;
-        try (final var denseBlockDataset = reader.object().openDataSet(getDenseBlockDatasetPath(resolution))) {
-          block = reader.int64().readSlicedMDArrayBlockWithOffset(denseBlockDataset, new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()}, new long[]{0L, 0L}, idx);
+        {
+          block = reader.int64().readSlicedMDArrayBlockWithOffset(dsBundle.getDenseBlockDataSet(), new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()}, new long[]{0L, 0L}, idx);
         }
         final long[][] denseBlock;
         if (rowStripeId == colStripeId) {
@@ -495,6 +496,8 @@ public class MatrixQueries {
       }
 
       return denseMatrix;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
   }
 

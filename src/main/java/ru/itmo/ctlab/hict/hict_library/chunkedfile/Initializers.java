@@ -10,6 +10,7 @@ import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -91,14 +92,19 @@ public class Initializers {
 //          });
 //        }
 //      }
-      for (int i = 1; i < resolutions.length; ++i) {
-        final var stripes = readStripeDescriptors(resolutions[i], reader);
-        resolutionOrderToStripes.set(i, stripes);
-        chunkedFile.getStripeCount()[i] = stripes.size();
-        final var atus = readATL(resolutions[i], reader, stripes);
-        resolutionOrderToBasisATUs.set(i, atus);
-        final var dataBundles = readContigDataBundles(resolutions[i], reader, atus);
-        contigDescriptorDataBundles.set(i, dataBundles);
+      try (final var executorService = Executors.newWorkStealingPool()) {
+        for (int i = 1; i < resolutions.length; ++i) {
+          int finalI = i;
+          executorService.submit(() -> {
+            final var stripes = readStripeDescriptors(resolutions[finalI], reader);
+            resolutionOrderToStripes.set(finalI, stripes);
+            chunkedFile.getStripeCount()[finalI] = stripes.size();
+            final var atus = readATL(resolutions[finalI], reader, stripes);
+            resolutionOrderToBasisATUs.set(finalI, atus);
+            final var dataBundles = readContigDataBundles(resolutions[finalI], reader, atus);
+            contigDescriptorDataBundles.set(finalI, dataBundles);
+          });
+        }
       }
 
       contigCount = contigDescriptorDataBundles.get(1).size();

@@ -3,6 +3,8 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.pool2.ObjectPool;
+import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
@@ -15,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.LongStream;
 
 @Getter
@@ -32,6 +35,7 @@ public class ChunkedFile {
   private final @NotNull ScaffoldTree scaffoldTree;
   private final @NotNull MatrixQueries matrixQueries;
   private final @NotNull ScaffoldingOperations scaffoldingOperations;
+  private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
 
 
   public ChunkedFile(final @NotNull Path hdfFilePath, final int denseBlockSize) {
@@ -74,6 +78,11 @@ public class ChunkedFile {
 
     this.matrixQueries = new MatrixQueries(this);
     this.scaffoldingOperations = new ScaffoldingOperations(this);
+    this.datasetBundlePools = new CopyOnWriteArrayList<org.apache.commons.pool2.ObjectPool<HDF5FileDatasetsBundle>>();
+    this.datasetBundlePools.add(null);
+    for (int i = 1; i < this.resolutions.length; ++i) {
+      this.datasetBundlePools.add(new GenericObjectPool<HDF5FileDatasetsBundle>(new HDF5FileDatasetsBundleFactory(ResolutionDescriptor.fromResolutionOrder(i), this)));
+    }
   }
 
   public @NotNull MatrixQueries matrixQueries() {
