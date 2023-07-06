@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
@@ -16,10 +17,7 @@ import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_library.util.CommonUtils;
 import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -366,9 +364,11 @@ public class MatrixQueries {
     final var queryCols = colATU.getLength();
 
 //    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
-
-
-    try (final var dsBundle = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder).borrowObject()) {
+    final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
+    @Nullable HDF5FileDatasetsBundle dsBundle = null;
+    try {
+      dsBundle = pool.borrowObject();
+      Objects.requireNonNull(dsBundle);
       final var reader = dsBundle.getReader();
       final var blockIndexInDatasets = rowStripeId * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
       final long blockLength;
@@ -498,6 +498,14 @@ public class MatrixQueries {
       return denseMatrix;
     } catch (Exception e) {
       throw new RuntimeException(e);
+    } finally {
+      if (null != dsBundle) {
+        try {
+          pool.returnObject(dsBundle);
+        } catch (final Exception ignored) {
+          // ignored
+        }
+      }
     }
   }
 

@@ -54,7 +54,7 @@ public class MainVerticle extends AbstractVerticle {
     log.info("Logging initialized");
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
-      .setConfig(new JsonObject().put("keys", new JsonArray().add("DATA_DIR").add("TILE_SIZE").add("VXPORT")));
+      .setConfig(new JsonObject().put("keys", new JsonArray().add("DATA_DIR").add("TILE_SIZE").add("VXPORT").add("MIN_DS_POOL").add("MAX_DS_POOL")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
     final ConfigRetriever myConfigRetriver = ConfigRetriever.create(vertx, myOptions);
     myConfigRetriver.getConfig(asyncResults -> System.out.println(asyncResults.result().encodePrettily()));
@@ -64,6 +64,8 @@ public class MainVerticle extends AbstractVerticle {
       final var dataDirectoryString = event.result().getString("DATA_DIR", ".");
       final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
       final var tileSize = event.result().getInteger("TILE_SIZE", 256);
+      final var minDSPool = event.result().getInteger("MIN_DS_POOL", 4);
+      final var maxDSPool = event.result().getInteger("MAX_DS_POOL", 16);
       final var port = event.result().getInteger("VXPORT", 5000);
 
       try {
@@ -72,6 +74,8 @@ public class MainVerticle extends AbstractVerticle {
         map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataDirectory));
         map.put("tileSize", tileSize);
         map.put("VXPORT", port);
+        map.put("MIN_DS_POOL", minDSPool);
+        map.put("MAX_DS_POOL", maxDSPool);
         log.info("Added to local map");
       } finally {
         log.info("Finished configuration write to maps");
@@ -107,8 +111,11 @@ public class MainVerticle extends AbstractVerticle {
       .allowedHeader("Access-Control-Allow-Headers")
       .allowedHeader("Content-Type"));
     router.route().handler(BodyHandler.create());
-
-
+//    router.route().handler(ErrorHandler.create(Vertx.vertx()));
+    vertx.exceptionHandler(event -> {
+      log.error("An exception was caught at the top level", event);
+      log.debug(event.getMessage());
+    });
     log.info("Awaiting configuration to be written into the local map");
     barrier.await();
 

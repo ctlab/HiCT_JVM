@@ -45,14 +45,18 @@ public class FileOpHandlersHolder extends HandlersHolder {
         return;
       }
 
+      final var map = vertx.sharedData().getLocalMap("hict_server");
+
       final var chunkedFile = new ChunkedFile(
-        Path.of(dataDirectory.toString(), filename),
-        (int) vertx.sharedData().getLocalMap("hict_server").getOrDefault("tileSize", 256)
+        new ChunkedFile.ChunkedFileOptions(
+          Path.of(dataDirectory.toString(), filename),
+          (int) map.getOrDefault("MIN_DS_POOL", 4),
+          (int) map.getOrDefault("MAX_DS_POOL", 16)
+        )
       );
       final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
 
       log.info("Putting chunkedFile into the local map");
-      final var map = vertx.sharedData().getLocalMap("hict_server");
       map.put("chunkedFile", chunkedFileWrapper);
 
       ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
