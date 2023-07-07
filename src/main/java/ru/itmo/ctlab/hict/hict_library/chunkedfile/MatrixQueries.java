@@ -429,28 +429,28 @@ public class MatrixQueries {
       final var lastRow = rowATU.getEndIndexInStripeExcl();
       final var lastCol = colATU.getEndIndexInStripeExcl();
 
+      final var flipRows = ATUDirection.REVERSED.equals(rowATU.getDirection());
+      final var flipCols = ATUDirection.REVERSED.equals(colATU.getDirection());
+
       {
         final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
         final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
         blockOffset = buf[0];
       }
 
-      if (blockOffset >= 0L) {
+      final var savedAsSparse = (blockOffset >= 0L);
+
+      if (savedAsSparse) {
         log.debug("Fetching sparse block");
-        // Fetch sparse block
         final long[] blockRows;
         final long[] blockCols;
         final long[] blockValues;
 
-        {
-          blockRows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset);
-        }
-        {
-          blockCols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset);
-        }
-        {
-          blockValues = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset);
-        }
+
+        blockRows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset);
+        blockCols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset);
+        blockValues = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset);
+
 
         final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
         final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, Integer.max(rowATU.getEndIndexInStripeExcl(), colATU.getEndIndexInStripeExcl()));
@@ -463,24 +463,45 @@ public class MatrixQueries {
           Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
           needsTranspose,
           (rowStripeId == colStripeId),
-          ATUDirection.REVERSED.equals(rowATU.getDirection()),
-          ATUDirection.REVERSED.equals(colATU.getDirection())
+          flipRows,
+          flipCols
         );
         final var denseSquarePartial = sparseMatrix.toDense(this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize());
 
         // TODO: process flips
         if (!needsTranspose) {
-          for (int i = firstRow; i < lastRow; ++i) {
-            System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
+          if (flipCols) {
+            for (int i = firstRow; i < lastRow; ++i) {
+              System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
+              ArrayUtils.reverse(denseMatrix[i - firstRow]);
+            }
+          } else {
+            for (int i = firstRow; i < lastRow; ++i) {
+              System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
+            }
+          }
+
+          if (flipRows) {
+            ArrayUtils.reverse(denseMatrix);
           }
         } else {
-          for (int i = firstCol; i < lastCol; ++i) {
-            System.arraycopy(denseSquarePartial[i], firstRow, denseMatrix[i - firstCol], 0, queryRows);
+          if (flipCols) {
+            for (int i = firstCol; i < lastCol; ++i) {
+              System.arraycopy(denseSquarePartial[i], firstRow, denseMatrix[i - firstCol], 0, queryRows);
+              ArrayUtils.reverse(denseMatrix[i - firstCol]);
+            }
+          } else {
+            for (int i = firstCol; i < lastCol; ++i) {
+              System.arraycopy(denseSquarePartial[i], firstRow, denseMatrix[i - firstCol], 0, queryRows);
+            }
+          }
+
+          if (flipRows) {
+            ArrayUtils.reverse(denseMatrix);
           }
         }
       } else {
         log.debug("Fetching dense block");
-        // Fetch dense block
         final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
         final MDLongArray block;
         {
@@ -504,29 +525,19 @@ public class MatrixQueries {
             }
           }
         } else {
-          if (ATUDirection.REVERSED.equals(rowATU.getDirection())) {
-            final var dr = lastRow - 1;
-            if (ATUDirection.REVERSED.equals(colATU.getDirection())) {
-              for (int i = firstRow; i < lastRow; ++i) {
-                System.arraycopy(denseBlock[i], firstCol, denseMatrix[dr - i], 0, queryCols);
-                ArrayUtils.reverse(denseMatrix[dr - i]);
-              }
-            } else {
-              for (int i = firstRow; i < lastRow; ++i) {
-                System.arraycopy(denseBlock[i], firstCol, denseMatrix[dr - i], 0, queryCols);
-              }
+          if (flipCols) {
+            for (int i = firstRow; i < lastRow; ++i) {
+              System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
+              ArrayUtils.reverse(denseMatrix[i - firstRow]);
             }
           } else {
-            if (ATUDirection.REVERSED.equals(colATU.getDirection())) {
-              for (int i = firstRow; i < lastRow; ++i) {
-                System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-                ArrayUtils.reverse(denseMatrix[i - firstRow]);
-              }
-            } else {
-              for (int i = firstRow; i < lastRow; ++i) {
-                System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-              }
+            for (int i = firstRow; i < lastRow; ++i) {
+              System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
             }
+          }
+
+          if (flipRows) {
+            ArrayUtils.reverse(denseMatrix);
           }
         }
       }
