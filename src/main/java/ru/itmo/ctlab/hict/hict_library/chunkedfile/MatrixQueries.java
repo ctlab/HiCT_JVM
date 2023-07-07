@@ -18,6 +18,7 @@ import ru.itmo.ctlab.hict.hict_library.util.CommonUtils;
 import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -45,7 +46,9 @@ public class MatrixQueries {
       colATUs = getATUsForRange(resolutionDescriptor, startCol, endCol, excludeHiddenContigs);
     }
 
-    final long[][] result = new long[(int) (endRowExcl - startRowIncl)][(int) (endColExcl - startColIncl)];
+    final var queryRows = (int) (endRowExcl - startRowIncl);
+    final var queryCols = (int) (endColExcl - startColIncl);
+    final long[][] result = new long[queryRows][queryCols];
 
     int deltaRow = (int) (startRow - startRowIncl);
     int deltaCol = (int) (startCol - startColIncl);
@@ -283,12 +286,13 @@ public class MatrixQueries {
 
     final var atus = new ArrayList<ATUDescriptor>();
 
-    atus.add(newFirstATU);
-
     if (onlyOneContig) {
       if (sameATUIsFirstAndLast) {
-        return atus;
+        final var result = new CopyOnWriteArrayList<ATUDescriptor>();
+        result.add(newLastATU);
+        return result;
       } else {
+        atus.add(newFirstATU);
         final var firstContigIntermediateATUs = firstContigATUs.subList(
           1 + Integer.min(indexOfATUContainingStartPx, indexOfATUContainingEndPx),
           Integer.max(indexOfATUContainingStartPx, indexOfATUContainingEndPx)
@@ -309,6 +313,7 @@ public class MatrixQueries {
         atus.addAll(firstContigRestATUs);
       }
     } else {
+      atus.add(newFirstATU);
       final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
         case FORWARD -> firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
         case REVERSED -> {
@@ -377,7 +382,7 @@ public class MatrixQueries {
       reducedATUs.stream().mapToLong(atu -> atu.getEndIndexInStripeExcl() - atu.getStartIndexInStripeIncl()).sum() == (endPx - startPx)
     ) : "Wrong total length of ATUs after reduction??";
 
-    return reducedATUs;
+    return new CopyOnWriteArrayList<>(reducedATUs);
   }
 
   public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU) {

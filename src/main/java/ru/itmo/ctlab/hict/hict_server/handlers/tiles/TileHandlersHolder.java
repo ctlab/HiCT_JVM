@@ -36,8 +36,8 @@ public class TileHandlersHolder extends HandlersHolder {
       final var row = Long.parseLong(ctx.request().getParam("row", "0"));
       final var col = Long.parseLong(ctx.request().getParam("col", "0"));
       final var version = Long.parseLong(ctx.request().getParam("version", "0"));
-      final var tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
-      final var tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+      final int tileHeight;
+      final int tileWidth;
       final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
 
       log.debug("Got parameters");
@@ -55,7 +55,24 @@ public class TileHandlersHolder extends HandlersHolder {
 
       final var level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
 
-      final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), row * tileHeight, col * tileWidth, (row + 1) * tileHeight, (col + 1) * tileWidth, true);
+      final long startRowPx, startColPx, endRowPx, endColPx;
+      if (format == TileFormat.PNG_BY_PIXELS) {
+        startRowPx = row;
+        startColPx = col;
+        endRowPx = startRowPx + Long.parseLong(ctx.request().getParam("rows", "0"));
+        endColPx = startColPx + Long.parseLong(ctx.request().getParam("cols", "0"));
+        tileHeight = (int) (endRowPx - startRowPx);
+        tileWidth = (int) (endColPx - startColPx);
+      } else {
+        tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+        tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+        startRowPx = row * tileHeight;
+        endRowPx = (row + 1) * tileHeight;
+        startColPx = col * tileWidth;
+        endColPx = (col + 1) * tileWidth;
+      }
+
+      final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), startRowPx, startColPx, endRowPx, endColPx, true);
       final var dense = matrixWithWeights.matrix();
       log.debug("Got dense matrix");
       final var normalized = Arrays.stream(dense).map(arrayRow -> Arrays.stream(arrayRow).mapToDouble(Math::log).mapToLong(Math::round).mapToInt(l -> (int) l).toArray()).toArray(int[][]::new);
@@ -85,28 +102,25 @@ public class TileHandlersHolder extends HandlersHolder {
 
       try {
 
-        switch (format) {
-          case JSON_PNG_WITH_RANGES -> {
-            ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
+        if (format == TileFormat.JSON_PNG_WITH_RANGES) {
+          ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
 
-            final byte[] base64 = Base64.getEncoder().encode(baos.toByteArray());
-            final String base64image = new String(base64);
-            final var result = new TileWithRanges(
-              String.format("data:image/png;base64,%s", base64image),
-              new TileSignalRanges(0.0, 1.0)
-            );
-            log.debug("Wrote stream to buffer");
-            ctx.response()
-              .putHeader("content-type", "application/json")
-              .end(Json.encode(result));
-          }
-          case PNG -> {
-            ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
-            log.debug("Wrote stream to buffer");
-            ctx.response()
-              .putHeader("content-type", "image/png")
-              .end(Buffer.buffer(baos.toByteArray()));
-          }
+          final byte[] base64 = Base64.getEncoder().encode(baos.toByteArray());
+          final String base64image = new String(base64);
+          final var result = new TileWithRanges(
+            String.format("data:image/png;base64,%s", base64image),
+            new TileSignalRanges(0.0, 1.0)
+          );
+          log.debug("Wrote stream to buffer");
+          ctx.response()
+            .putHeader("content-type", "application/json")
+            .end(Json.encode(result));
+        } else {
+          ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
+          log.debug("Wrote stream to buffer");
+          ctx.response()
+            .putHeader("content-type", "image/png")
+            .end(Buffer.buffer(baos.toByteArray()));
         }
         log.debug("Response");
       } catch (final IOException e) {
@@ -118,7 +132,8 @@ public class TileHandlersHolder extends HandlersHolder {
 
   public enum TileFormat {
     JSON_PNG_WITH_RANGES,
-    PNG
+    PNG,
+    PNG_BY_PIXELS
   }
 
   public record TileSignalRanges(double lowerBounds, double upperBounds) {

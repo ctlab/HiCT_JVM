@@ -51,52 +51,13 @@ public class SparseCOOMatrixLong {
     final var dc = cols - 1;
 
     if (!symmetric) {
-      if (flipRows) {
-        if (flipCols) {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[dr - rowIdx[i]][dc - colIdx[i]] = values[i];
-          }
-        } else {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[dr - rowIdx[i]][colIdx[i]] = values[i];
-          }
-        }
-      } else {
-        if (flipCols) {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[rowIdx[i]][dc - colIdx[i]] = values[i];
-          }
-        } else {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[rowIdx[i]][colIdx[i]] = values[i];
-          }
-        }
+      for (var i = 0; i < nonZeroCount; ++i) {
+        result2D[rowIdx[i]][colIdx[i]] = values[i];
       }
     } else {
-      if (flipRows) {
-        if (flipCols) {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[dr - rowIdx[i]][dc - colIdx[i]] = values[i];
-            result2D[dc - colIdx[i]][dr - rowIdx[i]] = values[i];
-          }
-        } else {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[dr - rowIdx[i]][colIdx[i]] = values[i];
-            result2D[colIdx[i]][dr - rowIdx[i]] = values[i];
-          }
-        }
-      } else {
-        if (flipCols) {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[rowIdx[i]][dc - colIdx[i]] = values[i];
-            result2D[dc - colIdx[i]][rowIdx[i]] = values[i];
-          }
-        } else {
-          for (var i = 0; i < nonZeroCount; ++i) {
-            result2D[rowIdx[i]][colIdx[i]] = values[i];
-            result2D[colIdx[i]][rowIdx[i]] = values[i];
-          }
-        }
+      for (var i = 0; i < nonZeroCount; ++i) {
+        result2D[rowIdx[i]][colIdx[i]] = values[i];
+        result2D[colIdx[i]][rowIdx[i]] = values[i];
       }
     }
 
