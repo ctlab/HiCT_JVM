@@ -88,7 +88,6 @@ public class ChunkedFile implements AutoCloseable {
       final var poolConfig = new GenericObjectPoolConfig<HDF5FileDatasetsBundle>();
       poolConfig.setMaxTotal(options.maxDatasetPoolSize());
       poolConfig.setMinIdle(options.minDatasetPoolSize());
-//    poolConfig.setBlockWhenExhausted(false);
       poolConfig.setBlockWhenExhausted(true);
       for (int i = 1; i < this.resolutions.length; ++i) {
         this.datasetBundlePools.add(new GenericObjectPool<HDF5FileDatasetsBundle>(

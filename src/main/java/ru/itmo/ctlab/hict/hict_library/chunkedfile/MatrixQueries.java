@@ -174,24 +174,26 @@ public class MatrixQueries {
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
-    final var firstContigNodeInSegment = es.segment().leftmostVisibleNode(resolutionDescriptor);
-    final var firstContigInSegment = firstContigNodeInSegment.getContigDescriptor();
-    final var firstContigATUs = firstContigInSegment.getAtus().get(resolutionOrder);
-    final var firstContigATUPrefixSum = firstContigInSegment.getAtuPrefixSumLengthBins().get(resolutionOrder);
+    final var firstContigNode = es.segment().leftmostVisibleNode(resolutionDescriptor);
+    final var firstContigDescriptor = firstContigNode.getContigDescriptor();
+    final var firstContigATUs = firstContigDescriptor.getAtus().get(resolutionOrder);
+    final var firstContigATUPrefixSum = firstContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
+    final var firstContigDirection = firstContigNode.getTrueDirection();
+    final var firstContigId = firstContigDescriptor.getContigId();
 
     final var deltaBetweenRightPxAndExposedSegment = (lessSize + segmentSize) - endPx;
     final var lastContigNode = es.segment().rightmostVisibleNode(resolutionDescriptor);
     final var lastContigDescriptor = lastContigNode.getContigDescriptor();
     final var lastContigATUs = lastContigDescriptor.getAtus().get(resolutionOrder);
     final var lastContigATUPrefixSum = lastContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
+    final var lastContigDirection = lastContigNode.getTrueDirection();
+    final var lastContigId = lastContigDescriptor.getContigId();
 
-    final var startContigId = firstContigInSegment.getContigId();
-    final var endContigId = lastContigDescriptor.getContigId();
-    final var onlyOneContig = (startContigId == endContigId);
+    final var onlyOneContig = (firstContigId == lastContigId);
 
 
     final int indexOfATUContainingStartPx;
-    if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.FORWARD) {
+    if (firstContigNode.getTrueDirection() == ContigDirection.FORWARD) {
       indexOfATUContainingStartPx = BinarySearch.rightBinarySearch(
         firstContigATUPrefixSum,
         deltaBetweenSegmentFirstContigAndQueryStart
@@ -204,68 +206,78 @@ public class MatrixQueries {
       );
     }
 
-    final var oldFirstATU = firstContigATUs.get(indexOfATUContainingStartPx);
-    final var lengthOfATUsBeforeOneContainingStart = (indexOfATUContainingStartPx == 0) ? 0L : (
-      switch (firstContigNodeInSegment.getTrueDirection()) {
-        case FORWARD -> firstContigATUPrefixSum[indexOfATUContainingStartPx - 1];
-        case REVERSED ->
-          firstContigATUPrefixSum[firstContigATUPrefixSum.length - 1] - firstContigATUPrefixSum[indexOfATUContainingStartPx];
-      }
-    );
-    final ATUDescriptor newFirstATU;
+    final var oldFirstATU = switch (firstContigDirection) {
+      case FORWARD -> firstContigATUs.get(indexOfATUContainingStartPx);
+      case REVERSED -> firstContigATUs.get(indexOfATUContainingStartPx).reversed();
+    };
 
-    if (oldFirstATU.getDirection() == ATUDirection.FORWARD) {
-      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl() + (int) (deltaBetweenSegmentFirstContigAndQueryStart -
-        lengthOfATUsBeforeOneContainingStart), oldFirstATU.getEndIndexInStripeExcl(), oldFirstATU.getDirection());
-    } else {
-      newFirstATU = new ATUDescriptor(oldFirstATU.getStripeDescriptor(), oldFirstATU.getStartIndexInStripeIncl(), oldFirstATU.getEndIndexInStripeExcl() - (int) (deltaBetweenSegmentFirstContigAndQueryStart -
-        lengthOfATUsBeforeOneContainingStart), oldFirstATU.getDirection());
-    }
+    final var lengthOfATUsBeforeOneContainingStart = switch (firstContigDirection) {
+      case FORWARD ->
+        (indexOfATUContainingStartPx == 0) ? 0L : firstContigATUPrefixSum[indexOfATUContainingStartPx - 1];
+      case REVERSED ->
+        firstContigATUPrefixSum[firstContigATUPrefixSum.length - 1] - firstContigATUPrefixSum[indexOfATUContainingStartPx];
+    };
+
+    final ATUDescriptor newFirstATU = switch (oldFirstATU.getDirection()) {
+      case FORWARD -> new ATUDescriptor(
+        oldFirstATU.getStripeDescriptor(),
+        oldFirstATU.getStartIndexInStripeIncl() + (int) (deltaBetweenSegmentFirstContigAndQueryStart -
+          lengthOfATUsBeforeOneContainingStart),
+        oldFirstATU.getEndIndexInStripeExcl(),
+        oldFirstATU.getDirection()
+      );
+      case REVERSED -> new ATUDescriptor(
+        oldFirstATU.getStripeDescriptor(),
+        oldFirstATU.getStartIndexInStripeIncl(),
+        oldFirstATU.getEndIndexInStripeExcl() - (int) (deltaBetweenSegmentFirstContigAndQueryStart -
+          lengthOfATUsBeforeOneContainingStart),
+        oldFirstATU.getDirection()
+      );
+    };
 
     assert (newFirstATU.getLength() > 0) : "Incorrect new first ATU??";
 
-    final int indexOfATUContainingEndPx;
-
-    if (lastContigNode.getTrueDirection() == ContigDirection.FORWARD) {
-      final var lastContigLengthBins = lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1];
-      indexOfATUContainingEndPx = BinarySearch.leftBinarySearch(lastContigATUPrefixSum, lastContigLengthBins - deltaBetweenRightPxAndExposedSegment);
-    } else {
-      indexOfATUContainingEndPx = BinarySearch.rightBinarySearch(
+    final int indexOfATUContainingEndPx = switch (lastContigDirection) {
+      case FORWARD -> BinarySearch.leftBinarySearch(
         lastContigATUPrefixSum,
-        deltaBetweenSegmentFirstContigAndQueryStart
+        lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1] - deltaBetweenRightPxAndExposedSegment
       );
-    }
+      case REVERSED -> BinarySearch.rightBinarySearch(
+        lastContigATUPrefixSum,
+        deltaBetweenRightPxAndExposedSegment
+      );
+    };
 
-    final long deletedATUsLength = switch (lastContigNode.getTrueDirection()) {
+    final long deletedATUsLength = switch (lastContigDirection) {
       case FORWARD ->
         lastContigATUPrefixSum[lastContigATUPrefixSum.length - 1] - lastContigATUPrefixSum[indexOfATUContainingEndPx];
       case REVERSED -> (indexOfATUContainingEndPx == 0) ? 0L : (lastContigATUPrefixSum[indexOfATUContainingEndPx - 1]);
     };
 
-    final ATUDescriptor oldLastATU;
 
-    if (onlyOneContig && indexOfATUContainingStartPx == indexOfATUContainingEndPx) {
-      oldLastATU = newFirstATU;
-    } else {
-      oldLastATU = lastContigATUs.get(indexOfATUContainingEndPx);
-    }
-    final ATUDescriptor newLastATU;
+    final var sameATUIsFirstAndLast = onlyOneContig && (indexOfATUContainingStartPx == indexOfATUContainingEndPx);
 
-    // TODO: Where ATU direction matters, where contigs'?
+    final ATUDescriptor oldLastATU = sameATUIsFirstAndLast ? newFirstATU : (
+      switch (lastContigNode.getTrueDirection()) {
+        case FORWARD -> lastContigATUs.get(indexOfATUContainingEndPx);
+        case REVERSED -> lastContigATUs.get(indexOfATUContainingEndPx).reversed();
+      }
+    );
 
-    if (oldLastATU.getDirection() == ATUDirection.FORWARD) {
-      newLastATU = new ATUDescriptor(
+    final ATUDescriptor newLastATU = switch (oldLastATU.getDirection()) {
+      case FORWARD -> new ATUDescriptor(
         oldLastATU.getStripeDescriptor(),
         oldLastATU.getStartIndexInStripeIncl(),
-        oldLastATU.getEndIndexInStripeExcl() + (int) (deletedATUsLength - deltaBetweenRightPxAndExposedSegment),
-        oldLastATU.getDirection());
-    } else {
-      newLastATU = new ATUDescriptor(
+        oldLastATU.getEndIndexInStripeExcl() - (int) (deltaBetweenRightPxAndExposedSegment - deletedATUsLength),
+        oldLastATU.getDirection()
+      );
+      case REVERSED -> new ATUDescriptor(
         oldLastATU.getStripeDescriptor(),
-        oldLastATU.getStartIndexInStripeIncl() - (int) (deletedATUsLength - deltaBetweenRightPxAndExposedSegment),
+        oldLastATU.getStartIndexInStripeIncl() + (int) (deltaBetweenRightPxAndExposedSegment - deletedATUsLength),
         oldLastATU.getEndIndexInStripeExcl(),
-        oldLastATU.getDirection());
-    }
+        oldLastATU.getDirection()
+      );
+    };
 
     assert (newLastATU.getLength() > 0) : "Incorrect new last ATU??";
 
@@ -274,56 +286,80 @@ public class MatrixQueries {
     atus.add(newFirstATU);
 
     if (onlyOneContig) {
-      if (indexOfATUContainingStartPx != indexOfATUContainingEndPx) {
-        final var firstContigIntermediateATUs = firstContigInSegment.getAtus().get(resolutionOrder).subList(1 + Integer.min(indexOfATUContainingStartPx, indexOfATUContainingEndPx), Integer.max(indexOfATUContainingStartPx, indexOfATUContainingEndPx));
-        if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.REVERSED) {
-          Collections.reverse(firstContigIntermediateATUs);
-        }
-        atus.addAll(firstContigIntermediateATUs);
-      } else {
+      if (sameATUIsFirstAndLast) {
         return atus;
+      } else {
+        final var firstContigIntermediateATUs = firstContigATUs.subList(
+          1 + Integer.min(indexOfATUContainingStartPx, indexOfATUContainingEndPx),
+          Integer.max(indexOfATUContainingStartPx, indexOfATUContainingEndPx)
+        );
+        final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
+          case FORWARD -> firstContigATUs.subList(
+            1 + Integer.min(indexOfATUContainingStartPx, indexOfATUContainingEndPx),
+            Integer.max(indexOfATUContainingStartPx, indexOfATUContainingEndPx)
+          );
+          case REVERSED -> {
+            final var firstContigIntermediateATUsReversed = firstContigIntermediateATUs.parallelStream()
+              .map(ATUDescriptor::reversed)
+              .collect(Collectors.toList());
+            Collections.reverse(firstContigIntermediateATUsReversed);
+            yield firstContigIntermediateATUs;
+          }
+        };
+        atus.addAll(firstContigRestATUs);
       }
     } else {
-      final List<@NotNull ATUDescriptor> firstContigRestATUs;
-      if (firstContigNodeInSegment.getTrueDirection() == ContigDirection.FORWARD) {
-        firstContigRestATUs = firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
-      } else {
-        firstContigRestATUs = firstContigATUs.parallelStream().limit(indexOfATUContainingStartPx).map(ATUDescriptor::reversed).collect(Collectors.toList());
-        Collections.reverse(firstContigRestATUs);
-      }
+      final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
+        case FORWARD -> firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
+        case REVERSED -> {
+          final var firstContigRestATUsReversed = firstContigATUs.parallelStream()
+            .limit(indexOfATUContainingStartPx)
+            .map(ATUDescriptor::reversed)
+            .collect(Collectors.toList());
+          Collections.reverse(firstContigRestATUsReversed);
+          yield firstContigRestATUsReversed;
+        }
+      };
+
       atus.addAll(firstContigRestATUs);
 
 
       ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
         final var nodeContigId = node.getContigDescriptor().getContigId();
-        if (nodeContigId != startContigId && nodeContigId != endContigId) {
+        if (nodeContigId != firstContigId && nodeContigId != lastContigId) {
           final var contigDirection = node.getTrueDirection();
           final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
-          if (contigDirection == ContigDirection.FORWARD) {
-            atus.addAll(contigATUs);
-          } else {
-            final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
-            Collections.reverse(reversedATUs);
-            atus.addAll(reversedATUs);
-          }
+          final var processedATUs = switch (contigDirection) {
+            case FORWARD -> contigATUs;
+            case REVERSED -> {
+              final var reversedATUs = contigATUs.stream()
+                .map(ATUDescriptor::reversed)
+                .collect(Collectors.toList());
+              Collections.reverse(reversedATUs);
+              yield reversedATUs;
+            }
+          };
+          atus.addAll(processedATUs);
         }
       });
 
-      final List<@NotNull ATUDescriptor> lastContigBeginningATUs;
-      if (lastContigNode.getTrueDirection() == ContigDirection.FORWARD) {
-        lastContigBeginningATUs = lastContigATUs.subList(0, indexOfATUContainingEndPx);
-      } else {
-        lastContigBeginningATUs = lastContigATUs.parallelStream().skip(1 + indexOfATUContainingEndPx).map(ATUDescriptor::reversed).collect(Collectors.toList());
-        Collections.reverse(lastContigBeginningATUs);
-      }
+      final List<@NotNull ATUDescriptor> lastContigBeginningATUs = switch (lastContigDirection) {
+        case FORWARD -> lastContigATUs.subList(0, indexOfATUContainingEndPx);
+        case REVERSED -> {
+          final var reversedATUs = lastContigATUs.parallelStream()
+            .skip(1 + indexOfATUContainingEndPx)
+            .map(ATUDescriptor::reversed)
+            .collect(Collectors.toList());
+          Collections.reverse(reversedATUs);
+          yield reversedATUs;
+        }
+      };
       atus.addAll(lastContigBeginningATUs);
     }
 
     atus.add(newLastATU);
 
     {
-
-
       final var sourceATUTotalLength = debugContigNodes.stream().flatMap(node -> node.getContigDescriptor().getAtus().get(resolutionOrder).stream()).mapToInt(ATUDescriptor::getLength).sum();
 
       assert (segmentSize == sourceATUTotalLength) : "Expose returned more ATUs than segment length??";
@@ -469,7 +505,7 @@ public class MatrixQueries {
           }
         } else {
           if (ATUDirection.REVERSED.equals(rowATU.getDirection())) {
-            final var dr = lastRow - firstRow - 1;
+            final var dr = lastRow - 1;
             if (ATUDirection.REVERSED.equals(colATU.getDirection())) {
               for (int i = firstRow; i < lastRow; ++i) {
                 System.arraycopy(denseBlock[i], firstCol, denseMatrix[dr - i], 0, queryCols);
