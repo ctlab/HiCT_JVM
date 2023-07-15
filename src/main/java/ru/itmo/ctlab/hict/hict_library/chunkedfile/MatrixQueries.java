@@ -480,27 +480,30 @@ public class MatrixQueries {
         );
 
         final var denseSquarePartial = sparseMatrix.toDense(this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize());
+        final var denseBlock = new long[queryRows][queryCols];
 
-        if (flipRows){
-          ArrayUtils.reverse(denseSquarePartial);
+        for (int i = firstRow; i < lastRow; ++i) {
+          System.arraycopy(denseSquarePartial[i], firstCol, denseBlock[i - firstRow], 0, queryCols);
         }
 
-        if (flipCols){
-          for (final var row : denseSquarePartial){
+        if (flipRows) {
+          ArrayUtils.reverse(denseBlock);
+        }
+
+        if (flipCols) {
+          for (final var row : denseBlock) {
             ArrayUtils.reverse(row);
           }
         }
 
-        if (needsTranspose){
-          for (int i = firstRow; i < lastRow; ++i) {
-            for (int j = firstCol; j < lastCol; ++j) {
-              denseMatrix[j - firstCol][i - firstRow] = denseSquarePartial[i][j];
+        if (needsTranspose) {
+          for (int i = 0; i < queryRows; ++i) {
+            for (int j = 0; j < queryCols; ++j) {
+              denseMatrix[j][i] = denseBlock[i][j];
             }
           }
         } else {
-          for (int i = firstRow; i < lastRow; i++) {
-            System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i-firstRow], 0, queryCols);
-          }
+          System.arraycopy(denseBlock, 0, denseMatrix, 0, queryRows);
         }
       } else {
         log.debug("Fetching dense block");
@@ -518,24 +521,28 @@ public class MatrixQueries {
             }
           }
         }
+        final var denseSubBlock = new long[queryRows][queryCols];
+
+        for (int i = firstRow; i < lastRow; ++i) {
+          System.arraycopy(denseBlock[i], firstCol, denseSubBlock[i - firstRow], 0, queryCols);
+        }
+
         if (flipRows) {
-          ArrayUtils.reverse(denseMatrix);
+          ArrayUtils.reverse(denseSubBlock);
         }
         if (flipCols) {
-          for (final var row : denseMatrix) {
+          for (final var row : denseSubBlock) {
             ArrayUtils.reverse(row);
           }
         }
         if (needsTranspose) {
-          for (int i = firstRow; i < lastRow; ++i) {
-            for (int j = firstCol; j < lastCol; ++j) {
-              denseMatrix[j - firstCol][i - firstRow] = denseBlock[i][j];
+          for (int i = 0; i < queryRows; ++i) {
+            for (int j = 0; j < queryCols; ++j) {
+              denseMatrix[j][i] = denseSubBlock[i][j];
             }
           }
         } else {
-          for (int i = firstRow; i < lastRow; ++i) {
-            System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-          }
+          System.arraycopy(denseSubBlock, 0, denseMatrix, 0, queryRows);
         }
       }
 
