@@ -298,6 +298,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       if (expectedLeftSize <= leftSubtreeLength) {
         final var sp = splitNodeBp(newTree.left, expectedLeftSize, includeEqualToTheLeft);
         final var newRightSplit = newTree.cloneBuilder().left(sp.right).build().updateSizes();
+        assert (newTree.subtreeLengthBp == (Optional.ofNullable(sp.left).map(n -> n.subtreeLengthBp).orElse(0L) + Optional.ofNullable(newRightSplit).map(n -> n.subtreeLengthBp).orElse(0L))) : "In first split case subtree length has changed??";
         return new Node.SplitResult(sp.left, newRightSplit);
       } else {
         final var nodeLength = newTree.nodeLengthBp;
@@ -305,26 +306,32 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
           if (newTree.scaffoldDescriptor != null) {
             if (includeEqualToTheLeft) {
               final var new_t = newTree.cloneBuilder().right(null).build();
+              assert (newTree.subtreeLengthBp == (new_t.subtreeLengthBp + Optional.ofNullable(newTree.right).map(n -> n.subtreeLengthBp).orElse(0L))) : "In second-include-left split case subtree length has changed??";
               return new Node.SplitResult(new_t, newTree.right);
             } else {
               final var new_t = newTree.cloneBuilder().left(null).build();
+              assert (newTree.subtreeLengthBp == (Optional.ofNullable(newTree.left).map(n -> n.subtreeLengthBp).orElse(0L) + new_t.updateSizes().subtreeLengthBp)) : "In second-non-include-left split case subtree length has changed??";
               return new Node.SplitResult(newTree.left, new_t.updateSizes());
             }
           } else {
-            final var t1 = newTree.cloneBuilder().subtreeLengthBp(expectedLeftSize - leftSubtreeLength).right(null).build();
+            final var t1 = newTree.cloneBuilder().nodeLengthBp(expectedLeftSize - leftSubtreeLength).right(null).build().updateSizes();
             final var rightPartLengthBp = newTree.subtreeLengthBp - t1.subtreeLengthBp;
             final Node t2;
             if (rightPartLengthBp > 0) {
-              t2 = newTree.cloneBuilder().subtreeLengthBp(rightPartLengthBp).left(null).yPriority(rnd.nextLong(newTree.yPriority + 1L, Long.MAX_VALUE)).build();
+              t2 = newTree.cloneBuilder().nodeLengthBp(rightPartLengthBp).left(null).yPriority(rnd.nextLong(newTree.yPriority + 1L, Long.MAX_VALUE)).build().updateSizes();
             } else {
               t2 = newTree.right;
             }
-            return new Node.SplitResult(t1.updateSizes(), t2.updateSizes());
+            final var t1u = t1.updateSizes();
+            final var t2u = t2.updateSizes();
+            assert (newTree.subtreeLengthBp == (Optional.ofNullable(t1u).map(n -> n.subtreeLengthBp).orElse(0L) + Optional.ofNullable(t2u).map(n -> n.subtreeLengthBp).orElse(0L))) : "In second-non-scaffold split case subtree length has changed??";
+            return new Node.SplitResult(t1u, t2u);
           }
         } else {
           final var sp = splitNodeBp(newTree.right, expectedLeftSize - (leftSubtreeLength + nodeLength), includeEqualToTheLeft);
-          final var new_t = newTree.cloneBuilder().right(sp.left).build();
-          return new Node.SplitResult(new_t.updateSizes(), sp.right);
+          final var new_t = newTree.cloneBuilder().right(sp.left).build().updateSizes();
+          assert (newTree.subtreeLengthBp == (Optional.ofNullable(new_t).map(n -> n.subtreeLengthBp).orElse(0L) + Optional.ofNullable(sp.right).map(n -> n.subtreeLengthBp).orElse(0L))) : "In second-non-scaffold split case subtree length has changed??";
+          return new Node.SplitResult(new_t, sp.right);
         }
       }
     }
@@ -348,8 +355,9 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
           son = t.left;
         }
         if (son.right == null) {
-          t = t.cloneBuilder().subtreeLengthBp(t.subtreeLengthBp + son.subtreeLengthBp).left(son.left).build();
+          t = t.cloneBuilder().nodeLengthBp(t.nodeLengthBp + son.nodeLengthBp).left(son.left).build().updateSizes();
         }
+        assert (node.subtreeLengthBp == (t.subtreeLengthBp)) : "Subtree length has changed after left space optimization??";
       }
 
       if (t.right != null && t.right.scaffoldDescriptor == null) {
@@ -360,8 +368,9 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
           son = t.right;
         }
         if (son.left == null) {
-          t = t.cloneBuilder().subtreeLengthBp(t.subtreeLengthBp + son.subtreeLengthBp).right(son.right).build();
+          t = t.cloneBuilder().nodeLengthBp(t.nodeLengthBp + son.nodeLengthBp).right(son.right).build().updateSizes();
         }
+        assert (node.subtreeLengthBp == (t.subtreeLengthBp)) : "Subtree length has changed after right space optimization??";
       }
 
       final var result = t.updateSizes();
@@ -401,6 +410,8 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
       final var leGr = splitNodeBp(t, toBp, true);
       final var lsSg = splitNodeBp(leGr.left(), fromBp, false); // TODO: Python code had true here as well, maybe that was a bug
+
+      assert ((t.subtreeLengthBp) == (lsSg.left().subtreeLengthBp + lsSg.right().subtreeLengthBp + leGr.right().subtreeLengthBp)) : "Total length of exposed segments is greater than source one?";
 
       return new ExposedSegment(lsSg.left(), lsSg.right(), leGr.right());
     }
