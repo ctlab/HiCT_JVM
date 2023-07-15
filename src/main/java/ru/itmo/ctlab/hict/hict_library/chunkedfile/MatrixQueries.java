@@ -463,47 +463,43 @@ public class MatrixQueries {
         final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
 
 
+//        final var sparseMatrix = new SparseCOOMatrixLong(
+//          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
+//          Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
+//          Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
+//          needsTranspose,
+//          blockOnMainDiagonal,
+//          flipRows,
+//          flipCols
+//        );
         final var sparseMatrix = new SparseCOOMatrixLong(
-          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-          Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-          Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
-          needsTranspose,
-          blockOnMainDiagonal,
-          flipRows,
-          flipCols
+          Arrays.stream(blockRows).mapToInt(i -> (int) i).toArray(),
+          Arrays.stream(blockCols).mapToInt(i -> (int) i).toArray(),
+          blockValues,
+          blockOnMainDiagonal
         );
+
         final var denseSquarePartial = sparseMatrix.toDense(this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize());
 
-        // TODO: process flips
-        if (!needsTranspose) {
-          if (flipCols) {
-            for (int i = firstRow; i < lastRow; ++i) {
-              System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-              ArrayUtils.reverse(denseMatrix[i - firstRow]);
-            }
-          } else {
-            for (int i = firstRow; i < lastRow; ++i) {
-              System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-            }
-          }
+        if (flipRows){
+          ArrayUtils.reverse(denseSquarePartial);
+        }
 
-          if (flipRows) {
-            ArrayUtils.reverse(denseMatrix);
+        if (flipCols){
+          for (final var row : denseSquarePartial){
+            ArrayUtils.reverse(row);
+          }
+        }
+
+        if (needsTranspose){
+          for (int i = firstRow; i < lastRow; ++i) {
+            for (int j = firstCol; j < lastCol; ++j) {
+              denseMatrix[j - firstCol][i - firstRow] = denseSquarePartial[i][j];
+            }
           }
         } else {
-          if (flipCols) {
-            for (int i = firstCol; i < lastCol; ++i) {
-              System.arraycopy(denseSquarePartial[i], firstRow, denseMatrix[i - firstCol], 0, queryRows);
-              ArrayUtils.reverse(denseMatrix[i - firstCol]);
-            }
-          } else {
-            for (int i = firstCol; i < lastCol; ++i) {
-              System.arraycopy(denseSquarePartial[i], firstRow, denseMatrix[i - firstCol], 0, queryRows);
-            }
-          }
-
-          if (flipRows) {
-            ArrayUtils.reverse(denseMatrix);
+          for (int i = firstRow; i < lastRow; i++) {
+            System.arraycopy(denseSquarePartial[i], firstCol, denseMatrix[i-firstRow], 0, queryCols);
           }
         }
       } else {
@@ -522,6 +518,14 @@ public class MatrixQueries {
             }
           }
         }
+        if (flipRows) {
+          ArrayUtils.reverse(denseMatrix);
+        }
+        if (flipCols) {
+          for (final var row : denseMatrix) {
+            ArrayUtils.reverse(row);
+          }
+        }
         if (needsTranspose) {
           for (int i = firstRow; i < lastRow; ++i) {
             for (int j = firstCol; j < lastCol; ++j) {
@@ -531,14 +535,6 @@ public class MatrixQueries {
         } else {
           for (int i = firstRow; i < lastRow; ++i) {
             System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-          }
-        }
-        if (flipRows) {
-          ArrayUtils.reverse(denseMatrix);
-        }
-        if (flipCols) {
-          for (final var row : denseMatrix) {
-            ArrayUtils.reverse(row);
           }
         }
       }
