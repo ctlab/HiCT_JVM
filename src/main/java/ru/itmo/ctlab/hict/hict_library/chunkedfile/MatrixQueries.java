@@ -35,7 +35,7 @@ public class MatrixQueries {
     final var endRow = CommonUtils.clamp(endRowExcl, 0L, totalAssemblyLength);
     final var startCol = CommonUtils.clamp(startColIncl, 0L, totalAssemblyLength);
     final var endCol = CommonUtils.clamp(endColExcl, 0L, totalAssemblyLength);
-    final var symmetricQuery = (startRow == startCol) && (endRow == endCol);
+    final var symmetricQuery = false; // (startRow == startCol) && (endRow == endCol);
 
 
     final var rowATUs = getATUsForRange(resolutionDescriptor, startRow, endRow, excludeHiddenContigs);
@@ -403,6 +403,7 @@ public class MatrixQueries {
     final var colStripeId = colStripe.stripeId();
     final var queryRows = rowATU.getLength();
     final var queryCols = colATU.getLength();
+    final var blockOnMainDiagonal = (rowStripeId == colStripeId);
 
 //    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
     final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
@@ -467,7 +468,7 @@ public class MatrixQueries {
           Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
           Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
           needsTranspose,
-          (rowStripeId == colStripeId),
+          blockOnMainDiagonal,
           flipRows,
           flipCols
         );
@@ -513,15 +514,13 @@ public class MatrixQueries {
           block = reader.int64().readSlicedMDArrayBlockWithOffset(dsBundle.getDenseBlockDataSet(), new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()}, new long[]{0L, 0L}, idx);
         }
         final long[][] denseBlock;
-        if (rowStripeId == colStripeId) {
-          denseBlock = block.toMatrix();
+        denseBlock = block.toMatrix();
+        if (blockOnMainDiagonal) {
           for (int i = 0; i < denseBlock.length; ++i) {
             for (int j = 1 + i; j < denseBlock.length; ++j) {
               denseBlock[j][i] = denseBlock[i][j];
             }
           }
-        } else {
-          denseBlock = block.toMatrix();
         }
         if (needsTranspose) {
           for (int i = firstRow; i < lastRow; ++i) {
@@ -530,19 +529,16 @@ public class MatrixQueries {
             }
           }
         } else {
-          if (flipCols) {
-            for (int i = firstRow; i < lastRow; ++i) {
-              System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-              ArrayUtils.reverse(denseMatrix[i - firstRow]);
-            }
-          } else {
-            for (int i = firstRow; i < lastRow; ++i) {
-              System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
-            }
+          for (int i = firstRow; i < lastRow; ++i) {
+            System.arraycopy(denseBlock[i], firstCol, denseMatrix[i - firstRow], 0, queryCols);
           }
-
-          if (flipRows) {
-            ArrayUtils.reverse(denseMatrix);
+        }
+        if (flipRows) {
+          ArrayUtils.reverse(denseMatrix);
+        }
+        if (flipCols) {
+          for (final var row : denseMatrix) {
+            ArrayUtils.reverse(row);
           }
         }
       }
