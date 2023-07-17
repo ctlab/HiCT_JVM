@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.pool2.ObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPool;
@@ -116,13 +117,46 @@ public class ChunkedFile implements AutoCloseable {
   }
 
   public @NotNull AssemblyInfo getAssemblyInfo() {
-    return new AssemblyInfo(this.contigTree.getContigList(), this.scaffoldTree.getScaffoldList());
+    return new AssemblyInfo(this.contigTree.getOrderedContigList(), this.scaffoldTree.getScaffoldList());
   }
 
   @Override
   public void close() {
     for (int i = 1; i < resolutions.length; ++i) {
       this.datasetBundlePools.get(i).close();
+    }
+  }
+
+  public long convertUnits(final long position, final @NotNull @NonNull ResolutionDescriptor fromResolution, final @NotNull @NonNull QueryLengthUnit fromUnits, final @NotNull @NonNull ResolutionDescriptor toResolution, final @NotNull @NonNull QueryLengthUnit toUnits) {
+    assert ((QueryLengthUnit.BASE_PAIRS.equals(fromUnits)) == (fromResolution.getResolutionOrderInArray() == 0)) : "If converting from base pairs, set fromResolution=0";
+    assert ((QueryLengthUnit.BASE_PAIRS.equals(toUnits)) == (toResolution.getResolutionOrderInArray() == 0)) : "If converting from base pairs, set toResolution=0";
+
+    final var contigTree = this.contigTree;
+    final var lock = contigTree.getRootLock();
+    try {
+      lock.readLock().lock();
+      final var es = contigTree.expose(fromResolution, position, 1 + position, fromUnits);
+
+      final var fromBpResolution = this.resolutions[fromResolution.getResolutionOrderInArray()];
+      final var toBpResolution = this.resolutions[toResolution.getResolutionOrderInArray()];
+
+      final long leftFromUnits = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(fromUnits, fromResolution);
+      final var leftToUnits = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(toUnits, toResolution);
+
+      final var deltaFromUnits = position - leftFromUnits;
+      final var deltaBp = switch (fromUnits) {
+        case BASE_PAIRS -> deltaFromUnits;
+        case BINS, PIXELS -> (deltaFromUnits * fromBpResolution);
+      };
+
+      final var deltaToUnits = switch (toUnits) {
+        case BASE_PAIRS -> deltaBp;
+        case BINS, PIXELS -> (deltaBp / toBpResolution);
+      };
+
+      return leftToUnits + deltaToUnits;
+    } finally {
+      lock.readLock().unlock();
     }
   }
 

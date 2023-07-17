@@ -4,6 +4,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 
 import java.util.Arrays;
@@ -25,6 +26,8 @@ public class ContigDescriptor {
   List<@NotNull ContigHideType> presenceAtResolution;
   private final @NotNull List<@NotNull List<@NotNull ATUDescriptor>> atus;
   private final @NotNull List<long @NotNull []> atuPrefixSumLengthBins;
+  private final @NotNull String contigNameInSourceFASTA;
+  private final int offsetInSourceFASTA;
 
   public ContigDescriptor(
     final int contigId,
@@ -32,14 +35,23 @@ public class ContigDescriptor {
     final long lengthBp,
     final @NotNull List<@NotNull Long> lengthBinsAtResolution,
     final @NotNull List<@NotNull ContigHideType> presenceAtResolution,
-    final @NotNull List<@NotNull List<@NotNull ATUDescriptor>> atus
+    final @NotNull List<@NotNull List<@NotNull ATUDescriptor>> atus,
+    final @Nullable String contigNameInSourceFASTA,
+    final int offsetInSourceFASTA
   ) {
     this.contigId = contigId;
     this.contigName = contigName;
     this.lengthBp = lengthBp;
 
-
+    assert (lengthBinsAtResolution.get(0) != lengthBp) : "Length bp should not be added at zero position of lengthBinsAtResolutions for constructor";
     this.lengthBinsAtResolution = Stream.concat(Stream.of(this.lengthBp), lengthBinsAtResolution.stream()).mapToLong(lng -> lng).toArray();
+    if (contigNameInSourceFASTA != null) {
+      this.contigNameInSourceFASTA = contigNameInSourceFASTA;
+      this.offsetInSourceFASTA = offsetInSourceFASTA;
+    } else {
+      this.contigNameInSourceFASTA = contigName;
+      this.offsetInSourceFASTA = 0;
+    }
     final var resolutionCount = this.lengthBinsAtResolution.length;
     this.presenceAtResolution = new CopyOnWriteArrayList<>();
     this.presenceAtResolution.add(ContigHideType.SHOWN);

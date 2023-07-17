@@ -12,6 +12,8 @@ import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
@@ -23,6 +25,8 @@ public class ContigTree implements Iterable<ContigTree.Node> {
   private final ReadWriteLock rootLock = new ReentrantReadWriteLock();
   @Getter
   private Node root;
+  @Getter
+  private final @NotNull Map<Integer, ContigDescriptor> contigDescriptors = new ConcurrentHashMap<>();
 
   @Override
   public Iterator<Node> iterator() {
@@ -82,7 +86,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
   }
 
-  public List<ContigTuple> getContigList() {
+  public List<ContigTuple> getOrderedContigList() {
     final List<ContigTuple> descriptors = new ArrayList<>();
 
     this.traverse(node -> {
@@ -110,6 +114,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     try {
       this.rootLock.writeLock().lock();
       this.root = Node.mergeNodes(new Node.SplitResult(this.root, newNode));
+      this.contigDescriptors.put(contigDescriptor.getContigId(), contigDescriptor);
     } finally {
       this.rootLock.writeLock().unlock();
     }
