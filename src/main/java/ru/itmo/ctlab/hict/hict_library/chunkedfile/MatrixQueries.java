@@ -35,7 +35,7 @@ public class MatrixQueries {
     final var endRow = CommonUtils.clamp(endRowExcl, 0L, totalAssemblyLength);
     final var startCol = CommonUtils.clamp(startColIncl, 0L, totalAssemblyLength);
     final var endCol = CommonUtils.clamp(endColExcl, 0L, totalAssemblyLength);
-    final var symmetricQuery = false; // (startRow == startCol) && (endRow == endCol);
+    final var symmetricQuery = (startRow == startCol) && (endRow == endCol);
 
 
     final var rowATUs = getATUsForRange(resolutionDescriptor, startRow, endRow, excludeHiddenContigs);

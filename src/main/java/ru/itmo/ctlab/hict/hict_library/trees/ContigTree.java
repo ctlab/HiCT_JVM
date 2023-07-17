@@ -372,15 +372,15 @@ public class ContigTree implements Iterable<ContigTree.Node> {
         final Node newLeft;
         final Node newRight;
         if (this.left != null) {
-          newLeft = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection).left(this.left.right).right(this.left.left).contigDirection(this.left.contigDirection.inverse()).build();
+          newRight = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection).build();
         } else {
-          newLeft = null;
+          newRight = null;
         }
 
         if (this.right != null) {
-          newRight = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection).left(this.right.right).right(this.right.left).contigDirection(this.right.contigDirection.inverse()).build();
+          newLeft = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection).build();
         } else {
-          newRight = null;
+          newLeft = null;
         }
 
         return this.cloneBuilder().left(newLeft).right(newRight).needsChangingDirection(false).contigDirection(this.contigDirection.inverse()).build();
