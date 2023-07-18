@@ -111,19 +111,13 @@ public class ScaffoldingOperations {
       };
 
 
-      final List<@NotNull List<@NotNull Long>> newContigLengthsBinsAtResolution = new ArrayList<>();
-      final List<@NotNull List<@NotNull ContigHideType>> newContigPresenceAtResolution = new ArrayList<>();
-      final List<@NotNull List<@NotNull List<@NotNull ATUDescriptor>>> newContigAtus = new ArrayList<>();
+      final List<@NotNull List<@NotNull Long>> newContigLengthsBinsAtResolution = List.of(new ArrayList<>(), new ArrayList<>());
+      final List<@NotNull List<@NotNull ContigHideType>> newContigPresenceAtResolution = List.of(new ArrayList<>(), new ArrayList<>());
+      final List<@NotNull List<@NotNull List<@NotNull ATUDescriptor>>> newContigAtus = List.of(new ArrayList<>(), new ArrayList<>());
 
       for (int i = 1; i < this.chunkedFile.getResolutions().length; i++) {
         final var bpResolution = this.chunkedFile.getResolutions()[i];
-        final var contigStartBinsAtResolution = this.chunkedFile.convertUnits(
-          leftBps,
-          ResolutionDescriptor.fromResolutionOrder(0),
-          QueryLengthUnit.BASE_PAIRS,
-          ResolutionDescriptor.fromResolutionOrder(i),
-          QueryLengthUnit.BINS
-        );
+        final var contigStartBinsAtResolution = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(i));
         final var splitPositionBinsAtResolution = this.chunkedFile.convertUnits(
           splitPositionBp,
           ResolutionDescriptor.fromResolutionOrder(0),
@@ -148,9 +142,9 @@ public class ScaffoldingOperations {
             oldContigLengthBinsAtResolution - deltaBinsFromContigStartAtResolution
           );
         }
-        newContigLengthsBinsAtResolution.add(newLengthsAtResolution);
+        IntStream.range(0, 2).forEach(j -> newContigLengthsBinsAtResolution.get(j).add(newLengthsAtResolution.get(j)));
+        IntStream.range(0, 2).forEach(j -> newContigPresenceAtResolution.get(j).add((newContigLengthBps.get(j) >= bpResolution) ? ContigHideType.SHOWN : ContigHideType.HIDDEN));
 
-        newContigPresenceAtResolution.add(newContigLengthBps.stream().map(bp -> (bp >= bpResolution) ? ContigHideType.SHOWN : ContigHideType.HIDDEN).toList());
 
         final var oldContigATUs = oldContigDescriptor.getAtus().get(i);
         final var oldATUsLengthBinsPrefixSum = oldContigDescriptor.getAtuPrefixSumLengthBins().get(i);
@@ -164,7 +158,7 @@ public class ScaffoldingOperations {
 
         final var oldJoinATU = oldContigATUs.get(indexOfATUWhereSplitOccurs);
 
-        final var newLeftATUs = oldContigATUs.subList(0, indexOfATUWhereSplitOccurs);
+        final var newLeftATUs = new ArrayList<>(oldContigATUs.subList(0, indexOfATUWhereSplitOccurs));
         final List<@NotNull ATUDescriptor> newRightATUs;
 
 
@@ -191,6 +185,7 @@ public class ScaffoldingOperations {
             )
             .build();
           newLeftATUs.add(newLeftJoinATU);
+          assert (newLeftJoinATU.getLength() == deltaL) : "New left ATU has incorrect size??";
         }
 
         final var newRightJoinATUStart = switch (oldJoinATU.getDirection()) {
@@ -204,26 +199,44 @@ public class ScaffoldingOperations {
         };
 
         if (newRightJoinATUEnd > newRightJoinATUStart) {
-          newRightATUs = oldContigATUs.subList(indexOfATUWhereSplitOccurs, oldContigATUs.size());
-          newRightATUs.set(0,
-            ATUDescriptor.builder()
-              .stripeDescriptor(oldJoinATU.getStripeDescriptor())
-              .direction(oldJoinATU.getDirection())
-              .startIndexInStripeIncl(newRightJoinATUStart)
-              .endIndexInStripeExcl(newRightJoinATUEnd)
-              .build()
-          );
+          newRightATUs = new ArrayList<>(oldContigATUs.subList(indexOfATUWhereSplitOccurs, oldContigATUs.size()));
+          final var newRightJoinATU = ATUDescriptor.builder()
+            .stripeDescriptor(oldJoinATU.getStripeDescriptor())
+            .direction(oldJoinATU.getDirection())
+            .startIndexInStripeIncl(newRightJoinATUStart)
+            .endIndexInStripeExcl(newRightJoinATUEnd)
+            .build();
+          newRightATUs.set(0, newRightJoinATU);
+          assert ((oldJoinATU.getLength() - ((i > 1) ? 0 : 1)) == (deltaL + newRightJoinATU.getLength()));
         } else {
           newRightATUs = oldContigATUs.subList(1 + indexOfATUWhereSplitOccurs, oldContigATUs.size());
+          assert ((oldJoinATU.getLength() - ((i > 1) ? 0 : 1)) == deltaL);
         }
+
+
+        assert (
+          newLeftATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum()
+            +
+            newRightATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum()
+            ==
+            oldATUsLengthBinsPrefixSum[oldATUsLengthBinsPrefixSum.length - 1] - ((i > 1) ? 0 : 1)
+        ) : String.format(
+          "ATUs total length %d + %d has changed after splitting contig with ATU length %d at resolution order %d??",
+          newLeftATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum(),
+          newRightATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum(),
+          oldATUsLengthBinsPrefixSum[oldATUsLengthBinsPrefixSum.length - 1],
+          i
+        );
 
 
         switch (oldContigNode.getTrueDirection()) {
           case FORWARD -> {
-            newContigAtus.add(List.of(newLeftATUs, newRightATUs));
+            newContigAtus.get(0).add(newLeftATUs);
+            newContigAtus.get(1).add(newRightATUs);
           }
           case REVERSED -> {
-            newContigAtus.add(List.of(newRightATUs, newLeftATUs));
+            newContigAtus.get(0).add(newRightATUs);
+            newContigAtus.get(1).add(newLeftATUs);
           }
         }
 
@@ -253,7 +266,7 @@ public class ScaffoldingOperations {
       final var newContigTreeRoot = contigTree.getRoot();
       final var newAssemblyLengthBp = newContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
 
-      assert (oldAssemblyLengthBp == newAssemblyLengthBp) : "Assembly length has changed after splitting contig??";
+      assert (oldAssemblyLengthBp == (newAssemblyLengthBp + minBpResolution)) : "Assembly length has changed after splitting contig??";
 
     } finally {
       lock.writeLock().unlock();

@@ -22,7 +22,7 @@ public abstract class ResolutionDescriptor {
     if (bpResolution < 1) {
       resolutionOrder = 0;
     } else {
-      resolutionOrder = 1 + BinarySearch.leftBinarySearch(chunkedFile.getResolutions(), bpResolution);
+      resolutionOrder = BinarySearch.leftBinarySearch(chunkedFile.getResolutions(), bpResolution);
     }
 
     return new ResolutionDescriptor() {
