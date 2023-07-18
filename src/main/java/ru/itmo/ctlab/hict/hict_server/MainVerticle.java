@@ -13,6 +13,7 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import lombok.extern.slf4j.Slf4j;
+import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
@@ -21,9 +22,11 @@ import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
+import java.util.stream.LongStream;
 
 @Slf4j
 public class MainVerticle extends AbstractVerticle {
@@ -31,7 +34,6 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
-    /*
     // TODO: Remove testing code:
     {
       final var a = new long[]{3, 3, 3, 3};
@@ -42,7 +44,7 @@ public class MainVerticle extends AbstractVerticle {
       LongStream.range(0, 12).map(idx -> BinarySearch.leftBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse leftBinarySearch Position is " + pos));
       LongStream.range(0, 12).map(idx -> BinarySearch.rightBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse rightBinarySearch Position is " + pos));
     }
-     */
+
 
 
     // set vertx logger delegate factory to slf4j

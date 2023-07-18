@@ -9,6 +9,7 @@ import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
+import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -56,9 +57,7 @@ public class ScaffoldingOperations {
   }
 
   public void splitContigAtBin(final long splitPosition, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull QueryLengthUnit units) {
-    if (QueryLengthUnit.BASE_PAIRS.equals(units)) {
-      assert (resolutionDescriptor.getResolutionOrderInArray() == 0) : "In bp query resolution should be set to 0";
-    }
+    assert !QueryLengthUnit.BASE_PAIRS.equals(units) || (resolutionDescriptor.getResolutionOrderInArray() == 0) : "In bp query resolution should be set to 0";
 
     final var minResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(1);
     final long minBpResolution = this.chunkedFile.getResolutions()[1];
@@ -80,7 +79,7 @@ public class ScaffoldingOperations {
       assert (node != null) : "Split position is outside of any contig??";
 
       final var oldContigDescriptor = node.getContigDescriptor();
-      final var deltaBinsFromContigStart = splitPositionBins - leftBins;
+      final var deltaBinsFromContigStartAtMinResolution = splitPositionBins - leftBins;
       final var deltaBpsFromContigStart = splitPositionBp - leftBps;
 
       final int maxContigId = contigTree.getContigDescriptors().keySet().stream().max(Integer::compareTo).orElse(0);
@@ -117,18 +116,74 @@ public class ScaffoldingOperations {
 
       for (int i = 1; i < this.chunkedFile.getResolutions().length; i++) {
         final var bpResolution = this.chunkedFile.getResolutions()[i];
-        final var deltaBinsFromStartAtResolution = this.chunkedFile.convertUnits(
-          deltaBpsFromContigStart,
+        final var contigStartBinsAtResolution = this.chunkedFile.convertUnits(
+          leftBps,
           ResolutionDescriptor.fromResolutionOrder(0),
           QueryLengthUnit.BASE_PAIRS,
           ResolutionDescriptor.fromResolutionOrder(i),
           QueryLengthUnit.BINS
         );
+        final var splitPositionBinsAtResolution = this.chunkedFile.convertUnits(
+          splitPositionBp,
+          ResolutionDescriptor.fromResolutionOrder(0),
+          QueryLengthUnit.BASE_PAIRS,
+          ResolutionDescriptor.fromResolutionOrder(i),
+          QueryLengthUnit.BINS
+        );
+        final var deltaBinsFromContigStartAtResolution = splitPositionBinsAtResolution - contigStartBinsAtResolution;
 
-        if (i == 1){
-          newContigLengthsBinsAtResolution.get(0).add(deltaBinsFromStartAtResolution);
+        final List<Long> newLengthsAtResolution;
+
+        final var oldContigLengthBinsAtResolution = oldContigDescriptor.getLengthInUnits(QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(i));
+
+        if (i == 1) {
+          newLengthsAtResolution = List.of(
+            deltaBinsFromContigStartAtResolution,
+            oldContigLengthBinsAtResolution - deltaBinsFromContigStartAtResolution - 1
+          );
         } else {
+          newLengthsAtResolution = List.of(
+            deltaBinsFromContigStartAtResolution,
+            oldContigLengthBinsAtResolution - deltaBinsFromContigStartAtResolution
+          );
+        }
+        newContigLengthsBinsAtResolution.add(newLengthsAtResolution);
 
+        newContigPresenceAtResolution.add(newContigLengthBps.stream().map(bp -> (bp >= bpResolution) ? ContigHideType.SHOWN : ContigHideType.HIDDEN).toList());
+
+        final var oldContigATUs = oldContigDescriptor.getAtus().get(i);
+        final var oldATUsLengthBinsPrefixSum = oldContigDescriptor.getAtuPrefixSumLengthBins().get(i);
+
+        final var indexOfATUWhereSplitOccurs = switch (node.getTrueDirection()) {
+          case FORWARD ->
+            BinarySearch.rightBinarySearch(oldATUsLengthBinsPrefixSum, deltaBinsFromContigStartAtResolution);
+          case REVERSED ->
+            BinarySearch.leftBinarySearch(oldATUsLengthBinsPrefixSum, oldContigLengthBinsAtResolution - deltaBinsFromContigStartAtResolution); //TODO: BinarySearch.
+        };
+
+        final var oldJoinATU = oldContigATUs.get(indexOfATUWhereSplitOccurs);
+
+        final var ATUsL = oldContigATUs.subList(0, indexOfATUWhereSplitOccurs);
+        final var ATUsR = oldContigATUs.subList(indexOfATUWhereSplitOccurs, oldContigATUs.size());
+
+        final var leftATUsLength = (indexOfATUWhereSplitOccurs == 0) ? 0L : oldATUsLengthBinsPrefixSum[indexOfATUWhereSplitOccurs - 1];
+
+        final var deltaL = deltaBinsFromContigStartAtResolution - leftATUsLength;
+
+
+        if (deltaL > 0){
+
+        }
+
+
+
+        switch (node.getTrueDirection()) {
+          case FORWARD -> {
+
+          }
+          case REVERSED -> {
+
+          }
         }
 
       }
