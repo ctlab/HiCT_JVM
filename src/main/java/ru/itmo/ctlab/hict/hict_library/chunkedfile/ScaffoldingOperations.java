@@ -67,6 +67,8 @@ public class ScaffoldingOperations {
     final var lock = contigTree.getRootLock();
     try {
       lock.writeLock().lock();
+      final var oldContigTreeRoot = contigTree.getRoot();
+      final var oldAssemblyLengthBp = oldContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
       final var splitPositionBp = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
       final var splitPositionBins = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, minResolutionDescriptor, QueryLengthUnit.BINS);
       final var es = contigTree.expose(minResolutionDescriptor, splitPositionBins, 1 + splitPositionBins, QueryLengthUnit.BINS);
@@ -74,12 +76,11 @@ public class ScaffoldingOperations {
       final var leftBins = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BINS, minResolutionDescriptor);
       final var leftBps = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
 
-      final var node = es.segment();
+      final var oldContigNode = es.segment().push().updateSizes();
 
-      assert (node != null) : "Split position is outside of any contig??";
+      assert (oldContigNode != null) : "Split position is outside of any contig??";
 
-      final var oldContigDescriptor = node.getContigDescriptor();
-      final var deltaBinsFromContigStartAtMinResolution = splitPositionBins - leftBins;
+      final var oldContigDescriptor = oldContigNode.getContigDescriptor();
       final var deltaBpsFromContigStart = splitPositionBp - leftBps;
 
       final int maxContigId = contigTree.getContigDescriptors().keySet().stream().max(Integer::compareTo).orElse(0);
@@ -90,7 +91,7 @@ public class ScaffoldingOperations {
         oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart - minBpResolution
       );
 
-      final var newContigNames = switch (node.getContigDirection()) {
+      final var newContigNames = switch (oldContigNode.getContigDirection()) {
         case FORWARD -> List.of(
           String.format("%s_%d_%d", oldContigDescriptor.getContigName(), 0, deltaBpsFromContigStart),
           String.format("%s_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp())
@@ -102,7 +103,7 @@ public class ScaffoldingOperations {
       };
 
       final var newContigNamesInSourceFasta = List.of(oldContigDescriptor.getContigNameInSourceFASTA(), oldContigDescriptor.getContigNameInSourceFASTA());
-      final var newContigOffsetsInSourceFasta = switch (node.getContigDirection()) {
+      final var newContigOffsetsInSourceFasta = switch (oldContigNode.getContigDirection()) {
         case FORWARD ->
           List.of(oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getOffsetInSourceFASTA() + (int) minBpResolution);
         case REVERSED ->
@@ -154,7 +155,7 @@ public class ScaffoldingOperations {
         final var oldContigATUs = oldContigDescriptor.getAtus().get(i);
         final var oldATUsLengthBinsPrefixSum = oldContigDescriptor.getAtuPrefixSumLengthBins().get(i);
 
-        final var indexOfATUWhereSplitOccurs = switch (node.getTrueDirection()) {
+        final var indexOfATUWhereSplitOccurs = switch (oldContigNode.getTrueDirection()) {
           case FORWARD ->
             BinarySearch.rightBinarySearch(oldATUsLengthBinsPrefixSum, deltaBinsFromContigStartAtResolution);
           case REVERSED ->
@@ -163,31 +164,70 @@ public class ScaffoldingOperations {
 
         final var oldJoinATU = oldContigATUs.get(indexOfATUWhereSplitOccurs);
 
-        final var ATUsL = oldContigATUs.subList(0, indexOfATUWhereSplitOccurs);
-        final var ATUsR = oldContigATUs.subList(indexOfATUWhereSplitOccurs, oldContigATUs.size());
+        final var newLeftATUs = oldContigATUs.subList(0, indexOfATUWhereSplitOccurs);
+        final List<@NotNull ATUDescriptor> newRightATUs;
+
 
         final var leftATUsLength = (indexOfATUWhereSplitOccurs == 0) ? 0L : oldATUsLengthBinsPrefixSum[indexOfATUWhereSplitOccurs - 1];
 
-        final var deltaL = deltaBinsFromContigStartAtResolution - leftATUsLength;
+        final var deltaL = (int) (deltaBinsFromContigStartAtResolution - leftATUsLength);
 
 
-        if (deltaL > 0){
+        if (deltaL > 0) {
+          final var newLeftJoinATU = ATUDescriptor.builder()
+            .stripeDescriptor(oldJoinATU.getStripeDescriptor())
+            .direction(oldJoinATU.getDirection())
+            .startIndexInStripeIncl(
+              switch (oldJoinATU.getDirection()) {
+                case FORWARD -> oldJoinATU.getStartIndexInStripeIncl();
+                case REVERSED -> oldJoinATU.getEndIndexInStripeExcl() - deltaL;
+              }
+            )
+            .endIndexInStripeExcl(
+              switch (oldJoinATU.getDirection()) {
+                case FORWARD -> oldJoinATU.getStartIndexInStripeIncl() + deltaL;
+                case REVERSED -> oldJoinATU.getEndIndexInStripeExcl();
+              }
+            )
+            .build();
+          newLeftATUs.add(newLeftJoinATU);
+        }
 
+        final var newRightJoinATUStart = switch (oldJoinATU.getDirection()) {
+          case FORWARD -> oldJoinATU.getStartIndexInStripeIncl() + deltaL + ((i > 1) ? 0 : 1);
+          case REVERSED -> oldJoinATU.getStartIndexInStripeIncl();
+        };
+
+        final var newRightJoinATUEnd = switch (oldJoinATU.getDirection()) {
+          case FORWARD -> oldJoinATU.getEndIndexInStripeExcl();
+          case REVERSED -> oldJoinATU.getEndIndexInStripeExcl() - deltaL - ((i > 1) ? 0 : 1);
+        };
+
+        if (newRightJoinATUEnd > newRightJoinATUStart) {
+          newRightATUs = oldContigATUs.subList(indexOfATUWhereSplitOccurs, oldContigATUs.size());
+          newRightATUs.set(0,
+            ATUDescriptor.builder()
+              .stripeDescriptor(oldJoinATU.getStripeDescriptor())
+              .direction(oldJoinATU.getDirection())
+              .startIndexInStripeIncl(newRightJoinATUStart)
+              .endIndexInStripeExcl(newRightJoinATUEnd)
+              .build()
+          );
+        } else {
+          newRightATUs = oldContigATUs.subList(1 + indexOfATUWhereSplitOccurs, oldContigATUs.size());
         }
 
 
-
-        switch (node.getTrueDirection()) {
+        switch (oldContigNode.getTrueDirection()) {
           case FORWARD -> {
-
+            newContigAtus.add(List.of(newLeftATUs, newRightATUs));
           }
           case REVERSED -> {
-
+            newContigAtus.add(List.of(newRightATUs, newLeftATUs));
           }
         }
 
       }
-
 
       final var newCds = IntStream.range(0, 2).mapToObj(i -> new ContigDescriptor(
         newContigIds.get(i),
@@ -200,6 +240,20 @@ public class ScaffoldingOperations {
         newContigOffsetsInSourceFasta.get(i)
       )).toList();
 
+      newCds.forEach(cd -> contigTree.getContigDescriptors().put(cd.getContigId(), cd));
+
+      final var newContigNodes = newCds.stream().map(cd -> ContigTree.Node.createNodeFromDescriptor(cd, oldContigNode.getTrueDirection())).toList();
+
+      final var newSegment = ContigTree.Node.mergeNodes(new ContigTree.Node.SplitResult(newContigNodes.get(0), newContigNodes.get(1)));
+
+      final var newExposedSegment = new ContigTree.Node.ExposedSegment(es.less(), newSegment, es.greater());
+
+      contigTree.commitExposedSegment(newExposedSegment);
+
+      final var newContigTreeRoot = contigTree.getRoot();
+      final var newAssemblyLengthBp = newContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
+
+      assert (oldAssemblyLengthBp == newAssemblyLengthBp) : "Assembly length has changed after splitting contig??";
 
     } finally {
       lock.writeLock().unlock();

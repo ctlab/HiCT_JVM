@@ -16,7 +16,7 @@ public abstract class ResolutionDescriptor {
     };
   }
 
-  public static ResolutionDescriptor fromBpResolution(final int bpResolution, final @NotNull ChunkedFile chunkedFile) {
+  public static ResolutionDescriptor fromBpResolution(final long bpResolution, final @NotNull ChunkedFile chunkedFile) {
     final int resolutionOrder;
 
     if (bpResolution < 1) {
