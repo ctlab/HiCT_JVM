@@ -9,10 +9,11 @@ import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
-import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 @RequiredArgsConstructor
@@ -97,8 +98,10 @@ public class ScaffoldingOperations {
           String.format("%s_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp())
         );
         case REVERSED -> List.of(
-          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp()),
-          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), 0, deltaBpsFromContigStart)
+//          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp()),
+//          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), 0, deltaBpsFromContigStart),
+          String.format("%s_reversed_%d_%d", oldContigDescriptor.getContigName(), 0, deltaBpsFromContigStart),
+          String.format("%s_reversed_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp())
         );
       };
 
@@ -145,16 +148,29 @@ public class ScaffoldingOperations {
         IntStream.range(0, 2).forEach(j -> newContigLengthsBinsAtResolution.get(j).add(newLengthsAtResolution.get(j)));
         IntStream.range(0, 2).forEach(j -> newContigPresenceAtResolution.get(j).add((newContigLengthBps.get(j) >= bpResolution) ? ContigHideType.SHOWN : ContigHideType.HIDDEN));
 
-
-        final var oldContigATUs = oldContigDescriptor.getAtus().get(i);
         final var oldATUsLengthBinsPrefixSum = oldContigDescriptor.getAtuPrefixSumLengthBins().get(i);
+
+        /*
+        final var oldContigATUs = switch (oldContigNode.getTrueDirection()) {
+          case FORWARD -> oldContigDescriptor.getAtus().get(i);
+          case REVERSED -> {
+            final var tmp = oldContigDescriptor.getAtus().get(i).parallelStream().map(ATUDescriptor::reversed).collect(Collectors.toList());
+            Collections.reverse(tmp);
+            yield tmp;
+          }
+        };
+
+
 
         final var indexOfATUWhereSplitOccurs = switch (oldContigNode.getTrueDirection()) {
           case FORWARD ->
             BinarySearch.rightBinarySearch(oldATUsLengthBinsPrefixSum, deltaBinsFromContigStartAtResolution);
           case REVERSED ->
-            BinarySearch.leftBinarySearch(oldATUsLengthBinsPrefixSum, oldContigLengthBinsAtResolution - deltaBinsFromContigStartAtResolution); //TODO: BinarySearch.
+            oldATUsLengthBinsPrefixSum.length - 1 - BinarySearch.leftBinarySearch(oldATUsLengthBinsPrefixSum, oldContigLengthBinsAtResolution - deltaBinsFromContigStartAtResolution); //TODO: BinarySearch.
         };
+
+        assert (indexOfATUWhereSplitOccurs >= 0) : "Wrong index of splitting ATU";
+        assert (indexOfATUWhereSplitOccurs < oldATUsLengthBinsPrefixSum.length) : "Wrong index of splitting ATU";
 
         final var oldJoinATU = oldContigATUs.get(indexOfATUWhereSplitOccurs);
 
@@ -163,8 +179,16 @@ public class ScaffoldingOperations {
 
 
         final var leftATUsLength = (indexOfATUWhereSplitOccurs == 0) ? 0L : oldATUsLengthBinsPrefixSum[indexOfATUWhereSplitOccurs - 1];
+        final var rightATUsLength = oldATUsLengthBinsPrefixSum[oldATUsLengthBinsPrefixSum.length - 1] - oldATUsLengthBinsPrefixSum[indexOfATUWhereSplitOccurs];
 
-        final var deltaL = (int) (deltaBinsFromContigStartAtResolution - leftATUsLength);
+        final var deltaL = (int) (deltaBinsFromContigStartAtResolution -
+          switch (oldContigNode.getTrueDirection()) {
+            case FORWARD -> leftATUsLength;
+            case REVERSED -> rightATUsLength;
+          }
+        );
+
+        assert (deltaL <= oldJoinATU.getLength()) : "Need to shrink ATU that is already smaller?";
 
 
         if (deltaL > 0) {
@@ -212,7 +236,10 @@ public class ScaffoldingOperations {
           newRightATUs = oldContigATUs.subList(1 + indexOfATUWhereSplitOccurs, oldContigATUs.size());
           assert ((oldJoinATU.getLength() - ((i > 1) ? 0 : 1)) == deltaL);
         }
+         */
 
+        final var newLeftATUs = this.chunkedFile.matrixQueries().getATUsForRange(ResolutionDescriptor.fromResolutionOrder(i), contigStartBinsAtResolution, splitPositionBinsAtResolution, false);
+        final var newRightATUs = this.chunkedFile.matrixQueries().getATUsForRange(ResolutionDescriptor.fromResolutionOrder(i), splitPositionBinsAtResolution + ((i > 1) ? 0 : 1), contigStartBinsAtResolution + oldContigLengthBinsAtResolution, false);
 
         assert (
           newLeftATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum()
@@ -235,8 +262,10 @@ public class ScaffoldingOperations {
             newContigAtus.get(1).add(newRightATUs);
           }
           case REVERSED -> {
-            newContigAtus.get(0).add(newRightATUs);
-            newContigAtus.get(1).add(newLeftATUs);
+            Collections.reverse(newLeftATUs);
+            Collections.reverse(newRightATUs);
+            newContigAtus.get(0).add(newLeftATUs.parallelStream().map(ATUDescriptor::reversed).toList());
+            newContigAtus.get(1).add(newRightATUs.parallelStream().map(ATUDescriptor::reversed).toList());
           }
         }
 
