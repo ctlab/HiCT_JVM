@@ -38,6 +38,7 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull MatrixQueries matrixQueries;
   private final @NotNull ScaffoldingOperations scaffoldingOperations;
   private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
+  private final @NotNull AGPProcessor agpProcessor;
 
 
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
@@ -98,6 +99,7 @@ public class ChunkedFile implements AutoCloseable {
       }
       log.info("Using dataset pools with minimum of " + options.minDatasetPoolSize() + " readily available bundles and maximum of " + options.maxDatasetPoolSize() + " readily available bundles.");
     }
+    this.agpProcessor = new AGPProcessor(this);
   }
 
   public @NotNull MatrixQueries matrixQueries() {
