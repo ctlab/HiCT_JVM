@@ -298,16 +298,13 @@ public class MatrixQueries {
           Integer.max(indexOfATUContainingStartPx, indexOfATUContainingEndPx)
         );
         final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
-          case FORWARD -> firstContigATUs.subList(
-            1 + Integer.min(indexOfATUContainingStartPx, indexOfATUContainingEndPx),
-            Integer.max(indexOfATUContainingStartPx, indexOfATUContainingEndPx)
-          );
+          case FORWARD -> firstContigIntermediateATUs;
           case REVERSED -> {
             final var firstContigIntermediateATUsReversed = firstContigIntermediateATUs.parallelStream()
               .map(ATUDescriptor::reversed)
               .collect(Collectors.toList());
             Collections.reverse(firstContigIntermediateATUsReversed);
-            yield firstContigIntermediateATUs;
+            yield firstContigIntermediateATUsReversed;
           }
         };
         atus.addAll(firstContigRestATUs);
