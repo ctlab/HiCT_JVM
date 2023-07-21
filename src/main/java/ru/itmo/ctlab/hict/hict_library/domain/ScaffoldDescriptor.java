@@ -9,5 +9,9 @@ public record ScaffoldDescriptor(
 ) {
   public record ScaffoldBordersBP(long startBP, long endBP) {
 
+    public long getLengthBp(){
+      return this.endBP - this.startBP;
+    }
+
   }
 }

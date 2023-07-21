@@ -4,16 +4,16 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
-import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
-import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
-import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
-import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
+import ru.itmo.ctlab.hict.hict_library.domain.*;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.LongFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -59,6 +59,86 @@ public class ScaffoldingOperations {
     }
   }
 
+  public void scaffoldRegion(final long startIncl, final long endExcl, final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull QueryLengthUnit units, final @Nullable LongFunction<ScaffoldDescriptor> scaffoldGenerator) {
+    assert (startIncl < endExcl) : "Rescaffolding: start >= end??";
+
+    final var contigTree = this.chunkedFile.getContigTree();
+    final var scaffoldTree = this.chunkedFile.getScaffoldTree();
+
+    try {
+      contigTree.getRootLock().readLock().lock();
+      scaffoldTree.getRootLock().writeLock().lock();
+
+      final long startBp = this.chunkedFile.convertUnits(
+        startIncl,
+        resolutionDescriptor,
+        units,
+        ResolutionDescriptor.fromResolutionOrder(0),
+        QueryLengthUnit.BASE_PAIRS
+      );
+      final long endBp = this.chunkedFile.convertUnits(
+        endExcl,
+        resolutionDescriptor,
+        units,
+        ResolutionDescriptor.fromResolutionOrder(0),
+        QueryLengthUnit.BASE_PAIRS
+      );
+
+      final var es = contigTree.expose(ResolutionDescriptor.fromResolutionOrder(0), startBp, endBp, QueryLengthUnit.BASE_PAIRS);
+      final var lessSize = (long) Optional.ofNullable(es.less()).map(n -> n.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0))).orElse(0L);
+      final var segmentSize = (long) Optional.ofNullable(es.segment()).map(n -> n.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0))).orElse(0L);
+
+      final var extended = scaffoldTree.extendBordersToScaffolds(lessSize, lessSize + segmentSize);
+
+
+      scaffoldTree.rescaffold(extended.startBP(), extended.endBP(), scaffoldGenerator);
+
+    } finally {
+      scaffoldTree.getRootLock().writeLock().unlock();
+      contigTree.getRootLock().readLock().unlock();
+    }
+  }
+
+
+  public void unscaffoldRegion(final long startIncl, final long endExcl, final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull QueryLengthUnit units) {
+    assert (startIncl < endExcl) : "Unscaffolding: start >= end??";
+
+    final var contigTree = this.chunkedFile.getContigTree();
+    final var scaffoldTree = this.chunkedFile.getScaffoldTree();
+
+    try {
+      contigTree.getRootLock().readLock().lock();
+      scaffoldTree.getRootLock().writeLock().lock();
+
+      final long startBp = this.chunkedFile.convertUnits(
+        startIncl,
+        resolutionDescriptor,
+        units,
+        ResolutionDescriptor.fromResolutionOrder(0),
+        QueryLengthUnit.BASE_PAIRS
+      );
+      final long endBp = this.chunkedFile.convertUnits(
+        endExcl,
+        resolutionDescriptor,
+        units,
+        ResolutionDescriptor.fromResolutionOrder(0),
+        QueryLengthUnit.BASE_PAIRS
+      );
+
+      final var es = contigTree.expose(ResolutionDescriptor.fromResolutionOrder(0), startBp, endBp, QueryLengthUnit.BASE_PAIRS);
+      final var lessSize = (long) Optional.ofNullable(es.less()).map(n -> n.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0))).orElse(0L);
+      final var segmentSize = (long) Optional.ofNullable(es.segment()).map(n -> n.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0))).orElse(0L);
+
+      final var extended = scaffoldTree.extendBordersToScaffolds(lessSize, lessSize + segmentSize);
+
+      scaffoldTree.removeSegmentFromAssembly(extended.startBP(), extended.endBP());
+
+    } finally {
+      scaffoldTree.getRootLock().writeLock().unlock();
+      contigTree.getRootLock().readLock().unlock();
+    }
+  }
+
   public void splitContigAtBin(final long splitPosition, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull QueryLengthUnit units) {
     assert !QueryLengthUnit.BASE_PAIRS.equals(units) || (resolutionDescriptor.getResolutionOrderInArray() == 0) : "In bp query resolution should be set to 0";
 
@@ -78,6 +158,8 @@ public class ScaffoldingOperations {
 
       final var leftBins = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BINS, minResolutionDescriptor);
       final var leftBps = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
+
+      unscaffoldRegion(leftBps, 1 + leftBps, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
 
       final var oldContigNode = es.segment().push().updateSizes();
 
@@ -178,8 +260,8 @@ public class ScaffoldingOperations {
           case REVERSED -> {
             newContigAtus.get(0).add(newLeftATUs.parallelStream().map(ATUDescriptor::reversed).collect(Collectors.toList()));
             newContigAtus.get(1).add(newRightATUs.parallelStream().map(ATUDescriptor::reversed).collect(Collectors.toList()));
-            Collections.reverse(newContigAtus.get(0).get(i-1));
-            Collections.reverse(newContigAtus.get(1).get(i-1));
+            Collections.reverse(newContigAtus.get(0).get(i - 1));
+            Collections.reverse(newContigAtus.get(1).get(i - 1));
           }
         }
       }

@@ -1,6 +1,7 @@
 package ru.itmo.ctlab.hict.hict_library.trees;
 
 import lombok.Builder;
+import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
@@ -14,6 +15,7 @@ import java.util.function.LongFunction;
 public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
   private static final Random rnd = new Random();
+  @Getter
   private final ReadWriteLock rootLock = new ReentrantReadWriteLock();
   private Node root;
   private long rootScaffoldIdCounter;
@@ -92,10 +94,10 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         assert (leftScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the left?";
       }
       final @Nullable var optionalRightScaffoldDescriptor = getScaffoldAtBp(queriedEndBp);
-      if (optionalLeftScaffoldDescriptor != null) {
+      if (optionalRightScaffoldDescriptor != null) {
         final @NotNull var leGr = Node.splitNodeBp(this.root, queriedEndBp, true);
         rightBp = (leGr.left() != null) ? (leGr.left().subtreeLengthBp) : 0L;
-        final @NotNull var rightScaffold = Objects.requireNonNull(Node.rightmost(leGr.right()));
+        final @NotNull var rightScaffold = Objects.requireNonNull(Node.rightmost(leGr.left()));
         assert (rightScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the right?";
       }
       return new ScaffoldDescriptor.ScaffoldBordersBP(leftBp, rightBp);
@@ -305,11 +307,11 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         if (expectedLeftSize < leftSubtreeLength + nodeLength) {
           if (newTree.scaffoldDescriptor != null) {
             if (includeEqualToTheLeft) {
-              final var new_t = newTree.cloneBuilder().right(null).build();
+              final var new_t = newTree.cloneBuilder().right(null).build().updateSizes();
               assert (newTree.subtreeLengthBp == (new_t.subtreeLengthBp + Optional.ofNullable(newTree.right).map(n -> n.subtreeLengthBp).orElse(0L))) : "In second-include-left split case subtree length has changed??";
               return new Node.SplitResult(new_t, newTree.right);
             } else {
-              final var new_t = newTree.cloneBuilder().left(null).build();
+              final var new_t = newTree.cloneBuilder().left(null).build().updateSizes();
               assert (newTree.subtreeLengthBp == (Optional.ofNullable(newTree.left).map(n -> n.subtreeLengthBp).orElse(0L) + new_t.updateSizes().subtreeLengthBp)) : "In second-non-include-left split case subtree length has changed??";
               return new Node.SplitResult(newTree.left, new_t.updateSizes());
             }
@@ -411,7 +413,12 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       final var leGr = splitNodeBp(t, toBp, true);
       final var lsSg = splitNodeBp(leGr.left(), fromBp, false); // TODO: Python code had true here as well, maybe that was a bug
 
-      assert ((t.subtreeLengthBp) == (lsSg.left().subtreeLengthBp + lsSg.right().subtreeLengthBp + leGr.right().subtreeLengthBp)) : "Total length of exposed segments is greater than source one?";
+      assert ((t.subtreeLengthBp) == (
+        Optional.ofNullable(lsSg.left()).map(e -> e.subtreeLengthBp).orElse(0L)
+          + Optional.ofNullable(lsSg.right()).map(e -> e.subtreeLengthBp).orElse(0L)
+          + Optional.ofNullable(leGr.right()).map(e -> e.subtreeLengthBp).orElse(0L)
+      )
+      ) : "Total length of exposed segments is greater than source one?";
 
       return new ExposedSegment(lsSg.left(), lsSg.right(), leGr.right());
     }
@@ -624,8 +631,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
-  public record ScaffoldTuple(@NotNull ScaffoldDescriptor scaffoldDescriptor, @NotNull
-  ScaffoldDescriptor.ScaffoldBordersBP scaffoldBordersBP) {
+  public record ScaffoldTuple(
+    @Nullable ScaffoldDescriptor scaffoldDescriptor,
+    @NotNull ScaffoldDescriptor.ScaffoldBordersBP scaffoldBordersBP
+  ) {
+    public long getLengthBp() {
+      return this.scaffoldBordersBP.getLengthBp();
+    }
   }
 
 

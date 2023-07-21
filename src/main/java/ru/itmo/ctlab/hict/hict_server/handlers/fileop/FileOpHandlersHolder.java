@@ -1,7 +1,9 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
+import io.vertx.core.streams.ReadStream;
 import io.vertx.ext.web.Router;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +16,7 @@ import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.OpenFileResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
 
@@ -60,6 +63,29 @@ public class FileOpHandlersHolder extends HandlersHolder {
       map.put("chunkedFile", chunkedFileWrapper);
 
       ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
+    });
+
+    router.post("/get_agp_for_assembly").blockingHandler(ctx -> {
+      final var map = vertx.sharedData().getLocalMap("hict_server");
+      log.debug("Got map");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+      log.debug("Got ChunkedFile from map");
+
+      final @NotNull var requestBody = ctx.body();
+      final @NotNull var requestJSON = requestBody.asJsonObject();
+
+      final long defaultSpacerLength = requestJSON.getLong("defaultSpacerLength", 1000L);
+
+      final var buffer = Buffer.buffer();
+
+      chunkedFile.getAgpProcessor().getAGPStream(defaultSpacerLength).sequential().forEach(s -> buffer.appendBytes(s.getBytes(StandardCharsets.UTF_8)));
+
+      ctx.response().setChunked(true).putHeader("Content-Type", "text/plain").end(buffer);
     });
   }
 

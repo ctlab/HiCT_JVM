@@ -177,7 +177,7 @@ public class MatrixQueries {
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
-    final var firstContigNode = es.segment().leftmostVisibleNode(resolutionDescriptor);
+    final var firstContigNode = excludeHiddenContigs?es.segment().leftmostVisibleNode(resolutionDescriptor):es.segment().leftmost();
     final var firstContigDescriptor = firstContigNode.getContigDescriptor();
     final var firstContigATUs = firstContigDescriptor.getAtus().get(resolutionOrder);
     final var firstContigATUPrefixSum = firstContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
@@ -185,7 +185,7 @@ public class MatrixQueries {
     final var firstContigId = firstContigDescriptor.getContigId();
 
     final var deltaBetweenRightPxAndExposedSegment = (lessSize + segmentSize) - endPx;
-    final var lastContigNode = es.segment().rightmostVisibleNode(resolutionDescriptor);
+    final var lastContigNode = excludeHiddenContigs?es.segment().rightmostVisibleNode(resolutionDescriptor):es.segment().rightmost();
     final var lastContigDescriptor = lastContigNode.getContigDescriptor();
     final var lastContigATUs = lastContigDescriptor.getAtus().get(resolutionOrder);
     final var lastContigATUPrefixSum = lastContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);

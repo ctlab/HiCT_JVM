@@ -3,17 +3,155 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
+import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
+import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 
+/**
+ * Following <a href="https://www.ncbi.nlm.nih.gov/assembly/agp/AGP_Specification/">AGP Specification v2.1</a>.
+ */
 @Slf4j
 @RequiredArgsConstructor
 public class AGPProcessor {
   private final @NotNull ChunkedFile chunkedFile;
 
+  public Stream<String> getAGPStream(final long unscaffoldedSpacerLength) {
+    final var records = this.getAGPRecords(unscaffoldedSpacerLength);
+    return records.parallelStream().map(r -> String.format("%s%n", r));
+  }
+
+  public @NotNull List<@NotNull AGPFileRecord> getAGPRecords(final long unscaffoldedSpacerLength) {
+    assert (unscaffoldedSpacerLength >= 0) : "Spacer length for unscaffolded contigs cannot be negative";
+    final var contigTree = this.chunkedFile.getContigTree();
+    final var scaffoldTree = this.chunkedFile.getScaffoldTree();
+
+    final var result = new ArrayList<AGPFileRecord>();
+
+    try {
+      contigTree.getRootLock().readLock().lock();
+      scaffoldTree.getRootLock().readLock().lock();
+
+      final var contigs = contigTree.getOrderedContigList();
+      final var scaffolds = scaffoldTree.getScaffoldList();
+
+      final var scaffoldedContigs = groupContigsIntoScaffolds(contigs, scaffolds);
+
+      var positionBp = 1L;
+
+      for (final var sc : scaffoldedContigs) {
+        final var scaffold = sc.scaffoldTuple().scaffoldDescriptor();
+        assert (scaffold != null || (sc.contigs().size() == 1)) : "Unscaffolded contig must always represent unique unscaffolded segment";
+        final var scaffoldName = (scaffold != null) ? scaffold.scaffoldName() : String.format(
+          "unscaffolded_%s",
+          sc.contigs().get(0).descriptor().getContigName()
+        );
+
+        final var spacerLength = ((scaffold != null) ? scaffold.spacerLength() : unscaffoldedSpacerLength);
+
+        int partNumber = 1;
+
+        for (final ContigTree.ContigTuple contigTuple : sc.contigs()) {
+          result.add(new ContigAGPRecord(
+            scaffoldName,
+            positionBp,
+            positionBp + contigTuple.descriptor().getLengthBp() - 1,
+            partNumber,
+            contigTuple.descriptor().getContigNameInSourceFASTA(),
+            1 + contigTuple.descriptor().getOffsetInSourceFASTA(),
+            contigTuple.descriptor().getOffsetInSourceFASTA() + contigTuple.descriptor().getLengthBp(),
+            switch (contigTuple.direction()) {
+              case FORWARD -> AGPContigOrientation.PLUS;
+              case REVERSED -> AGPContigOrientation.MINUS;
+            }
+          ));
+          positionBp += contigTuple.descriptor().getLengthBp();
+          ++partNumber;
+          if (((partNumber - 1) / 2 < sc.contigs().size() - 1) && (spacerLength > 0)) {
+            result.add(
+              new GapAGPRecord(
+                scaffoldName,
+                positionBp,
+                positionBp + spacerLength - 1,
+                partNumber,
+                spacerLength,
+                AGPGapType.SCAFFOLD,
+                true,
+                LinkageEvidence.PROXIMITY_LIGATION
+              )
+            );
+            positionBp += spacerLength;
+            ++partNumber;
+          }
+        }
+      }
+
+    } finally {
+      contigTree.getRootLock().readLock().unlock();
+      scaffoldTree.getRootLock().readLock().unlock();
+    }
+
+    return result;
+  }
+
+  protected @NotNull List<@NotNull ScaffoldedContigs> groupContigsIntoScaffolds(
+    final @NotNull List<ContigTree.@NotNull ContigTuple> contigs,
+    final List<ScaffoldTree.@NotNull ScaffoldTuple> scaffolds
+  ) {
+    var positionBp = 0L;
+    var positionInScaffoldList = 0;
+
+    final List<ScaffoldedContigs> scaffoldedContigs = new ArrayList<>();
+
+    for (final var ctgTuple : contigs) {
+      while (positionInScaffoldList < scaffolds.size() && scaffolds.get(positionInScaffoldList).scaffoldBordersBP().endBP() <= positionBp) {
+        ++positionInScaffoldList;
+      }
+
+      if (
+        (positionInScaffoldList < scaffolds.size())
+          && (scaffolds.get(positionInScaffoldList).scaffoldDescriptor() != null)
+          && (scaffolds.get(positionInScaffoldList).scaffoldBordersBP().startBP() <= positionBp)
+          && (positionBp < scaffolds.get(positionInScaffoldList).scaffoldBordersBP().endBP())
+      ) {
+        final var currentScaffoldTuple = scaffolds.get(positionInScaffoldList);
+        assert currentScaffoldTuple.scaffoldDescriptor() != null;
+        if (scaffoldedContigs.size() > 0) {
+          final var lastTuple = scaffoldedContigs.get(scaffoldedContigs.size() - 1);
+          if (currentScaffoldTuple.scaffoldDescriptor().equals(lastTuple.scaffoldTuple().scaffoldDescriptor())) {
+            lastTuple.contigs().add(ctgTuple);
+            positionBp += ctgTuple.descriptor().getLengthBp();
+          } else {
+            scaffoldedContigs.add(new ScaffoldedContigs(currentScaffoldTuple, new ArrayList<>(List.of(ctgTuple))));
+            positionBp += ctgTuple.descriptor().getLengthBp();
+          }
+        } else {
+          scaffoldedContigs.add(new ScaffoldedContigs(currentScaffoldTuple, new ArrayList<>(List.of(ctgTuple))));
+          positionBp += ctgTuple.descriptor().getLengthBp();
+        }
+      } else {
+        scaffoldedContigs.add(new ScaffoldedContigs(
+          new ScaffoldTree.ScaffoldTuple(
+            null,
+            new ScaffoldDescriptor.ScaffoldBordersBP(
+              positionBp,
+              positionBp + ctgTuple.descriptor().getLengthBp()
+            )
+          ),
+          List.of(ctgTuple)
+        ));
+        positionBp += ctgTuple.descriptor().getLengthBp();
+      }
+    }
+
+    return scaffoldedContigs;
+  }
 
   public enum AGPGapType {
     SCAFFOLD,
@@ -33,6 +171,7 @@ public class AGPProcessor {
     CONTAMINATION,
 //    a gap inserted in place of foreign sequence to maintain the coordinates.
   }
+
 
   public enum LinkageEvidence {
     NA,
@@ -65,16 +204,21 @@ public class AGPProcessor {
     PLUS,
     MINUS,
     UNKNOWN,
-    NA
+    IRRELEVANT
   }
 
-  @ToString
+  protected record ScaffoldedContigs(
+    @NotNull ScaffoldTree.ScaffoldTuple scaffoldTuple,
+    @NotNull List<ContigTree.@NotNull ContigTuple> contigs
+  ) {
+  }
+
   @Getter
   @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
   public static sealed class AGPFileRecord permits ContigAGPRecord, GapAGPRecord {
     private final @NotNull String scaffoldName;
-    private final long intraScaffoldStartIncl;
-    private final long intraScaffoldEndIncl;
+    private final long interScaffoldStartIncl;
+    private final long interScaffoldEndIncl;
     private final int partNumber;
 
     @Override
@@ -83,19 +227,29 @@ public class AGPProcessor {
       if (obj == null || obj.getClass() != this.getClass()) return false;
       var that = (AGPFileRecord) obj;
       return Objects.equals(this.scaffoldName, that.scaffoldName) &&
-        this.intraScaffoldStartIncl == that.intraScaffoldStartIncl &&
-        this.intraScaffoldEndIncl == that.intraScaffoldEndIncl &&
+        this.interScaffoldStartIncl == that.interScaffoldStartIncl &&
+        this.interScaffoldEndIncl == that.interScaffoldEndIncl &&
         this.partNumber == that.partNumber;
     }
 
     @Override
     public int hashCode() {
-      return Objects.hash(scaffoldName, intraScaffoldStartIncl, intraScaffoldEndIncl, partNumber);
+      return Objects.hash(scaffoldName, interScaffoldStartIncl, interScaffoldEndIncl, partNumber);
+    }
+
+    @Override
+    public String toString() {
+      return String.format(
+        "%s\t%d\t%d\t%d",
+        this.scaffoldName,
+        this.interScaffoldStartIncl,
+        this.interScaffoldEndIncl,
+        this.partNumber
+      );
     }
   }
 
   @Getter
-  @ToString
   public static final class GapAGPRecord extends AGPFileRecord {
     private final long gapLength;
     private final @NotNull AGPGapType gapType;
@@ -104,8 +258,8 @@ public class AGPProcessor {
 
     public GapAGPRecord(
       final @NotNull String scaffoldName,
-      final long intraScaffoldStartIncl,
-      final long intraScaffoldEndIncl,
+      final long interScaffoldStartIncl,
+      final long interScaffoldEndIncl,
       final int partNumber,
       final long gapLength,
       final @NotNull AGPGapType gapType,
@@ -114,8 +268,8 @@ public class AGPProcessor {
     ) {
       super(
         scaffoldName,
-        intraScaffoldStartIncl,
-        intraScaffoldEndIncl,
+        interScaffoldStartIncl,
+        interScaffoldEndIncl,
         partNumber
       );
       this.gapLength = gapLength;
@@ -139,9 +293,20 @@ public class AGPProcessor {
     public int hashCode() {
       return Objects.hash(gapLength, gapType, linkage, linkageEvidence);
     }
+
+    @Override
+    public String toString() {
+      return String.format(
+        "%s\tN\t%d\t%s\t%s\t%s",
+        super.toString(),
+        this.gapLength,
+        this.gapType.toString().toLowerCase(),
+        this.linkage ? "yes" : "no",
+        linkageEvidence.toString().toLowerCase()
+      );
+    }
   }
 
-  @ToString
   @Getter
   public static final class ContigAGPRecord extends AGPFileRecord {
     private final @NotNull String contigName;
@@ -151,8 +316,8 @@ public class AGPProcessor {
 
     public ContigAGPRecord(
       final @NotNull String scaffoldName,
-      final long intraScaffoldStartIncl,
-      final long intraScaffoldEndIncl,
+      final long interScaffoldStartIncl,
+      final long interScaffoldEndIncl,
       final int partNumber,
       final @NotNull String contigName,
       final long intraContigStartBpIncl,
@@ -161,8 +326,8 @@ public class AGPProcessor {
     ) {
       super(
         scaffoldName,
-        intraScaffoldStartIncl,
-        intraScaffoldEndIncl,
+        interScaffoldStartIncl,
+        interScaffoldEndIncl,
         partNumber
       );
       this.contigName = contigName;
@@ -185,6 +350,23 @@ public class AGPProcessor {
     @Override
     public int hashCode() {
       return Objects.hash(contigName, intraContigStartBpIncl, intraContigEndBpIncl, contigOrientation);
+    }
+
+    @Override
+    public String toString() {
+      return String.format(
+        "%s\tW\t%s\t%d\t%d\t%s",
+        super.toString(),
+        this.contigName,
+        this.intraContigStartBpIncl,
+        this.intraContigEndBpIncl,
+        switch (this.contigOrientation) {
+          case PLUS -> "+";
+          case MINUS -> "-";
+          case UNKNOWN -> "?";
+          case IRRELEVANT -> "na";
+        }
+      );
     }
   }
 
