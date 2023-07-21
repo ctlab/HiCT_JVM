@@ -1,6 +1,9 @@
 package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
-import lombok.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 
@@ -58,6 +61,13 @@ public class AGPProcessor {
 //    used only for gaps of type contamination and when converting old AGPs that lack a field for linkage evidence into the new format.
   }
 
+  public enum AGPContigOrientation {
+    PLUS,
+    MINUS,
+    UNKNOWN,
+    NA
+  }
+
   @ToString
   @Getter
   @RequiredArgsConstructor(access = AccessLevel.PROTECTED)
@@ -93,14 +103,14 @@ public class AGPProcessor {
     private final @NotNull LinkageEvidence linkageEvidence;
 
     public GapAGPRecord(
-      @NotNull String scaffoldName,
-      long intraScaffoldStartIncl,
-      long intraScaffoldEndIncl,
-      int partNumber,
-      long gapLength,
-      @NotNull AGPGapType gapType,
-      boolean linkage,
-      @NotNull LinkageEvidence linkageEvidence
+      final @NotNull String scaffoldName,
+      final long intraScaffoldStartIncl,
+      final long intraScaffoldEndIncl,
+      final int partNumber,
+      final long gapLength,
+      final @NotNull AGPGapType gapType,
+      final boolean linkage,
+      final @NotNull LinkageEvidence linkageEvidence
     ) {
       super(
         scaffoldName,
@@ -131,6 +141,51 @@ public class AGPProcessor {
     }
   }
 
-  public record ContigAGPRecord(@NotNull String contigName, long intraContigStartBpIncl, long intraContigEndBpIncl){}
+  @ToString
+  @Getter
+  public static final class ContigAGPRecord extends AGPFileRecord {
+    private final @NotNull String contigName;
+    private final long intraContigStartBpIncl;
+    private final long intraContigEndBpIncl;
+    private final @NotNull AGPContigOrientation contigOrientation;
+
+    public ContigAGPRecord(
+      final @NotNull String scaffoldName,
+      final long intraScaffoldStartIncl,
+      final long intraScaffoldEndIncl,
+      final int partNumber,
+      final @NotNull String contigName,
+      final long intraContigStartBpIncl,
+      final long intraContigEndBpIncl,
+      final @NotNull AGPContigOrientation contigOrientation
+    ) {
+      super(
+        scaffoldName,
+        intraScaffoldStartIncl,
+        intraScaffoldEndIncl,
+        partNumber
+      );
+      this.contigName = contigName;
+      this.intraContigStartBpIncl = intraContigStartBpIncl;
+      this.intraContigEndBpIncl = intraContigEndBpIncl;
+      this.contigOrientation = contigOrientation;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (obj == this) return true;
+      if (obj == null || obj.getClass() != this.getClass()) return false;
+      var that = (ContigAGPRecord) obj;
+      return Objects.equals(this.contigName, that.contigName) &&
+        this.intraContigStartBpIncl == that.intraContigStartBpIncl &&
+        this.intraContigEndBpIncl == that.intraContigEndBpIncl &&
+        Objects.equals(this.contigOrientation, that.contigOrientation);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(contigName, intraContigStartBpIncl, intraContigEndBpIncl, contigOrientation);
+    }
+  }
 
 }
