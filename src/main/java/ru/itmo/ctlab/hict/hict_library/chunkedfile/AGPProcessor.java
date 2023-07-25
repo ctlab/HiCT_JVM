@@ -269,8 +269,6 @@ public class AGPProcessor {
 
       final var scaffoldedContigs = groupContigsIntoScaffolds(contigs, scaffolds);
 
-      var positionBp = 1L;
-
       for (final var sc : scaffoldedContigs) {
         final var scaffold = sc.scaffoldTuple().scaffoldDescriptor();
         assert (scaffold != null || (sc.contigs().size() == 1)) : "Unscaffolded contig must always represent unique unscaffolded segment";
@@ -281,6 +279,7 @@ public class AGPProcessor {
 
         final var spacerLength = ((scaffold != null) ? scaffold.spacerLength() : unscaffoldedSpacerLength);
 
+        var positionBp = 1L;
         int partNumber = 1;
 
         for (final ContigTree.ContigTuple contigTuple : sc.contigs()) {
