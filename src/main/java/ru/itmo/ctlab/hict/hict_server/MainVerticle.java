@@ -139,6 +139,12 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new FileOpHandlersHolder(vertx));
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
 
+    router.route().failureHandler(ctx -> {
+      ctx.response().end(
+        ctx.failure().getMessage()
+      );
+    });
+
 
     log.info("Configuring router");
     handlersHolders.forEach(handlersHolder -> handlersHolder.addHandlersToRouter(router));

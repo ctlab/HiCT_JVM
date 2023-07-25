@@ -10,10 +10,13 @@ import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
+import java.io.IOException;
+import java.io.Reader;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
@@ -39,6 +42,7 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull ScaffoldingOperations scaffoldingOperations;
   private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
   private final @NotNull AGPProcessor agpProcessor;
+  private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
 
 
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
@@ -73,6 +77,9 @@ public class ChunkedFile implements AutoCloseable {
     }
     this.contigTree = new ContigTree();
     Initializers.initializeContigTree(this);
+    final var originalDescriptors = new ConcurrentHashMap<String, ContigDescriptor>();
+    this.contigTree.getContigDescriptors().values().forEach(contigDescriptor -> originalDescriptors.put(contigDescriptor.getContigName(), contigDescriptor));
+    this.originalDescriptors = originalDescriptors;
     this.matrixSizeBins = new long[this.resolutions.length];
     this.matrixSizeBins[0] = this.contigTree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
     for (int i = 1; i < this.resolutions.length; ++i) {
@@ -159,6 +166,22 @@ public class ChunkedFile implements AutoCloseable {
       return leftToUnits + deltaToUnits;
     } finally {
       lock.readLock().unlock();
+    }
+  }
+
+  public void importAGP(final @NotNull Reader tsvReader) throws IOException, NoSuchFieldException {
+    final var agpFileRecords = this.agpProcessor.parseRecords(tsvReader);
+    final var contigTreeLock = this.contigTree.getRootLock().writeLock();
+    final var scaffoldTreeLock = this.scaffoldTree.getRootLock().writeLock();
+    try {
+      contigTreeLock.lock();
+      scaffoldTreeLock.lock();
+
+      this.agpProcessor.initializeContigTreeFromAGP(agpFileRecords);
+      this.agpProcessor.initializeScaffoldTreeFromAGP(agpFileRecords);
+    } finally {
+      contigTreeLock.unlock();
+      scaffoldTreeLock.unlock();
     }
   }
 

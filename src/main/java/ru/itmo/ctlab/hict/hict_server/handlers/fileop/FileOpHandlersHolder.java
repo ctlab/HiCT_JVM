@@ -16,9 +16,14 @@ import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.OpenFileResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Objects;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -86,6 +91,39 @@ public class FileOpHandlersHolder extends HandlersHolder {
       chunkedFile.getAgpProcessor().getAGPStream(defaultSpacerLength).sequential().forEach(s -> buffer.appendBytes(s.getBytes(StandardCharsets.UTF_8)));
 
       ctx.response().setChunked(true).putHeader("Content-Type", "text/plain").end(buffer);
+    });
+
+    router.post("/load_agp").blockingHandler(ctx -> {
+      final var map = vertx.sharedData().getLocalMap("hict_server");
+      log.debug("Got map");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+      log.debug("Got ChunkedFile from map");
+
+      final @NotNull var requestBody = ctx.body();
+      final @NotNull var requestJSON = requestBody.asJsonObject();
+
+      final var agpFilename = Objects.requireNonNull(requestJSON.getString("agpFilename"), "AGP filename must be provided to load it.");
+
+      final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+      if (dataDirectoryWrapper == null) {
+        ctx.fail(new RuntimeException("Data directory is not present in local map"));
+        return;
+      }
+      final var dataDirectory = dataDirectoryWrapper.getPath();
+
+      final var agpFile = Path.of(dataDirectory.toString(), agpFilename);
+      try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)){
+        chunkedFile.importAGP(reader);
+      } catch (IOException | NoSuchFieldException e) {
+        throw new RuntimeException(e);
+      }
+
+      ctx.response().end(Json.encode(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile)));
     });
   }
 

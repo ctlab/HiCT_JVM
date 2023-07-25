@@ -57,7 +57,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
-  public void commitRoot(final @NotNull Node.ExposedSegment exposedSegment) {
+  public void commitExposedSegment(final @NotNull Node.ExposedSegment exposedSegment) {
     final var le = Node.mergeNodes(new Node.SplitResult(exposedSegment.less(), exposedSegment.segment()));
     final var rt = Node.mergeNodes(new Node.SplitResult(le, exposedSegment.greater()));
     try {
@@ -67,6 +67,15 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       this.rootLock.writeLock().unlock();
     }
   }
+
+//  public void commitRoot(final @No Node newRoot) {
+//    try {
+//      this.rootLock.writeLock().lock();
+//      this.root = newRoot;
+//    } finally {
+//      this.rootLock.writeLock().unlock();
+//    }
+//  }
 
   public @Nullable ScaffoldDescriptor getScaffoldAtBp(final long bp) {
     try {
@@ -143,7 +152,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         false
       );
 
-      commitRoot(new Node.ExposedSegment(es.less(), newScaffoldNode, es.greater()));
+      commitExposedSegment(new Node.ExposedSegment(es.less(), newScaffoldNode, es.greater()));
       assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after rescaffolding a region?";
       return newScaffoldDescriptor;
     } finally {
@@ -177,7 +186,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         false
       );
 
-      commitRoot(new Node.ExposedSegment(es.less(), emptyNode, es.greater()));
+      commitExposedSegment(new Node.ExposedSegment(es.less(), emptyNode, es.greater()));
       assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after unscaffolding a region?";
     } finally {
       this.rootLock.writeLock().unlock();
@@ -200,7 +209,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       final @NotNull var tmp = Node.mergeNodes(new Node.SplitResult(es.less(), es.greater()));
       final @NotNull var nlnr = Node.splitNodeBp(tmp, targetStartBp, false);
 
-      commitRoot(new Node.ExposedSegment(nlnr.left(), es.segment(), nlnr.right()));
+      commitExposedSegment(new Node.ExposedSegment(nlnr.left(), es.segment(), nlnr.right()));
       assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after moving a region?";
     } finally {
       this.rootLock.writeLock().unlock();
@@ -263,7 +272,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
       final @NotNull var newSegment = segment.cloneBuilder().nodeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).subtreeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).build();
 
-      commitRoot(new Node.ExposedSegment(es.less(), newSegment, es.greater()));
+      commitExposedSegment(new Node.ExposedSegment(es.less(), newSegment, es.greater()));
 //      assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after removing a region?";
     } finally {
       this.rootLock.writeLock().unlock();

@@ -24,7 +24,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
   @Getter
   private final ReadWriteLock rootLock = new ReentrantReadWriteLock();
   @Getter
-  private Node root;
+  private @Nullable Node root;
   @Getter
   private final @NotNull Map<Integer, ContigDescriptor> contigDescriptors = new ConcurrentHashMap<>();
 
@@ -77,7 +77,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
   }
 
-  public void commitRoot(final @NotNull @NonNull Node newRoot) {
+  public void commitRoot(final @Nullable Node newRoot) {
     try {
       this.rootLock.writeLock().lock();
       this.root = newRoot;

@@ -2,16 +2,23 @@ package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
 import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
@@ -21,6 +28,225 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class AGPProcessor {
   private final @NotNull ChunkedFile chunkedFile;
+
+
+  public List<AGPFileRecord> parseRecords(final @NotNull @NonNull Reader reader) throws IOException, NoSuchFieldException {
+    final var csvFormat = CSVFormat.TDF.builder().setRecordSeparator(String.format("%n")).build();
+    //final var recordRows = csvFormat.parse(reader);
+    final List<List<String>> recordRows = new ArrayList<>();
+    try (final var br = new BufferedReader(reader)) {
+      br.lines().parallel().map(line -> line.trim().split("\t")).filter(e -> e.length > 0).forEachOrdered(sp -> {
+        recordRows.add(Arrays.stream(sp).toList());
+      });
+    }
+//    final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.getRecords().size());
+    final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.size());
+    int rowNumber = 0;
+    for (final var row : recordRows) {
+      ++rowNumber;
+      if (row.size() < 9) {
+        log.error("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row.toString());
+        throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row.toString());
+      }
+      final var objectName = row.get(0);
+      final var objectBeg = Long.parseLong(row.get(1));
+      final var objectEnd = Long.parseLong(row.get(2));
+      final var partNumber = Integer.parseInt(row.get(3));
+      final var componentType = switch (row.get(4)) {
+        case "W" -> AGPComponentType.WGS_CONTIG;
+        case "N" -> AGPComponentType.GAP_WITH_SPECIFIED_SIZE;
+        case "U" -> AGPComponentType.GAP_OF_UNKNOWN_SIZE;
+        case "A" -> AGPComponentType.ACTIVE_FINISHING;
+        case "D" -> AGPComponentType.DRAFT_HTG;
+        case "F" -> AGPComponentType.FINISHED_HTG;
+        case "G" -> AGPComponentType.WHOLE_GENOME_FINISHING;
+        case "O" -> AGPComponentType.OTHER_SEQUENCE;
+        case "P" -> AGPComponentType.PRE_DRAFT;
+        default -> {
+          log.error("Unknown AGP component type " + row.get(4) + " at line " + rowNumber);
+          throw new IllegalArgumentException("Unknown AGP component type " + row.get(4) + " at line " + rowNumber);
+        }
+      };
+      final var agpFileRecord = switch (componentType) {
+        case WGS_CONTIG, ACTIVE_FINISHING, DRAFT_HTG, FINISHED_HTG, WHOLE_GENOME_FINISHING, OTHER_SEQUENCE, PRE_DRAFT -> {
+          final var componentId = row.get(5);
+          final var componentBeg = Long.parseLong(row.get(6));
+          final var componentEnd = Long.parseLong(row.get(7));
+          final var orientation = switch (row.get(8)) {
+            case "+" -> AGPContigOrientation.PLUS;
+            case "-" -> AGPContigOrientation.MINUS;
+            case "?", "0" -> AGPContigOrientation.UNKNOWN;
+            case "na" -> AGPContigOrientation.IRRELEVANT;
+            default -> {
+              log.error("Unknown AGP component orientation " + row.get(8) + " at line " + rowNumber);
+              throw new IllegalArgumentException("Unknown AGP component orientation " + row.get(8) + " at line " + rowNumber);
+            }
+          };
+          yield new ContigAGPRecord(
+            objectName,
+            objectBeg,
+            objectEnd,
+            partNumber,
+            componentId,
+            componentBeg,
+            componentEnd,
+            orientation
+          );
+        }
+        case GAP_WITH_SPECIFIED_SIZE, GAP_OF_UNKNOWN_SIZE -> {
+          final var gapLength = Long.parseLong(row.get(5));
+          final var gapType = switch (row.get(6)) {
+            case "scaffold" -> AGPGapType.SCAFFOLD;
+            case "contig" -> AGPGapType.CONTIG;
+            case "centromere" -> AGPGapType.CENTROMERE;
+            case "short_arm" -> AGPGapType.SHORT_ARM;
+            case "heterochromatin" -> AGPGapType.HETEROCHROMATIN;
+            case "telomere" -> AGPGapType.TELOMERE;
+            case "repeat" -> AGPGapType.REPEAT;
+            case "contamination" -> AGPGapType.CONTAMINATION;
+            default -> {
+              log.error("Unknown AGP gap type " + row.get(6) + " at line " + rowNumber);
+              throw new IllegalArgumentException("Unknown AGP gap type " + row.get(6) + " at line " + rowNumber);
+            }
+          };
+          final var linkage = switch (row.get(7)) {
+            case "yes" -> true;
+            case "no" -> false;
+            default -> {
+              log.error("Unknown AGP linkage " + row.get(7) + " at line " + rowNumber);
+              throw new IllegalArgumentException("Unknown AGP linkage " + row.get(7) + " at line " + rowNumber);
+            }
+          };
+          final var linkageEvidence = switch (row.get(8)) {
+            case "proximity_ligation" -> LinkageEvidence.PROXIMITY_LIGATION;
+            case "na" -> {
+              assert ("no".equals(row.get(7)));
+              yield LinkageEvidence.NA;
+            }
+            case "paired-ends", "paired_ends" -> LinkageEvidence.PAIRED_ENDS;
+            case "align_genus" -> LinkageEvidence.ALIGN_GENUS;
+            case "align_xgenus" -> LinkageEvidence.ALIGN_XGENUS;
+            case "align_trnscpt" -> LinkageEvidence.ALIGN_TRNSCPT;
+            case "within_clone" -> LinkageEvidence.WITHIN_CLONE;
+            case "clone_contig" -> LinkageEvidence.CLONE_CONTIG;
+            case "map" -> LinkageEvidence.MAP;
+            case "pcr" -> LinkageEvidence.PCR;
+            case "strobe" -> LinkageEvidence.STROBE;
+            case "unspecified" -> LinkageEvidence.UNSPECIFIED;
+            default -> {
+              log.error("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
+              throw new IllegalArgumentException("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
+            }
+          };
+          yield new GapAGPRecord(
+            objectName,
+            objectBeg,
+            objectEnd,
+            partNumber,
+            gapLength,
+            gapType,
+            linkage,
+            linkageEvidence
+          );
+        }
+      };
+      parsedRecords.add(agpFileRecord);
+    }
+    return parsedRecords.parallelStream().sorted(Comparator.comparingLong(AGPFileRecord::getInterScaffoldStartIncl).thenComparingInt(AGPFileRecord::getPartNumber)).toList();
+  }
+
+  public void initializeContigTreeFromAGP(final @NotNull List<@NotNull AGPFileRecord> agpFileRecords) {
+    final var originalDescriptors = this.chunkedFile.getOriginalDescriptors();
+    final var tree = this.chunkedFile.getContigTree();
+    final var lock = tree.getRootLock();
+    try {
+      lock.writeLock().lock();
+      tree.commitRoot(null);
+      for (final var rec : agpFileRecords) {
+        if (!(rec instanceof ContigAGPRecord)) {
+          continue;
+        }
+        final ContigAGPRecord ctgRecord = (ContigAGPRecord) rec;
+        final var sourceDescriptor = originalDescriptors.get(ctgRecord.getContigName());
+        if (sourceDescriptor == null) {
+          log.error("Cannot find contig with name " + ctgRecord.getContigName() + " in original .hict.hdf5 file");
+          throw new NoSuchElementException("Cannot find contig with name " + ctgRecord.getContigName() + " in original .hict.hdf5 file");
+        }
+
+        final var componentLength = ctgRecord.getInterScaffoldEndIncl() - ctgRecord.getInterScaffoldStartIncl() + 1;
+        if (componentLength != ctgRecord.getIntraContigEndBpIncl() - ctgRecord.getIntraContigStartBpIncl() + 1) {
+          log.error("A part of scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive has length " + componentLength + " but is to be filled with contig " + ctgRecord.getContigName() + " from " + ctgRecord.getIntraContigStartBpIncl() + " bp to " + ctgRecord.getIntraContigEndBpIncl() + " bp but this region has length " + (ctgRecord.getIntraContigEndBpIncl() - ctgRecord.getIntraContigStartBpIncl() + 1));
+          throw new IllegalArgumentException("A part of scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive has length " + componentLength + " but is to be filled with contig " + ctgRecord.getContigName() + " from " + ctgRecord.getIntraContigStartBpIncl() + " bp to " + ctgRecord.getIntraContigEndBpIncl() + " bp but this region has length " + (ctgRecord.getIntraContigEndBpIncl() - ctgRecord.getIntraContigStartBpIncl() + 1));
+        }
+
+        if (componentLength > sourceDescriptor.getLengthBp()) {
+          log.error("Contig " + ctgRecord.getContigName() + " has length " + sourceDescriptor.getLengthBp() + " bp but is required to fill scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive which has length " + componentLength);
+          throw new IllegalArgumentException("Contig " + ctgRecord.getContigName() + " has length " + sourceDescriptor.getLengthBp() + " bp but is required to fill scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive which has length " + componentLength);
+        }
+
+        final ContigDescriptor selectedContigDescriptor;
+
+        if (componentLength < sourceDescriptor.getLengthBp()) {
+          log.error("Contig splitting from AGP is not yet implemented");
+          throw new RuntimeException("Contig splitting from AGP is not yet implemented");
+        }
+
+        selectedContigDescriptor = sourceDescriptor;
+
+        tree.appendContig(selectedContigDescriptor, switch (ctgRecord.getContigOrientation()) {
+          case PLUS -> ContigDirection.FORWARD;
+          case MINUS -> ContigDirection.REVERSED;
+          case UNKNOWN, IRRELEVANT -> {
+            final var autoDirection = ContigDirection.FORWARD;
+            log.warn("A contig " + ctgRecord.getContigName() + " inside scaffold " + ctgRecord.getScaffoldName() + " has orientation " + ctgRecord.getContigOrientation() + " which is automatically treated as " + autoDirection);
+            yield autoDirection;
+          }
+        });
+      }
+    } finally {
+      lock.writeLock().unlock();
+    }
+  }
+
+  public void initializeScaffoldTreeFromAGP(final @NotNull List<@NotNull AGPFileRecord> agpFileRecords) {
+    final var tree = this.chunkedFile.getScaffoldTree();
+    final var lock = tree.getRootLock();
+    try {
+      lock.writeLock().lock();
+
+      tree.unscaffold(0, 1+this.chunkedFile.getMatrixSizeBins()[0]);
+//      final var newTree = new ScaffoldTree(this.chunkedFile.getMatrixSizeBins()[0]);
+      final var scaffoldToRecords = new LinkedHashMap<String, List<AGPFileRecord>>();
+      for (final var rec : agpFileRecords) {
+        scaffoldToRecords.computeIfAbsent(rec.scaffoldName, i -> new ArrayList<>());
+        scaffoldToRecords.get(rec.scaffoldName).add(rec);
+      }
+
+      long positionBP = 0L;
+
+      for (final var entry : scaffoldToRecords.entrySet()) {
+        final var scaffoldName = entry.getKey();
+        final var elements = entry.getValue();
+        final var totalLength = elements.parallelStream().filter(r -> r instanceof ContigAGPRecord).mapToLong(r -> ((ContigAGPRecord) r).getIntraContigEndBpIncl() - ((ContigAGPRecord) r).getIntraContigStartBpIncl() + 1).sum();
+
+        if (elements.size() > 1 || !scaffoldName.startsWith("unscaffolded")) {
+          final var maxSpacerLength = elements.parallelStream().filter(r -> r instanceof GapAGPRecord).mapToLong(r -> ((GapAGPRecord) r).gapLength).max().orElse(1000L);
+          tree.rescaffold(
+            positionBP,
+            positionBP + totalLength,
+            id -> new ScaffoldDescriptor(
+              id,
+              scaffoldName,
+              maxSpacerLength
+            )
+          );
+        }
+        positionBP += totalLength;
+      }
+    } finally {
+      lock.writeLock().unlock();
+    }
+  }
 
   public Stream<String> getAGPStream(final long unscaffoldedSpacerLength) {
     final var records = this.getAGPRecords(unscaffoldedSpacerLength);
@@ -151,6 +377,18 @@ public class AGPProcessor {
     }
 
     return scaffoldedContigs;
+  }
+
+  public enum AGPComponentType {
+    ACTIVE_FINISHING,
+    DRAFT_HTG,
+    FINISHED_HTG,
+    WHOLE_GENOME_FINISHING,
+    OTHER_SEQUENCE,
+    PRE_DRAFT,
+    WGS_CONTIG,
+    GAP_WITH_SPECIFIED_SIZE,
+    GAP_OF_UNKNOWN_SIZE
   }
 
   public enum AGPGapType {
