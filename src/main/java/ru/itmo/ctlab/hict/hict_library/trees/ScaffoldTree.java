@@ -329,7 +329,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
             final var rightPartLengthBp = newTree.subtreeLengthBp - t1.subtreeLengthBp;
             final Node t2;
             if (rightPartLengthBp > 0) {
-              t2 = newTree.cloneBuilder().nodeLengthBp(rightPartLengthBp).left(null).yPriority(rnd.nextLong(newTree.yPriority + 1L, Long.MAX_VALUE)).build().updateSizes();
+              t2 = newTree.cloneBuilder().nodeLengthBp(rightPartLengthBp).left(null).yPriority(rnd.nextLong(Long.min(1L+newTree.yPriority, Long.MAX_VALUE-1), Long.MAX_VALUE)).build().updateSizes();
             } else {
               t2 = newTree.right;
             }

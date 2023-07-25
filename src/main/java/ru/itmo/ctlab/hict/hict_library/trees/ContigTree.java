@@ -193,7 +193,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
           length = 0L;
         }
         return length;
-      }).toArray()).yPriority(rnd.nextLong()).contigDirection(contigDirection).left(null).right(null).build();
+      }).toArray()).yPriority(rnd.nextLong(-(Long.MAX_VALUE / 4), Long.MAX_VALUE / 4)).contigDirection(contigDirection).left(null).right(null).build();
     }
 
     public static SplitResult splitNodeByLength(final ResolutionDescriptor resolutionDescriptor, final Node t, final long k, final boolean includeEqualToTheLeft, final boolean excludeHiddenContigs) {
