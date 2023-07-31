@@ -188,4 +188,4 @@ nbdist/
 /.idea/jarRepositories.xml
 /.idea/vcs.xml
 /build/*
-/gradle/wrapper/gradle-wrapper.jar
+.github/**
