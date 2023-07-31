@@ -141,6 +141,47 @@ public class ScaffoldingOperations {
     }
   }
 
+  public void moveRegionToDebris(final long startIncl, final long endExcl, final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull QueryLengthUnit units) {
+    assert (startIncl < endExcl) : "Unscaffolding: start >= end??";
+
+    final var contigTree = this.chunkedFile.getContigTree();
+    final var scaffoldTree = this.chunkedFile.getScaffoldTree();
+
+    try {
+      contigTree.getRootLock().writeLock().lock();
+      scaffoldTree.getRootLock().writeLock().lock();
+
+      final long startBp = this.chunkedFile.convertUnits(
+        startIncl,
+        resolutionDescriptor,
+        units,
+        ResolutionDescriptor.fromResolutionOrder(0),
+        QueryLengthUnit.BASE_PAIRS
+      );
+      final long endBp = this.chunkedFile.convertUnits(
+        endExcl,
+        resolutionDescriptor,
+        units,
+        ResolutionDescriptor.fromResolutionOrder(0),
+        QueryLengthUnit.BASE_PAIRS
+      );
+
+      final var leftScaffoldBorders = scaffoldTree.getScaffoldBordersAtBp(startBp);
+      final var rightScaffoldBorders = scaffoldTree.getScaffoldBordersAtBp(endBp - 1);
+
+      final var trueStartBpIncl = leftScaffoldBorders.endBP();
+      final var trueEndBpExcl = rightScaffoldBorders.startBP();
+
+      if (trueStartBpIncl < trueEndBpExcl) {
+        scaffoldRegion(trueStartBpIncl, trueEndBpExcl, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, id -> new ScaffoldDescriptor(id, String.format("scaffold_debris_%d", id), 1000));
+        moveSelectionRangeBp(trueStartBpIncl, trueEndBpExcl, this.chunkedFile.getMatrixSizeBins()[0]);
+      }
+    } finally {
+      scaffoldTree.getRootLock().writeLock().unlock();
+      contigTree.getRootLock().writeLock().unlock();
+    }
+  }
+
   public void splitContigAtBin(final long splitPosition, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull QueryLengthUnit units) {
     assert !QueryLengthUnit.BASE_PAIRS.equals(units) || (resolutionDescriptor.getResolutionOrderInArray() == 0) : "In bp query resolution should be set to 0";
 

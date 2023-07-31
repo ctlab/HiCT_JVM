@@ -115,6 +115,24 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
+  public @NotNull ScaffoldDescriptor.ScaffoldBordersBP getScaffoldBordersAtBp(final long queriedBp) {
+    try {
+      var leftBp = queriedBp;
+      var rightBp = queriedBp;
+      this.rootLock.readLock().lock();
+
+      final var es = Node.expose(this.root, leftBp, 1 + rightBp);
+      final var sg = es.segment();
+      if ((sg != null) && sg.scaffoldDescriptor != null) {
+        leftBp = Optional.ofNullable(es.less()).map(n -> n.subtreeLengthBp).orElse(0L);
+        rightBp = leftBp + sg.subtreeLengthBp;
+      }
+      return new ScaffoldDescriptor.ScaffoldBordersBP(leftBp, rightBp);
+    } finally {
+      this.rootLock.readLock().unlock();
+    }
+  }
+
   /**
    * @param startBp           Starting BP of new scaffold.
    * @param endBp             Last (exclusive) BP of new scaffold.
@@ -329,7 +347,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
             final var rightPartLengthBp = newTree.subtreeLengthBp - t1.subtreeLengthBp;
             final Node t2;
             if (rightPartLengthBp > 0) {
-              t2 = newTree.cloneBuilder().nodeLengthBp(rightPartLengthBp).left(null).yPriority(rnd.nextLong(Long.min(1L+newTree.yPriority, Long.MAX_VALUE-1), Long.MAX_VALUE)).build().updateSizes();
+              t2 = newTree.cloneBuilder().nodeLengthBp(rightPartLengthBp).left(null).yPriority(rnd.nextLong(Long.min(1L + newTree.yPriority, Long.MAX_VALUE - 1), Long.MAX_VALUE)).build().updateSizes();
             } else {
               t2 = newTree.right;
             }

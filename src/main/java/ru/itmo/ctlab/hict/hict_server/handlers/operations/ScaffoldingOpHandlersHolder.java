@@ -121,5 +121,25 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
 
       ctx.response().end(Json.encode(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile)));
     });
+    router.post("/move_selection_to_debris").blockingHandler(ctx -> {
+      final @NotNull var requestBody = ctx.body();
+      final @NotNull var requestJSON = requestBody.asJsonObject();
+
+      final @NotNull @NonNull var request = MoveSelectionToDebrisRequestDTO.fromJSONObject(requestJSON);
+
+      final var map = vertx.sharedData().getLocalMap("hict_server");
+      log.debug("Got map");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+      log.debug("Got ChunkedFile from map");
+
+      chunkedFile.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+
+      ctx.response().end(Json.encode(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile)));
+    });
   }
 }

@@ -153,11 +153,15 @@ public class TileHandlersHolder extends HandlersHolder {
         return;
       }
 
-      final var currentVersion = stats.versionCounter().get();
-      if ((version < currentVersion) || ((version > currentVersion) && !stats.versionCounter().compareAndSet(currentVersion, version))) {
-        ctx.response().setStatusCode(204).end(String.format("Current version is %d and request version is %d", currentVersion, version));
+      var currentVersion = stats.versionCounter().get();
+      if (version < currentVersion) {
+        log.debug(String.format("Current version is %d and request version is %d", currentVersion, version));
+        ctx.response().setStatusCode(204).putHeader("Content-Type", "text/plain").end(String.format("Current version is %d and request version is %d", currentVersion, version));
         return;
       }
+      do {
+        currentVersion = stats.versionCounter().get();
+      } while ((currentVersion < version) && !stats.versionCounter().compareAndSet(currentVersion, version));
 
       final long startRowPx, startColPx, endRowPx, endColPx;
       if (format == TileFormat.PNG_BY_PIXELS) {
