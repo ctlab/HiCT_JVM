@@ -14,7 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 
 @Slf4j
 public class Initializers {

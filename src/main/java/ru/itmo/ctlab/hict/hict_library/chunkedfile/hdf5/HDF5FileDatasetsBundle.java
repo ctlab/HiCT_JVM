@@ -1,4 +1,4 @@
-package ru.itmo.ctlab.hict.hict_library.chunkedfile;
+package ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5;
 
 import ch.systemsx.cisd.hdf5.HDF5DataSet;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
@@ -6,9 +6,10 @@ import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import lombok.Getter;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 
-import static ru.itmo.ctlab.hict.hict_library.chunkedfile.PathGenerators.*;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 
 @Getter
 public class HDF5FileDatasetsBundle implements AutoCloseable {

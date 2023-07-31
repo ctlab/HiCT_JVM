@@ -3,7 +3,6 @@ package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
-import io.vertx.core.streams.ReadStream;
 import io.vertx.ext.web.Router;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,10 +13,9 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.OpenFileResponseDTO;
+import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -66,6 +64,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
       log.info("Putting chunkedFile into the local map");
       map.put("chunkedFile", chunkedFileWrapper);
+
+      map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
 
       ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
     });
@@ -117,7 +117,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       final var dataDirectory = dataDirectoryWrapper.getPath();
 
       final var agpFile = Path.of(dataDirectory.toString(), agpFilename);
-      try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)){
+      try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
         chunkedFile.importAGP(reader);
       } catch (IOException | NoSuchFieldException e) {
         throw new RuntimeException(e);

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundle;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
@@ -56,65 +57,75 @@ public class MatrixQueries {
     final double[] rowWeights = rowATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
     final double[] colWeights = colATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
 
-    try (final var pool = Executors.newWorkStealingPool()) {
-      if (symmetricQuery) {
-        final var atuCount = rowATUs.size();
-        log.debug("Symmetric query with " + atuCount + " ATUs");
-        var startDeltaCol = (int) (startCol - startColIncl);
-        for (int i = 0; i < atuCount; ++i) {
-          final var rowATU = rowATUs.get(i);
-          deltaCol = startDeltaCol;
-          final var rowCount = rowATU.getLength();
-          for (int j = i; j < atuCount; ++j) {
-            final var colATU = colATUs.get(j);
-            final int finalDeltaCol = deltaCol;
-            final int finalDeltaRow = deltaRow;
-            final var colCount = colATU.getLength();
-            pool.submit(() -> {
-              final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
-              for (int k = 0; k < rowCount; k++) {
-                System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
-              }
-              for (int k = 0; k < rowCount; k++) {
-                for (int l = 0; l < colCount; l++) {
-                  result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
-                }
-              }
-            });
-            deltaCol += colCount;
-          }
-          startDeltaCol += colATUs.get(i).getLength();
-          deltaRow += rowCount;
-        }
-      } else {
-        for (final var rowATU : rowATUs) {
-          deltaCol = (int) (startCol - startColIncl);
-          final var rowCount = rowATU.getLength();
-          for (final var colATU : colATUs) {
-            final int finalDeltaCol = deltaCol;
-            final int finalDeltaRow = deltaRow;
-            final var colCount = colATU.getLength();
+    final double[] paddedRowWeights = new double[queryRows];
+    final double[] paddedColWeights = new double[queryCols];
 
-            pool.submit(() -> {
-              try {
+    if (startCol < totalAssemblyLength && startRow < totalAssemblyLength && endRow > 0 && endCol > 0) {
+
+      System.arraycopy(rowWeights, 0, paddedRowWeights, deltaRow, rowWeights.length);
+      System.arraycopy(colWeights, 0, paddedColWeights, deltaCol, colWeights.length);
+
+
+      try (final var pool = Executors.newWorkStealingPool()) {
+        if (symmetricQuery) {
+          final var atuCount = rowATUs.size();
+          log.debug("Symmetric query with " + atuCount + " ATUs");
+          var startDeltaCol = (int) (startCol - startColIncl);
+          for (int i = 0; i < atuCount; ++i) {
+            final var rowATU = rowATUs.get(i);
+            deltaCol = startDeltaCol;
+            final var rowCount = rowATU.getLength();
+            for (int j = i; j < atuCount; ++j) {
+              final var colATU = colATUs.get(j);
+              final int finalDeltaCol = deltaCol;
+              final int finalDeltaRow = deltaRow;
+              final var colCount = colATU.getLength();
+              pool.submit(() -> {
                 final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
                 for (int k = 0; k < rowCount; k++) {
                   System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
                 }
-              } catch (final Throwable ex) {
-                throw new RuntimeException("Dense matrix fetch failed");
-              }
-            });
-
-            deltaCol += colCount;
+                for (int k = 0; k < rowCount; k++) {
+                  for (int l = 0; l < colCount; l++) {
+                    result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
+                  }
+                }
+              });
+              deltaCol += colCount;
+            }
+            startDeltaCol += colATUs.get(i).getLength();
+            deltaRow += rowCount;
           }
-          deltaRow += rowCount;
+        } else {
+          for (final var rowATU : rowATUs) {
+            deltaCol = (int) (startCol - startColIncl);
+            final var rowCount = rowATU.getLength();
+            for (final var colATU : colATUs) {
+              final int finalDeltaCol = deltaCol;
+              final int finalDeltaRow = deltaRow;
+              final var colCount = colATU.getLength();
+
+              pool.submit(() -> {
+                try {
+                  final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
+                  for (int k = 0; k < rowCount; k++) {
+                    System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
+                  }
+                } catch (final Throwable ex) {
+                  throw new RuntimeException("Dense matrix fetch failed");
+                }
+              });
+
+              deltaCol += colCount;
+            }
+            deltaRow += rowCount;
+          }
         }
       }
     }
 
 
-    return new MatrixQueries.MatrixWithWeights(result, rowWeights, colWeights);
+    return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights);
   }
 
   private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu) {
@@ -177,7 +188,7 @@ public class MatrixQueries {
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
-    final var firstContigNode = excludeHiddenContigs?es.segment().leftmostVisibleNode(resolutionDescriptor):es.segment().leftmost();
+    final var firstContigNode = excludeHiddenContigs ? es.segment().leftmostVisibleNode(resolutionDescriptor) : es.segment().leftmost();
     final var firstContigDescriptor = firstContigNode.getContigDescriptor();
     final var firstContigATUs = firstContigDescriptor.getAtus().get(resolutionOrder);
     final var firstContigATUPrefixSum = firstContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
@@ -185,7 +196,7 @@ public class MatrixQueries {
     final var firstContigId = firstContigDescriptor.getContigId();
 
     final var deltaBetweenRightPxAndExposedSegment = (lessSize + segmentSize) - endPx;
-    final var lastContigNode = excludeHiddenContigs?es.segment().rightmostVisibleNode(resolutionDescriptor):es.segment().rightmost();
+    final var lastContigNode = excludeHiddenContigs ? es.segment().rightmostVisibleNode(resolutionDescriptor) : es.segment().rightmost();
     final var lastContigDescriptor = lastContigNode.getContigDescriptor();
     final var lastContigATUs = lastContigDescriptor.getAtus().get(resolutionOrder);
     final var lastContigATUPrefixSum = lastContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);

@@ -1,5 +1,6 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
+import java.io.ByteArrayOutputStream
 
 plugins {
   java
@@ -8,7 +9,6 @@ plugins {
 }
 
 group = "ru.itmo.ctlab.hict"
-version = "1.0.0-SNAPSHOT"
 
 repositories {
   mavenCentral()
@@ -25,6 +25,8 @@ val launcherClassName = "io.vertx.core.Launcher"
 
 val watchForChange = "src/**/*"
 val doOnChange = "${projectDir}/gradlew classes"
+
+val versionFile = file("${project.projectDir}/version.txt")
 
 application {
   mainClass.set(launcherClassName)
@@ -76,8 +78,6 @@ dependencies {
   implementation("org.apache.commons:commons-csv:1.10.0")
 
 
-
-
 }
 
 java {
@@ -123,4 +123,72 @@ tasks.withType<JavaExec> {
     "--launcher-class=$launcherClassName",
     "--on-redeploy=$doOnChange"
   )
+}
+
+
+
+
+
+fun readVersion(): String {
+  return if (versionFile.exists()) {
+    versionFile.readText().trim()
+  } else {
+    "0.0.0"
+  }
+}
+
+fun writeVersion(version: String) {
+  versionFile.writeText(version)
+}
+
+fun incrementPatchVersion(currentVersion: String): String {
+  val gitHash = getGitHash()
+  val (semver, oldHash) = currentVersion.split("-")
+  val (major, minor, patch) = semver.split(".")
+  val newPatch = patch.toInt() + 1
+  return "$major.$minor.$newPatch-$gitHash"
+}
+
+fun getGitHash(): String {
+  val byteOut = ByteArrayOutputStream()
+  project.exec {
+    commandLine("git", "rev-parse", "--short=7", "HEAD")
+    standardOutput = byteOut
+  }
+  return String(byteOut.toByteArray()).trim()
+}
+
+val currentVersion: String by lazy { readVersion() }
+
+version = currentVersion
+
+tasks.register<Exec>("getGitHash") {
+  commandLine("git", "rev-parse", "--short=7", "HEAD")
+  standardOutput = System.out
+}
+
+tasks.register("incrementPatchVersion") {
+  doLast {
+    val newVersion = incrementPatchVersion(currentVersion)
+    writeVersion(newVersion)
+    project.version = newVersion
+    println("[Patch] Version incremented to $newVersion")
+  }
+}
+
+tasks.named("clean") {
+  dependsOn("incrementPatchVersion")
+}
+
+tasks.named("build") {
+  dependsOn("incrementPatchVersion")
+}
+
+tasks.named("jar") {
+  doLast {
+    val newVersion = incrementPatchVersion(currentVersion)
+    writeVersion(newVersion)
+    project.version = newVersion
+    println("[JAR] Version with git hash: $newVersion")
+  }
 }

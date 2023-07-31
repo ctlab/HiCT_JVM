@@ -1,4 +1,4 @@
-package ru.itmo.ctlab.hict.hict_library.chunkedfile;
+package ru.itmo.ctlab.hict.hict_library.assembly;
 
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -6,8 +6,8 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
@@ -17,7 +17,6 @@ import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
-import java.io.StringReader;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -45,8 +44,8 @@ public class AGPProcessor {
     for (final var row : recordRows) {
       ++rowNumber;
       if (row.size() < 9) {
-        log.error("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row.toString());
-        throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row.toString());
+        log.error("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row);
+        throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row);
       }
       final var objectName = row.get(0);
       final var objectBeg = Long.parseLong(row.get(1));
@@ -163,10 +162,9 @@ public class AGPProcessor {
       lock.writeLock().lock();
       tree.commitRoot(null);
       for (final var rec : agpFileRecords) {
-        if (!(rec instanceof ContigAGPRecord)) {
+        if (!(rec instanceof ContigAGPRecord ctgRecord)) {
           continue;
         }
-        final ContigAGPRecord ctgRecord = (ContigAGPRecord) rec;
         final var sourceDescriptor = originalDescriptors.get(ctgRecord.getContigName());
         if (sourceDescriptor == null) {
           log.error("Cannot find contig with name " + ctgRecord.getContigName() + " in original .hict.hdf5 file");
@@ -214,7 +212,7 @@ public class AGPProcessor {
     try {
       lock.writeLock().lock();
 
-      tree.unscaffold(0, 1+this.chunkedFile.getMatrixSizeBins()[0]);
+      tree.unscaffold(0, 1 + this.chunkedFile.getMatrixSizeBins()[0]);
 //      final var newTree = new ScaffoldTree(this.chunkedFile.getMatrixSizeBins()[0]);
       final var scaffoldToRecords = new LinkedHashMap<String, List<AGPFileRecord>>();
       for (final var rec : agpFileRecords) {
@@ -412,7 +410,7 @@ public class AGPProcessor {
 
   public enum LinkageEvidence {
     NA,
-    //    used when no linkage is being asserted (column 8b is ‘no’)
+    //    used when no linkage is being asserted (column 8b is 'no')
     PAIRED_ENDS,
     //    paired sequences from the two ends of a DNA fragment, mate-pairs and molecular-barcoding.
     ALIGN_GENUS,

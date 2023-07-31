@@ -1,4 +1,4 @@
-package ru.itmo.ctlab.hict.hict_library.chunkedfile;
+package ru.itmo.ctlab.hict.hict_library.chunkedfile.util;
 
 import org.jetbrains.annotations.NotNull;
 

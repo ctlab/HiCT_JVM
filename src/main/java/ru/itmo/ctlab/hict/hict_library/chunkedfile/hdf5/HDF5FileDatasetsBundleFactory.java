@@ -1,4 +1,4 @@
-package ru.itmo.ctlab.hict.hict_library.chunkedfile;
+package ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5;
 
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
@@ -6,6 +6,7 @@ import org.apache.commons.pool2.BasePooledObjectFactory;
 import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 
 @AllArgsConstructor

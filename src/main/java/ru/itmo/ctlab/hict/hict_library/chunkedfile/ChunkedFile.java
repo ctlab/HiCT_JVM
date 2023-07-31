@@ -8,12 +8,17 @@ import org.apache.commons.pool2.ObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundle;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundleFactory;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
+import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
+import ru.itmo.ctlab.hict.hict_library.visualization.TileVisualizationProcessor;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -43,6 +48,7 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
   private final @NotNull AGPProcessor agpProcessor;
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
+  private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
 
 
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
@@ -107,6 +113,10 @@ public class ChunkedFile implements AutoCloseable {
       log.info("Using dataset pools with minimum of " + options.minDatasetPoolSize() + " readily available bundles and maximum of " + options.maxDatasetPoolSize() + " readily available bundles.");
     }
     this.agpProcessor = new AGPProcessor(this);
+    this.tileVisualizationProcessor = new TileVisualizationProcessor(
+      new SimpleVisualizationOptions(10.0, 0.0, false, 0.0, 1.0),
+      this
+    );
   }
 
   public @NotNull MatrixQueries matrixQueries() {
@@ -115,6 +125,10 @@ public class ChunkedFile implements AutoCloseable {
 
   public @NotNull ScaffoldingOperations scaffoldingOperations() {
     return this.scaffoldingOperations;
+  }
+
+  public @NotNull TileVisualizationProcessor tileVisualizationProcessor() {
+    return this.tileVisualizationProcessor;
   }
 
   public long @NotNull [] getResolutions() {
