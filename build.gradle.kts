@@ -28,6 +28,8 @@ val doOnChange = "${projectDir}/gradlew classes"
 
 val versionFile = file("${project.projectDir}/version.txt")
 
+version = readVersion()
+
 application {
   mainClass.set(launcherClassName)
 }
