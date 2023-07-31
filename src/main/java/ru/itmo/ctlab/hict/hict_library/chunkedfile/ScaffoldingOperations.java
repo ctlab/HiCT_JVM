@@ -251,7 +251,6 @@ public class ScaffoldingOperations {
           i
         );
 
-
         switch (oldContigNode.getTrueDirection()) {
           case FORWARD -> {
             newContigAtus.get(0).add(newLeftATUs);
@@ -264,6 +263,9 @@ public class ScaffoldingOperations {
             Collections.reverse(newContigAtus.get(1).get(i - 1));
           }
         }
+
+        assert (newContigAtus.get(0).size() > 0) : "Empty list of ATUs for first part??";
+        assert (newContigAtus.get(1).size() > 0) : "Empty list of ATUs for second part??";
       }
 
       final var newCds = IntStream.range(0, 2).mapToObj(i -> new ContigDescriptor(

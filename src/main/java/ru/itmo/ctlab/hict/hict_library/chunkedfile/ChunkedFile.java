@@ -9,6 +9,7 @@ import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
+import ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundle;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundleFactory;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
@@ -49,6 +50,7 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull AGPProcessor agpProcessor;
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
+  private final @NotNull FASTAProcessor fastaProcessor;
 
 
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
@@ -117,6 +119,7 @@ public class ChunkedFile implements AutoCloseable {
       new SimpleVisualizationOptions(10.0, 0.0, false, 0.0, 1.0),
       this
     );
+    this.fastaProcessor = new FASTAProcessor(this);
   }
 
   public @NotNull MatrixQueries matrixQueries() {
