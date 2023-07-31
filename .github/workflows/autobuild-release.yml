@@ -34,7 +34,7 @@ jobs:
         run: gradle wrapper
 
       - name: Execute Gradle build
-        run: ./gradlew :clean :build
+        run: ./gradlew clean build
 
       - name: Generate latest release
         uses: marvinpinto/action-automatic-releases@latest
