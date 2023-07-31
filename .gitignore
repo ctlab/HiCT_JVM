@@ -189,3 +189,4 @@ nbdist/
 /.idea/vcs.xml
 /build/*
 .github/**
+.gitignore

@@ -154,8 +154,8 @@ public class TileHandlersHolder extends HandlersHolder {
       }
 
       final var currentVersion = stats.versionCounter().get();
-      if (version < currentVersion) {
-        ctx.response().setStatusCode(204).end(String.format("Current version %d is newer than requested %d", currentVersion, version));
+      if ((version < currentVersion) || ((version > currentVersion) && !stats.versionCounter().compareAndSet(currentVersion, version))) {
+        ctx.response().setStatusCode(204).end(String.format("Current version is %d and request version is %d", currentVersion, version));
         return;
       }
 
