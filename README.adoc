@@ -1,6 +1,6 @@
-= Hict_server
+= Hict_server 
 
-image:https://img.shields.io/badge/vert.x-4.4.1-purple.svg[link="https://vertx.io"]
+image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release.yml/badge.svg[link="https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release.yml"] image:https://img.shields.io/badge/vert.x-4.4.1-purple.svg[link="https://vertx.io"]
 
 This application was generated using http://start.vertx.io
 
