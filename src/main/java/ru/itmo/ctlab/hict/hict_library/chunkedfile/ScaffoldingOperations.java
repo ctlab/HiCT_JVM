@@ -49,8 +49,10 @@ public class ScaffoldingOperations {
       final var ext = scaffoldTree.extendBordersToScaffolds(queriedStartBpIncl, queriedEndBpExcl);
       final var es = contigTree.expose(ResolutionDescriptor.fromResolutionOrder(0), ext.startBP(), ext.endBP(), QueryLengthUnit.BASE_PAIRS);
       if (es.segment() != null) {
+        final var leftSizeBp = Optional.ofNullable(es.less()).map(l -> l.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0))).orElse(0L);
+        final var segmentSizeBp = es.segment().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
         final var tmp = ContigTree.Node.mergeNodes(new ContigTree.Node.SplitResult(es.less(), es.greater()));
-        final var nlnr = tmp.splitByLength(ResolutionDescriptor.fromResolutionOrder(0), targetStartBp, false, QueryLengthUnit.BASE_PAIRS);
+        final var nlnr = tmp.splitByLength(ResolutionDescriptor.fromResolutionOrder(0), targetStartBp - ((leftSizeBp > targetStartBp) ? 0L : segmentSizeBp), false, QueryLengthUnit.BASE_PAIRS);
         contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(nlnr.left(), es.segment(), nlnr.right()));
         scaffoldTree.moveSelectionRange(ext.startBP(), ext.endBP(), targetStartBp);
       }
