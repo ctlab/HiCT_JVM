@@ -195,16 +195,35 @@ public class TileHandlersHolder extends HandlersHolder {
       final var normalized = chunkedFile.tileVisualizationProcessor().processTile(dense, matrixWithWeights.rowWeights(), matrixWithWeights.colWeights());
       log.debug("Normalized dense matrix");
 
+
       final var boxedRGBValues = Arrays.stream(normalized)
         .flatMap(arrayRow ->
-          Arrays.stream(arrayRow).boxed().
-            flatMap(nVal -> Stream.of(
-                (byte) ((nVal > visualizationOptions.getLowerThreshold()) ? 0x00 : 0xFF), // Red
-                (byte) ((nVal > visualizationOptions.getLowerThreshold()) ? (
-                  (nVal < visualizationOptions.getUpperThreshold()) ? (0xFF - 16 * (nVal.byteValue())) : (0xFF)
-                ) : (0xFF)
-                ), // Green
-                (byte) ((nVal > visualizationOptions.getLowerThreshold()) ? 0x00 : 0xFF) // Blue
+          Arrays.stream(arrayRow).boxed()
+            .map(nVal ->
+              Long.min(
+                1L + (long) visualizationOptions.getUpperThreshold(),
+                Long.max(
+                  nVal,
+                  (long) visualizationOptions.getLowerThreshold()
+                )
+              )
+                - (long) visualizationOptions.getLowerThreshold()
+            ).
+            map(constrainedValue -> Color.getHSBColor(
+                142.0f / 360.0f,
+                Float.max(
+                  0L,
+                  Float.min(
+                    (float) ((double) constrainedValue * (128.0 / (1 + visualizationOptions.getUpperThreshold() - visualizationOptions.getLowerThreshold()))),
+                    128.0f * 128.0f)
+                ) / 128.0f,
+                1.0f
+              )
+            )
+            .flatMap(color -> Stream.of(
+                (byte) (color.getRed()), // Red
+                (byte) (color.getGreen()), // Green
+                (byte) (color.getBlue()) // Blue,
               )
             )
         )
@@ -219,7 +238,8 @@ public class TileHandlersHolder extends HandlersHolder {
 
       //3 bytes per pixel: red, green, blue
       final WritableRaster raster = Raster.createInterleavedRaster(buffer, tileWidth, tileHeight, 3 * tileWidth, 3, new int[]{0, 1, 2}, null);
-      final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, true, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
+      final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, false, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
+      //final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, true, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
       final BufferedImage image = new BufferedImage(cm, raster, true, null);
       final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
