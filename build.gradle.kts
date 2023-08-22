@@ -150,18 +150,23 @@ fun writeVersion(version: String) {
 }
 
 fun incrementPatchVersion(currentVersion: String): String {
-  val gitHash = getGitHash()
+  val gitHash = getGitHash(layout.projectDirectory.asFile)
+  val webuiVer = if (webUIRepositoryDirectory.asFile.exists()) {
+    val webuiGitHash = getGitHash(webUIRepositoryDirectory.asFile)
+    "webui_$webuiGitHash"
+  } else "nowebui"
   val (semver, oldHash) = currentVersion.split("-")
   val (major, minor, patch) = semver.split(".")
   val newPatch = patch.toInt() + 1
-  return "$major.$minor.$newPatch-$gitHash"
+  return "$major.$minor.$newPatch-$gitHash-$webuiVer"
 }
 
-fun getGitHash(): String {
+fun getGitHash(repositoryDir: File): String {
   val byteOut = ByteArrayOutputStream()
   project.exec {
     commandLine("git", "rev-parse", "--short=7", "HEAD")
     standardOutput = byteOut
+    workingDir = repositoryDir
   }
   return String(byteOut.toByteArray()).trim()
 }
