@@ -190,3 +190,4 @@ nbdist/
 /build/*
 .github/**
 .gitignore
+/src/main/resources/webui/**

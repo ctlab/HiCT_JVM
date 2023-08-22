@@ -93,11 +93,6 @@ public class MainVerticle extends AbstractVerticle {
       }
     });
 
-    // TODO: This should be in the queries
-    final var dataDirectory = Path.of("/home/tux/HiCT/HiCT_Server/data/").normalize();
-//    final var chunkedFile = new ChunkedFile(Path.of(dataDirectory.toString(), "zanu_male_4DN.mcool.hict.hdf5"), 256);
-//    final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
-
     final HttpServerOptions serverOptions = new HttpServerOptions();
     serverOptions.setCompressionSupported(true);
     final var server = vertx.createHttpServer(serverOptions);
@@ -123,10 +118,8 @@ public class MainVerticle extends AbstractVerticle {
 
     final int port;
     try {
-      log.info("Trying local map");
       final var map = vertx.sharedData().getLocalMap("hict_server");
       port = (int) map.get("VXPORT");
-      log.info("Added to local map");
     } finally {
       log.info("Finished maps");
     }
@@ -139,11 +132,9 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new FileOpHandlersHolder(vertx));
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
 
-    router.route().failureHandler(ctx -> {
-      ctx.response().end(
-        ctx.failure().getMessage()
-      );
-    });
+    router.route().failureHandler(ctx -> ctx.response().end(
+      ctx.failure().getMessage()
+    ));
 
 
     log.info("Configuring router");
@@ -152,5 +143,8 @@ public class MainVerticle extends AbstractVerticle {
     log.info("Starting server on port " + port);
     server.requestHandler(router).listen(port);
     log.info("Server started");
+
+    log.info("Deploying WebUI Verticle");
+    vertx.deployVerticle(new WebUIVerticle());
   }
 }

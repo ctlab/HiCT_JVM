@@ -1,6 +1,7 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 import java.io.ByteArrayOutputStream
+import java.nio.file.Files
 
 plugins {
   java
@@ -27,6 +28,11 @@ val watchForChange = "src/**/*"
 val doOnChange = "${projectDir}/gradlew classes"
 
 val versionFile = file("${project.projectDir}/version.txt")
+
+val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
+val webUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
+val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
+val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
 
 version = readVersion()
 
@@ -164,11 +170,6 @@ val currentVersion: String by lazy { readVersion() }
 
 version = currentVersion
 
-tasks.register<Exec>("getGitHash") {
-  commandLine("git", "rev-parse", "--short=7", "HEAD")
-  standardOutput = System.out
-}
-
 tasks.register("incrementPatchVersion") {
   doLast {
     val newVersion = incrementPatchVersion(currentVersion)
@@ -178,19 +179,84 @@ tasks.register("incrementPatchVersion") {
   }
 }
 
+tasks.register("cleanWebUI") {
+  doLast {
+    delete(webUIRepositoryDirectory.dir("dist"))
+    delete(webUITargetDirectory)
+  }
+}
+
+tasks.register("buildWebUI") {
+  dependsOn("cleanWebUI")
+  doLast {
+    Files.createDirectories(webUICloneDirectory.asFile.toPath())
+    val cloneResult = project.exec {
+      commandLine("git", "clone", webUIRepositoryAddress)
+      workingDir = webUICloneDirectory.asFile
+      standardOutput = System.out
+      isIgnoreExitValue = true
+    }
+
+    if (cloneResult.exitValue != 0) {
+      print("Failed to clone WebUI repository, maybe it already exists. Trying to pull changes.")
+      val pullResult = project.exec {
+        commandLine("git", "pull")
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = System.out
+        isIgnoreExitValue = true
+      }
+
+      if (pullResult.exitValue != 0) {
+        print("Failed to pull changes from WebUI repository. Proceeding without baked-in WebUI.")
+        return@doLast
+      } else {
+        print("Successfully pulled changes")
+      }
+    }
+
+    project.exec {
+      commandLine("npm", "install")
+      workingDir = webUIRepositoryDirectory.asFile
+      standardOutput = System.out
+    }
+
+    project.exec {
+      commandLine("npm", "run", "build")
+      workingDir = webUIRepositoryDirectory.asFile
+      standardOutput = System.out
+    }
+  }
+}
+
+tasks.register<Copy>("copyWebUI") {
+  dependsOn("buildWebUI")
+  doLast {
+    Files.createDirectories(webUITargetDirectory.asFile.toPath())
+  }
+  from(webUIRepositoryDirectory.dir("dist"))
+  into(webUITargetDirectory)
+}
+
 tasks.named("clean") {
-  dependsOn("incrementPatchVersion")
+  dependsOn("cleanWebUI")
+}
+
+tasks.named("processResources") {
+  dependsOn("copyWebUI")
 }
 
 tasks.named("build") {
+  dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
 }
 
 tasks.named("jar") {
-  doLast {
+  dependsOn("copyWebUI")
+  dependsOn("incrementPatchVersion")
+  /*doLast {
     val newVersion = incrementPatchVersion(currentVersion)
     writeVersion(newVersion)
     project.version = newVersion
     println("[JAR] Version with git hash: $newVersion")
-  }
+  }*/
 }
