@@ -20,7 +20,9 @@ import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.TileVisualizationProcessor;
+import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
+import java.awt.*;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Path;
@@ -29,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.LongStream;
 
 @Getter
@@ -51,6 +54,8 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
   private final @NotNull FASTAProcessor fastaProcessor;
+  @Getter
+  private final AtomicInteger parallelThreadCount = new AtomicInteger(4);
 
 
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
@@ -115,10 +120,14 @@ public class ChunkedFile implements AutoCloseable {
       log.info("Using dataset pools with minimum of " + options.minDatasetPoolSize() + " readily available bundles and maximum of " + options.maxDatasetPoolSize() + " readily available bundles.");
     }
     this.agpProcessor = new AGPProcessor(this);
-    this.tileVisualizationProcessor = new TileVisualizationProcessor(
-      new SimpleVisualizationOptions(10.0, 0.0, false, 0.0, 1.0),
-      this
-    );
+    this.tileVisualizationProcessor = new TileVisualizationProcessor(this,
+      new SimpleVisualizationOptions(10.0, 0.0, false, new SimpleLinearGradient(
+        32,
+        Color.WHITE,
+        Color.GREEN,
+        0.0d,
+        1.0d
+      )));
     this.fastaProcessor = new FASTAProcessor(this);
   }
 

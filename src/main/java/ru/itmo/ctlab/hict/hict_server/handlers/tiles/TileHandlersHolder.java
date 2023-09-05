@@ -63,8 +63,8 @@ public class TileHandlersHolder extends HandlersHolder {
           oldSettings.getPostLogBase(),
           oldSettings.isApplyCoolerWeights(),
           request.lowerSignalBound(),
-          request.upperSignalBound()
-        );
+          request.upperSignalBound(),
+          colormap);
         tileVisualizationProcessor.setVisualizationOptions(newOptions);
       } finally {
         lock.writeLock().unlock();
@@ -110,8 +110,8 @@ public class TileHandlersHolder extends HandlersHolder {
           request.postLogBase(),
           request.applyCoolerWeights(),
           oldSettings.getLowerThreshold(),
-          oldSettings.getUpperThreshold()
-        );
+          oldSettings.getUpperThreshold(),
+          colormap);
         tileVisualizationProcessor.setVisualizationOptions(newOptions);
       } finally {
         lock.writeLock().unlock();
