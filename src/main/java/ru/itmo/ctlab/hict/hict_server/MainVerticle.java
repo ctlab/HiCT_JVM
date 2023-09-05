@@ -14,12 +14,15 @@ import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import lombok.extern.slf4j.Slf4j;
 import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
+import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
+import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
+import java.awt.*;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,7 +47,6 @@ public class MainVerticle extends AbstractVerticle {
       LongStream.range(0, 12).map(idx -> BinarySearch.leftBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse leftBinarySearch Position is " + pos));
       LongStream.range(0, 12).map(idx -> BinarySearch.rightBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse rightBinarySearch Position is " + pos));
     }
-
 
 
     // set vertx logger delegate factory to slf4j
@@ -78,6 +80,17 @@ public class MainVerticle extends AbstractVerticle {
         map.put("VXPORT", port);
         map.put("MIN_DS_POOL", minDSPool);
         map.put("MAX_DS_POOL", maxDSPool);
+
+        final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, new SimpleLinearGradient(
+          32,
+          Color.WHITE,
+          Color.GREEN,
+          0.0d,
+          1.0d
+        ));
+
+        map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions));
+
         log.info("Added to local map");
       } finally {
         log.info("Finished configuration write to maps");

@@ -18,11 +18,8 @@ import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
-import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.TileVisualizationProcessor;
-import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
-import java.awt.*;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Path;
@@ -120,14 +117,7 @@ public class ChunkedFile implements AutoCloseable {
       log.info("Using dataset pools with minimum of " + options.minDatasetPoolSize() + " readily available bundles and maximum of " + options.maxDatasetPoolSize() + " readily available bundles.");
     }
     this.agpProcessor = new AGPProcessor(this);
-    this.tileVisualizationProcessor = new TileVisualizationProcessor(this,
-      new SimpleVisualizationOptions(10.0, 0.0, false, new SimpleLinearGradient(
-        32,
-        Color.WHITE,
-        Color.GREEN,
-        0.0d,
-        1.0d
-      )));
+    this.tileVisualizationProcessor = new TileVisualizationProcessor(this);
     this.fastaProcessor = new FASTAProcessor(this);
   }
 

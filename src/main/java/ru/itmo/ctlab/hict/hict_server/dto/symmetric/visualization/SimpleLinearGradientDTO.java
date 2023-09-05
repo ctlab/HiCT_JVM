@@ -1,4 +1,4 @@
-package ru.itmo.ctlab.hict.hict_server.dto.response.visualization;
+package ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization;
 
 import io.vertx.core.json.JsonObject;
 import lombok.AccessLevel;

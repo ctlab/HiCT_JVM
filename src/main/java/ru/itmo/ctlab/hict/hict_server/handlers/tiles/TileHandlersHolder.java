@@ -9,25 +9,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
-import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
-import ru.itmo.ctlab.hict.hict_server.dto.request.tiles.ContrastRangeSettingsDTO;
-import ru.itmo.ctlab.hict.hict_server.dto.request.tiles.NormalizationSettingsDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.VisualizationOptionsDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Map;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -36,14 +29,15 @@ public class TileHandlersHolder extends HandlersHolder {
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
-    router.post("/set_contrast_range").blockingHandler(ctx -> {
+    router.post("/set_visualization_options").blockingHandler(ctx -> {
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
-      final @NotNull @NonNull var request = ContrastRangeSettingsDTO.fromJSONObject(requestJSON);
+      final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
 
       final var map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
+      map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(request.toEntity()));
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
       if (chunkedFileWrapper == null) {
         ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
@@ -51,24 +45,6 @@ public class TileHandlersHolder extends HandlersHolder {
       }
       final var chunkedFile = chunkedFileWrapper.getChunkedFile();
       log.debug("Got ChunkedFile from map");
-
-      final var tileVisualizationProcessor = chunkedFile.tileVisualizationProcessor();
-      final var lock = tileVisualizationProcessor.getVisualizationOptionsLock();
-
-      try {
-        lock.writeLock().lock();
-        final var oldSettings = tileVisualizationProcessor.getVisualizationOptions();
-        final var newOptions = new SimpleVisualizationOptions(
-          oldSettings.getPreLogBase(),
-          oldSettings.getPostLogBase(),
-          oldSettings.isApplyCoolerWeights(),
-          request.lowerSignalBound(),
-          request.upperSignalBound(),
-          colormap);
-        tileVisualizationProcessor.setVisualizationOptions(newOptions);
-      } finally {
-        lock.writeLock().unlock();
-      }
 
       final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
       if (stats == null) {
@@ -78,16 +54,14 @@ public class TileHandlersHolder extends HandlersHolder {
       final var newStats = TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length);
       newStats.versionCounter().set(stats.versionCounter().get());
       map.put("TileStatisticHolder", newStats);
-
-
       ctx.response().setStatusCode(200).end();
     });
 
-    router.post("/set_normalization").blockingHandler(ctx -> {
+    router.post("/get_visualization_options").blockingHandler(ctx -> {
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
-      final @NotNull @NonNull var request = NormalizationSettingsDTO.fromJSONObject(requestJSON);
+      final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
 
       final var map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
@@ -98,25 +72,13 @@ public class TileHandlersHolder extends HandlersHolder {
       }
       final var chunkedFile = chunkedFileWrapper.getChunkedFile();
       log.debug("Got ChunkedFile from map");
-
-      final var tileVisualizationProcessor = chunkedFile.tileVisualizationProcessor();
-      final var lock = tileVisualizationProcessor.getVisualizationOptionsLock();
-
-      try {
-        lock.writeLock().lock();
-        final var oldSettings = tileVisualizationProcessor.getVisualizationOptions();
-        final var newOptions = new SimpleVisualizationOptions(
-          request.preLogBase(),
-          request.postLogBase(),
-          request.applyCoolerWeights(),
-          oldSettings.getLowerThreshold(),
-          oldSettings.getUpperThreshold(),
-          colormap);
-        tileVisualizationProcessor.setVisualizationOptions(newOptions);
-      } finally {
-        lock.writeLock().unlock();
+      final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
+      if (visualizationOptionsWrapper == null) {
+        ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
+        return;
       }
-      ctx.response().setStatusCode(200).end();
+      final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
+      ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
     });
 
     router.get("/get_tile").handler(ctx -> {
@@ -144,6 +106,12 @@ public class TileHandlersHolder extends HandlersHolder {
       }
       final var chunkedFile = chunkedFileWrapper.getChunkedFile();
       log.debug("Got ChunkedFile from map");
+      final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
+      if (visualizationOptionsWrapper == null) {
+        ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
 
       final var level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
 
@@ -180,71 +148,13 @@ public class TileHandlersHolder extends HandlersHolder {
         endColPx = (col + 1) * tileWidth;
       }
 
-      final SimpleVisualizationOptions visualizationOptions;
-      try {
-        chunkedFile.tileVisualizationProcessor().getVisualizationOptionsLock().readLock().lock();
-        visualizationOptions = chunkedFile.tileVisualizationProcessor().getVisualizationOptions();
-      } finally {
-        chunkedFile.tileVisualizationProcessor().getVisualizationOptionsLock().readLock().unlock();
-      }
-
       final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), startRowPx, startColPx, endRowPx, endColPx, true);
-      final var dense = matrixWithWeights.matrix();
-      log.debug("Got dense matrix");
-//        final var normalized = Arrays.stream(dense).map(arrayRow -> Arrays.stream(arrayRow).mapToDouble(Math::log).mapToLong(Math::round).mapToInt(l -> (int) l).toArray()).toArray(int[][]::new);
-      final var normalized = chunkedFile.tileVisualizationProcessor().processTile(dense, matrixWithWeights.rowWeights(), matrixWithWeights.colWeights());
-      log.debug("Normalized dense matrix");
-
-
-      final var boxedRGBValues = Arrays.stream(normalized)
-        .flatMap(arrayRow ->
-          Arrays.stream(arrayRow).boxed()
-            .map(nVal ->
-              Long.min(
-                1L + (long) visualizationOptions.getUpperThreshold(),
-                Long.max(
-                  nVal,
-                  (long) visualizationOptions.getLowerThreshold()
-                )
-              )
-                - (long) visualizationOptions.getLowerThreshold()
-            ).
-            map(constrainedValue -> Color.getHSBColor(
-                142.0f / 360.0f,
-                Float.max(
-                  0L,
-                  Float.min(
-                    (float) ((double) constrainedValue * (128.0 / (1 + visualizationOptions.getUpperThreshold() - visualizationOptions.getLowerThreshold()))),
-                    128.0f * 128.0f)
-                ) / 128.0f,
-                1.0f
-              )
-            )
-            .flatMap(color -> Stream.of(
-                (byte) (color.getRed()), // Red
-                (byte) (color.getGreen()), // Green
-                (byte) (color.getBlue()) // Blue,
-              )
-            )
-        )
-        .toArray(Byte[]::new);
-
-      final byte[] rgbValues = new byte[boxedRGBValues.length];
-      for (var i = 0; i < boxedRGBValues.length; ++i) {
-        rgbValues[i] = boxedRGBValues[i];
-      }
-
-      final DataBuffer buffer = new DataBufferByte(rgbValues, rgbValues.length);
-
-      //3 bytes per pixel: red, green, blue
-      final WritableRaster raster = Raster.createInterleavedRaster(buffer, tileWidth, tileHeight, 3 * tileWidth, 3, new int[]{0, 1, 2}, null);
-      final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, false, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-      //final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, true, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-      final BufferedImage image = new BufferedImage(cm, raster, true, null);
+      final var image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options);
       final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
       log.debug("Created byte stream");
 
+      /*
       try (final var pool = Executors.newSingleThreadExecutor()) {
         pool.submit(() -> {
           // Update signal ranges
@@ -263,6 +173,7 @@ public class TileHandlersHolder extends HandlersHolder {
           } while (Double.longBitsToDouble(oldMaximumDoubleBits) < tileMaximum && !stats.maximumsAtResolutionDoubleBits().compareAndSet(level, oldMaximumDoubleBits, Double.doubleToLongBits(tileMaximum)));
         });
       }
+      */
 
 
       try {

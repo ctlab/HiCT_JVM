@@ -2,18 +2,16 @@ package ru.itmo.ctlab.hict.hict_library.visualization;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 
 import java.awt.*;
 import java.awt.image.*;
 import java.util.Arrays;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.DoubleStream;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
@@ -21,10 +19,7 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 @Getter
 public class TileVisualizationProcessor {
-  private final @NotNull ReadWriteLock visualizationOptionsLock = new ReentrantReadWriteLock();
   private final @NotNull ChunkedFile chunkedFile;
-  @Setter
-  private @NotNull SimpleVisualizationOptions visualizationOptions;
 
   protected DoubleStream applyCoolerWeightsToRow(final DoubleStream rowStream, final double rowWeight, final double @Nullable [] columnWeights) {
     var doubleStream = rowStream;
@@ -93,10 +88,10 @@ public class TileVisualizationProcessor {
     );
   }
 
-  public TileWithWeights processTile(final @NotNull RawTileWithWeights rawTile, final @NotNull SimpleVisualizationOptions visualizationOptions) {
-    final var input = rawTile.values();
+  public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions visualizationOptions) {
+    final var input = rawTile.matrix();
     final var rowWeights = rawTile.rowWeights();
-    final var columnWeights = rawTile.columnWeights();
+    final var columnWeights = rawTile.colWeights();
     final var rowCount = input.length;
     final var columnCount = (rowCount > 0) ? input[0].length : 0;
     final var result = new double[rowCount][columnCount];
@@ -142,8 +137,8 @@ public class TileVisualizationProcessor {
     return new TileWithWeights(result, rowWeights, columnWeights);
   }
 
-  public @NotNull BufferedImage visualizeTile(final @NotNull RawTileWithWeights rawTile, final @NotNull SimpleVisualizationOptions options) {
-    final var input = rawTile.values();
+  public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions options) {
+    final var input = rawTile.matrix();
     final var rowCount = input.length;
     final var columnCount = (rowCount > 0) ? input[0].length : 0;
     final var normalized = processTile(rawTile, options);
@@ -153,7 +148,7 @@ public class TileVisualizationProcessor {
         Arrays.stream(arrayRow)
           .mapToObj(colormap::mapSignal)
           .flatMap(color -> Stream.of(
-              (byte) (color.getAlpha()), // Alpha,
+            (byte) (color.getAlpha()), // Alpha,
               (byte) (color.getRed()), // Red
               (byte) (color.getGreen()), // Green
               (byte) (color.getBlue()) // Blue,
@@ -175,56 +170,5 @@ public class TileVisualizationProcessor {
     final BufferedImage image = new BufferedImage(cm, raster, true, null);
 
     return image;
-  }
-
-
-  public long @NotNull [][] processTile(final long @NotNull [][] input, final double @Nullable [] rowWeights, final double @Nullable [] columnWeights) {
-    assert (input.length > 0) : "Zero-height tile??";
-    final var result = new long[input.length][input[0].length];
-    final SimpleVisualizationOptions options;
-    try {
-      this.visualizationOptionsLock.readLock().lock();
-      options = this.visualizationOptions;
-    } finally {
-      this.visualizationOptionsLock.readLock().unlock();
-    }
-    for (int rowIndex = 0; rowIndex < input.length; ++rowIndex) {
-      final var startStream = Arrays.stream(input[rowIndex]).parallel();
-      final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
-
-      final var pre = options.getLnPreLogBase();
-      final var post = options.getLnPostLogBase();
-
-      if (pre > 0) {
-        var doubleStream = startStream.mapToDouble(
-          signal -> Math.log1p(signal) / pre
-        );
-
-        if (options.isApplyCoolerWeights()) {
-          doubleStream = applyCoolerWeightsToRow(doubleStream, rowWeight, columnWeights);
-        }
-
-        if (post > 0) {
-          doubleStream = doubleStream.map(signal -> Math.log1p(signal) / post);
-        }
-        result[rowIndex] = doubleStream.mapToLong(Math::round).toArray();
-      } else {
-        if (options.isApplyCoolerWeights()) {
-          var doubleStream = applyCoolerWeightsToRow(startStream, rowWeight, columnWeights);
-          if (post > 0) {
-            doubleStream = doubleStream.map(signal -> Math.log1p(signal) / post);
-          }
-          result[rowIndex] = doubleStream.mapToLong(Math::round).toArray();
-        } else {
-          if (post > 0) {
-            var doubleStream = startStream.mapToDouble(signal -> Math.log1p(signal) / post);
-            result[rowIndex] = doubleStream.mapToLong(Math::round).toArray();
-          } else {
-            System.arraycopy(input[rowIndex], 0, result[rowIndex], 0, input[rowIndex].length);
-          }
-        }
-      }
-    }
-    return result;
   }
 }

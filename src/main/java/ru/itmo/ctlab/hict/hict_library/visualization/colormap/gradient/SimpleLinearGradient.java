@@ -29,7 +29,7 @@ public class SimpleLinearGradient extends DoubleColormap {
       throw new IllegalArgumentException("Signal range must be positive: min < max");
     }
     final var startComp = this.startColor.getRGBComponents(null);
-    final var endComp = this.startColor.getRGBComponents(null);
+    final var endComp = this.endColor.getRGBComponents(null);
     assert (startComp.length == endComp.length) : "Different component counts in the same color space??";
     this.componentCount = startComp.length;
     this.deltaComponents = new double[this.componentCount];
@@ -46,7 +46,7 @@ public class SimpleLinearGradient extends DoubleColormap {
       components[i] = (float) (this.deltaComponents[i] * standardized);
     }
     return new Color(
-      ColorSpace.getInstance(ColorSpace.TYPE_RGB),
+      ColorSpace.getInstance(ColorSpace.CS_sRGB),
       components,
       (float) (this.deltaComponents[this.componentCount - 1] * standardized)
     );
