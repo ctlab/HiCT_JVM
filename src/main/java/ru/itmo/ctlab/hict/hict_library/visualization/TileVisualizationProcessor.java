@@ -148,10 +148,10 @@ public class TileVisualizationProcessor {
         Arrays.stream(arrayRow)
           .mapToObj(colormap::mapSignal)
           .flatMap(color -> Stream.of(
-            (byte) (color.getAlpha()), // Alpha,
               (byte) (color.getRed()), // Red
               (byte) (color.getGreen()), // Green
-              (byte) (color.getBlue()) // Blue,
+              (byte) (color.getBlue()), // Blue,
+              (byte) (color.getAlpha()) // Alpha,
             )
           )
       )

@@ -54,15 +54,16 @@ public class TileHandlersHolder extends HandlersHolder {
       final var newStats = TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length);
       newStats.versionCounter().set(stats.versionCounter().get());
       map.put("TileStatisticHolder", newStats);
-      ctx.response().setStatusCode(200).end();
+      final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
+      if (visualizationOptionsWrapper == null) {
+        ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
+      ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
     });
 
     router.post("/get_visualization_options").blockingHandler(ctx -> {
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
-
-      final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
-
       final var map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
