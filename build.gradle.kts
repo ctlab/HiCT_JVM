@@ -33,6 +33,7 @@ val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
 val webUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
+val webUIBranch = "dev-0.1.5"
 
 version = readVersion()
 
@@ -202,6 +203,7 @@ tasks.register("buildWebUI") {
       isIgnoreExitValue = true
     }
 
+
     if (cloneResult.exitValue != 0) {
       print("Failed to clone WebUI repository, maybe it already exists. Trying to pull changes.")
       val pullResult = project.exec {
@@ -218,6 +220,14 @@ tasks.register("buildWebUI") {
         print("Successfully pulled changes")
       }
     }
+
+    project.exec {
+      commandLine("git", "checkout", webUIBranch)
+      workingDir = webUICloneDirectory.asFile
+      standardOutput = System.out
+      isIgnoreExitValue = true
+    }
+
 
     project.exec {
       commandLine("npm", "install")
