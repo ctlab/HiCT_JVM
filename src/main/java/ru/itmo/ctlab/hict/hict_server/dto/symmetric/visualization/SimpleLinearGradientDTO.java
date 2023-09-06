@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 @Getter(AccessLevel.PUBLIC)
 @ToString
 public class SimpleLinearGradientDTO extends ColormapDTO {
-  private static final Pattern RGBA_EXTRACT_PATTERN = Pattern.compile("rgba\\p{Zs}*\\(\\p{Zs}*(?<red>\\d+)\\p{Zs}*,\\p{Zs}*(?<green>\\d+)\\p{Zs}*,\\p{Zs}*(?<blue>\\d+)\\p{Zs}*,\\p{Zs}*(?<alpha>[+-]?\\d+\\.?\\d*)\\p{Zs}*\\)");
+  private static final Pattern RGBA_EXTRACT_PATTERN = Pattern.compile("rgba\\p{Zs}*\\(\\p{Zs}*(?<red>\\d+)\\p{Zs}*,\\p{Zs}*(?<green>\\d+)\\p{Zs}*,\\p{Zs}*(?<blue>\\d+)\\p{Zs}*,\\p{Zs}*(?<alpha>[+-]?\\d+[\\.,]?\\d*)\\p{Zs}*\\)");
   private final String startColorRGBAString;
   private final double minSignal;
   private final double maxSignal;
@@ -60,13 +60,13 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
         Integer.parseInt(startColorMatcher.group("red")),
         Integer.parseInt(startColorMatcher.group("green")),
         Integer.parseInt(startColorMatcher.group("blue")),
-        (int) (255.0d * Double.parseDouble(startColorMatcher.group("alpha")))
+        (int) (255.0d * Double.parseDouble(startColorMatcher.group("alpha").replaceAll(",", ".")))
       ),
       new Color(
         Integer.parseInt(endColorMatcher.group("red")),
         Integer.parseInt(endColorMatcher.group("green")),
         Integer.parseInt(endColorMatcher.group("blue")),
-        (int) (255.0d * Double.parseDouble(endColorMatcher.group("alpha")))
+        (int) (255.0d * Double.parseDouble(endColorMatcher.group("alpha").replaceAll(",", ".")))
       ),
       this.minSignal,
       this.maxSignal
