@@ -84,7 +84,7 @@ public class MainVerticle extends AbstractVerticle {
         final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, new SimpleLinearGradient(
           32,
           Color.WHITE,
-          Color.GREEN,
+          new Color(0, 96, 0, 255),
           0.0d,
           1.0d
         ));
