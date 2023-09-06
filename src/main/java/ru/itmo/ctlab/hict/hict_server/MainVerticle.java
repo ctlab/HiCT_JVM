@@ -81,13 +81,14 @@ public class MainVerticle extends AbstractVerticle {
         map.put("MIN_DS_POOL", minDSPool);
         map.put("MAX_DS_POOL", maxDSPool);
 
-        final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, new SimpleLinearGradient(
-          32,
-          new Color(255, 255, 255, 0),
-          new Color(0, 96, 0, 255),
-          0.0d,
-          1.0d
-        ));
+        final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, false, false,
+          new SimpleLinearGradient(
+            32,
+            new Color(255, 255, 255, 0),
+            new Color(0, 96, 0, 255),
+            0.0d,
+            1.0d
+          ));
 
         map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions));
 

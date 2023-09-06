@@ -125,7 +125,7 @@ public class MatrixQueries {
     }
 
 
-    return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights);
+    return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
   }
 
   private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu) {
@@ -569,7 +569,9 @@ public class MatrixQueries {
   }
 
   public record MatrixWithWeights(long @NotNull [][] matrix, double @NotNull [] rowWeights,
-                                  double @NotNull [] colWeights) {
+                                  double @NotNull [] colWeights, long startRowIncl, long startColIncl, long endRowExcl,
+                                  long endColExcl, @NotNull QueryLengthUnit units,
+                                  @NotNull ResolutionDescriptor resolutionDescriptor) {
   }
 
 }

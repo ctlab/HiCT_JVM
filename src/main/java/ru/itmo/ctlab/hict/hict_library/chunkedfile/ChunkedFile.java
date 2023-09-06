@@ -42,6 +42,7 @@ public class ChunkedFile implements AutoCloseable {
   private final Map<@NotNull Long, @NotNull Integer> resolutionToIndex;
   private final long @NotNull [] matrixSizeBins;
   private final int @NotNull [] stripeCount;
+  private final double @NotNull [] resolutionScalingCoefficient, resolutionLinearScalingCoefficient;
   private final @NotNull ContigTree contigTree;
   private final @NotNull ScaffoldTree scaffoldTree;
   private final @NotNull MatrixQueries matrixQueries;
@@ -119,6 +120,18 @@ public class ChunkedFile implements AutoCloseable {
     this.agpProcessor = new AGPProcessor(this);
     this.tileVisualizationProcessor = new TileVisualizationProcessor(this);
     this.fastaProcessor = new FASTAProcessor(this);
+
+    this.resolutionScalingCoefficient = new double[this.resolutions.length];
+    this.resolutionLinearScalingCoefficient = new double[this.resolutions.length];
+    this.resolutionScalingCoefficient[0] = 1.0d;
+    this.resolutionScalingCoefficient[1] = 1.0d;
+    this.resolutionLinearScalingCoefficient[0] = 1.0d;
+    this.resolutionLinearScalingCoefficient[1] = 1.0d;
+    for (int i = 2; i < this.resolutions.length; ++i) {
+      final var ratio = (this.resolutions[i] / this.resolutions[1]);
+      this.resolutionScalingCoefficient[i] = 1.0d / ((double) (ratio * ratio));
+      this.resolutionLinearScalingCoefficient[i] = 1.0d / ((double) ratio);
+    }
   }
 
   public @NotNull MatrixQueries matrixQueries() {

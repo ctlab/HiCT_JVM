@@ -95,6 +95,10 @@ public class TileVisualizationProcessor {
     final var rowCount = input.length;
     final var columnCount = (rowCount > 0) ? input[0].length : 0;
     final var result = new double[rowCount][columnCount];
+    final var resolutionScalingCoeffs = this.chunkedFile.getResolutionScalingCoefficient();
+    final var resolutionLinearScalingCoeffs = this.chunkedFile.getResolutionLinearScalingCoefficient();
+    final var resolutionScalingCoeff = resolutionScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
+    final var resolutionLinearScalingCoeff = resolutionLinearScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
 
     for (int rowIndex = 0; rowIndex < input.length; ++rowIndex) {
       final var startStream = Arrays.stream(input[rowIndex]).parallel();
@@ -103,35 +107,28 @@ public class TileVisualizationProcessor {
       final var pre = visualizationOptions.getLnPreLogBase();
       final var post = visualizationOptions.getLnPostLogBase();
 
-      DoubleStream doubleStream;
+      DoubleStream doubleStream = startStream.mapToDouble(signal -> (double) signal);
 
       if (pre > 0) {
-        doubleStream = startStream.mapToDouble(
-          signal -> Math.log1p(signal) / pre
-        );
-
-        if (visualizationOptions.isApplyCoolerWeights()) {
-          doubleStream = applyCoolerWeightsToRow(doubleStream, rowWeight, columnWeights);
-        }
-
-        if (post > 0) {
-          doubleStream = doubleStream.map(signal -> Math.log1p(signal) / post);
-        }
-
-      } else {
-        if (visualizationOptions.isApplyCoolerWeights()) {
-          doubleStream = applyCoolerWeightsToRow(startStream, rowWeight, columnWeights);
-          if (post > 0) {
-            doubleStream = doubleStream.map(signal -> Math.log1p(signal) / post);
-          }
-        } else {
-          if (post > 0) {
-            doubleStream = startStream.mapToDouble(signal -> Math.log1p(signal) / post);
-          } else {
-            doubleStream = startStream.mapToDouble(signal -> (double) signal);
-          }
-        }
+        doubleStream = doubleStream.map(signal -> Math.log1p(signal) / pre);
       }
+
+      if (visualizationOptions.isResolutionScaling()) {
+        doubleStream = doubleStream.map(signal -> signal * resolutionScalingCoeff);
+      }
+
+      if (visualizationOptions.isResolutionLinearScaling()) {
+        doubleStream = doubleStream.map(signal -> signal * resolutionLinearScalingCoeff);
+      }
+
+      if (visualizationOptions.isApplyCoolerWeights()) {
+        doubleStream = applyCoolerWeightsToRow(doubleStream, rowWeight, columnWeights);
+      }
+
+      if (post > 0) {
+        doubleStream = doubleStream.map(signal -> Math.log1p(signal) / post);
+      }
+
       result[rowIndex] = doubleStream.toArray();
     }
     return new TileWithWeights(result, rowWeights, columnWeights);

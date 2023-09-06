@@ -8,12 +8,17 @@ import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 public record VisualizationOptionsDTO(double preLogBase,
                                       double postLogBase,
                                       boolean applyCoolerWeights,
-                                      ColormapDTO colormap) {
+                                      boolean resolutionScaling,
+                                      boolean resolutionLinearScaling,
+                                      ColormapDTO colormap
+) {
   public static @NotNull VisualizationOptionsDTO fromEntity(final @NotNull SimpleVisualizationOptions options, final @NotNull ChunkedFile chunkedFile) {
     return new VisualizationOptionsDTO(
       options.getPreLogBase(),
       options.getPostLogBase(),
       options.isApplyCoolerWeights(),
+      options.isResolutionScaling(),
+      options.isResolutionLinearScaling(),
       ColormapDTO.fromEntity(options.getColormap(), chunkedFile)
     );
   }
@@ -23,6 +28,8 @@ public record VisualizationOptionsDTO(double preLogBase,
       json.getDouble("preLogBase"),
       json.getDouble("postLogBase"),
       json.getBoolean("applyCoolerWeights"),
+      json.getBoolean("resolutionScaling"),
+      json.getBoolean("resolutionLinearScaling"),
       ColormapDTO.fromJSONObject(json.getJsonObject("colormap"))
     );
   }
@@ -32,6 +39,8 @@ public record VisualizationOptionsDTO(double preLogBase,
       this.preLogBase,
       this.postLogBase,
       this.applyCoolerWeights,
+      this.resolutionScaling,
+      this.resolutionLinearScaling,
       this.colormap.toEntity()
     );
   }
