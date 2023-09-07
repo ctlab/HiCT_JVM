@@ -1,5 +1,7 @@
 package ru.itmo.ctlab.hict.hict_server;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
@@ -13,7 +15,7 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import lombok.extern.slf4j.Slf4j;
-import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
+import org.slf4j.LoggerFactory;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
@@ -25,11 +27,9 @@ import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.awt.*;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
-import java.util.stream.LongStream;
 
 @Slf4j
 public class MainVerticle extends AbstractVerticle {
@@ -37,23 +37,15 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
-    // TODO: Remove testing code:
-    {
-      final var a = new long[]{3, 3, 3, 3};
-      final var ps = a.clone();
-      Arrays.parallelPrefix(ps, Long::sum);
-      LongStream.range(0, 12).map(idx -> BinarySearch.leftBinarySearch(ps, idx)).forEachOrdered(pos -> log.debug("leftBinarySearch Position is " + pos));
-      LongStream.range(0, 12).map(idx -> BinarySearch.rightBinarySearch(ps, idx)).forEachOrdered(pos -> log.debug("rightBinarySearch Position is " + pos));
-      LongStream.range(0, 12).map(idx -> BinarySearch.leftBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse leftBinarySearch Position is " + pos));
-      LongStream.range(0, 12).map(idx -> BinarySearch.rightBinarySearch(ps, ps[ps.length - 1] - idx)).forEachOrdered(pos -> log.debug("Reverse rightBinarySearch Position is " + pos));
-    }
-
-
     // set vertx logger delegate factory to slf4j
     String logFactory = System.getProperty("org.vertx.logger-delegate-factory-class-name");
     if (logFactory == null) {
       System.setProperty("org.vertx.logger-delegate-factory-class-name", SLF4JLogDelegateFactory.class.getName());
     }
+
+    final Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+    root.setLevel(Level.INFO);
+
 
     log.info("Logging initialized");
 
