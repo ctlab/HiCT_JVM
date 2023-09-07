@@ -235,6 +235,14 @@ tasks.register("buildWebUI") {
 
 
     project.exec {
+      commandLine("git", "pull")
+      workingDir = webUIRepositoryDirectory.asFile
+      standardOutput = System.out
+      isIgnoreExitValue = true
+    }
+
+
+    project.exec {
       commandLine("npm", "install")
       workingDir = webUIRepositoryDirectory.asFile
       standardOutput = System.out

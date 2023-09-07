@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 @Getter(AccessLevel.PUBLIC)
 @ToString
 public class SimpleLinearGradientDTO extends ColormapDTO {
-  private static final Pattern RGBA_EXTRACT_PATTERN = Pattern.compile("rgba\\p{Zs}*\\(\\p{Zs}*(?<red>\\d+)\\p{Zs}*,\\p{Zs}*(?<green>\\d+)\\p{Zs}*,\\p{Zs}*(?<blue>\\d+)\\p{Zs}*,\\p{Zs}*(?<alpha>[+-]?\\d+[\\.,]?\\d*)\\p{Zs}*\\)");
+  private static final Pattern RGBA_EXTRACT_PATTERN = Pattern.compile("rgba\\p{Zs}*\\(\\p{Zs}*(?<red>\\d+)\\p{Zs}*,\\p{Zs}*(?<green>\\d+)\\p{Zs}*,\\p{Zs}*(?<blue>\\d+)\\p{Zs}*,\\p{Zs}*(?<alpha>[+-]?\\d+[.,]?\\d*)\\p{Zs}*\\)");
   private final String startColorRGBAString;
   private final double minSignal;
   private final double maxSignal;
@@ -52,8 +52,10 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
   public @NotNull SimpleLinearGradient toEntity() {
     final var startColorMatcher = RGBA_EXTRACT_PATTERN.matcher(this.startColorRGBAString);
     final var endColorMatcher = RGBA_EXTRACT_PATTERN.matcher(this.endColorRGBAString);
-    assert startColorMatcher.matches() : "Wrong start RGBA color?";
-    assert endColorMatcher.matches() : "Wrong end RGBA color?";
+    final var startMatches = startColorMatcher.matches();
+    final var endMatches = endColorMatcher.matches();
+    assert startMatches : "Wrong start RGBA color?";
+    assert endMatches : "Wrong end RGBA color?";
     return new SimpleLinearGradient(
       32,
       new Color(
