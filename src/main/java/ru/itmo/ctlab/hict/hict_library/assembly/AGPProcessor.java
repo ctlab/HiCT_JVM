@@ -34,7 +34,7 @@ public class AGPProcessor {
     //final var recordRows = csvFormat.parse(reader);
     final List<List<String>> recordRows = new ArrayList<>();
     try (final var br = new BufferedReader(reader)) {
-      br.lines().parallel().map(line -> line.trim().split("\t")).filter(e -> e.length > 0).forEachOrdered(sp -> {
+      br.lines().sequential().map(line -> line.trim().split("\t")).filter(e -> e.length > 0).forEachOrdered(sp -> {
         recordRows.add(Arrays.stream(sp).toList());
       });
     }
@@ -151,7 +151,7 @@ public class AGPProcessor {
       };
       parsedRecords.add(agpFileRecord);
     }
-    return parsedRecords.parallelStream().sorted(Comparator.comparingLong(AGPFileRecord::getInterScaffoldStartIncl).thenComparingInt(AGPFileRecord::getPartNumber)).toList();
+    return parsedRecords.stream().sequential().toList();
   }
 
   public void initializeContigTreeFromAGP(final @NotNull List<@NotNull AGPFileRecord> agpFileRecords) {

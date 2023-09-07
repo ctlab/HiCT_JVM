@@ -211,6 +211,28 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
+  public void reverseSelectionRange(final long startBp, final long endBp) {
+    if (startBp > endBp) {
+      reverseSelectionRange(endBp, startBp);
+      return;
+    }
+
+    try {
+      this.rootLock.writeLock().lock();
+      final var oldAssemblyLength = this.root.subtreeLengthBp;
+
+      final @NotNull var extendedBorders = extendBordersToScaffolds(startBp, endBp);
+      final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
+
+      final var reversedSegment = es.segment().cloneBuilder().needsChangingDirection(true).build().push();
+
+      commitExposedSegment(new Node.ExposedSegment(es.less(), reversedSegment, es.greater()));
+      assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after moving a region?";
+    } finally {
+      this.rootLock.writeLock().unlock();
+    }
+  }
+
   public void moveSelectionRange(final long startBp, final long endBp, final long targetStartBp) {
     if (startBp > endBp) {
       moveSelectionRange(endBp, startBp, targetStartBp);
@@ -556,15 +578,15 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         final Node newLeft;
         final Node newRight;
         if (this.left != null) {
-          newLeft = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection).left(this.left.right).right(this.left.left).build();
+          newRight = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection).left(this.left.right).right(this.left.left).build();
         } else {
-          newLeft = null;
+          newRight = null;
         }
 
         if (this.right != null) {
-          newRight = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection).left(this.right.right).right(this.right.left).build();
+          newLeft = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection).left(this.right.right).right(this.right.left).build();
         } else {
-          newRight = null;
+          newLeft = null;
         }
 
         return this.cloneBuilder().left(newLeft).right(newRight).needsChangingDirection(false).build();
