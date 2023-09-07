@@ -310,7 +310,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       assert (segment.left == null) : "Exposed more than one nodes and there is left??";
       assert (segment.right == null) : "Exposed more than one nodes and there is right??";
 
-      final @NotNull var newSegment = segment.cloneBuilder().nodeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).subtreeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).build();
+      final @NotNull var newSegment = segment.cloneBuilder().scaffoldDescriptor(null).build().push().updateSizes(); //.nodeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).subtreeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).build();
 
       commitExposedSegment(new Node.ExposedSegment(es.less(), newSegment, es.greater()));
 //      assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after removing a region?";
@@ -632,7 +632,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         this.nodeLengthBp = base.nodeLengthBp;
       }
 
-      public Node.NodeCloneBuilder contigDescriptor(final @Nullable ScaffoldDescriptor scaffoldDescriptor) {
+      public Node.NodeCloneBuilder scaffoldDescriptor(final @Nullable ScaffoldDescriptor scaffoldDescriptor) {
         this.scaffoldDescriptor = scaffoldDescriptor;
         return this;
       }
