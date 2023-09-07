@@ -257,21 +257,15 @@ tasks.named("clean") {
 }
 
 tasks.named("processResources") {
-//  dependsOn("copyWebUI")
+  dependsOn("copyWebUI")
 }
 
 tasks.named("build") {
-//  dependsOn("copyWebUI")
+  dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
 }
 
 tasks.named("jar") {
-//  dependsOn("copyWebUI")
+  dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
-  /*doLast {
-    val newVersion = incrementPatchVersion(currentVersion)
-    writeVersion(newVersion)
-    project.version = newVersion
-    println("[JAR] Version with git hash: $newVersion")
-  }*/
 }
