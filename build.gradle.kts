@@ -221,11 +221,15 @@ tasks.register("buildWebUI") {
       }
     }
 
-    project.exec {
+    val checkOutResult = project.exec {
       commandLine("git", "checkout", webUIBranch)
-      workingDir = webUICloneDirectory.asFile
+      workingDir = webUIRepositoryDirectory.asFile
       standardOutput = System.out
       isIgnoreExitValue = true
+    }
+
+    if (checkOutResult.exitValue != 0) {
+      print("Failed to checkout branch ${webUIBranch}, will use main branch instead");
     }
 
 
