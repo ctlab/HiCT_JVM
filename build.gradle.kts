@@ -39,12 +39,21 @@ version = readVersion()
 
 application {
   mainClass.set(launcherClassName)
+
+  val currentOS = org.gradle.internal.os.OperatingSystem.current()
+
+  applicationDefaultJvmArgs += listOf(
+    "-Djava.library.path=${projectDir}/src/main/resources/libs/native/linux",
+    "-Djava.library.path=${projectDir}/src/main/resources/libs/native/win"
+  )
 }
 
 dependencies {
+//  implementation("cisd:jhdf5:19.04.1")
+  implementation(fileTree("src/main/resources/libs"))
 
-
-  implementation("cisd:jhdf5:19.04.1")
+  // https://mvnrepository.com/artifact/cisd/base
+  implementation("cisd:base:18.09.0")
   implementation("org.jetbrains:annotations:24.0.0")
   implementation("org.jetbrains:annotations:24.0.0")
 
@@ -87,7 +96,11 @@ dependencies {
 // https://mvnrepository.com/artifact/org.apache.commons/commons-csv
   implementation("org.apache.commons:commons-csv:1.10.0")
 
+  // https://mvnrepository.com/artifact/org.scijava/native-lib-loader
+  implementation("org.scijava:native-lib-loader:2.4.0")
 
+
+  runtimeOnly(fileTree("src/main/resources/libs/natives"))
 }
 
 java {
@@ -230,7 +243,7 @@ tasks.register("buildWebUI") {
     }
 
     if (checkOutResult.exitValue != 0) {
-      print("Failed to checkout branch ${webUIBranch}, will use main branch instead");
+      print("Failed to checkout branch ${webUIBranch}, will use main branch instead")
     }
 
 
@@ -270,15 +283,15 @@ tasks.named("clean") {
 }
 
 tasks.named("processResources") {
-  dependsOn("copyWebUI")
+//  dependsOn("copyWebUI")
 }
 
 tasks.named("build") {
-  dependsOn("copyWebUI")
+//  dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
 }
 
 tasks.named("jar") {
-  dependsOn("copyWebUI")
+//  dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
 }

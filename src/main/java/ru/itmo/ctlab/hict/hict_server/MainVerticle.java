@@ -15,6 +15,7 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import lombok.extern.slf4j.Slf4j;
+import org.scijava.nativelib.NativeLoader;
 import org.slf4j.LoggerFactory;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
@@ -25,8 +26,10 @@ import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.awt.*;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
@@ -34,6 +37,44 @@ import java.util.concurrent.CyclicBarrier;
 @Slf4j
 public class MainVerticle extends AbstractVerticle {
 
+
+  static {
+    final var libraryNames = new LinkedHashMap<String, String>();
+    libraryNames.put("hdf5", "HDF5");
+    libraryNames.put("hdf5_tools", "HDF5_tools");
+    libraryNames.put("hdf5_java", "HDF5_java");
+    libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
+//    libraryNames.put("h5blosc", "HDF5 BLOSC filter plugin (Windows-style naming)");
+    libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
+//    libraryNames.put("h5bshuf", "HDF5 Shuffle filter plugin (Windows-style naming)");
+    libraryNames.put("libh5bz2", "HDF5 BZ2 filter plugin (Linux-style naming)");
+//    libraryNames.put("h5bz2", "HDF5 BZ2 filter plugin (Windows-style naming)");
+    libraryNames.put("libh5lz4", "HDF5 LZ4 filter plugin (Linux-style naming)");
+//    libraryNames.put("h5lz4", "HDF5 LZ4 filter plugin (Windows-style naming)");
+    libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
+//    libraryNames.put("h5lzf", "HDF5 LZF filter plugin (Windows-style naming)");
+    libraryNames.put("libh5zfp", "HDF5 ZFP filter plugin (Linux-style naming)");
+//    libraryNames.put("h5zfp", "HDF5 ZFP filter plugin (Windows-style naming)");
+    libraryNames.put("libh5zstd", "HDF5 zSTD filter plugin (Linux-style naming)");
+//    libraryNames.put("h5zstd", "HDF5 zSTD filter plugin (Windows-style naming)");
+
+    for (final var e : libraryNames.entrySet()) {
+      final var lib = e.getKey();
+      final var name = e.getValue();
+      log.info("Loading " + name + " library");
+      try {
+        NativeLoader.loadLibrary(lib);
+      } catch (final IOException err) {
+        log.error("Failed to load native library " + name + " by NativeLoader");
+        log.error("Failed to load native library due to IOException");
+//        throw new RuntimeException("Failed to load native library " + name + " by NativeLoader", err);
+      } catch (UnsatisfiedLinkError unsatisfiedLinkError) {
+        log.error("Failed to load native library " + name + " by NativeLoader due to unsatisfied link error");
+        log.error("Failed to load native library due to UnsatisfiedLinkError");
+//        throw new RuntimeException("Failed to load native library " + name + " by NativeLoader due to unsatisfied link error", unsatisfiedLinkError);
+      }
+    }
+  }
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
