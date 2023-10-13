@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_server;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import hdf.hdf5lib.H5;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
@@ -15,6 +16,8 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bcel.Repository;
+import org.apache.bcel.classfile.JavaClass;
 import org.scijava.nativelib.NativeLoader;
 import org.slf4j.LoggerFactory;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
@@ -73,6 +76,32 @@ public class MainVerticle extends AbstractVerticle {
         log.error("Failed to load native library due to UnsatisfiedLinkError");
 //        throw new RuntimeException("Failed to load native library " + name + " by NativeLoader due to unsatisfied link error", unsatisfiedLinkError);
       }
+    }
+
+    try {
+      H5.loadH5Lib();
+    } catch (final Throwable uoe) {
+      log.info("Caught an Unsupported Operation Exception while initializing HDF5 Library, if it complains about library version, you can simply ignore that", uoe);
+    }
+
+    try {
+      log.info("Trying to patch library version checker in H5");
+      final var loadH5LibMethod = H5.class.getDeclaredMethod("loadH5Lib");
+      loadH5LibMethod.setAccessible(true);
+
+      final JavaClass H5Class = Repository.lookupClass(H5.class); //("hdf.hdf5lib.H5");
+
+      final var h5m = H5Class.getMethod(loadH5LibMethod);
+
+      log.debug("H5 Class found");
+
+
+      // hdf.hdf5lib.H5
+
+    } catch (NoSuchMethodException | ClassNotFoundException e) {
+      throw new RuntimeException(e);
+    } finally {
+      log.debug("H5 patcher: finally");
     }
   }
 

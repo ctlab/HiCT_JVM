@@ -49,13 +49,17 @@ application {
 }
 
 dependencies {
-//  implementation("cisd:jhdf5:19.04.1")
-  implementation(fileTree("src/main/resources/libs"))
+  implementation("cisd:jhdf5:19.04.1")
+//  implementation(fileTree("src/main/resources/libs"))
 
   // https://mvnrepository.com/artifact/cisd/base
   implementation("cisd:base:18.09.0")
   implementation("org.jetbrains:annotations:24.0.0")
   implementation("org.jetbrains:annotations:24.0.0")
+
+
+  // https://mvnrepository.com/artifact/org.apache.bcel/bcel
+  implementation("org.apache.bcel:bcel:6.7.0")
 
 
 
