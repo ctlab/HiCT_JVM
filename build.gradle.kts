@@ -49,8 +49,8 @@ application {
 }
 
 dependencies {
-  implementation("cisd:jhdf5:19.04.1")
-//  implementation(fileTree("src/main/resources/libs"))
+//  implementation("cisd:jhdf5:19.04.1")
+  implementation(fileTree("src/main/resources/libs"))
 
   // https://mvnrepository.com/artifact/cisd/base
   implementation("cisd:base:18.09.0")
