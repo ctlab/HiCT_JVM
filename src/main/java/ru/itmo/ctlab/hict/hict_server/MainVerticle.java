@@ -57,10 +57,12 @@ public class MainVerticle extends AbstractVerticle {
     @Override
     public File extractJni(String libPath, String libname) throws IOException {
       final var result = this.defaultExtractor.extractJni(libPath, libname);
-      pathsCollection.add(libPath);
-      namesCollection.add(libname);
-      Optional.ofNullable(result.getAbsoluteFile().getParent()).ifPresent(absolutePathsCollection::add);
-      fullPathsCollection.add(result.getAbsolutePath());
+      if (result != null) {
+        pathsCollection.add(libPath);
+        namesCollection.add(libname);
+        Optional.ofNullable(result.getAbsoluteFile().getParent()).ifPresent(absolutePathsCollection::add);
+        fullPathsCollection.add(result.getAbsolutePath());
+      }
       return result;
     }
 
@@ -73,10 +75,10 @@ public class MainVerticle extends AbstractVerticle {
 
   static {
     final var libraryNames = new LinkedHashMap<String, String>();
-    libraryNames.put("hdf5", "HDF5");
-    libraryNames.put("jhdf5", "jHDF5");
-    libraryNames.put("hdf5_tools", "HDF5_tools");
-    libraryNames.put("hdf5_java", "HDF5_java");
+//    libraryNames.put("hdf5", "HDF5");
+//    libraryNames.put("jhdf5", "jHDF5");
+//    libraryNames.put("hdf5_tools", "HDF5_tools");
+//    libraryNames.put("hdf5_java", "HDF5_java");
     libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
     libraryNames.put("h5blosc", "HDF5 BLOSC filter plugin (Windows-style naming)");
     libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
@@ -103,17 +105,19 @@ public class MainVerticle extends AbstractVerticle {
         if (!NativeLibraryUtil.loadNativeLibrary(jniExtractor, lib)) {
           log.warn("Failed to load library " + lib + " with custom JNI Extractor, will try fallback method.");
           NativeLoader.loadLibrary(lib);
+          log.warn("Fallback method succeeded but the library path won't be added to the H5 plugins search registry.");
         }
       } catch (final IOException err) {
-        log.error("Failed to load native library " + name + " by NativeLoader");
-        log.error("Failed to load native library due to IOException");
+        log.warn("Failed to load native library " + name + " by NativeLoader");
+//        log.warn("Failed to load native library due to IOException");
 //        throw new RuntimeException("Failed to load native library " + name + " by NativeLoader", err);
       } catch (UnsatisfiedLinkError unsatisfiedLinkError) {
         log.error("Failed to load native library " + name + " by NativeLoader due to unsatisfied link error");
-        log.error("Failed to load native library due to UnsatisfiedLinkError");
+//        log.error("Failed to load native library due to UnsatisfiedLinkError");
 //        throw new RuntimeException("Failed to load native library " + name + " by NativeLoader due to unsatisfied link error", unsatisfiedLinkError);
       }
     }
+
 
     try {
       H5.loadH5Lib();
@@ -122,14 +126,19 @@ public class MainVerticle extends AbstractVerticle {
       log.error("Caught an Unsupported Operation Exception while initializing HDF5 Library, if it complains about library version, you can simply ignore that", uoe);
     }
 
+
     for (final var libPath : jniExtractor.getAbsolutePathsCollection()) {
       try {
+        log.info("Prepending " + libPath + " to the plugin path registry of H5 library");
+        H5.H5PLprepend(libPath);
         log.info("Appending " + libPath + " to the plugin path registry of H5 library");
         H5.H5PLappend(libPath);
       } catch (final HDF5LibraryException e) {
         log.error("Failed to append " + libPath + " to the plugin registry", e);
       }
     }
+
+
   }
 
   @Override
