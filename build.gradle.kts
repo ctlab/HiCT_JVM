@@ -42,11 +42,20 @@ application {
 }
 
 dependencies {
-
+  implementation(fileTree("src/main/resources/libs"))
+  runtimeOnly(fileTree("src/main/resources/libs/natives"))
 
   implementation("cisd:jhdf5:19.04.1")
+
+
+  // https://mvnrepository.com/artifact/cisd/base
+  implementation("cisd:base:18.09.0")
   implementation("org.jetbrains:annotations:24.0.0")
   implementation("org.jetbrains:annotations:24.0.0")
+
+
+  // https://mvnrepository.com/artifact/org.apache.bcel/bcel
+  implementation("org.apache.bcel:bcel:6.7.0")
 
 
 
@@ -86,6 +95,9 @@ dependencies {
 
 // https://mvnrepository.com/artifact/org.apache.commons/commons-csv
   implementation("org.apache.commons:commons-csv:1.10.0")
+
+  // https://mvnrepository.com/artifact/org.scijava/native-lib-loader
+  implementation("org.scijava:native-lib-loader:2.4.0")
 
 
 }
@@ -196,62 +208,68 @@ tasks.register("cleanWebUI") {
 tasks.register("buildWebUI") {
   dependsOn("cleanWebUI")
   doLast {
-    Files.createDirectories(webUICloneDirectory.asFile.toPath())
-    val cloneResult = project.exec {
-      commandLine("git", "clone", webUIRepositoryAddress)
-      workingDir = webUICloneDirectory.asFile
-      standardOutput = System.out
-      isIgnoreExitValue = true
-    }
+    try {
+      Files.createDirectories(webUICloneDirectory.asFile.toPath())
+      val cloneResult = project.exec {
+        commandLine("git", "clone", webUIRepositoryAddress)
+        workingDir = webUICloneDirectory.asFile
+        standardOutput = System.out
+        isIgnoreExitValue = true
+      }
 
 
-    if (cloneResult.exitValue != 0) {
-      print("Failed to clone WebUI repository, maybe it already exists. Trying to pull changes.")
-      val pullResult = project.exec {
+      if (cloneResult.exitValue != 0) {
+        print("Failed to clone WebUI repository, maybe it already exists. Trying to pull changes.")
+        val pullResult = project.exec {
+          commandLine("git", "pull")
+          workingDir = webUIRepositoryDirectory.asFile
+          standardOutput = System.out
+          isIgnoreExitValue = true
+        }
+
+        if (pullResult.exitValue != 0) {
+          print("Failed to pull changes from WebUI repository. Proceeding without baked-in WebUI.")
+          return@doLast
+        } else {
+          print("Successfully pulled changes")
+        }
+      }
+
+      val checkOutResult = project.exec {
+        commandLine("git", "checkout", webUIBranch)
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = System.out
+        isIgnoreExitValue = true
+      }
+
+      if (checkOutResult.exitValue != 0) {
+        print("Failed to checkout branch ${webUIBranch}, will use main branch instead");
+      }
+
+
+      project.exec {
         commandLine("git", "pull")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
         isIgnoreExitValue = true
       }
 
-      if (pullResult.exitValue != 0) {
-        print("Failed to pull changes from WebUI repository. Proceeding without baked-in WebUI.")
-        return@doLast
-      } else {
-        print("Successfully pulled changes")
+
+      project.exec {
+        commandLine("npm", "install")
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = System.out
       }
-    }
 
-    val checkOutResult = project.exec {
-      commandLine("git", "checkout", webUIBranch)
-      workingDir = webUIRepositoryDirectory.asFile
-      standardOutput = System.out
-      isIgnoreExitValue = true
-    }
-
-    if (checkOutResult.exitValue != 0) {
-      print("Failed to checkout branch ${webUIBranch}, will use main branch instead");
-    }
-
-
-    project.exec {
-      commandLine("git", "pull")
-      workingDir = webUIRepositoryDirectory.asFile
-      standardOutput = System.out
-      isIgnoreExitValue = true
-    }
-
-
-    project.exec {
-      commandLine("npm", "install")
-      workingDir = webUIRepositoryDirectory.asFile
-      standardOutput = System.out
-    }
-
-    project.exec {
-      commandLine("npm", "run", "build")
-      workingDir = webUIRepositoryDirectory.asFile
-      standardOutput = System.out
+      project.exec {
+        commandLine("npm", "run", "build")
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = System.out
+      }
+    } catch (e: Exception) {
+      print("Caught an exception during building WebUI, proceeding without it")
+      print(e)
+      return@doLast
     }
   }
 }
