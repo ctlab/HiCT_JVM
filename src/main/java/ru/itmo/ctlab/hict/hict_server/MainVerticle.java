@@ -75,10 +75,10 @@ public class MainVerticle extends AbstractVerticle {
 
   static {
     final var libraryNames = new LinkedHashMap<String, String>();
-//    libraryNames.put("hdf5", "HDF5");
-//    libraryNames.put("jhdf5", "jHDF5");
-//    libraryNames.put("hdf5_tools", "HDF5_tools");
-//    libraryNames.put("hdf5_java", "HDF5_java");
+    libraryNames.put("hdf5", "HDF5");
+    libraryNames.put("jhdf5", "jHDF5");
+    libraryNames.put("hdf5_tools", "HDF5_tools");
+    libraryNames.put("hdf5_java", "HDF5_java");
     libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
     libraryNames.put("h5blosc", "HDF5 BLOSC filter plugin (Windows-style naming)");
     libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
