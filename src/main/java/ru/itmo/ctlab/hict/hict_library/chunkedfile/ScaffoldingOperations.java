@@ -34,6 +34,7 @@ public class ScaffoldingOperations {
       if (es.segment() != null) {
         final var newSegmentNode = es.segment().cloneBuilder().needsChangingDirection(!es.segment().isNeedsChangingDirection()).build().push().updateSizes();
         contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(es.less(), newSegmentNode, es.greater()));
+        log.debug("Test");
         scaffoldTree.reverseSelectionRange(ext.startBP(), ext.endBP());
       }
     } finally {
