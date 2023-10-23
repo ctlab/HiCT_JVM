@@ -4,6 +4,7 @@ import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.domain.*;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
@@ -18,6 +19,10 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 
 @Slf4j
 public class Initializers {
+  static {
+    HDF5LibraryInitializer.initializeHDF5Library();
+  }
+
   public static @NotNull List<@NotNull StripeDescriptor> readStripeDescriptors(final long resolution, final @NotNull IHDF5Reader reader) {
     final List<StripeDescriptor> result = new ArrayList<>();
     final long[] stripeLengthBins;
