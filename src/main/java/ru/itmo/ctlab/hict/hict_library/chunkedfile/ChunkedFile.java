@@ -208,7 +208,7 @@ public class ChunkedFile implements AutoCloseable {
 
       this.agpProcessor.initializeContigTreeFromAGP(agpFileRecords);
       this.agpProcessor.initializeScaffoldTreeFromAGP(agpFileRecords);
-//      assert (this.validateTreeBordersCorrectness()) : "Contig and scaffold borders are not aligned";
+      assert (this.validateTreeBordersCorrectness()) : "Contig and scaffold borders are not aligned";
     } finally {
       contigTreeLock.unlock();
       scaffoldTreeLock.unlock();
@@ -222,35 +222,43 @@ public class ChunkedFile implements AutoCloseable {
     int scaffoldIndex = 0;
     int contigIndex = 0;
 
-    throw new UnsupportedOperationException("Not yet implemented");
+//    throw new UnsupportedOperationException("Not yet implemented");
 
-//    while (contigIndex < assemblyInfo.contigs().size() && scaffoldIndex < assemblyInfo.scaffolds().size()){
-//      while (scaffoldIndex < assemblyInfo.scaffolds().size()) {
-//        final var sct = assemblyInfo.scaffolds().get(scaffoldIndex);
-//        assert (sct.scaffoldBordersBP().endBP() - sct.scaffoldBordersBP().startBP() == sct.getLengthBp()) : "Wrong scaffold length in BP??";
-//        if (sct.scaffoldBordersBP().endBP() < leftContigBp){
-//          leftScaffoldBp += sct.getLengthBp();
-//          ++scaffoldIndex;
-//        } else {
-//          break;
-//        }
-//      }
-//
-//      if (scaffoldIndex >= assemblyInfo.scaffolds().size()){
-//        break;
-//      }
-//      final var currentScaffold = assemblyInfo.scaffolds().get(scaffoldIndex);
-//      assert (currentScaffold.scaffoldBordersBP().startBP() == leftContigBp) : "Scaffolds left border is not aligned to contigs?";
-//
-//
-//
-//      final var ctgt = assemblyInfo.contigs().get(contigIndex);
-//      final var newContigBp = leftContigBp + ctgt.descriptor().getLengthBp();
-//      if (newContigBp >= leftScaffoldBp + assemblyInfo.scaffolds().get(scaffoldIndex).getLengthBp()){
-//
-//      }
-//    }
+    while (contigIndex < assemblyInfo.contigs().size() && scaffoldIndex < assemblyInfo.scaffolds().size()) {
+      while (scaffoldIndex < assemblyInfo.scaffolds().size()) {
+        final var sct = assemblyInfo.scaffolds().get(scaffoldIndex);
+        assert (sct.scaffoldBordersBP().endBP() - sct.scaffoldBordersBP().startBP() == sct.getLengthBp()) : "Wrong scaffold length in BP??";
+        if (sct.scaffoldBordersBP().endBP() <= leftContigBp) {
+          leftScaffoldBp += sct.getLengthBp();
+          ++scaffoldIndex;
+        } else {
+          assert (sct.scaffoldBordersBP().startBP() == leftScaffoldBp) : "Start of scaffold not as expected";
+          assert (leftScaffoldBp == leftContigBp) : "Scaffold should start with a contig";
+          break;
+        }
+      }
 
+      if (scaffoldIndex >= assemblyInfo.scaffolds().size()) {
+        break;
+      }
+      final var currentScaffold = assemblyInfo.scaffolds().get(scaffoldIndex);
+      assert (currentScaffold.scaffoldBordersBP().startBP() == leftContigBp) : "Scaffolds left border is not aligned to contigs?";
+
+      while (contigIndex < assemblyInfo.contigs().size()) {
+        final var ctgt = assemblyInfo.contigs().get(contigIndex);
+        final var newLeftContigBp = leftContigBp + ctgt.descriptor().getLengthBp();
+        if (newLeftContigBp >= currentScaffold.scaffoldBordersBP().endBP()) {
+          assert (newLeftContigBp == currentScaffold.scaffoldBordersBP().endBP()) : "Contig has a start inside scaffold and ends outside of scaffold";
+          leftContigBp = newLeftContigBp;
+          ++contigIndex;
+          break;
+        }
+        leftContigBp = newLeftContigBp;
+        ++contigIndex;
+      }
+    }
+
+    return true;
   }
 
   public record ChunkedFileOptions(@NotNull Path hdfFilePath, int minDatasetPoolSize, int maxDatasetPoolSize) {
