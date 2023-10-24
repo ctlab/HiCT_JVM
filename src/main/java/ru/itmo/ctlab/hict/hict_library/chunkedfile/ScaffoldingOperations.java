@@ -37,6 +37,7 @@ public class ScaffoldingOperations {
         log.debug("Test");
         scaffoldTree.reverseSelectionRange(ext.startBP(), ext.endBP());
       }
+//      assert (this.chunkedFile.validateTreeBordersCorrectness()) : "Assembly became incorrect after range reversal";
     } finally {
       lock.writeLock().unlock();
     }
@@ -58,6 +59,7 @@ public class ScaffoldingOperations {
         contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(nlnr.left(), es.segment(), nlnr.right()));
         scaffoldTree.moveSelectionRange(ext.startBP(), ext.endBP(), targetStartBp);
       }
+      assert (this.chunkedFile.validateTreeBordersCorrectness()) : "Assembly became incorrect after range translocation";
     } finally {
       lock.writeLock().unlock();
     }
@@ -96,6 +98,8 @@ public class ScaffoldingOperations {
 
 
       scaffoldTree.rescaffold(extended.startBP(), extended.endBP(), scaffoldGenerator);
+
+      assert (this.chunkedFile.validateTreeBordersCorrectness()) : "Assembly became incorrect after range scaffolding";
 
     } finally {
       scaffoldTree.getRootLock().writeLock().unlock();
@@ -136,6 +140,8 @@ public class ScaffoldingOperations {
       final var extended = scaffoldTree.extendBordersToScaffolds(lessSize, lessSize + segmentSize);
 
       scaffoldTree.removeSegmentFromAssembly(extended.startBP(), extended.endBP());
+
+      assert (this.chunkedFile.validateTreeBordersCorrectness()) : "Assembly became incorrect after range unscaffolding";
 
     } finally {
       scaffoldTree.getRootLock().writeLock().unlock();
@@ -178,6 +184,8 @@ public class ScaffoldingOperations {
         scaffoldRegion(trueStartBpIncl, trueEndBpExcl, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, id -> new ScaffoldDescriptor(id, String.format("scaffold_debris_%d", id), 1000));
         moveSelectionRangeBp(trueStartBpIncl, trueEndBpExcl, this.chunkedFile.getMatrixSizeBins()[0]);
       }
+
+      assert (this.chunkedFile.validateTreeBordersCorrectness()) : "Assembly became incorrect after moving range to debris";
     } finally {
       scaffoldTree.getRootLock().writeLock().unlock();
       contigTree.getRootLock().writeLock().unlock();
@@ -338,6 +346,8 @@ public class ScaffoldingOperations {
       final var newAssemblyLengthBp = newContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
 
       assert (oldAssemblyLengthBp == (newAssemblyLengthBp + minBpResolution)) : "Assembly length has changed after splitting contig??";
+
+      assert (this.chunkedFile.validateTreeBordersCorrectness()) : "Assembly became incorrect after splitting contig at bin";
 
     } finally {
       lock.writeLock().unlock();

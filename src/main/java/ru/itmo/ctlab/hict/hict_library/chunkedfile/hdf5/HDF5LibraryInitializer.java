@@ -28,28 +28,28 @@ public class HDF5LibraryInitializer {
 
   static {
     libraryNames.put("z", "Z compression library (Windows-style naming)");
-//    libraryNames.put("libz", "Z compression library (Linux-style naming)");
+    libraryNames.put("libz", "Z compression library (Linux-style naming)");
     libraryNames.put("sz", "SZip decompression library (Windows-style naming)");
-//    libraryNames.put("libsz", "SZip decompression library (Linux-style naming)");
+    libraryNames.put("libsz", "SZip decompression library (Linux-style naming)");
     libraryNames.put("hdf5", "HDF5 (Windows-style naming)");
-//    libraryNames.put("libhdf5", "HDF5 (Windows-style naming)");
+    libraryNames.put("libhdf5", "HDF5 (Windows-style naming)");
     libraryNames.put("jhdf5", "jHDF5 (Windows-style naming)");
-//    libraryNames.put("libjhdf5", "jHDF5 (Linux-style naming)");
+    libraryNames.put("libjhdf5", "jHDF5 (Linux-style naming)");
     libraryNames.put("hdf5_tools", "HDF5_tools");
     libraryNames.put("hdf5_java", "HDF5_java");
-//    libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
+    libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
     libraryNames.put("h5blosc", "HDF5 BLOSC filter plugin (Windows-style naming)");
-//    libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
+    libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
     libraryNames.put("h5bshuf", "HDF5 Shuffle filter plugin (Windows-style naming)");
-//    libraryNames.put("libh5bz2", "HDF5 BZ2 filter plugin (Linux-style naming)");
+    libraryNames.put("libh5bz2", "HDF5 BZ2 filter plugin (Linux-style naming)");
     libraryNames.put("h5bz2", "HDF5 BZ2 filter plugin (Windows-style naming)");
-//    libraryNames.put("libh5lz4", "HDF5 LZ4 filter plugin (Linux-style naming)");
+    libraryNames.put("libh5lz4", "HDF5 LZ4 filter plugin (Linux-style naming)");
     libraryNames.put("h5lz4", "HDF5 LZ4 filter plugin (Windows-style naming)");
-//    libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
+    libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
     libraryNames.put("h5lzf", "HDF5 LZF filter plugin (Windows-style naming)");
-//    libraryNames.put("libh5zfp", "HDF5 ZFP filter plugin (Linux-style naming)");
+    libraryNames.put("libh5zfp", "HDF5 ZFP filter plugin (Linux-style naming)");
     libraryNames.put("h5zfp", "HDF5 ZFP filter plugin (Windows-style naming)");
-//    libraryNames.put("libh5zstd", "HDF5 zSTD filter plugin (Linux-style naming)");
+    libraryNames.put("libh5zstd", "HDF5 zSTD filter plugin (Linux-style naming)");
     libraryNames.put("h5zstd", "HDF5 zSTD filter plugin (Windows-style naming)");
 
     initializeHDF5Library();
@@ -81,6 +81,18 @@ public class HDF5LibraryInitializer {
 //        throw new RuntimeException("Failed to load native library " + name + " by NativeLoader due to unsatisfied link error", unsatisfiedLinkError);
       }
     }
+
+    for (final var libPath : jniExtractor.getAbsolutePathsCollection()) {
+      try {
+        log.info("Prepending " + libPath + " to the plugin path registry of H5 library");
+        H5.H5PLprepend(libPath);
+        log.info("Appending " + libPath + " to the plugin path registry of H5 library");
+        H5.H5PLappend(libPath);
+      } catch (final HDF5LibraryException e) {
+        log.error("Failed to append " + libPath + " to the plugin registry", e);
+      }
+    }
+
 
     try {
       H5.loadH5Lib();

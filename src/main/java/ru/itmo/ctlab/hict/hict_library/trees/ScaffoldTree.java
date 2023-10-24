@@ -578,13 +578,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         final Node newLeft;
         final Node newRight;
         if (this.left != null) {
-          newRight = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection).left(this.left.right).right(this.left.left).build();
+          newRight = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection)./*left(this.left.right).right(this.left.left).*/build();
         } else {
           newRight = null;
         }
 
         if (this.right != null) {
-          newLeft = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection).left(this.right.right).right(this.right.left).build();
+          newLeft = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection)./*left(this.right.right).right(this.right.left).*/build();
         } else {
           newLeft = null;
         }
