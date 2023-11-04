@@ -122,22 +122,31 @@ public class TileHandlersHolder extends HandlersHolder {
         return;
       }
 
-      var currentVersion = stats.versionCounter().get();
-      if (version < currentVersion) {
-        log.debug(String.format("Current version is %d and request version is %d", currentVersion, version));
-        ctx.response().setStatusCode(204).putHeader("Content-Type", "text/plain").end(String.format("Current version is %d and request version is %d", currentVersion, version));
-        return;
+      if (!TileFormat.PNG_BY_PIXELS_RECTANGLE.equals(format) && !TileFormat.PNG_BY_PIXELS.equals(format)) {
+        var currentVersion = stats.versionCounter().get();
+        if (version < currentVersion) {
+          log.debug(String.format("Current version is %d and request version is %d", currentVersion, version));
+          ctx.response().setStatusCode(204).putHeader("Content-Type", "text/plain").end(String.format("Current version is %d and request version is %d", currentVersion, version));
+          return;
+        }
+        do {
+          currentVersion = stats.versionCounter().get();
+        } while ((currentVersion < version) && !stats.versionCounter().compareAndSet(currentVersion, version));
       }
-      do {
-        currentVersion = stats.versionCounter().get();
-      } while ((currentVersion < version) && !stats.versionCounter().compareAndSet(currentVersion, version));
 
       final long startRowPx, startColPx, endRowPx, endColPx;
-      if (format == TileFormat.PNG_BY_PIXELS) {
+      if (TileFormat.PNG_BY_PIXELS.equals(format)) {
         startRowPx = row;
         startColPx = col;
         endRowPx = startRowPx + Long.parseLong(ctx.request().getParam("rows", "0"));
         endColPx = startColPx + Long.parseLong(ctx.request().getParam("cols", "0"));
+        tileHeight = (int) (endRowPx - startRowPx);
+        tileWidth = (int) (endColPx - startColPx);
+      } else if (TileFormat.PNG_BY_PIXELS_RECTANGLE.equals(format)) {
+        startRowPx = Long.parseLong(ctx.request().getParam("sy", "0"));
+        startColPx = Long.parseLong(ctx.request().getParam("sx", "0"));
+        endRowPx = Long.parseLong(ctx.request().getParam("ey", "0"));
+        endColPx = Long.parseLong(ctx.request().getParam("ex", "0"));
         tileHeight = (int) (endRowPx - startRowPx);
         tileWidth = (int) (endColPx - startColPx);
       } else {
@@ -216,7 +225,8 @@ public class TileHandlersHolder extends HandlersHolder {
   public enum TileFormat {
     JSON_PNG_WITH_RANGES,
     PNG,
-    PNG_BY_PIXELS
+    PNG_BY_PIXELS,
+    PNG_BY_PIXELS_RECTANGLE
   }
 
   public record TileSignalRanges(@NotNull Map<@NotNull Integer, @NotNull Double> lowerBounds,

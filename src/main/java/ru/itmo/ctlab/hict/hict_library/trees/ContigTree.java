@@ -13,7 +13,6 @@ import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
@@ -320,14 +319,15 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public static @Nullable Node leftmostVisibleNode(final Node node, final ResolutionDescriptor resolutionDescriptor) {
-      if (node != null) {
-        final @Nullable var leftSonVisibleNode = leftmostVisibleNode(node.needsChangingDirection ? node.right : node.left, resolutionDescriptor);
+    public static @Nullable Node leftmostVisibleNode(final Node some_node, final ResolutionDescriptor resolutionDescriptor) {
+      if (some_node != null) {
+        final var node = some_node.push();
+        final @Nullable var leftSonVisibleNode = leftmostVisibleNode(node.left, resolutionDescriptor);
         if (leftSonVisibleNode == null) {
           if (ContigHideType.SHOWN.equals(node.getContigDescriptor().getPresenceAtResolution().get(resolutionDescriptor.getResolutionOrderInArray()))) {
             return node;
           } else {
-            return leftmostVisibleNode(node.needsChangingDirection ? node.left : node.right, resolutionDescriptor);
+            return leftmostVisibleNode(node.left, resolutionDescriptor);
           }
         } else {
           return leftSonVisibleNode;
@@ -337,14 +337,15 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public static @Nullable Node rightmostVisibleNode(final Node node, final ResolutionDescriptor resolutionDescriptor) {
-      if (node != null) {
-        final @Nullable var rightSonVisibleNode = rightmostVisibleNode(node.needsChangingDirection ? node.left : node.right, resolutionDescriptor);
+    public static @Nullable Node rightmostVisibleNode(final Node some_node, final ResolutionDescriptor resolutionDescriptor) {
+      if (some_node != null) {
+        final var node = some_node.push();
+        final @Nullable var rightSonVisibleNode = rightmostVisibleNode(node.right, resolutionDescriptor);
         if (rightSonVisibleNode == null) {
           if (ContigHideType.SHOWN.equals(node.getContigDescriptor().getPresenceAtResolution().get(resolutionDescriptor.getResolutionOrderInArray()))) {
             return node;
           } else {
-            return rightmostVisibleNode(node.needsChangingDirection ? node.right : node.left, resolutionDescriptor);
+            return rightmostVisibleNode(node.right, resolutionDescriptor);
           }
         } else {
           return rightSonVisibleNode;
@@ -354,11 +355,11 @@ public class ContigTree implements Iterable<ContigTree.Node> {
       }
     }
 
-    public @NotNull Node leftmostVisibleNode(final @NotNull ResolutionDescriptor resolutionDescriptor) {
+    public @Nullable Node leftmostVisibleNode(final @NotNull ResolutionDescriptor resolutionDescriptor) {
       return leftmostVisibleNode(this, resolutionDescriptor);
     }
 
-    public @NotNull Node rightmostVisibleNode(final @NotNull ResolutionDescriptor resolutionDescriptor) {
+    public @Nullable Node rightmostVisibleNode(final @NotNull ResolutionDescriptor resolutionDescriptor) {
       return rightmostVisibleNode(this, resolutionDescriptor);
     }
 

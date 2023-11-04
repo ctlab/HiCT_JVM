@@ -12,9 +12,6 @@ public enum ContigDirection {
   }
 
   public ContigDirection inverse() {
-    return switch (this) {
-            case FORWARD -> REVERSED;
-            case REVERSED -> FORWARD;
-        };
-    }
+    return ContigDirection.inverse(this);
+  }
 }
