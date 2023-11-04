@@ -31,7 +31,7 @@ public class FSHandlersHolder extends HandlersHolder {
 
       final List<?> files;
       try (final var fileStream = Files.walk(dataDirectory)) {
-        files = fileStream.filter(Files::isRegularFile).map(dataDirectory::relativize).map(Object::toString).filter(p -> p.endsWith(".hict.hdf5")).collect(Collectors.toList());
+        files = fileStream.filter(Files::isRegularFile).map(dataDirectory::relativize).map(Object::toString).filter(p -> p.endsWith(".hict") || p.endsWith(".hict.hdf5") || p.endsWith(".agp") || p.endsWith(".fasta") || p.endsWith(".fa") || p.endsWith(".cool") || p.endsWith(".mcool")).collect(Collectors.toList());
       } catch (final IOException e) {
         throw new RuntimeException(e);
       }
