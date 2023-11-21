@@ -18,7 +18,7 @@ repositories {
   }
 }
 
-val vertxVersion = "4.4.1"
+val vertxVersion = "4.5.0"
 val junitJupiterVersion = "5.9.1"
 
 val mainVerticleName = "ru.itmo.ctlab.hict.hict_server.MainVerticle"
@@ -67,7 +67,14 @@ dependencies {
 
   implementation("org.slf4j:slf4j-api:1.7.+")
 //  implementation("org.slf4j:slf4j-nop:1.7.+")
-  implementation("ch.qos.logback:logback-classic:1.2.+")
+//  implementation("ch.qos.logback:logback-classic:1.2.+")
+
+  // https://mvnrepository.com/artifact/ch.qos.logback/logback-classic
+  implementation("ch.qos.logback:logback-classic:1.4.11")
+
+
+  // https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
+  implementation("org.slf4j:slf4j-simple:2.0.9")
 
 
   implementation(platform("io.vertx:vertx-stack-depchain:$vertxVersion"))
@@ -99,7 +106,8 @@ dependencies {
   // https://mvnrepository.com/artifact/org.scijava/native-lib-loader
   implementation("org.scijava:native-lib-loader:2.4.0")
 
-
+// https://mvnrepository.com/artifact/org.jetbrains.bio/npy
+  implementation("org.jetbrains.bio:npy:0.3.5")
 }
 
 java {

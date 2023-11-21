@@ -8,6 +8,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.bio.npy.NpzFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.VisualizationOptionsDTO;
@@ -17,6 +18,8 @@ import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import javax.imageio.ImageIO;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -133,20 +136,25 @@ public class TileHandlersHolder extends HandlersHolder {
       } while ((currentVersion < version) && !stats.versionCounter().compareAndSet(currentVersion, version));
 
       final long startRowPx, startColPx, endRowPx, endColPx;
-      if (format == TileFormat.PNG_BY_PIXELS) {
-        startRowPx = row;
-        startColPx = col;
-        endRowPx = startRowPx + Long.parseLong(ctx.request().getParam("rows", "0"));
-        endColPx = startColPx + Long.parseLong(ctx.request().getParam("cols", "0"));
-        tileHeight = (int) (endRowPx - startRowPx);
-        tileWidth = (int) (endColPx - startColPx);
-      } else {
-        tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
-        tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
-        startRowPx = row * tileHeight;
-        endRowPx = (row + 1) * tileHeight;
-        startColPx = col * tileWidth;
-        endColPx = (col + 1) * tileWidth;
+      switch (format) {
+        case PNG, JSON_PNG_WITH_RANGES -> {
+          tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+          tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+          startRowPx = row * tileHeight;
+          endRowPx = (row + 1) * tileHeight;
+          startColPx = col * tileWidth;
+          endColPx = (col + 1) * tileWidth;
+          break;
+        }
+        default -> {
+          startRowPx = row;
+          startColPx = col;
+          endRowPx = startRowPx + Long.parseLong(ctx.request().getParam("rows", "0"));
+          endColPx = startColPx + Long.parseLong(ctx.request().getParam("cols", "0"));
+          tileHeight = (int) (endRowPx - startRowPx);
+          tileWidth = (int) (endColPx - startColPx);
+          break;
+        }
       }
 
       final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), startRowPx, startColPx, endRowPx, endColPx, true);
@@ -178,32 +186,55 @@ public class TileHandlersHolder extends HandlersHolder {
 
 
       try {
-        if (format == TileFormat.JSON_PNG_WITH_RANGES) {
-          ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
-
-          final byte[] base64 = Base64.getEncoder().encode(baos.toByteArray());
-          final String base64image = new String(base64);
-          final var result = new TileWithRanges(
-            String.format("data:image/png;base64,%s", base64image),
-            new TileSignalRanges(
-              IntStream.range(0, chunkedFile.getResolutions().length).boxed().map(
-                lvl -> Map.entry(chunkedFile.getResolutions().length - lvl, Double.longBitsToDouble(stats.minimumsAtResolutionDoubleBits().get(lvl)))
-              ).collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)),
-              IntStream.range(0, chunkedFile.getResolutions().length).boxed().map(
-                lvl -> Map.entry(chunkedFile.getResolutions().length - lvl, Double.longBitsToDouble(stats.maximumsAtResolutionDoubleBits().get(lvl)))
-              ).collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue))
-            )
-          );
-          log.debug("Wrote stream to buffer");
-          ctx.response()
-            .putHeader("content-type", "application/json")
-            .end(Json.encode(result));
-        } else {
-          ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
-          log.debug("Wrote stream to buffer");
-          ctx.response()
-            .putHeader("content-type", "image/png")
-            .end(Buffer.buffer(baos.toByteArray()));
+        switch (format) {
+          case JSON_PNG_WITH_RANGES -> {
+            ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
+            final byte[] base64 = Base64.getEncoder().encode(baos.toByteArray());
+            final String base64image = new String(base64);
+            final var result = new TileWithRanges(
+              String.format("data:image/png;base64,%s", base64image),
+              new TileSignalRanges(
+                IntStream.range(0, chunkedFile.getResolutions().length).boxed().map(
+                  lvl -> Map.entry(chunkedFile.getResolutions().length - lvl, Double.longBitsToDouble(stats.minimumsAtResolutionDoubleBits().get(lvl)))
+                ).collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)),
+                IntStream.range(0, chunkedFile.getResolutions().length).boxed().map(
+                  lvl -> Map.entry(chunkedFile.getResolutions().length - lvl, Double.longBitsToDouble(stats.maximumsAtResolutionDoubleBits().get(lvl)))
+                ).collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue))
+              )
+            );
+            log.debug("Wrote stream to buffer");
+            ctx.response()
+              .putHeader("content-type", "application/json")
+              .end(Json.encode(result));
+          }
+          case PNG_BY_PIXELS -> {
+            ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
+            log.debug("Wrote stream to buffer");
+            ctx.response()
+              .putHeader("content-type", "image/png")
+              .end(Buffer.buffer(baos.toByteArray()));
+          }
+          case NPZ_BY_PIXELS -> {
+            final var tempFile = Files.createTempFile("hict", "npz");
+            final var matrix = chunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options);
+            try (final var npzWriter = NpzFile.write(tempFile.toAbsolutePath(), true)) {
+              npzWriter.write("matrix", Arrays.stream(matrix.values()).flatMapToDouble(Arrays::stream).toArray(), new int[]{tileHeight, tileWidth});
+              npzWriter.write("rowWeights", matrix.rowWeights());
+              npzWriter.write("columnWeights", matrix.columnWeights());
+            }
+            ctx.response()
+              .putHeader("content-type", "application/octet-stream")
+              .sendFile(tempFile.toAbsolutePath().toString(), result -> {
+                if (!result.succeeded()) {
+                  log.error("Failed to send NPZ matrix");
+                }
+                try {
+                  Files.deleteIfExists(tempFile);
+                } catch (final IOException e) {
+                  log.debug("Failed to delete temporary file");
+                }
+              });
+          }
         }
         log.debug("Response");
       } catch (final IOException e) {
@@ -216,7 +247,9 @@ public class TileHandlersHolder extends HandlersHolder {
   public enum TileFormat {
     JSON_PNG_WITH_RANGES,
     PNG,
-    PNG_BY_PIXELS
+    PNG_BY_PIXELS,
+    NPZ_BY_PIXELS,
+//    NPY_BY_PIXELS
   }
 
   public record TileSignalRanges(@NotNull Map<@NotNull Integer, @NotNull Double> lowerBounds,
