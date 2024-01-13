@@ -42,10 +42,10 @@ application {
 }
 
 dependencies {
-  implementation(fileTree("src/main/resources/libs"))
-  runtimeOnly(fileTree("src/main/resources/libs/natives"))
+//  implementation(fileTree("src/main/resources/libs"))
+//  runtimeOnly(fileTree("src/main/resources/libs/natives"))
 
-//  implementation("cisd:jhdf5:19.04.1")
+  implementation("cisd:jhdf5:19.04.1")
 
 
   // https://mvnrepository.com/artifact/cisd/base
