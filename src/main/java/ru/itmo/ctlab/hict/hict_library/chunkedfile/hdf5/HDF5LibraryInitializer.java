@@ -27,24 +27,38 @@ public class HDF5LibraryInitializer {
   private static final PathCollectingJNIExtractor jniExtractor = new PathCollectingJNIExtractor(defaultJNIExtractor);
 
   static {
-    libraryNames.put("hdf5", "HDF5");
+    // SiS JHDF5 dependencies:
+    libraryNames.put("libnativedata", "NativeData (Linux-style naming)");
+    libraryNames.put("nativedata", "NativeData (Windows-style naming)");
+    libraryNames.put("libunix", "libunix.so (Linux-style naming), not needed on Windows");
+    libraryNames.put("unix", "libunix.so (Windows-style naming), not needed on Windows");
+    // Main HDF5 library, rebuilt from sources:
+    libraryNames.put("libhdf5", "HDF5 (Linux-style naming)");
+    libraryNames.put("hdf5", "HDF5 (Windows-style naming)");
+    // HDF5_java library (from source on Linux, from SiS-modified jni/ folder JHDF5 source on Windows):
+    libraryNames.put("libhdf5_java", "HDF5 (Linux-style naming)");
+    libraryNames.put("hdf5_java", "HDF5 (Windows-style naming)");
+    // SiS-modified jni/ folder source linked to libhdf5.a on Linux, SiS-modified version of hdf5_java.dll on Windows
     libraryNames.put("jhdf5", "jHDF5");
+    // This library might be in dependencies:
     libraryNames.put("hdf5_tools", "HDF5_tools");
-    libraryNames.put("hdf5_java", "HDF5_java");
-    libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
-    libraryNames.put("h5blosc", "HDF5 BLOSC filter plugin (Windows-style naming)");
+    // The most important HDF5 filter plugins for HiCT (bitshuffle and LZF compression):
     libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
     libraryNames.put("h5bshuf", "HDF5 Shuffle filter plugin (Windows-style naming)");
+    libraryNames.put("h5lzf", "HDF5 LZ4 filter plugin (Windows-style naming)");
+    libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
+    // Other general compression plugins:
     libraryNames.put("libh5bz2", "HDF5 BZ2 filter plugin (Linux-style naming)");
     libraryNames.put("h5bz2", "HDF5 BZ2 filter plugin (Windows-style naming)");
     libraryNames.put("libh5lz4", "HDF5 LZ4 filter plugin (Linux-style naming)");
     libraryNames.put("h5lz4", "HDF5 LZ4 filter plugin (Windows-style naming)");
-    libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
-    libraryNames.put("h5lzf", "HDF5 LZF filter plugin (Windows-style naming)");
     libraryNames.put("libh5zfp", "HDF5 ZFP filter plugin (Linux-style naming)");
     libraryNames.put("h5zfp", "HDF5 ZFP filter plugin (Windows-style naming)");
     libraryNames.put("libh5zstd", "HDF5 zSTD filter plugin (Linux-style naming)");
     libraryNames.put("h5zstd", "HDF5 zSTD filter plugin (Windows-style naming)");
+    // Lossy compression plugins currently not used by HiCT:
+    libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
+    libraryNames.put("h5blosc", "HDF5 BLOSC filter plugin (Windows-style naming)");
 
     initializeHDF5Library();
   }
@@ -60,11 +74,12 @@ public class HDF5LibraryInitializer {
       final var name = e.getValue();
       log.info("Loading " + name + " library");
       try {
-        if (!NativeLibraryUtil.loadNativeLibrary(jniExtractor, lib)) {
+        if (!NativeLibraryUtil.loadNativeLibrary(jniExtractor, lib, "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/")) {
           log.warn("Failed to load library " + lib + " with custom JNI Extractor, will try fallback method.");
           NativeLoader.loadLibrary(lib);
           log.warn("Fallback method succeeded but the library path won't be added to the H5 plugins search registry.");
         }
+        log.info("Successfully loaded library " + lib + " using NativeLoader");
       } catch (final IOException err) {
         log.warn("Failed to load native library " + name + " by NativeLoader due to IOException", err);
 //        log.warn("Failed to load native library due to IOException");
@@ -76,14 +91,6 @@ public class HDF5LibraryInitializer {
       }
     }
 
-    try {
-      H5.loadH5Lib();
-      log.info("Loaded HDF5 library");
-    } catch (final Throwable uoe) {
-      log.error("Caught an Unsupported Operation Exception while initializing HDF5 Library, if it complains about library version, you can simply ignore that", uoe);
-    }
-
-
     for (final var libPath : jniExtractor.getAbsolutePathsCollection()) {
       try {
         log.info("Prepending " + libPath + " to the plugin path registry of H5 library");
@@ -94,6 +101,16 @@ public class HDF5LibraryInitializer {
         log.error("Failed to append " + libPath + " to the plugin registry", e);
       }
     }
+
+    try {
+      H5.loadH5Lib();
+      log.info("Loaded HDF5 library");
+    } catch (final Throwable uoe) {
+      log.error("Caught an Unsupported Operation Exception while initializing HDF5 Library, if it complains about library version, you can simply ignore that", uoe);
+    }
+
+
+
 
     hdf5LibraryInitialized.set(true);
   }
