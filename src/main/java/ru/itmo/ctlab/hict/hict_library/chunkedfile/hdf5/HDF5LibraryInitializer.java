@@ -34,31 +34,31 @@ public class HDF5LibraryInitializer {
     // libraryNames.put("libunix", "libunix.so (Linux-style naming), not needed on Windows");
     // libraryNames.put("unix", "libunix.so (Windows-style naming), not needed on Windows");
     // Main HDF5 library, rebuilt from sources:
-    // libraryNames.put("libhdf5", "HDF5 (Linux-style naming)");
-    //libraryNames.put("hdf5", "HDF5 (Windows-style naming)");
+    libraryNames.put("libhdf5", "HDF5 (Linux-style naming)");
+    libraryNames.put("hdf5", "HDF5 (Windows-style naming)");
     // HDF5_java library (from source on Linux, from SiS-modified jni/ folder JHDF5 source on Windows):
     // libraryNames.put("libhdf5_java", "HDF5 (Linux-style naming)");
     // libraryNames.put("hdf5_java", "HDF5 (Windows-style naming)");
     // This library might be in dependencies:
     // libraryNames.put("hdf5_tools", "HDF5_tools");
     // The most important HDF5 filter plugins for HiCT (bitshuffle and LZF compression):
-    // libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
+    libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
     libraryNames.put("h5bshuf", "HDF5 Shuffle filter plugin (Windows-style naming)");
     libraryNames.put("h5lzf", "HDF5 LZ4 filter plugin (Windows-style naming)");
-    // libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
+    libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
     // SiS-modified jni/ folder source linked to libhdf5.a on Linux, SiS-modified version of hdf5_java.dll on Windows
     // libraryNames.put("jhdf5", "jHDF5");
     // Other general compression plugins:
-    // libraryNames.put("libh5bz2", "HDF5 BZ2 filter plugin (Linux-style naming)");
+    libraryNames.put("libh5bz2", "HDF5 BZ2 filter plugin (Linux-style naming)");
     libraryNames.put("h5bz2", "HDF5 BZ2 filter plugin (Windows-style naming)");
-    // libraryNames.put("libh5lz4", "HDF5 LZ4 filter plugin (Linux-style naming)");
+    libraryNames.put("libh5lz4", "HDF5 LZ4 filter plugin (Linux-style naming)");
     libraryNames.put("h5lz4", "HDF5 LZ4 filter plugin (Windows-style naming)");
-    // libraryNames.put("libh5zfp", "HDF5 ZFP filter plugin (Linux-style naming)");
+    libraryNames.put("libh5zfp", "HDF5 ZFP filter plugin (Linux-style naming)");
     libraryNames.put("h5zfp", "HDF5 ZFP filter plugin (Windows-style naming)");
-    // libraryNames.put("libh5zstd", "HDF5 zSTD filter plugin (Linux-style naming)");
+    libraryNames.put("libh5zstd", "HDF5 zSTD filter plugin (Linux-style naming)");
     libraryNames.put("h5zstd", "HDF5 zSTD filter plugin (Windows-style naming)");
     // Lossy compression plugins currently not used by HiCT:
-    // libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
+    libraryNames.put("libh5blosc", "HDF5 BLOSC filter plugin (Linux-style naming)");
     libraryNames.put("h5blosc", "HDF5 BLOSC filter plugin (Windows-style naming)");
     /*
     libraryNames.put("hdf5", "HDF5 (Windows-style naming)");
