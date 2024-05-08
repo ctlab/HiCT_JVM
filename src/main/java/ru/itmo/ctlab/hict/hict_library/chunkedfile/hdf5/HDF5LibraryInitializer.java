@@ -34,8 +34,8 @@ public class HDF5LibraryInitializer {
     // libraryNames.put("libunix", "libunix.so (Linux-style naming), not needed on Windows");
     // libraryNames.put("unix", "libunix.so (Windows-style naming), not needed on Windows");
     // Main HDF5 library, rebuilt from sources:
-    libraryNames.put("libhdf5", "HDF5 (Linux-style naming)");
-    libraryNames.put("hdf5", "HDF5 (Windows-style naming)");
+//    libraryNames.put("libhdf5", "HDF5 (Linux-style naming)");
+//    libraryNames.put("hdf5", "HDF5 (Windows-style naming)");
     // HDF5_java library (from source on Linux, from SiS-modified jni/ folder JHDF5 source on Windows):
     // libraryNames.put("libhdf5_java", "HDF5 (Linux-style naming)");
     // libraryNames.put("hdf5_java", "HDF5 (Windows-style naming)");
@@ -76,7 +76,9 @@ public class HDF5LibraryInitializer {
     }
 
     NativeLibraryUtil.loadNativeLibrary(jniExtractor, "hdf5", "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/");
-
+    log.info("Loaded HDF5");
+    NativeLibraryUtil.loadNativeLibrary(jniExtractor, "jhdf5", "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/");
+    log.info("Loaded JHDF5");
 
     for (int i = H5.H5PLsize() - 1; i >= 0; --i) {
       final String path;
@@ -107,16 +109,16 @@ public class HDF5LibraryInitializer {
 //      }
 //    }
 
-    for (final var libPath : jniExtractor.getAbsolutePathsCollection()) {
-      try {
-        log.info("Prepending " + libPath + " to the plugin path registry of H5 library");
-        H5.H5PLprepend(libPath);
-        log.info("Appending " + libPath + " to the plugin path registry of H5 library");
-        H5.H5PLappend(libPath);
-      } catch (final HDF5LibraryException e) {
-        log.error("Failed to append " + libPath + " to the plugin registry", e);
-      }
-    }
+//    for (final var libPath : jniExtractor.getAbsolutePathsCollection()) {
+//      try {
+//        log.info("Prepending " + libPath + " to the plugin path registry of H5 library");
+//        H5.H5PLprepend(libPath);
+//        log.info("Appending " + libPath + " to the plugin path registry of H5 library");
+//        H5.H5PLappend(libPath);
+//      } catch (final HDF5LibraryException e) {
+//        log.error("Failed to append " + libPath + " to the plugin registry", e);
+//      }
+//    }
 
     try {
       H5.loadH5Lib();
@@ -147,24 +149,24 @@ public class HDF5LibraryInitializer {
       }
     }
 
-
-    for (int i = H5.H5PLsize() - 1; i >= 0; --i) {
-      final String path;
-      try {
-        path = H5.H5PLget(i);
-      } catch (final HDF5LibraryException e) {
-        log.error("Failed to get plugin path with index " + i);
-        continue;
-      }
-
-      try {
-        H5.H5PLremove(i);
-        log.info("Removed pre-existing path with index " + i + " that was " + path);
-      } catch (final HDF5LibraryException e) {
-        log.error("Failed to remove plugin path with index " + i + " that is " + path);
-        continue;
-      }
-    }
+//
+//    for (int i = H5.H5PLsize() - 1; i >= 0; --i) {
+//      final String path;
+//      try {
+//        path = H5.H5PLget(i);
+//      } catch (final HDF5LibraryException e) {
+//        log.error("Failed to get plugin path with index " + i);
+//        continue;
+//      }
+//
+//      try {
+//        H5.H5PLremove(i);
+//        log.info("Removed pre-existing path with index " + i + " that was " + path);
+//      } catch (final HDF5LibraryException e) {
+//        log.error("Failed to remove plugin path with index " + i + " that is " + path);
+//        continue;
+//      }
+//    }
 //
 //    for (final var libPath : jniExtractor.getFullPathsCollection()) {
 //      try {
