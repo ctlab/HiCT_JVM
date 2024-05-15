@@ -9,6 +9,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 @Getter(AccessLevel.PUBLIC)
@@ -33,8 +34,8 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
 //    final String endHEX = String.format("#%02x%02x%02x%02x", cmap.getEndColor().getRed(), cmap.getEndColor().getGreen(), cmap.getEndColor().getBlue(), cmap.getEndColor().getAlpha());
 
     return new SimpleLinearGradientDTO(
-      String.format("rgba(%d,%d,%d,%f)", cmap.getStartColor().getRed(), cmap.getStartColor().getGreen(), cmap.getStartColor().getBlue(), ((double) cmap.getStartColor().getAlpha() / 255.0d)),
-      String.format("rgba(%d,%d,%d,%f)", cmap.getEndColor().getRed(), cmap.getEndColor().getGreen(), cmap.getEndColor().getBlue(), ((double) cmap.getEndColor().getAlpha() / 255.0d)),
+      String.format(Locale.US, "rgba(%d,%d,%d,%f)", cmap.getStartColor().getRed(), cmap.getStartColor().getGreen(), cmap.getStartColor().getBlue(), ((double) cmap.getStartColor().getAlpha() / 255.0d)),
+      String.format(Locale.US, "rgba(%d,%d,%d,%f)", cmap.getEndColor().getRed(), cmap.getEndColor().getGreen(), cmap.getEndColor().getBlue(), ((double) cmap.getEndColor().getAlpha() / 255.0d)),
       cmap.getMinSignal(),
       cmap.getMaxSignal()
     );
