@@ -17,11 +17,11 @@ image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release
 
 Currently, there are multiple environment variables that could be set prior to launching HiCT.
 
-* `DATA_DIR` --- should be a path to the directory containing `.hict.hdf5`, `.agp` and `fasta` files. These files could be anywhere in subtree of this directory, it is scanned recursively.
-* `VXPORT` --- should be an integer between `1` and `65535` denoting port number which will be served by HiCT API. Note that listening on ports below `4096` usually requires some kind of administrative privileges. If not provided, the default value is `5000`. Startup might fail if the port is already occupied by another service. Be sure to set correct port in Connection -> API Gateway field in HiCT WebUI if changed.
-* `WEBUI_PORT` --- should be an integer between `1` and `65535` denoting port number which will be served by HiCT WebUI. Note that listening on ports below `4096` usually requires some kind of administrative privileges. If not provided, the default value is `8080`. Startup might fail if the port is already occupied by another service.
+* `DATA_DIR` -- should be a path to the directory containing `.hict.hdf5`, `.agp` and `fasta` files. These files could be anywhere in subtree of this directory, it is scanned recursively.
+* `VXPORT` -- should be an integer between `1` and `65535` denoting port number which will be served by HiCT API. Note that listening on ports below `4096` usually requires some kind of administrative privileges. If not provided, the default value is `5000`. Startup might fail if the port is already occupied by another service. Be sure to set correct port in Connection -> API Gateway field in HiCT WebUI if changed.
+* `WEBUI_PORT` -- should be an integer between `1` and `65535` denoting port number which will be served by HiCT WebUI. Note that listening on ports below `4096` usually requires some kind of administrative privileges. If not provided, the default value is `8080`. Startup might fail if the port is already occupied by another service.
 * `SERVE_WEBUI` -- should either be `true` or `false` telling whether to start serving HiCT WebUI on the desired port or not. Might be useful during debugging or when WebUI is served by another process. Default is `true`. This option does not have any effect in case WebUI is not packed into the jar file.
-* `TILE_SIZE` --- should be an integer greater than one. Defines the default tile size for visualization. Experimental setting, currently might break WebUI renderer. Default is `256`. The greater the tile size is, the less tiles are shown on screen and therefore less requests are sent to the server, but each request could potentially take longer to process.
+* `TILE_SIZE` -- should be an integer greater than one. Defines the default tile size for visualization. Experimental setting, currently might break WebUI renderer. Default is `256`. The greater the tile size is, the less tiles are shown on screen and therefore less requests are sent to the server, but each request could potentially take longer to process.
 
 An example of launching HiCT with parameters:
 
