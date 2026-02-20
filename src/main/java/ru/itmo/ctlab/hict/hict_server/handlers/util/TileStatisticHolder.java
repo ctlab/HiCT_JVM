@@ -43,4 +43,20 @@ public record TileStatisticHolder(@NotNull AtomicLong versionCounter,
     );
   }
 
+  public static @NotNull TileStatisticHolder newDefaultStatisticHolderWithVersion(final int resolutionCount, final long version) {
+    final var stats = newDefaultStatisticHolder(resolutionCount);
+    stats.versionCounter().set(version);
+    return stats;
+  }
+
+  public static @NotNull TileStatisticHolder resetRangesKeepingVersion(final @NotNull TileStatisticHolder previous,
+                                                                        final int resolutionCount) {
+    return newDefaultStatisticHolderWithVersion(resolutionCount, previous.versionCounter().get());
+  }
+
+  public static @NotNull TileStatisticHolder resetRangesWithIncrementedVersion(final @NotNull TileStatisticHolder previous,
+                                                                                final int resolutionCount) {
+    return newDefaultStatisticHolderWithVersion(resolutionCount, previous.versionCounter().incrementAndGet());
+  }
+
 }

@@ -27,6 +27,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
+import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -59,7 +60,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
       final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
 
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
       map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(request.toEntity()));
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
@@ -75,9 +76,7 @@ public class TileHandlersHolder extends HandlersHolder {
         ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
         return;
       }
-      final var newStats = TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length);
-      newStats.versionCounter().set(stats.versionCounter().get());
-      map.put("TileStatisticHolder", newStats);
+      map.put("TileStatisticHolder", TileStatisticHolder.resetRangesKeepingVersion(stats, chunkedFile.getResolutions().length));
       final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
       if (visualizationOptionsWrapper == null) {
         ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
@@ -88,7 +87,7 @@ public class TileHandlersHolder extends HandlersHolder {
     });
 
     router.post("/get_visualization_options").blockingHandler(ctx -> {
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
       if (chunkedFileWrapper == null) {
@@ -121,7 +120,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
       log.debug("Got parameters");
 
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
 
       log.debug("Got map");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));

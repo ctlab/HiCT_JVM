@@ -30,16 +30,20 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Launcher;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.SLF4JLogDelegateFactory;
+import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.LoggerFactory;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
@@ -47,6 +51,7 @@ import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLin
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
@@ -64,6 +69,9 @@ public class MainVerticle extends AbstractVerticle {
     HDF5LibraryInitializer.initializeHDF5Library();
   }
 
+  public static void main(final String[] args) {
+    Launcher.executeCommand("run", MainVerticle.class.getName());
+  }
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
@@ -76,11 +84,11 @@ public class MainVerticle extends AbstractVerticle {
     final Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
     root.setLevel(Level.INFO);
 
-
     log.info("Logging initialized");
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
-      .setConfig(new JsonObject().put("keys", new JsonArray().add("DATA_DIR").add("TILE_SIZE").add("VXPORT").add("MIN_DS_POOL").add("MAX_DS_POOL")));
+        .setConfig(new JsonObject().put("keys",
+            new JsonArray().add("DATA_DIR").add("TILE_SIZE").add("VXPORT").add("MIN_DS_POOL").add("MAX_DS_POOL")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
     final ConfigRetriever myConfigRetriver = ConfigRetriever.create(vertx, myOptions);
     myConfigRetriver.getConfig(asyncResults -> System.out.println(asyncResults.result().encodePrettily()));
@@ -96,7 +104,7 @@ public class MainVerticle extends AbstractVerticle {
 
       try {
         log.info("Trying to write configuration to local map");
-        final var map = vertx.sharedData().getLocalMap("hict_server");
+        final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
         map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataDirectory));
         map.put("tileSize", tileSize);
         map.put("VXPORT", port);
@@ -104,15 +112,15 @@ public class MainVerticle extends AbstractVerticle {
         map.put("MAX_DS_POOL", maxDSPool);
 
         final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, false, false,
-          new SimpleLinearGradient(
-            32,
-            new Color(255, 255, 255, 0),
-            new Color(0, 96, 0, 255),
-            0.0d,
-            1.0d
-          ));
+            new SimpleLinearGradient(
+                32,
+                new Color(255, 255, 255, 0),
+                new Color(0, 96, 0, 255),
+                0.0d,
+                1.0d));
 
-        map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions));
+        map.put("visualizationOptions",
+            new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions));
 
         log.info("Added to local map");
       } finally {
@@ -135,16 +143,16 @@ public class MainVerticle extends AbstractVerticle {
     final var router = Router.router(vertx);
 
     router.route().handler(CorsHandler.create()
-      .allowedMethod(io.vertx.core.http.HttpMethod.GET)
-      .allowedMethod(io.vertx.core.http.HttpMethod.POST)
-      .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
-      .allowedHeader("Access-Control-Request-Method")
-      .allowedHeader("Access-Control-Allow-Credentials")
-      .allowedHeader("Access-Control-Allow-Origin")
-      .allowedHeader("Access-Control-Allow-Headers")
-      .allowedHeader("Content-Type"));
-    router.route().handler(BodyHandler.create());
-//    router.route().handler(ErrorHandler.create(Vertx.vertx()));
+        .allowedMethod(io.vertx.core.http.HttpMethod.GET)
+        .allowedMethod(io.vertx.core.http.HttpMethod.POST)
+        .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
+        .allowedHeader("Access-Control-Request-Method")
+        .allowedHeader("Access-Control-Allow-Credentials")
+        .allowedHeader("Access-Control-Allow-Origin")
+        .allowedHeader("Access-Control-Allow-Headers")
+        .allowedHeader("Content-Type"));
+    router.route().handler(BodyHandler.create().setUploadsDirectory("/tmp").setBodyLimit(2L * 1024 * 1024 * 1024));
+    // router.route().handler(ErrorHandler.create(Vertx.vertx()));
     vertx.exceptionHandler(event -> {
       log.error("An exception was caught at the top level", event);
       log.debug(event.getMessage());
@@ -154,7 +162,7 @@ public class MainVerticle extends AbstractVerticle {
 
     final int port;
     try {
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       port = (int) map.get("VXPORT");
     } finally {
       log.info("Finished maps");
@@ -165,22 +173,19 @@ public class MainVerticle extends AbstractVerticle {
       Vertx.currentContext().exceptionHandler().handle(err);
     });
 
-
     log.info("Initializing handlers");
     final List<HandlersHolder> handlersHolders = new ArrayList<>();
     handlersHolders.add(new FSHandlersHolder(vertx));
     handlersHolders.add(new TileHandlersHolder(vertx));
     handlersHolders.add(new FileOpHandlersHolder(vertx));
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
-
+    handlersHolders.add(new ConversionHandlersHolder(vertx));
 
     router.route().failureHandler(ctx -> {
       log.error("An exception was caught at router top-level", ctx.failure());
       ctx.response().end(
-        ctx.failure().getMessage()
-      );
+          ctx.failure().getMessage());
     });
-
 
     log.info("Configuring router");
     handlersHolders.forEach(handlersHolder -> handlersHolder.addHandlersToRouter(router));

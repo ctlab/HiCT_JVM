@@ -43,6 +43,12 @@ repositories {
 
 val vertxVersion = "4.4.1"
 val junitJupiterVersion = "5.9.1"
+val slf4jVersion = "1.7.36"
+val logbackVersion = "1.2.13"
+
+dependencyLocking {
+  lockAllConfigurations()
+}
 
 val mainVerticleName = "ru.itmo.ctlab.hict.hict_server.MainVerticle"
 val launcherClassName = "io.vertx.core.Launcher"
@@ -64,6 +70,8 @@ application {
   mainClass.set(launcherClassName)
 }
 
+val lombokVersion = "1.18.42"
+
 dependencies {
 //  implementation(fileTree("src/main/resources/libs"))
 //  runtimeOnly(fileTree("src/main/resources/libs/natives"))
@@ -74,23 +82,19 @@ dependencies {
   // https://mvnrepository.com/artifact/cisd/base
   implementation("cisd:base:18.09.0")
   implementation("org.jetbrains:annotations:24.0.0")
-  implementation("org.jetbrains:annotations:24.0.0")
 
 
   // https://mvnrepository.com/artifact/org.apache.bcel/bcel
   implementation("org.apache.bcel:bcel:6.7.0")
 
+  compileOnly("org.projectlombok:lombok:$lombokVersion")
+  annotationProcessor("org.projectlombok:lombok:$lombokVersion")
+  testCompileOnly("org.projectlombok:lombok:$lombokVersion")
+  testAnnotationProcessor("org.projectlombok:lombok:$lombokVersion")
 
-
-  compileOnly("org.projectlombok:lombok:1.18.22")
-  annotationProcessor("org.projectlombok:lombok:1.18.22")
-  testCompileOnly("org.projectlombok:lombok:1.18.22")
-  testAnnotationProcessor("org.projectlombok:lombok:1.18.22")
-
-
-  implementation("org.slf4j:slf4j-api:1.7.+")
+  implementation("org.slf4j:slf4j-api:$slf4jVersion")
 //  implementation("org.slf4j:slf4j-nop:1.7.+")
-  implementation("ch.qos.logback:logback-classic:1.2.+")
+  implementation("ch.qos.logback:logback-classic:$logbackVersion")
 
 
   implementation(platform("io.vertx:vertx-stack-depchain:$vertxVersion"))
@@ -144,6 +148,16 @@ tasks.withType<Test> {
     events = setOf(PASSED, SKIPPED, FAILED)
   }
 }
+
+
+
+tasks.register<JavaExec>("runConversionCli") {
+  group = "application"
+  description = "Run conversion CLI (hict-to-mcool / mcool-to-hict subcommands)"
+  classpath = sourceSets["main"].runtimeClasspath
+  mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.ConversionCliLauncher")
+}
+
 
 tasks.withType<JavaExec> {
   doFirst {

@@ -33,10 +33,13 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.SLF4JLogDelegateFactory;
+import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.CorsHandler;
 import io.vertx.ext.web.handler.StaticHandler;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
@@ -68,7 +71,7 @@ public class WebUIVerticle extends AbstractVerticle {
 
       try {
         log.info("Trying to write WebUI configuration to local map");
-        final var map = vertx.sharedData().getLocalMap("webui_server");
+        final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("webui_server");
         map.put("WEBUI_PORT", webuiPort);
         map.put("SERVE_WEBUI", serveWebUI);
         log.info("Added to local map");
@@ -109,7 +112,7 @@ public class WebUIVerticle extends AbstractVerticle {
     final int webuiPort;
     final boolean serve;
     try {
-      final var map = vertx.sharedData().getLocalMap("webui_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("webui_server");
       serve = (boolean) map.get("SERVE_WEBUI");
       webuiPort = (int) map.get("WEBUI_PORT");
     } finally {
