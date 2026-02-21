@@ -137,7 +137,19 @@ public class TileHandlersHolder extends HandlersHolder {
       }
       final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
 
-      final var level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+      final var requestedBpResolutionParam = ctx.request().getParam("bpResolution");
+      final int level;
+      if (requestedBpResolutionParam != null) {
+        final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
+        final var resolutionOrder = chunkedFile.getResolutionToIndex().get(requestedBpResolution);
+        if (resolutionOrder == null) {
+          ctx.fail(new RuntimeException("Requested bpResolution is not present in opened file: " + requestedBpResolution));
+          return;
+        }
+        level = resolutionOrder;
+      } else {
+        level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+      }
 
       final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
       if (stats == null) {
