@@ -33,7 +33,8 @@ public class HictToMcoolConverter {
 
       final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions());
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
-      final var workers = Math.max(1, Math.min(options.parallelism(), selectedResolutions.size()));
+      final var requestedWorkers = resolveRequestedWorkers(options.parallelism());
+      final var workers = Math.max(1, Math.min(requestedWorkers, selectedResolutions.size()));
 
       synchronizedLogConsumer.accept("Converting in parallel with workers=" + workers + ", chunkSize=" + options.chunkSize());
 
@@ -267,5 +268,12 @@ public class HictToMcoolConverter {
         delegate.accept(message);
       }
     };
+  }
+
+  private static int resolveRequestedWorkers(final int parallelismOption) {
+    if (parallelismOption == -1 || parallelismOption <= 0) {
+      return Math.max(1, Runtime.getRuntime().availableProcessors());
+    }
+    return parallelismOption;
   }
 }

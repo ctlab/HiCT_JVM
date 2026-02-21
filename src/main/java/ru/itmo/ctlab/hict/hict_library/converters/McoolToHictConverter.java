@@ -67,9 +67,12 @@ public class McoolToHictConverter {
       final var floatStorageFeatures = resolveFloatStorageFeatures(options, synchronizedLogConsumer);
       final var progressTracker = new ConversionProgressTracker((conversionOrder.size() * 2) + 1, synchronizedLogConsumer);
 
-      final var workers = Math.max(1, Math.min(options.parallelism(), conversionOrder.size()));
+      final var requestedWorkers = resolveRequestedWorkers(options.parallelism());
+      final var workers = Math.max(1, Math.min(requestedWorkers, conversionOrder.size()));
+      final var perResolutionWorkers = Math.max(1, requestedWorkers / workers);
       synchronizedLogConsumer.accept(
         "Converting .mcool -> .hict.hdf5, workers=" + workers + ", resolutions=" + conversionOrder +
+          ", perResolutionWorkers=" + perResolutionWorkers +
           ", compressionAlgorithm=" + options.compressionAlgorithm() + ", compressionLevel=" + options.compressionLevel()
       );
 
@@ -77,6 +80,7 @@ public class McoolToHictConverter {
         options.inputPath(),
         conversionOrder,
         workers,
+        perResolutionWorkers,
         options.chunkSize(),
         intStorageFeatures,
         floatStorageFeatures,
@@ -147,6 +151,7 @@ public class McoolToHictConverter {
     final @NotNull Path inputPath,
     final @NotNull List<Long> resolutions,
     final int workers,
+    final int perResolutionWorkers,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
@@ -170,6 +175,7 @@ public class McoolToHictConverter {
             chunkSize,
             intStorageFeatures,
             floatStorageFeatures,
+            perResolutionWorkers,
             (processedStripes, stripeCount) -> {
               final int percent = stripeCount <= 0 ? 100 : (int) ((processedStripes * 100L) / stripeCount);
               final var elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
@@ -223,6 +229,7 @@ public class McoolToHictConverter {
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
+    final int stripeWorkersRequested,
     final @NotNull StripeProgressReporter stripeProgressReporter,
     final @NotNull Consumer<String> logConsumer
   ) {
@@ -251,7 +258,8 @@ public class McoolToHictConverter {
       stripeCount,
       logConsumer
     );
-    final var counts = countDenseAndSparse(src, resolution, stripeCount, allRowsStartIndices, countingProgress::report);
+    final int stripeWorkers = Math.max(1, Math.min(stripeWorkersRequested, Math.max(1, stripeCount)));
+    final var counts = countDenseAndSparse(src, resolution, stripeCount, allRowsStartIndices, stripeWorkers, countingProgress::report);
     countingProgress.finish();
     final var denseBlockCount = counts.denseBlockCount();
     logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
@@ -291,34 +299,49 @@ public class McoolToHictConverter {
       writeProgress.finish();
     }
 
-    for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
-      final var block = readRowStripePixels(src, resolution, rowStripe, allRowsStartIndices);
-      if (block.length() <= 0) {
-        stripeProgressReporter.report(rowStripe + 1, stripeCount);
-        writeProgress.report(rowStripe + 1);
-        continue;
+    final int batchSize = Math.max(1, stripeWorkers * 2);
+    final ExecutorService stripeExecutor = stripeWorkers > 1 ? Executors.newFixedThreadPool(stripeWorkers) : null;
+    try {
+      for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
+        final int batchEnd = Math.min(stripeCount, batchStart + batchSize);
+        final int localCount = batchEnd - batchStart;
+        final var blocks = new PixelBlock[localCount];
+
+        for (int i = 0; i < localCount; i++) {
+          blocks[i] = readRowStripePixels(src, resolution, batchStart + i, allRowsStartIndices);
+        }
+
+        final var sortedBatch = sortStripeBatch(blocks, stripeExecutor);
+
+        for (int i = 0; i < localCount; i++) {
+          final int rowStripe = batchStart + i;
+          final var sorted = sortedBatch[i];
+          if (sorted != null) {
+            final var saveResult = saveIndirectBlock(
+              dst,
+              rowStripe,
+              stripeCount,
+              sorted,
+              currentSparseOffset,
+              currentDenseOffset,
+              blockRowsPath,
+              blockColsPath,
+              blockValsPath,
+              blockOffsetPath,
+              blockLengthPath,
+              denseBlocksPath
+            );
+            currentSparseOffset = saveResult.sparseOffset();
+            currentDenseOffset = saveResult.denseOffset();
+          }
+          stripeProgressReporter.report(rowStripe + 1, stripeCount);
+          writeProgress.report(rowStripe + 1);
+        }
       }
-
-      final var sorted = sortStripePixels(block.rows(), block.cols(), block.values());
-      final var saveResult = saveIndirectBlock(
-        dst,
-        rowStripe,
-        stripeCount,
-        sorted,
-        currentSparseOffset,
-        currentDenseOffset,
-        blockRowsPath,
-        blockColsPath,
-        blockValsPath,
-        blockOffsetPath,
-        blockLengthPath,
-        denseBlocksPath
-      );
-      currentSparseOffset = saveResult.sparseOffset();
-      currentDenseOffset = saveResult.denseOffset();
-
-      stripeProgressReporter.report(rowStripe + 1, stripeCount);
-      writeProgress.report(rowStripe + 1);
+    } finally {
+      if (stripeExecutor != null) {
+        stripeExecutor.shutdownNow();
+      }
     }
     writeProgress.finish();
   }
@@ -412,40 +435,93 @@ public class McoolToHictConverter {
     final long resolution,
     final int stripeCount,
     final long @NotNull [] allRowsStartIndices,
+    final int stripeWorkers,
     final @NotNull java.util.function.IntConsumer countingProgressReporter
   ) {
     long sparseCount = 0L;
     long denseCount = 0L;
 
-    for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
-      final var block = readRowStripePixels(src, resolution, rowStripe, allRowsStartIndices);
-      if (block.length() <= 0) {
-        countingProgressReporter.accept(rowStripe + 1);
-        continue;
-      }
-
-      final var sorted = sortStripePixels(block.rows(), block.cols(), block.values());
-      final var colStripes = sorted.colStripes();
-
-      int start = 0;
-      while (start < colStripes.length) {
-        int end = start + 1;
-        while (end < colStripes.length && colStripes[end] == colStripes[start]) {
-          end++;
+    final int batchSize = Math.max(1, stripeWorkers * 2);
+    final ExecutorService stripeExecutor = stripeWorkers > 1 ? Executors.newFixedThreadPool(stripeWorkers) : null;
+    try {
+      for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
+        final int batchEnd = Math.min(stripeCount, batchStart + batchSize);
+        final int localCount = batchEnd - batchStart;
+        final var blocks = new PixelBlock[localCount];
+        for (int i = 0; i < localCount; i++) {
+          blocks[i] = readRowStripePixels(src, resolution, batchStart + i, allRowsStartIndices);
         }
+        final var sortedBatch = sortStripeBatch(blocks, stripeExecutor);
 
-        final int blockLen = end - start;
-        if (blockLen >= DENSE_THRESHOLD) {
-          denseCount++;
-        } else {
-          sparseCount += blockLen;
+        for (int i = 0; i < localCount; i++) {
+          final int rowStripe = batchStart + i;
+          final var sorted = sortedBatch[i];
+          if (sorted != null) {
+            final var colStripes = sorted.colStripes();
+            int start = 0;
+            while (start < colStripes.length) {
+              int end = start + 1;
+              while (end < colStripes.length && colStripes[end] == colStripes[start]) {
+                end++;
+              }
+              final int blockLen = end - start;
+              if (blockLen >= DENSE_THRESHOLD) {
+                denseCount++;
+              } else {
+                sparseCount += blockLen;
+              }
+              start = end;
+            }
+          }
+          countingProgressReporter.accept(rowStripe + 1);
         }
-        start = end;
       }
-      countingProgressReporter.accept(rowStripe + 1);
+    } finally {
+      if (stripeExecutor != null) {
+        stripeExecutor.shutdownNow();
+      }
     }
 
     return new StripeCounts(sparseCount, denseCount);
+  }
+
+  private static @NotNull SortedStripePixels[] sortStripeBatch(
+    final PixelBlock @NotNull [] blocks,
+    final ExecutorService stripeExecutor
+  ) {
+    final var sortedBatch = new SortedStripePixels[blocks.length];
+    if (stripeExecutor == null) {
+      for (int i = 0; i < blocks.length; i++) {
+        final var block = blocks[i];
+        if (block.length() > 0) {
+          sortedBatch[i] = sortStripePixels(block.rows(), block.cols(), block.values());
+        }
+      }
+      return sortedBatch;
+    }
+
+    final List<Future<?>> futures = new ArrayList<>(blocks.length);
+    for (int i = 0; i < blocks.length; i++) {
+      final int idx = i;
+      futures.add(stripeExecutor.submit(() -> {
+        final var block = blocks[idx];
+        if (block.length() > 0) {
+          sortedBatch[idx] = sortStripePixels(block.rows(), block.cols(), block.values());
+        }
+      }));
+    }
+
+    try {
+      for (final var f : futures) {
+        f.get();
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException(e);
+    } catch (ExecutionException e) {
+      throw new RuntimeException(e.getCause());
+    }
+    return sortedBatch;
   }
 
   private static long estimateEtaMillis(final long done, final long total, final long elapsedMillis) {
@@ -454,6 +530,13 @@ public class McoolToHictConverter {
     }
     final var remaining = total - done;
     return (elapsedMillis * remaining) / done;
+  }
+
+  private static int resolveRequestedWorkers(final int parallelismOption) {
+    if (parallelismOption == -1 || parallelismOption <= 0) {
+      return Math.max(1, Runtime.getRuntime().availableProcessors());
+    }
+    return parallelismOption;
   }
 
   private static @NotNull String formatDuration(final long millis) {
