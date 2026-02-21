@@ -21,20 +21,21 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 public class HictToMcoolConverter {
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) throws IOException, NoSuchFieldException {
+    final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
     final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8));
     try {
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
         try (final var reader = Files.newBufferedReader(options.inputPath().resolveSibling(options.agpPath()), StandardCharsets.UTF_8)) {
           chunkedFile.importAGP(reader);
         }
-        logConsumer.accept("Applied AGP before export");
+        synchronizedLogConsumer.accept("Applied AGP before export");
       }
 
       final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions());
-      final var compression = resolveIntStorageFeatures(options, logConsumer);
+      final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
       final var workers = Math.max(1, Math.min(options.parallelism(), selectedResolutions.size()));
 
-      logConsumer.accept("Converting in parallel with workers=" + workers + ", chunkSize=" + options.chunkSize());
+      synchronizedLogConsumer.accept("Converting in parallel with workers=" + workers + ", chunkSize=" + options.chunkSize());
 
       final var stagedResolutionFiles = convertResolutionsInParallel(
         options.inputPath(),
@@ -42,7 +43,7 @@ public class HictToMcoolConverter {
         options.chunkSize(),
         compression,
         workers,
-        logConsumer
+        synchronizedLogConsumer
       );
 
       try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
@@ -54,11 +55,12 @@ public class HictToMcoolConverter {
         for (final var staged : stagedResolutionFiles.stream().sorted(Comparator.comparingLong(StagedResolutionFile::resolution)).toList()) {
           try (final var stagedReader = HDF5Factory.openForReading(staged.path().toFile())) {
             mergeResolution(stagedReader, dst, staged.resolution(), options.chunkSize(), compression, logConsumer);
+            synchronizedLogConsumer.accept("Merged resolution " + staged.resolution() + " to final output");
           } finally {
             try {
               Files.deleteIfExists(staged.path());
             } catch (IOException e) {
-              logConsumer.accept("Failed to delete temp file " + staged.path() + ": " + e.getMessage());
+              synchronizedLogConsumer.accept("Failed to delete temp file " + staged.path() + ": " + e.getMessage());
             }
           }
         }
@@ -123,12 +125,13 @@ public class HictToMcoolConverter {
     dst.object().createGroup(root + "/pixels");
     dst.object().createGroup(root + "/indexes");
 
-    copyLongArrayChunked(src, dst, getBlockLengthDatasetPath(resolution), root + "/pixels/count", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(src, dst, getBlockOffsetDatasetPath(resolution), root + "/indexes/block_offset", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(src, dst, getBlockRowsDatasetPath(resolution), root + "/pixels/bin1_id", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(src, dst, getBlockColsDatasetPath(resolution), root + "/pixels/bin2_id", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(src, dst, getBlockValuesDatasetPath(resolution), root + "/pixels/counts", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(src, dst, getDenseBlockDatasetPath(resolution), root + "/pixels/dense_blocks", chunkSize, compression, logConsumer);
+    final var prefix = "Resolution " + resolution;
+    copyLongArrayChunked(src, dst, getBlockLengthDatasetPath(resolution), root + "/pixels/count", chunkSize, compression, logConsumer, prefix + " pixels/count");
+    copyLongArrayChunked(src, dst, getBlockOffsetDatasetPath(resolution), root + "/indexes/block_offset", chunkSize, compression, logConsumer, prefix + " indexes/block_offset");
+    copyLongArrayChunked(src, dst, getBlockRowsDatasetPath(resolution), root + "/pixels/bin1_id", chunkSize, compression, logConsumer, prefix + " pixels/bin1_id");
+    copyLongArrayChunked(src, dst, getBlockColsDatasetPath(resolution), root + "/pixels/bin2_id", chunkSize, compression, logConsumer, prefix + " pixels/bin2_id");
+    copyLongArrayChunked(src, dst, getBlockValuesDatasetPath(resolution), root + "/pixels/counts", chunkSize, compression, logConsumer, prefix + " pixels/counts");
+    copyLongArrayChunked(src, dst, getDenseBlockDatasetPath(resolution), root + "/pixels/dense_blocks", chunkSize, compression, logConsumer, prefix + " pixels/dense_blocks");
     dst.int64().setAttr(root, "bin_size", resolution);
     logConsumer.accept("Staged resolution " + resolution + " in worker=" + Thread.currentThread().getName());
   }
@@ -146,14 +149,14 @@ public class HictToMcoolConverter {
     dst.object().createGroup(root + "/pixels");
     dst.object().createGroup(root + "/indexes");
 
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/count", root + "/pixels/count", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(stagedReader, dst, root + "/indexes/block_offset", root + "/indexes/block_offset", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin1_id", root + "/pixels/bin1_id", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin2_id", root + "/pixels/bin2_id", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/counts", root + "/pixels/counts", chunkSize, compression, logConsumer);
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/dense_blocks", root + "/pixels/dense_blocks", chunkSize, compression, logConsumer);
+    final var prefix = "Merge resolution " + resolution;
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/count", root + "/pixels/count", chunkSize, compression, logConsumer, prefix + " pixels/count");
+    copyLongArrayChunked(stagedReader, dst, root + "/indexes/block_offset", root + "/indexes/block_offset", chunkSize, compression, logConsumer, prefix + " indexes/block_offset");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin1_id", root + "/pixels/bin1_id", chunkSize, compression, logConsumer, prefix + " pixels/bin1_id");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin2_id", root + "/pixels/bin2_id", chunkSize, compression, logConsumer, prefix + " pixels/bin2_id");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/counts", root + "/pixels/counts", chunkSize, compression, logConsumer, prefix + " pixels/counts");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/dense_blocks", root + "/pixels/dense_blocks", chunkSize, compression, logConsumer, prefix + " pixels/dense_blocks");
     dst.int64().setAttr(root, "bin_size", resolution);
-    logConsumer.accept("Merged resolution " + resolution + " to final output");
   }
 
   static void copyLongArrayChunked(
@@ -163,7 +166,8 @@ public class HictToMcoolConverter {
     final @NotNull String dstPath,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
-    final @NotNull Consumer<String> logConsumer
+    final @NotNull Consumer<String> logConsumer,
+    final @NotNull String progressLabel
   ) {
     if (!src.object().isDataSet(srcPath)) {
       logConsumer.accept("Skipped missing dataset " + srcPath);
@@ -175,11 +179,32 @@ public class HictToMcoolConverter {
     dst.int64().createArray(dstPath, length, chunkSize, compression);
 
     long offset = 0L;
+    final long startedNanos = System.nanoTime();
+    int lastLoggedPercent = -1;
     while (offset < length) {
       final int blockLen = (int) Math.min(chunkSize, length - offset);
       final var block = src.int64().readArrayBlockWithOffset(srcPath, blockLen, offset);
       dst.int64().writeArrayBlockWithOffset(dstPath, block, blockLen, offset);
       offset += blockLen;
+      if (length > 0) {
+        final int percent = (int) ((offset * 100L) / length);
+        if (percent >= 100 || percent - lastLoggedPercent >= 10) {
+          lastLoggedPercent = percent;
+          final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+          final long etaMillis = estimateEtaMillis(offset, length, elapsedMillis);
+          logConsumer.accept(
+            String.format(
+              "%s: %d%% (%d/%d), elapsed=%s, eta=%s",
+              progressLabel,
+              percent,
+              offset,
+              length,
+              formatDuration(elapsedMillis),
+              formatDuration(etaMillis)
+            )
+          );
+        }
+      }
     }
     logConsumer.accept("Copied " + srcPath + " -> " + dstPath + " (" + length + " items)");
   }
@@ -210,6 +235,36 @@ public class HictToMcoolConverter {
             " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to Deflate."
         );
         yield HDF5IntStorageFeatures.createDeflation(options.compressionLevel());
+      }
+    };
+  }
+
+  private static long estimateEtaMillis(final long done, final long total, final long elapsedMillis) {
+    if (done <= 0 || total <= 0 || done >= total || elapsedMillis <= 0) {
+      return 0L;
+    }
+    return (elapsedMillis * (total - done)) / done;
+  }
+
+  private static @NotNull String formatDuration(final long millis) {
+    if (millis <= 0) {
+      return "00:00";
+    }
+    final long totalSeconds = millis / 1000L;
+    final long hours = totalSeconds / 3600L;
+    final long minutes = (totalSeconds % 3600L) / 60L;
+    final long seconds = totalSeconds % 60L;
+    if (hours > 0) {
+      return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+    return String.format("%02d:%02d", minutes, seconds);
+  }
+
+  private static @NotNull Consumer<String> synchronizedLogger(final @NotNull Consumer<String> delegate) {
+    final Object lock = new Object();
+    return message -> {
+      synchronized (lock) {
+        delegate.accept(message);
       }
     };
   }

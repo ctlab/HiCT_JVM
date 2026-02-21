@@ -8,6 +8,7 @@ import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class ConversionCliLauncher {
 
@@ -36,10 +37,19 @@ public class ConversionCliLauncher {
     );
 
     switch (command) {
-      case "hict-to-mcool" -> new HictToMcoolConverter().convert(options, System.out::println);
-      case "mcool-to-hict" -> new McoolToHictConverter().convert(options, System.out::println);
+      case "hict-to-mcool" -> new HictToMcoolConverter().convert(options, stdoutLogger());
+      case "mcool-to-hict" -> new McoolToHictConverter().convert(options, stdoutLogger());
       default -> throw new IllegalArgumentException("Unknown command: " + command);
     }
+  }
+
+  private static Consumer<String> stdoutLogger() {
+    return message -> {
+      synchronized (System.out) {
+        System.out.println(message);
+        System.out.flush();
+      }
+    };
   }
 
   private static void printHelp() {

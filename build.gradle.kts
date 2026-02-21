@@ -59,7 +59,10 @@ val doOnChange = "${projectDir}/gradlew classes"
 val versionFile = file("${project.projectDir}/version.txt")
 
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
-val webUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
+val localWebUIRepositoryDirectory = layout.projectDirectory.dir("../HiCT_WebUI")
+val remoteWebUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
+val webUIRepositoryDirectory =
+  if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
 val webUIBranch = "dev-0.1.5"
@@ -246,6 +249,27 @@ tasks.register("buildWebUI") {
   dependsOn("cleanWebUI")
   doLast {
     try {
+      if (localWebUIRepositoryDirectory.asFile.exists()) {
+        println("Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath}")
+        project.exec {
+          commandLine("git", "checkout", webUIBranch)
+          workingDir = localWebUIRepositoryDirectory.asFile
+          standardOutput = System.out
+          isIgnoreExitValue = true
+        }
+        project.exec {
+          commandLine("npm", "install")
+          workingDir = localWebUIRepositoryDirectory.asFile
+          standardOutput = System.out
+        }
+        project.exec {
+          commandLine("npm", "run", "build")
+          workingDir = localWebUIRepositoryDirectory.asFile
+          standardOutput = System.out
+        }
+        return@doLast
+      }
+
       Files.createDirectories(webUICloneDirectory.asFile.toPath())
       val cloneResult = project.exec {
         commandLine("git", "clone", webUIRepositoryAddress)

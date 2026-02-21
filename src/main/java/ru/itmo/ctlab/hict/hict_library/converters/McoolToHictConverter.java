@@ -158,6 +158,7 @@ public class McoolToHictConverter {
 
     for (final var resolution : resolutions) {
       final Callable<StagedResolutionFile> task = () -> {
+        final long startedNanos = System.nanoTime();
         final var stagedFile = Files.createTempFile("mcool-to-hict-r" + resolution + "-", ".h5");
         try (final var src = HDF5Factory.openForReading(inputPath.toFile());
              final var dst = HDF5Factory.open(stagedFile.toFile())) {
@@ -171,13 +172,17 @@ public class McoolToHictConverter {
             floatStorageFeatures,
             (processedStripes, stripeCount) -> {
               final int percent = stripeCount <= 0 ? 100 : (int) ((processedStripes * 100L) / stripeCount);
+              final var elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+              final var etaMillis = estimateEtaMillis(processedStripes, stripeCount, elapsedMillis);
               logConsumer.accept(
                 String.format(
-                  "Resolution %d progress: %d%% (%d/%d stripes) [%s]",
+                  "Resolution %d write: %d%% (%d/%d stripes), elapsed=%s, eta=%s [%s]",
                   resolution,
                   percent,
                   processedStripes,
                   stripeCount,
+                  formatDuration(elapsedMillis),
+                  formatDuration(etaMillis),
                   Thread.currentThread().getName()
                 )
               );
@@ -241,7 +246,13 @@ public class McoolToHictConverter {
     final var allRowsStartIndices = src.int64().readArray(resolutionRoot + "/indexes/bin1_offset");
 
     logConsumer.accept("Resolution " + resolution + ": counting sparse and dense blocks");
-    final var counts = countDenseAndSparse(src, resolution, stripeCount, allRowsStartIndices);
+    final var countingProgress = new PhaseProgressTracker(
+      "Resolution " + resolution + " count",
+      stripeCount,
+      logConsumer
+    );
+    final var counts = countDenseAndSparse(src, resolution, stripeCount, allRowsStartIndices, countingProgress::report);
+    countingProgress.finish();
     final var denseBlockCount = counts.denseBlockCount();
     logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
 
@@ -270,19 +281,21 @@ public class McoolToHictConverter {
 
     long currentSparseOffset = 0L;
     long currentDenseOffset = 0L;
-    int lastLoggedPercent = -1;
+    final var writeProgress = new PhaseProgressTracker(
+      "Resolution " + resolution + " write",
+      stripeCount,
+      logConsumer
+    );
     if (stripeCount == 0) {
       stripeProgressReporter.report(0, 0);
+      writeProgress.finish();
     }
 
     for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
       final var block = readRowStripePixels(src, resolution, rowStripe, allRowsStartIndices);
       if (block.length() <= 0) {
-        final int percent = (int) (((rowStripe + 1L) * 100L) / stripeCount);
-        if (percent >= 100 || percent - lastLoggedPercent >= 5) {
-          stripeProgressReporter.report(rowStripe + 1, stripeCount);
-          lastLoggedPercent = percent;
-        }
+        stripeProgressReporter.report(rowStripe + 1, stripeCount);
+        writeProgress.report(rowStripe + 1);
         continue;
       }
 
@@ -304,12 +317,10 @@ public class McoolToHictConverter {
       currentSparseOffset = saveResult.sparseOffset();
       currentDenseOffset = saveResult.denseOffset();
 
-      final int percent = (int) (((rowStripe + 1L) * 100L) / stripeCount);
-      if (percent >= 100 || percent - lastLoggedPercent >= 5) {
-        stripeProgressReporter.report(rowStripe + 1, stripeCount);
-        lastLoggedPercent = percent;
-      }
+      stripeProgressReporter.report(rowStripe + 1, stripeCount);
+      writeProgress.report(rowStripe + 1);
     }
+    writeProgress.finish();
   }
 
   private static @NotNull Consumer<String> synchronizedLogger(final @NotNull Consumer<String> delegate) {
@@ -400,7 +411,8 @@ public class McoolToHictConverter {
     final @NotNull IHDF5Reader src,
     final long resolution,
     final int stripeCount,
-    final long @NotNull [] allRowsStartIndices
+    final long @NotNull [] allRowsStartIndices,
+    final @NotNull java.util.function.IntConsumer countingProgressReporter
   ) {
     long sparseCount = 0L;
     long denseCount = 0L;
@@ -408,6 +420,7 @@ public class McoolToHictConverter {
     for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
       final var block = readRowStripePixels(src, resolution, rowStripe, allRowsStartIndices);
       if (block.length() <= 0) {
+        countingProgressReporter.accept(rowStripe + 1);
         continue;
       }
 
@@ -429,9 +442,32 @@ public class McoolToHictConverter {
         }
         start = end;
       }
+      countingProgressReporter.accept(rowStripe + 1);
     }
 
     return new StripeCounts(sparseCount, denseCount);
+  }
+
+  private static long estimateEtaMillis(final long done, final long total, final long elapsedMillis) {
+    if (done <= 0 || total <= 0 || done >= total || elapsedMillis <= 0) {
+      return 0L;
+    }
+    final var remaining = total - done;
+    return (elapsedMillis * remaining) / done;
+  }
+
+  private static @NotNull String formatDuration(final long millis) {
+    if (millis <= 0) {
+      return "00:00";
+    }
+    final long totalSeconds = millis / 1000L;
+    final long hours = totalSeconds / 3600L;
+    final long minutes = (totalSeconds % 3600L) / 60L;
+    final long seconds = totalSeconds % 60L;
+    if (hours > 0) {
+      return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+    return String.format("%02d:%02d", minutes, seconds);
   }
 
   private static @NotNull PixelBlock readRowStripePixels(
@@ -921,6 +957,7 @@ public class McoolToHictConverter {
     private final int totalSteps;
     private final @NotNull Consumer<String> logger;
     private final @NotNull AtomicInteger completedSteps = new AtomicInteger(0);
+    private final long startedNanos = System.nanoTime();
 
     private ConversionProgressTracker(final int totalSteps, final @NotNull Consumer<String> logger) {
       this.totalSteps = Math.max(1, totalSteps);
@@ -930,7 +967,69 @@ public class McoolToHictConverter {
     private void markStep(final @NotNull String stepDescription) {
       final int done = completedSteps.incrementAndGet();
       final int percent = (int) ((done * 100L) / totalSteps);
-      logger.accept(String.format("Overall progress: %d%% (%d/%d) - %s", percent, done, totalSteps, stepDescription));
+      final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+      final long etaMillis = estimateEtaMillis(done, totalSteps, elapsedMillis);
+      logger.accept(
+        String.format(
+          "Overall progress: %d%% (%d/%d), elapsed=%s, eta=%s - %s",
+          percent,
+          done,
+          totalSteps,
+          formatDuration(elapsedMillis),
+          formatDuration(etaMillis),
+          stepDescription
+        )
+      );
+    }
+  }
+
+  private static final class PhaseProgressTracker {
+    private final @NotNull String label;
+    private final int totalItems;
+    private final @NotNull Consumer<String> logger;
+    private final long startedNanos = System.nanoTime();
+    private int lastLoggedPercent = -1;
+
+    private PhaseProgressTracker(
+      final @NotNull String label,
+      final int totalItems,
+      final @NotNull Consumer<String> logger
+    ) {
+      this.label = label;
+      this.totalItems = Math.max(0, totalItems);
+      this.logger = logger;
+      if (this.totalItems == 0) {
+        logger.accept(label + ": 100% (0/0), elapsed=00:00, eta=00:00");
+      }
+    }
+
+    private void report(final int doneItems) {
+      if (totalItems <= 0) {
+        return;
+      }
+      final int clampedDone = Math.max(0, Math.min(doneItems, totalItems));
+      final int percent = (int) ((clampedDone * 100L) / totalItems);
+      if (lastLoggedPercent >= 0 && percent < 100 && percent - lastLoggedPercent < 5) {
+        return;
+      }
+      lastLoggedPercent = percent;
+      final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+      final long etaMillis = estimateEtaMillis(clampedDone, totalItems, elapsedMillis);
+      logger.accept(
+        String.format(
+          "%s: %d%% (%d/%d), elapsed=%s, eta=%s",
+          label,
+          percent,
+          clampedDone,
+          totalItems,
+          formatDuration(elapsedMillis),
+          formatDuration(etaMillis)
+        )
+      );
+    }
+
+    private void finish() {
+      report(totalItems);
     }
   }
 

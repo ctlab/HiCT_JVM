@@ -41,6 +41,8 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
@@ -128,12 +130,40 @@ public class WebUIVerticle extends AbstractVerticle {
     log.info("WebUI Server will start on port " + webuiPort);
 
 
-    webuiRouter.route("/").handler(ctx -> ctx.response().sendFile("webui/index.html"));
-    webuiRouter.route("/*").handler(StaticHandler.create("webui"));
+    final var webuiStaticHandler = createWebuiStaticHandler();
+    webuiRouter.route("/").handler(ctx -> ctx.reroute("/index.html"));
+    webuiRouter.route("/*").handler(webuiStaticHandler);
 
 
     log.info("Starting WebUI server on port " + webuiPort);
     webuiServer.requestHandler(webuiRouter).listen(webuiPort);
     log.info("WebUI Server started");
+  }
+
+  private @NotNull StaticHandler createWebuiStaticHandler() {
+    final var explicitRoot = System.getenv("WEBUI_ROOT");
+    if (explicitRoot != null && !explicitRoot.isBlank()) {
+      final var explicitRootPath = Path.of(explicitRoot).toAbsolutePath().normalize();
+      if (Files.isDirectory(explicitRootPath)) {
+        log.info("Serving WebUI from WEBUI_ROOT={}", explicitRootPath);
+        return StaticHandler.create().setWebRoot(explicitRootPath.toString()).setAllowRootFileSystemAccess(true);
+      }
+      log.warn("WEBUI_ROOT is set but does not exist: {}", explicitRootPath);
+    }
+
+    final var localDist = Path.of("../HiCT_WebUI/dist").toAbsolutePath().normalize();
+    if (Files.isDirectory(localDist)) {
+      log.info("Serving WebUI from local checkout: {}", localDist);
+      return StaticHandler.create().setWebRoot(localDist.toString()).setAllowRootFileSystemAccess(true);
+    }
+
+    final var builtCloneDist = Path.of("build/webui/HiCT_WebUI/dist").toAbsolutePath().normalize();
+    if (Files.isDirectory(builtCloneDist)) {
+      log.info("Serving WebUI from gradle clone output: {}", builtCloneDist);
+      return StaticHandler.create().setWebRoot(builtCloneDist.toString()).setAllowRootFileSystemAccess(true);
+    }
+
+    log.info("Serving WebUI from classpath resources: webui");
+    return StaticHandler.create("webui");
   }
 }

@@ -68,10 +68,16 @@ public class ConversionHandlersHolder extends HandlersHolder {
               vertx.executeBlocking(promise -> {
                   try {
                       job.status = "running";
+                      final java.util.function.Consumer<String> conversionLogger = message -> {
+                          synchronized (System.out) {
+                              System.out.println(message);
+                          }
+                          job.logs.add(message);
+                      };
                       if ("hict-to-mcool".equals(direction)) {
-                          new HictToMcoolConverter().convert(options, job.logs::add);
+                          new HictToMcoolConverter().convert(options, conversionLogger);
                       } else if ("mcool-to-hict".equals(direction)) {
-                          new McoolToHictConverter().convert(options, job.logs::add);
+                          new McoolToHictConverter().convert(options, conversionLogger);
                       } else {
                           throw new IllegalArgumentException("Unknown conversion direction");
                       }
