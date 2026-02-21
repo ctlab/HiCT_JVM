@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Consumer;
 
@@ -54,6 +55,7 @@ public class McoolToHictConverter {
   private static final int DENSE_THRESHOLD = (SUBMATRIX_SIZE * SUBMATRIX_SIZE) / 2;
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+    final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
     try (final var src = HDF5Factory.openForReading(options.inputPath().toFile())) {
       final var selectedResolutions = resolveResolutions(src, options.resolutions());
       if (selectedResolutions.isEmpty()) {
@@ -61,11 +63,12 @@ public class McoolToHictConverter {
       }
 
       final var conversionOrder = selectedResolutions.stream().sorted(Comparator.reverseOrder()).toList();
-      final var intStorageFeatures = resolveIntStorageFeatures(options, logConsumer);
-      final var floatStorageFeatures = resolveFloatStorageFeatures(options, logConsumer);
+      final var intStorageFeatures = resolveIntStorageFeatures(options, synchronizedLogConsumer);
+      final var floatStorageFeatures = resolveFloatStorageFeatures(options, synchronizedLogConsumer);
+      final var progressTracker = new ConversionProgressTracker((conversionOrder.size() * 2) + 1, synchronizedLogConsumer);
 
       final var workers = Math.max(1, Math.min(options.parallelism(), conversionOrder.size()));
-      logConsumer.accept(
+      synchronizedLogConsumer.accept(
         "Converting .mcool -> .hict.hdf5, workers=" + workers + ", resolutions=" + conversionOrder +
           ", compressionAlgorithm=" + options.compressionAlgorithm() + ", compressionLevel=" + options.compressionLevel()
       );
@@ -77,7 +80,8 @@ public class McoolToHictConverter {
         options.chunkSize(),
         intStorageFeatures,
         floatStorageFeatures,
-        logConsumer
+        synchronizedLogConsumer,
+        progressTracker
       );
 
       Files.deleteIfExists(options.outputPath());
@@ -89,16 +93,18 @@ public class McoolToHictConverter {
         for (final var staged : stagedResolutionFiles.stream().sorted(Comparator.comparingLong(StagedResolutionFile::resolution).reversed()).toList()) {
           try (final var stagedReader = HDF5Factory.openForReading(staged.path().toFile())) {
             mergeStagedResolution(stagedReader, dst, staged.resolution(), options.chunkSize(), intStorageFeatures, floatStorageFeatures);
+            progressTracker.markStep("Merged resolution " + staged.resolution());
           } finally {
             try {
               Files.deleteIfExists(staged.path());
             } catch (IOException e) {
-              logConsumer.accept("Failed to delete temp file " + staged.path() + ": " + e.getMessage());
+              synchronizedLogConsumer.accept("Failed to delete temp file " + staged.path() + ": " + e.getMessage());
             }
           }
         }
 
         dumpContigData(srcAgain, dst, selectedResolutions, workers, intStorageFeatures, floatStorageFeatures);
+        progressTracker.markStep("Dumped contig metadata");
       }
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -144,7 +150,8 @@ public class McoolToHictConverter {
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
-    final @NotNull Consumer<String> logConsumer
+    final @NotNull Consumer<String> logConsumer,
+    final @NotNull ConversionProgressTracker progressTracker
   ) {
     final ExecutorService executor = Executors.newFixedThreadPool(workers);
     final List<Future<StagedResolutionFile>> futures = new ArrayList<>();
@@ -155,8 +162,30 @@ public class McoolToHictConverter {
         try (final var src = HDF5Factory.openForReading(inputPath.toFile());
              final var dst = HDF5Factory.open(stagedFile.toFile())) {
           dst.object().createGroup("/resolutions");
-          stageSingleResolution(src, dst, resolution, chunkSize, intStorageFeatures, floatStorageFeatures);
+          stageSingleResolution(
+            src,
+            dst,
+            resolution,
+            chunkSize,
+            intStorageFeatures,
+            floatStorageFeatures,
+            (processedStripes, stripeCount) -> {
+              final int percent = stripeCount <= 0 ? 100 : (int) ((processedStripes * 100L) / stripeCount);
+              logConsumer.accept(
+                String.format(
+                  "Resolution %d progress: %d%% (%d/%d stripes) [%s]",
+                  resolution,
+                  percent,
+                  processedStripes,
+                  stripeCount,
+                  Thread.currentThread().getName()
+                )
+              );
+            },
+            logConsumer
+          );
           logConsumer.accept("Staged resolution " + resolution + " in " + Thread.currentThread().getName());
+          progressTracker.markStep("Staged resolution " + resolution);
           return new StagedResolutionFile(resolution, stagedFile);
         } catch (Exception e) {
           Files.deleteIfExists(stagedFile);
@@ -188,7 +217,9 @@ public class McoolToHictConverter {
     final long resolution,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
-    final @NotNull HDF5FloatStorageFeatures floatStorageFeatures
+    final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
+    final @NotNull StripeProgressReporter stripeProgressReporter,
+    final @NotNull Consumer<String> logConsumer
   ) {
     final var resolutionRoot = "/resolutions/" + resolution;
     dst.object().createGroup(resolutionRoot);
@@ -209,8 +240,10 @@ public class McoolToHictConverter {
 
     final var allRowsStartIndices = src.int64().readArray(resolutionRoot + "/indexes/bin1_offset");
 
+    logConsumer.accept("Resolution " + resolution + ": counting sparse and dense blocks");
     final var counts = countDenseAndSparse(src, resolution, stripeCount, allRowsStartIndices);
     final var denseBlockCount = counts.denseBlockCount();
+    logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
 
     final var blockRowsPath = getBlockRowsDatasetPath(resolution);
     final var blockColsPath = getBlockColsDatasetPath(resolution);
@@ -237,10 +270,19 @@ public class McoolToHictConverter {
 
     long currentSparseOffset = 0L;
     long currentDenseOffset = 0L;
+    int lastLoggedPercent = -1;
+    if (stripeCount == 0) {
+      stripeProgressReporter.report(0, 0);
+    }
 
     for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
       final var block = readRowStripePixels(src, resolution, rowStripe, allRowsStartIndices);
       if (block.length() <= 0) {
+        final int percent = (int) (((rowStripe + 1L) * 100L) / stripeCount);
+        if (percent >= 100 || percent - lastLoggedPercent >= 5) {
+          stripeProgressReporter.report(rowStripe + 1, stripeCount);
+          lastLoggedPercent = percent;
+        }
         continue;
       }
 
@@ -261,7 +303,22 @@ public class McoolToHictConverter {
       );
       currentSparseOffset = saveResult.sparseOffset();
       currentDenseOffset = saveResult.denseOffset();
+
+      final int percent = (int) (((rowStripe + 1L) * 100L) / stripeCount);
+      if (percent >= 100 || percent - lastLoggedPercent >= 5) {
+        stripeProgressReporter.report(rowStripe + 1, stripeCount);
+        lastLoggedPercent = percent;
+      }
     }
+  }
+
+  private static @NotNull Consumer<String> synchronizedLogger(final @NotNull Consumer<String> delegate) {
+    final Object lock = new Object();
+    return msg -> {
+      synchronized (lock) {
+        delegate.accept(msg);
+      }
+    };
   }
 
   private static SaveBlockResult saveIndirectBlock(
@@ -853,6 +910,28 @@ public class McoolToHictConverter {
 
     final var availableSet = new java.util.HashSet<>(available);
     return requested.stream().filter(availableSet::contains).toList();
+  }
+
+  @FunctionalInterface
+  private interface StripeProgressReporter {
+    void report(int processedStripes, int stripeCount);
+  }
+
+  private static final class ConversionProgressTracker {
+    private final int totalSteps;
+    private final @NotNull Consumer<String> logger;
+    private final @NotNull AtomicInteger completedSteps = new AtomicInteger(0);
+
+    private ConversionProgressTracker(final int totalSteps, final @NotNull Consumer<String> logger) {
+      this.totalSteps = Math.max(1, totalSteps);
+      this.logger = logger;
+    }
+
+    private void markStep(final @NotNull String stepDescription) {
+      final int done = completedSteps.incrementAndGet();
+      final int percent = (int) ((done * 100L) / totalSteps);
+      logger.accept(String.format("Overall progress: %d%% (%d/%d) - %s", percent, done, totalSteps, stepDescription));
+    }
   }
 
   private record StagedResolutionFile(long resolution, @NotNull Path path) {
