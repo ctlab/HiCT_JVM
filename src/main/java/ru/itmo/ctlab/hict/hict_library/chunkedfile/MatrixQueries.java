@@ -50,6 +50,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class MatrixQueries {
+  private static final boolean ASSERTIONS_ENABLED = MatrixQueries.class.desiredAssertionStatus();
   private final @NotNull ChunkedFile chunkedFile;
 
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
@@ -191,24 +192,13 @@ public class MatrixQueries {
       lessSize = 0L;
     }
 
-    final List<ContigTree.Node> debugContigNodes = new ArrayList<>();
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      debugContigNodes.add(node);
-    });
-
-    final List<ATUDescriptor> debugAllATUs = new ArrayList<>();
-
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      final var contigDirection = node.getTrueDirection();
-      final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
-      if (contigDirection == ContigDirection.FORWARD) {
-        debugAllATUs.addAll(contigATUs);
-      } else {
-        final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
-        Collections.reverse(reversedATUs);
-        debugAllATUs.addAll(reversedATUs);
-      }
-    });
+    final List<ContigTree.Node> debugContigNodes;
+    if (ASSERTIONS_ENABLED) {
+      debugContigNodes = new ArrayList<>();
+      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+    } else {
+      debugContigNodes = List.of();
+    }
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
@@ -393,7 +383,7 @@ public class MatrixQueries {
 
     atus.add(newLastATU);
 
-    {
+    if (ASSERTIONS_ENABLED) {
       final var sourceATUTotalLength = debugContigNodes.stream().flatMap(node -> node.getContigDescriptor().getAtus().get(resolutionOrder).stream()).mapToInt(ATUDescriptor::getLength).sum();
 
       assert (segmentSize == sourceATUTotalLength) : "Expose returned more ATUs than segment length??";

@@ -41,7 +41,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
   private static final Random rnd = new Random();
   @Getter
   private final ReadWriteLock rootLock = new ReentrantReadWriteLock();
-  private Node root;
+  private volatile Node root;
   private long rootScaffoldIdCounter;
 
   public ScaffoldTree(final long assemblyLengthBp) {
@@ -57,13 +57,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
   @Override
   public Iterator<Node> iterator() {
-    final Node rootSnapshot;
-    try {
-      this.rootLock.readLock().lock();
-      rootSnapshot = this.root;
-    } finally {
-      this.rootLock.readLock().unlock();
-    }
+    final Node rootSnapshot = this.root;
     if (rootSnapshot != null) {
       return rootSnapshot.iterator();
     } else {
@@ -102,59 +96,45 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 //  }
 
   public @Nullable ScaffoldDescriptor getScaffoldAtBp(final long bp) {
-    try {
-      this.rootLock.readLock().lock();
-      if (bp >= this.root.subtreeLengthBp || bp < 0) {
-        return null;
-      }
-      final @NotNull var leGr = Node.splitNodeBp(this.root, 1 + bp, true);
-      return Objects.requireNonNull(Node.rightmost(leGr.left()), "Segment was not none but its leftmost is None").scaffoldDescriptor;
-    } finally {
-      this.rootLock.readLock().unlock();
-    }
+    return getScaffoldAtBpInSnapshot(this.root, bp);
   }
 
   public @NotNull ScaffoldDescriptor.ScaffoldBordersBP extendBordersToScaffolds(final long queriedStartBp, final long queriedEndBp) {
-    try {
-      var leftBp = queriedStartBp;
-      var rightBp = queriedEndBp;
-      this.rootLock.readLock().lock();
-      final @Nullable var optionalLeftScaffoldDescriptor = getScaffoldAtBp(queriedStartBp);
-      if (optionalLeftScaffoldDescriptor != null) {
-        final var lr = Node.splitNodeBp(this.root, queriedStartBp, false);
-        leftBp = (lr.left() != null) ? (lr.left().subtreeLengthBp) : (0L);
-        final @NotNull var leftScaffold = Objects.requireNonNull(Node.leftmost(lr.right()));
-        assert (leftScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the left?";
-      }
-      final @Nullable var optionalRightScaffoldDescriptor = getScaffoldAtBp(queriedEndBp);
-      if (optionalRightScaffoldDescriptor != null) {
-        final @NotNull var leGr = Node.splitNodeBp(this.root, queriedEndBp, true);
-        rightBp = (leGr.left() != null) ? (leGr.left().subtreeLengthBp) : 0L;
-        final @NotNull var rightScaffold = Objects.requireNonNull(Node.rightmost(leGr.left()));
-        assert (rightScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the right?";
-      }
-      return new ScaffoldDescriptor.ScaffoldBordersBP(leftBp, rightBp);
-    } finally {
-      this.rootLock.readLock().unlock();
+    final var rootSnapshot = this.root;
+    if (rootSnapshot == null) {
+      return new ScaffoldDescriptor.ScaffoldBordersBP(queriedStartBp, queriedEndBp);
     }
+
+    var leftBp = queriedStartBp;
+    var rightBp = queriedEndBp;
+    final @Nullable var optionalLeftScaffoldDescriptor = getScaffoldAtBpInSnapshot(rootSnapshot, queriedStartBp);
+    if (optionalLeftScaffoldDescriptor != null) {
+      final var lr = Node.splitNodeBp(rootSnapshot, queriedStartBp, false);
+      leftBp = (lr.left() != null) ? (lr.left().subtreeLengthBp) : (0L);
+      final @NotNull var leftScaffold = Objects.requireNonNull(Node.leftmost(lr.right()));
+      assert (leftScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the left?";
+    }
+    final @Nullable var optionalRightScaffoldDescriptor = getScaffoldAtBpInSnapshot(rootSnapshot, queriedEndBp);
+    if (optionalRightScaffoldDescriptor != null) {
+      final @NotNull var leGr = Node.splitNodeBp(rootSnapshot, queriedEndBp, true);
+      rightBp = (leGr.left() != null) ? (leGr.left().subtreeLengthBp) : 0L;
+      final @NotNull var rightScaffold = Objects.requireNonNull(Node.rightmost(leGr.left()));
+      assert (rightScaffold.scaffoldDescriptor != null) : "Borders were extended but no scaffold present to the right?";
+    }
+    return new ScaffoldDescriptor.ScaffoldBordersBP(leftBp, rightBp);
   }
 
   public @NotNull ScaffoldDescriptor.ScaffoldBordersBP getScaffoldBordersAtBp(final long queriedBp) {
-    try {
-      var leftBp = queriedBp;
-      var rightBp = queriedBp;
-      this.rootLock.readLock().lock();
-
-      final var es = Node.expose(this.root, leftBp, 1 + rightBp);
-      final var sg = es.segment();
-      if ((sg != null) && sg.scaffoldDescriptor != null) {
-        leftBp = Optional.ofNullable(es.less()).map(n -> n.subtreeLengthBp).orElse(0L);
-        rightBp = leftBp + sg.subtreeLengthBp;
-      }
-      return new ScaffoldDescriptor.ScaffoldBordersBP(leftBp, rightBp);
-    } finally {
-      this.rootLock.readLock().unlock();
+    var leftBp = queriedBp;
+    var rightBp = queriedBp;
+    final var rootSnapshot = this.root;
+    final var es = Node.expose(rootSnapshot, leftBp, 1 + rightBp);
+    final var sg = es.segment();
+    if ((sg != null) && sg.scaffoldDescriptor != null) {
+      leftBp = Optional.ofNullable(es.less()).map(n -> n.subtreeLengthBp).orElse(0L);
+      rightBp = leftBp + sg.subtreeLengthBp;
     }
+    return new ScaffoldDescriptor.ScaffoldBordersBP(leftBp, rightBp);
   }
 
   /**
@@ -281,15 +261,19 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
   }
 
   public void traverse(final @NotNull Consumer<@NotNull Node> traverseFn) {
-    try {
-      this.rootLock.readLock().lock();
-      Node.traverseNode(
-        this.root,
-        traverseFn
-      );
-    } finally {
-      this.rootLock.readLock().unlock();
+    final var rootSnapshot = this.root;
+    Node.traverseNode(
+      rootSnapshot,
+      traverseFn
+    );
+  }
+
+  private static @Nullable ScaffoldDescriptor getScaffoldAtBpInSnapshot(final @Nullable Node rootSnapshot, final long bp) {
+    if (rootSnapshot == null || bp < 0 || bp >= rootSnapshot.subtreeLengthBp) {
+      return null;
     }
+    final @NotNull var leGr = Node.splitNodeBp(rootSnapshot, 1 + bp, true);
+    return Objects.requireNonNull(Node.rightmost(leGr.left()), "Segment was not none but its leftmost is None").scaffoldDescriptor;
   }
 
   public List<ScaffoldTuple> getScaffoldList() {
@@ -362,7 +346,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       if (expectedLeftSize <= 0) {
         return new Node.SplitResult(null, t);
       }
-      final var newTree = t.push().updateSizes();
+      final var newTree = t.push();
       final long leftSubtreeLength;
       if (newTree.left != null) {
         leftSubtreeLength = newTree.left.subtreeLengthBp;
@@ -385,8 +369,8 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
               return new Node.SplitResult(new_t, newTree.right);
             } else {
               final var new_t = newTree.cloneBuilder().left(null).build().updateSizes();
-              assert (newTree.subtreeLengthBp == (Optional.ofNullable(newTree.left).map(n -> n.subtreeLengthBp).orElse(0L) + new_t.updateSizes().subtreeLengthBp)) : "In second-non-include-left split case subtree length has changed??";
-              return new Node.SplitResult(newTree.left, new_t.updateSizes());
+              assert (newTree.subtreeLengthBp == (Optional.ofNullable(newTree.left).map(n -> n.subtreeLengthBp).orElse(0L) + new_t.subtreeLengthBp)) : "In second-non-include-left split case subtree length has changed??";
+              return new Node.SplitResult(newTree.left, new_t);
             }
           } else {
             final var t1 = newTree.cloneBuilder().nodeLengthBp(expectedLeftSize - leftSubtreeLength).right(null).build().updateSizes();
@@ -397,10 +381,8 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
             } else {
               t2 = newTree.right;
             }
-            final var t1u = t1.updateSizes();
-            final var t2u = t2.updateSizes();
-            assert (newTree.subtreeLengthBp == (Optional.ofNullable(t1u).map(n -> n.subtreeLengthBp).orElse(0L) + Optional.ofNullable(t2u).map(n -> n.subtreeLengthBp).orElse(0L))) : "In second-non-scaffold split case subtree length has changed??";
-            return new Node.SplitResult(t1u, t2u);
+            assert (newTree.subtreeLengthBp == (Optional.ofNullable(t1).map(n -> n.subtreeLengthBp).orElse(0L) + Optional.ofNullable(t2).map(n -> n.subtreeLengthBp).orElse(0L))) : "In second-non-scaffold split case subtree length has changed??";
+            return new Node.SplitResult(t1, t2);
           }
         } else {
           final var sp = splitNodeBp(newTree.right, expectedLeftSize - (leftSubtreeLength + nodeLength), includeEqualToTheLeft);
