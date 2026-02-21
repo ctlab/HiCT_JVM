@@ -29,6 +29,7 @@ public class ConversionCliLauncher {
       parser.listOfLong("resolutions"),
       parser.integer("chunk-size", 8192),
       parser.integer("compression", 0),
+      ConversionOptions.CompressionAlgorithm.parse(parser.value("compression-algorithm", "deflate")),
       parser.value("agp", ConversionOptions.NO_AGP),
       parser.flag("apply-agp"),
       parser.integer("parallelism", Runtime.getRuntime().availableProcessors())
@@ -43,8 +44,8 @@ public class ConversionCliLauncher {
 
   private static void printHelp() {
     System.out.println("Usage:");
-    System.out.println("  hict-to-mcool --input=<in.hict> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9] [--chunk-size=8192] [--agp=foo.agp --apply-agp] [--parallelism=N]");
-    System.out.println("  mcool-to-hict --input=<in.mcool> --output=<out.hict> [--resolutions=10000,50000] [--compression=0..9] [--chunk-size=8192] [--parallelism=N]");
+    System.out.println("  hict-to-mcool --input=<in.hict> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--agp=foo.agp --apply-agp] [--parallelism=N]");
+    System.out.println("  mcool-to-hict --input=<in.mcool> --output=<out.hict> [--resolutions=10000,50000] [--compression=0..9] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N]");
   }
 
   private record ArgParser(String[] args) {

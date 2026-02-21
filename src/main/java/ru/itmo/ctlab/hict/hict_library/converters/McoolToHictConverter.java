@@ -61,15 +61,14 @@ public class McoolToHictConverter {
       }
 
       final var conversionOrder = selectedResolutions.stream().sorted(Comparator.reverseOrder()).toList();
-      final var intStorageFeatures = options.compressionLevel() > 0
-        ? HDF5IntStorageFeatures.createDeflation(options.compressionLevel())
-        : HDF5IntStorageFeatures.INT_CHUNKED;
-      final var floatStorageFeatures = options.compressionLevel() > 0
-        ? HDF5FloatStorageFeatures.createDeflation(options.compressionLevel())
-        : HDF5FloatStorageFeatures.FLOAT_CHUNKED;
+      final var intStorageFeatures = resolveIntStorageFeatures(options, logConsumer);
+      final var floatStorageFeatures = resolveFloatStorageFeatures(options, logConsumer);
 
       final var workers = Math.max(1, Math.min(options.parallelism(), conversionOrder.size()));
-      logConsumer.accept("Converting .mcool -> .hict.hdf5, workers=" + workers + ", resolutions=" + conversionOrder);
+      logConsumer.accept(
+        "Converting .mcool -> .hict.hdf5, workers=" + workers + ", resolutions=" + conversionOrder +
+          ", compressionAlgorithm=" + options.compressionAlgorithm() + ", compressionLevel=" + options.compressionLevel()
+      );
 
       final var stagedResolutionFiles = stageResolutionsInParallel(
         options.inputPath(),
@@ -104,6 +103,38 @@ public class McoolToHictConverter {
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private static @NotNull HDF5IntStorageFeatures resolveIntStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+    if (options.compressionLevel() <= 0) {
+      return HDF5IntStorageFeatures.INT_CHUNKED;
+    }
+    return switch (options.compressionAlgorithm()) {
+      case DEFLATE -> HDF5IntStorageFeatures.createDeflation(options.compressionLevel());
+      case ZSTD, LZF -> {
+        logConsumer.accept(
+          "Compression algorithm " + options.compressionAlgorithm() +
+            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to Deflate."
+        );
+        yield HDF5IntStorageFeatures.createDeflation(options.compressionLevel());
+      }
+    };
+  }
+
+  private static @NotNull HDF5FloatStorageFeatures resolveFloatStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+    if (options.compressionLevel() <= 0) {
+      return HDF5FloatStorageFeatures.FLOAT_CHUNKED;
+    }
+    return switch (options.compressionAlgorithm()) {
+      case DEFLATE -> HDF5FloatStorageFeatures.createDeflation(options.compressionLevel());
+      case ZSTD, LZF -> {
+        logConsumer.accept(
+          "Compression algorithm " + options.compressionAlgorithm() +
+            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to Deflate."
+        );
+        yield HDF5FloatStorageFeatures.createDeflation(options.compressionLevel());
+      }
+    };
   }
 
   private static @NotNull List<StagedResolutionFile> stageResolutionsInParallel(

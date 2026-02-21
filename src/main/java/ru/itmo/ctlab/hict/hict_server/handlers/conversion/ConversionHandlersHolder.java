@@ -54,6 +54,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
               final var resolutionCsv = req.getParam("resolutions");
               final var resolutions = parseResolutions(resolutionCsv);
               final var compression = parseInteger(req.getParam("compression"), 0);
+              final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(req.getParam("compressionAlgorithm") == null ? "deflate" : req.getParam("compressionAlgorithm"));
               final var chunkSize = parseInteger(req.getParam("chunkSize"), 8192);
               final var applyAgp = Boolean.parseBoolean(req.getParam("applyAgp"));
               final var agpPath = req.getParam("agpPath") == null ? ConversionOptions.NO_AGP : req.getParam("agpPath");
@@ -63,7 +64,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
               final var job = new ConversionJob(jobId, sourcePath, outputPath);
               jobs.put(jobId, job);
 
-              final var options = new ConversionOptions(sourcePath, outputPath, resolutions, chunkSize, compression, agpPath, applyAgp, parallelism);
+              final var options = new ConversionOptions(sourcePath, outputPath, resolutions, chunkSize, compression, compressionAlgorithm, agpPath, applyAgp, parallelism);
               vertx.executeBlocking(promise -> {
                   try {
                       job.status = "running";
