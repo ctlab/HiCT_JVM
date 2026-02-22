@@ -132,11 +132,6 @@ public class HictCli implements Runnable {
     )
     ConversionOptions.CompressionAlgorithm compressionAlgorithm;
 
-    @Option(names = "--agp", description = "AGP file path (optional).")
-    String agpPath = ConversionOptions.NO_AGP;
-
-    @Option(names = "--apply-agp", description = "Apply AGP before export.")
-    boolean applyAgp;
 
     @Option(
       names = "--parallelism",
@@ -145,7 +140,7 @@ public class HictCli implements Runnable {
     )
     int parallelism;
 
-    ConversionOptions toOptions() {
+    ConversionOptions toOptions(String agpPath, boolean applyAgp) {
       return new ConversionOptions(
         input,
         output,
@@ -179,10 +174,16 @@ public class HictCli implements Runnable {
     description = "Convert .hict.hdf5 to .mcool."
   )
   static class HictToMcool extends BaseConvert {
+    @Option(names = "--agp", description = "AGP file path (optional).")
+    String agpPath = ConversionOptions.NO_AGP;
+
+    @Option(names = "--apply-agp", description = "Apply AGP before export.")
+    boolean applyAgp;
+
     @Override
     public Integer call() throws Exception {
       initializeHdf5();
-      new HictToMcoolConverter().convert(toOptions(), stdoutLogger());
+      new HictToMcoolConverter().convert(toOptions(agpPath, applyAgp), stdoutLogger());
       return 0;
     }
   }
@@ -196,7 +197,7 @@ public class HictCli implements Runnable {
     @Override
     public Integer call() throws Exception {
       initializeHdf5();
-      new McoolToHictConverter().convert(toOptions(), stdoutLogger());
+      new McoolToHictConverter().convert(toOptions(ConversionOptions.NO_AGP, false), stdoutLogger());
       return 0;
     }
   }

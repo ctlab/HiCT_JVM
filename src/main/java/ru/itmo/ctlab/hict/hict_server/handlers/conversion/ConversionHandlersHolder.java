@@ -56,15 +56,17 @@ public class ConversionHandlersHolder extends HandlersHolder {
               final var compression = parseInteger(req.getParam("compression"), 0);
               final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(req.getParam("compressionAlgorithm") == null ? "deflate" : req.getParam("compressionAlgorithm"));
               final var chunkSize = parseInteger(req.getParam("chunkSize"), 8192);
-              final var applyAgp = Boolean.parseBoolean(req.getParam("applyAgp"));
-              final var agpPath = req.getParam("agpPath") == null ? ConversionOptions.NO_AGP : req.getParam("agpPath");
+              final var applyAgpRaw = Boolean.parseBoolean(req.getParam("applyAgp"));
+              final var agpPathRaw = req.getParam("agpPath") == null ? ConversionOptions.NO_AGP : req.getParam("agpPath");
               final var parallelism = parseInteger(req.getParam("parallelism"), Runtime.getRuntime().availableProcessors());
 
               final var jobId = UUID.randomUUID().toString();
               final var job = new ConversionJob(jobId, sourcePath, outputPath);
               jobs.put(jobId, job);
 
-              final var options = new ConversionOptions(sourcePath, outputPath, resolutions, chunkSize, compression, compressionAlgorithm, agpPath, applyAgp, parallelism);
+              final var useAgp = "hict-to-mcool".equals(direction) && applyAgpRaw;
+              final var agpPath = useAgp ? agpPathRaw : ConversionOptions.NO_AGP;
+              final var options = new ConversionOptions(sourcePath, outputPath, resolutions, chunkSize, compression, compressionAlgorithm, agpPath, useAgp, parallelism);
               vertx.executeBlocking(promise -> {
                   try {
                       job.status = "running";
