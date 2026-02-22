@@ -78,6 +78,9 @@ public class McoolToHictConverter {
         dst.object().createGroup("/resolutions");
         dst.string().setAttr("/resolutions", "hict_version", "0.1.3.1a");
 
+        dumpContigData(srcAgain, dst, selectedResolutions, requestedWorkers, intStorageFeatures, floatStorageFeatures);
+        progressTracker.markStep("Dumped contig metadata");
+
         for (final var resolution : conversionOrder) {
           writeResolutionDirect(
             srcAgain,
@@ -91,9 +94,6 @@ public class McoolToHictConverter {
           );
           progressTracker.markStep("Wrote resolution " + resolution);
         }
-
-        dumpContigData(srcAgain, dst, selectedResolutions, requestedWorkers, intStorageFeatures, floatStorageFeatures);
-        progressTracker.markStep("Dumped contig metadata");
       }
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -109,9 +109,9 @@ public class McoolToHictConverter {
       case ZSTD, LZF -> {
         logConsumer.accept(
           "Compression algorithm " + options.compressionAlgorithm() +
-            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to Deflate."
+            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to uncompressed chunked datasets."
         );
-        yield HDF5IntStorageFeatures.createDeflation(options.compressionLevel());
+        yield HDF5IntStorageFeatures.INT_CHUNKED;
       }
     };
   }
@@ -125,9 +125,9 @@ public class McoolToHictConverter {
       case ZSTD, LZF -> {
         logConsumer.accept(
           "Compression algorithm " + options.compressionAlgorithm() +
-            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to Deflate."
+            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to uncompressed chunked datasets."
         );
-        yield HDF5FloatStorageFeatures.createDeflation(options.compressionLevel());
+        yield HDF5FloatStorageFeatures.FLOAT_CHUNKED;
       }
     };
   }
@@ -144,7 +144,9 @@ public class McoolToHictConverter {
   ) {
     final long startedNanos = System.nanoTime();
     final var resolutionRoot = "/resolutions/" + resolution;
-    dst.object().createGroup(resolutionRoot);
+    if (!dst.object().isGroup(resolutionRoot)) {
+      dst.object().createGroup(resolutionRoot);
+    }
 
     final var nameLengthPath = resolveNameLengthPath(src, resolution);
     final var stripes = dumpStripeData(src, dst, resolution, nameLengthPath, floatStorageFeatures);

@@ -55,6 +55,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.LongStream;
 
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockColsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockLengthDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockOffsetDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockRowsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockValuesDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigHideTypeDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigLengthBinsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigsATLDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getDenseBlockDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getStripeBinWeightsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getStripeLengthsBinsDatasetPath;
+
 @Getter
 @Slf4j
 public class ChunkedFile implements AutoCloseable {
@@ -85,20 +98,33 @@ public class ChunkedFile implements AutoCloseable {
 
 
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
-      this.resolutions = LongStream.concat(LongStream.of(0L), reader.object().getAllGroupMembers("/resolutions").parallelStream().filter(s -> {
+      final var parsedResolutions = reader.object().getAllGroupMembers("/resolutions").parallelStream().flatMap(s -> {
         try {
           log.debug("Trying to parse " + s + " as a resolution");
-          Long.parseLong(s);
+          final var parsed = Long.parseLong(s);
           log.debug("Found new resolution: " + s);
-          return true;
+          return java.util.stream.Stream.of(parsed);
         } catch (final NumberFormatException nfe) {
           log.debug("Not a resolution: " + s);
-          return false;
+          return java.util.stream.Stream.empty();
         }
-      }).mapToLong(Long::parseLong)).sorted().toArray();
+      }).sorted().toList();
 
+      final var validResolutions = parsedResolutions.stream()
+        .filter(resolution -> isResolutionComplete(reader, resolution))
+        .sorted()
+        .toList();
 
-      this.denseBlockSize = (int) Arrays.stream(resolutions).sorted().skip(1L).map(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size")).max().orElse(256L);
+      if (validResolutions.isEmpty()) {
+        throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
+      }
+
+      this.resolutions = LongStream.concat(LongStream.of(0L), validResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+
+      this.denseBlockSize = (int) validResolutions.stream()
+        .mapToLong(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size"))
+        .max()
+        .orElse(256L);
       log.info("Dense block size: " + this.denseBlockSize);
 
       log.debug("Resolutions count: " + resolutions.length);
@@ -155,6 +181,32 @@ public class ChunkedFile implements AutoCloseable {
       final var ratio = (this.resolutions[i] / this.resolutions[1]);
       this.resolutionScalingCoefficient[i] = 1.0d / ((double) (ratio * ratio));
       this.resolutionLinearScalingCoefficient[i] = 1.0d / ((double) ratio);
+    }
+  }
+
+  private static boolean isResolutionComplete(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader, final long resolution) {
+    final String base = "/resolutions/" + resolution;
+    try {
+      if (!reader.object().isGroup(base + "/treap_coo")) {
+        log.warn("Skipping resolution {}: missing treap_coo group", resolution);
+        return false;
+      }
+      if (!reader.object().isDataSet(getBlockLengthDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockOffsetDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockRowsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockColsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockValuesDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getDenseBlockDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getStripeLengthsBinsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getStripeBinWeightsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getContigLengthBinsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getContigHideTypeDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getContigsATLDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBasisATUDatasetPath(resolution))) return false;
+      return true;
+    } catch (Exception e) {
+      log.warn("Skipping resolution {} due to validation error: {}", resolution, e.getMessage());
+      return false;
     }
   }
 
