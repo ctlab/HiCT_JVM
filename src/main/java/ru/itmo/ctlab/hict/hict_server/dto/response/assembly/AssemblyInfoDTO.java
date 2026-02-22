@@ -37,7 +37,7 @@ public record AssemblyInfoDTO(@NotNull List<@NotNull ContigDescriptorDTO> contig
     final @NotNull var assemblyInfo = chunkedFile.getAssemblyInfo();
     return new AssemblyInfoDTO(
       assemblyInfo.contigs().stream().map(ctg -> ContigDescriptorDTO.fromEntity(ctg, chunkedFile)).toList(),
-      assemblyInfo.scaffolds().stream().map(ScaffoldDescriptorDTO::fromEntity).toList()
+      assemblyInfo.scaffolds().stream().map(scaffold -> ScaffoldDescriptorDTO.fromEntity(scaffold, chunkedFile)).toList()
     );
   }
 }

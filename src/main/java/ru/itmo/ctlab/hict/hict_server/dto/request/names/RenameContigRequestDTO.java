@@ -22,29 +22,17 @@
  * SOFTWARE.
  */
 
-package ru.itmo.ctlab.hict.hict_server.dto.response.assembly;
+package ru.itmo.ctlab.hict.hict_server.dto.request.names;
 
+import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
-import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
-public record ScaffoldDescriptorDTO(
-  long scaffoldId,
-  String scaffoldName,
-  String scaffoldOriginalName,
-  long spacerLength,
-  @Nullable ScaffoldDescriptor.ScaffoldBordersBP scaffoldBordersBP
-) {
-
-  public static @NotNull ScaffoldDescriptorDTO fromEntity(final @NotNull ScaffoldTree.ScaffoldTuple scaffoldTuple, final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile chunkedFile) {
-    return new ScaffoldDescriptorDTO(
-      scaffoldTuple.scaffoldDescriptor().scaffoldId(),
-      chunkedFile.getScaffoldDisplayName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
-      chunkedFile.getScaffoldOriginalName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
-      scaffoldTuple.scaffoldDescriptor().spacerLength(),
-      scaffoldTuple.scaffoldBordersBP()
+public record RenameContigRequestDTO(int contigId, @Nullable String newName) {
+  public static @NotNull RenameContigRequestDTO fromJSONObject(final @NotNull JsonObject jsonObject) {
+    return new RenameContigRequestDTO(
+      jsonObject.getInteger("contigId"),
+      jsonObject.getString("newName")
     );
   }
-
 }

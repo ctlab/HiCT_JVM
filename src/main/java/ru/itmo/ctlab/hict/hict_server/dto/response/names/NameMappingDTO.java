@@ -22,29 +22,17 @@
  * SOFTWARE.
  */
 
-package ru.itmo.ctlab.hict.hict_server.dto.response.assembly;
+package ru.itmo.ctlab.hict.hict_server.dto.response.names;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
-import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
-public record ScaffoldDescriptorDTO(
-  long scaffoldId,
-  String scaffoldName,
-  String scaffoldOriginalName,
-  long spacerLength,
-  @Nullable ScaffoldDescriptor.ScaffoldBordersBP scaffoldBordersBP
+import java.util.List;
+
+public record NameMappingDTO(
+  @NotNull List<@NotNull ContigNameMappingDTO> contigs,
+  @NotNull List<@NotNull ScaffoldNameMappingDTO> scaffolds
 ) {
+  public record ContigNameMappingDTO(int contigId, @NotNull String originalName, @NotNull String name) {}
 
-  public static @NotNull ScaffoldDescriptorDTO fromEntity(final @NotNull ScaffoldTree.ScaffoldTuple scaffoldTuple, final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile chunkedFile) {
-    return new ScaffoldDescriptorDTO(
-      scaffoldTuple.scaffoldDescriptor().scaffoldId(),
-      chunkedFile.getScaffoldDisplayName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
-      chunkedFile.getScaffoldOriginalName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
-      scaffoldTuple.scaffoldDescriptor().spacerLength(),
-      scaffoldTuple.scaffoldBordersBP()
-    );
-  }
-
+  public record ScaffoldNameMappingDTO(long scaffoldId, @NotNull String originalName, @NotNull String name) {}
 }

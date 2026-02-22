@@ -158,7 +158,7 @@ public class ScaffoldingOperations {
 
       final var extended = scaffoldTree.extendBordersToScaffolds(lessSize, lessSize + segmentSize);
 
-      scaffoldTree.removeSegmentFromAssembly(extended.startBP(), extended.endBP());
+      scaffoldTree.unscaffold(extended.startBP(), extended.endBP());
 
     } finally {
       scaffoldTree.getRootLock().writeLock().unlock();

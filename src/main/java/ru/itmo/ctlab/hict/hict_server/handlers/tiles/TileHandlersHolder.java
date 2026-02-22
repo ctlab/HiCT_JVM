@@ -105,6 +105,24 @@ public class TileHandlersHolder extends HandlersHolder {
       ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
     });
 
+    router.post("/tiles/reload").blockingHandler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+      final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
+      if (stats == null) {
+        ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
+      map.put("TileStatisticHolder", newStats);
+      ctx.response().setStatusCode(200).end(Json.encode(Map.of("version", newStats.versionCounter().get())));
+    });
+
     router.get("/get_tile").handler(ctx -> {
       log.debug("Entered non-blocking handler");
       ctx.next();
@@ -113,7 +131,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
       final var row = Long.parseLong(ctx.request().getParam("row", "0"));
       final var col = Long.parseLong(ctx.request().getParam("col", "0"));
-      final var version = Long.parseLong(ctx.request().getParam("version", "0"));
+      final var requestedVersion = Long.parseLong(ctx.request().getParam("version", "0"));
       final int tileHeight;
       final int tileWidth;
       final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
@@ -158,10 +176,10 @@ public class TileHandlersHolder extends HandlersHolder {
       }
 
       var currentVersion = stats.versionCounter().get();
+      long version = requestedVersion;
       if (version < currentVersion) {
-        log.debug(String.format("Current version is %d and request version is %d", currentVersion, version));
-        ctx.response().setStatusCode(204).putHeader("Content-Type", "text/plain").end(String.format("Current version is %d and request version is %d", currentVersion, version));
-        return;
+        log.debug(String.format("Current version is %d and request version is %d; serving with current version", currentVersion, version));
+        version = currentVersion;
       }
       do {
         currentVersion = stats.versionCounter().get();

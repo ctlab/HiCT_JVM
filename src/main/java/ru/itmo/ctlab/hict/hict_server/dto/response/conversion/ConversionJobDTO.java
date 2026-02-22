@@ -9,6 +9,16 @@ public record ConversionJobDTO(
   @NotNull String status,
   @NotNull String sourceFilename,
   @NotNull String outputFilename,
+  @NotNull String direction,
+  double overallProgress,
+  double resolutionProgress,
+  long currentResolution,
+  long elapsedMillis,
+  long etaMillis,
+  long resolutionElapsedMillis,
+  long resolutionEtaMillis,
+  long inputSizeBytes,
+  long outputSizeBytes,
   @NotNull List<@NotNull String> logs,
   @NotNull String error
 ) {

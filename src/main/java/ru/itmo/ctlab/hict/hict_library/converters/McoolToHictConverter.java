@@ -143,6 +143,7 @@ public class McoolToHictConverter {
     final @NotNull Consumer<String> logConsumer
   ) {
     final long startedNanos = System.nanoTime();
+    checkInterrupted();
     final var resolutionRoot = "/resolutions/" + resolution;
     if (!dst.object().isGroup(resolutionRoot)) {
       dst.object().createGroup(resolutionRoot);
@@ -219,11 +220,13 @@ public class McoolToHictConverter {
     final List<Future<?>> futures = new ArrayList<>(stripeCount);
 
     for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+      checkInterrupted();
       final int stripeIdx = rowStripe;
       futures.add(stripeExecutor.submit(() -> {
         try {
           final PixelBlock block;
           synchronized (readLock) {
+            checkInterrupted();
             block = readRowStripePixels(src, resolution, stripeIdx, allRowsStartIndices);
           }
           final SortedStripePixels sorted = block.length() > 0
@@ -242,6 +245,7 @@ public class McoolToHictConverter {
 
     try {
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        checkInterrupted();
         SortedStripePixels sorted = sortedStripes.get(rowStripe);
         while (sorted == null) {
           if (errorRef.get() != null) {
@@ -410,15 +414,18 @@ public class McoolToHictConverter {
     final ExecutorService stripeExecutor = stripeWorkers > 1 ? Executors.newFixedThreadPool(stripeWorkers) : null;
     try {
       for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
+        checkInterrupted();
         final int batchEnd = Math.min(stripeCount, batchStart + batchSize);
         final int localCount = batchEnd - batchStart;
         final var blocks = new PixelBlock[localCount];
         for (int i = 0; i < localCount; i++) {
+          checkInterrupted();
           blocks[i] = readRowStripePixels(src, resolution, batchStart + i, allRowsStartIndices);
         }
         final var sortedBatch = sortStripeBatch(blocks, stripeExecutor);
 
         for (int i = 0; i < localCount; i++) {
+          checkInterrupted();
           final int rowStripe = batchStart + i;
           final var sorted = sortedBatch[i];
           if (sorted != null) {
@@ -457,6 +464,7 @@ public class McoolToHictConverter {
     final var sortedBatch = new SortedStripePixels[blocks.length];
     if (stripeExecutor == null) {
       for (int i = 0; i < blocks.length; i++) {
+        checkInterrupted();
         final var block = blocks[i];
         if (block.length() > 0) {
           sortedBatch[i] = sortStripePixels(block.rows(), block.cols(), block.values());
@@ -469,6 +477,7 @@ public class McoolToHictConverter {
     for (int i = 0; i < blocks.length; i++) {
       final int idx = i;
       futures.add(stripeExecutor.submit(() -> {
+        checkInterrupted();
         final var block = blocks[idx];
         if (block.length() > 0) {
           sortedBatch[idx] = sortStripePixels(block.rows(), block.cols(), block.values());
@@ -516,6 +525,12 @@ public class McoolToHictConverter {
       return String.format("%02d:%02d:%02d", hours, minutes, seconds);
     }
     return String.format("%02d:%02d", minutes, seconds);
+  }
+
+  private static void checkInterrupted() {
+    if (Thread.currentThread().isInterrupted()) {
+      throw new RuntimeException("Conversion interrupted");
+    }
   }
 
   private static @NotNull PixelBlock readRowStripePixels(
