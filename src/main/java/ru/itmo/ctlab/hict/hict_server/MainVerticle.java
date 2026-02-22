@@ -195,6 +195,12 @@ public class MainVerticle extends AbstractVerticle {
     log.info("Server started");
 
     log.info("Deploying WebUI Verticle");
-    vertx.deployVerticle(new WebUIVerticle());
+    vertx.deployVerticle(new WebUIVerticle(), ar -> {
+      if (ar.succeeded()) {
+        log.info("WebUI verticle deployed");
+      } else {
+        log.error("WebUI verticle deployment failed", ar.cause());
+      }
+    });
   }
 }

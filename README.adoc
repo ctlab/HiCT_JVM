@@ -19,7 +19,23 @@ image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release
 * *Not bundled by default:* macOS variants and Linux ARM variants.
 * *JDK:* Java 19 or newer is required for running/building this repository.
 
-== Startup options
+== Startup options and CLI
+
+The fat JAR is runnable and exposes a CLI with subcommands:
+
+* `start-server` -- API + WebUI (default when no args are given)
+* `start-api-server` -- API only (no WebUI)
+* `convert` -- conversion tools
+** `convert mcool-to-hict`
+** `convert hict-to-mcool`
+
+Help:
+
+```bash
+java -jar hict.jar --help
+java -jar hict.jar convert --help
+java -jar hict.jar convert mcool-to-hict --help
+```
 
 Environment variables supported by the server startup:
 
@@ -30,12 +46,18 @@ Environment variables supported by the server startup:
 * `TILE_SIZE` -- default visualization tile size, default `256`.
 * `MIN_DS_POOL` / `MAX_DS_POOL` -- min/max pool sizes used when opening chunked datasets.
 
-=== Launch examples
+=== Launch examples (fat JAR)
 
 ==== Linux (bash)
 
 ```bash
-DATA_DIR=/home/${USER}/hict/data SERVE_WEBUI=false java -jar hict.jar
+DATA_DIR=/home/${USER}/hict/data java -jar hict.jar
+
+# API only
+DATA_DIR=/home/${USER}/hict/data java -jar hict.jar start-api-server
+
+# Explicit server (API + WebUI)
+DATA_DIR=/home/${USER}/hict/data java -jar hict.jar start-server
 ```
 
 ==== Windows (cmd)
@@ -43,7 +65,7 @@ DATA_DIR=/home/${USER}/hict/data SERVE_WEBUI=false java -jar hict.jar
 ```cmd
 set DATA_DIR="D:\hict\data"
 set WEBUI_PORT="8888"
-java -jar hict.jar
+java -jar hict.jar start-server
 ```
 
 ==== Windows (PowerShell)
@@ -51,36 +73,43 @@ java -jar hict.jar
 ```powershell
 $env:DATA_DIR = "D:\hict\data"
 $env:WEBUI_PORT = "8888"
-java -jar hict.jar
+java -jar hict.jar start-server
 ```
 
 ==== Custom JVM options
 
 ```bash
-DATA_DIR=/home/${USER}/hict/data SERVE_WEBUI=false java -ea -Xms512M -Xmx16G -jar hict.jar
+DATA_DIR=/home/${USER}/hict/data java -ea -Xms512M -Xmx16G -jar hict.jar start-api-server
+```
+
+=== Launch examples (Gradle, from source)
+
+```bash
+# Default: runs HiCT CLI (equivalent to `java -jar ...`)
+./gradlew clean run
+
+# Explicit modes
+./gradlew run --args="start-server"
+./gradlew run --args="start-api-server"
 ```
 
 == Converter workflows (`.mcool` ↔ `.hict.hdf5`)
 
-HiCT conversion is performed with https://github.com/ctlab/HiCT_Utils[HiCT_Utils].
+=== CLI commands
 
-=== CLI commands (new flow)
-
-Use the converter CLI for both directions:
+Use the JVM CLI for both directions:
 
 ```bash
 # mcool -> hict
-hict-converter mcool-to-hict \
+java -jar hict.jar convert mcool-to-hict \
   --input /data/sample.mcool \
   --output /data/sample.hict.hdf5
 
 # hict -> mcool
-hict-converter hict-to-mcool \
+java -jar hict.jar convert hict-to-mcool \
   --input /data/sample.hict.hdf5 \
   --output /data/sample.roundtrip.mcool
 ```
-
-TIP: if your local binary name differs, keep the same subcommand names (`mcool-to-hict`, `hict-to-mcool`) and adapt only the executable prefix.
 
 === Web conversion API flow
 
@@ -187,8 +216,8 @@ A native converter module is now available in JVM codebase with two services:
 CLI launcher:
 
 ```bash
-./gradlew runConversionCli --args="hict-to-mcool --input=/data/sample.hict.hdf5 --output=/data/sample.mcool --resolutions=10000,50000 --compression=4 --chunk-size=8192"
-./gradlew runConversionCli --args="mcool-to-hict --input=/data/sample.mcool --output=/data/sample.hict.hdf5 --resolutions=10000,50000 --parallelism=16"
+./gradlew runConversionCli --args="convert hict-to-mcool --input=/data/sample.hict.hdf5 --output=/data/sample.mcool --resolutions=10000,50000 --compression=4 --chunk-size=8192"
+./gradlew runConversionCli --args="convert mcool-to-hict --input=/data/sample.mcool --output=/data/sample.hict.hdf5 --resolutions=10000,50000 --parallelism=16"
 ```
 
 Arguments:
@@ -199,7 +228,7 @@ Arguments:
 * `--compression=<0..9>` deflate level (`0` means chunked/no deflate)
 * `--chunk-size=<N>` chunk size for streaming traversal
 * `--agp=<file.agp> --apply-agp` apply AGP before `hict-to-mcool` export
-* `--parallelism=<N>` max worker threads used for staged parallel resolution conversion (default: available CPU cores)
+* `--parallelism=<N>` max worker threads (default: available CPU cores)
 
 Web API endpoints:
 

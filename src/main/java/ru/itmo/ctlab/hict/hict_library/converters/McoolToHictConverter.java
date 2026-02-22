@@ -15,7 +15,6 @@ import ru.itmo.ctlab.hict.hict_library.domain.StripeDescriptor;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -23,13 +22,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
@@ -68,24 +67,9 @@ public class McoolToHictConverter {
       final var progressTracker = new ConversionProgressTracker((conversionOrder.size() * 2) + 1, synchronizedLogConsumer);
 
       final var requestedWorkers = resolveRequestedWorkers(options.parallelism());
-      final var workers = Math.max(1, Math.min(requestedWorkers, conversionOrder.size()));
-      final var perResolutionWorkers = Math.max(1, requestedWorkers / workers);
       synchronizedLogConsumer.accept(
-        "Converting .mcool -> .hict.hdf5, workers=" + workers + ", resolutions=" + conversionOrder +
-          ", perResolutionWorkers=" + perResolutionWorkers +
+        "Converting .mcool -> .hict.hdf5, workers=" + requestedWorkers + ", resolutions=" + conversionOrder +
           ", compressionAlgorithm=" + options.compressionAlgorithm() + ", compressionLevel=" + options.compressionLevel()
-      );
-
-      final var stagedResolutionFiles = stageResolutionsInParallel(
-        options.inputPath(),
-        conversionOrder,
-        workers,
-        perResolutionWorkers,
-        options.chunkSize(),
-        intStorageFeatures,
-        floatStorageFeatures,
-        synchronizedLogConsumer,
-        progressTracker
       );
 
       Files.deleteIfExists(options.outputPath());
@@ -94,20 +78,21 @@ public class McoolToHictConverter {
         dst.object().createGroup("/resolutions");
         dst.string().setAttr("/resolutions", "hict_version", "0.1.3.1a");
 
-        for (final var staged : stagedResolutionFiles.stream().sorted(Comparator.comparingLong(StagedResolutionFile::resolution).reversed()).toList()) {
-          try (final var stagedReader = HDF5Factory.openForReading(staged.path().toFile())) {
-            mergeStagedResolution(stagedReader, dst, staged.resolution(), options.chunkSize(), intStorageFeatures, floatStorageFeatures);
-            progressTracker.markStep("Merged resolution " + staged.resolution());
-          } finally {
-            try {
-              Files.deleteIfExists(staged.path());
-            } catch (IOException e) {
-              synchronizedLogConsumer.accept("Failed to delete temp file " + staged.path() + ": " + e.getMessage());
-            }
-          }
+        for (final var resolution : conversionOrder) {
+          writeResolutionDirect(
+            srcAgain,
+            dst,
+            resolution,
+            options.chunkSize(),
+            intStorageFeatures,
+            floatStorageFeatures,
+            requestedWorkers,
+            synchronizedLogConsumer
+          );
+          progressTracker.markStep("Wrote resolution " + resolution);
         }
 
-        dumpContigData(srcAgain, dst, selectedResolutions, workers, intStorageFeatures, floatStorageFeatures);
+        dumpContigData(srcAgain, dst, selectedResolutions, requestedWorkers, intStorageFeatures, floatStorageFeatures);
         progressTracker.markStep("Dumped contig metadata");
       }
     } catch (IOException e) {
@@ -147,82 +132,7 @@ public class McoolToHictConverter {
     };
   }
 
-  private static @NotNull List<StagedResolutionFile> stageResolutionsInParallel(
-    final @NotNull Path inputPath,
-    final @NotNull List<Long> resolutions,
-    final int workers,
-    final int perResolutionWorkers,
-    final int chunkSize,
-    final @NotNull HDF5IntStorageFeatures intStorageFeatures,
-    final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
-    final @NotNull Consumer<String> logConsumer,
-    final @NotNull ConversionProgressTracker progressTracker
-  ) {
-    final ExecutorService executor = Executors.newFixedThreadPool(workers);
-    final List<Future<StagedResolutionFile>> futures = new ArrayList<>();
-
-    for (final var resolution : resolutions) {
-      final Callable<StagedResolutionFile> task = () -> {
-        final long startedNanos = System.nanoTime();
-        final var stagedFile = Files.createTempFile("mcool-to-hict-r" + resolution + "-", ".h5");
-        try (final var src = HDF5Factory.openForReading(inputPath.toFile());
-             final var dst = HDF5Factory.open(stagedFile.toFile())) {
-          dst.object().createGroup("/resolutions");
-          stageSingleResolution(
-            src,
-            dst,
-            resolution,
-            chunkSize,
-            intStorageFeatures,
-            floatStorageFeatures,
-            perResolutionWorkers,
-            (processedStripes, stripeCount) -> {
-              final int percent = stripeCount <= 0 ? 100 : (int) ((processedStripes * 100L) / stripeCount);
-              final var elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
-              final var etaMillis = estimateEtaMillis(processedStripes, stripeCount, elapsedMillis);
-              logConsumer.accept(
-                String.format(
-                  "Resolution %d write: %d%% (%d/%d stripes), elapsed=%s, eta=%s [%s]",
-                  resolution,
-                  percent,
-                  processedStripes,
-                  stripeCount,
-                  formatDuration(elapsedMillis),
-                  formatDuration(etaMillis),
-                  Thread.currentThread().getName()
-                )
-              );
-            },
-            logConsumer
-          );
-          logConsumer.accept("Staged resolution " + resolution + " in " + Thread.currentThread().getName());
-          progressTracker.markStep("Staged resolution " + resolution);
-          return new StagedResolutionFile(resolution, stagedFile);
-        } catch (Exception e) {
-          Files.deleteIfExists(stagedFile);
-          throw e;
-        }
-      };
-      futures.add(executor.submit(task));
-    }
-
-    final var out = new ArrayList<StagedResolutionFile>();
-    try {
-      for (final var f : futures) {
-        out.add(f.get());
-      }
-      return out;
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException(e);
-    } catch (ExecutionException e) {
-      throw new RuntimeException(e.getCause());
-    } finally {
-      executor.shutdownNow();
-    }
-  }
-
-  private static void stageSingleResolution(
+  private static void writeResolutionDirect(
     final @NotNull IHDF5Reader src,
     final @NotNull IHDF5Writer dst,
     final long resolution,
@@ -230,9 +140,9 @@ public class McoolToHictConverter {
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
     final int stripeWorkersRequested,
-    final @NotNull StripeProgressReporter stripeProgressReporter,
     final @NotNull Consumer<String> logConsumer
   ) {
+    final long startedNanos = System.nanoTime();
     final var resolutionRoot = "/resolutions/" + resolution;
     dst.object().createGroup(resolutionRoot);
 
@@ -295,53 +205,106 @@ public class McoolToHictConverter {
       logConsumer
     );
     if (stripeCount == 0) {
-      stripeProgressReporter.report(0, 0);
       writeProgress.finish();
+      return;
     }
 
-    final int batchSize = Math.max(1, stripeWorkers * 2);
-    final ExecutorService stripeExecutor = stripeWorkers > 1 ? Executors.newFixedThreadPool(stripeWorkers) : null;
-    try {
-      for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
-        final int batchEnd = Math.min(stripeCount, batchStart + batchSize);
-        final int localCount = batchEnd - batchStart;
-        final var blocks = new PixelBlock[localCount];
+    final var sortedStripes = new AtomicReferenceArray<SortedStripePixels>(stripeCount);
+    final var errorRef = new AtomicReference<Throwable>();
+    final Object lock = new Object();
+    final ExecutorService stripeExecutor = Executors.newFixedThreadPool(stripeWorkers);
+    final Object readLock = new Object();
+    final List<Future<?>> futures = new ArrayList<>(stripeCount);
 
-        for (int i = 0; i < localCount; i++) {
-          blocks[i] = readRowStripePixels(src, resolution, batchStart + i, allRowsStartIndices);
-        }
-
-        final var sortedBatch = sortStripeBatch(blocks, stripeExecutor);
-
-        for (int i = 0; i < localCount; i++) {
-          final int rowStripe = batchStart + i;
-          final var sorted = sortedBatch[i];
-          if (sorted != null) {
-            final var saveResult = saveIndirectBlock(
-              dst,
-              rowStripe,
-              stripeCount,
-              sorted,
-              currentSparseOffset,
-              currentDenseOffset,
-              blockRowsPath,
-              blockColsPath,
-              blockValsPath,
-              blockOffsetPath,
-              blockLengthPath,
-              denseBlocksPath
-            );
-            currentSparseOffset = saveResult.sparseOffset();
-            currentDenseOffset = saveResult.denseOffset();
+    for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+      final int stripeIdx = rowStripe;
+      futures.add(stripeExecutor.submit(() -> {
+        try {
+          final PixelBlock block;
+          synchronized (readLock) {
+            block = readRowStripePixels(src, resolution, stripeIdx, allRowsStartIndices);
           }
-          stripeProgressReporter.report(rowStripe + 1, stripeCount);
-          writeProgress.report(rowStripe + 1);
+          final SortedStripePixels sorted = block.length() > 0
+            ? sortStripePixels(block.rows(), block.cols(), block.values())
+            : EMPTY_STRIPE;
+          sortedStripes.set(stripeIdx, sorted);
+        } catch (Throwable t) {
+          errorRef.compareAndSet(null, t);
+        } finally {
+          synchronized (lock) {
+            lock.notifyAll();
+          }
         }
+      }));
+    }
+
+    try {
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        SortedStripePixels sorted = sortedStripes.get(rowStripe);
+        while (sorted == null) {
+          if (errorRef.get() != null) {
+            throw new RuntimeException(errorRef.get());
+          }
+          synchronized (lock) {
+            try {
+              lock.wait(50L);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              throw new RuntimeException(e);
+            }
+          }
+          sorted = sortedStripes.get(rowStripe);
+        }
+
+        if (sorted != EMPTY_STRIPE) {
+          final var saveResult = saveIndirectBlock(
+            dst,
+            rowStripe,
+            stripeCount,
+            sorted,
+            currentSparseOffset,
+            currentDenseOffset,
+            blockRowsPath,
+            blockColsPath,
+            blockValsPath,
+            blockOffsetPath,
+            blockLengthPath,
+            denseBlocksPath
+          );
+          currentSparseOffset = saveResult.sparseOffset();
+          currentDenseOffset = saveResult.denseOffset();
+        }
+        sortedStripes.set(rowStripe, null);
+        writeProgress.report(rowStripe + 1);
+
+        final int percent = (int) ((rowStripe + 1L) * 100L / stripeCount);
+        final var elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+        final var etaMillis = estimateEtaMillis(rowStripe + 1L, stripeCount, elapsedMillis);
+        logConsumer.accept(
+          String.format(
+            "Resolution %d write: %d%% (%d/%d stripes), elapsed=%s, eta=%s",
+            resolution,
+            percent,
+            rowStripe + 1,
+            stripeCount,
+            formatDuration(elapsedMillis),
+            formatDuration(etaMillis)
+          )
+        );
       }
     } finally {
-      if (stripeExecutor != null) {
-        stripeExecutor.shutdownNow();
+      stripeExecutor.shutdown();
+    }
+
+    try {
+      for (final var f : futures) {
+        f.get();
       }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException(e);
+    } catch (ExecutionException e) {
+      throw new RuntimeException(e.getCause());
     }
     writeProgress.finish();
   }
@@ -663,97 +626,6 @@ public class McoolToHictConverter {
     dst.float64().writeMatrix(getStripeBinWeightsDatasetPath(resolution), stripeWeights, floatStorageFeatures);
 
     return stripes;
-  }
-
-  private static void mergeStagedResolution(
-    final @NotNull IHDF5Reader stagedReader,
-    final @NotNull IHDF5Writer dst,
-    final long resolution,
-    final int chunkSize,
-    final @NotNull HDF5IntStorageFeatures intStorageFeatures,
-    final @NotNull HDF5FloatStorageFeatures floatStorageFeatures
-  ) {
-    final var resolutionRoot = "/resolutions/" + resolution;
-    final var stripesRoot = resolutionRoot + "/stripes";
-    final var treapRoot = resolutionRoot + "/treap_coo";
-
-    dst.object().createGroup(resolutionRoot);
-    dst.object().createGroup(stripesRoot);
-    dst.object().createGroup(treapRoot);
-
-    copyLongArray(stagedReader, dst, getStripeLengthsBinsDatasetPath(resolution), getStripeLengthsBinsDatasetPath(resolution), chunkSize, intStorageFeatures);
-    copyDoubleMatrix(stagedReader, dst, getStripeBinWeightsDatasetPath(resolution), getStripeBinWeightsDatasetPath(resolution), floatStorageFeatures);
-
-    copyLongArray(stagedReader, dst, getBlockRowsDatasetPath(resolution), getBlockRowsDatasetPath(resolution), chunkSize, intStorageFeatures);
-    copyLongArray(stagedReader, dst, getBlockColsDatasetPath(resolution), getBlockColsDatasetPath(resolution), chunkSize, intStorageFeatures);
-    copyLongArray(stagedReader, dst, getBlockValuesDatasetPath(resolution), getBlockValuesDatasetPath(resolution), chunkSize, intStorageFeatures);
-    copyLongArray(stagedReader, dst, getBlockOffsetDatasetPath(resolution), getBlockOffsetDatasetPath(resolution), chunkSize, intStorageFeatures);
-    copyLongArray(stagedReader, dst, getBlockLengthDatasetPath(resolution), getBlockLengthDatasetPath(resolution), chunkSize, intStorageFeatures);
-    copyDenseBlocks(stagedReader, dst, getDenseBlockDatasetPath(resolution), getDenseBlockDatasetPath(resolution), intStorageFeatures);
-
-    dst.int64().setAttr(treapRoot, "dense_submatrix_size", stagedReader.int64().getAttr(treapRoot, "dense_submatrix_size"));
-    dst.int64().setAttr(treapRoot, "hdf5_max_chunk_size", stagedReader.int64().getAttr(treapRoot, "hdf5_max_chunk_size"));
-    dst.int64().setAttr(treapRoot, "bins_count", stagedReader.int64().getAttr(treapRoot, "bins_count"));
-    dst.int64().setAttr(treapRoot, "stripes_count", stagedReader.int64().getAttr(treapRoot, "stripes_count"));
-  }
-
-  private static void copyLongArray(
-    final @NotNull IHDF5Reader src,
-    final @NotNull IHDF5Writer dst,
-    final @NotNull String srcPath,
-    final @NotNull String dstPath,
-    final int chunkSize,
-    final @NotNull HDF5IntStorageFeatures features
-  ) {
-    final long length = datasetLength(src, srcPath);
-    dst.int64().createArray(dstPath, length, safeChunkLen(length, chunkSize), features);
-
-    long offset = 0L;
-    while (offset < length) {
-      final int len = (int) Math.min((long) safeChunkLen(length, chunkSize), length - offset);
-      final var block = src.int64().readArrayBlockWithOffset(srcPath, len, offset);
-      dst.int64().writeArrayBlockWithOffset(dstPath, block, len, offset);
-      offset += len;
-    }
-  }
-
-  private static void copyDoubleMatrix(
-    final @NotNull IHDF5Reader src,
-    final @NotNull IHDF5Writer dst,
-    final @NotNull String srcPath,
-    final @NotNull String dstPath,
-    final @NotNull HDF5FloatStorageFeatures features
-  ) {
-    final var dims = src.object().getDataSetInformation(srcPath).getDimensions();
-    final int rows = (int) dims[0];
-    final int cols = (int) dims[1];
-    final var data = src.float64().readMatrix(srcPath);
-    dst.float64().createMatrix(dstPath, rows, cols, features);
-    dst.float64().writeMatrix(dstPath, data);
-  }
-
-  private static void copyDenseBlocks(
-    final @NotNull IHDF5Reader src,
-    final @NotNull IHDF5Writer dst,
-    final @NotNull String srcPath,
-    final @NotNull String dstPath,
-    final @NotNull HDF5IntStorageFeatures features
-  ) {
-    final var dims = src.object().getDataSetInformation(srcPath).getDimensions();
-    final long denseBlockCount = dims[0];
-    final int denseSize = (int) dims[3];
-
-    dst.int64().createMDArray(
-      dstPath,
-      new long[]{denseBlockCount, 1L, denseSize, denseSize},
-      new int[]{1, 1, denseSize, denseSize},
-      features
-    );
-
-    for (long denseIdx = 0L; denseIdx < denseBlockCount; denseIdx++) {
-      final var dense = src.int64().readMDArrayBlockWithOffset(srcPath, new int[]{1, 1, denseSize, denseSize}, new long[]{denseIdx, 0L, 0L, 0L});
-      dst.int64().writeMDArrayBlockWithOffset(dstPath, dense, new long[]{denseIdx, 0L, 0L, 0L});
-    }
   }
 
   private static void dumpContigData(
@@ -1116,8 +988,8 @@ public class McoolToHictConverter {
     }
   }
 
-  private record StagedResolutionFile(long resolution, @NotNull Path path) {
-  }
+  private static final SortedStripePixels EMPTY_STRIPE =
+    new SortedStripePixels(new long[0], new int[0], new int[0], new long[0]);
 
   private record PixelBlock(long @NotNull [] rows, long @NotNull [] cols, long @NotNull [] values) {
     int length() {

@@ -70,7 +70,7 @@ val webUIBranch = "dev-0.1.5"
 version = readVersion()
 
 application {
-  mainClass.set(launcherClassName)
+  mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.HictCli")
 }
 
 val lombokVersion = "1.18.42"
@@ -128,6 +128,7 @@ dependencies {
 
   // https://mvnrepository.com/artifact/org.scijava/native-lib-loader
   implementation("org.scijava:native-lib-loader:2.4.0")
+  implementation("info.picocli:picocli:4.7.6")
 
 
 }
@@ -140,7 +141,12 @@ java {
 tasks.withType<ShadowJar> {
   archiveClassifier.set("fat")
   manifest {
-    attributes(mapOf("Main-Verticle" to mainVerticleName))
+    attributes(
+      mapOf(
+        "Main-Verticle" to mainVerticleName,
+        "Main-Class" to "ru.itmo.ctlab.hict.hict_server.tools.HictCli"
+      )
+    )
   }
   mergeServiceFiles()
 }
@@ -158,11 +164,11 @@ tasks.register<JavaExec>("runConversionCli") {
   group = "application"
   description = "Run conversion CLI (hict-to-mcool / mcool-to-hict subcommands)"
   classpath = sourceSets["main"].runtimeClasspath
-  mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.ConversionCliLauncher")
+  mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.HictCli")
 }
 
 
-tasks.withType<JavaExec> {
+tasks.withType<JavaExec>().configureEach {
   doFirst {
     environment(
       "LD_LIBRARY_PATH",
@@ -178,13 +184,6 @@ tasks.withType<JavaExec> {
     )
     environment("VERTXWEB_ENVIRONMENT", "dev")
   }
-  args = listOf(
-    "run",
-    mainVerticleName,
-    "--redeploy=$watchForChange",
-    "--launcher-class=$launcherClassName",
-    "--on-redeploy=$doOnChange"
-  )
 }
 
 
