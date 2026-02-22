@@ -29,7 +29,7 @@ import java.nio.file.Files
 plugins {
   java
   application
-  id("com.github.johnrengelman.shadow") version "7.1.2"
+  id("com.gradleup.shadow") version "8.3.9"
 }
 
 group = "ru.itmo.ctlab.hict"
