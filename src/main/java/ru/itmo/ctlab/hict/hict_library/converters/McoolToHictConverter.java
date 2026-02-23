@@ -85,6 +85,7 @@ public class McoolToHictConverter {
           writeResolutionDirect(
             srcAgain,
             dst,
+            options.inputPath(),
             resolution,
             options.chunkSize(),
             intStorageFeatures,
@@ -135,6 +136,7 @@ public class McoolToHictConverter {
   private static void writeResolutionDirect(
     final @NotNull IHDF5Reader src,
     final @NotNull IHDF5Writer dst,
+    final @NotNull java.nio.file.Path inputPath,
     final long resolution,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
@@ -172,7 +174,7 @@ public class McoolToHictConverter {
       logConsumer
     );
     final int stripeWorkers = Math.max(1, Math.min(stripeWorkersRequested, Math.max(1, stripeCount)));
-    final var counts = countDenseAndSparse(src, resolution, stripeCount, allRowsStartIndices, stripeWorkers, countingProgress::report);
+    final var counts = countDenseAndSparse(inputPath, resolution, stripeCount, allRowsStartIndices, stripeWorkers, countingProgress::report);
     countingProgress.finish();
     final var denseBlockCount = counts.denseBlockCount();
     logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
@@ -216,7 +218,12 @@ public class McoolToHictConverter {
     final var errorRef = new AtomicReference<Throwable>();
     final Object lock = new Object();
     final ExecutorService stripeExecutor = Executors.newFixedThreadPool(stripeWorkers);
-    final Object readLock = new Object();
+    final var readers = java.util.Collections.synchronizedList(new ArrayList<IHDF5Reader>());
+    final ThreadLocal<IHDF5Reader> readerHolder = ThreadLocal.withInitial(() -> {
+      final IHDF5Reader reader = HDF5Factory.openForReading(inputPath.toFile());
+      readers.add(reader);
+      return reader;
+    });
     final List<Future<?>> futures = new ArrayList<>(stripeCount);
 
     for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
@@ -225,10 +232,8 @@ public class McoolToHictConverter {
       futures.add(stripeExecutor.submit(() -> {
         try {
           final PixelBlock block;
-          synchronized (readLock) {
-            checkInterrupted();
-            block = readRowStripePixels(src, resolution, stripeIdx, allRowsStartIndices);
-          }
+          checkInterrupted();
+          block = readRowStripePixels(readerHolder.get(), resolution, stripeIdx, allRowsStartIndices);
           final SortedStripePixels sorted = block.length() > 0
             ? sortStripePixels(block.rows(), block.cols(), block.values())
             : EMPTY_STRIPE;
@@ -300,6 +305,14 @@ public class McoolToHictConverter {
       }
     } finally {
       stripeExecutor.shutdown();
+      synchronized (readers) {
+        for (final var reader : readers) {
+          try {
+            reader.close();
+          } catch (Exception ignored) {
+          }
+        }
+      }
     }
 
     try {
@@ -400,35 +413,33 @@ public class McoolToHictConverter {
   }
 
   private static @NotNull StripeCounts countDenseAndSparse(
-    final @NotNull IHDF5Reader src,
+    final @NotNull java.nio.file.Path inputPath,
     final long resolution,
     final int stripeCount,
     final long @NotNull [] allRowsStartIndices,
     final int stripeWorkers,
     final @NotNull java.util.function.IntConsumer countingProgressReporter
   ) {
-    long sparseCount = 0L;
-    long denseCount = 0L;
+    if (stripeCount <= 0) {
+      return new StripeCounts(0L, 0L);
+    }
 
-    final int batchSize = Math.max(1, stripeWorkers * 2);
     final ExecutorService stripeExecutor = stripeWorkers > 1 ? Executors.newFixedThreadPool(stripeWorkers) : null;
+    final var readers = java.util.Collections.synchronizedList(new ArrayList<IHDF5Reader>());
+    final ThreadLocal<IHDF5Reader> readerHolder = ThreadLocal.withInitial(() -> {
+      final IHDF5Reader reader = HDF5Factory.openForReading(inputPath.toFile());
+      readers.add(reader);
+      return reader;
+    });
     try {
-      for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
-        checkInterrupted();
-        final int batchEnd = Math.min(stripeCount, batchStart + batchSize);
-        final int localCount = batchEnd - batchStart;
-        final var blocks = new PixelBlock[localCount];
-        for (int i = 0; i < localCount; i++) {
+      if (stripeExecutor == null) {
+        long sparseCount = 0L;
+        long denseCount = 0L;
+        for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
           checkInterrupted();
-          blocks[i] = readRowStripePixels(src, resolution, batchStart + i, allRowsStartIndices);
-        }
-        final var sortedBatch = sortStripeBatch(blocks, stripeExecutor);
-
-        for (int i = 0; i < localCount; i++) {
-          checkInterrupted();
-          final int rowStripe = batchStart + i;
-          final var sorted = sortedBatch[i];
-          if (sorted != null) {
+          final var block = readRowStripePixels(readerHolder.get(), resolution, rowStripe, allRowsStartIndices);
+          if (block.length() > 0) {
+            final var sorted = sortStripePixels(block.rows(), block.cols(), block.values());
             final var colStripes = sorted.colStripes();
             int start = 0;
             while (start < colStripes.length) {
@@ -447,14 +458,70 @@ public class McoolToHictConverter {
           }
           countingProgressReporter.accept(rowStripe + 1);
         }
+        return new StripeCounts(sparseCount, denseCount);
       }
+
+      final List<Future<StripeCounts>> futures = new ArrayList<>(stripeCount);
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        final int stripeIdx = rowStripe;
+        futures.add(stripeExecutor.submit(() -> {
+          checkInterrupted();
+          final var block = readRowStripePixels(readerHolder.get(), resolution, stripeIdx, allRowsStartIndices);
+          if (block.length() <= 0) {
+            return new StripeCounts(0L, 0L);
+          }
+          final var sorted = sortStripePixels(block.rows(), block.cols(), block.values());
+          long sparse = 0L;
+          long dense = 0L;
+          final var colStripes = sorted.colStripes();
+          int start = 0;
+          while (start < colStripes.length) {
+            int end = start + 1;
+            while (end < colStripes.length && colStripes[end] == colStripes[start]) {
+              end++;
+            }
+            final int blockLen = end - start;
+            if (blockLen >= DENSE_THRESHOLD) {
+              dense++;
+            } else {
+              sparse += blockLen;
+            }
+            start = end;
+          }
+          return new StripeCounts(sparse, dense);
+        }));
+      }
+
+      long sparseCount = 0L;
+      long denseCount = 0L;
+      for (int i = 0; i < futures.size(); i++) {
+        checkInterrupted();
+        try {
+          final var counts = futures.get(i).get();
+          sparseCount += counts.sparseElementCount();
+          denseCount += counts.denseBlockCount();
+          countingProgressReporter.accept(i + 1);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+          throw new RuntimeException(e.getCause());
+        }
+      }
+      return new StripeCounts(sparseCount, denseCount);
     } finally {
       if (stripeExecutor != null) {
         stripeExecutor.shutdownNow();
       }
+      synchronized (readers) {
+        for (final var reader : readers) {
+          try {
+            reader.close();
+          } catch (Exception ignored) {
+          }
+        }
+      }
     }
-
-    return new StripeCounts(sparseCount, denseCount);
   }
 
   private static @NotNull SortedStripePixels[] sortStripeBatch(
