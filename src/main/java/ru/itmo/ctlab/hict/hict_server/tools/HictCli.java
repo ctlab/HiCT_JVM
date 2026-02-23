@@ -122,7 +122,7 @@ public class HictCli implements Runnable {
     @Option(names = "--chunk-size", defaultValue = "8192", description = "HDF5 chunk size (default: 8192).")
     int chunkSize;
 
-    @Option(names = "--compression", defaultValue = "0", description = "Compression level 0..9 (default: 0).")
+    @Option(names = "--compression", defaultValue = "6", description = "Compression level 0..9 (default: 6).")
     int compression;
 
     @Option(
