@@ -367,34 +367,54 @@ public class McoolToHictConverter {
     final var sparseVals = blocks.sparseVals();
     final var denseFlats = blocks.denseFlats();
 
+    long stripeSparseLen = 0L;
+    for (int i = 0; i < colStripes.length; i++) {
+      if (!denseFlags[i]) {
+        stripeSparseLen += lengths[i];
+      }
+    }
+
+    final long[] offsetRow = new long[stripeCount];
+    final long[] lengthRow = new long[stripeCount];
+    final long[] stripeRows = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
+    final long[] stripeCols = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
+    final long[] stripeVals = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
+    int stripePos = 0;
+
     for (int i = 0; i < colStripes.length; i++) {
       final int blockLen = lengths[i];
       if (blockLen <= 0) {
         continue;
       }
-      final long blockIndex = (long) rowStripe * stripeCount + colStripes[i];
+      final int colStripe = colStripes[i];
 
       if (denseFlags[i]) {
-        dst.int64().writeArrayBlockWithOffset(blockOffsetPath, new long[]{-denseOffset - 1L}, 1, blockIndex);
-        dst.int64().writeArrayBlockWithOffset(blockLengthPath, new long[]{blockLen}, 1, blockIndex);
-
+        offsetRow[colStripe] = -denseOffset - 1L;
+        lengthRow[colStripe] = blockLen;
         final var denseMd = new MDLongArray(denseFlats[i], new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE});
         dst.int64().writeMDArrayBlockWithOffset(denseBlocksPath, denseMd, new long[]{denseOffset, 0L, 0L, 0L});
         denseOffset++;
       } else {
-        dst.int64().writeArrayBlockWithOffset(blockOffsetPath, new long[]{sparseOffset}, 1, blockIndex);
-        dst.int64().writeArrayBlockWithOffset(blockLengthPath, new long[]{blockLen}, 1, blockIndex);
-
+        offsetRow[colStripe] = sparseOffset;
+        lengthRow[colStripe] = blockLen;
         final var blockRows = sparseRows[i];
         final var blockCols = sparseCols[i];
         final var blockVals = sparseVals[i];
-
-        dst.int64().writeArrayBlockWithOffset(blockRowsPath, blockRows, blockLen, sparseOffset);
-        dst.int64().writeArrayBlockWithOffset(blockColsPath, blockCols, blockLen, sparseOffset);
-        dst.int64().writeArrayBlockWithOffset(blockValsPath, blockVals, blockLen, sparseOffset);
-
+        System.arraycopy(blockRows, 0, stripeRows, stripePos, blockLen);
+        System.arraycopy(blockCols, 0, stripeCols, stripePos, blockLen);
+        System.arraycopy(blockVals, 0, stripeVals, stripePos, blockLen);
+        stripePos += blockLen;
         sparseOffset += blockLen;
       }
+    }
+
+    final long rowBase = (long) rowStripe * stripeCount;
+    dst.int64().writeArrayBlockWithOffset(blockOffsetPath, offsetRow, stripeCount, rowBase);
+    dst.int64().writeArrayBlockWithOffset(blockLengthPath, lengthRow, stripeCount, rowBase);
+    if (stripeSparseLen > 0) {
+      dst.int64().writeArrayBlockWithOffset(blockRowsPath, stripeRows, (int) stripeSparseLen, stripeSparseOffset);
+      dst.int64().writeArrayBlockWithOffset(blockColsPath, stripeCols, (int) stripeSparseLen, stripeSparseOffset);
+      dst.int64().writeArrayBlockWithOffset(blockValsPath, stripeVals, (int) stripeSparseLen, stripeSparseOffset);
     }
 
     return new SaveBlockResult(sparseOffset, denseOffset);
