@@ -69,7 +69,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
 
               final var resolutionCsv = req.getParam("resolutions");
               final var resolutions = parseResolutions(resolutionCsv);
-              final var compression = parseInteger(req.getParam("compression"), 0);
+              final var compression = parseInteger(req.getParam("compression"), 6);
               final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(req.getParam("compressionAlgorithm") == null ? "deflate" : req.getParam("compressionAlgorithm"));
               final var chunkSize = parseInteger(req.getParam("chunkSize"), 8192);
               final var applyAgpRaw = Boolean.parseBoolean(req.getParam("applyAgp"));
@@ -99,7 +99,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             final var direction = requestJson.getString("direction", "mcool-to-hict");
             final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
             final var resolutions = parseResolutions(requestJson.getString("resolutions"));
-            final var compression = requestJson.getInteger("compression", 0);
+            final var compression = requestJson.getInteger("compression", 6);
             final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
             final var chunkSize = requestJson.getInteger("chunkSize", 8192);
 
@@ -143,7 +143,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             final var parallelJobs = Math.max(1, requestJson.getInteger("parallelJobs", 1));
             final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
             final var resolutions = parseResolutions(requestJson.getString("resolutions"));
-            final var compression = requestJson.getInteger("compression", 0);
+            final var compression = requestJson.getInteger("compression", 6);
             final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
             final var chunkSize = requestJson.getInteger("chunkSize", 8192);
 
