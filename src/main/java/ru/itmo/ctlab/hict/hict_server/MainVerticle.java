@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -53,6 +53,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
@@ -182,6 +183,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
+    handlersHolders.add(new InfoHandlersHolder(vertx));
 
     router.route().failureHandler(ctx -> {
       log.error("An exception was caught at router top-level", ctx.failure());

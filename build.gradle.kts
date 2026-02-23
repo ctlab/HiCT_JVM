@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,8 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 plugins {
   java
@@ -57,6 +59,7 @@ val watchForChange = "src/**/*"
 val doOnChange = "${projectDir}/gradlew classes"
 
 val versionFile = file("${project.projectDir}/version.txt")
+val webUiPackageJson = file("${project.projectDir}/../HiCT_WebUI/package.json")
 
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
 val localWebUIRepositoryDirectory = layout.projectDirectory.dir("../HiCT_WebUI")
@@ -349,6 +352,20 @@ tasks.named("clean") {
 
 tasks.named("processResources") {
   dependsOn("copyWebUI")
+  doLast {
+    Files.copy(
+      versionFile.toPath(),
+      layout.buildDirectory.file("resources/main/version.txt").get().asFile.toPath(),
+      StandardCopyOption.REPLACE_EXISTING
+    )
+    if (webUiPackageJson.exists()) {
+      Files.copy(
+        webUiPackageJson.toPath(),
+        layout.buildDirectory.file("resources/main/webui-package.json").get().asFile.toPath(),
+        StandardCopyOption.REPLACE_EXISTING
+      )
+    }
+  }
 }
 
 tasks.named("build") {
