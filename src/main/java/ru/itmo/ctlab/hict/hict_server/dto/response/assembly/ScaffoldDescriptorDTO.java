@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,14 +32,16 @@ import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 public record ScaffoldDescriptorDTO(
   long scaffoldId,
   String scaffoldName,
+  String scaffoldOriginalName,
   long spacerLength,
   @Nullable ScaffoldDescriptor.ScaffoldBordersBP scaffoldBordersBP
 ) {
 
-  public static @NotNull ScaffoldDescriptorDTO fromEntity(final @NotNull ScaffoldTree.ScaffoldTuple scaffoldTuple) {
+  public static @NotNull ScaffoldDescriptorDTO fromEntity(final @NotNull ScaffoldTree.ScaffoldTuple scaffoldTuple, final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile chunkedFile) {
     return new ScaffoldDescriptorDTO(
       scaffoldTuple.scaffoldDescriptor().scaffoldId(),
-      scaffoldTuple.scaffoldDescriptor().scaffoldName(),
+      chunkedFile.getScaffoldDisplayName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
+      chunkedFile.getScaffoldOriginalName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
       scaffoldTuple.scaffoldDescriptor().spacerLength(),
       scaffoldTuple.scaffoldBordersBP()
     );

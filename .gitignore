@@ -191,3 +191,5 @@ nbdist/
 .github/**
 .gitignore
 /src/main/resources/webui/**
+data/**
+start.sh

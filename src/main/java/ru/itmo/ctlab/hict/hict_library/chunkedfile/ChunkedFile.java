@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -47,13 +47,30 @@ import ru.itmo.ctlab.hict.hict_library.visualization.TileVisualizationProcessor;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Path;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.LongStream;
+
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockColsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockLengthDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockOffsetDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockRowsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockValuesDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigHideTypeDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigLengthBinsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigsATLDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getDenseBlockDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getStripeBinWeightsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getStripeLengthsBinsDatasetPath;
 
 @Getter
 @Slf4j
@@ -74,6 +91,9 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
   private final @NotNull AGPProcessor agpProcessor;
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
+  private final @NotNull Map<Integer, String> contigNameOverrides = new ConcurrentHashMap<>();
+  private final @NotNull Map<Long, String> scaffoldNameOverrides = new ConcurrentHashMap<>();
+  private final @NotNull Object nameOverrideLock = new Object();
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
   private final @NotNull FASTAProcessor fastaProcessor;
   @Getter
@@ -85,20 +105,33 @@ public class ChunkedFile implements AutoCloseable {
 
 
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
-      this.resolutions = LongStream.concat(LongStream.of(0L), reader.object().getAllGroupMembers("/resolutions").parallelStream().filter(s -> {
+      final var parsedResolutions = reader.object().getAllGroupMembers("/resolutions").parallelStream().flatMap(s -> {
         try {
           log.debug("Trying to parse " + s + " as a resolution");
-          Long.parseLong(s);
+          final var parsed = Long.parseLong(s);
           log.debug("Found new resolution: " + s);
-          return true;
+          return java.util.stream.Stream.of(parsed);
         } catch (final NumberFormatException nfe) {
           log.debug("Not a resolution: " + s);
-          return false;
+          return java.util.stream.Stream.empty();
         }
-      }).mapToLong(Long::parseLong)).sorted().toArray();
+      }).sorted().toList();
 
+      final var validResolutions = parsedResolutions.stream()
+        .filter(resolution -> isResolutionComplete(reader, resolution))
+        .sorted()
+        .toList();
 
-      this.denseBlockSize = (int) Arrays.stream(resolutions).sorted().skip(1L).map(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size")).max().orElse(256L);
+      if (validResolutions.isEmpty()) {
+        throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
+      }
+
+      this.resolutions = LongStream.concat(LongStream.of(0L), validResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+
+      this.denseBlockSize = (int) validResolutions.stream()
+        .mapToLong(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size"))
+        .max()
+        .orElse(256L);
       log.info("Dense block size: " + this.denseBlockSize);
 
       log.debug("Resolutions count: " + resolutions.length);
@@ -144,6 +177,7 @@ public class ChunkedFile implements AutoCloseable {
     this.agpProcessor = new AGPProcessor(this);
     this.tileVisualizationProcessor = new TileVisualizationProcessor(this);
     this.fastaProcessor = new FASTAProcessor(this);
+    this.loadNameOverrides();
 
     this.resolutionScalingCoefficient = new double[this.resolutions.length];
     this.resolutionLinearScalingCoefficient = new double[this.resolutions.length];
@@ -155,6 +189,151 @@ public class ChunkedFile implements AutoCloseable {
       final var ratio = (this.resolutions[i] / this.resolutions[1]);
       this.resolutionScalingCoefficient[i] = 1.0d / ((double) (ratio * ratio));
       this.resolutionLinearScalingCoefficient[i] = 1.0d / ((double) ratio);
+    }
+  }
+
+  private void loadNameOverrides() {
+    // Name overrides are session-only and should not be loaded from the HDF5 file.
+  }
+
+  private static <K> void readOverrideMap(final @NotNull String encoded, final @NotNull Map<K, String> target, final @NotNull java.util.function.Function<String, K> keyParser) {
+    if (encoded.isBlank()) {
+      return;
+    }
+    for (final var line : encoded.split("\n")) {
+      if (line.isBlank()) {
+        continue;
+      }
+      final var parts = line.split("\t", 2);
+      if (parts.length != 2) {
+        continue;
+      }
+      final var key = keyParser.apply(parts[0]);
+      final var value = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+      if (!value.isBlank()) {
+        target.put(key, value);
+      }
+    }
+  }
+
+  private static <K> @NotNull String writeOverrideMap(final @NotNull Map<K, String> source) {
+    final var sb = new StringBuilder();
+    for (final var entry : source.entrySet()) {
+      final var name = entry.getValue();
+      if (name == null || name.isBlank()) {
+        continue;
+      }
+      if (!sb.isEmpty()) {
+        sb.append('\n');
+      }
+      sb.append(entry.getKey()).append('\t').append(URLEncoder.encode(name, StandardCharsets.UTF_8));
+    }
+    return sb.toString();
+  }
+
+  private void persistNameOverrides() {
+    // Name overrides are session-only and should not be persisted to the HDF5 file.
+  }
+
+  public @NotNull String getContigOriginalName(final int contigId) {
+    final var descriptor = this.contigTree.getContigDescriptors().get(contigId);
+    if (descriptor == null) {
+      throw new IllegalArgumentException("Unknown contig id " + contigId);
+    }
+    return descriptor.getContigName();
+  }
+
+  public @NotNull String getContigDisplayName(final int contigId) {
+    return Optional.ofNullable(contigNameOverrides.get(contigId)).orElse(getContigOriginalName(contigId));
+  }
+
+  public @NotNull String getScaffoldOriginalName(final long scaffoldId) {
+    return this.scaffoldTree.getScaffoldList().stream()
+      .filter(tuple -> tuple.scaffoldDescriptor().scaffoldId() == scaffoldId)
+      .findFirst()
+      .map(tuple -> tuple.scaffoldDescriptor().scaffoldName())
+      .orElseThrow(() -> new IllegalArgumentException("Unknown scaffold id " + scaffoldId));
+  }
+
+  public @NotNull String getScaffoldDisplayName(final long scaffoldId) {
+    return Optional.ofNullable(scaffoldNameOverrides.get(scaffoldId)).orElse(getScaffoldOriginalName(scaffoldId));
+  }
+
+  public void setContigNameOverride(final int contigId, final @NotNull String newName) {
+    if (newName.isBlank() || newName.equals(getContigOriginalName(contigId))) {
+      contigNameOverrides.remove(contigId);
+    } else {
+      contigNameOverrides.put(contigId, newName);
+    }
+    persistNameOverrides();
+  }
+
+  public void setScaffoldNameOverride(final long scaffoldId, final @NotNull String newName) {
+    if (newName.isBlank() || newName.equals(getScaffoldOriginalName(scaffoldId))) {
+      scaffoldNameOverrides.remove(scaffoldId);
+    } else {
+      scaffoldNameOverrides.put(scaffoldId, newName);
+    }
+    persistNameOverrides();
+  }
+
+  public @NotNull Map<Integer, String> getContigNameOverrides() {
+    return contigNameOverrides;
+  }
+
+  public @NotNull Map<Long, String> getScaffoldNameOverrides() {
+    return scaffoldNameOverrides;
+  }
+
+  public @NotNull java.util.Set<String> getAllContigDisplayNames() {
+    return this.contigTree.getContigDescriptors().keySet().stream().map(this::getContigDisplayName).collect(java.util.stream.Collectors.toSet());
+  }
+
+  public @NotNull java.util.Set<String> getAllScaffoldDisplayNames() {
+    return this.scaffoldTree.getScaffoldList().stream()
+      .map(tuple -> Optional.ofNullable(scaffoldNameOverrides.get(tuple.scaffoldDescriptor().scaffoldId())).orElse(tuple.scaffoldDescriptor().scaffoldName()))
+      .collect(java.util.stream.Collectors.toSet());
+  }
+
+  public @NotNull ContigDescriptor resolveContigDescriptorByName(final @NotNull String contigName) {
+    final var original = originalDescriptors.get(contigName);
+    if (original != null) {
+      return original;
+    }
+    for (final var entry : contigNameOverrides.entrySet()) {
+      if (contigName.equals(entry.getValue())) {
+        final var descriptor = this.contigTree.getContigDescriptors().get(entry.getKey());
+        if (descriptor != null) {
+          return descriptor;
+        }
+      }
+    }
+    throw new IllegalArgumentException("Unknown contig name " + contigName);
+  }
+
+  private static boolean isResolutionComplete(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader, final long resolution) {
+    final String base = "/resolutions/" + resolution;
+    try {
+      if (!reader.object().isGroup(base + "/treap_coo")) {
+        log.warn("Skipping resolution {}: missing treap_coo group", resolution);
+        return false;
+      }
+      if (!reader.object().isDataSet(getBlockLengthDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockOffsetDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockRowsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockColsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBlockValuesDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getDenseBlockDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getStripeLengthsBinsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getStripeBinWeightsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getContigLengthBinsDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getContigHideTypeDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getContigsATLDatasetPath(resolution))) return false;
+      if (!reader.object().isDataSet(getBasisATUDatasetPath(resolution))) return false;
+      return true;
+    } catch (Exception e) {
+      log.warn("Skipping resolution {} due to validation error: {}", resolution, e.getMessage());
+      return false;
     }
   }
 

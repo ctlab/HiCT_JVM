@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,6 +35,7 @@ import java.util.stream.IntStream;
 public record ContigDescriptorDTO(
   int contigId,
   String contigName,
+  String contigOriginalName,
   int contigDirection,
   long contigLengthBp,
   Map<Long, Long> contigLengthBins,
@@ -45,7 +46,8 @@ public record ContigDescriptorDTO(
     final var resolutions = chunkedFile.getResolutions();
     return new ContigDescriptorDTO(
       ctg.descriptor().getContigId(),
-      ctg.descriptor().getContigName(),
+      chunkedFile.getContigDisplayName(ctg.descriptor().getContigId()),
+      chunkedFile.getContigOriginalName(ctg.descriptor().getContigId()),
       ctg.direction().ordinal(),
       ctg.descriptor().getLengthBp(),
       IntStream.range(1, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getLengthBinsAtResolution()[resIdx])),

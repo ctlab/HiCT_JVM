@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,11 +25,13 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 plugins {
   java
   application
-  id("com.github.johnrengelman.shadow") version "7.1.2"
+  id("com.gradleup.shadow") version "8.3.9"
 }
 
 group = "ru.itmo.ctlab.hict"
@@ -43,6 +45,12 @@ repositories {
 
 val vertxVersion = "4.4.1"
 val junitJupiterVersion = "5.9.1"
+val slf4jVersion = "1.7.36"
+val logbackVersion = "1.2.13"
+
+dependencyLocking {
+  lockAllConfigurations()
+}
 
 val mainVerticleName = "ru.itmo.ctlab.hict.hict_server.MainVerticle"
 val launcherClassName = "io.vertx.core.Launcher"
@@ -51,9 +59,13 @@ val watchForChange = "src/**/*"
 val doOnChange = "${projectDir}/gradlew classes"
 
 val versionFile = file("${project.projectDir}/version.txt")
+val webUiPackageJson = file("${project.projectDir}/../HiCT_WebUI/package.json")
 
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
-val webUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
+val localWebUIRepositoryDirectory = layout.projectDirectory.dir("../HiCT_WebUI")
+val remoteWebUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
+val webUIRepositoryDirectory =
+  if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
 val webUIBranch = "dev-0.1.5"
@@ -61,8 +73,10 @@ val webUIBranch = "dev-0.1.5"
 version = readVersion()
 
 application {
-  mainClass.set(launcherClassName)
+  mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.HictCli")
 }
+
+val lombokVersion = "1.18.42"
 
 dependencies {
 //  implementation(fileTree("src/main/resources/libs"))
@@ -74,23 +88,19 @@ dependencies {
   // https://mvnrepository.com/artifact/cisd/base
   implementation("cisd:base:18.09.0")
   implementation("org.jetbrains:annotations:24.0.0")
-  implementation("org.jetbrains:annotations:24.0.0")
 
 
   // https://mvnrepository.com/artifact/org.apache.bcel/bcel
   implementation("org.apache.bcel:bcel:6.7.0")
 
+  compileOnly("org.projectlombok:lombok:$lombokVersion")
+  annotationProcessor("org.projectlombok:lombok:$lombokVersion")
+  testCompileOnly("org.projectlombok:lombok:$lombokVersion")
+  testAnnotationProcessor("org.projectlombok:lombok:$lombokVersion")
 
-
-  compileOnly("org.projectlombok:lombok:1.18.22")
-  annotationProcessor("org.projectlombok:lombok:1.18.22")
-  testCompileOnly("org.projectlombok:lombok:1.18.22")
-  testAnnotationProcessor("org.projectlombok:lombok:1.18.22")
-
-
-  implementation("org.slf4j:slf4j-api:1.7.+")
+  implementation("org.slf4j:slf4j-api:$slf4jVersion")
 //  implementation("org.slf4j:slf4j-nop:1.7.+")
-  implementation("ch.qos.logback:logback-classic:1.2.+")
+  implementation("ch.qos.logback:logback-classic:$logbackVersion")
 
 
   implementation(platform("io.vertx:vertx-stack-depchain:$vertxVersion"))
@@ -121,6 +131,7 @@ dependencies {
 
   // https://mvnrepository.com/artifact/org.scijava/native-lib-loader
   implementation("org.scijava:native-lib-loader:2.4.0")
+  implementation("info.picocli:picocli:4.7.6")
 
 
 }
@@ -133,7 +144,12 @@ java {
 tasks.withType<ShadowJar> {
   archiveClassifier.set("fat")
   manifest {
-    attributes(mapOf("Main-Verticle" to mainVerticleName))
+    attributes(
+      mapOf(
+        "Main-Verticle" to mainVerticleName,
+        "Main-Class" to "ru.itmo.ctlab.hict.hict_server.tools.HictCli"
+      )
+    )
   }
   mergeServiceFiles()
 }
@@ -145,7 +161,17 @@ tasks.withType<Test> {
   }
 }
 
-tasks.withType<JavaExec> {
+
+
+tasks.register<JavaExec>("runConversionCli") {
+  group = "application"
+  description = "Run conversion CLI (hict-to-mcool / mcool-to-hict subcommands)"
+  classpath = sourceSets["main"].runtimeClasspath
+  mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.HictCli")
+}
+
+
+tasks.withType<JavaExec>().configureEach {
   doFirst {
     environment(
       "LD_LIBRARY_PATH",
@@ -161,13 +187,6 @@ tasks.withType<JavaExec> {
     )
     environment("VERTXWEB_ENVIRONMENT", "dev")
   }
-  args = listOf(
-    "run",
-    mainVerticleName,
-    "--redeploy=$watchForChange",
-    "--launcher-class=$launcherClassName",
-    "--on-redeploy=$doOnChange"
-  )
 }
 
 
@@ -232,6 +251,27 @@ tasks.register("buildWebUI") {
   dependsOn("cleanWebUI")
   doLast {
     try {
+      if (localWebUIRepositoryDirectory.asFile.exists()) {
+        println("Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath}")
+        project.exec {
+          commandLine("git", "checkout", webUIBranch)
+          workingDir = localWebUIRepositoryDirectory.asFile
+          standardOutput = System.out
+          isIgnoreExitValue = true
+        }
+        project.exec {
+          commandLine("npm", "install")
+          workingDir = localWebUIRepositoryDirectory.asFile
+          standardOutput = System.out
+        }
+        project.exec {
+          commandLine("npm", "run", "build")
+          workingDir = localWebUIRepositoryDirectory.asFile
+          standardOutput = System.out
+        }
+        return@doLast
+      }
+
       Files.createDirectories(webUICloneDirectory.asFile.toPath())
       val cloneResult = project.exec {
         commandLine("git", "clone", webUIRepositoryAddress)
@@ -312,6 +352,20 @@ tasks.named("clean") {
 
 tasks.named("processResources") {
   dependsOn("copyWebUI")
+  doLast {
+    Files.copy(
+      versionFile.toPath(),
+      layout.buildDirectory.file("resources/main/version.txt").get().asFile.toPath(),
+      StandardCopyOption.REPLACE_EXISTING
+    )
+    if (webUiPackageJson.exists()) {
+      Files.copy(
+        webUiPackageJson.toPath(),
+        layout.buildDirectory.file("resources/main/webui-package.json").get().asFile.toPath(),
+        StandardCopyOption.REPLACE_EXISTING
+      )
+    }
+  }
 }
 
 tasks.named("build") {

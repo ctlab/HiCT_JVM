@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -179,7 +179,7 @@ public class AGPProcessor {
   }
 
   public void initializeContigTreeFromAGP(final @NotNull List<@NotNull AGPFileRecord> agpFileRecords) {
-    final var originalDescriptors = this.chunkedFile.getOriginalDescriptors();
+    final var chunkedFile = this.chunkedFile;
     final var tree = this.chunkedFile.getContigTree();
     final var lock = tree.getRootLock();
     try {
@@ -189,11 +189,7 @@ public class AGPProcessor {
         if (!(rec instanceof ContigAGPRecord ctgRecord)) {
           continue;
         }
-        final var sourceDescriptor = originalDescriptors.get(ctgRecord.getContigName());
-        if (sourceDescriptor == null) {
-          log.error("Cannot find contig with name " + ctgRecord.getContigName() + " in original .hict.hdf5 file");
-          throw new NoSuchElementException("Cannot find contig with name " + ctgRecord.getContigName() + " in original .hict.hdf5 file");
-        }
+        final var sourceDescriptor = chunkedFile.resolveContigDescriptorByName(ctgRecord.getContigName());
 
         final var componentLength = ctgRecord.getInterScaffoldEndIncl() - ctgRecord.getInterScaffoldStartIncl() + 1;
         if (componentLength != ctgRecord.getIntraContigEndBpIncl() - ctgRecord.getIntraContigStartBpIncl() + 1) {
@@ -294,9 +290,9 @@ public class AGPProcessor {
       for (final var sc : scaffoldedContigs) {
         final var scaffold = sc.scaffoldTuple().scaffoldDescriptor();
         assert (scaffold != null || (sc.contigs().size() == 1)) : "Unscaffolded contig must always represent unique unscaffolded segment";
-        final var scaffoldName = (scaffold != null) ? scaffold.scaffoldName() : String.format(
+        final var scaffoldName = (scaffold != null) ? chunkedFile.getScaffoldDisplayName(scaffold.scaffoldId()) : String.format(
           "unscaffolded_%s",
-          sc.contigs().get(0).descriptor().getContigName()
+          chunkedFile.getContigDisplayName(sc.contigs().get(0).descriptor().getContigId())
         );
 
         final var spacerLength = ((scaffold != null) ? scaffold.spacerLength() : unscaffoldedSpacerLength);
@@ -305,12 +301,13 @@ public class AGPProcessor {
         int partNumber = 1;
 
         for (final ContigTree.ContigTuple contigTuple : sc.contigs()) {
+          final var contigDisplayName = chunkedFile.getContigDisplayName(contigTuple.descriptor().getContigId());
           result.add(new ContigAGPRecord(
             scaffoldName,
             positionBp,
             positionBp + contigTuple.descriptor().getLengthBp() - 1,
             partNumber,
-            contigTuple.descriptor().getContigNameInSourceFASTA(),
+            contigDisplayName,
             1 + contigTuple.descriptor().getOffsetInSourceFASTA(),
             contigTuple.descriptor().getOffsetInSourceFASTA() + contigTuple.descriptor().getLengthBp(),
             switch (contigTuple.direction()) {

@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
+import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -59,7 +60,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
       final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
 
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
       map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(request.toEntity()));
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
@@ -75,9 +76,7 @@ public class TileHandlersHolder extends HandlersHolder {
         ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
         return;
       }
-      final var newStats = TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length);
-      newStats.versionCounter().set(stats.versionCounter().get());
-      map.put("TileStatisticHolder", newStats);
+      map.put("TileStatisticHolder", TileStatisticHolder.resetRangesKeepingVersion(stats, chunkedFile.getResolutions().length));
       final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
       if (visualizationOptionsWrapper == null) {
         ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
@@ -88,7 +87,7 @@ public class TileHandlersHolder extends HandlersHolder {
     });
 
     router.post("/get_visualization_options").blockingHandler(ctx -> {
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
       if (chunkedFileWrapper == null) {
@@ -106,6 +105,24 @@ public class TileHandlersHolder extends HandlersHolder {
       ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
     });
 
+    router.post("/tiles/reload").blockingHandler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+      final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
+      if (stats == null) {
+        ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
+        return;
+      }
+      final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
+      map.put("TileStatisticHolder", newStats);
+      ctx.response().setStatusCode(200).end(Json.encode(Map.of("version", newStats.versionCounter().get())));
+    });
+
     router.get("/get_tile").handler(ctx -> {
       log.debug("Entered non-blocking handler");
       ctx.next();
@@ -114,14 +131,14 @@ public class TileHandlersHolder extends HandlersHolder {
 
       final var row = Long.parseLong(ctx.request().getParam("row", "0"));
       final var col = Long.parseLong(ctx.request().getParam("col", "0"));
-      final var version = Long.parseLong(ctx.request().getParam("version", "0"));
+      final var requestedVersion = Long.parseLong(ctx.request().getParam("version", "0"));
       final int tileHeight;
       final int tileWidth;
       final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
 
       log.debug("Got parameters");
 
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
 
       log.debug("Got map");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
@@ -138,7 +155,19 @@ public class TileHandlersHolder extends HandlersHolder {
       }
       final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
 
-      final var level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+      final var requestedBpResolutionParam = ctx.request().getParam("bpResolution");
+      final int level;
+      if (requestedBpResolutionParam != null) {
+        final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
+        final var resolutionOrder = chunkedFile.getResolutionToIndex().get(requestedBpResolution);
+        if (resolutionOrder == null) {
+          ctx.fail(new RuntimeException("Requested bpResolution is not present in opened file: " + requestedBpResolution));
+          return;
+        }
+        level = resolutionOrder;
+      } else {
+        level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+      }
 
       final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
       if (stats == null) {
@@ -147,10 +176,10 @@ public class TileHandlersHolder extends HandlersHolder {
       }
 
       var currentVersion = stats.versionCounter().get();
+      long version = requestedVersion;
       if (version < currentVersion) {
-        log.debug(String.format("Current version is %d and request version is %d", currentVersion, version));
-        ctx.response().setStatusCode(204).putHeader("Content-Type", "text/plain").end(String.format("Current version is %d and request version is %d", currentVersion, version));
-        return;
+        log.debug(String.format("Current version is %d and request version is %d; serving with current version", currentVersion, version));
+        version = currentVersion;
       }
       do {
         currentVersion = stats.versionCounter().get();

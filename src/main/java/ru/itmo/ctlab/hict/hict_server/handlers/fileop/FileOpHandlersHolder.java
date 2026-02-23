@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2024. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,9 @@ package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
+import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
@@ -75,7 +77,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         return;
       }
 
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
 
       final var chunkedFile = new ChunkedFile(
         new ChunkedFile.ChunkedFileOptions(
@@ -95,7 +97,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     });
 
     router.post("/get_agp_for_assembly").blockingHandler(ctx -> {
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
       if (chunkedFileWrapper == null) {
@@ -118,7 +120,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     });
 
     router.post("/load_agp").blockingHandler(ctx -> {
-      final var map = vertx.sharedData().getLocalMap("hict_server");
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
       log.debug("Got map");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
       if (chunkedFileWrapper == null) {
