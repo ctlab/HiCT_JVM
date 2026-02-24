@@ -35,6 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
@@ -76,16 +77,32 @@ public class FileOpHandlersHolder extends HandlersHolder {
         ctx.fail(new RuntimeException("Filename must be specified to open the file"));
         return;
       }
+      final boolean verbose = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
+      if (verbose) {
+        log.info("Opening file " + filename);
+      }
 
       final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
 
-      final var chunkedFile = new ChunkedFile(
+      final var progress = new io.vertx.core.json.JsonObject()
+        .put("stage", "starting")
+        .put("progress", 0.0);
+      map.put("openProgress", progress);
+
+      final var chunkedFile = Initializers.withProgressReporter((stage, progressValue) -> {
+        map.put("openProgress", new io.vertx.core.json.JsonObject()
+          .put("stage", stage)
+          .put("progress", progressValue));
+        if (verbose) {
+          log.info(String.format("Open progress: %s (%.1f%%)", stage, progressValue * 100.0));
+        }
+      }, () -> new ChunkedFile(
         new ChunkedFile.ChunkedFileOptions(
           Path.of(dataDirectory.toString(), filename),
           (int) map.getOrDefault("MIN_DS_POOL", 4),
           (int) map.getOrDefault("MAX_DS_POOL", 16)
         )
-      );
+      ));
       final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
 
       log.info("Putting chunkedFile into the local map");
@@ -94,9 +111,29 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
       map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
 
+      map.put("openProgress", new io.vertx.core.json.JsonObject()
+        .put("stage", "done")
+        .put("progress", 1.0));
+
       ctx.response()
         .putHeader("content-type", "application/json")
         .end(Json.encode(generateOpenFileResponse(chunkedFile)));
+    });
+
+    router.post("/open_progress").handler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var progressObj = map.get("openProgress");
+      if (!(progressObj instanceof io.vertx.core.json.JsonObject)) {
+        ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(new io.vertx.core.json.JsonObject()
+            .put("stage", "idle")
+            .put("progress", 0.0)));
+        return;
+      }
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(((io.vertx.core.json.JsonObject) progressObj).encode());
     });
 
     router.post("/attach").blockingHandler(ctx -> {
