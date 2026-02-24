@@ -85,6 +85,7 @@ public class McoolToHictConverter {
           writeResolutionDirect(
             srcAgain,
             dst,
+            options.inputPath(),
             resolution,
             options.chunkSize(),
             intStorageFeatures,
@@ -135,6 +136,7 @@ public class McoolToHictConverter {
   private static void writeResolutionDirect(
     final @NotNull IHDF5Reader src,
     final @NotNull IHDF5Writer dst,
+    final @NotNull java.nio.file.Path inputPath,
     final long resolution,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
@@ -172,9 +174,9 @@ public class McoolToHictConverter {
       logConsumer
     );
     final int stripeWorkers = Math.max(1, Math.min(stripeWorkersRequested, Math.max(1, stripeCount)));
-    final var counts = countDenseAndSparse(src, resolution, stripeCount, allRowsStartIndices, stripeWorkers, countingProgress::report);
+    final var counts = countDenseAndSparse(inputPath, resolution, stripeCount, allRowsStartIndices, stripeWorkers, countingProgress::report);
     countingProgress.finish();
-    final var denseBlockCount = counts.denseBlockCount();
+    final var denseBlockCount = counts.denseTotal();
     logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
 
     final var blockRowsPath = getBlockRowsDatasetPath(resolution);
@@ -200,8 +202,16 @@ public class McoolToHictConverter {
       intStorageFeatures
     );
 
-    long currentSparseOffset = 0L;
-    long currentDenseOffset = 0L;
+    final var stripeSparseBase = new long[stripeCount];
+    final var stripeDenseBase = new long[stripeCount];
+    long sparseCursor = 0L;
+    long denseCursor = 0L;
+    for (int i = 0; i < stripeCount; i++) {
+      stripeSparseBase[i] = sparseCursor;
+      stripeDenseBase[i] = denseCursor;
+      sparseCursor += counts.sparseCounts()[i];
+      denseCursor += counts.denseCounts()[i];
+    }
     final var writeProgress = new PhaseProgressTracker(
       "Resolution " + resolution + " write",
       stripeCount,
@@ -212,94 +222,84 @@ public class McoolToHictConverter {
       return;
     }
 
-    final var sortedStripes = new AtomicReferenceArray<SortedStripePixels>(stripeCount);
     final var errorRef = new AtomicReference<Throwable>();
-    final Object lock = new Object();
     final ExecutorService stripeExecutor = Executors.newFixedThreadPool(stripeWorkers);
-    final Object readLock = new Object();
-    final List<Future<?>> futures = new ArrayList<>(stripeCount);
+    final var readers = java.util.Collections.synchronizedList(new ArrayList<IHDF5Reader>());
+    final ThreadLocal<IHDF5Reader> readerHolder = ThreadLocal.withInitial(() -> {
+      final IHDF5Reader reader = HDF5Factory.openForReading(inputPath.toFile());
+      readers.add(reader);
+      return reader;
+    });
+    final int batchSize = resolveBatchSize(stripeWorkers);
+    final var queue = new java.util.concurrent.ArrayBlockingQueue<StripeWriteTask>(Math.max(4, stripeWorkers * 2));
+    final var writerThread = new Thread(() -> {
+      long written = 0L;
+      try {
+        while (true) {
+          final var task = queue.take();
+          if (task == StripeWriteTask.POISON) {
+            break;
+          }
+          if (task.blocks() != EMPTY_BLOCKS) {
+            saveStripeBlocks(
+              dst,
+              task.stripeIndex(),
+              stripeCount,
+              task.blocks(),
+              stripeSparseBase[task.stripeIndex()],
+              stripeDenseBase[task.stripeIndex()],
+              blockRowsPath,
+              blockColsPath,
+              blockValsPath,
+              blockOffsetPath,
+              blockLengthPath,
+              denseBlocksPath
+            );
+          }
+          written++;
+          writeProgress.report((int) written);
 
-    for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
-      checkInterrupted();
-      final int stripeIdx = rowStripe;
+          final int percent = (int) (written * 100L / stripeCount);
+          final var elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+          final var etaMillis = estimateEtaMillis(written, stripeCount, elapsedMillis);
+          logConsumer.accept(
+            String.format(
+              "Resolution %d write: %d%% (%d/%d stripes), elapsed=%s, eta=%s",
+              resolution,
+              percent,
+              written,
+              stripeCount,
+              formatDuration(elapsedMillis),
+              formatDuration(etaMillis)
+            )
+          );
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        errorRef.compareAndSet(null, e);
+      }
+    }, "hict-writer-" + resolution);
+    writerThread.setDaemon(true);
+    writerThread.start();
+
+    final List<Future<?>> futures = new ArrayList<>();
+    for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
+      final int start = batchStart;
+      final int end = Math.min(stripeCount, batchStart + batchSize);
       futures.add(stripeExecutor.submit(() -> {
         try {
-          final PixelBlock block;
-          synchronized (readLock) {
+          final var batchBlocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices);
+          for (int i = 0; i < batchBlocks.length; i++) {
             checkInterrupted();
-            block = readRowStripePixels(src, resolution, stripeIdx, allRowsStartIndices);
+            final int stripeIdx = start + i;
+            final var block = batchBlocks[i];
+            final StripeBlocks blocks = block.length() > 0 ? buildStripeBlocks(block, stripeCount) : EMPTY_BLOCKS;
+            queue.put(new StripeWriteTask(stripeIdx, blocks));
           }
-          final SortedStripePixels sorted = block.length() > 0
-            ? sortStripePixels(block.rows(), block.cols(), block.values())
-            : EMPTY_STRIPE;
-          sortedStripes.set(stripeIdx, sorted);
         } catch (Throwable t) {
           errorRef.compareAndSet(null, t);
-        } finally {
-          synchronized (lock) {
-            lock.notifyAll();
-          }
         }
       }));
-    }
-
-    try {
-      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
-        checkInterrupted();
-        SortedStripePixels sorted = sortedStripes.get(rowStripe);
-        while (sorted == null) {
-          if (errorRef.get() != null) {
-            throw new RuntimeException(errorRef.get());
-          }
-          synchronized (lock) {
-            try {
-              lock.wait(50L);
-            } catch (InterruptedException e) {
-              Thread.currentThread().interrupt();
-              throw new RuntimeException(e);
-            }
-          }
-          sorted = sortedStripes.get(rowStripe);
-        }
-
-        if (sorted != EMPTY_STRIPE) {
-          final var saveResult = saveIndirectBlock(
-            dst,
-            rowStripe,
-            stripeCount,
-            sorted,
-            currentSparseOffset,
-            currentDenseOffset,
-            blockRowsPath,
-            blockColsPath,
-            blockValsPath,
-            blockOffsetPath,
-            blockLengthPath,
-            denseBlocksPath
-          );
-          currentSparseOffset = saveResult.sparseOffset();
-          currentDenseOffset = saveResult.denseOffset();
-        }
-        sortedStripes.set(rowStripe, null);
-        writeProgress.report(rowStripe + 1);
-
-        final int percent = (int) ((rowStripe + 1L) * 100L / stripeCount);
-        final var elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
-        final var etaMillis = estimateEtaMillis(rowStripe + 1L, stripeCount, elapsedMillis);
-        logConsumer.accept(
-          String.format(
-            "Resolution %d write: %d%% (%d/%d stripes), elapsed=%s, eta=%s",
-            resolution,
-            percent,
-            rowStripe + 1,
-            stripeCount,
-            formatDuration(elapsedMillis),
-            formatDuration(etaMillis)
-          )
-        );
-      }
-    } finally {
-      stripeExecutor.shutdown();
     }
 
     try {
@@ -311,6 +311,24 @@ public class McoolToHictConverter {
       throw new RuntimeException(e);
     } catch (ExecutionException e) {
       throw new RuntimeException(e.getCause());
+    } finally {
+      try {
+        queue.put(StripeWriteTask.POISON);
+        writerThread.join();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException(e);
+      } finally {
+        stripeExecutor.shutdown();
+        synchronized (readers) {
+          for (final var reader : readers) {
+            try {
+              reader.close();
+            } catch (Exception ignored) {
+            }
+          }
+        }
+      }
     }
     writeProgress.finish();
   }
@@ -324,13 +342,13 @@ public class McoolToHictConverter {
     };
   }
 
-  private static SaveBlockResult saveIndirectBlock(
+  private static SaveBlockResult saveStripeBlocks(
     final @NotNull IHDF5Writer dst,
     final int rowStripe,
     final int stripeCount,
-    final @NotNull SortedStripePixels sorted,
-    final long currentSparseOffset,
-    final long currentDenseOffset,
+    final @NotNull StripeBlocks blocks,
+    final long stripeSparseOffset,
+    final long stripeDenseOffset,
     final @NotNull String blockRowsPath,
     final @NotNull String blockColsPath,
     final @NotNull String blockValsPath,
@@ -338,123 +356,389 @@ public class McoolToHictConverter {
     final @NotNull String blockLengthPath,
     final @NotNull String denseBlocksPath
   ) {
-    long sparseOffset = currentSparseOffset;
-    long denseOffset = currentDenseOffset;
+    long sparseOffset = stripeSparseOffset;
+    long denseOffset = stripeDenseOffset;
 
-    final var colStripes = sorted.colStripes();
-    final var intraRows = sorted.intraRows();
-    final var intraCols = sorted.intraCols();
-    final var values = sorted.values();
+    final var colStripes = blocks.colStripes();
+    final var lengths = blocks.blockLengths();
+    final var denseFlags = blocks.denseFlags();
+    final var sparseRows = blocks.sparseRows();
+    final var sparseCols = blocks.sparseCols();
+    final var sparseVals = blocks.sparseVals();
+    final var denseFlats = blocks.denseFlats();
 
-    int start = 0;
-    while (start < colStripes.length) {
-      int end = start + 1;
-      final long colStripe = colStripes[start];
-      while (end < colStripes.length && colStripes[end] == colStripe) {
-        end++;
+    long stripeSparseLen = 0L;
+    for (int i = 0; i < colStripes.length; i++) {
+      if (!denseFlags[i]) {
+        stripeSparseLen += lengths[i];
       }
+    }
 
-      final int blockLen = end - start;
-      if (blockLen > 0) {
-        final long blockIndex = (long) rowStripe * stripeCount + colStripe;
+    final long[] offsetRow = new long[stripeCount];
+    final long[] lengthRow = new long[stripeCount];
+    final long[] stripeRows = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
+    final long[] stripeCols = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
+    final long[] stripeVals = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
+    int stripePos = 0;
 
-        if (blockLen >= DENSE_THRESHOLD) {
-          dst.int64().writeArrayBlockWithOffset(blockOffsetPath, new long[]{-denseOffset - 1L}, 1, blockIndex);
-          dst.int64().writeArrayBlockWithOffset(blockLengthPath, new long[]{blockLen}, 1, blockIndex);
-
-          final var denseFlat = new long[SUBMATRIX_SIZE * SUBMATRIX_SIZE];
-          for (int i = start; i < end; i++) {
-            final int r = intraRows[i];
-            final int c = intraCols[i];
-            denseFlat[r * SUBMATRIX_SIZE + c] += values[i];
-          }
-
-          final var denseMd = new MDLongArray(denseFlat, new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE});
-          dst.int64().writeMDArrayBlockWithOffset(denseBlocksPath, denseMd, new long[]{denseOffset, 0L, 0L, 0L});
-          denseOffset++;
-        } else {
-          dst.int64().writeArrayBlockWithOffset(blockOffsetPath, new long[]{sparseOffset}, 1, blockIndex);
-          dst.int64().writeArrayBlockWithOffset(blockLengthPath, new long[]{blockLen}, 1, blockIndex);
-
-          final var blockRows = new long[blockLen];
-          final var blockCols = new long[blockLen];
-          final var blockVals = new long[blockLen];
-          for (int i = 0; i < blockLen; i++) {
-            blockRows[i] = intraRows[start + i];
-            blockCols[i] = intraCols[start + i];
-            blockVals[i] = values[start + i];
-          }
-
-          dst.int64().writeArrayBlockWithOffset(blockRowsPath, blockRows, blockLen, sparseOffset);
-          dst.int64().writeArrayBlockWithOffset(blockColsPath, blockCols, blockLen, sparseOffset);
-          dst.int64().writeArrayBlockWithOffset(blockValsPath, blockVals, blockLen, sparseOffset);
-
-          sparseOffset += blockLen;
-        }
+    for (int i = 0; i < colStripes.length; i++) {
+      final int blockLen = lengths[i];
+      if (blockLen <= 0) {
+        continue;
       }
+      final int colStripe = colStripes[i];
 
-      start = end;
+      if (denseFlags[i]) {
+        offsetRow[colStripe] = -denseOffset - 1L;
+        lengthRow[colStripe] = blockLen;
+        final var denseMd = new MDLongArray(denseFlats[i], new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE});
+        dst.int64().writeMDArrayBlockWithOffset(denseBlocksPath, denseMd, new long[]{denseOffset, 0L, 0L, 0L});
+        denseOffset++;
+      } else {
+        offsetRow[colStripe] = sparseOffset;
+        lengthRow[colStripe] = blockLen;
+        final var blockRows = sparseRows[i];
+        final var blockCols = sparseCols[i];
+        final var blockVals = sparseVals[i];
+        System.arraycopy(blockRows, 0, stripeRows, stripePos, blockLen);
+        System.arraycopy(blockCols, 0, stripeCols, stripePos, blockLen);
+        System.arraycopy(blockVals, 0, stripeVals, stripePos, blockLen);
+        stripePos += blockLen;
+        sparseOffset += blockLen;
+      }
+    }
+
+    final long rowBase = (long) rowStripe * stripeCount;
+    dst.int64().writeArrayBlockWithOffset(blockOffsetPath, offsetRow, stripeCount, rowBase);
+    dst.int64().writeArrayBlockWithOffset(blockLengthPath, lengthRow, stripeCount, rowBase);
+    if (stripeSparseLen > 0) {
+      dst.int64().writeArrayBlockWithOffset(blockRowsPath, stripeRows, (int) stripeSparseLen, stripeSparseOffset);
+      dst.int64().writeArrayBlockWithOffset(blockColsPath, stripeCols, (int) stripeSparseLen, stripeSparseOffset);
+      dst.int64().writeArrayBlockWithOffset(blockValsPath, stripeVals, (int) stripeSparseLen, stripeSparseOffset);
     }
 
     return new SaveBlockResult(sparseOffset, denseOffset);
   }
 
-  private static @NotNull StripeCounts countDenseAndSparse(
-    final @NotNull IHDF5Reader src,
+  private static @NotNull StripeCountDetails countDenseAndSparse(
+    final @NotNull java.nio.file.Path inputPath,
     final long resolution,
     final int stripeCount,
     final long @NotNull [] allRowsStartIndices,
     final int stripeWorkers,
     final @NotNull java.util.function.IntConsumer countingProgressReporter
   ) {
-    long sparseCount = 0L;
-    long denseCount = 0L;
+    if (stripeCount <= 0) {
+      return new StripeCountDetails(new long[0], new long[0], 0L, 0L);
+    }
 
-    final int batchSize = Math.max(1, stripeWorkers * 2);
     final ExecutorService stripeExecutor = stripeWorkers > 1 ? Executors.newFixedThreadPool(stripeWorkers) : null;
+    final var readers = java.util.Collections.synchronizedList(new ArrayList<IHDF5Reader>());
+    final ThreadLocal<IHDF5Reader> readerHolder = ThreadLocal.withInitial(() -> {
+      final IHDF5Reader reader = HDF5Factory.openForReading(inputPath.toFile());
+      readers.add(reader);
+      return reader;
+    });
     try {
-      for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
-        checkInterrupted();
-        final int batchEnd = Math.min(stripeCount, batchStart + batchSize);
-        final int localCount = batchEnd - batchStart;
-        final var blocks = new PixelBlock[localCount];
-        for (int i = 0; i < localCount; i++) {
+      final long[] sparseCounts = new long[stripeCount];
+      final long[] denseCounts = new long[stripeCount];
+      final int batchSize = resolveBatchSize(stripeWorkers);
+      if (stripeExecutor == null) {
+        for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
           checkInterrupted();
-          blocks[i] = readRowStripePixels(src, resolution, batchStart + i, allRowsStartIndices);
-        }
-        final var sortedBatch = sortStripeBatch(blocks, stripeExecutor);
-
-        for (int i = 0; i < localCount; i++) {
-          checkInterrupted();
-          final int rowStripe = batchStart + i;
-          final var sorted = sortedBatch[i];
-          if (sorted != null) {
-            final var colStripes = sorted.colStripes();
-            int start = 0;
-            while (start < colStripes.length) {
-              int end = start + 1;
-              while (end < colStripes.length && colStripes[end] == colStripes[start]) {
-                end++;
-              }
-              final int blockLen = end - start;
-              if (blockLen >= DENSE_THRESHOLD) {
-                denseCount++;
-              } else {
-                sparseCount += blockLen;
-              }
-              start = end;
+          final int end = Math.min(stripeCount, batchStart + batchSize);
+          final var blocks = readStripeBatch(readerHolder.get(), resolution, batchStart, end, allRowsStartIndices);
+          for (int i = 0; i < blocks.length; i++) {
+            final int stripeIdx = batchStart + i;
+            final var block = blocks[i];
+            if (block.length() > 0) {
+              final var counts = countStripeBlocks(block, stripeCount);
+              sparseCounts[stripeIdx] = counts.sparseElementCount();
+              denseCounts[stripeIdx] = counts.denseBlockCount();
             }
+            countingProgressReporter.accept(stripeIdx + 1);
           }
-          countingProgressReporter.accept(rowStripe + 1);
+        }
+      } else {
+        final List<Future<?>> futures = new ArrayList<>();
+        for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
+          final int start = batchStart;
+          final int end = Math.min(stripeCount, batchStart + batchSize);
+          futures.add(stripeExecutor.submit(() -> {
+            checkInterrupted();
+            final var blocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices);
+            for (int i = 0; i < blocks.length; i++) {
+              final int stripeIdx = start + i;
+              final var block = blocks[i];
+              if (block.length() > 0) {
+                final var counts = countStripeBlocks(block, stripeCount);
+                sparseCounts[stripeIdx] = counts.sparseElementCount();
+                denseCounts[stripeIdx] = counts.denseBlockCount();
+              }
+              countingProgressReporter.accept(stripeIdx + 1);
+            }
+          }));
+        }
+
+        try {
+          for (final var future : futures) {
+            future.get();
+          }
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+          throw new RuntimeException(e.getCause());
         }
       }
+
+      long sparseTotal = 0L;
+      long denseTotal = 0L;
+      for (int i = 0; i < stripeCount; i++) {
+        sparseTotal += sparseCounts[i];
+        denseTotal += denseCounts[i];
+      }
+      return new StripeCountDetails(sparseCounts, denseCounts, sparseTotal, denseTotal);
     } finally {
       if (stripeExecutor != null) {
         stripeExecutor.shutdownNow();
       }
+      synchronized (readers) {
+        for (final var reader : readers) {
+          try {
+            reader.close();
+          } catch (Exception ignored) {
+          }
+        }
+      }
+    }
+  }
+
+  private static @NotNull StripeCounts countStripeBlocks(
+    final @NotNull PixelBlock block,
+    final int stripeCount
+  ) {
+    final var cols = block.cols();
+    final int maxTouched = Math.min(stripeCount, cols.length);
+    final var buffer = acquireCountBuffer(stripeCount, maxTouched);
+    final int[] counts = buffer.counts();
+    final int[] touched = buffer.touched();
+    int touchedCount = 0;
+
+    for (int i = 0; i < cols.length; i++) {
+      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      if (counts[colStripe]++ == 0) {
+        touched[touchedCount++] = colStripe;
+      }
     }
 
-    return new StripeCounts(sparseCount, denseCount);
+    Arrays.sort(touched, 0, touchedCount);
+    long sparse = 0L;
+    long dense = 0L;
+    for (int i = 0; i < touchedCount; i++) {
+      final int colStripe = touched[i];
+      final int count = counts[colStripe];
+      counts[colStripe] = 0;
+      if (count >= DENSE_THRESHOLD) {
+        dense++;
+      } else {
+        sparse += count;
+      }
+    }
+    return new StripeCounts(sparse, dense);
+  }
+
+  private static @NotNull PixelBlock[] readStripeBatch(
+    final @NotNull IHDF5Reader src,
+    final long resolution,
+    final int startStripe,
+    final int endStripe,
+    final long @NotNull [] allRowsStartIndices
+  ) {
+    final int actualEnd = Math.max(startStripe, endStripe);
+    final int count = actualEnd - startStripe;
+    final PixelBlock[] blocks = new PixelBlock[count];
+    if (count == 0) {
+      return blocks;
+    }
+    final int startBin = startStripe * SUBMATRIX_SIZE;
+    final int endBin = Math.min(actualEnd * SUBMATRIX_SIZE, allRowsStartIndices.length - 1);
+    final long startOffset = allRowsStartIndices[startBin];
+    final long endOffset = allRowsStartIndices[endBin];
+    final int length = (int) (endOffset - startOffset);
+    if (length <= 0) {
+      for (int i = 0; i < count; i++) {
+        blocks[i] = new PixelBlock(new long[0], new long[0], new long[0]);
+      }
+      return blocks;
+    }
+
+    final var base = "/resolutions/" + resolution + "/pixels/";
+    final var rows = src.int64().readArrayBlockWithOffset(base + "bin1_id", length, startOffset);
+    final var cols = src.int64().readArrayBlockWithOffset(base + "bin2_id", length, startOffset);
+    final var vals = src.int64().readArrayBlockWithOffset(base + "count", length, startOffset);
+
+    for (int i = 0; i < count; i++) {
+      final int stripeIdx = startStripe + i;
+      final int stripeStartBin = stripeIdx * SUBMATRIX_SIZE;
+      final int stripeEndBin = Math.min((stripeIdx + 1) * SUBMATRIX_SIZE, allRowsStartIndices.length - 1);
+      final int stripeStart = (int) (allRowsStartIndices[stripeStartBin] - startOffset);
+      final int stripeEnd = (int) (allRowsStartIndices[stripeEndBin] - startOffset);
+      final int stripeLen = Math.max(0, stripeEnd - stripeStart);
+      if (stripeLen <= 0) {
+        blocks[i] = new PixelBlock(new long[0], new long[0], new long[0]);
+      } else {
+        blocks[i] = new PixelBlock(
+          Arrays.copyOfRange(rows, stripeStart, stripeEnd),
+          Arrays.copyOfRange(cols, stripeStart, stripeEnd),
+          Arrays.copyOfRange(vals, stripeStart, stripeEnd)
+        );
+      }
+    }
+    return blocks;
+  }
+
+  private static int resolveBatchSize(final int stripeWorkers) {
+    if (stripeWorkers <= 1) {
+      return 4;
+    }
+    return Math.min(32, Math.max(4, stripeWorkers));
+  }
+
+  private static @NotNull StripeBlocks buildStripeBlocks(
+    final @NotNull PixelBlock block,
+    final int stripeCount
+  ) {
+    final var rows = block.rows();
+    final var cols = block.cols();
+    final var values = block.values();
+    final int n = rows.length;
+
+    final int maxTouched = Math.min(stripeCount, n);
+    final var buffer = acquireCountBuffer(stripeCount, maxTouched);
+    final int[] counts = buffer.counts();
+    final int[] touched = buffer.touched();
+    int touchedCount = 0;
+
+    for (int i = 0; i < n; i++) {
+      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      if (counts[colStripe]++ == 0) {
+        touched[touchedCount++] = colStripe;
+      }
+    }
+
+    Arrays.sort(touched, 0, touchedCount);
+    final int nonEmptyBlocks = touchedCount;
+    final int[] blockColStripes = new int[nonEmptyBlocks];
+    final boolean[] denseFlags = new boolean[nonEmptyBlocks];
+    final int[] blockLengths = new int[nonEmptyBlocks];
+
+    for (int i = 0; i < touchedCount; i++) {
+      final int colStripe = touched[i];
+      final int count = counts[colStripe];
+      counts[colStripe] = 0;
+      blockColStripes[i] = colStripe;
+      blockLengths[i] = count;
+      denseFlags[i] = count >= DENSE_THRESHOLD;
+    }
+
+    final long[][] sparseRows = new long[nonEmptyBlocks][];
+    final long[][] sparseCols = new long[nonEmptyBlocks][];
+    final long[][] sparseVals = new long[nonEmptyBlocks][];
+    final long[][] denseFlats = new long[nonEmptyBlocks][];
+
+    for (int i = 0; i < nonEmptyBlocks; i++) {
+      if (denseFlags[i]) {
+        denseFlats[i] = new long[SUBMATRIX_SIZE * SUBMATRIX_SIZE];
+      } else {
+        final int len = blockLengths[i];
+        sparseRows[i] = new long[len];
+        sparseCols[i] = new long[len];
+        sparseVals[i] = new long[len];
+      }
+    }
+
+    final int[] colStripeToIndex = new int[stripeCount];
+    Arrays.fill(colStripeToIndex, -1);
+    for (int i = 0; i < nonEmptyBlocks; i++) {
+      colStripeToIndex[blockColStripes[i]] = i;
+    }
+
+    final int[] sparsePositions = new int[nonEmptyBlocks];
+    for (int i = 0; i < n; i++) {
+      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      final int idx = colStripeToIndex[colStripe];
+      final int intraRow = (int) (rows[i] % SUBMATRIX_SIZE);
+      final int intraCol = (int) (cols[i] % SUBMATRIX_SIZE);
+      if (denseFlags[idx]) {
+        denseFlats[idx][intraRow * SUBMATRIX_SIZE + intraCol] += values[i];
+      } else {
+        final int pos = sparsePositions[idx]++;
+        sparseRows[idx][pos] = intraRow;
+        sparseCols[idx][pos] = intraCol;
+        sparseVals[idx][pos] = values[i];
+      }
+    }
+
+    for (int i = 0; i < nonEmptyBlocks; i++) {
+      if (!denseFlags[i] && blockLengths[i] > 1) {
+        sortSparseBlockRowMajor(sparseRows[i], sparseCols[i], sparseVals[i]);
+      }
+    }
+
+    return new StripeBlocks(blockColStripes, blockLengths, denseFlags, sparseRows, sparseCols, sparseVals, denseFlats);
+  }
+
+  private static void sortSparseBlockRowMajor(
+    final long @NotNull [] rows,
+    final long @NotNull [] cols,
+    final long @NotNull [] vals
+  ) {
+    final int n = rows.length;
+    if (n <= 1) {
+      return;
+    }
+    final int bucketSize = SUBMATRIX_SIZE * SUBMATRIX_SIZE;
+    final int[] counts = new int[bucketSize];
+    final int[] keys = new int[n];
+    for (int i = 0; i < n; i++) {
+      final int key = (int) (rows[i] * SUBMATRIX_SIZE + cols[i]);
+      keys[i] = key;
+      counts[key]++;
+    }
+    int sum = 0;
+    for (int i = 0; i < bucketSize; i++) {
+      final int c = counts[i];
+      counts[i] = sum;
+      sum += c;
+    }
+    final long[] sortedRows = new long[n];
+    final long[] sortedCols = new long[n];
+    final long[] sortedVals = new long[n];
+    for (int i = 0; i < n; i++) {
+      final int key = keys[i];
+      final int pos = counts[key]++;
+      sortedRows[pos] = rows[i];
+      sortedCols[pos] = cols[i];
+      sortedVals[pos] = vals[i];
+    }
+    System.arraycopy(sortedRows, 0, rows, 0, n);
+    System.arraycopy(sortedCols, 0, cols, 0, n);
+    System.arraycopy(sortedVals, 0, vals, 0, n);
+  }
+
+  private static final ThreadLocal<CountBuffer> COUNT_BUFFER =
+    ThreadLocal.withInitial(() -> new CountBuffer(new int[0], new int[0]));
+
+  private static @NotNull CountBuffer acquireCountBuffer(final int stripeCount, final int touchedCapacity) {
+    final var buffer = COUNT_BUFFER.get();
+    if (buffer.counts().length < stripeCount) {
+      buffer.counts = new int[stripeCount];
+    }
+    if (buffer.touched().length < touchedCapacity) {
+      buffer.touched = new int[touchedCapacity];
+    }
+    return buffer;
   }
 
   private static @NotNull SortedStripePixels[] sortStripeBatch(
@@ -1005,8 +1289,8 @@ public class McoolToHictConverter {
     }
   }
 
-  private static final SortedStripePixels EMPTY_STRIPE =
-    new SortedStripePixels(new long[0], new int[0], new int[0], new long[0]);
+  private static final StripeBlocks EMPTY_BLOCKS =
+    new StripeBlocks(new int[0], new int[0], new boolean[0], new long[0][], new long[0][], new long[0][], new long[0][]);
 
   private record PixelBlock(long @NotNull [] rows, long @NotNull [] cols, long @NotNull [] values) {
     int length() {
@@ -1022,7 +1306,48 @@ public class McoolToHictConverter {
   ) {
   }
 
+  private record StripeBlocks(
+    int @NotNull [] colStripes,
+    int @NotNull [] blockLengths,
+    boolean @NotNull [] denseFlags,
+    long @NotNull [] @NotNull [] sparseRows,
+    long @NotNull [] @NotNull [] sparseCols,
+    long @NotNull [] @NotNull [] sparseVals,
+    long @NotNull [] @NotNull [] denseFlats
+  ) {
+  }
+
   private record StripeCounts(long sparseElementCount, long denseBlockCount) {
+  }
+
+  private record StripeCountDetails(
+    long @NotNull [] sparseCounts,
+    long @NotNull [] denseCounts,
+    long sparseTotal,
+    long denseTotal
+  ) {
+  }
+
+  private record StripeWriteTask(int stripeIndex, @NotNull StripeBlocks blocks) {
+    static final StripeWriteTask POISON = new StripeWriteTask(-1, EMPTY_BLOCKS);
+  }
+
+  private static final class CountBuffer {
+    private int[] counts;
+    private int[] touched;
+
+    private CountBuffer(final int[] counts, final int[] touched) {
+      this.counts = counts;
+      this.touched = touched;
+    }
+
+    private int[] counts() {
+      return counts;
+    }
+
+    private int[] touched() {
+      return touched;
+    }
   }
 
   private record SaveBlockResult(long sparseOffset, long denseOffset) {

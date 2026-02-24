@@ -90,10 +90,50 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
       log.info("Putting chunkedFile into the local map");
       map.put("chunkedFile", chunkedFileWrapper);
+      map.put("openedFilename", filename);
 
       map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
 
       ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
+    });
+
+    router.post("/attach").blockingHandler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.response()
+          .setStatusCode(404)
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(new io.vertx.core.json.JsonObject().put("error", "No session to attach")));
+        return;
+      }
+      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+      final var filename = (String) map.getOrDefault("openedFilename", "");
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(Json.encode(
+          new io.vertx.core.json.JsonObject()
+            .put("filename", filename)
+            .put("openFileResponse", generateOpenFileResponse(chunkedFile))
+        ));
+    });
+
+    router.post("/close").blockingHandler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper != null) {
+        try {
+          chunkedFileWrapper.getChunkedFile().close();
+        } catch (Exception e) {
+          log.warn("Failed to close chunked file", e);
+        }
+      }
+      map.remove("chunkedFile");
+      map.remove("TileStatisticHolder");
+      map.remove("openedFilename");
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(Json.encode(new io.vertx.core.json.JsonObject().put("status", "closed")));
     });
 
     router.post("/get_agp_for_assembly").blockingHandler(ctx -> {
