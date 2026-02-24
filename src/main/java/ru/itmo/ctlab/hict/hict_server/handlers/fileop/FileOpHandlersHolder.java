@@ -94,7 +94,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
       map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
 
-      ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(Json.encode(generateOpenFileResponse(chunkedFile)));
     });
 
     router.post("/attach").blockingHandler(ctx -> {

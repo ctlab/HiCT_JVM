@@ -26,10 +26,13 @@ public class InfoHandlersHolder extends HandlersHolder {
     router.get("/version").handler(ctx -> {
       final var version = readVersion();
       final var webuiVersion = readWebUiVersion();
-      ctx.response().setStatusCode(200).end(Json.encode(Map.of(
-        "version", version,
-        "webuiVersion", webuiVersion
-      )));
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(Map.of(
+          "version", version,
+          "webuiVersion", webuiVersion
+        )));
     });
   }
 

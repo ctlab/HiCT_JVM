@@ -83,7 +83,10 @@ public class TileHandlersHolder extends HandlersHolder {
         return;
       }
       final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
-      ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
     });
 
     router.post("/get_visualization_options").blockingHandler(ctx -> {
@@ -102,7 +105,10 @@ public class TileHandlersHolder extends HandlersHolder {
         return;
       }
       final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
-      ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
     });
 
     router.post("/tiles/reload").blockingHandler(ctx -> {
