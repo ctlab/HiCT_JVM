@@ -48,6 +48,9 @@ public class HictCli implements Runnable {
     }
 
     final CommandLine.ParseResult parseResult = commandLine.parseArgs(args);
+    if (parseResult.hasMatchedOption("verbose")) {
+      System.setProperty("HICT_VERBOSE", "true");
+    }
     final var subcommand = parseResult.subcommand();
     final String subcommandName = subcommand != null ? subcommand.commandSpec().name() : "";
 
