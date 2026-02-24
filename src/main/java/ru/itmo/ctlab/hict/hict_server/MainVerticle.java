@@ -34,6 +34,7 @@ import io.vertx.core.Launcher;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.SLF4JLogDelegateFactory;
@@ -61,6 +62,7 @@ import java.awt.*;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
@@ -187,8 +189,12 @@ public class MainVerticle extends AbstractVerticle {
 
     router.route().failureHandler(ctx -> {
       log.error("An exception was caught at router top-level", ctx.failure());
-      ctx.response().end(
-          ctx.failure().getMessage());
+      final var message = ctx.failure() != null && ctx.failure().getMessage() != null
+        ? ctx.failure().getMessage()
+        : "Request failed";
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(Json.encode(Map.of("error", message)));
     });
 
     log.info("Configuring router");
