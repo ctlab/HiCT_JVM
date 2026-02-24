@@ -47,7 +47,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class MatrixQueries {
   private final @NotNull ChunkedFile chunkedFile;
+  private static final boolean ASSERTIONS_ENABLED = MatrixQueries.class.desiredAssertionStatus();
   private final Map<Integer, BlockMetaRowCache> blockMetaRowCaches = new ConcurrentHashMap<>();
+  private final BlockDataCache blockDataCache = new BlockDataCache(Long.getLong("HICT_BLOCK_DATA_CACHE_BYTES", 128L * 1024L * 1024L));
 
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
@@ -94,7 +96,6 @@ public class MatrixQueries {
         Objects.requireNonNull(dsBundle);
         final var blockMetaCache = new HashMap<Long, BlockMeta>();
         prefillBlockMetaCache(dsBundle, resolutionOrder, rowATUs, colATUs, blockMetaCache);
-        final var sparseBlockCache = new HashMap<Long, SparseBlockData>();
         if (symmetricQuery) {
           final var atuCount = rowATUs.size();
           var startDeltaCol = (int) (startCol - startColIncl);
@@ -105,7 +106,7 @@ public class MatrixQueries {
             for (int j = i; j < atuCount; ++j) {
               final var colATU = colATUs.get(j);
               final var colCount = colATU.getLength();
-              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache, sparseBlockCache);
+              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
               if (i != j) {
                 for (int k = 0; k < rowCount; k++) {
                   for (int l = 0; l < colCount; l++) {
@@ -122,7 +123,7 @@ public class MatrixQueries {
           for (final var rowATU : rowATUs) {
             deltaCol = (int) (startCol - startColIncl);
             for (final var colATU : colATUs) {
-              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache, sparseBlockCache);
+              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
               deltaCol += colATU.getLength();
             }
             deltaRow += rowATU.getLength();
@@ -191,24 +192,13 @@ public class MatrixQueries {
       lessSize = 0L;
     }
 
-    final List<ContigTree.Node> debugContigNodes = new ArrayList<>();
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      debugContigNodes.add(node);
-    });
-
-    final List<ATUDescriptor> debugAllATUs = new ArrayList<>();
-
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      final var contigDirection = node.getTrueDirection();
-      final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
-      if (contigDirection == ContigDirection.FORWARD) {
-        debugAllATUs.addAll(contigATUs);
-      } else {
-        final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
-        Collections.reverse(reversedATUs);
-        debugAllATUs.addAll(reversedATUs);
-      }
-    });
+    final List<ContigTree.Node> debugContigNodes;
+    if (ASSERTIONS_ENABLED) {
+      debugContigNodes = new ArrayList<>();
+      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+    } else {
+      debugContigNodes = List.of();
+    }
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
@@ -330,7 +320,7 @@ public class MatrixQueries {
         final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
           case FORWARD -> firstContigIntermediateATUs;
           case REVERSED -> {
-            final var firstContigIntermediateATUsReversed = firstContigIntermediateATUs.parallelStream()
+            final var firstContigIntermediateATUsReversed = firstContigIntermediateATUs.stream()
               .map(ATUDescriptor::reversed)
               .collect(Collectors.toList());
             Collections.reverse(firstContigIntermediateATUsReversed);
@@ -344,7 +334,7 @@ public class MatrixQueries {
       final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
         case FORWARD -> firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
         case REVERSED -> {
-          final var firstContigRestATUsReversed = firstContigATUs.parallelStream()
+          final var firstContigRestATUsReversed = firstContigATUs.stream()
             .limit(indexOfATUContainingStartPx)
             .map(ATUDescriptor::reversed)
             .collect(Collectors.toList());
@@ -378,7 +368,7 @@ public class MatrixQueries {
       final List<@NotNull ATUDescriptor> lastContigBeginningATUs = switch (lastContigDirection) {
         case FORWARD -> lastContigATUs.subList(0, indexOfATUContainingEndPx);
         case REVERSED -> {
-          final var reversedATUs = lastContigATUs.parallelStream()
+          final var reversedATUs = lastContigATUs.stream()
             .skip(1 + indexOfATUContainingEndPx)
             .map(ATUDescriptor::reversed)
             .collect(Collectors.toList());
@@ -391,7 +381,7 @@ public class MatrixQueries {
 
     atus.add(newLastATU);
 
-    {
+    if (ASSERTIONS_ENABLED) {
       final var sourceATUTotalLength = debugContigNodes.stream().flatMap(node -> node.getContigDescriptor().getAtus().get(resolutionOrder).stream()).mapToInt(ATUDescriptor::getLength).sum();
 
       assert (segmentSize == sourceATUTotalLength) : "Expose returned more ATUs than segment length??";
@@ -446,7 +436,7 @@ public class MatrixQueries {
     final @Nullable Map<Long, BlockMeta> blockMetaCache
   ) {
     final var denseMatrix = new long[needsTranspose ? colATU.getLength() : rowATU.getLength()][needsTranspose ? rowATU.getLength() : colATU.getLength()];
-    fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, denseMatrix, 0, 0, needsTranspose, blockMetaCache, null);
+    fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, denseMatrix, 0, 0, needsTranspose, blockMetaCache);
     return denseMatrix;
   }
 
@@ -459,11 +449,10 @@ public class MatrixQueries {
     final int dstRow,
     final int dstCol,
     final boolean needsTranspose,
-    final @Nullable Map<Long, BlockMeta> blockMetaCache,
-    final @Nullable Map<Long, SparseBlockData> sparseBlockCache
+    final @Nullable Map<Long, BlockMeta> blockMetaCache
   ) {
     if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
-      fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, colATU, rowATU, target, dstRow, dstCol, !needsTranspose, blockMetaCache, sparseBlockCache);
+      fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, colATU, rowATU, target, dstRow, dstCol, !needsTranspose, blockMetaCache);
       return;
     }
 
@@ -513,21 +502,20 @@ public class MatrixQueries {
       final var flipCols = ATUDirection.REVERSED.equals(colATU.getDirection());
 
       final var savedAsSparse = (blockOffset >= 0L);
+      final var cacheKey = new BlockCacheKey(resolutionOrder, blockIndexInDatasets);
+      final var cachedPayload = this.blockDataCache.get(cacheKey);
 
       if (savedAsSparse) {
         final SparseBlockData sparseBlockData;
-        if (sparseBlockCache != null) {
-          sparseBlockData = sparseBlockCache.computeIfAbsent(blockIndexInDatasets, key -> new SparseBlockData(
-            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
-            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
-            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
-          ));
+        if (cachedPayload instanceof SparseBlockData cachedSparse) {
+          sparseBlockData = cachedSparse;
         } else {
           sparseBlockData = new SparseBlockData(
             reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
             reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
             reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
           );
+          this.blockDataCache.put(cacheKey, sparseBlockData);
         }
 
         final var queryRowCount = lastRow - firstRow;
@@ -568,8 +556,11 @@ public class MatrixQueries {
           }
         }
       } else {
-        final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
-        if (blockOnMainDiagonal) {
+        final DenseBlockData denseBlockData;
+        if (cachedPayload instanceof DenseBlockData cachedDense) {
+          denseBlockData = cachedDense;
+        } else {
+          final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
           final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
             dsBundle.getDenseBlockDataSet(),
             new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()},
@@ -577,11 +568,18 @@ public class MatrixQueries {
             idx
           );
           final var denseBlock = block.toMatrix();
-          for (int i = 0; i < denseBlock.length; ++i) {
-            for (int j = 1 + i; j < denseBlock.length; ++j) {
-              denseBlock[j][i] = denseBlock[i][j];
+          if (blockOnMainDiagonal) {
+            for (int i = 0; i < denseBlock.length; ++i) {
+              for (int j = 1 + i; j < denseBlock.length; ++j) {
+                denseBlock[j][i] = denseBlock[i][j];
+              }
             }
           }
+          denseBlockData = new DenseBlockData(denseBlock);
+          this.blockDataCache.put(cacheKey, denseBlockData);
+        }
+        final var denseBlock = denseBlockData.matrix();
+        if (blockOnMainDiagonal) {
           for (int outRow = 0; outRow < queryRows; outRow++) {
             final int srcRow = flipRows ? (lastRow - 1 - outRow) : (firstRow + outRow);
             for (int outCol = 0; outCol < queryCols; outCol++) {
@@ -594,21 +592,14 @@ public class MatrixQueries {
             }
           }
         } else {
-          final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
-            dsBundle.getDenseBlockDataSet(),
-            new int[]{queryRows, queryCols},
-            new long[]{firstRow, firstCol},
-            idx
-          );
-          final var denseSubBlock = block.toMatrix();
           for (int outRow = 0; outRow < queryRows; outRow++) {
             final int srcRow = flipRows ? (queryRows - 1 - outRow) : outRow;
             for (int outCol = 0; outCol < queryCols; outCol++) {
               final int srcCol = flipCols ? (queryCols - 1 - outCol) : outCol;
               if (needsTranspose) {
-                target[dstRow + outCol][dstCol + outRow] = denseSubBlock[srcRow][srcCol];
+                target[dstRow + outCol][dstCol + outRow] = denseBlock[firstRow + srcRow][firstCol + srcCol];
               } else {
-                target[dstRow + outRow][dstCol + outCol] = denseSubBlock[srcRow][srcCol];
+                target[dstRow + outRow][dstCol + outCol] = denseBlock[firstRow + srcRow][firstCol + srcCol];
               }
             }
           }
@@ -692,7 +683,28 @@ public class MatrixQueries {
   private record BlockMeta(long blockLength, long blockOffset) {
   }
 
-  private record SparseBlockData(long[] rows, long[] cols, long[] values) {
+  private record BlockCacheKey(int resolutionOrder, long blockIndex) {
+  }
+
+  private sealed interface BlockPayload permits SparseBlockData, DenseBlockData {
+    long estimatedBytes();
+  }
+
+  private record SparseBlockData(long[] rows, long[] cols, long[] values) implements BlockPayload {
+    @Override
+    public long estimatedBytes() {
+      return ((long) rows.length + cols.length + values.length) * Long.BYTES;
+    }
+  }
+
+  private record DenseBlockData(long[][] matrix) implements BlockPayload {
+    @Override
+    public long estimatedBytes() {
+      if (matrix.length == 0) {
+        return 0L;
+      }
+      return ((long) matrix.length) * matrix[0].length * Long.BYTES;
+    }
   }
 
   private record BlockMetaRow(long[] blockLengths, long[] blockOffsets) {
@@ -728,6 +740,41 @@ public class MatrixQueries {
       final var loaded = new BlockMetaRow(rowLengths, rowOffsets);
       this.cache.put(rowStripeId, loaded);
       return loaded;
+    }
+  }
+
+  private static final class BlockDataCache {
+    private final long maxBytes;
+    private long usedBytes = 0L;
+    private final LinkedHashMap<BlockCacheKey, BlockPayload> cache = new LinkedHashMap<>(256, 0.75f, true);
+
+    private BlockDataCache(final long maxBytes) {
+      this.maxBytes = Math.max(8L * 1024L * 1024L, maxBytes);
+    }
+
+    private synchronized @Nullable BlockPayload get(final @NotNull BlockCacheKey key) {
+      return cache.get(key);
+    }
+
+    private synchronized void put(final @NotNull BlockCacheKey key, final @NotNull BlockPayload payload) {
+      final var size = payload.estimatedBytes();
+      if (size <= 0 || size > this.maxBytes) {
+        return;
+      }
+      final var old = cache.put(key, payload);
+      if (old != null) {
+        usedBytes -= old.estimatedBytes();
+      }
+      usedBytes += size;
+      while (usedBytes > maxBytes && !cache.isEmpty()) {
+        final var it = cache.entrySet().iterator();
+        if (!it.hasNext()) {
+          break;
+        }
+        final var eldest = it.next();
+        usedBytes -= eldest.getValue().estimatedBytes();
+        it.remove();
+      }
     }
   }
 
