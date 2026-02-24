@@ -24,11 +24,9 @@
 
 package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
-import ch.systemsx.cisd.base.mdarray.MDLongArray;
 import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundle;
@@ -40,17 +38,16 @@ import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_library.util.CommonUtils;
-import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Slf4j
 public class MatrixQueries {
   private final @NotNull ChunkedFile chunkedFile;
+  private final Map<Integer, BlockMetaRowCache> blockMetaRowCaches = new ConcurrentHashMap<>();
 
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
@@ -78,8 +75,8 @@ public class MatrixQueries {
     int deltaRow = (int) (startRow - startRowIncl);
     int deltaCol = (int) (startCol - startColIncl);
 
-    final double[] rowWeights = rowATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
-    final double[] colWeights = colATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
+    final double[] rowWeights = flattenWeights(rowATUs);
+    final double[] colWeights = symmetricQuery ? rowWeights : flattenWeights(colATUs);
 
     final double[] paddedRowWeights = new double[queryRows];
     final double[] paddedColWeights = new double[queryCols];
@@ -90,10 +87,16 @@ public class MatrixQueries {
       System.arraycopy(colWeights, 0, paddedColWeights, deltaCol, colWeights.length);
 
 
-      try (final var pool = Executors.newWorkStealingPool()) {
+      final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
+      @Nullable HDF5FileDatasetsBundle dsBundle = null;
+      try {
+        dsBundle = pool.borrowObject();
+        Objects.requireNonNull(dsBundle);
+        final var blockMetaCache = new HashMap<Long, BlockMeta>();
+        prefillBlockMetaCache(dsBundle, resolutionOrder, rowATUs, colATUs, blockMetaCache);
+        final var sparseBlockCache = new HashMap<Long, SparseBlockData>();
         if (symmetricQuery) {
           final var atuCount = rowATUs.size();
-          log.debug("Symmetric query with " + atuCount + " ATUs");
           var startDeltaCol = (int) (startCol - startColIncl);
           for (int i = 0; i < atuCount; ++i) {
             final var rowATU = rowATUs.get(i);
@@ -101,20 +104,15 @@ public class MatrixQueries {
             final var rowCount = rowATU.getLength();
             for (int j = i; j < atuCount; ++j) {
               final var colATU = colATUs.get(j);
-              final int finalDeltaCol = deltaCol;
-              final int finalDeltaRow = deltaRow;
               final var colCount = colATU.getLength();
-              pool.submit(() -> {
-                final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
-                for (int k = 0; k < rowCount; k++) {
-                  System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
-                }
+              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache, sparseBlockCache);
+              if (i != j) {
                 for (int k = 0; k < rowCount; k++) {
                   for (int l = 0; l < colCount; l++) {
-                    result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
+                    result[deltaCol + l][deltaRow + k] = result[deltaRow + k][deltaCol + l];
                   }
                 }
-              });
+              }
               deltaCol += colCount;
             }
             startDeltaCol += colATUs.get(i).getLength();
@@ -123,26 +121,21 @@ public class MatrixQueries {
         } else {
           for (final var rowATU : rowATUs) {
             deltaCol = (int) (startCol - startColIncl);
-            final var rowCount = rowATU.getLength();
             for (final var colATU : colATUs) {
-              final int finalDeltaCol = deltaCol;
-              final int finalDeltaRow = deltaRow;
-              final var colCount = colATU.getLength();
-
-              pool.submit(() -> {
-                try {
-                  final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
-                  for (int k = 0; k < rowCount; k++) {
-                    System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
-                  }
-                } catch (final Throwable ex) {
-                  throw new RuntimeException("Dense matrix fetch failed");
-                }
-              });
-
-              deltaCol += colCount;
+              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache, sparseBlockCache);
+              deltaCol += colATU.getLength();
             }
-            deltaRow += rowCount;
+            deltaRow += rowATU.getLength();
+          }
+        }
+      } catch (final Exception ex) {
+        throw new RuntimeException("Dense matrix fetch failed", ex);
+      } finally {
+        if (dsBundle != null) {
+          try {
+            pool.returnObject(dsBundle);
+          } catch (final Exception ignored) {
+            // ignored
           }
         }
       }
@@ -152,18 +145,25 @@ public class MatrixQueries {
     return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
   }
 
-  private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu) {
-    return getWeightsByATU(atu, false);
-  }
-
-  private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu, final boolean needsReversal) {
-    final var length = atu.getLength();
-    final var weights = new double[length];
-    System.arraycopy(atu.getStripeDescriptor().bin_weights(), atu.getStartIndexInStripeIncl(), weights, 0, length);
-    if ((atu.getDirection() == ATUDirection.REVERSED) ^ needsReversal) {
-      ArrayUtils.reverse(weights);
+  private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus) {
+    final var totalLength = atus.stream().mapToInt(ATUDescriptor::getLength).sum();
+    final var result = new double[totalLength];
+    var dst = 0;
+    for (final var atu : atus) {
+      final var src = atu.getStripeDescriptor().bin_weights();
+      final var start = atu.getStartIndexInStripeIncl();
+      final var end = atu.getEndIndexInStripeExcl();
+      final var len = end - start;
+      if (atu.getDirection() == ATUDirection.FORWARD) {
+        System.arraycopy(src, start, result, dst, len);
+      } else {
+        for (int i = 0; i < len; i++) {
+          result[dst + i] = src[end - 1 - i];
+        }
+      }
+      dst += len;
     }
-    return weights;
+    return result;
   }
 
   // TODO: Implement
@@ -320,9 +320,7 @@ public class MatrixQueries {
 
     if (onlyOneContig) {
       if (sameATUIsFirstAndLast) {
-        final var result = new CopyOnWriteArrayList<ATUDescriptor>();
-        result.add(newLastATU);
-        return result;
+        return List.of(newLastATU);
       } else {
         atus.add(newFirstATU);
         final var firstContigIntermediateATUs = firstContigATUs.subList(
@@ -411,171 +409,21 @@ public class MatrixQueries {
       reducedATUs.stream().mapToLong(atu -> atu.getEndIndexInStripeExcl() - atu.getStartIndexInStripeIncl()).sum() == (endPx - startPx)
     ) : "Wrong total length of ATUs after reduction??";
 
-    return new CopyOnWriteArrayList<>(reducedATUs);
+    return reducedATUs;
   }
 
   public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU) {
     return getATUIntersection(resolutionDescriptor, rowATU, colATU, false);
   }
 
-  // TODO: Implement
   public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU, final boolean needsTranspose) {
-    if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
-      return getATUIntersection(resolutionDescriptor, colATU, rowATU, !needsTranspose);
-    }
-
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
-    final var resolution = this.chunkedFile.getResolutions()[resolutionOrder];
-    final var rowStripe = rowATU.getStripeDescriptor();
-    final var colStripe = colATU.getStripeDescriptor();
-    final var rowStripeId = rowStripe.stripeId();
-    final var colStripeId = colStripe.stripeId();
-    final var queryRows = rowATU.getLength();
-    final var queryCols = colATU.getLength();
-    final var blockOnMainDiagonal = (rowStripeId == colStripeId);
-
-//    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
     final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
     @Nullable HDF5FileDatasetsBundle dsBundle = null;
     try {
       dsBundle = pool.borrowObject();
       Objects.requireNonNull(dsBundle);
-      final var reader = dsBundle.getReader();
-      final var blockIndexInDatasets = rowStripeId * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
-      final long blockLength;
-      final long blockOffset;
-
-      {
-        final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
-        final long[] buf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
-        blockLength = buf[0];
-      }
-
-      final boolean isEmpty = (blockLength == 0L);
-      final long[][] denseMatrix = new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
-
-      if (isEmpty) {
-        log.debug("Zero ATU intersection");
-        return denseMatrix;
-      }
-
-      final var firstRow = rowATU.getStartIndexInStripeIncl();
-      final var firstCol = colATU.getStartIndexInStripeIncl();
-      final var lastRow = rowATU.getEndIndexInStripeExcl();
-      final var lastCol = colATU.getEndIndexInStripeExcl();
-
-      final var flipRows = ATUDirection.REVERSED.equals(rowATU.getDirection());
-      final var flipCols = ATUDirection.REVERSED.equals(colATU.getDirection());
-
-      {
-        final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
-        final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
-        blockOffset = buf[0];
-      }
-
-      final var savedAsSparse = (blockOffset >= 0L);
-
-      if (savedAsSparse) {
-        log.debug("Fetching sparse block");
-        final long[] blockRows;
-        final long[] blockCols;
-        final long[] blockValues;
-
-
-        blockRows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset);
-        blockCols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset);
-        blockValues = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset);
-
-
-        final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
-        final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, Integer.max(rowATU.getEndIndexInStripeExcl(), colATU.getEndIndexInStripeExcl()));
-        final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
-
-
-//        final var sparseMatrix = new SparseCOOMatrixLong(
-//          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-//          Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-//          Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
-//          needsTranspose,
-//          blockOnMainDiagonal,
-//          flipRows,
-//          flipCols
-//        );
-        final var sparseMatrix = new SparseCOOMatrixLong(
-          Arrays.stream(blockRows).mapToInt(i -> (int) i).toArray(),
-          Arrays.stream(blockCols).mapToInt(i -> (int) i).toArray(),
-          blockValues,
-          blockOnMainDiagonal
-        );
-
-        final var denseSquarePartial = sparseMatrix.toDense(this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize());
-        final var denseBlock = new long[queryRows][queryCols];
-
-        for (int i = firstRow; i < lastRow; ++i) {
-          System.arraycopy(denseSquarePartial[i], firstCol, denseBlock[i - firstRow], 0, queryCols);
-        }
-
-        if (flipRows) {
-          ArrayUtils.reverse(denseBlock);
-        }
-
-        if (flipCols) {
-          for (final var row : denseBlock) {
-            ArrayUtils.reverse(row);
-          }
-        }
-
-        if (needsTranspose) {
-          for (int i = 0; i < queryRows; ++i) {
-            for (int j = 0; j < queryCols; ++j) {
-              denseMatrix[j][i] = denseBlock[i][j];
-            }
-          }
-        } else {
-          System.arraycopy(denseBlock, 0, denseMatrix, 0, queryRows);
-        }
-      } else {
-        log.debug("Fetching dense block");
-        final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
-        final MDLongArray block;
-        {
-          block = reader.int64().readSlicedMDArrayBlockWithOffset(dsBundle.getDenseBlockDataSet(), new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()}, new long[]{0L, 0L}, idx);
-        }
-        final long[][] denseBlock;
-        denseBlock = block.toMatrix();
-        if (blockOnMainDiagonal) {
-          for (int i = 0; i < denseBlock.length; ++i) {
-            for (int j = 1 + i; j < denseBlock.length; ++j) {
-              denseBlock[j][i] = denseBlock[i][j];
-            }
-          }
-        }
-        final var denseSubBlock = new long[queryRows][queryCols];
-
-        for (int i = firstRow; i < lastRow; ++i) {
-          System.arraycopy(denseBlock[i], firstCol, denseSubBlock[i - firstRow], 0, queryCols);
-        }
-
-        if (flipRows) {
-          ArrayUtils.reverse(denseSubBlock);
-        }
-        if (flipCols) {
-          for (final var row : denseSubBlock) {
-            ArrayUtils.reverse(row);
-          }
-        }
-        if (needsTranspose) {
-          for (int i = 0; i < queryRows; ++i) {
-            for (int j = 0; j < queryCols; ++j) {
-              denseMatrix[j][i] = denseSubBlock[i][j];
-            }
-          }
-        } else {
-          System.arraycopy(denseSubBlock, 0, denseMatrix, 0, queryRows);
-        }
-      }
-
-      return denseMatrix;
+      return getATUIntersectionWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, needsTranspose, null);
     } catch (Exception e) {
       throw new RuntimeException(e);
     } finally {
@@ -586,6 +434,300 @@ public class MatrixQueries {
           // ignored
         }
       }
+    }
+  }
+
+  private long @NotNull [][] getATUIntersectionWithBundle(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final @NotNull ATUDescriptor rowATU,
+    final @NotNull ATUDescriptor colATU,
+    final boolean needsTranspose,
+    final @Nullable Map<Long, BlockMeta> blockMetaCache
+  ) {
+    final var denseMatrix = new long[needsTranspose ? colATU.getLength() : rowATU.getLength()][needsTranspose ? rowATU.getLength() : colATU.getLength()];
+    fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, denseMatrix, 0, 0, needsTranspose, blockMetaCache, null);
+    return denseMatrix;
+  }
+
+  private void fillATUIntersectionIntoWithBundle(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final @NotNull ATUDescriptor rowATU,
+    final @NotNull ATUDescriptor colATU,
+    final long[][] target,
+    final int dstRow,
+    final int dstCol,
+    final boolean needsTranspose,
+    final @Nullable Map<Long, BlockMeta> blockMetaCache,
+    final @Nullable Map<Long, SparseBlockData> sparseBlockCache
+  ) {
+    if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
+      fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, colATU, rowATU, target, dstRow, dstCol, !needsTranspose, blockMetaCache, sparseBlockCache);
+      return;
+    }
+
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var rowStripe = rowATU.getStripeDescriptor();
+    final var colStripe = colATU.getStripeDescriptor();
+    final var rowStripeId = rowStripe.stripeId();
+    final var colStripeId = colStripe.stripeId();
+    final var queryRows = rowATU.getLength();
+    final var queryCols = colATU.getLength();
+    final var blockOnMainDiagonal = (rowStripeId == colStripeId);
+
+    final long blockIndexInDatasets = ((long) rowStripeId) * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
+    final long blockLength;
+    final long blockOffset;
+    try {
+      final var reader = dsBundle.getReader();
+      final BlockMeta blockMeta;
+      if (blockMetaCache != null) {
+        blockMeta = blockMetaCache.computeIfAbsent(blockIndexInDatasets, key -> {
+          final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
+          final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
+          final long[] blockLengthBuf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, key.longValue());
+          final long[] blockOffsetBuf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, key.longValue());
+          return new BlockMeta(blockLengthBuf[0], blockOffsetBuf[0]);
+        });
+      } else {
+        final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
+        final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
+        final long[] blockLengthBuf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
+        final long[] blockOffsetBuf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
+        blockMeta = new BlockMeta(blockLengthBuf[0], blockOffsetBuf[0]);
+      }
+      blockLength = blockMeta.blockLength();
+      blockOffset = blockMeta.blockOffset();
+
+      if (blockLength == 0L) {
+        return;
+      }
+
+      final var firstRow = rowATU.getStartIndexInStripeIncl();
+      final var firstCol = colATU.getStartIndexInStripeIncl();
+      final var lastRow = rowATU.getEndIndexInStripeExcl();
+      final var lastCol = colATU.getEndIndexInStripeExcl();
+
+      final var flipRows = ATUDirection.REVERSED.equals(rowATU.getDirection());
+      final var flipCols = ATUDirection.REVERSED.equals(colATU.getDirection());
+
+      final var savedAsSparse = (blockOffset >= 0L);
+
+      if (savedAsSparse) {
+        final SparseBlockData sparseBlockData;
+        if (sparseBlockCache != null) {
+          sparseBlockData = sparseBlockCache.computeIfAbsent(blockIndexInDatasets, key -> new SparseBlockData(
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
+          ));
+        } else {
+          sparseBlockData = new SparseBlockData(
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
+          );
+        }
+
+        final var queryRowCount = lastRow - firstRow;
+        final var queryColCount = lastCol - firstCol;
+        for (int i = 0; i < sparseBlockData.values().length; i++) {
+          final var value = sparseBlockData.values()[i];
+          writeSparseValueToTarget(
+            target,
+            dstRow,
+            dstCol,
+            sparseBlockData.rows()[i],
+            sparseBlockData.cols()[i],
+            value,
+            firstRow,
+            firstCol,
+            queryRowCount,
+            queryColCount,
+            flipRows,
+            flipCols,
+            needsTranspose
+          );
+          if (blockOnMainDiagonal && sparseBlockData.rows()[i] != sparseBlockData.cols()[i]) {
+            writeSparseValueToTarget(
+              target,
+              dstRow,
+              dstCol,
+              sparseBlockData.cols()[i],
+              sparseBlockData.rows()[i],
+              value,
+              firstRow,
+              firstCol,
+              queryRowCount,
+              queryColCount,
+              flipRows,
+              flipCols,
+              needsTranspose
+            );
+          }
+        }
+      } else {
+        final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
+        if (blockOnMainDiagonal) {
+          final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
+            dsBundle.getDenseBlockDataSet(),
+            new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()},
+            new long[]{0L, 0L},
+            idx
+          );
+          final var denseBlock = block.toMatrix();
+          for (int i = 0; i < denseBlock.length; ++i) {
+            for (int j = 1 + i; j < denseBlock.length; ++j) {
+              denseBlock[j][i] = denseBlock[i][j];
+            }
+          }
+          for (int outRow = 0; outRow < queryRows; outRow++) {
+            final int srcRow = flipRows ? (lastRow - 1 - outRow) : (firstRow + outRow);
+            for (int outCol = 0; outCol < queryCols; outCol++) {
+              final int srcCol = flipCols ? (lastCol - 1 - outCol) : (firstCol + outCol);
+              if (needsTranspose) {
+                target[dstRow + outCol][dstCol + outRow] = denseBlock[srcRow][srcCol];
+              } else {
+                target[dstRow + outRow][dstCol + outCol] = denseBlock[srcRow][srcCol];
+              }
+            }
+          }
+        } else {
+          final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
+            dsBundle.getDenseBlockDataSet(),
+            new int[]{queryRows, queryCols},
+            new long[]{firstRow, firstCol},
+            idx
+          );
+          final var denseSubBlock = block.toMatrix();
+          for (int outRow = 0; outRow < queryRows; outRow++) {
+            final int srcRow = flipRows ? (queryRows - 1 - outRow) : outRow;
+            for (int outCol = 0; outCol < queryCols; outCol++) {
+              final int srcCol = flipCols ? (queryCols - 1 - outCol) : outCol;
+              if (needsTranspose) {
+                target[dstRow + outCol][dstCol + outRow] = denseSubBlock[srcRow][srcCol];
+              } else {
+                target[dstRow + outRow][dstCol + outCol] = denseSubBlock[srcRow][srcCol];
+              }
+            }
+          }
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static void writeSparseValueToTarget(
+    final long[][] target,
+    final int dstRow,
+    final int dstCol,
+    final long row,
+    final long col,
+    final long value,
+    final int firstRow,
+    final int firstCol,
+    final int queryRowCount,
+    final int queryColCount,
+    final boolean flipRows,
+    final boolean flipCols,
+    final boolean needsTranspose
+  ) {
+    final int localRow = (int) row - firstRow;
+    final int localCol = (int) col - firstCol;
+    if (localRow < 0 || localRow >= queryRowCount || localCol < 0 || localCol >= queryColCount) {
+      return;
+    }
+    final int transformedRow = flipRows ? (queryRowCount - 1 - localRow) : localRow;
+    final int transformedCol = flipCols ? (queryColCount - 1 - localCol) : localCol;
+    if (needsTranspose) {
+      target[dstRow + transformedCol][dstCol + transformedRow] = value;
+    } else {
+      target[dstRow + transformedRow][dstCol + transformedCol] = value;
+    }
+  }
+
+  private void prefillBlockMetaCache(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final int resolutionOrder,
+    final @NotNull List<@NotNull ATUDescriptor> rowATUs,
+    final @NotNull List<@NotNull ATUDescriptor> colATUs,
+    final @NotNull Map<Long, BlockMeta> blockMetaCache
+  ) {
+    final int stripeCount = this.chunkedFile.getStripeCount()[resolutionOrder];
+    if (stripeCount <= 0) {
+      return;
+    }
+    final var rowStripeIds = rowATUs.stream().map(atu -> atu.getStripeDescriptor().stripeId()).collect(Collectors.toSet());
+    final var colStripeIds = colATUs.stream().map(atu -> atu.getStripeDescriptor().stripeId()).collect(Collectors.toSet());
+    final var neededMetaRows = new HashSet<Integer>();
+    for (final var rowStripeId : rowStripeIds) {
+      for (final var colStripeId : colStripeIds) {
+        neededMetaRows.add(Math.min(rowStripeId, colStripeId));
+      }
+    }
+    final var rowCache = this.blockMetaRowCaches.computeIfAbsent(
+      resolutionOrder,
+      key -> new BlockMetaRowCache(Integer.getInteger("HICT_BLOCK_META_ROW_CACHE_ROWS", 256))
+    );
+    final var loadedRows = new HashMap<Integer, BlockMetaRow>(neededMetaRows.size());
+    for (final var rowStripeId : neededMetaRows) {
+      loadedRows.put(rowStripeId, rowCache.getOrLoad(dsBundle, stripeCount, rowStripeId));
+    }
+    for (final var rowStripeId : rowStripeIds) {
+      for (final var colStripeId : colStripeIds) {
+        final var canonicalRow = Math.min(rowStripeId, colStripeId);
+        final var canonicalCol = Math.max(rowStripeId, colStripeId);
+        final var row = loadedRows.get(canonicalRow);
+        if (row == null) {
+          continue;
+        }
+        final long blockIndex = ((long) canonicalRow) * stripeCount + canonicalCol;
+        blockMetaCache.putIfAbsent(blockIndex, new BlockMeta(row.blockLengths()[canonicalCol], row.blockOffsets()[canonicalCol]));
+      }
+    }
+  }
+
+  private record BlockMeta(long blockLength, long blockOffset) {
+  }
+
+  private record SparseBlockData(long[] rows, long[] cols, long[] values) {
+  }
+
+  private record BlockMetaRow(long[] blockLengths, long[] blockOffsets) {
+  }
+
+  private static final class BlockMetaRowCache {
+    private final int maxRows;
+    private final LinkedHashMap<Integer, BlockMetaRow> cache;
+
+    private BlockMetaRowCache(final int maxRows) {
+      this.maxRows = Math.max(16, maxRows);
+      this.cache = new LinkedHashMap<>(this.maxRows, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<Integer, BlockMetaRow> eldest) {
+          return size() > BlockMetaRowCache.this.maxRows;
+        }
+      };
+    }
+
+    private synchronized @NotNull BlockMetaRow getOrLoad(
+      final @NotNull HDF5FileDatasetsBundle dsBundle,
+      final int stripeCount,
+      final int rowStripeId
+    ) {
+      final var cached = this.cache.get(rowStripeId);
+      if (cached != null) {
+        return cached;
+      }
+      final var reader = dsBundle.getReader();
+      final var rowOffset = ((long) rowStripeId) * stripeCount;
+      final var rowLengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
+      final var rowOffsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
+      final var loaded = new BlockMetaRow(rowLengths, rowOffsets);
+      this.cache.put(rowStripeId, loaded);
+      return loaded;
     }
   }
 
