@@ -56,7 +56,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.stream.LongStream;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
@@ -89,6 +92,11 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull MatrixQueries matrixQueries;
   private final @NotNull ScaffoldingOperations scaffoldingOperations;
   private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
+  private final @NotNull ExecutorService queryExecutor;
+  private final boolean blockCacheEnabled;
+  private final @NotNull AtomicReferenceArray<long[]> blockLengthCache;
+  private final @NotNull AtomicReferenceArray<long[]> blockOffsetCache;
+  private final @NotNull Object[] blockCacheLocks;
   private final @NotNull AGPProcessor agpProcessor;
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
   private final @NotNull Map<Integer, String> contigNameOverrides = new ConcurrentHashMap<>();
@@ -163,8 +171,11 @@ public class ChunkedFile implements AutoCloseable {
       this.datasetBundlePools = new CopyOnWriteArrayList<org.apache.commons.pool2.ObjectPool<HDF5FileDatasetsBundle>>();
       this.datasetBundlePools.add(null);
       final var poolConfig = new GenericObjectPoolConfig<HDF5FileDatasetsBundle>();
-      poolConfig.setMaxTotal(options.maxDatasetPoolSize());
-      poolConfig.setMinIdle(options.minDatasetPoolSize());
+      final int cpuCount = Math.max(2, Runtime.getRuntime().availableProcessors());
+      final int maxPool = Math.max(options.maxDatasetPoolSize(), cpuCount);
+      final int minPool = Math.max(1, Math.min(options.minDatasetPoolSize(), maxPool));
+      poolConfig.setMaxTotal(maxPool);
+      poolConfig.setMinIdle(minPool);
       poolConfig.setBlockWhenExhausted(true);
       for (int i = 1; i < this.resolutions.length; ++i) {
         this.datasetBundlePools.add(new GenericObjectPool<HDF5FileDatasetsBundle>(
@@ -172,7 +183,18 @@ public class ChunkedFile implements AutoCloseable {
           poolConfig
         ));
       }
-      log.info("Using dataset pools with minimum of " + options.minDatasetPoolSize() + " readily available bundles and maximum of " + options.maxDatasetPoolSize() + " readily available bundles.");
+      log.info("Using dataset pools with minimum of " + minPool + " readily available bundles and maximum of " + maxPool + " readily available bundles.");
+    }
+    final int queryThreads = options.queryThreads() > 0
+      ? options.queryThreads()
+      : Math.max(2, Runtime.getRuntime().availableProcessors());
+    this.queryExecutor = Executors.newWorkStealingPool(queryThreads);
+    this.blockCacheEnabled = options.blockCacheEnabled();
+    this.blockLengthCache = new AtomicReferenceArray<>(this.resolutions.length);
+    this.blockOffsetCache = new AtomicReferenceArray<>(this.resolutions.length);
+    this.blockCacheLocks = new Object[this.resolutions.length];
+    for (int i = 0; i < this.blockCacheLocks.length; i++) {
+      this.blockCacheLocks[i] = new Object();
     }
     this.agpProcessor = new AGPProcessor(this);
     this.tileVisualizationProcessor = new TileVisualizationProcessor(this);
@@ -363,8 +385,147 @@ public class ChunkedFile implements AutoCloseable {
 
   @Override
   public void close() {
+    this.queryExecutor.shutdown();
     for (int i = 1; i < resolutions.length; ++i) {
       this.datasetBundlePools.get(i).close();
+    }
+  }
+
+  public @NotNull ExecutorService getQueryExecutor() {
+    return this.queryExecutor;
+  }
+
+  public long getBlockLengthAt(final int resolutionOrder, final long blockIndexInDatasets) {
+    final var pool = datasetBundlePools.get(resolutionOrder);
+    if (pool == null) {
+      throw new IllegalStateException("No dataset pool for resolution order " + resolutionOrder);
+    }
+    if (blockCacheEnabled) {
+      final var cached = getBlockLengthCache(resolutionOrder);
+      if (cached.length > 0 && blockIndexInDatasets < cached.length) {
+        return cached[(int) blockIndexInDatasets];
+      }
+    }
+    HDF5FileDatasetsBundle bundle = null;
+    try {
+      bundle = pool.borrowObject();
+      final var reader = bundle.getReader();
+      final long[] buf = reader.int64().readArrayBlockWithOffset(
+        bundle.getBlockLengthDataSet(),
+        1,
+        blockIndexInDatasets
+      );
+      return buf[0];
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to read block length", e);
+    } finally {
+      if (bundle != null) {
+        try {
+          pool.returnObject(bundle);
+        } catch (Exception ignored) {
+        }
+      }
+    }
+  }
+
+  public long getBlockOffsetAt(final int resolutionOrder, final long blockIndexInDatasets) {
+    final var pool = datasetBundlePools.get(resolutionOrder);
+    if (pool == null) {
+      throw new IllegalStateException("No dataset pool for resolution order " + resolutionOrder);
+    }
+    if (blockCacheEnabled) {
+      final var cached = getBlockOffsetCache(resolutionOrder);
+      if (cached.length > 0 && blockIndexInDatasets < cached.length) {
+        return cached[(int) blockIndexInDatasets];
+      }
+    }
+    HDF5FileDatasetsBundle bundle = null;
+    try {
+      bundle = pool.borrowObject();
+      final var reader = bundle.getReader();
+      final long[] buf = reader.int64().readArrayBlockWithOffset(
+        bundle.getBlockOffsetDataSet(),
+        1,
+        blockIndexInDatasets
+      );
+      return buf[0];
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to read block offset", e);
+    } finally {
+      if (bundle != null) {
+        try {
+          pool.returnObject(bundle);
+        } catch (Exception ignored) {
+        }
+      }
+    }
+  }
+
+  private long @NotNull [] getBlockLengthCache(final int resolutionOrder) {
+    final var cached = blockLengthCache.get(resolutionOrder);
+    if (cached != null) {
+      return cached;
+    }
+    synchronized (blockCacheLocks[resolutionOrder]) {
+      final var again = blockLengthCache.get(resolutionOrder);
+      if (again != null) {
+        return again;
+      }
+      final var pool = datasetBundlePools.get(resolutionOrder);
+      if (pool == null) {
+        throw new IllegalStateException("No dataset pool for resolution order " + resolutionOrder);
+      }
+      HDF5FileDatasetsBundle bundle = null;
+      try {
+        bundle = pool.borrowObject();
+        final var reader = bundle.getReader();
+        final var data = reader.int64().readArray(getBlockLengthDatasetPath(resolutions[resolutionOrder]));
+        blockLengthCache.set(resolutionOrder, data);
+        return data;
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to cache block lengths", e);
+      } finally {
+        if (bundle != null) {
+          try {
+            pool.returnObject(bundle);
+          } catch (Exception ignored) {
+          }
+        }
+      }
+    }
+  }
+
+  private long @NotNull [] getBlockOffsetCache(final int resolutionOrder) {
+    final var cached = blockOffsetCache.get(resolutionOrder);
+    if (cached != null) {
+      return cached;
+    }
+    synchronized (blockCacheLocks[resolutionOrder]) {
+      final var again = blockOffsetCache.get(resolutionOrder);
+      if (again != null) {
+        return again;
+      }
+      final var pool = datasetBundlePools.get(resolutionOrder);
+      if (pool == null) {
+        throw new IllegalStateException("No dataset pool for resolution order " + resolutionOrder);
+      }
+      HDF5FileDatasetsBundle bundle = null;
+      try {
+        bundle = pool.borrowObject();
+        final var reader = bundle.getReader();
+        final var data = reader.int64().readArray(getBlockOffsetDatasetPath(resolutions[resolutionOrder]));
+        blockOffsetCache.set(resolutionOrder, data);
+        return data;
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to cache block offsets", e);
+      } finally {
+        if (bundle != null) {
+          try {
+            pool.returnObject(bundle);
+          } catch (Exception ignored) {
+          }
+        }
+      }
     }
   }
 
@@ -417,7 +578,8 @@ public class ChunkedFile implements AutoCloseable {
     }
   }
 
-  public record ChunkedFileOptions(@NotNull Path hdfFilePath, int minDatasetPoolSize, int maxDatasetPoolSize) {
+  public record ChunkedFileOptions(@NotNull Path hdfFilePath, int minDatasetPoolSize, int maxDatasetPoolSize,
+                                   boolean blockCacheEnabled, int queryThreads) {
 
   }
 }

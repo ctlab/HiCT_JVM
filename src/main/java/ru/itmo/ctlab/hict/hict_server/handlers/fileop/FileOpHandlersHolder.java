@@ -25,12 +25,12 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
@@ -49,147 +49,210 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Objects;
 
-@RequiredArgsConstructor
 @Slf4j
 public class FileOpHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private final WorkerExecutor controlExecutor;
+
+  public FileOpHandlersHolder(final Vertx vertx) {
+    this.vertx = vertx;
+    this.controlExecutor = vertx.createSharedWorkerExecutor("hict-control", 2);
+  }
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
-    router.post("/open").blockingHandler(ctx -> {
-      final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
-      if (dataDirectoryWrapper == null) {
-        ctx.fail(new RuntimeException("Data directory is not present in local map"));
-        return;
-      }
-      final var dataDirectory = dataDirectoryWrapper.getPath();
-
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
-
-      final @Nullable var filename = requestJSON.getString("filename");
-      final @Nullable var fastaFilename = requestJSON.getString("fastaFilename");
-
-      log.debug("Got filename: " + filename + " and FASTA filename: " + fastaFilename);
-
-      if (filename == null) {
-        ctx.fail(new RuntimeException("Filename must be specified to open the file"));
-        return;
-      }
-
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-
-      final var chunkedFile = new ChunkedFile(
-        new ChunkedFile.ChunkedFileOptions(
-          Path.of(dataDirectory.toString(), filename),
-          (int) map.getOrDefault("MIN_DS_POOL", 4),
-          (int) map.getOrDefault("MAX_DS_POOL", 16)
-        )
-      );
-      final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
-
-      log.info("Putting chunkedFile into the local map");
-      map.put("chunkedFile", chunkedFileWrapper);
-      map.put("openedFilename", filename);
-
-      map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
-
-      ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
-    });
-
-    router.post("/attach").blockingHandler(ctx -> {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper == null) {
-        ctx.response()
-          .setStatusCode(404)
-          .putHeader("content-type", "application/json")
-          .end(Json.encode(new io.vertx.core.json.JsonObject().put("error", "No session to attach")));
-        return;
-      }
-      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-      final var filename = (String) map.getOrDefault("openedFilename", "");
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .end(Json.encode(
-          new io.vertx.core.json.JsonObject()
-            .put("filename", filename)
-            .put("openFileResponse", generateOpenFileResponse(chunkedFile))
-        ));
-    });
-
-    router.post("/close").blockingHandler(ctx -> {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper != null) {
-        try {
-          chunkedFileWrapper.getChunkedFile().close();
-        } catch (Exception e) {
-          log.warn("Failed to close chunked file", e);
+    router.post("/open").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+      try {
+        final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+        if (dataDirectoryWrapper == null) {
+          promise.fail(new RuntimeException("Data directory is not present in local map"));
+          return;
         }
+        final var dataDirectory = dataDirectoryWrapper.getPath();
+
+        final @NotNull var requestBody = ctx.body();
+        final @NotNull var requestJSON = requestBody.asJsonObject();
+
+        final @Nullable var filename = requestJSON.getString("filename");
+        final @Nullable var fastaFilename = requestJSON.getString("fastaFilename");
+
+        log.debug("Got filename: " + filename + " and FASTA filename: " + fastaFilename);
+
+        if (filename == null) {
+          promise.fail(new RuntimeException("Filename must be specified to open the file"));
+          return;
+        }
+
+        final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+
+        final var chunkedFile = new ChunkedFile(
+          new ChunkedFile.ChunkedFileOptions(
+            Path.of(dataDirectory.toString(), filename),
+            (int) map.getOrDefault("MIN_DS_POOL", 4),
+            (int) map.getOrDefault("MAX_DS_POOL", 16),
+            (boolean) map.getOrDefault("BLOCK_CACHE", true),
+            (int) map.getOrDefault("QUERY_THREADS", 0)
+          )
+        );
+        final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
+
+        log.info("Putting chunkedFile into the local map");
+        map.put("chunkedFile", chunkedFileWrapper);
+        map.put("openedFilename", filename);
+
+        map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
+
+        ctx.response().end(Json.encode(generateOpenFileResponse(chunkedFile)));
+        promise.complete();
+      } catch (Exception e) {
+        promise.fail(e);
       }
-      map.remove("chunkedFile");
-      map.remove("TileStatisticHolder");
-      map.remove("openedFilename");
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .end(Json.encode(new io.vertx.core.json.JsonObject().put("status", "closed")));
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
     });
 
-    router.post("/get_agp_for_assembly").blockingHandler(ctx -> {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper == null) {
-        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-      log.debug("Got ChunkedFile from map");
-
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
-
-      final long defaultSpacerLength = requestJSON.getLong("defaultSpacerLength", 1000L);
-
-      final var buffer = Buffer.buffer();
-
-      chunkedFile.getAgpProcessor().getAGPStream(defaultSpacerLength).sequential().forEach(s -> buffer.appendBytes(s.getBytes(StandardCharsets.UTF_8)));
-
-      ctx.response().setChunked(true).putHeader("Content-Type", "text/plain").end(buffer);
+    router.post("/attach").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+        try {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper == null) {
+            ctx.response()
+              .setStatusCode(404)
+              .putHeader("content-type", "application/json")
+              .end(Json.encode(new io.vertx.core.json.JsonObject().put("error", "No session to attach")));
+            promise.complete();
+            return;
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          final var filename = (String) map.getOrDefault("openedFilename", "");
+          ctx.response()
+            .putHeader("content-type", "application/json")
+            .end(Json.encode(
+              new io.vertx.core.json.JsonObject()
+                .put("filename", filename)
+                .put("openFileResponse", generateOpenFileResponse(chunkedFile))
+            ));
+          promise.complete();
+        } catch (Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
     });
 
-    router.post("/load_agp").blockingHandler(ctx -> {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper == null) {
-        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-      log.debug("Got ChunkedFile from map");
+    router.post("/close").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+        try {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper != null) {
+            try {
+              chunkedFileWrapper.getChunkedFile().close();
+            } catch (Exception e) {
+              log.warn("Failed to close chunked file", e);
+            }
+          }
+          map.remove("chunkedFile");
+          map.remove("TileStatisticHolder");
+          map.remove("openedFilename");
+          ctx.response()
+            .putHeader("content-type", "application/json")
+            .end(Json.encode(new io.vertx.core.json.JsonObject().put("status", "closed")));
+          promise.complete();
+        } catch (Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
+    });
 
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+    router.post("/get_agp_for_assembly").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+        try {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper == null) {
+            promise.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          log.debug("Got ChunkedFile from map");
 
-      final var agpFilename = Objects.requireNonNull(requestJSON.getString("agpFilename"), "AGP filename must be provided to load it.");
+          final @NotNull var requestBody = ctx.body();
+          final @NotNull var requestJSON = requestBody.asJsonObject();
 
-      final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
-      if (dataDirectoryWrapper == null) {
-        ctx.fail(new RuntimeException("Data directory is not present in local map"));
-        return;
-      }
-      final var dataDirectory = dataDirectoryWrapper.getPath();
+          final long defaultSpacerLength = requestJSON.getLong("defaultSpacerLength", 1000L);
 
-      final var agpFile = Path.of(dataDirectory.toString(), agpFilename);
-      try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
-        chunkedFile.importAGP(reader);
-      } catch (IOException | NoSuchFieldException e) {
-        throw new RuntimeException(e);
-      }
+          final var buffer = Buffer.buffer();
 
-      ctx.response().end(Json.encode(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile)));
+          chunkedFile.getAgpProcessor().getAGPStream(defaultSpacerLength).sequential().forEach(s -> buffer.appendBytes(s.getBytes(StandardCharsets.UTF_8)));
+
+          ctx.response().setChunked(true).putHeader("Content-Type", "text/plain").end(buffer);
+          promise.complete();
+        } catch (Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
+    });
+
+    router.post("/load_agp").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+        try {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper == null) {
+            promise.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          log.debug("Got ChunkedFile from map");
+
+          final @NotNull var requestBody = ctx.body();
+          final @NotNull var requestJSON = requestBody.asJsonObject();
+
+          final var agpFilename = Objects.requireNonNull(requestJSON.getString("agpFilename"), "AGP filename must be provided to load it.");
+
+          final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+          if (dataDirectoryWrapper == null) {
+            promise.fail(new RuntimeException("Data directory is not present in local map"));
+            return;
+          }
+          final var dataDirectory = dataDirectoryWrapper.getPath();
+
+          final var agpFile = Path.of(dataDirectory.toString(), agpFilename);
+          try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
+            chunkedFile.importAGP(reader);
+          } catch (IOException | NoSuchFieldException e) {
+            throw new RuntimeException(e);
+          }
+
+          ctx.response().end(Json.encode(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile)));
+          promise.complete();
+        } catch (Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
     });
   }
 

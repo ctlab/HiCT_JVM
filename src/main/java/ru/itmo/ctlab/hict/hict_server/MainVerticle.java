@@ -90,19 +90,35 @@ public class MainVerticle extends AbstractVerticle {
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
         .setConfig(new JsonObject().put("keys",
-            new JsonArray().add("DATA_DIR").add("TILE_SIZE").add("VXPORT").add("MIN_DS_POOL").add("MAX_DS_POOL")));
+            new JsonArray()
+              .add("DATA_DIR")
+              .add("TILE_SIZE")
+              .add("VXPORT")
+              .add("MIN_DS_POOL")
+              .add("MAX_DS_POOL")
+              .add("BLOCK_CACHE")
+              .add("QUERY_THREADS")
+              .add("TILE_WORKERS")
+              .add("EXPORT_WORKERS")
+              .add("CONTROL_WORKERS")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
     final ConfigRetriever myConfigRetriver = ConfigRetriever.create(vertx, myOptions);
     myConfigRetriver.getConfig(asyncResults -> System.out.println(asyncResults.result().encodePrettily()));
     final CyclicBarrier barrier = new CyclicBarrier(1);
 
     myConfigRetriver.getConfig(event -> {
-      final var dataDirectoryString = event.result().getString("DATA_DIR", ".");
+      final var cfg = event.result();
+      final var dataDirectoryString = getConfigString(cfg, "DATA_DIR", ".");
       final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
-      final var tileSize = event.result().getInteger("TILE_SIZE", 256);
-      final var minDSPool = event.result().getInteger("MIN_DS_POOL", 4);
-      final var maxDSPool = event.result().getInteger("MAX_DS_POOL", 16);
-      final var port = event.result().getInteger("VXPORT", 5000);
+      final var tileSize = getConfigInt(cfg, "TILE_SIZE", 256);
+      final var minDSPool = getConfigInt(cfg, "MIN_DS_POOL", 4);
+      final var maxDSPool = getConfigInt(cfg, "MAX_DS_POOL", 16);
+      final var port = getConfigInt(cfg, "VXPORT", 5000);
+      final var blockCacheEnabled = getConfigBool(cfg, "BLOCK_CACHE", true);
+      final var queryThreads = getConfigInt(cfg, "QUERY_THREADS", 0);
+      final var tileWorkers = getConfigInt(cfg, "TILE_WORKERS", 0);
+      final var exportWorkers = getConfigInt(cfg, "EXPORT_WORKERS", 0);
+      final var controlWorkers = getConfigInt(cfg, "CONTROL_WORKERS", 2);
 
       try {
         log.info("Trying to write configuration to local map");
@@ -112,6 +128,11 @@ public class MainVerticle extends AbstractVerticle {
         map.put("VXPORT", port);
         map.put("MIN_DS_POOL", minDSPool);
         map.put("MAX_DS_POOL", maxDSPool);
+        map.put("BLOCK_CACHE", blockCacheEnabled);
+        map.put("QUERY_THREADS", queryThreads);
+        map.put("TILE_WORKERS", tileWorkers);
+        map.put("EXPORT_WORKERS", exportWorkers);
+        map.put("CONTROL_WORKERS", controlWorkers);
 
         final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, false, false,
             new SimpleLinearGradient(
@@ -206,5 +227,47 @@ public class MainVerticle extends AbstractVerticle {
         log.error("WebUI verticle deployment failed", ar.cause());
       }
     });
+  }
+
+  private static int getConfigInt(final JsonObject cfg, final String key, final int defaultValue) {
+    final var sys = System.getProperty(key);
+    if (sys != null) {
+      try {
+        return Integer.parseInt(sys);
+      } catch (NumberFormatException ignored) {
+      }
+    }
+    final var env = cfg.getString(key, null);
+    if (env != null) {
+      try {
+        return Integer.parseInt(env);
+      } catch (NumberFormatException ignored) {
+      }
+    }
+    return defaultValue;
+  }
+
+  private static boolean getConfigBool(final JsonObject cfg, final String key, final boolean defaultValue) {
+    final var sys = System.getProperty(key);
+    if (sys != null) {
+      return Boolean.parseBoolean(sys);
+    }
+    final var env = cfg.getString(key, null);
+    if (env != null) {
+      return Boolean.parseBoolean(env);
+    }
+    return defaultValue;
+  }
+
+  private static String getConfigString(final JsonObject cfg, final String key, final String defaultValue) {
+    final var sys = System.getProperty(key);
+    if (sys != null) {
+      return sys;
+    }
+    final var env = cfg.getString(key, null);
+    if (env != null) {
+      return env;
+    }
+    return defaultValue;
   }
 }

@@ -66,10 +66,31 @@ public class HictCli implements Runnable {
   static class StartServer implements Callable<Integer> {
     @Option(names = "--serve-webui", description = "Whether to serve WebUI (default: true).", defaultValue = "true")
     boolean serveWebUi;
+    @Option(names = "--min-ds-pool", description = "Minimum dataset pool size (default: 4).")
+    Integer minDsPool;
+    @Option(names = "--max-ds-pool", description = "Maximum dataset pool size (default: 16).")
+    Integer maxDsPool;
+    @Option(names = "--block-cache", description = "Enable block metadata cache (default: true).", defaultValue = "true")
+    boolean blockCache;
+    @Option(names = "--query-threads", description = "Query worker threads (default: cpu).")
+    Integer queryThreads;
+    @Option(names = "--tile-workers", description = "Tile worker threads (default: cpu*2).")
+    Integer tileWorkers;
+    @Option(names = "--export-workers", description = "Export worker threads (default: cpu/2).")
+    Integer exportWorkers;
+    @Option(names = "--control-workers", description = "Control worker threads (default: 2).")
+    Integer controlWorkers;
 
     @Override
     public Integer call() {
       System.setProperty("SERVE_WEBUI", Boolean.toString(serveWebUi));
+      if (minDsPool != null) System.setProperty("MIN_DS_POOL", Integer.toString(minDsPool));
+      if (maxDsPool != null) System.setProperty("MAX_DS_POOL", Integer.toString(maxDsPool));
+      System.setProperty("BLOCK_CACHE", Boolean.toString(blockCache));
+      if (queryThreads != null) System.setProperty("QUERY_THREADS", Integer.toString(queryThreads));
+      if (tileWorkers != null) System.setProperty("TILE_WORKERS", Integer.toString(tileWorkers));
+      if (exportWorkers != null) System.setProperty("EXPORT_WORKERS", Integer.toString(exportWorkers));
+      if (controlWorkers != null) System.setProperty("CONTROL_WORKERS", Integer.toString(controlWorkers));
       Launcher.main(new String[]{"run", MainVerticle.class.getName()});
       return 0;
     }
@@ -81,9 +102,31 @@ public class HictCli implements Runnable {
     description = "Start API server only (no WebUI)."
   )
   static class StartApiServer implements Callable<Integer> {
+    @Option(names = "--min-ds-pool", description = "Minimum dataset pool size (default: 4).")
+    Integer minDsPool;
+    @Option(names = "--max-ds-pool", description = "Maximum dataset pool size (default: 16).")
+    Integer maxDsPool;
+    @Option(names = "--block-cache", description = "Enable block metadata cache (default: true).", defaultValue = "true")
+    boolean blockCache;
+    @Option(names = "--query-threads", description = "Query worker threads (default: cpu).")
+    Integer queryThreads;
+    @Option(names = "--tile-workers", description = "Tile worker threads (default: cpu*2).")
+    Integer tileWorkers;
+    @Option(names = "--export-workers", description = "Export worker threads (default: cpu/2).")
+    Integer exportWorkers;
+    @Option(names = "--control-workers", description = "Control worker threads (default: 2).")
+    Integer controlWorkers;
+
     @Override
     public Integer call() {
       System.setProperty("SERVE_WEBUI", "false");
+      if (minDsPool != null) System.setProperty("MIN_DS_POOL", Integer.toString(minDsPool));
+      if (maxDsPool != null) System.setProperty("MAX_DS_POOL", Integer.toString(maxDsPool));
+      System.setProperty("BLOCK_CACHE", Boolean.toString(blockCache));
+      if (queryThreads != null) System.setProperty("QUERY_THREADS", Integer.toString(queryThreads));
+      if (tileWorkers != null) System.setProperty("TILE_WORKERS", Integer.toString(tileWorkers));
+      if (exportWorkers != null) System.setProperty("EXPORT_WORKERS", Integer.toString(exportWorkers));
+      if (controlWorkers != null) System.setProperty("CONTROL_WORKERS", Integer.toString(controlWorkers));
       Launcher.main(new String[]{"run", MainVerticle.class.getName()});
       return 0;
     }

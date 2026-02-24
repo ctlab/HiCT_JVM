@@ -25,12 +25,12 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
@@ -47,166 +47,224 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-@RequiredArgsConstructor
 @Slf4j
 public class TileHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private final WorkerExecutor tileExecutor;
+  private final WorkerExecutor exportExecutor;
+  private final WorkerExecutor controlExecutor;
+
+  public TileHandlersHolder(final Vertx vertx) {
+    this.vertx = vertx;
+    final int cpu = Math.max(2, Runtime.getRuntime().availableProcessors());
+    final var map = vertx.sharedData().getLocalMap("hict_server");
+    final int tileWorkers = ((Integer) map.getOrDefault("TILE_WORKERS", 0));
+    final int exportWorkers = ((Integer) map.getOrDefault("EXPORT_WORKERS", 0));
+    final int controlWorkers = ((Integer) map.getOrDefault("CONTROL_WORKERS", 2));
+    final int tileThreads = tileWorkers > 0 ? tileWorkers : Math.max(4, cpu * 2);
+    final int exportThreads = exportWorkers > 0 ? exportWorkers : Math.max(2, cpu / 2);
+    final int controlThreads = controlWorkers > 0 ? controlWorkers : 2;
+    this.tileExecutor = vertx.createSharedWorkerExecutor("hict-tiles", tileThreads);
+    this.exportExecutor = vertx.createSharedWorkerExecutor("hict-export", exportThreads);
+    this.controlExecutor = vertx.createSharedWorkerExecutor("hict-control", controlThreads);
+  }
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
-    router.post("/set_visualization_options").blockingHandler(ctx -> {
-      final @NotNull var requestBody = ctx.body();
-      final @NotNull var requestJSON = requestBody.asJsonObject();
+    router.post("/set_visualization_options").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+        try {
+          final @NotNull var requestBody = ctx.body();
+          final @NotNull var requestJSON = requestBody.asJsonObject();
 
-      final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
+          final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(request.toEntity()));
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper == null) {
-        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-      log.debug("Got ChunkedFile from map");
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(request.toEntity()));
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper == null) {
+            promise.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          log.debug("Got ChunkedFile from map");
 
-      final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
-      if (stats == null) {
-        ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      map.put("TileStatisticHolder", TileStatisticHolder.resetRangesKeepingVersion(stats, chunkedFile.getResolutions().length));
-      final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
-      if (visualizationOptionsWrapper == null) {
-        ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
-      ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
+          final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
+          if (stats == null) {
+            promise.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          map.put("TileStatisticHolder", TileStatisticHolder.resetRangesKeepingVersion(stats, chunkedFile.getResolutions().length));
+          final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
+          if (visualizationOptionsWrapper == null) {
+            promise.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
+          ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
+          promise.complete();
+        } catch (Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
     });
 
-    router.post("/get_visualization_options").blockingHandler(ctx -> {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper == null) {
-        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-      log.debug("Got ChunkedFile from map");
-      final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
-      if (visualizationOptionsWrapper == null) {
-        ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
-      ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
+    router.post("/get_visualization_options").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+        try {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper == null) {
+            promise.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          log.debug("Got ChunkedFile from map");
+          final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
+          if (visualizationOptionsWrapper == null) {
+            promise.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
+          ctx.response().setStatusCode(200).end(Json.encode(VisualizationOptionsDTO.fromEntity(options, chunkedFile)));
+          promise.complete();
+        } catch (Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
     });
 
-    router.post("/tiles/reload").blockingHandler(ctx -> {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper == null) {
-        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-      final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
-      if (stats == null) {
-        ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
-      map.put("TileStatisticHolder", newStats);
-      ctx.response().setStatusCode(200).end(Json.encode(Map.of("version", newStats.versionCounter().get())));
+    router.post("/tiles/reload").handler(ctx -> {
+      controlExecutor.executeBlocking(promise -> {
+        try {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper == null) {
+            promise.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
+          if (stats == null) {
+            promise.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
+          map.put("TileStatisticHolder", newStats);
+          ctx.response().setStatusCode(200).end(Json.encode(Map.of("version", newStats.versionCounter().get())));
+          promise.complete();
+        } catch (Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
     });
 
     router.get("/get_tile").handler(ctx -> {
-      log.debug("Entered non-blocking handler");
-      ctx.next();
-    }).blockingHandler(ctx -> {
-      log.debug("Entered blockingHandler");
+      final var priority = ctx.request().getParam("priority", "high");
+      final var executor = "low".equalsIgnoreCase(priority) ? exportExecutor : tileExecutor;
+      executor.executeBlocking(promise -> {
+        log.debug("Entered blockingHandler");
 
-      final var row = Long.parseLong(ctx.request().getParam("row", "0"));
-      final var col = Long.parseLong(ctx.request().getParam("col", "0"));
-      final var requestedVersion = Long.parseLong(ctx.request().getParam("version", "0"));
-      final int tileHeight;
-      final int tileWidth;
-      final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
+        try {
+          final var row = Long.parseLong(ctx.request().getParam("row", "0"));
+          final var col = Long.parseLong(ctx.request().getParam("col", "0"));
+          final var requestedVersion = Long.parseLong(ctx.request().getParam("version", "0"));
+          final int tileHeight;
+          final int tileWidth;
+          final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
 
-      log.debug("Got parameters");
+          log.debug("Got parameters");
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
 
-      log.debug("Got map");
-      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-      if (chunkedFileWrapper == null) {
-        ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-      log.debug("Got ChunkedFile from map");
-      final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
-      if (visualizationOptionsWrapper == null) {
-        ctx.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
-      final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
+          log.debug("Got map");
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          if (chunkedFileWrapper == null) {
+            promise.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          log.debug("Got ChunkedFile from map");
+          final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
+          if (visualizationOptionsWrapper == null) {
+            promise.fail(new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
+          final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
 
-      final var requestedBpResolutionParam = ctx.request().getParam("bpResolution");
-      final int level;
-      if (requestedBpResolutionParam != null) {
-        final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
-        final var resolutionOrder = chunkedFile.getResolutionToIndex().get(requestedBpResolution);
-        if (resolutionOrder == null) {
-          ctx.fail(new RuntimeException("Requested bpResolution is not present in opened file: " + requestedBpResolution));
-          return;
-        }
-        level = resolutionOrder;
-      } else {
-        level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
-      }
+          final var requestedBpResolutionParam = ctx.request().getParam("bpResolution");
+          final int level;
+          if (requestedBpResolutionParam != null) {
+            final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
+            final var resolutionOrder = chunkedFile.getResolutionToIndex().get(requestedBpResolution);
+            if (resolutionOrder == null) {
+              promise.fail(new RuntimeException("Requested bpResolution is not present in opened file: " + requestedBpResolution));
+              return;
+            }
+            level = resolutionOrder;
+          } else {
+            level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+          }
 
-      final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
-      if (stats == null) {
-        ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
-        return;
-      }
+          final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
+          if (stats == null) {
+            promise.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
+            return;
+          }
 
-      var currentVersion = stats.versionCounter().get();
-      long version = requestedVersion;
-      if (version < currentVersion) {
-        log.debug(String.format("Current version is %d and request version is %d; serving with current version", currentVersion, version));
-        version = currentVersion;
-      }
-      do {
-        currentVersion = stats.versionCounter().get();
-      } while ((currentVersion < version) && !stats.versionCounter().compareAndSet(currentVersion, version));
+          var currentVersion = stats.versionCounter().get();
+          long version = requestedVersion;
+          if (version < currentVersion) {
+            log.debug(String.format("Current version is %d and request version is %d; serving with current version", currentVersion, version));
+            version = currentVersion;
+          }
+          do {
+            currentVersion = stats.versionCounter().get();
+          } while ((currentVersion < version) && !stats.versionCounter().compareAndSet(currentVersion, version));
 
-      final long startRowPx, startColPx, endRowPx, endColPx;
-      if (format == TileFormat.PNG_BY_PIXELS) {
-        startRowPx = row;
-        startColPx = col;
-        endRowPx = startRowPx + Long.parseLong(ctx.request().getParam("rows", "0"));
-        endColPx = startColPx + Long.parseLong(ctx.request().getParam("cols", "0"));
-        tileHeight = (int) (endRowPx - startRowPx);
-        tileWidth = (int) (endColPx - startColPx);
-      } else {
-        tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
-        tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
-        startRowPx = row * tileHeight;
-        endRowPx = (row + 1) * tileHeight;
-        startColPx = col * tileWidth;
-        endColPx = (col + 1) * tileWidth;
-      }
+          final long startRowPx, startColPx, endRowPx, endColPx;
+          if (format == TileFormat.PNG_BY_PIXELS) {
+            startRowPx = row;
+            startColPx = col;
+            endRowPx = startRowPx + Long.parseLong(ctx.request().getParam("rows", "0"));
+            endColPx = startColPx + Long.parseLong(ctx.request().getParam("cols", "0"));
+            tileHeight = (int) (endRowPx - startRowPx);
+            tileWidth = (int) (endColPx - startColPx);
+          } else {
+            tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+            tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
+            startRowPx = row * tileHeight;
+            endRowPx = (row + 1) * tileHeight;
+            startColPx = col * tileWidth;
+            endColPx = (col + 1) * tileWidth;
+          }
 
-      final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), startRowPx, startColPx, endRowPx, endColPx, true);
-      final var image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options);
-      final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+          final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
+            ResolutionDescriptor.fromResolutionOrder(level),
+            startRowPx,
+            startColPx,
+            endRowPx,
+            endColPx,
+            true
+          );
+          final var image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options);
+          final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
-      log.debug("Created byte stream");
+          log.debug("Created byte stream");
 
       /*
       try (final var pool = Executors.newSingleThreadExecutor()) {
@@ -230,7 +288,7 @@ public class TileHandlersHolder extends HandlersHolder {
       */
 
 
-      try {
+          try {
         if (format == TileFormat.JSON_PNG_WITH_RANGES) {
           ImageIO.write(image, "png", baos); // convert BufferedImage to byte array
 
@@ -259,9 +317,21 @@ public class TileHandlersHolder extends HandlersHolder {
             .end(Buffer.buffer(baos.toByteArray()));
         }
         log.debug("Response");
-      } catch (final IOException e) {
-        log.error("Cannot write tile image: " + e.getMessage());
-      }
+            promise.complete();
+          } catch (final IOException e) {
+            log.error("Cannot write tile image: " + e.getMessage());
+            promise.fail(e);
+          } catch (final Exception e) {
+            promise.fail(e);
+          }
+        } catch (final Exception e) {
+          promise.fail(e);
+        }
+      }, false, ar -> {
+        if (ar.failed()) {
+          ctx.fail(ar.cause());
+        }
+      });
     });
   }
 

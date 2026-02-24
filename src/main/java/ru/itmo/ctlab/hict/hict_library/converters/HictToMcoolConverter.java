@@ -22,7 +22,9 @@ public class HictToMcoolConverter {
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) throws IOException, NoSuchFieldException {
     final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
-    final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8));
+    final var chunkedFile = new ChunkedFile(
+      new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8, true, 0)
+    );
     try {
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
         try (final var reader = Files.newBufferedReader(options.inputPath().resolveSibling(options.agpPath()), StandardCharsets.UTF_8)) {

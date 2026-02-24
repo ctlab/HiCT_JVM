@@ -38,13 +38,11 @@ import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
-import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_library.util.CommonUtils;
-import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
+import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
@@ -90,7 +88,8 @@ public class MatrixQueries {
       System.arraycopy(colWeights, 0, paddedColWeights, deltaCol, colWeights.length);
 
 
-      try (final var pool = Executors.newWorkStealingPool()) {
+      final var pool = this.chunkedFile.getQueryExecutor();
+      final var tasks = new ArrayList<CompletableFuture<Void>>();
         if (symmetricQuery) {
           final var atuCount = rowATUs.size();
           log.debug("Symmetric query with " + atuCount + " ATUs");
@@ -104,7 +103,7 @@ public class MatrixQueries {
               final int finalDeltaCol = deltaCol;
               final int finalDeltaRow = deltaRow;
               final var colCount = colATU.getLength();
-              pool.submit(() -> {
+              tasks.add(CompletableFuture.runAsync(() -> {
                 final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
                 for (int k = 0; k < rowCount; k++) {
                   System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
@@ -114,7 +113,7 @@ public class MatrixQueries {
                     result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
                   }
                 }
-              });
+              }, pool));
               deltaCol += colCount;
             }
             startDeltaCol += colATUs.get(i).getLength();
@@ -129,7 +128,7 @@ public class MatrixQueries {
               final int finalDeltaRow = deltaRow;
               final var colCount = colATU.getLength();
 
-              pool.submit(() -> {
+              tasks.add(CompletableFuture.runAsync(() -> {
                 try {
                   final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
                   for (int k = 0; k < rowCount; k++) {
@@ -138,14 +137,14 @@ public class MatrixQueries {
                 } catch (final Throwable ex) {
                   throw new RuntimeException("Dense matrix fetch failed");
                 }
-              });
+              }, pool));
 
               deltaCol += colCount;
             }
             deltaRow += rowCount;
           }
         }
-      }
+      CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
     }
 
 
@@ -191,24 +190,11 @@ public class MatrixQueries {
       lessSize = 0L;
     }
 
-    final List<ContigTree.Node> debugContigNodes = new ArrayList<>();
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      debugContigNodes.add(node);
-    });
-
-    final List<ATUDescriptor> debugAllATUs = new ArrayList<>();
-
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      final var contigDirection = node.getTrueDirection();
-      final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
-      if (contigDirection == ContigDirection.FORWARD) {
-        debugAllATUs.addAll(contigATUs);
-      } else {
-        final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
-        Collections.reverse(reversedATUs);
-        debugAllATUs.addAll(reversedATUs);
-      }
-    });
+    final boolean assertionsEnabled = MatrixQueries.class.desiredAssertionStatus();
+    final List<ContigTree.Node> debugContigNodes = assertionsEnabled ? new ArrayList<>() : null;
+    if (assertionsEnabled) {
+      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+    }
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
@@ -320,7 +306,7 @@ public class MatrixQueries {
 
     if (onlyOneContig) {
       if (sameATUIsFirstAndLast) {
-        final var result = new CopyOnWriteArrayList<ATUDescriptor>();
+        final var result = new ArrayList<ATUDescriptor>();
         result.add(newLastATU);
         return result;
       } else {
@@ -393,16 +379,15 @@ public class MatrixQueries {
 
     atus.add(newLastATU);
 
-    {
-      final var sourceATUTotalLength = debugContigNodes.stream().flatMap(node -> node.getContigDescriptor().getAtus().get(resolutionOrder).stream()).mapToInt(ATUDescriptor::getLength).sum();
-
+    if (assertionsEnabled) {
+      final var sourceATUTotalLength = debugContigNodes.stream()
+        .flatMap(node -> node.getContigDescriptor().getAtus().get(resolutionOrder).stream())
+        .mapToInt(ATUDescriptor::getLength)
+        .sum();
       assert (segmentSize == sourceATUTotalLength) : "Expose returned more ATUs than segment length??";
-
       final var collectedATUsTotalLength = atus.stream().mapToLong(ATUDescriptor::getLength).sum();
-
-      assert (
-        collectedATUsTotalLength == (endPx - startPx)
-      ) : "Wrong total length of ATUs before reduction??";
+      assert (collectedATUsTotalLength == (endPx - startPx))
+        : "Wrong total length of ATUs before reduction??";
     }
 
     final var reducedATUs = ATUDescriptor.reduce(atus);
@@ -411,7 +396,7 @@ public class MatrixQueries {
       reducedATUs.stream().mapToLong(atu -> atu.getEndIndexInStripeExcl() - atu.getStartIndexInStripeIncl()).sum() == (endPx - startPx)
     ) : "Wrong total length of ATUs after reduction??";
 
-    return new CopyOnWriteArrayList<>(reducedATUs);
+    return new ArrayList<>(reducedATUs);
   }
 
   public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU) {
@@ -442,19 +427,13 @@ public class MatrixQueries {
       Objects.requireNonNull(dsBundle);
       final var reader = dsBundle.getReader();
       final var blockIndexInDatasets = rowStripeId * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
-      final long blockLength;
-      final long blockOffset;
+      final long blockLength = this.chunkedFile.getBlockLengthAt(resolutionOrder, blockIndexInDatasets);
+      final long blockOffset = this.chunkedFile.getBlockOffsetAt(resolutionOrder, blockIndexInDatasets);
+      final var savedAsSparse = (blockOffset >= 0L);
 
-      {
-        final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
-        final long[] buf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
-        blockLength = buf[0];
-      }
-
-      final boolean isEmpty = (blockLength == 0L);
       final long[][] denseMatrix = new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
 
-      if (isEmpty) {
+      if (blockLength == 0L && savedAsSparse) {
         log.debug("Zero ATU intersection");
         return denseMatrix;
       }
@@ -467,72 +446,61 @@ public class MatrixQueries {
       final var flipRows = ATUDirection.REVERSED.equals(rowATU.getDirection());
       final var flipCols = ATUDirection.REVERSED.equals(colATU.getDirection());
 
-      {
-        final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
-        final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
-        blockOffset = buf[0];
-      }
-
-      final var savedAsSparse = (blockOffset >= 0L);
-
       if (savedAsSparse) {
         log.debug("Fetching sparse block");
-        final long[] blockRows;
-        final long[] blockCols;
-        final long[] blockValues;
-
-
-        blockRows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset);
-        blockCols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset);
-        blockValues = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset);
-
-
-        final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
-        final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, Integer.max(rowATU.getEndIndexInStripeExcl(), colATU.getEndIndexInStripeExcl()));
-        final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
-
-
-//        final var sparseMatrix = new SparseCOOMatrixLong(
-//          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-//          Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-//          Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
-//          needsTranspose,
-//          blockOnMainDiagonal,
-//          flipRows,
-//          flipCols
-//        );
-        final var sparseMatrix = new SparseCOOMatrixLong(
-          Arrays.stream(blockRows).mapToInt(i -> (int) i).toArray(),
-          Arrays.stream(blockCols).mapToInt(i -> (int) i).toArray(),
-          blockValues,
-          blockOnMainDiagonal
+        final long[] blockRows = reader.int64().readArrayBlockWithOffset(
+          dsBundle.getBlockRowsDataSet(),
+          (int) blockLength,
+          blockOffset
+        );
+        final long[] blockCols = reader.int64().readArrayBlockWithOffset(
+          dsBundle.getBlockColsDataSet(),
+          (int) blockLength,
+          blockOffset
+        );
+        final long[] blockValues = reader.int64().readArrayBlockWithOffset(
+          dsBundle.getBlockValuesDataSet(),
+          (int) blockLength,
+          blockOffset
         );
 
-        final var denseSquarePartial = sparseMatrix.toDense(this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize());
-        final var denseBlock = new long[queryRows][queryCols];
+        final int rowStart = firstRow;
+        final int rowEnd = lastRow;
+        final int colStart = firstCol;
+        final int colEnd = lastCol;
 
-        for (int i = firstRow; i < lastRow; ++i) {
-          System.arraycopy(denseSquarePartial[i], firstCol, denseBlock[i - firstRow], 0, queryCols);
-        }
+        for (int i = 0; i < blockLength; i++) {
+          final int r = (int) blockRows[i];
+          final int c = (int) blockCols[i];
+          final long v = blockValues[i];
 
-        if (flipRows) {
-          ArrayUtils.reverse(denseBlock);
-        }
-
-        if (flipCols) {
-          for (final var row : denseBlock) {
-            ArrayUtils.reverse(row);
-          }
-        }
-
-        if (needsTranspose) {
-          for (int i = 0; i < queryRows; ++i) {
-            for (int j = 0; j < queryCols; ++j) {
-              denseMatrix[j][i] = denseBlock[i][j];
+          if (r >= rowStart && r < rowEnd && c >= colStart && c < colEnd) {
+            int rr = r - rowStart;
+            int cc = c - colStart;
+            if (flipRows) rr = queryRows - 1 - rr;
+            if (flipCols) cc = queryCols - 1 - cc;
+            if (needsTranspose) {
+              denseMatrix[cc][rr] = v;
+            } else {
+              denseMatrix[rr][cc] = v;
             }
           }
-        } else {
-          System.arraycopy(denseBlock, 0, denseMatrix, 0, queryRows);
+
+          if (blockOnMainDiagonal && r != c) {
+            final int r2 = c;
+            final int c2 = r;
+            if (r2 >= rowStart && r2 < rowEnd && c2 >= colStart && c2 < colEnd) {
+              int rr = r2 - rowStart;
+              int cc = c2 - colStart;
+              if (flipRows) rr = queryRows - 1 - rr;
+              if (flipCols) cc = queryCols - 1 - cc;
+              if (needsTranspose) {
+                denseMatrix[cc][rr] = v;
+              } else {
+                denseMatrix[rr][cc] = v;
+              }
+            }
+          }
         }
       } else {
         log.debug("Fetching dense block");
