@@ -24,11 +24,9 @@
 
 package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
-import ch.systemsx.cisd.base.mdarray.MDLongArray;
 import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundle;
@@ -40,17 +38,18 @@ import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.util.BinarySearch;
 import ru.itmo.ctlab.hict.hict_library.util.CommonUtils;
-import ru.itmo.ctlab.hict.hict_library.util.matrix.SparseCOOMatrixLong;
 
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Slf4j
 public class MatrixQueries {
   private final @NotNull ChunkedFile chunkedFile;
+  private static final boolean ASSERTIONS_ENABLED = MatrixQueries.class.desiredAssertionStatus();
+  private final Map<Integer, BlockMetaRowCache> blockMetaRowCaches = new ConcurrentHashMap<>();
+  private final BlockDataCache blockDataCache = new BlockDataCache(Long.getLong("HICT_BLOCK_DATA_CACHE_BYTES", 128L * 1024L * 1024L));
 
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
@@ -78,8 +77,8 @@ public class MatrixQueries {
     int deltaRow = (int) (startRow - startRowIncl);
     int deltaCol = (int) (startCol - startColIncl);
 
-    final double[] rowWeights = rowATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
-    final double[] colWeights = colATUs.parallelStream().flatMapToDouble(atu -> Arrays.stream(getWeightsByATU(atu))).toArray();
+    final double[] rowWeights = flattenWeights(rowATUs);
+    final double[] colWeights = symmetricQuery ? rowWeights : flattenWeights(colATUs);
 
     final double[] paddedRowWeights = new double[queryRows];
     final double[] paddedColWeights = new double[queryCols];
@@ -90,10 +89,15 @@ public class MatrixQueries {
       System.arraycopy(colWeights, 0, paddedColWeights, deltaCol, colWeights.length);
 
 
-      try (final var pool = Executors.newWorkStealingPool()) {
+      final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
+      @Nullable HDF5FileDatasetsBundle dsBundle = null;
+      try {
+        dsBundle = pool.borrowObject();
+        Objects.requireNonNull(dsBundle);
+        final var blockMetaCache = new HashMap<Long, BlockMeta>();
+        prefillBlockMetaCache(dsBundle, resolutionOrder, rowATUs, colATUs, blockMetaCache);
         if (symmetricQuery) {
           final var atuCount = rowATUs.size();
-          log.debug("Symmetric query with " + atuCount + " ATUs");
           var startDeltaCol = (int) (startCol - startColIncl);
           for (int i = 0; i < atuCount; ++i) {
             final var rowATU = rowATUs.get(i);
@@ -101,20 +105,15 @@ public class MatrixQueries {
             final var rowCount = rowATU.getLength();
             for (int j = i; j < atuCount; ++j) {
               final var colATU = colATUs.get(j);
-              final int finalDeltaCol = deltaCol;
-              final int finalDeltaRow = deltaRow;
               final var colCount = colATU.getLength();
-              pool.submit(() -> {
-                final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
-                for (int k = 0; k < rowCount; k++) {
-                  System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
-                }
+              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
+              if (i != j) {
                 for (int k = 0; k < rowCount; k++) {
                   for (int l = 0; l < colCount; l++) {
-                    result[finalDeltaCol + l][finalDeltaRow + k] = dense[k][l];
+                    result[deltaCol + l][deltaRow + k] = result[deltaRow + k][deltaCol + l];
                   }
                 }
-              });
+              }
               deltaCol += colCount;
             }
             startDeltaCol += colATUs.get(i).getLength();
@@ -123,26 +122,21 @@ public class MatrixQueries {
         } else {
           for (final var rowATU : rowATUs) {
             deltaCol = (int) (startCol - startColIncl);
-            final var rowCount = rowATU.getLength();
             for (final var colATU : colATUs) {
-              final int finalDeltaCol = deltaCol;
-              final int finalDeltaRow = deltaRow;
-              final var colCount = colATU.getLength();
-
-              pool.submit(() -> {
-                try {
-                  final var dense = getATUIntersection(resolutionDescriptor, rowATU, colATU);
-                  for (int k = 0; k < rowCount; k++) {
-                    System.arraycopy(dense[k], 0, result[finalDeltaRow + k], finalDeltaCol, colCount);
-                  }
-                } catch (final Throwable ex) {
-                  throw new RuntimeException("Dense matrix fetch failed");
-                }
-              });
-
-              deltaCol += colCount;
+              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
+              deltaCol += colATU.getLength();
             }
-            deltaRow += rowCount;
+            deltaRow += rowATU.getLength();
+          }
+        }
+      } catch (final Exception ex) {
+        throw new RuntimeException("Dense matrix fetch failed", ex);
+      } finally {
+        if (dsBundle != null) {
+          try {
+            pool.returnObject(dsBundle);
+          } catch (final Exception ignored) {
+            // ignored
           }
         }
       }
@@ -152,18 +146,25 @@ public class MatrixQueries {
     return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
   }
 
-  private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu) {
-    return getWeightsByATU(atu, false);
-  }
-
-  private double @NotNull [] getWeightsByATU(final @NotNull ATUDescriptor atu, final boolean needsReversal) {
-    final var length = atu.getLength();
-    final var weights = new double[length];
-    System.arraycopy(atu.getStripeDescriptor().bin_weights(), atu.getStartIndexInStripeIncl(), weights, 0, length);
-    if ((atu.getDirection() == ATUDirection.REVERSED) ^ needsReversal) {
-      ArrayUtils.reverse(weights);
+  private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus) {
+    final var totalLength = atus.stream().mapToInt(ATUDescriptor::getLength).sum();
+    final var result = new double[totalLength];
+    var dst = 0;
+    for (final var atu : atus) {
+      final var src = atu.getStripeDescriptor().bin_weights();
+      final var start = atu.getStartIndexInStripeIncl();
+      final var end = atu.getEndIndexInStripeExcl();
+      final var len = end - start;
+      if (atu.getDirection() == ATUDirection.FORWARD) {
+        System.arraycopy(src, start, result, dst, len);
+      } else {
+        for (int i = 0; i < len; i++) {
+          result[dst + i] = src[end - 1 - i];
+        }
+      }
+      dst += len;
     }
-    return weights;
+    return result;
   }
 
   // TODO: Implement
@@ -191,24 +192,13 @@ public class MatrixQueries {
       lessSize = 0L;
     }
 
-    final List<ContigTree.Node> debugContigNodes = new ArrayList<>();
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      debugContigNodes.add(node);
-    });
-
-    final List<ATUDescriptor> debugAllATUs = new ArrayList<>();
-
-    ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
-      final var contigDirection = node.getTrueDirection();
-      final var contigATUs = node.getContigDescriptor().getAtus().get(resolutionOrder);
-      if (contigDirection == ContigDirection.FORWARD) {
-        debugAllATUs.addAll(contigATUs);
-      } else {
-        final var reversedATUs = contigATUs.stream().map(ATUDescriptor::reversed).collect(Collectors.toList());
-        Collections.reverse(reversedATUs);
-        debugAllATUs.addAll(reversedATUs);
-      }
-    });
+    final List<ContigTree.Node> debugContigNodes;
+    if (ASSERTIONS_ENABLED) {
+      debugContigNodes = new ArrayList<>();
+      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+    } else {
+      debugContigNodes = List.of();
+    }
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
@@ -320,9 +310,7 @@ public class MatrixQueries {
 
     if (onlyOneContig) {
       if (sameATUIsFirstAndLast) {
-        final var result = new CopyOnWriteArrayList<ATUDescriptor>();
-        result.add(newLastATU);
-        return result;
+        return List.of(newLastATU);
       } else {
         atus.add(newFirstATU);
         final var firstContigIntermediateATUs = firstContigATUs.subList(
@@ -332,7 +320,7 @@ public class MatrixQueries {
         final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
           case FORWARD -> firstContigIntermediateATUs;
           case REVERSED -> {
-            final var firstContigIntermediateATUsReversed = firstContigIntermediateATUs.parallelStream()
+            final var firstContigIntermediateATUsReversed = firstContigIntermediateATUs.stream()
               .map(ATUDescriptor::reversed)
               .collect(Collectors.toList());
             Collections.reverse(firstContigIntermediateATUsReversed);
@@ -346,7 +334,7 @@ public class MatrixQueries {
       final List<@NotNull ATUDescriptor> firstContigRestATUs = switch (firstContigDirection) {
         case FORWARD -> firstContigATUs.subList(1 + indexOfATUContainingStartPx, firstContigATUs.size());
         case REVERSED -> {
-          final var firstContigRestATUsReversed = firstContigATUs.parallelStream()
+          final var firstContigRestATUsReversed = firstContigATUs.stream()
             .limit(indexOfATUContainingStartPx)
             .map(ATUDescriptor::reversed)
             .collect(Collectors.toList());
@@ -380,7 +368,7 @@ public class MatrixQueries {
       final List<@NotNull ATUDescriptor> lastContigBeginningATUs = switch (lastContigDirection) {
         case FORWARD -> lastContigATUs.subList(0, indexOfATUContainingEndPx);
         case REVERSED -> {
-          final var reversedATUs = lastContigATUs.parallelStream()
+          final var reversedATUs = lastContigATUs.stream()
             .skip(1 + indexOfATUContainingEndPx)
             .map(ATUDescriptor::reversed)
             .collect(Collectors.toList());
@@ -393,7 +381,7 @@ public class MatrixQueries {
 
     atus.add(newLastATU);
 
-    {
+    if (ASSERTIONS_ENABLED) {
       final var sourceATUTotalLength = debugContigNodes.stream().flatMap(node -> node.getContigDescriptor().getAtus().get(resolutionOrder).stream()).mapToInt(ATUDescriptor::getLength).sum();
 
       assert (segmentSize == sourceATUTotalLength) : "Expose returned more ATUs than segment length??";
@@ -411,21 +399,64 @@ public class MatrixQueries {
       reducedATUs.stream().mapToLong(atu -> atu.getEndIndexInStripeExcl() - atu.getStartIndexInStripeIncl()).sum() == (endPx - startPx)
     ) : "Wrong total length of ATUs after reduction??";
 
-    return new CopyOnWriteArrayList<>(reducedATUs);
+    return reducedATUs;
   }
 
   public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU) {
     return getATUIntersection(resolutionDescriptor, rowATU, colATU, false);
   }
 
-  // TODO: Implement
   public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU, final boolean needsTranspose) {
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
+    @Nullable HDF5FileDatasetsBundle dsBundle = null;
+    try {
+      dsBundle = pool.borrowObject();
+      Objects.requireNonNull(dsBundle);
+      return getATUIntersectionWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, needsTranspose, null);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    } finally {
+      if (null != dsBundle) {
+        try {
+          pool.returnObject(dsBundle);
+        } catch (final Exception ignored) {
+          // ignored
+        }
+      }
+    }
+  }
+
+  private long @NotNull [][] getATUIntersectionWithBundle(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final @NotNull ATUDescriptor rowATU,
+    final @NotNull ATUDescriptor colATU,
+    final boolean needsTranspose,
+    final @Nullable Map<Long, BlockMeta> blockMetaCache
+  ) {
+    final var denseMatrix = new long[needsTranspose ? colATU.getLength() : rowATU.getLength()][needsTranspose ? rowATU.getLength() : colATU.getLength()];
+    fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, denseMatrix, 0, 0, needsTranspose, blockMetaCache);
+    return denseMatrix;
+  }
+
+  private void fillATUIntersectionIntoWithBundle(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final @NotNull ATUDescriptor rowATU,
+    final @NotNull ATUDescriptor colATU,
+    final long[][] target,
+    final int dstRow,
+    final int dstCol,
+    final boolean needsTranspose,
+    final @Nullable Map<Long, BlockMeta> blockMetaCache
+  ) {
     if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
-      return getATUIntersection(resolutionDescriptor, colATU, rowATU, !needsTranspose);
+      fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, colATU, rowATU, target, dstRow, dstCol, !needsTranspose, blockMetaCache);
+      return;
     }
 
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
-    final var resolution = this.chunkedFile.getResolutions()[resolutionOrder];
     final var rowStripe = rowATU.getStripeDescriptor();
     final var colStripe = colATU.getStripeDescriptor();
     final var rowStripeId = rowStripe.stripeId();
@@ -434,29 +465,32 @@ public class MatrixQueries {
     final var queryCols = colATU.getLength();
     final var blockOnMainDiagonal = (rowStripeId == colStripeId);
 
-//    log.debug("Getting intersection of ATUs with stripes " + rowStripeId + " and " + colStripeId);
-    final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
-    @Nullable HDF5FileDatasetsBundle dsBundle = null;
+    final long blockIndexInDatasets = ((long) rowStripeId) * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
+    final long blockLength;
+    final long blockOffset;
     try {
-      dsBundle = pool.borrowObject();
-      Objects.requireNonNull(dsBundle);
       final var reader = dsBundle.getReader();
-      final var blockIndexInDatasets = rowStripeId * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
-      final long blockLength;
-      final long blockOffset;
-
-      {
+      final BlockMeta blockMeta;
+      if (blockMetaCache != null) {
+        blockMeta = blockMetaCache.computeIfAbsent(blockIndexInDatasets, key -> {
+          final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
+          final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
+          final long[] blockLengthBuf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, key.longValue());
+          final long[] blockOffsetBuf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, key.longValue());
+          return new BlockMeta(blockLengthBuf[0], blockOffsetBuf[0]);
+        });
+      } else {
         final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
-        final long[] buf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
-        blockLength = buf[0];
+        final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
+        final long[] blockLengthBuf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
+        final long[] blockOffsetBuf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
+        blockMeta = new BlockMeta(blockLengthBuf[0], blockOffsetBuf[0]);
       }
+      blockLength = blockMeta.blockLength();
+      blockOffset = blockMeta.blockOffset();
 
-      final boolean isEmpty = (blockLength == 0L);
-      final long[][] denseMatrix = new long[needsTranspose ? queryCols : queryRows][needsTranspose ? queryRows : queryCols];
-
-      if (isEmpty) {
-        log.debug("Zero ATU intersection");
-        return denseMatrix;
+      if (blockLength == 0L) {
+        return;
       }
 
       final var firstRow = rowATU.getStartIndexInStripeIncl();
@@ -467,124 +501,279 @@ public class MatrixQueries {
       final var flipRows = ATUDirection.REVERSED.equals(rowATU.getDirection());
       final var flipCols = ATUDirection.REVERSED.equals(colATU.getDirection());
 
-      {
-        final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
-        final long[] buf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
-        blockOffset = buf[0];
-      }
-
       final var savedAsSparse = (blockOffset >= 0L);
+      final var cacheKey = new BlockCacheKey(resolutionOrder, blockIndexInDatasets);
+      final var cachedPayload = this.blockDataCache.get(cacheKey);
 
       if (savedAsSparse) {
-        log.debug("Fetching sparse block");
-        final long[] blockRows;
-        final long[] blockCols;
-        final long[] blockValues;
-
-
-        blockRows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset);
-        blockCols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset);
-        blockValues = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset);
-
-
-        final int rowStartIndex = BinarySearch.leftBinarySearch(blockRows, Integer.min(rowATU.getStartIndexInStripeIncl(), colATU.getStartIndexInStripeIncl()));
-        final int rowEndIndex = BinarySearch.leftBinarySearch(blockRows, Integer.max(rowATU.getEndIndexInStripeExcl(), colATU.getEndIndexInStripeExcl()));
-        final var maxCol = (int) Arrays.stream(blockCols).max().orElse(0L);
-
-
-//        final var sparseMatrix = new SparseCOOMatrixLong(
-//          Arrays.stream(blockRows).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-//          Arrays.stream(blockCols).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).mapToInt(l -> (int) l).toArray(),
-//          Arrays.stream(blockValues).skip(rowStartIndex).limit(rowEndIndex - rowStartIndex).toArray(),
-//          needsTranspose,
-//          blockOnMainDiagonal,
-//          flipRows,
-//          flipCols
-//        );
-        final var sparseMatrix = new SparseCOOMatrixLong(
-          Arrays.stream(blockRows).mapToInt(i -> (int) i).toArray(),
-          Arrays.stream(blockCols).mapToInt(i -> (int) i).toArray(),
-          blockValues,
-          blockOnMainDiagonal
-        );
-
-        final var denseSquarePartial = sparseMatrix.toDense(this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize());
-        final var denseBlock = new long[queryRows][queryCols];
-
-        for (int i = firstRow; i < lastRow; ++i) {
-          System.arraycopy(denseSquarePartial[i], firstCol, denseBlock[i - firstRow], 0, queryCols);
-        }
-
-        if (flipRows) {
-          ArrayUtils.reverse(denseBlock);
-        }
-
-        if (flipCols) {
-          for (final var row : denseBlock) {
-            ArrayUtils.reverse(row);
-          }
-        }
-
-        if (needsTranspose) {
-          for (int i = 0; i < queryRows; ++i) {
-            for (int j = 0; j < queryCols; ++j) {
-              denseMatrix[j][i] = denseBlock[i][j];
-            }
-          }
+        final SparseBlockData sparseBlockData;
+        if (cachedPayload instanceof SparseBlockData cachedSparse) {
+          sparseBlockData = cachedSparse;
         } else {
-          System.arraycopy(denseBlock, 0, denseMatrix, 0, queryRows);
+          sparseBlockData = new SparseBlockData(
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
+          );
+          this.blockDataCache.put(cacheKey, sparseBlockData);
+        }
+
+        final var queryRowCount = lastRow - firstRow;
+        final var queryColCount = lastCol - firstCol;
+        for (int i = 0; i < sparseBlockData.values().length; i++) {
+          final var value = sparseBlockData.values()[i];
+          writeSparseValueToTarget(
+            target,
+            dstRow,
+            dstCol,
+            sparseBlockData.rows()[i],
+            sparseBlockData.cols()[i],
+            value,
+            firstRow,
+            firstCol,
+            queryRowCount,
+            queryColCount,
+            flipRows,
+            flipCols,
+            needsTranspose
+          );
+          if (blockOnMainDiagonal && sparseBlockData.rows()[i] != sparseBlockData.cols()[i]) {
+            writeSparseValueToTarget(
+              target,
+              dstRow,
+              dstCol,
+              sparseBlockData.cols()[i],
+              sparseBlockData.rows()[i],
+              value,
+              firstRow,
+              firstCol,
+              queryRowCount,
+              queryColCount,
+              flipRows,
+              flipCols,
+              needsTranspose
+            );
+          }
         }
       } else {
-        log.debug("Fetching dense block");
-        final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
-        final MDLongArray block;
-        {
-          block = reader.int64().readSlicedMDArrayBlockWithOffset(dsBundle.getDenseBlockDataSet(), new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()}, new long[]{0L, 0L}, idx);
-        }
-        final long[][] denseBlock;
-        denseBlock = block.toMatrix();
-        if (blockOnMainDiagonal) {
-          for (int i = 0; i < denseBlock.length; ++i) {
-            for (int j = 1 + i; j < denseBlock.length; ++j) {
-              denseBlock[j][i] = denseBlock[i][j];
+        final DenseBlockData denseBlockData;
+        if (cachedPayload instanceof DenseBlockData cachedDense) {
+          denseBlockData = cachedDense;
+        } else {
+          final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
+          final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
+            dsBundle.getDenseBlockDataSet(),
+            new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()},
+            new long[]{0L, 0L},
+            idx
+          );
+          final var denseBlock = block.toMatrix();
+          if (blockOnMainDiagonal) {
+            for (int i = 0; i < denseBlock.length; ++i) {
+              for (int j = 1 + i; j < denseBlock.length; ++j) {
+                denseBlock[j][i] = denseBlock[i][j];
+              }
             }
           }
+          denseBlockData = new DenseBlockData(denseBlock);
+          this.blockDataCache.put(cacheKey, denseBlockData);
         }
-        final var denseSubBlock = new long[queryRows][queryCols];
-
-        for (int i = firstRow; i < lastRow; ++i) {
-          System.arraycopy(denseBlock[i], firstCol, denseSubBlock[i - firstRow], 0, queryCols);
-        }
-
-        if (flipRows) {
-          ArrayUtils.reverse(denseSubBlock);
-        }
-        if (flipCols) {
-          for (final var row : denseSubBlock) {
-            ArrayUtils.reverse(row);
-          }
-        }
-        if (needsTranspose) {
-          for (int i = 0; i < queryRows; ++i) {
-            for (int j = 0; j < queryCols; ++j) {
-              denseMatrix[j][i] = denseSubBlock[i][j];
+        final var denseBlock = denseBlockData.matrix();
+        if (blockOnMainDiagonal) {
+          for (int outRow = 0; outRow < queryRows; outRow++) {
+            final int srcRow = flipRows ? (lastRow - 1 - outRow) : (firstRow + outRow);
+            for (int outCol = 0; outCol < queryCols; outCol++) {
+              final int srcCol = flipCols ? (lastCol - 1 - outCol) : (firstCol + outCol);
+              if (needsTranspose) {
+                target[dstRow + outCol][dstCol + outRow] = denseBlock[srcRow][srcCol];
+              } else {
+                target[dstRow + outRow][dstCol + outCol] = denseBlock[srcRow][srcCol];
+              }
             }
           }
         } else {
-          System.arraycopy(denseSubBlock, 0, denseMatrix, 0, queryRows);
+          for (int outRow = 0; outRow < queryRows; outRow++) {
+            final int srcRow = flipRows ? (queryRows - 1 - outRow) : outRow;
+            for (int outCol = 0; outCol < queryCols; outCol++) {
+              final int srcCol = flipCols ? (queryCols - 1 - outCol) : outCol;
+              if (needsTranspose) {
+                target[dstRow + outCol][dstCol + outRow] = denseBlock[firstRow + srcRow][firstCol + srcCol];
+              } else {
+                target[dstRow + outRow][dstCol + outCol] = denseBlock[firstRow + srcRow][firstCol + srcCol];
+              }
+            }
+          }
         }
       }
-
-      return denseMatrix;
     } catch (Exception e) {
       throw new RuntimeException(e);
-    } finally {
-      if (null != dsBundle) {
-        try {
-          pool.returnObject(dsBundle);
-        } catch (final Exception ignored) {
-          // ignored
+    }
+  }
+
+  private static void writeSparseValueToTarget(
+    final long[][] target,
+    final int dstRow,
+    final int dstCol,
+    final long row,
+    final long col,
+    final long value,
+    final int firstRow,
+    final int firstCol,
+    final int queryRowCount,
+    final int queryColCount,
+    final boolean flipRows,
+    final boolean flipCols,
+    final boolean needsTranspose
+  ) {
+    final int localRow = (int) row - firstRow;
+    final int localCol = (int) col - firstCol;
+    if (localRow < 0 || localRow >= queryRowCount || localCol < 0 || localCol >= queryColCount) {
+      return;
+    }
+    final int transformedRow = flipRows ? (queryRowCount - 1 - localRow) : localRow;
+    final int transformedCol = flipCols ? (queryColCount - 1 - localCol) : localCol;
+    if (needsTranspose) {
+      target[dstRow + transformedCol][dstCol + transformedRow] = value;
+    } else {
+      target[dstRow + transformedRow][dstCol + transformedCol] = value;
+    }
+  }
+
+  private void prefillBlockMetaCache(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final int resolutionOrder,
+    final @NotNull List<@NotNull ATUDescriptor> rowATUs,
+    final @NotNull List<@NotNull ATUDescriptor> colATUs,
+    final @NotNull Map<Long, BlockMeta> blockMetaCache
+  ) {
+    final int stripeCount = this.chunkedFile.getStripeCount()[resolutionOrder];
+    if (stripeCount <= 0) {
+      return;
+    }
+    final var rowStripeIds = rowATUs.stream().map(atu -> atu.getStripeDescriptor().stripeId()).collect(Collectors.toSet());
+    final var colStripeIds = colATUs.stream().map(atu -> atu.getStripeDescriptor().stripeId()).collect(Collectors.toSet());
+    final var neededMetaRows = new HashSet<Integer>();
+    for (final var rowStripeId : rowStripeIds) {
+      for (final var colStripeId : colStripeIds) {
+        neededMetaRows.add(Math.min(rowStripeId, colStripeId));
+      }
+    }
+    final var rowCache = this.blockMetaRowCaches.computeIfAbsent(
+      resolutionOrder,
+      key -> new BlockMetaRowCache(Integer.getInteger("HICT_BLOCK_META_ROW_CACHE_ROWS", 256))
+    );
+    final var loadedRows = new HashMap<Integer, BlockMetaRow>(neededMetaRows.size());
+    for (final var rowStripeId : neededMetaRows) {
+      loadedRows.put(rowStripeId, rowCache.getOrLoad(dsBundle, stripeCount, rowStripeId));
+    }
+    for (final var rowStripeId : rowStripeIds) {
+      for (final var colStripeId : colStripeIds) {
+        final var canonicalRow = Math.min(rowStripeId, colStripeId);
+        final var canonicalCol = Math.max(rowStripeId, colStripeId);
+        final var row = loadedRows.get(canonicalRow);
+        if (row == null) {
+          continue;
         }
+        final long blockIndex = ((long) canonicalRow) * stripeCount + canonicalCol;
+        blockMetaCache.putIfAbsent(blockIndex, new BlockMeta(row.blockLengths()[canonicalCol], row.blockOffsets()[canonicalCol]));
+      }
+    }
+  }
+
+  private record BlockMeta(long blockLength, long blockOffset) {
+  }
+
+  private record BlockCacheKey(int resolutionOrder, long blockIndex) {
+  }
+
+  private sealed interface BlockPayload permits SparseBlockData, DenseBlockData {
+    long estimatedBytes();
+  }
+
+  private record SparseBlockData(long[] rows, long[] cols, long[] values) implements BlockPayload {
+    @Override
+    public long estimatedBytes() {
+      return ((long) rows.length + cols.length + values.length) * Long.BYTES;
+    }
+  }
+
+  private record DenseBlockData(long[][] matrix) implements BlockPayload {
+    @Override
+    public long estimatedBytes() {
+      if (matrix.length == 0) {
+        return 0L;
+      }
+      return ((long) matrix.length) * matrix[0].length * Long.BYTES;
+    }
+  }
+
+  private record BlockMetaRow(long[] blockLengths, long[] blockOffsets) {
+  }
+
+  private static final class BlockMetaRowCache {
+    private final int maxRows;
+    private final LinkedHashMap<Integer, BlockMetaRow> cache;
+
+    private BlockMetaRowCache(final int maxRows) {
+      this.maxRows = Math.max(16, maxRows);
+      this.cache = new LinkedHashMap<>(this.maxRows, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<Integer, BlockMetaRow> eldest) {
+          return size() > BlockMetaRowCache.this.maxRows;
+        }
+      };
+    }
+
+    private synchronized @NotNull BlockMetaRow getOrLoad(
+      final @NotNull HDF5FileDatasetsBundle dsBundle,
+      final int stripeCount,
+      final int rowStripeId
+    ) {
+      final var cached = this.cache.get(rowStripeId);
+      if (cached != null) {
+        return cached;
+      }
+      final var reader = dsBundle.getReader();
+      final var rowOffset = ((long) rowStripeId) * stripeCount;
+      final var rowLengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
+      final var rowOffsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
+      final var loaded = new BlockMetaRow(rowLengths, rowOffsets);
+      this.cache.put(rowStripeId, loaded);
+      return loaded;
+    }
+  }
+
+  private static final class BlockDataCache {
+    private final long maxBytes;
+    private long usedBytes = 0L;
+    private final LinkedHashMap<BlockCacheKey, BlockPayload> cache = new LinkedHashMap<>(256, 0.75f, true);
+
+    private BlockDataCache(final long maxBytes) {
+      this.maxBytes = Math.max(8L * 1024L * 1024L, maxBytes);
+    }
+
+    private synchronized @Nullable BlockPayload get(final @NotNull BlockCacheKey key) {
+      return cache.get(key);
+    }
+
+    private synchronized void put(final @NotNull BlockCacheKey key, final @NotNull BlockPayload payload) {
+      final var size = payload.estimatedBytes();
+      if (size <= 0 || size > this.maxBytes) {
+        return;
+      }
+      final var old = cache.put(key, payload);
+      if (old != null) {
+        usedBytes -= old.estimatedBytes();
+      }
+      usedBytes += size;
+      while (usedBytes > maxBytes && !cache.isEmpty()) {
+        final var it = cache.entrySet().iterator();
+        if (!it.hasNext()) {
+          break;
+        }
+        final var eldest = it.next();
+        usedBytes -= eldest.getValue().estimatedBytes();
+        it.remove();
       }
     }
   }
