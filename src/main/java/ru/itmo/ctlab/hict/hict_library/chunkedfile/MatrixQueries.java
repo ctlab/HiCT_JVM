@@ -96,37 +96,23 @@ public class MatrixQueries {
         Objects.requireNonNull(dsBundle);
         final var blockMetaCache = new HashMap<Long, BlockMeta>();
         prefillBlockMetaCache(dsBundle, resolutionOrder, rowATUs, colATUs, blockMetaCache);
-        if (symmetricQuery) {
-          final var atuCount = rowATUs.size();
-          var startDeltaCol = (int) (startCol - startColIncl);
-          for (int i = 0; i < atuCount; ++i) {
-            final var rowATU = rowATUs.get(i);
-            deltaCol = startDeltaCol;
-            final var rowCount = rowATU.getLength();
-            for (int j = i; j < atuCount; ++j) {
-              final var colATU = colATUs.get(j);
-              final var colCount = colATU.getLength();
-              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
-              if (i != j) {
-                for (int k = 0; k < rowCount; k++) {
-                  for (int l = 0; l < colCount; l++) {
-                    result[deltaCol + l][deltaRow + k] = result[deltaRow + k][deltaCol + l];
-                  }
-                }
-              }
-              deltaCol += colCount;
-            }
-            startDeltaCol += colATUs.get(i).getLength();
-            deltaRow += rowCount;
-          }
-        } else {
-          for (final var rowATU : rowATUs) {
-            deltaCol = (int) (startCol - startColIncl);
-            for (final var colATU : colATUs) {
-              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
-              deltaCol += colATU.getLength();
-            }
-            deltaRow += rowATU.getLength();
+        final var rowPlacements = buildPlacements(rowATUs, (int) (startRow - startRowIncl));
+        final var colPlacements = symmetricQuery ? rowPlacements : buildPlacements(colATUs, (int) (startCol - startColIncl));
+        final var tasksByBlock = buildGroupedTasks(rowPlacements, colPlacements, this.chunkedFile.getStripeCount()[resolutionOrder]);
+
+        for (final var entry : tasksByBlock.entrySet()) {
+          for (final var task : entry.getValue()) {
+            fillATUIntersectionIntoWithBundle(
+              dsBundle,
+              resolutionDescriptor,
+              task.rowATU(),
+              task.colATU(),
+              result,
+              task.dstRow(),
+              task.dstCol(),
+              task.needsTranspose(),
+              blockMetaCache
+            );
           }
         }
       } catch (final Exception ex) {
@@ -144,6 +130,49 @@ public class MatrixQueries {
 
 
     return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
+  }
+
+  private List<ATUPlacement> buildPlacements(final @NotNull List<@NotNull ATUDescriptor> atus, final int startOffset) {
+    final var placements = new ArrayList<ATUPlacement>(atus.size());
+    var offset = startOffset;
+    for (final var atu : atus) {
+      placements.add(new ATUPlacement(atu, offset));
+      offset += atu.getLength();
+    }
+    return placements;
+  }
+
+  private Map<Long, List<IntersectionTask>> buildGroupedTasks(
+    final @NotNull List<ATUPlacement> rowPlacements,
+    final @NotNull List<ATUPlacement> colPlacements,
+    final int stripeCount
+  ) {
+    final var tasksByBlock = new LinkedHashMap<Long, List<IntersectionTask>>();
+    for (int i = 0; i < rowPlacements.size(); i++) {
+      final var rp = rowPlacements.get(i);
+      // For symmetric queries we still build full ordered (i, j) set.
+      // This avoids mirror-copy corner cases at tile borders and keeps rendering correct.
+      final int colStart = 0;
+      for (int j = colStart; j < colPlacements.size(); j++) {
+        final var cp = colPlacements.get(j);
+        final var rowStripe = rp.atu().getStripeDescriptor().stripeId();
+        final var colStripe = cp.atu().getStripeDescriptor().stripeId();
+        final boolean needsTranspose = rowStripe > colStripe;
+        final var canonicalRow = needsTranspose ? cp.atu() : rp.atu();
+        final var canonicalCol = needsTranspose ? rp.atu() : cp.atu();
+        final var canonicalRowStripe = Math.min(rowStripe, colStripe);
+        final var canonicalColStripe = Math.max(rowStripe, colStripe);
+        final long blockIndex = ((long) canonicalRowStripe) * stripeCount + canonicalColStripe;
+        tasksByBlock.computeIfAbsent(blockIndex, ignored -> new ArrayList<>()).add(new IntersectionTask(
+          canonicalRow,
+          canonicalCol,
+          rp.offset(),
+          cp.offset(),
+          needsTranspose
+        ));
+      }
+    }
+    return tasksByBlock;
   }
 
   private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus) {
@@ -510,40 +539,50 @@ public class MatrixQueries {
         if (cachedPayload instanceof SparseBlockData cachedSparse) {
           sparseBlockData = cachedSparse;
         } else {
+          final var rows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset);
+          final var cols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset);
+          final var values = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset);
           sparseBlockData = new SparseBlockData(
-            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
-            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
-            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
+            rows,
+            cols,
+            values,
+            buildSparseRowPointers(rows, this.chunkedFile.getDenseBlockSize())
           );
           this.blockDataCache.put(cacheKey, sparseBlockData);
         }
 
         final var queryRowCount = lastRow - firstRow;
         final var queryColCount = lastCol - firstCol;
-        for (int i = 0; i < sparseBlockData.values().length; i++) {
+        final int sparseStart = sparseBlockData.rowPointers()[firstRow];
+        final int sparseEnd = sparseBlockData.rowPointers()[lastRow];
+        for (int i = sparseStart; i < sparseEnd; i++) {
           final var value = sparseBlockData.values()[i];
-          writeSparseValueToTarget(
-            target,
-            dstRow,
-            dstCol,
-            sparseBlockData.rows()[i],
-            sparseBlockData.cols()[i],
-            value,
-            firstRow,
-            firstCol,
-            queryRowCount,
-            queryColCount,
-            flipRows,
-            flipCols,
-            needsTranspose
-          );
-          if (blockOnMainDiagonal && sparseBlockData.rows()[i] != sparseBlockData.cols()[i]) {
+          final var rowValue = sparseBlockData.rows()[i];
+          final var colValue = sparseBlockData.cols()[i];
+          if (colValue >= firstCol && colValue < lastCol) {
             writeSparseValueToTarget(
               target,
               dstRow,
               dstCol,
-              sparseBlockData.cols()[i],
-              sparseBlockData.rows()[i],
+              rowValue,
+              colValue,
+              value,
+              firstRow,
+              firstCol,
+              queryRowCount,
+              queryColCount,
+              flipRows,
+              flipCols,
+              needsTranspose
+            );
+          }
+          if (blockOnMainDiagonal && rowValue != colValue && rowValue >= firstCol && rowValue < lastCol && colValue >= firstRow && colValue < lastRow) {
+            writeSparseValueToTarget(
+              target,
+              dstRow,
+              dstCol,
+              colValue,
+              rowValue,
               value,
               firstRow,
               firstCol,
@@ -683,6 +722,18 @@ public class MatrixQueries {
   private record BlockMeta(long blockLength, long blockOffset) {
   }
 
+  private record ATUPlacement(@NotNull ATUDescriptor atu, int offset) {
+  }
+
+  private record IntersectionTask(
+    @NotNull ATUDescriptor rowATU,
+    @NotNull ATUDescriptor colATU,
+    int dstRow,
+    int dstCol,
+    boolean needsTranspose
+  ) {
+  }
+
   private record BlockCacheKey(int resolutionOrder, long blockIndex) {
   }
 
@@ -690,10 +741,10 @@ public class MatrixQueries {
     long estimatedBytes();
   }
 
-  private record SparseBlockData(long[] rows, long[] cols, long[] values) implements BlockPayload {
+  private record SparseBlockData(long[] rows, long[] cols, long[] values, int[] rowPointers) implements BlockPayload {
     @Override
     public long estimatedBytes() {
-      return ((long) rows.length + cols.length + values.length) * Long.BYTES;
+      return ((long) rows.length + cols.length + values.length) * Long.BYTES + ((long) rowPointers.length) * Integer.BYTES;
     }
   }
 
@@ -776,6 +827,19 @@ public class MatrixQueries {
         it.remove();
       }
     }
+  }
+
+  private static int[] buildSparseRowPointers(final long[] rows, final int denseBlockSize) {
+    final int[] rowPointers = new int[denseBlockSize + 1];
+    int cursor = 0;
+    for (int row = 0; row < denseBlockSize; row++) {
+      while (cursor < rows.length && rows[cursor] < row) {
+        cursor++;
+      }
+      rowPointers[row] = cursor;
+    }
+    rowPointers[denseBlockSize] = rows.length;
+    return rowPointers;
   }
 
   public record MatrixWithWeights(long @NotNull [][] matrix, double @NotNull [] rowWeights,
