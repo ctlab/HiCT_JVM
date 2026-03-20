@@ -128,9 +128,10 @@ public class TrackHandlersHolder extends HandlersHolder {
 
     router.post("/tracks/query_1d").blockingHandler(ctx -> {
       final var request = ctx.body().asJsonObject();
-      final var startBp = request.getLong("startBp", 0L);
-      final var endBp = request.getLong("endBp", startBp + 1L);
+      final var startPx = request.getLong("startPx", 0L);
+      final var endPx = request.getLong("endPx", startPx + 1L);
       final var widthPx = request.getInteger("widthPx", 512);
+      final var bpResolution = request.getLong("bpResolution", 1L);
 
       final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
       final var manager = getTrackManager(ctx);
@@ -141,7 +142,7 @@ public class TrackHandlersHolder extends HandlersHolder {
       if (chunkedFile == null) {
         return;
       }
-      final var result = manager.queryVisibleTracks(chunkedFile, startBp, endBp, widthPx);
+      final var result = manager.queryVisibleTracks(chunkedFile, startPx, endPx, widthPx, bpResolution);
       ctx.response()
         .putHeader("content-type", "application/json")
         .end(Json.encode(result));
