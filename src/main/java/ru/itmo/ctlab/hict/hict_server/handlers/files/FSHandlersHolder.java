@@ -42,6 +42,10 @@ import java.util.stream.Collectors;
 @Slf4j
 public class FSHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private static final List<String> FASTA_SUFFIXES = List.of(
+    ".fasta", ".fa", ".fna", ".fas",
+    ".fasta.gz", ".fa.gz", ".fna.gz", ".fas.gz"
+  );
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
@@ -89,7 +93,12 @@ public class FSHandlersHolder extends HandlersHolder {
 
       final List<?> files;
       try (final var fileStream = Files.walk(dataDirectory)) {
-        files = fileStream.filter(Files::isRegularFile).map(dataDirectory::relativize).map(Object::toString).filter(p -> p.toLowerCase().endsWith(".fasta")).collect(Collectors.toList());
+        files = fileStream
+          .filter(Files::isRegularFile)
+          .map(dataDirectory::relativize)
+          .map(Object::toString)
+          .filter(FSHandlersHolder::isFastaFilename)
+          .collect(Collectors.toList());
       } catch (final IOException e) {
         throw new RuntimeException(e);
       }
@@ -112,5 +121,10 @@ public class FSHandlersHolder extends HandlersHolder {
       }
       ctx.response().putHeader("content-type", "application/json").end(Json.encode(files));
     });
+  }
+
+  private static boolean isFastaFilename(final @NotNull String path) {
+    final var lowered = path.toLowerCase();
+    return FASTA_SUFFIXES.stream().anyMatch(lowered::endsWith);
   }
 }

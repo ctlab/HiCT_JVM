@@ -39,8 +39,10 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.response.fasta.FastaLinkResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.OpenFileResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
+import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.IOException;
@@ -83,6 +85,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }
 
       final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var oldTrackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+      if (oldTrackManagerWrapper != null) {
+        oldTrackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
+        oldTrackManagerWrapper.getTrack1DManager().close();
+      }
+      map.remove("linkedFastaPath");
+      map.remove("linkedFastaFilename");
 
       final var progress = new io.vertx.core.json.JsonObject()
         .put("stage", "starting")
@@ -110,6 +119,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       map.put("openedFilename", filename);
 
       map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
+      map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(new Track1DManager(dataDirectory)));
 
       map.put("openProgress", new io.vertx.core.json.JsonObject()
         .put("stage", "done")
@@ -153,6 +163,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         .end(Json.encode(
           new io.vertx.core.json.JsonObject()
             .put("filename", filename)
+            .put("fastaFilename", map.getOrDefault("linkedFastaFilename", ""))
             .put("openFileResponse", generateOpenFileResponse(chunkedFile))
         ));
     });
@@ -170,9 +181,117 @@ public class FileOpHandlersHolder extends HandlersHolder {
       map.remove("chunkedFile");
       map.remove("TileStatisticHolder");
       map.remove("openedFilename");
+      map.remove("linkedFastaPath");
+      map.remove("linkedFastaFilename");
+      final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.remove("Track1DManager");
+      if (trackManagerWrapper != null) {
+        trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
+        trackManagerWrapper.getTrack1DManager().close();
+      }
       ctx.response()
         .putHeader("content-type", "application/json")
         .end(Json.encode(new io.vertx.core.json.JsonObject().put("status", "closed")));
+    });
+
+    router.post("/link_fasta").blockingHandler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new IllegalStateException("Open a Hi-C file before linking FASTA"));
+        return;
+      }
+      final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
+      if (dataDirectoryWrapper == null) {
+        ctx.fail(new RuntimeException("Data directory is not present in local map"));
+        return;
+      }
+      final var requestJSON = ctx.body().asJsonObject();
+      final var fastaFilename = requestJSON.getString("fastaFilename");
+      final boolean allowMismatch = requestJSON.getBoolean("allowMismatch", false);
+      if (fastaFilename == null || fastaFilename.isBlank()) {
+        ctx.fail(new IllegalArgumentException("FASTA filename is required"));
+        return;
+      }
+
+      final Path fastaPath = dataDirectoryWrapper.getPath().resolve(fastaFilename).normalize().toAbsolutePath();
+      if (!fastaPath.startsWith(dataDirectoryWrapper.getPath())) {
+        ctx.fail(new IllegalArgumentException("FASTA path " + fastaFilename + " is outside DATA_DIR"));
+        return;
+      }
+      if (!Files.exists(fastaPath) || !Files.isRegularFile(fastaPath)) {
+        ctx.fail(new IllegalArgumentException("FASTA file " + fastaFilename + " does not exist"));
+        return;
+      }
+
+      final var report = chunkedFileWrapper.getChunkedFile().getFastaProcessor().analyzeLinkCandidate(fastaPath);
+      final boolean requiresConfirmation = report.hasWarnings() && !allowMismatch;
+      if (!requiresConfirmation) {
+        map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
+        map.put("linkedFastaFilename", fastaFilename);
+        final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+        if (trackManagerWrapper != null) {
+          trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(
+            chunkedFileWrapper.getChunkedFile().getFastaProcessor().buildSourceNameAliases(fastaPath)
+          );
+        }
+      }
+
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(Json.encode(FastaLinkResponseDTO.fromReport(report, !requiresConfirmation, requiresConfirmation)));
+    });
+
+    router.post("/get_fasta_for_assembly").blockingHandler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new IllegalStateException("Open a Hi-C file before exporting FASTA"));
+        return;
+      }
+      final var fastaPathWrapper = (ShareableWrappers.PathWrapper) map.get("linkedFastaPath");
+      if (fastaPathWrapper == null) {
+        ctx.fail(new IllegalStateException("Link a FASTA file before exporting FASTA"));
+        return;
+      }
+      final var fasta = chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath());
+      ctx.response()
+        .setChunked(true)
+        .putHeader("Content-Type", "text/plain")
+        .end(Buffer.buffer(fasta, StandardCharsets.UTF_8.name()));
+    });
+
+    router.post("/get_fasta_for_selection").blockingHandler(ctx -> {
+      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+      if (chunkedFileWrapper == null) {
+        ctx.fail(new IllegalStateException("Open a Hi-C file before exporting FASTA"));
+        return;
+      }
+      final var fastaPathWrapper = (ShareableWrappers.PathWrapper) map.get("linkedFastaPath");
+      if (fastaPathWrapper == null) {
+        ctx.fail(new IllegalStateException("Link a FASTA file before exporting FASTA"));
+        return;
+      }
+      final var requestJSON = ctx.body().asJsonObject();
+      final var fromBpX = requestJSON.getLong("fromBpX");
+      final var fromBpY = requestJSON.getLong("fromBpY");
+      final var toBpX = requestJSON.getLong("toBpX");
+      final var toBpY = requestJSON.getLong("toBpY");
+      if (fromBpX == null || fromBpY == null || toBpX == null || toBpY == null) {
+        ctx.fail(new IllegalArgumentException("Selection coordinates must be provided"));
+        return;
+      }
+      final var fasta = chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportSelection(
+        fastaPathWrapper.getPath(),
+        fromBpX,
+        fromBpY,
+        toBpX,
+        toBpY
+      );
+      ctx.response()
+        .setChunked(true)
+        .putHeader("Content-Type", "text/plain")
+        .end(Buffer.buffer(fasta, StandardCharsets.UTF_8.name()));
     });
 
     router.post("/get_agp_for_assembly").blockingHandler(ctx -> {

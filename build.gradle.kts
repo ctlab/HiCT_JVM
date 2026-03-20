@@ -41,6 +41,9 @@ repositories {
   maven {
     url = uri("https://maven.scijava.org/content/repositories/public/")
   }
+  maven {
+    url = uri("https://nexus.bioviz.org/repository/maven-releases/")
+  }
 }
 
 val vertxVersion = "4.4.1"
@@ -132,6 +135,8 @@ dependencies {
   // https://mvnrepository.com/artifact/org.scijava/native-lib-loader
   implementation("org.scijava:native-lib-loader:2.4.0")
   implementation("info.picocli:picocli:4.7.6")
+  implementation("com.github.samtools:htsjdk:4.1.3")
+  implementation("org.broad.igv:bigwig:3.0.0")
 
 
 }

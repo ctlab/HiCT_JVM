@@ -56,6 +56,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersH
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.tracks.TrackHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.awt.*;
@@ -186,6 +187,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
     handlersHolders.add(new InfoHandlersHolder(vertx));
+    handlersHolders.add(new TrackHandlersHolder(vertx));
 
     router.route().failureHandler(ctx -> {
       log.error("An exception was caught at router top-level", ctx.failure());

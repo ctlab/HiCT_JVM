@@ -30,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
+import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 
 import java.nio.file.Path;
 
@@ -50,5 +51,11 @@ public class ShareableWrappers {
   @RequiredArgsConstructor
   public static class SimpleVisualizationOptionsWrapper implements Shareable {
     private final @NotNull SimpleVisualizationOptions simpleVisualizationOptions;
+  }
+
+  @Getter
+  @RequiredArgsConstructor
+  public static class Track1DManagerWrapper implements Shareable {
+    private final @NotNull Track1DManager track1DManager;
   }
 }
