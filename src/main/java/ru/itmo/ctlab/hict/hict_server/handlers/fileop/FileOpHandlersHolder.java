@@ -119,7 +119,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
       map.put("openedFilename", filename);
 
       map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
-      map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(new Track1DManager(dataDirectory)));
+      final var processedDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+      final var processedDirectory = processedDirectoryWrapper != null
+        ? processedDirectoryWrapper.getPath()
+        : dataDirectory.resolve("processed").normalize().toAbsolutePath();
+      map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(new Track1DManager(dataDirectory, processedDirectory)));
 
       map.put("openProgress", new io.vertx.core.json.JsonObject()
         .put("stage", "done")

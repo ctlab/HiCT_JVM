@@ -25,22 +25,35 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.tracks;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.WorkerExecutor;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
-@RequiredArgsConstructor
 public class TrackHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private final WorkerExecutor trackQueryWorkerExecutor;
+
+  public TrackHandlersHolder(final Vertx vertx) {
+    this.vertx = vertx;
+    final var workerPoolSize = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors() / 2));
+    this.trackQueryWorkerExecutor = vertx.createSharedWorkerExecutor(
+      "hict-tracks-query-worker",
+      workerPoolSize,
+      10,
+      TimeUnit.MINUTES
+    );
+  }
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
@@ -70,6 +83,12 @@ public class TrackHandlersHolder extends HandlersHolder {
         request.getString("name"),
         request.getString("color")
       );
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      manager.startPrecompute(chunkedFile, summary.getTrackId(), false);
       ctx.response()
         .putHeader("content-type", "application/json")
         .end(Json.encode(summary));
@@ -126,10 +145,39 @@ public class TrackHandlersHolder extends HandlersHolder {
         .end(Json.encode(Map.of("status", "removed", "trackId", trackId)));
     });
 
-    router.post("/tracks/query_1d").blockingHandler(ctx -> {
+    router.post("/tracks/precompute/status").blockingHandler(ctx -> {
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(Json.encode(manager.getPrecomputeStatus()));
+    });
+
+    router.post("/tracks/precompute/start").blockingHandler(ctx -> {
       final var request = ctx.body().asJsonObject();
-      final var startPx = request.getLong("startPx", 0L);
-      final var endPx = request.getLong("endPx", startPx + 1L);
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      final var status = manager.startPrecompute(
+        chunkedFile,
+        request.getString("trackId"),
+        request.getBoolean("force", false)
+      );
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .end(Json.encode(status));
+    });
+
+    router.post("/tracks/query_1d").handler(ctx -> {
+      final var request = ctx.body().asJsonObject();
       final var widthPx = request.getInteger("widthPx", 512);
       final var bpResolution = request.getLong("bpResolution", 1L);
 
@@ -142,11 +190,75 @@ public class TrackHandlersHolder extends HandlersHolder {
       if (chunkedFile == null) {
         return;
       }
-      final var result = manager.queryVisibleTracks(chunkedFile, startPx, endPx, widthPx, bpResolution);
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .end(Json.encode(result));
+      final var resolvedUnits = resolveUnits(request);
+      final var start = resolveStart(request, resolvedUnits);
+      final var end = resolveEnd(request, resolvedUnits, start + 1L);
+      this.trackQueryWorkerExecutor.<Track1DManager.QueryResult>executeBlocking(promise -> {
+          try {
+            promise.complete(manager.queryVisibleTracks(chunkedFile, start, end, widthPx, bpResolution, resolvedUnits));
+          } catch (final Throwable t) {
+            promise.fail(t);
+          }
+        },
+        false,
+        ar -> {
+          if (ar.failed()) {
+            ctx.fail(ar.cause());
+            return;
+          }
+          ctx.response()
+            .putHeader("content-type", "application/json")
+            .end(Json.encode(ar.result()));
+        });
     });
+  }
+
+  private static @NotNull QueryLengthUnit resolveUnits(final @NotNull io.vertx.core.json.JsonObject request) {
+    final var declared = request.getString("unit", request.getString("units"));
+    if (declared != null && !declared.isBlank()) {
+      return parseUnits(declared);
+    }
+    if (request.containsKey("startPx") || request.containsKey("endPx")) {
+      return QueryLengthUnit.PIXELS;
+    }
+    if (request.containsKey("startBin") || request.containsKey("endBin")) {
+      return QueryLengthUnit.BINS;
+    }
+    if (request.containsKey("startBP") || request.containsKey("endBP")) {
+      return QueryLengthUnit.BASE_PAIRS;
+    }
+    return QueryLengthUnit.PIXELS;
+  }
+
+  private static long resolveStart(final @NotNull io.vertx.core.json.JsonObject request,
+                                   final @NotNull QueryLengthUnit units) {
+    return switch (units) {
+      case PIXELS -> request.getLong("startPx", request.getLong("start", 0L));
+      case BINS -> request.getLong("startBin", request.getLong("start", 0L));
+      case BASE_PAIRS -> request.getLong("startBP", request.getLong("start", 0L));
+    };
+  }
+
+  private static long resolveEnd(final @NotNull io.vertx.core.json.JsonObject request,
+                                 final @NotNull QueryLengthUnit units,
+                                 final long fallback) {
+    return switch (units) {
+      case PIXELS -> request.getLong("endPx", request.getLong("end", fallback));
+      case BINS -> request.getLong("endBin", request.getLong("end", fallback));
+      case BASE_PAIRS -> request.getLong("endBP", request.getLong("end", fallback));
+    };
+  }
+
+  private static @NotNull QueryLengthUnit parseUnits(final @NotNull String rawValue) {
+    final var normalized = rawValue.trim().toUpperCase();
+    return switch (normalized) {
+      case "PIXEL", "PIXELS", "PX" -> QueryLengthUnit.PIXELS;
+      case "BIN", "BINS" -> QueryLengthUnit.BINS;
+      case "BP", "BASE_PAIRS", "BASEPAIR", "BASEPAIRS" -> QueryLengthUnit.BASE_PAIRS;
+      default -> throw new IllegalArgumentException(
+        "Unsupported query unit '" + rawValue + "'. Use one of: PIXELS, BINS, BP."
+      );
+    };
   }
 
   private Track1DManager getTrackManager(final @NotNull io.vertx.ext.web.RoutingContext ctx) {

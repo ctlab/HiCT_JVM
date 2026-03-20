@@ -93,7 +93,7 @@ public class MainVerticle extends AbstractVerticle {
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
         .setConfig(new JsonObject().put("keys",
-            new JsonArray().add("DATA_DIR").add("TILE_SIZE").add("VXPORT").add("MIN_DS_POOL").add("MAX_DS_POOL")));
+            new JsonArray().add("DATA_DIR").add("PROCESSED_DIR").add("TILE_SIZE").add("VXPORT").add("MIN_DS_POOL").add("MAX_DS_POOL")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
     final ConfigRetriever myConfigRetriver = ConfigRetriever.create(vertx, myOptions);
     myConfigRetriver.getConfig(asyncResults -> System.out.println(asyncResults.result().encodePrettily()));
@@ -102,6 +102,8 @@ public class MainVerticle extends AbstractVerticle {
     myConfigRetriver.getConfig(event -> {
       final var dataDirectoryString = event.result().getString("DATA_DIR", ".");
       final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
+      final var processedDirectoryString = event.result().getString("PROCESSED_DIR", dataDirectory.resolve("processed").toString());
+      final var processedDirectory = Path.of(processedDirectoryString).normalize().toAbsolutePath().normalize();
       final var tileSize = event.result().getInteger("TILE_SIZE", 256);
       final var minDSPool = event.result().getInteger("MIN_DS_POOL", 4);
       final var maxDSPool = event.result().getInteger("MAX_DS_POOL", 16);
@@ -111,6 +113,7 @@ public class MainVerticle extends AbstractVerticle {
         log.info("Trying to write configuration to local map");
         final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
         map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataDirectory));
+        map.put("processedDirectory", new ShareableWrappers.PathWrapper(processedDirectory));
         map.put("tileSize", tileSize);
         map.put("VXPORT", port);
         map.put("MIN_DS_POOL", minDSPool);
@@ -133,6 +136,7 @@ public class MainVerticle extends AbstractVerticle {
       }
 
       log.info("Using " + dataDirectory + " as data directory");
+      log.info("Using " + processedDirectory + " as processed directory");
       log.info("Using tile size " + tileSize);
       log.info("Server will start on port " + port);
       try {

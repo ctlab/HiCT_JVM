@@ -24,6 +24,7 @@
 
 package ru.itmo.ctlab.hict.hict_server.tracks;
 
+import ch.systemsx.cisd.hdf5.HDF5Factory;
 import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SamReader;
@@ -39,18 +40,26 @@ import org.broad.igv.bbfile.WigItem;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
+import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -66,15 +75,44 @@ public class Track1DManager {
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ab"
   );
   private static final int MAX_FEATURES_PER_QUERY = 250_000;
+  private static final String PRECOMPUTE_CACHE_VERSION = "1";
+  private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
+  private static final int PRECOMPUTE_EXECUTOR_THREADS = 1;
+  private static final long PRECOMPUTE_STATUS_TTL_MS = 15L * 60_000L;
 
   private final @NotNull Path dataDirectory;
+  private final @NotNull Path processedDirectory;
   private final @NotNull ReadWriteLock lock = new ReentrantReadWriteLock();
   private final @NotNull LinkedHashMap<String, TrackState> tracks = new LinkedHashMap<>();
   private final @NotNull AtomicLong trackCounter = new AtomicLong(0L);
+  private final @NotNull ExecutorService precomputeExecutor;
+  private final @NotNull ConcurrentHashMap<PrecomputedSeriesKey, PrecomputedSeries> precomputedSeriesCache = new ConcurrentHashMap<>();
+  private final @NotNull ConcurrentHashMap<String, TrackPrecomputeRuntime> precomputeRuntimeByTrackId = new ConcurrentHashMap<>();
   private volatile @NotNull Map<String, String> linkedFastaAliasesBySource = Map.of();
 
   public Track1DManager(final @NotNull Path dataDirectory) {
+    this(dataDirectory, dataDirectory.resolve("processed"));
+  }
+
+  public Track1DManager(final @NotNull Path dataDirectory, final @Nullable Path processedDirectory) {
     this.dataDirectory = dataDirectory.normalize().toAbsolutePath();
+    this.processedDirectory = (processedDirectory == null ? this.dataDirectory.resolve("processed") : processedDirectory)
+      .normalize()
+      .toAbsolutePath();
+    try {
+      Files.createDirectories(this.processedDirectory);
+    } catch (final IOException e) {
+      throw new RuntimeException("Failed to create processed directory " + this.processedDirectory, e);
+    }
+    this.precomputeExecutor = Executors.newFixedThreadPool(
+      PRECOMPUTE_EXECUTOR_THREADS,
+      r -> {
+        final var t = new Thread(r);
+        t.setDaemon(true);
+        t.setName("hict-track-precompute");
+        return t;
+      }
+    );
   }
 
   public @NotNull List<String> listTrackFiles() {
@@ -178,6 +216,8 @@ public class Track1DManager {
       if (removed != null) {
         closeDataSourceQuietly(removed.dataSource());
       }
+      this.precomputeRuntimeByTrackId.remove(trackId);
+      this.precomputedSeriesCache.keySet().removeIf(key -> key.trackId().equals(trackId));
     } finally {
       this.lock.writeLock().unlock();
     }
@@ -188,13 +228,88 @@ public class Track1DManager {
       this.lock.writeLock().lock();
       this.tracks.values().forEach(track -> closeDataSourceQuietly(track.dataSource()));
       this.tracks.clear();
+      this.precomputeRuntimeByTrackId.clear();
+      this.precomputedSeriesCache.clear();
     } finally {
       this.lock.writeLock().unlock();
     }
+    this.precomputeExecutor.shutdownNow();
   }
 
   public void setLinkedFastaAliasesBySource(final @Nullable Map<String, String> aliases) {
     this.linkedFastaAliasesBySource = aliases == null ? Map.of() : Map.copyOf(aliases);
+  }
+
+  public @NotNull TracksPrecomputeStatus getPrecomputeStatus() {
+    final var now = System.currentTimeMillis();
+    this.precomputeRuntimeByTrackId.entrySet().removeIf(entry ->
+      now - entry.getValue().lastUpdatedMs() > PRECOMPUTE_STATUS_TTL_MS
+    );
+    final var statuses = this.precomputeRuntimeByTrackId.values().stream()
+      .sorted(Comparator.comparing(TrackPrecomputeRuntime::trackName))
+      .map(TrackPrecomputeRuntime::toStatus)
+      .toList();
+    final var runningCount = statuses.stream()
+      .filter(status -> "queued".equals(status.getStatus()) || "running".equals(status.getStatus()))
+      .count();
+    return new TracksPrecomputeStatus(statuses, (int) runningCount, this.processedDirectory.toString());
+  }
+
+  public @NotNull TracksPrecomputeStatus startPrecompute(final @NotNull ChunkedFile chunkedFile,
+                                                         final @Nullable String trackId,
+                                                         final boolean force) {
+    final List<TrackState> selectedTracks;
+    try {
+      this.lock.readLock().lock();
+      if (trackId != null && !trackId.isBlank()) {
+        final var state = this.tracks.get(trackId);
+        if (state == null) {
+          throw new IllegalArgumentException("Unknown track id " + trackId);
+        }
+        selectedTracks = List.of(state);
+      } else {
+        selectedTracks = this.tracks.values().stream().toList();
+      }
+    } finally {
+      this.lock.readLock().unlock();
+    }
+
+    for (final var state : selectedTracks) {
+      scheduleTrackPrecompute(chunkedFile, state, force);
+    }
+    return getPrecomputeStatus();
+  }
+
+  public @NotNull QueryResult queryVisibleTracks(final @NotNull ChunkedFile chunkedFile,
+                                                 final long start,
+                                                 final long end,
+                                                 final int widthPx,
+                                                 final long bpResolution,
+                                                 final @NotNull QueryLengthUnit units) {
+    final var safeWidth = Math.max(1, widthPx);
+    final var segmentsBuildResult =
+      buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
+    final var totalVisiblePixels = segmentsBuildResult.totalVisiblePixels();
+    if (totalVisiblePixels <= 0L) {
+      return new QueryResult(0L, 1L, 0L, 1L, safeWidth, bpResolution, List.of());
+    }
+    final var queryPxRange = resolveQueryPxRange(
+      chunkedFile,
+      start,
+      end,
+      bpResolution,
+      units,
+      segmentsBuildResult.orderedSegments(),
+      totalVisiblePixels
+    );
+    return queryVisibleTracksInternal(
+      chunkedFile,
+      segmentsBuildResult,
+      queryPxRange.startPx(),
+      queryPxRange.endPx(),
+      safeWidth,
+      bpResolution
+    );
   }
 
   public @NotNull QueryResult queryVisibleTracks(final @NotNull ChunkedFile chunkedFile,
@@ -211,8 +326,18 @@ public class Track1DManager {
     }
     final var queryStartPx = Math.max(0L, Math.min(Math.min(startPx, endPx), totalVisiblePixels - 1L));
     final var queryEndPx = Math.max(queryStartPx + 1L, Math.min(Math.max(startPx, endPx), totalVisiblePixels));
+    return queryVisibleTracksInternal(chunkedFile, segmentsBuildResult, queryStartPx, queryEndPx, safeWidth, bpResolution);
+  }
+
+  private @NotNull QueryResult queryVisibleTracksInternal(final @NotNull ChunkedFile chunkedFile,
+                                                          final @NotNull SegmentBuildResult segmentsBuildResult,
+                                                          final long queryStartPx,
+                                                          final long queryEndPx,
+                                                          final int safeWidth,
+                                                          final long bpResolution) {
     final Map<String, List<AssemblySegment>> sourceToAssemblySegments =
       segmentsBuildResult.sourceToAssemblySegments();
+    final var assemblySignature = computeAssemblySignature(segmentsBuildResult.orderedSegments(), bpResolution);
     final List<TrackRender> trackRenders = new ArrayList<>();
     try {
       this.lock.readLock().lock();
@@ -220,7 +345,23 @@ public class Track1DManager {
         .filter(track -> track.visible)
         .forEach(track -> {
           try {
-            trackRenders.add(track.query(sourceToAssemblySegments, queryStartPx, queryEndPx, safeWidth, bpResolution));
+            maybeScheduleTrackPrecomputeFromQuery(chunkedFile, track);
+            final var maybePrecomputed = getPrecomputedBinsIfReady(
+              chunkedFile,
+              track,
+              sourceToAssemblySegments,
+              segmentsBuildResult.orderedSegments(),
+              queryStartPx,
+              queryEndPx,
+              safeWidth,
+              bpResolution,
+              assemblySignature
+            );
+            if (maybePrecomputed != null) {
+              trackRenders.add(maybePrecomputed);
+            } else {
+              trackRenders.add(track.query(sourceToAssemblySegments, queryStartPx, queryEndPx, safeWidth, bpResolution));
+            }
           } catch (final RuntimeException ex) {
             final var message = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
             log.error("Failed to query 1D track {} ({})", track.name(), track.trackId(), ex);
@@ -237,6 +378,432 @@ public class Track1DManager {
       bpResolution
     ) + bpResolution;
     return new QueryResult(startBp, endBp, queryStartPx, queryEndPx, safeWidth, bpResolution, trackRenders);
+  }
+
+  private static @NotNull QueryPxRange resolveQueryPxRange(final @NotNull ChunkedFile chunkedFile,
+                                                           final long start,
+                                                           final long end,
+                                                           final long bpResolution,
+                                                           final @NotNull QueryLengthUnit units,
+                                                           final @NotNull List<AssemblySegment> orderedSegments,
+                                                           final long totalVisiblePixels) {
+    final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
+    if (resolutionOrder == null) {
+      throw new IllegalArgumentException("Unsupported resolution for 1D track query: " + bpResolution);
+    }
+    final var minCoord = Math.min(start, end);
+    final var maxCoord = Math.max(start, end);
+    if (units == QueryLengthUnit.PIXELS) {
+      final var startPx = Math.max(0L, Math.min(minCoord, totalVisiblePixels - 1L));
+      final var endPx = Math.max(startPx + 1L, Math.min(maxCoord, totalVisiblePixels));
+      return new QueryPxRange(startPx, endPx);
+    }
+
+    final var bpResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
+    final var bpResolution0 = ResolutionDescriptor.fromResolutionOrder(0);
+    final var totalAssemblyBp = chunkedFile.getContigTree().getLengthInUnits(QueryLengthUnit.BASE_PAIRS, bpResolution0);
+    if (totalAssemblyBp <= 0L) {
+      return new QueryPxRange(0L, 1L);
+    }
+
+    final long startBp;
+    final long endBpExcl;
+    if (units == QueryLengthUnit.BASE_PAIRS) {
+      startBp = Math.max(0L, Math.min(minCoord, totalAssemblyBp - 1L));
+      endBpExcl = Math.max(startBp + 1L, Math.min(maxCoord, totalAssemblyBp));
+    } else if (units == QueryLengthUnit.BINS) {
+      final var totalBins = chunkedFile.getContigTree().getLengthInUnits(QueryLengthUnit.BINS, bpResolutionDescriptor);
+      if (totalBins <= 0L) {
+        return new QueryPxRange(0L, 1L);
+      }
+      final var startBin = Math.max(0L, Math.min(minCoord, totalBins - 1L));
+      final var endBinExcl = Math.max(startBin + 1L, Math.min(maxCoord, totalBins));
+      startBp = chunkedFile.convertUnits(
+        startBin,
+        bpResolutionDescriptor,
+        QueryLengthUnit.BINS,
+        bpResolution0,
+        QueryLengthUnit.BASE_PAIRS
+      );
+      if (endBinExcl >= totalBins) {
+        endBpExcl = totalAssemblyBp;
+      } else {
+        endBpExcl = chunkedFile.convertUnits(
+          endBinExcl,
+          bpResolutionDescriptor,
+          QueryLengthUnit.BINS,
+          bpResolution0,
+          QueryLengthUnit.BASE_PAIRS
+        );
+      }
+    } else {
+      throw new IllegalArgumentException("Unsupported query units for 1D track query: " + units);
+    }
+
+    final var clampedStartBp = Math.max(0L, Math.min(startBp, totalAssemblyBp - 1L));
+    final var clampedEndBpExcl = Math.max(clampedStartBp + 1L, Math.min(endBpExcl, totalAssemblyBp));
+    final var startPx = mapAssemblyBpToVisiblePx(clampedStartBp, orderedSegments, bpResolution, totalVisiblePixels);
+    final var endPx = Math.min(
+      totalVisiblePixels,
+      mapAssemblyBpToVisiblePx(Math.max(clampedStartBp, clampedEndBpExcl - 1L), orderedSegments, bpResolution, totalVisiblePixels) + 1L
+    );
+    final var safeEndPx = Math.max(startPx + 1L, endPx);
+    return new QueryPxRange(startPx, safeEndPx);
+  }
+
+  private void maybeScheduleTrackPrecomputeFromQuery(final @NotNull ChunkedFile chunkedFile,
+                                                     final @NotNull TrackState track) {
+    final var runtime = this.precomputeRuntimeByTrackId.get(track.trackId());
+    if (runtime != null && runtime.isActive()) {
+      return;
+    }
+    scheduleTrackPrecompute(chunkedFile, track, false);
+  }
+
+  private void scheduleTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
+                                       final @NotNull TrackState track,
+                                       final boolean force) {
+    final var runtime = this.precomputeRuntimeByTrackId.computeIfAbsent(
+      track.trackId(),
+      ignored -> new TrackPrecomputeRuntime(track.trackId(), track.name())
+    );
+    synchronized (runtime) {
+      if (runtime.isActive()) {
+        return;
+      }
+      runtime.markQueued();
+    }
+    this.precomputeExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime));
+  }
+
+  private void runTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
+                                  final @NotNull TrackState track,
+                                  final boolean force,
+                                  final @NotNull TrackPrecomputeRuntime runtime) {
+    try {
+      final var tasks = buildPrecomputeTasks(chunkedFile, track, force);
+      runtime.setTotalTasks(tasks.size());
+      if (tasks.isEmpty()) {
+        runtime.markFinished();
+        return;
+      }
+      int completed = 0;
+      for (final var task : tasks) {
+        runtime.markRunning(task.bpResolution() + "bp/" + task.modeKey(), completed);
+        final var key = new PrecomputedSeriesKey(track.trackId(), task.bpResolution(), task.assemblySignature(), task.modeKey());
+        PrecomputedSeries series = this.precomputedSeriesCache.get(key);
+        if (series == null || force) {
+          series = loadPrecomputedSeriesFromSidecar(task.sidecarFile(), task.totalVisiblePixels()).orElse(null);
+        }
+        if (series == null || force) {
+          series = computePrecomputedSeries(chunkedFile, track, task);
+          persistPrecomputedSeries(task.sidecarFile(), series);
+        }
+        this.precomputedSeriesCache.put(key, series);
+        completed++;
+        runtime.markTaskDone(completed);
+      }
+      runtime.markFinished();
+    } catch (final Exception ex) {
+      runtime.markFailed(ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+      log.error("Failed to precompute track {}", track.trackId(), ex);
+    }
+  }
+
+  private @NotNull List<PrecomputeTask> buildPrecomputeTasks(final @NotNull ChunkedFile chunkedFile,
+                                                             final @NotNull TrackState track,
+                                                             final boolean force) {
+    final var tasks = new ArrayList<PrecomputeTask>();
+    final var resolutions = Arrays.stream(chunkedFile.getResolutions()).boxed().sorted(Comparator.reverseOrder()).toList();
+    final var modeKeys = modeKeysForTrack(track);
+    for (final var bpResolution : resolutions) {
+      final var segmentsBuildResult = buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
+      final var totalVisiblePixels = segmentsBuildResult.totalVisiblePixels();
+      if (totalVisiblePixels <= 0L || totalVisiblePixels > MAX_PRECOMPUTE_VISIBLE_PIXELS) {
+        continue;
+      }
+      final var assemblySignature = computeAssemblySignature(segmentsBuildResult.orderedSegments(), bpResolution);
+      for (final var modeKey : modeKeys) {
+        final var key = new PrecomputedSeriesKey(track.trackId(), bpResolution, assemblySignature, modeKey);
+        if (!force && this.precomputedSeriesCache.containsKey(key)) {
+          continue;
+        }
+        final var sidecarPath = sidecarPathForVector(chunkedFile, track, bpResolution, assemblySignature, modeKey);
+        if (!force && Files.exists(sidecarPath)) {
+          continue;
+        }
+        tasks.add(new PrecomputeTask(bpResolution, modeKey, totalVisiblePixels, assemblySignature, sidecarPath));
+      }
+    }
+    return tasks;
+  }
+
+  private @Nullable TrackRender getPrecomputedBinsIfReady(final @NotNull ChunkedFile chunkedFile,
+                                                          final @NotNull TrackState track,
+                                                          final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                          final @NotNull List<AssemblySegment> orderedSegments,
+                                                          final long queryStartPx,
+                                                          final long queryEndPx,
+                                                          final int widthPx,
+                                                          final long bpResolution,
+                                                          final @NotNull String assemblySignature) {
+    final var totalVisiblePixels = orderedSegments.isEmpty() ? 0L : orderedSegments.get(orderedSegments.size() - 1).visiblePxEnd();
+    if (totalVisiblePixels <= 0L || totalVisiblePixels > MAX_PRECOMPUTE_VISIBLE_PIXELS) {
+      return null;
+    }
+    final var modeKey = activeModeKey(track);
+    final var key = new PrecomputedSeriesKey(track.trackId(), bpResolution, assemblySignature, modeKey);
+    var series = this.precomputedSeriesCache.get(key);
+    if (series == null) {
+      final var sidecar = sidecarPathForVector(chunkedFile, track, bpResolution, assemblySignature, modeKey);
+      series = loadPrecomputedSeriesFromSidecar(sidecar, totalVisiblePixels).orElse(null);
+      if (series != null) {
+        this.precomputedSeriesCache.put(key, series);
+      }
+    }
+    if (series == null) {
+      return null;
+    }
+    final var strategy = aggregationStrategy(track);
+    final var bins = aggregatePrecomputedSeries(series, queryStartPx, queryEndPx, widthPx, strategy);
+    final var maxValue = bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0.0d);
+    return new TrackRender(track.trackId(), track.name(), track.type().name(), track.color(), bins, maxValue, null);
+  }
+
+  private @NotNull PrecomputedSeries computePrecomputedSeries(final @NotNull ChunkedFile chunkedFile,
+                                                              final @NotNull TrackState track,
+                                                              final @NotNull PrecomputeTask task) {
+    final var segmentsBuildResult = buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, task.bpResolution());
+    final var totalVisiblePixels = (int) Math.max(1L, Math.min(Integer.MAX_VALUE, task.totalVisiblePixels()));
+    final var bamRenderMode = bamModeForKey(track.bamRenderMode(), task.modeKey());
+    final var bigWigAggregationMode = bigWigModeForKey(track.bigWigAggregationMode(), task.modeKey());
+    final var bins = queryBinsForTrack(
+      track.type(),
+      track.dataSource(),
+      segmentsBuildResult.sourceToAssemblySegments(),
+      0L,
+      task.totalVisiblePixels(),
+      totalVisiblePixels,
+      task.bpResolution(),
+      bamRenderMode,
+      bigWigAggregationMode
+    );
+    final var values = new double[totalVisiblePixels];
+    final var support = new long[totalVisiblePixels];
+    for (final var bin : bins) {
+      final var rawStart = bin.getStartPx() == null ? bin.getStartBp() : bin.getStartPx();
+      final var rawEnd = bin.getEndPx() == null ? bin.getEndBp() : bin.getEndPx();
+      final int start = (int) Math.max(0L, Math.min(rawStart, totalVisiblePixels - 1L));
+      final int end = (int) Math.max(start + 1L, Math.min(rawEnd, totalVisiblePixels));
+      for (int i = start; i < end; i++) {
+        values[i] = bin.getValue();
+        support[i] = Math.max(support[i], Math.max(1L, bin.getCount()));
+      }
+    }
+    return new PrecomputedSeries(values, support);
+  }
+
+  private @NotNull List<TrackBin> aggregatePrecomputedSeries(final @NotNull PrecomputedSeries series,
+                                                             final long queryStartPx,
+                                                             final long queryEndPx,
+                                                             final int widthPx,
+                                                             final @NotNull PrecomputeAggregationStrategy strategy) {
+    final var bucketCount = Math.max(1, widthPx);
+    final var span = Math.max(1L, queryEndPx - queryStartPx);
+    final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+    final var bins = new ArrayList<TrackBin>(bucketCount);
+    for (int i = 0; i < bucketCount; i++) {
+      final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
+      final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
+      final var safeEndPx = Math.max(startPx + 1L, endPx);
+      final int from = (int) Math.max(0L, Math.min(startPx, series.values().length - 1L));
+      final int to = (int) Math.max(from + 1L, Math.min(safeEndPx, series.values().length));
+      double maxValue = 0.0d;
+      double sumValue = 0.0d;
+      long supportSum = 0L;
+      long supportCount = 0L;
+      for (int idx = from; idx < to; idx++) {
+        final var value = series.values()[idx];
+        final var support = series.support()[idx];
+        maxValue = Math.max(maxValue, value);
+        sumValue += value;
+        supportSum += support;
+        if (support > 0L) {
+          supportCount++;
+        }
+      }
+      final double value = switch (strategy) {
+        case MAX -> maxValue;
+        case MEAN_ALL_PIXELS -> sumValue / Math.max(1.0d, to - from);
+        case MEAN_PRESENT_PIXELS -> supportCount > 0L ? (sumValue / supportCount) : 0.0d;
+        case SUM -> sumValue;
+      };
+      if (supportSum <= 0L && value <= 0.0d) {
+        continue;
+      }
+      bins.add(new TrackBin(startPx, safeEndPx, value, Math.max(1L, supportSum), null, startPx, safeEndPx));
+    }
+    return bins;
+  }
+
+  private @NotNull Optional<PrecomputedSeries> loadPrecomputedSeriesFromSidecar(final @NotNull Path sidecarPath,
+                                                                                 final long expectedLength) {
+    if (!Files.exists(sidecarPath) || !Files.isRegularFile(sidecarPath)) {
+      return Optional.empty();
+    }
+    try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
+      if (!reader.object().isDataSet("/cache/values") || !reader.object().isDataSet("/cache/support")) {
+        return Optional.empty();
+      }
+      final var valuesDims = reader.object().getDataSetInformation("/cache/values").getDimensions();
+      if (valuesDims.length != 1 || valuesDims[0] != expectedLength) {
+        return Optional.empty();
+      }
+      final var values = reader.float64().readArray("/cache/values");
+      final var support = reader.int64().readArray("/cache/support");
+      if (values.length != support.length) {
+        return Optional.empty();
+      }
+      return Optional.of(new PrecomputedSeries(values, support));
+    } catch (final Exception e) {
+      log.debug("Could not load sidecar precompute {}: {}", sidecarPath, e.getMessage());
+      return Optional.empty();
+    }
+  }
+
+  private void persistPrecomputedSeries(final @NotNull Path sidecarPath,
+                                        final @NotNull PrecomputedSeries series) {
+    try {
+      Files.createDirectories(sidecarPath.getParent());
+      final var tmpPath = sidecarPath.resolveSibling(sidecarPath.getFileName() + ".tmp");
+      try (final var writer = HDF5Factory.open(tmpPath.toFile())) {
+        if (!writer.object().isGroup("/cache")) {
+          writer.object().createGroup("/cache");
+        }
+        writer.string().setAttr("/cache", "version", PRECOMPUTE_CACHE_VERSION);
+        writer.int64().setAttr("/cache", "length", series.values().length);
+        writer.float64().writeArray("/cache/values", series.values());
+        writer.int64().writeArray("/cache/support", series.support());
+      }
+      Files.move(tmpPath, sidecarPath, StandardCopyOption.REPLACE_EXISTING);
+    } catch (final Exception e) {
+      log.warn("Failed to write precomputed sidecar {}", sidecarPath, e);
+    }
+  }
+
+  private @NotNull Path sidecarPathForVector(final @NotNull ChunkedFile chunkedFile,
+                                             final @NotNull TrackState track,
+                                             final long bpResolution,
+                                             final @NotNull String assemblySignature,
+                                             final @NotNull String modeKey) {
+    final var trackSource = resolveDataPath(track.sourceFile());
+    final var hictPath = chunkedFile.getHdfFilePath();
+    final String fingerprint;
+    try {
+      fingerprint = String.join("|",
+        PRECOMPUTE_CACHE_VERSION,
+        trackSource.toString(),
+        String.valueOf(Files.size(trackSource)),
+        String.valueOf(Files.getLastModifiedTime(trackSource).toMillis()),
+        hictPath.toString(),
+        String.valueOf(Files.size(hictPath)),
+        String.valueOf(Files.getLastModifiedTime(hictPath).toMillis()),
+        String.valueOf(bpResolution),
+        assemblySignature,
+        modeKey
+      );
+    } catch (final IOException e) {
+      throw new RuntimeException("Cannot build precompute fingerprint for " + track.sourceFile(), e);
+    }
+    final var fileName = sha256Hex(fingerprint) + ".h5";
+    return this.processedDirectory.resolve("track_precompute").resolve(fileName);
+  }
+
+  private static @NotNull String computeAssemblySignature(final @NotNull List<AssemblySegment> orderedSegments,
+                                                          final long bpResolution) {
+    long hash = 1469598103934665603L;
+    hash = fnv1a(hash, bpResolution);
+    hash = fnv1a(hash, orderedSegments.size());
+    for (final var segment : orderedSegments) {
+      hash = fnv1a(hash, segment.sourceStart());
+      hash = fnv1a(hash, segment.sourceEnd());
+      hash = fnv1a(hash, segment.assemblyStart());
+      hash = fnv1a(hash, segment.assemblyEnd());
+      hash = fnv1a(hash, segment.visiblePxStart());
+      hash = fnv1a(hash, segment.visiblePxEnd());
+      hash = fnv1a(hash, segment.reversed() ? 1L : 0L);
+    }
+    return Long.toUnsignedString(hash, 16);
+  }
+
+  private static long fnv1a(long hash, final long value) {
+    hash ^= value;
+    hash *= 1099511628211L;
+    return hash;
+  }
+
+  private static @NotNull String sha256Hex(final @NotNull String input) {
+    try {
+      final var digest = MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8));
+      final var sb = new StringBuilder(digest.length * 2);
+      for (final byte b : digest) {
+        sb.append(String.format("%02x", b));
+      }
+      return sb.toString();
+    } catch (final NoSuchAlgorithmException e) {
+      throw new RuntimeException("SHA-256 is not available", e);
+    }
+  }
+
+  private static @NotNull List<String> modeKeysForTrack(final @NotNull TrackState track) {
+    return switch (track.type()) {
+      case BIGWIG -> List.of("MAX", "MEAN", "SUM");
+      case BAM -> List.of("COVERAGE", "READ_DENSITY");
+      case BED, VCF -> List.of("DEFAULT");
+      case UNSUPPORTED -> List.of("DEFAULT");
+    };
+  }
+
+  private static @NotNull String activeModeKey(final @NotNull TrackState track) {
+    return switch (track.type()) {
+      case BIGWIG -> track.bigWigAggregationMode().name();
+      case BAM -> track.bamRenderMode().name();
+      case BED, VCF, UNSUPPORTED -> "DEFAULT";
+    };
+  }
+
+  private static @NotNull BamRenderMode bamModeForKey(final @NotNull BamRenderMode fallback,
+                                                       final @NotNull String modeKey) {
+    return switch (modeKey) {
+      case "READ_DENSITY" -> BamRenderMode.READ_DENSITY;
+      case "COVERAGE" -> BamRenderMode.COVERAGE;
+      default -> fallback;
+    };
+  }
+
+  private static @NotNull BigWigAggregationMode bigWigModeForKey(final @NotNull BigWigAggregationMode fallback,
+                                                                  final @NotNull String modeKey) {
+    return switch (modeKey) {
+      case "MAX" -> BigWigAggregationMode.MAX;
+      case "MEAN" -> BigWigAggregationMode.MEAN;
+      case "SUM" -> BigWigAggregationMode.SUM;
+      default -> fallback;
+    };
+  }
+
+  private static @NotNull PrecomputeAggregationStrategy aggregationStrategy(final @NotNull TrackState track) {
+    return switch (track.type()) {
+      case BIGWIG -> switch (track.bigWigAggregationMode()) {
+        case MAX -> PrecomputeAggregationStrategy.MAX;
+        case MEAN -> PrecomputeAggregationStrategy.MEAN_PRESENT_PIXELS;
+        case SUM -> PrecomputeAggregationStrategy.MEAN_ALL_PIXELS;
+      };
+      case BAM -> switch (track.bamRenderMode()) {
+        case COVERAGE -> PrecomputeAggregationStrategy.MEAN_ALL_PIXELS;
+        case READ_DENSITY -> PrecomputeAggregationStrategy.SUM;
+      };
+      case BED, VCF, UNSUPPORTED -> PrecomputeAggregationStrategy.MAX;
+    };
   }
 
   private @NotNull SegmentBuildResult buildSourceToAssemblySegments(final @NotNull ChunkedFile chunkedFile,
@@ -451,6 +1018,38 @@ public class Track1DManager {
     }
     final var localPx = Math.max(0L, px - segment.visiblePxStart());
     return localPxToAssemblyBp(segment, localPx, bpResolution);
+  }
+
+  private static long mapAssemblyBpToVisiblePx(final long assemblyBp,
+                                               final @NotNull List<AssemblySegment> orderedSegments,
+                                               final long bpResolution,
+                                               final long totalVisiblePixels) {
+    if (orderedSegments.isEmpty() || totalVisiblePixels <= 0L) {
+      return 0L;
+    }
+    if (assemblyBp <= orderedSegments.get(0).assemblyStart()) {
+      return 0L;
+    }
+    if (assemblyBp >= orderedSegments.get(orderedSegments.size() - 1).assemblyEnd()) {
+      return totalVisiblePixels;
+    }
+    int lo = 0;
+    int hi = orderedSegments.size();
+    while (lo < hi) {
+      final int mid = (lo + hi) >>> 1;
+      if (orderedSegments.get(mid).assemblyEnd() <= assemblyBp) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    final int idx = Math.max(0, Math.min(lo, orderedSegments.size() - 1));
+    final var segment = orderedSegments.get(idx);
+    if (assemblyBp < segment.assemblyStart()) {
+      return segment.visiblePxStart();
+    }
+    final var localPx = assemblyBpToLocalPx(segment, assemblyBp, bpResolution);
+    return Math.max(0L, Math.min(totalVisiblePixels, segment.visiblePxStart() + localPx));
   }
 
   private static @NotNull Optional<SourceInterval> mapVisiblePxIntervalToSegmentSource(final @NotNull AssemblySegment segment,
@@ -815,6 +1414,48 @@ public class Track1DManager {
     return projectedFeatures.stream()
       .map(f -> new TrackBin(f.startBp(), f.endBp(), f.value(), 1L, f.label(), f.startPx(), f.endPx()))
       .toList();
+  }
+
+  private static @NotNull List<TrackBin> queryBinsForTrack(final @NotNull TrackType type,
+                                                           final @NotNull TrackDataSource dataSource,
+                                                           final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                           final long queryStartPx,
+                                                           final long queryEndPx,
+                                                           final int widthPx,
+                                                           final long bpResolution,
+                                                           final @NotNull BamRenderMode bamRenderMode,
+                                                           final @NotNull BigWigAggregationMode bigWigAggregationMode) {
+    if (type == TrackType.BAM && dataSource instanceof BamTrackDataSource bamDataSource) {
+      return bamDataSource.queryBins(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        widthPx,
+        bpResolution,
+        bamRenderMode
+      );
+    }
+    if (type == TrackType.BIGWIG && dataSource instanceof BigWigTrackDataSource bigWigDataSource) {
+      return bigWigDataSource.queryBins(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        widthPx,
+        bpResolution,
+        bigWigAggregationMode
+      );
+    }
+    final var projectedFeatures = dataSource.projectFeatures(
+      sourceToAssemblySegments,
+      queryStartPx,
+      queryEndPx,
+      bpResolution
+    );
+    final var maxFeatureCount = Math.max(widthPx * 8, 8192);
+    if (projectedFeatures.size() > maxFeatureCount) {
+      return aggregateFeatures(projectedFeatures, queryStartPx, queryEndPx, widthPx);
+    }
+    return toBins(projectedFeatures);
   }
 
   private enum TrackType {
@@ -1397,6 +2038,33 @@ public class Track1DManager {
   private record SourceInterval(long start, long end) {
   }
 
+  private record QueryPxRange(long startPx, long endPx) {
+  }
+
+  private record PrecomputeTask(long bpResolution,
+                                @NotNull String modeKey,
+                                long totalVisiblePixels,
+                                @NotNull String assemblySignature,
+                                @NotNull Path sidecarFile) {
+  }
+
+  private record PrecomputedSeriesKey(@NotNull String trackId,
+                                      long bpResolution,
+                                      @NotNull String assemblySignature,
+                                      @NotNull String modeKey) {
+  }
+
+  private record PrecomputedSeries(double @NotNull [] values,
+                                   long @NotNull [] support) {
+  }
+
+  private enum PrecomputeAggregationStrategy {
+    MAX,
+    MEAN_ALL_PIXELS,
+    MEAN_PRESENT_PIXELS,
+    SUM
+  }
+
   private record SegmentBuildResult(@NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
                                     @NotNull List<AssemblySegment> orderedSegments,
                                     long totalVisiblePixels) {
@@ -1420,6 +2088,118 @@ public class Track1DManager {
                                   long endPx,
                                   double value,
                                   String label) {
+  }
+
+  @Getter
+  @RequiredArgsConstructor
+  public static final class TrackPrecomputeStatus {
+    private final @NotNull String trackId;
+    private final @NotNull String trackName;
+    private final @NotNull String status;
+    private final int totalTasks;
+    private final int completedTasks;
+    private final double progress;
+    private final @NotNull String currentTask;
+    private final String error;
+    private final long updatedAtMs;
+  }
+
+  @Getter
+  @RequiredArgsConstructor
+  public static final class TracksPrecomputeStatus {
+    private final @NotNull List<TrackPrecomputeStatus> tracks;
+    private final int runningJobs;
+    private final @NotNull String processedDirectory;
+  }
+
+  private static final class TrackPrecomputeRuntime {
+    private final String trackId;
+    private volatile String trackName;
+    private volatile String status;
+    private volatile int totalTasks;
+    private volatile int completedTasks;
+    private volatile String currentTask;
+    private volatile String error;
+    private volatile long lastUpdatedMs;
+
+    private TrackPrecomputeRuntime(final @NotNull String trackId, final @NotNull String trackName) {
+      this.trackId = trackId;
+      this.trackName = trackName;
+      this.status = "idle";
+      this.totalTasks = 0;
+      this.completedTasks = 0;
+      this.currentTask = "";
+      this.error = null;
+      this.lastUpdatedMs = System.currentTimeMillis();
+    }
+
+    private boolean isActive() {
+      return "queued".equals(this.status) || "running".equals(this.status);
+    }
+
+    private void markQueued() {
+      this.status = "queued";
+      this.currentTask = "";
+      this.error = null;
+      this.completedTasks = 0;
+      this.totalTasks = 0;
+      this.lastUpdatedMs = System.currentTimeMillis();
+    }
+
+    private void setTotalTasks(final int totalTasks) {
+      this.totalTasks = Math.max(0, totalTasks);
+      this.lastUpdatedMs = System.currentTimeMillis();
+    }
+
+    private void markRunning(final @NotNull String currentTask, final int completedTasks) {
+      this.status = "running";
+      this.currentTask = currentTask;
+      this.completedTasks = Math.max(0, completedTasks);
+      this.lastUpdatedMs = System.currentTimeMillis();
+    }
+
+    private void markTaskDone(final int completedTasks) {
+      this.completedTasks = Math.max(0, completedTasks);
+      this.lastUpdatedMs = System.currentTimeMillis();
+    }
+
+    private void markFinished() {
+      this.status = "finished";
+      this.currentTask = "";
+      this.error = null;
+      this.completedTasks = Math.max(this.completedTasks, this.totalTasks);
+      this.lastUpdatedMs = System.currentTimeMillis();
+    }
+
+    private void markFailed(final @NotNull String error) {
+      this.status = "failed";
+      this.error = error;
+      this.currentTask = "";
+      this.lastUpdatedMs = System.currentTimeMillis();
+    }
+
+    private long lastUpdatedMs() {
+      return this.lastUpdatedMs;
+    }
+
+    private String trackName() {
+      return this.trackName;
+    }
+
+    private TrackPrecomputeStatus toStatus() {
+      final var progress = this.totalTasks > 0 ? Math.min(1.0d, this.completedTasks / (double) this.totalTasks) : 0.0d;
+      return new TrackPrecomputeStatus(
+        this.trackId,
+        this.trackName,
+        this.status,
+        this.totalTasks,
+        this.completedTasks,
+        progress,
+        this.currentTask == null ? "" : this.currentTask,
+        this.error,
+        this.lastUpdatedMs
+      );
+    }
   }
 
   @Getter
@@ -1553,39 +2333,17 @@ public class Track1DManager {
                               final long queryEndPx,
                               final int widthPx,
                               final long bpResolution) {
-      final List<TrackBin> bins;
-      if (type == TrackType.BAM && dataSource instanceof BamTrackDataSource bamDataSource) {
-        bins = bamDataSource.queryBins(
-          sourceToAssemblySegments,
-          queryStartPx,
-          queryEndPx,
-          widthPx,
-          bpResolution,
-          bamRenderMode
-        );
-      } else if (type == TrackType.BIGWIG && dataSource instanceof BigWigTrackDataSource bigWigDataSource) {
-        bins = bigWigDataSource.queryBins(
-          sourceToAssemblySegments,
-          queryStartPx,
-          queryEndPx,
-          widthPx,
-          bpResolution,
-          bigWigAggregationMode
-        );
-      } else {
-        final var projectedFeatures = dataSource.projectFeatures(
-          sourceToAssemblySegments,
-          queryStartPx,
-          queryEndPx,
-          bpResolution
-        );
-        final var maxFeatureCount = Math.max(widthPx * 8, 8192);
-        if (projectedFeatures.size() > maxFeatureCount) {
-          bins = aggregateFeatures(projectedFeatures, queryStartPx, queryEndPx, widthPx);
-        } else {
-          bins = toBins(projectedFeatures);
-        }
-      }
+      final var bins = queryBinsForTrack(
+        type,
+        dataSource,
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        widthPx,
+        bpResolution,
+        bamRenderMode,
+        bigWigAggregationMode
+      );
       final var maxValue = bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0.0d);
       return new TrackRender(trackId, name, type.name(), color, bins, maxValue, null);
     }

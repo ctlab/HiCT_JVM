@@ -71,7 +71,7 @@ val webUIRepositoryDirectory =
   if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
-val webUIBranch = "dev-0.1.5"
+val webUIBranch = "migrate-converters-update-ui-1dtracks"
 
 version = readVersion()
 
@@ -257,13 +257,10 @@ tasks.register("buildWebUI") {
   doLast {
     try {
       if (localWebUIRepositoryDirectory.asFile.exists()) {
-        println("Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath}")
-        project.exec {
-          commandLine("git", "checkout", webUIBranch)
-          workingDir = localWebUIRepositoryDirectory.asFile
-          standardOutput = System.out
-          isIgnoreExitValue = true
-        }
+        println(
+          "Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath} " +
+            "(branch/working tree will not be modified by Gradle)"
+        )
         project.exec {
           commandLine("npm", "install")
           workingDir = localWebUIRepositoryDirectory.asFile
