@@ -36,6 +36,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding.*;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoWithVersionDTO;
@@ -49,159 +50,198 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
-    router.post("/reverse_selection_range").blockingHandler(ctx -> {
+    router.post("/reverse_selection_range").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @NotNull @NonNull var request = ReverseSelectionRangeRequestDTO.fromJSONObject(requestJSON);
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-      log.debug("Got ChunkedFile from map");
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFile = extractChunkedFile(map);
+          log.debug("Got ChunkedFile from map");
 
-      chunkedFile.scaffoldingOperations().reverseSelectionRangeBp(request.startBP(), request.endBP());
-
-      final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, ctx);
-      if (newVersion == null) {
-        return;
-      }
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+          chunkedFile.scaffoldingOperations().reverseSelectionRangeBp(request.startBP(), request.endBP());
+          final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
-    router.post("/move_selection_range").blockingHandler(ctx -> {
+    router.post("/move_selection_range").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @NotNull @NonNull var request = MoveSelectionRangeRequestDTO.fromJSONObject(requestJSON);
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-      log.debug("Got ChunkedFile from map");
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFile = extractChunkedFile(map);
+          log.debug("Got ChunkedFile from map");
 
-      chunkedFile.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
-
-      final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, ctx);
-      if (newVersion == null) {
-        return;
-      }
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+          chunkedFile.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
+          final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
-    router.post("/split_contig_at_bin").blockingHandler(ctx -> {
+    router.post("/split_contig_at_bin").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @NotNull @NonNull var request = SplitContigRequestDTO.fromJSONObject(requestJSON);
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-      log.debug("Got ChunkedFile from map");
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFile = extractChunkedFile(map);
+          log.debug("Got ChunkedFile from map");
 
-      chunkedFile.scaffoldingOperations().splitContigAtBin(request.splitPx(), ResolutionDescriptor.fromBpResolution(request.bpResolution(), chunkedFile), QueryLengthUnit.PIXELS);
-
-      final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, ctx);
-      if (newVersion == null) {
-        return;
-      }
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+          chunkedFile.scaffoldingOperations().splitContigAtBin(request.splitPx(), ResolutionDescriptor.fromBpResolution(request.bpResolution(), chunkedFile), QueryLengthUnit.PIXELS);
+          final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
-    router.post("/group_contigs_into_scaffold").blockingHandler(ctx -> {
+    router.post("/group_contigs_into_scaffold").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @NotNull @NonNull var request = ScaffoldRegionRequestDTO.fromJSONObject(requestJSON);
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-      log.debug("Got ChunkedFile from map");
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFile = extractChunkedFile(map);
+          log.debug("Got ChunkedFile from map");
 
-      chunkedFile.scaffoldingOperations().scaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
-
-      final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, ctx);
-      if (newVersion == null) {
-        return;
-      }
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+          chunkedFile.scaffoldingOperations().scaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
+          final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
-    router.post("/ungroup_contigs_from_scaffold").blockingHandler(ctx -> {
+    router.post("/ungroup_contigs_from_scaffold").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @NotNull @NonNull var request = UnscaffoldRegionRequestDTO.fromJSONObject(requestJSON);
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-      log.debug("Got ChunkedFile from map");
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFile = extractChunkedFile(map);
+          log.debug("Got ChunkedFile from map");
 
-      chunkedFile.scaffoldingOperations().unscaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
-
-      final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, ctx);
-      if (newVersion == null) {
-        return;
-      }
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+          chunkedFile.scaffoldingOperations().unscaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+          final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
-    router.post("/move_selection_to_debris").blockingHandler(ctx -> {
+    router.post("/move_selection_to_debris").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @NotNull @NonNull var request = MoveSelectionToDebrisRequestDTO.fromJSONObject(requestJSON);
 
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      log.debug("Got map");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-      log.debug("Got ChunkedFile from map");
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          log.debug("Got map");
+          final var chunkedFile = extractChunkedFile(map);
+          log.debug("Got ChunkedFile from map");
 
-      chunkedFile.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
-
-      final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, ctx);
-      if (newVersion == null) {
-        return;
-      }
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+          chunkedFile.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+          final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
   }
 
-  private ChunkedFile extractChunkedFile(final @NotNull LocalMap<String, Object> map, final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+  private ChunkedFile extractChunkedFile(final @NotNull LocalMap<String, Object> map) {
     final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (chunkedFileWrapper == null) {
-      ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-      return null;
+      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
     }
     return chunkedFileWrapper.getChunkedFile();
   }
 
-  private Long incrementVersionAndResetTileStats(final @NotNull LocalMap<String, Object> map,
+  private long incrementVersionAndResetTileStats(final @NotNull LocalMap<String, Object> map,
                                                  final @NotNull ChunkedFile chunkedFile,
-                                                 final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+                                                 final @NotNull RequestTaskScheduler scheduler) {
     final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
     if (stats == null) {
-      ctx.fail(new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?"));
-      return null;
+      throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
     }
     final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
     map.put("TileStatisticHolder", newStats);
+    scheduler.bumpAssemblyGeneration();
     return newStats.versionCounter().get();
+  }
+
+  private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+    final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+    if (wrapper == null) {
+      ctx.fail(new IllegalStateException("Request scheduler is not initialized"));
+      return null;
+    }
+    return wrapper.getRequestTaskScheduler();
   }
 }

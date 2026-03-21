@@ -2,7 +2,9 @@ package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
+import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -10,6 +12,7 @@ import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.response.conversion.ConversionJobDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.conversion.ConversionSubmitResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
@@ -51,188 +54,330 @@ public class ConversionHandlersHolder extends HandlersHolder {
 
     @Override
     public void addHandlersToRouter(final @NotNull Router router) {
-        router.post("/convert/upload").blockingHandler(ctx -> {
-            try {
-              cleanupOldJobs();
-
-              final var upload = ctx.fileUploads().stream().findFirst().orElseThrow(() -> new IllegalArgumentException("No file uploaded"));
-              final var sourcePath = Path.of(upload.uploadedFileName());
-
-              if (Files.size(sourcePath) > MAX_UPLOAD_BYTES) {
-                  Files.deleteIfExists(sourcePath);
-                  throw new IllegalArgumentException("Uploaded file is too large");
-              }
-              final var req = ctx.request();
-              final var direction = req.getParam("direction");
-              final var outputExt = "hict-to-mcool".equals(direction) ? ".mcool" : ".hict.hdf5";
-              final var outputPath = Files.createTempFile("hict-converter-out-", outputExt);
-
-              final var resolutionCsv = req.getParam("resolutions");
-              final var resolutions = parseResolutions(resolutionCsv);
-              final var compression = parseInteger(req.getParam("compression"), 6);
-              final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(req.getParam("compressionAlgorithm") == null ? "deflate" : req.getParam("compressionAlgorithm"));
-              final var chunkSize = parseInteger(req.getParam("chunkSize"), 8192);
-              final var applyAgpRaw = Boolean.parseBoolean(req.getParam("applyAgp"));
-              final var agpPathRaw = req.getParam("agpPath") == null ? ConversionOptions.NO_AGP : req.getParam("agpPath");
-              final var parallelism = parseInteger(req.getParam("parallelism"), Runtime.getRuntime().availableProcessors());
-
-              final var useAgp = "hict-to-mcool".equals(direction) && applyAgpRaw;
-              final var agpPath = useAgp ? agpPathRaw : ConversionOptions.NO_AGP;
-              final var options = new ConversionOptions(sourcePath, outputPath, resolutions, chunkSize, compression, compressionAlgorithm, agpPath, useAgp, parallelism);
-
-              final var job = createJob(sourcePath, outputPath, direction, parallelism, true, true);
-              submitJob(job, options, ensureGroup("upload", 1));
-
-              ctx.response().end(Json.encode(new ConversionSubmitResponseDTO("submitted", job.jobId)));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+        router.post("/convert/upload").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.EXPORT,
+                RequestTaskScheduler.CancellationDomain.EXPORT,
+                () -> {
+                    cleanupOldJobs();
+                    try {
+                        final var upload = ctx.fileUploads().stream()
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalArgumentException("No file uploaded"));
+                        final var sourcePath = Path.of(upload.uploadedFileName());
+
+                        if (Files.size(sourcePath) > MAX_UPLOAD_BYTES) {
+                            Files.deleteIfExists(sourcePath);
+                            throw new IllegalArgumentException("Uploaded file is too large");
+                        }
+                        final var req = ctx.request();
+                        final var direction = req.getParam("direction");
+                        final var outputExt = "hict-to-mcool".equals(direction) ? ".mcool" : ".hict.hdf5";
+                        final var outputPath = Files.createTempFile("hict-converter-out-", outputExt);
+
+                        final var resolutionCsv = req.getParam("resolutions");
+                        final var resolutions = parseResolutions(resolutionCsv);
+                        final var compression = parseInteger(req.getParam("compression"), 6);
+                        final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(
+                            req.getParam("compressionAlgorithm") == null ? "deflate" : req.getParam("compressionAlgorithm")
+                        );
+                        final var chunkSize = parseInteger(req.getParam("chunkSize"), 8192);
+                        final var applyAgpRaw = Boolean.parseBoolean(req.getParam("applyAgp"));
+                        final var agpPathRaw = req.getParam("agpPath") == null ? ConversionOptions.NO_AGP : req.getParam("agpPath");
+                        final var parallelism = parseInteger(req.getParam("parallelism"), Runtime.getRuntime().availableProcessors());
+
+                        final var useAgp = "hict-to-mcool".equals(direction) && applyAgpRaw;
+                        final var agpPath = useAgp ? agpPathRaw : ConversionOptions.NO_AGP;
+                        final var options = new ConversionOptions(
+                            sourcePath,
+                            outputPath,
+                            resolutions,
+                            chunkSize,
+                            compression,
+                            compressionAlgorithm,
+                            agpPath,
+                            useAgp,
+                            parallelism
+                        );
+
+                        final var job = createJob(sourcePath, outputPath, direction, parallelism, true, true);
+                        submitJob(job, options, ensureGroup("upload", 1));
+                        return new ConversionSubmitResponseDTO("submitted", job.jobId);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                response -> ctx.response().end(Json.encode(response)),
+                () -> ctx.response().end(Json.encode(Map.of("status", "cancelled")))
+            );
         });
 
-        router.post("/convert/jobs").blockingHandler(ctx -> {
-            cleanupOldJobs();
-            final var requestJson = ctx.body().asJsonObject();
-            final var filename = requestJson.getString("filename");
-            if (filename == null || filename.isBlank()) {
-                throw new IllegalArgumentException("filename is required");
+        router.post("/convert/jobs").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
-            final var direction = requestJson.getString("direction", "mcool-to-hict");
-            final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
-            final var resolutions = parseResolutions(requestJson.getString("resolutions"));
-            final var compression = requestJson.getInteger("compression", 6);
-            final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
-            final var chunkSize = requestJson.getInteger("chunkSize", 8192);
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.EXPORT,
+                RequestTaskScheduler.CancellationDomain.EXPORT,
+                () -> {
+                    cleanupOldJobs();
+                    final var requestJson = ctx.body().asJsonObject();
+                    final var filename = requestJson.getString("filename");
+                    if (filename == null || filename.isBlank()) {
+                        throw new IllegalArgumentException("filename is required");
+                    }
+                    final var direction = requestJson.getString("direction", "mcool-to-hict");
+                    final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
+                    final var resolutions = parseResolutions(requestJson.getString("resolutions"));
+                    final var compression = requestJson.getInteger("compression", 6);
+                    final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
+                    final var chunkSize = requestJson.getInteger("chunkSize", 8192);
 
-            final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
-            if (dataDirectoryWrapper == null) {
-                throw new IllegalStateException("Data directory is not present in local map");
-            }
-            final var dataDirectory = dataDirectoryWrapper.getPath();
-            final var sourcePath = dataDirectory.resolve(filename).normalize();
-            if (!sourcePath.startsWith(dataDirectory)) {
-                throw new IllegalArgumentException("Invalid filename");
-            }
-            if (!Files.exists(sourcePath)) {
-                throw new IllegalArgumentException("Source file not found: " + filename);
-            }
+                    final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+                    if (dataDirectoryWrapper == null) {
+                        throw new IllegalStateException("Data directory is not present in local map");
+                    }
+                    final var dataDirectory = dataDirectoryWrapper.getPath();
+                    final var sourcePath = dataDirectory.resolve(filename).normalize();
+                    if (!sourcePath.startsWith(dataDirectory)) {
+                        throw new IllegalArgumentException("Invalid filename");
+                    }
+                    if (!Files.exists(sourcePath)) {
+                        throw new IllegalArgumentException("Source file not found: " + filename);
+                    }
 
-            final var outputPath = deriveOutputPath(sourcePath);
-            if (Files.exists(outputPath)) {
-                throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
-            }
+                    final var outputPath = deriveOutputPath(sourcePath);
+                    if (Files.exists(outputPath)) {
+                        throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
+                    }
 
-            final var options = new ConversionOptions(sourcePath, outputPath, resolutions, chunkSize, compression, compressionAlgorithm, ConversionOptions.NO_AGP, false, parallelism);
-            final ConversionJob job;
-            try {
-                job = createJob(sourcePath, outputPath, direction, parallelism, false, false);
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to create conversion job", e);
-            }
-            submitJob(job, options, ensureGroup(UUID.randomUUID().toString(), 1));
-
-            ctx.response().end(Json.encode(new ConversionSubmitResponseDTO("submitted", job.jobId)));
+                    final var options = new ConversionOptions(
+                        sourcePath,
+                        outputPath,
+                        resolutions,
+                        chunkSize,
+                        compression,
+                        compressionAlgorithm,
+                        ConversionOptions.NO_AGP,
+                        false,
+                        parallelism
+                    );
+                    final ConversionJob job;
+                    try {
+                        job = createJob(sourcePath, outputPath, direction, parallelism, false, false);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to create conversion job", e);
+                    }
+                    submitJob(job, options, ensureGroup(UUID.randomUUID().toString(), 1));
+                    return new ConversionSubmitResponseDTO("submitted", job.jobId);
+                },
+                response -> ctx.response().end(Json.encode(response)),
+                () -> ctx.response().end(Json.encode(Map.of("status", "cancelled")))
+            );
         });
 
-        router.post("/convert/jobs/batch").blockingHandler(ctx -> {
-            cleanupOldJobs();
-            final var requestJson = ctx.body().asJsonObject();
-            final var files = requestJson.getJsonArray("files", null);
-            if (files == null || files.isEmpty()) {
-                throw new IllegalArgumentException("files is required");
+        router.post("/convert/jobs/batch").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
-            final var parallelJobs = Math.max(1, requestJson.getInteger("parallelJobs", 1));
-            final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
-            final var resolutions = parseResolutions(requestJson.getString("resolutions"));
-            final var compression = requestJson.getInteger("compression", 6);
-            final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
-            final var chunkSize = requestJson.getInteger("chunkSize", 8192);
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.EXPORT,
+                RequestTaskScheduler.CancellationDomain.EXPORT,
+                () -> {
+                    cleanupOldJobs();
+                    final var requestJson = ctx.body().asJsonObject();
+                    final var files = requestJson.getJsonArray("files", null);
+                    if (files == null || files.isEmpty()) {
+                        throw new IllegalArgumentException("files is required");
+                    }
+                    final var parallelJobs = Math.max(1, requestJson.getInteger("parallelJobs", 1));
+                    final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
+                    final var resolutions = parseResolutions(requestJson.getString("resolutions"));
+                    final var compression = requestJson.getInteger("compression", 6);
+                    final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
+                    final var chunkSize = requestJson.getInteger("chunkSize", 8192);
 
-            final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
-            if (dataDirectoryWrapper == null) {
-                throw new IllegalStateException("Data directory is not present in local map");
-            }
-            final var dataDirectory = dataDirectoryWrapper.getPath();
+                    final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+                    if (dataDirectoryWrapper == null) {
+                        throw new IllegalStateException("Data directory is not present in local map");
+                    }
+                    final var dataDirectory = dataDirectoryWrapper.getPath();
 
-            final var groupId = UUID.randomUUID().toString();
-            final var group = ensureGroup(groupId, parallelJobs);
-            final var jobIds = new ArrayList<String>();
+                    final var groupId = UUID.randomUUID().toString();
+                    final var group = ensureGroup(groupId, parallelJobs);
+                    final var jobIds = new ArrayList<String>();
 
-            for (int i = 0; i < files.size(); i++) {
-                final var filename = files.getString(i);
-                final var sourcePath = dataDirectory.resolve(filename).normalize();
-                if (!sourcePath.startsWith(dataDirectory)) {
-                    throw new IllegalArgumentException("Invalid filename: " + filename);
-                }
-                if (!Files.exists(sourcePath)) {
-                    throw new IllegalArgumentException("Source file not found: " + filename);
-                }
-                final var outputPath = deriveOutputPath(sourcePath);
-                if (Files.exists(outputPath)) {
-                    throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
-                }
-                final var options = new ConversionOptions(sourcePath, outputPath, resolutions, chunkSize, compression, compressionAlgorithm, ConversionOptions.NO_AGP, false, parallelism);
-                final ConversionJob job;
-                try {
-                    job = createJob(sourcePath, outputPath, "mcool-to-hict", parallelism, false, false);
-                } catch (IOException e) {
-                    throw new RuntimeException("Failed to create conversion job for " + filename, e);
-                }
-                submitJob(job, options, group);
-                jobIds.add(job.jobId);
-            }
-
-            ctx.response().end(Json.encode(Map.of("status", "submitted", "groupId", groupId, "jobIds", jobIds)));
+                    for (int i = 0; i < files.size(); i++) {
+                        final var filename = files.getString(i);
+                        final var sourcePath = dataDirectory.resolve(filename).normalize();
+                        if (!sourcePath.startsWith(dataDirectory)) {
+                            throw new IllegalArgumentException("Invalid filename: " + filename);
+                        }
+                        if (!Files.exists(sourcePath)) {
+                            throw new IllegalArgumentException("Source file not found: " + filename);
+                        }
+                        final var outputPath = deriveOutputPath(sourcePath);
+                        if (Files.exists(outputPath)) {
+                            throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
+                        }
+                        final var options = new ConversionOptions(
+                            sourcePath,
+                            outputPath,
+                            resolutions,
+                            chunkSize,
+                            compression,
+                            compressionAlgorithm,
+                            ConversionOptions.NO_AGP,
+                            false,
+                            parallelism
+                        );
+                        final ConversionJob job;
+                        try {
+                            job = createJob(sourcePath, outputPath, "mcool-to-hict", parallelism, false, false);
+                        } catch (IOException e) {
+                            throw new RuntimeException("Failed to create conversion job for " + filename, e);
+                        }
+                        submitJob(job, options, group);
+                        jobIds.add(job.jobId);
+                    }
+                    return Map.of("status", "submitted", "groupId", groupId, "jobIds", jobIds);
+                },
+                response -> ctx.response().end(Json.encode(response)),
+                () -> ctx.response().end(Json.encode(Map.of("status", "cancelled")))
+            );
         });
 
-        router.get("/convert/jobs").blockingHandler(ctx -> {
-            cleanupOldJobs();
-            final var jobList = jobs.values().stream().map(ConversionJob::toDto).toList();
-            ctx.response().end(Json.encode(jobList));
-        });
-        router.post("/convert/jobs/list").blockingHandler(ctx -> {
-            cleanupOldJobs();
-            final var jobList = jobs.values().stream().map(ConversionJob::toDto).toList();
-            ctx.response().end(Json.encode(jobList));
-        });
-
-        router.get("/convert/jobs/:jobId").blockingHandler(ctx -> {
-            final var job = jobs.get(ctx.pathParam("jobId"));
-            if (job == null) {
-                throw new IllegalArgumentException("Job not found");
+        router.get("/convert/jobs").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
-            ctx.response().end(Json.encode(job.toDto()));
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.UI_UX,
+                null,
+                () -> {
+                    cleanupOldJobs();
+                    return jobs.values().stream().map(ConversionJob::toDto).toList();
+                },
+                response -> ctx.response().end(Json.encode(response))
+            );
         });
-        router.post("/convert/jobs/:jobId").blockingHandler(ctx -> {
-            final var job = jobs.get(ctx.pathParam("jobId"));
-            if (job == null) {
-                throw new IllegalArgumentException("Job not found");
+        router.post("/convert/jobs/list").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
-            ctx.response().end(Json.encode(job.toDto()));
-        });
-
-        router.post("/convert/jobs/:jobId/stop").blockingHandler(ctx -> {
-            final var job = jobs.get(ctx.pathParam("jobId"));
-            if (job == null) {
-                throw new IllegalArgumentException("Job not found");
-            }
-            job.requestCancel();
-            ctx.response().end(Json.encode(Map.of("status", "cancelling", "jobId", job.jobId)));
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.UI_UX,
+                null,
+                () -> {
+                    cleanupOldJobs();
+                    return jobs.values().stream().map(ConversionJob::toDto).toList();
+                },
+                response -> ctx.response().end(Json.encode(response))
+            );
         });
 
-        router.get("/convert/download/:jobId").blockingHandler(ctx -> {
-            final var job = jobs.get(ctx.pathParam("jobId"));
-            if (job == null) {
-                throw new IllegalArgumentException("Job not found");
+        router.get("/convert/jobs/:jobId").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
-            if (!"finished".equals(job.status)) {
-                throw new IllegalStateException("Job is not finished yet");
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.UI_UX,
+                null,
+                () -> {
+                    final var job = jobs.get(ctx.pathParam("jobId"));
+                    if (job == null) {
+                        throw new IllegalArgumentException("Job not found");
+                    }
+                    return job.toDto();
+                },
+                response -> ctx.response().end(Json.encode(response))
+            );
+        });
+        router.post("/convert/jobs/:jobId").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
-            if (!Files.exists(job.outputPath)) {
-                throw new IllegalStateException("Converted file was already cleaned up");
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.UI_UX,
+                null,
+                () -> {
+                    final var job = jobs.get(ctx.pathParam("jobId"));
+                    if (job == null) {
+                        throw new IllegalArgumentException("Job not found");
+                    }
+                    return job.toDto();
+                },
+                response -> ctx.response().end(Json.encode(response))
+            );
+        });
+
+        router.post("/convert/jobs/:jobId/stop").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
             }
-            ctx.response().putHeader("Content-Type", "application/octet-stream");
-            ctx.response().putHeader("Content-Disposition", "attachment; filename=\"" + job.outputPath.getFileName() + "\"");
-            ctx.response().sendFile(job.outputPath.toString());
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.UI_UX,
+                null,
+                () -> {
+                    final var job = jobs.get(ctx.pathParam("jobId"));
+                    if (job == null) {
+                        throw new IllegalArgumentException("Job not found");
+                    }
+                    job.requestCancel();
+                    return Map.of("status", "cancelling", "jobId", job.jobId);
+                },
+                response -> ctx.response().end(Json.encode(response))
+            );
+        });
+
+        router.get("/convert/download/:jobId").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
+            }
+            scheduler.submit(
+                ctx,
+                RequestTaskScheduler.RequestPriority.EXPORT,
+                RequestTaskScheduler.CancellationDomain.EXPORT,
+                () -> {
+                    final var job = jobs.get(ctx.pathParam("jobId"));
+                    if (job == null) {
+                        throw new IllegalArgumentException("Job not found");
+                    }
+                    if (!"finished".equals(job.status)) {
+                        throw new IllegalStateException("Job is not finished yet");
+                    }
+                    if (!Files.exists(job.outputPath)) {
+                        throw new IllegalStateException("Converted file was already cleaned up");
+                    }
+                    return job.outputPath;
+                },
+                outputPath -> {
+                    ctx.response().putHeader("Content-Type", "application/octet-stream");
+                    ctx.response().putHeader("Content-Disposition", "attachment; filename=\"" + outputPath.getFileName() + "\"");
+                    ctx.response().sendFile(outputPath.toString());
+                },
+                () -> ctx.response().setStatusCode(200).end()
+            );
         });
     }
 
@@ -388,6 +533,16 @@ public class ConversionHandlersHolder extends HandlersHolder {
             }
             return expired;
         });
+    }
+
+    private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+        final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+        final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+        if (wrapper == null) {
+            ctx.fail(new IllegalStateException("Request scheduler is not initialized"));
+            return null;
+        }
+        return wrapper.getRequestTaskScheduler();
     }
 
     private static class ConversionJobGroup {

@@ -49,6 +49,7 @@ import org.slf4j.LoggerFactory;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
+import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
@@ -62,6 +63,7 @@ import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.awt.*;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BrokenBarrierException;
@@ -69,6 +71,7 @@ import java.util.concurrent.CyclicBarrier;
 
 @Slf4j(topic = "MainVerticle")
 public class MainVerticle extends AbstractVerticle {
+  private RequestTaskScheduler requestTaskScheduler;
 
   static {
     HDF5LibraryInitializer.initializeHDF5Library();
@@ -93,7 +96,26 @@ public class MainVerticle extends AbstractVerticle {
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
         .setConfig(new JsonObject().put("keys",
-            new JsonArray().add("DATA_DIR").add("PROCESSED_DIR").add("TILE_SIZE").add("VXPORT").add("MIN_DS_POOL").add("MAX_DS_POOL")));
+            new JsonArray()
+              .add("DATA_DIR")
+              .add("PROCESSED_DIR")
+              .add("TILE_SIZE")
+              .add("VXPORT")
+              .add("MIN_DS_POOL")
+              .add("MAX_DS_POOL")
+              .add("HICT_WORKERS_TOTAL_MAX")
+              .add("HICT_WORKERS_QUEUE_CAPACITY")
+              .add("HICT_WORKERS_KEEPALIVE_SECONDS")
+              .add("HICT_WORKERS_UI_MIN")
+              .add("HICT_WORKERS_UI_MAX")
+              .add("HICT_WORKERS_ASSEMBLY_MIN")
+              .add("HICT_WORKERS_ASSEMBLY_MAX")
+              .add("HICT_WORKERS_TILE_MIN")
+              .add("HICT_WORKERS_TILE_MAX")
+              .add("HICT_WORKERS_TRACK_MIN")
+              .add("HICT_WORKERS_TRACK_MAX")
+              .add("HICT_WORKERS_EXPORT_MIN")
+              .add("HICT_WORKERS_EXPORT_MAX")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
     final ConfigRetriever myConfigRetriver = ConfigRetriever.create(vertx, myOptions);
     myConfigRetriver.getConfig(asyncResults -> System.out.println(asyncResults.result().encodePrettily()));
@@ -104,10 +126,54 @@ public class MainVerticle extends AbstractVerticle {
       final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
       final var processedDirectoryString = event.result().getString("PROCESSED_DIR", dataDirectory.resolve("processed").toString());
       final var processedDirectory = Path.of(processedDirectoryString).normalize().toAbsolutePath().normalize();
-      final var tileSize = event.result().getInteger("TILE_SIZE", 256);
-      final var minDSPool = event.result().getInteger("MIN_DS_POOL", 4);
-      final var maxDSPool = event.result().getInteger("MAX_DS_POOL", 16);
-      final var port = event.result().getInteger("VXPORT", 5000);
+      final var tileSize = getIntegerSetting(event.result(), "TILE_SIZE", 256);
+      final var minDSPool = getIntegerSetting(event.result(), "MIN_DS_POOL", 4);
+      final var maxDSPool = getIntegerSetting(event.result(), "MAX_DS_POOL", 16);
+      final var port = getIntegerSetting(event.result(), "VXPORT", 5000);
+      final int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
+      final int totalWorkersDefault = Math.max(10, cores * 2);
+      final int totalWorkers = getIntegerSetting(event.result(), "HICT_WORKERS_TOTAL_MAX", totalWorkersDefault);
+      final int queueCapacity = getIntegerSetting(event.result(), "HICT_WORKERS_QUEUE_CAPACITY", 32);
+      final int keepAliveSeconds = getIntegerSetting(event.result(), "HICT_WORKERS_KEEPALIVE_SECONDS", 30);
+      final int defaultPoolMax = Math.max(2, Math.min(totalWorkers, cores));
+      final var perPrioritySizing = new EnumMap<RequestTaskScheduler.RequestPriority, RequestTaskScheduler.PoolSizing>(
+        RequestTaskScheduler.RequestPriority.class
+      );
+      perPrioritySizing.put(
+        RequestTaskScheduler.RequestPriority.UI_UX,
+        new RequestTaskScheduler.PoolSizing(
+          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MAX", defaultPoolMax)
+        )
+      );
+      perPrioritySizing.put(
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        new RequestTaskScheduler.PoolSizing(
+          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MAX", defaultPoolMax)
+        )
+      );
+      perPrioritySizing.put(
+        RequestTaskScheduler.RequestPriority.TILE,
+        new RequestTaskScheduler.PoolSizing(
+          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MAX", defaultPoolMax)
+        )
+      );
+      perPrioritySizing.put(
+        RequestTaskScheduler.RequestPriority.TRACK,
+        new RequestTaskScheduler.PoolSizing(
+          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MAX", defaultPoolMax)
+        )
+      );
+      perPrioritySizing.put(
+        RequestTaskScheduler.RequestPriority.EXPORT,
+        new RequestTaskScheduler.PoolSizing(
+          getIntegerSetting(event.result(), "HICT_WORKERS_EXPORT_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_EXPORT_MAX", defaultPoolMax)
+        )
+      );
 
       try {
         log.info("Trying to write configuration to local map");
@@ -118,6 +184,19 @@ public class MainVerticle extends AbstractVerticle {
         map.put("VXPORT", port);
         map.put("MIN_DS_POOL", minDSPool);
         map.put("MAX_DS_POOL", maxDSPool);
+        this.requestTaskScheduler = new RequestTaskScheduler(
+          vertx,
+          new RequestTaskScheduler.SchedulerConfig(
+            totalWorkers,
+            queueCapacity,
+            keepAliveSeconds,
+            perPrioritySizing
+          )
+        );
+        map.put(
+          RequestTaskScheduler.LOCAL_MAP_KEY,
+          new ShareableWrappers.RequestTaskSchedulerWrapper(this.requestTaskScheduler)
+        );
 
         final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, false, false,
             new SimpleLinearGradient(
@@ -218,5 +297,39 @@ public class MainVerticle extends AbstractVerticle {
         log.error("WebUI verticle deployment failed", ar.cause());
       }
     });
+  }
+
+  @Override
+  public void stop(final Promise<Void> stopPromise) {
+    if (this.requestTaskScheduler != null) {
+      this.requestTaskScheduler.close();
+      this.requestTaskScheduler = null;
+    }
+    stopPromise.complete();
+  }
+
+  private static int getIntegerSetting(final @NotNull JsonObject config,
+                                       final @NotNull String key,
+                                       final int defaultValue) {
+    final Object raw = config.getValue(key);
+    if (raw instanceof Number number) {
+      return number.intValue();
+    }
+    if (raw instanceof String value && !value.isBlank()) {
+      try {
+        return Integer.parseInt(value.trim());
+      } catch (final NumberFormatException ignored) {
+        // Fall through to system property/default.
+      }
+    }
+    final String systemPropertyValue = System.getProperty(key);
+    if (systemPropertyValue != null && !systemPropertyValue.isBlank()) {
+      try {
+        return Integer.parseInt(systemPropertyValue.trim());
+      } catch (final NumberFormatException ignored) {
+        // Fall through to default.
+      }
+    }
+    return defaultValue;
   }
 }
