@@ -158,6 +158,10 @@ public class TileHandlersHolder extends HandlersHolder {
           map.put("TileStatisticHolder", newStats);
           scheduler.bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
           scheduler.bumpGeneration(RequestTaskScheduler.CancellationDomain.TRACK);
+          final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+          if (trackManagerWrapper != null) {
+            trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
+          }
           return Map.of("version", newStats.versionCounter().get());
         },
         result -> ctx.response().setStatusCode(200).end(Json.encode(result))

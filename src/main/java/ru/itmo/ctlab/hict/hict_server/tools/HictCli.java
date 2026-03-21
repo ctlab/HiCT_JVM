@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 @Command(
   name = "hict",
@@ -109,6 +110,9 @@ public class HictCli implements Runnable {
   }
 
   abstract static class BaseConvert implements Callable<Integer> {
+    private static final Pattern OVERALL_PROGRESS_PATTERN = Pattern.compile("Overall progress:\\s*(\\d+)%");
+    private static final Pattern LOCAL_PROGRESS_PATTERN = Pattern.compile("^[^\\n]*:\\s*(\\d+)%\\s*\\(");
+
     @Option(names = {"-i", "--input"}, required = true, description = "Input file path.")
     Path input;
 
@@ -158,9 +162,21 @@ public class HictCli implements Runnable {
     }
 
     Consumer<String> stdoutLogger() {
+      final boolean verboseEnabled = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
       return message -> {
+        if (!verboseEnabled) {
+          return;
+        }
         synchronized (System.out) {
-          System.out.println(message);
+          final var overall = OVERALL_PROGRESS_PATTERN.matcher(message);
+          final var local = LOCAL_PROGRESS_PATTERN.matcher(message);
+          if (overall.find()) {
+            System.out.println("[TOTAL " + overall.group(1) + "%] " + message);
+          } else if (local.find()) {
+            System.out.println("[LOCAL " + local.group(1) + "%] " + message);
+          } else {
+            System.out.println(message);
+          }
           System.out.flush();
         }
       };

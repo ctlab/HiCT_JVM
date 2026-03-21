@@ -2,9 +2,12 @@ package ru.itmo.ctlab.hict.hict_server.handlers.info;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
+import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -33,6 +36,21 @@ public class InfoHandlersHolder extends HandlersHolder {
           "version", version,
           "webuiVersion", webuiVersion
         )));
+    });
+
+    router.post("/diagnostics/workers").handler(ctx -> {
+      final @NotNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var schedulerWrapper =
+        (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (schedulerWrapper == null) {
+        ctx.fail(new IllegalStateException("Request scheduler is not initialized"));
+        return;
+      }
+      final var snapshot = schedulerWrapper.getRequestTaskScheduler().diagnosticsSnapshot();
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(snapshot));
     });
   }
 

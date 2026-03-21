@@ -181,6 +181,10 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
     map.put("TileStatisticHolder", newStats);
     scheduler.bumpAssemblyGeneration();
+    final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+    if (trackManagerWrapper != null) {
+      trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
+    }
     return newStats.versionCounter().get();
   }
 

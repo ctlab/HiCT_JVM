@@ -24,7 +24,9 @@
 
 package ru.itmo.ctlab.hict.hict_server.tracks;
 
+import ch.systemsx.cisd.hdf5.HDF5FloatStorageFeatures;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
+import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SamReader;
@@ -55,7 +57,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -77,7 +78,13 @@ public class Track1DManager {
   private static final int MAX_FEATURES_PER_QUERY = 250_000;
   private static final String PRECOMPUTE_CACHE_VERSION = "1";
   private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
-  private static final int PRECOMPUTE_EXECUTOR_THREADS = 1;
+  private static final int PRECOMPUTE_JOB_THREADS = resolveThreadCount("HICT_TRACK_PRECOMPUTE_JOB_THREADS", 2);
+  private static final int PRECOMPUTE_WORKER_THREADS = resolveThreadCount(
+    "HICT_TRACK_PRECOMPUTE_WORKER_THREADS",
+    Math.max(2, Runtime.getRuntime().availableProcessors())
+  );
+  private static final int PRECOMPUTE_DATASET_CHUNK_SIZE = 8192;
+  private static final int PRECOMPUTE_COMPRESSION_LEVEL = 4;
   private static final long PRECOMPUTE_STATUS_TTL_MS = 15L * 60_000L;
 
   private final @NotNull Path dataDirectory;
@@ -85,7 +92,9 @@ public class Track1DManager {
   private final @NotNull ReadWriteLock lock = new ReentrantReadWriteLock();
   private final @NotNull LinkedHashMap<String, TrackState> tracks = new LinkedHashMap<>();
   private final @NotNull AtomicLong trackCounter = new AtomicLong(0L);
-  private final @NotNull ExecutorService precomputeExecutor;
+  private final @NotNull ExecutorService precomputeJobExecutor;
+  private final @NotNull ExecutorService precomputeWorkerExecutor;
+  private final @NotNull ExecutorService precomputeWriterExecutor;
   private final @NotNull ConcurrentHashMap<PrecomputedSeriesKey, PrecomputedSeries> precomputedSeriesCache = new ConcurrentHashMap<>();
   private final @NotNull ConcurrentHashMap<String, TrackPrecomputeRuntime> precomputeRuntimeByTrackId = new ConcurrentHashMap<>();
   private volatile @NotNull Map<String, String> linkedFastaAliasesBySource = Map.of();
@@ -104,15 +113,47 @@ public class Track1DManager {
     } catch (final IOException e) {
       throw new RuntimeException("Failed to create processed directory " + this.processedDirectory, e);
     }
-    this.precomputeExecutor = Executors.newFixedThreadPool(
-      PRECOMPUTE_EXECUTOR_THREADS,
-      r -> {
-        final var t = new Thread(r);
-        t.setDaemon(true);
-        t.setName("hict-track-precompute");
-        return t;
-      }
+    this.precomputeJobExecutor = Executors.newFixedThreadPool(
+      PRECOMPUTE_JOB_THREADS,
+      namedDaemonThreadFactory("hict-track-precompute-job")
     );
+    this.precomputeWorkerExecutor = Executors.newFixedThreadPool(
+      PRECOMPUTE_WORKER_THREADS,
+      namedDaemonThreadFactory("hict-track-precompute-worker")
+    );
+    this.precomputeWriterExecutor = Executors.newSingleThreadExecutor(
+      namedDaemonThreadFactory("hict-track-precompute-writer")
+    );
+  }
+
+  private static @NotNull ThreadFactory namedDaemonThreadFactory(final @NotNull String prefix) {
+    final var counter = new AtomicLong(0L);
+    return runnable -> {
+      final var thread = new Thread(runnable);
+      thread.setDaemon(true);
+      thread.setName(prefix + "-" + counter.incrementAndGet());
+      return thread;
+    };
+  }
+
+  private static int resolveThreadCount(final @NotNull String envKey, final int defaultValue) {
+    final String env = System.getenv(envKey);
+    if (env != null && !env.isBlank()) {
+      try {
+        return Math.max(1, Integer.parseInt(env.trim()));
+      } catch (final NumberFormatException ignored) {
+        // Fallback to default.
+      }
+    }
+    final String property = System.getProperty(envKey);
+    if (property != null && !property.isBlank()) {
+      try {
+        return Math.max(1, Integer.parseInt(property.trim()));
+      } catch (final NumberFormatException ignored) {
+        // Fallback to default.
+      }
+    }
+    return Math.max(1, defaultValue);
   }
 
   public @NotNull List<String> listTrackFiles() {
@@ -233,11 +274,17 @@ public class Track1DManager {
     } finally {
       this.lock.writeLock().unlock();
     }
-    this.precomputeExecutor.shutdownNow();
+    this.precomputeJobExecutor.shutdownNow();
+    this.precomputeWorkerExecutor.shutdownNow();
+    this.precomputeWriterExecutor.shutdownNow();
   }
 
   public void setLinkedFastaAliasesBySource(final @Nullable Map<String, String> aliases) {
     this.linkedFastaAliasesBySource = aliases == null ? Map.of() : Map.copyOf(aliases);
+  }
+
+  public void invalidateInMemoryCache() {
+    this.precomputedSeriesCache.clear();
   }
 
   public @NotNull TracksPrecomputeStatus getPrecomputeStatus() {
@@ -473,7 +520,7 @@ public class Track1DManager {
       }
       runtime.markQueued();
     }
-    this.precomputeExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime));
+    this.precomputeJobExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime));
   }
 
   private void runTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
@@ -481,29 +528,39 @@ public class Track1DManager {
                                   final boolean force,
                                   final @NotNull TrackPrecomputeRuntime runtime) {
     try {
-      final var tasks = buildPrecomputeTasks(chunkedFile, track, force);
+      final var sidecarPath = sidecarPathForTrackCache(chunkedFile, track);
+      final var tasks = buildPrecomputeTasks(chunkedFile, track, sidecarPath, force);
       runtime.setTotalTasks(tasks.size());
       if (tasks.isEmpty()) {
         runtime.markFinished();
         return;
       }
-      int completed = 0;
+      final CompletionService<ComputedPrecomputeTask> completionService =
+        new ExecutorCompletionService<>(this.precomputeWorkerExecutor);
       for (final var task : tasks) {
+        completionService.submit(() -> new ComputedPrecomputeTask(task, computePrecomputedSeries(chunkedFile, track, task)));
+      }
+
+      final var writeFutures = new ArrayList<Future<?>>(tasks.size());
+      int completed = 0;
+      for (int i = 0; i < tasks.size(); i++) {
+        final var computed = completionService.take().get();
+        final var task = computed.task();
         runtime.markRunning(task.bpResolution() + "bp/" + task.modeKey(), completed);
         final var key = new PrecomputedSeriesKey(track.trackId(), task.bpResolution(), task.assemblySignature(), task.modeKey());
-        PrecomputedSeries series = this.precomputedSeriesCache.get(key);
-        if (series == null || force) {
-          series = loadPrecomputedSeriesFromSidecar(task.sidecarFile(), task.totalVisiblePixels()).orElse(null);
-        }
-        if (series == null || force) {
-          series = computePrecomputedSeries(chunkedFile, track, task);
-          persistPrecomputedSeries(task.sidecarFile(), series);
-        }
-        this.precomputedSeriesCache.put(key, series);
+        this.precomputedSeriesCache.put(key, computed.series());
+        writeFutures.add(this.precomputeWriterExecutor.submit(() -> persistPrecomputedSeries(sidecarPath, task, computed.series())));
         completed++;
         runtime.markTaskDone(completed);
       }
+      for (final var writeFuture : writeFutures) {
+        writeFuture.get();
+      }
       runtime.markFinished();
+    } catch (final InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      runtime.markFailed("Precompute interrupted");
+      log.warn("Track precompute interrupted for track {}", track.trackId());
     } catch (final Exception ex) {
       runtime.markFailed(ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
       log.error("Failed to precompute track {}", track.trackId(), ex);
@@ -512,6 +569,7 @@ public class Track1DManager {
 
   private @NotNull List<PrecomputeTask> buildPrecomputeTasks(final @NotNull ChunkedFile chunkedFile,
                                                              final @NotNull TrackState track,
+                                                             final @NotNull Path sidecarPath,
                                                              final boolean force) {
     final var tasks = new ArrayList<PrecomputeTask>();
     final var resolutions = Arrays.stream(chunkedFile.getResolutions()).boxed().sorted(Comparator.reverseOrder()).toList();
@@ -528,11 +586,20 @@ public class Track1DManager {
         if (!force && this.precomputedSeriesCache.containsKey(key)) {
           continue;
         }
-        final var sidecarPath = sidecarPathForVector(chunkedFile, track, bpResolution, assemblySignature, modeKey);
-        if (!force && Files.exists(sidecarPath)) {
-          continue;
+        if (!force) {
+          final var cached = loadPrecomputedSeriesFromSidecar(
+            sidecarPath,
+            bpResolution,
+            modeKey,
+            assemblySignature,
+            totalVisiblePixels
+          );
+          if (cached.isPresent()) {
+            this.precomputedSeriesCache.put(key, cached.get());
+            continue;
+          }
         }
-        tasks.add(new PrecomputeTask(bpResolution, modeKey, totalVisiblePixels, assemblySignature, sidecarPath));
+        tasks.add(new PrecomputeTask(bpResolution, modeKey, totalVisiblePixels, assemblySignature));
       }
     }
     return tasks;
@@ -555,8 +622,14 @@ public class Track1DManager {
     final var key = new PrecomputedSeriesKey(track.trackId(), bpResolution, assemblySignature, modeKey);
     var series = this.precomputedSeriesCache.get(key);
     if (series == null) {
-      final var sidecar = sidecarPathForVector(chunkedFile, track, bpResolution, assemblySignature, modeKey);
-      series = loadPrecomputedSeriesFromSidecar(sidecar, totalVisiblePixels).orElse(null);
+      final var sidecar = sidecarPathForTrackCache(chunkedFile, track);
+      series = loadPrecomputedSeriesFromSidecar(
+        sidecar,
+        bpResolution,
+        modeKey,
+        assemblySignature,
+        totalVisiblePixels
+      ).orElse(null);
       if (series != null) {
         this.precomputedSeriesCache.put(key, series);
       }
@@ -647,20 +720,26 @@ public class Track1DManager {
   }
 
   private @NotNull Optional<PrecomputedSeries> loadPrecomputedSeriesFromSidecar(final @NotNull Path sidecarPath,
+                                                                                 final long bpResolution,
+                                                                                 final @NotNull String modeKey,
+                                                                                 final @NotNull String assemblySignature,
                                                                                  final long expectedLength) {
     if (!Files.exists(sidecarPath) || !Files.isRegularFile(sidecarPath)) {
       return Optional.empty();
     }
+    final var groupPath = precomputeGroupPath(bpResolution, modeKey, assemblySignature);
+    final var valuesPath = groupPath + "/values";
+    final var supportPath = groupPath + "/support";
     try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
-      if (!reader.object().isDataSet("/cache/values") || !reader.object().isDataSet("/cache/support")) {
+      if (!reader.object().isDataSet(valuesPath) || !reader.object().isDataSet(supportPath)) {
         return Optional.empty();
       }
-      final var valuesDims = reader.object().getDataSetInformation("/cache/values").getDimensions();
+      final var valuesDims = reader.object().getDataSetInformation(valuesPath).getDimensions();
       if (valuesDims.length != 1 || valuesDims[0] != expectedLength) {
         return Optional.empty();
       }
-      final var values = reader.float64().readArray("/cache/values");
-      final var support = reader.int64().readArray("/cache/support");
+      final var values = reader.float64().readArray(valuesPath);
+      final var support = reader.int64().readArray(supportPath);
       if (values.length != support.length) {
         return Optional.empty();
       }
@@ -672,30 +751,60 @@ public class Track1DManager {
   }
 
   private void persistPrecomputedSeries(final @NotNull Path sidecarPath,
+                                        final @NotNull PrecomputeTask task,
                                         final @NotNull PrecomputedSeries series) {
     try {
       Files.createDirectories(sidecarPath.getParent());
-      final var tmpPath = sidecarPath.resolveSibling(sidecarPath.getFileName() + ".tmp");
-      try (final var writer = HDF5Factory.open(tmpPath.toFile())) {
-        if (!writer.object().isGroup("/cache")) {
-          writer.object().createGroup("/cache");
+      final var groupPath = precomputeGroupPath(task.bpResolution(), task.modeKey(), task.assemblySignature());
+      final var valuesPath = groupPath + "/values";
+      final var supportPath = groupPath + "/support";
+      final var chunkLen = Math.max(
+        1,
+        Math.min(PRECOMPUTE_DATASET_CHUNK_SIZE, Math.max(series.values().length, series.support().length))
+      );
+      try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
+        ensureGroupPath(writer, groupPath);
+        writer.string().setAttr(groupPath, "version", PRECOMPUTE_CACHE_VERSION);
+        writer.int64().setAttr(groupPath, "bpResolution", task.bpResolution());
+        writer.string().setAttr(groupPath, "mode", task.modeKey());
+        writer.string().setAttr(groupPath, "assemblySignature", task.assemblySignature());
+        writer.int64().setAttr(groupPath, "length", series.values().length);
+        if (!writer.object().isDataSet(valuesPath)) {
+          writer.float64().createArray(
+            valuesPath,
+            series.values().length,
+            chunkLen,
+            HDF5FloatStorageFeatures.createDeflation(PRECOMPUTE_COMPRESSION_LEVEL)
+          );
         }
-        writer.string().setAttr("/cache", "version", PRECOMPUTE_CACHE_VERSION);
-        writer.int64().setAttr("/cache", "length", series.values().length);
-        writer.float64().writeArray("/cache/values", series.values());
-        writer.int64().writeArray("/cache/support", series.support());
+        if (!writer.object().isDataSet(supportPath)) {
+          writer.int64().createArray(
+            supportPath,
+            series.support().length,
+            chunkLen,
+            HDF5IntStorageFeatures.createDeflation(PRECOMPUTE_COMPRESSION_LEVEL)
+          );
+        }
+        writer.float64().writeArrayBlockWithOffset(
+          valuesPath,
+          series.values(),
+          series.values().length,
+          0L
+        );
+        writer.int64().writeArrayBlockWithOffset(
+          supportPath,
+          series.support(),
+          series.support().length,
+          0L
+        );
       }
-      Files.move(tmpPath, sidecarPath, StandardCopyOption.REPLACE_EXISTING);
     } catch (final Exception e) {
       log.warn("Failed to write precomputed sidecar {}", sidecarPath, e);
     }
   }
 
-  private @NotNull Path sidecarPathForVector(final @NotNull ChunkedFile chunkedFile,
-                                             final @NotNull TrackState track,
-                                             final long bpResolution,
-                                             final @NotNull String assemblySignature,
-                                             final @NotNull String modeKey) {
+  private @NotNull Path sidecarPathForTrackCache(final @NotNull ChunkedFile chunkedFile,
+                                                 final @NotNull TrackState track) {
     final var trackSource = resolveDataPath(track.sourceFile());
     final var hictPath = chunkedFile.getHdfFilePath();
     final String fingerprint;
@@ -707,16 +816,35 @@ public class Track1DManager {
         String.valueOf(Files.getLastModifiedTime(trackSource).toMillis()),
         hictPath.toString(),
         String.valueOf(Files.size(hictPath)),
-        String.valueOf(Files.getLastModifiedTime(hictPath).toMillis()),
-        String.valueOf(bpResolution),
-        assemblySignature,
-        modeKey
+        String.valueOf(Files.getLastModifiedTime(hictPath).toMillis())
       );
     } catch (final IOException e) {
       throw new RuntimeException("Cannot build precompute fingerprint for " + track.sourceFile(), e);
     }
     final var fileName = sha256Hex(fingerprint) + ".h5";
     return this.processedDirectory.resolve("track_precompute").resolve(fileName);
+  }
+
+  private static @NotNull String precomputeGroupPath(final long bpResolution,
+                                                     final @NotNull String modeKey,
+                                                     final @NotNull String assemblySignature) {
+    return "/cache/resolutions/" + bpResolution + "/modes/" + modeKey + "/assemblies/" + assemblySignature;
+  }
+
+  private static void ensureGroupPath(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer writer,
+                                      final @NotNull String groupPath) {
+    final var parts = groupPath.split("/");
+    final var current = new StringBuilder();
+    for (final var part : parts) {
+      if (part == null || part.isBlank()) {
+        continue;
+      }
+      current.append('/').append(part);
+      final var path = current.toString();
+      if (!writer.object().isGroup(path)) {
+        writer.object().createGroup(path);
+      }
+    }
   }
 
   private static @NotNull String computeAssemblySignature(final @NotNull List<AssemblySegment> orderedSegments,
@@ -934,6 +1062,25 @@ public class Track1DManager {
     } catch (final NumberFormatException ignored) {
       return defaultValue;
     }
+  }
+
+  private static @Nullable Double parseNullableDouble(final String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    try {
+      return Double.parseDouble(value);
+    } catch (final NumberFormatException ignored) {
+      return null;
+    }
+  }
+
+  private static boolean isBedStrandToken(final String token) {
+    if (token == null) {
+      return false;
+    }
+    final var trimmed = token.trim();
+    return "+".equals(trimmed) || "-".equals(trimmed) || ".".equals(trimmed);
   }
 
   private static @NotNull BufferedReader openMaybeGzipReader(final @NotNull Path filePath) throws IOException {
@@ -1445,6 +1592,24 @@ public class Track1DManager {
         bigWigAggregationMode
       );
     }
+    if (type == TrackType.BED) {
+      if (dataSource instanceof InMemoryTrackDataSource inMemoryTrackDataSource) {
+        return inMemoryTrackDataSource.queryBins(
+          sourceToAssemblySegments,
+          queryStartPx,
+          queryEndPx,
+          widthPx,
+          bpResolution
+        );
+      }
+      final var projectedFeatures = dataSource.projectFeatures(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        bpResolution
+      );
+      return aggregateCoverageFeatures(projectedFeatures, queryStartPx, queryEndPx, widthPx);
+    }
     final var projectedFeatures = dataSource.projectFeatures(
       sourceToAssemblySegments,
       queryStartPx,
@@ -1510,10 +1675,12 @@ public class Track1DManager {
   }
 
   private record InMemoryTrackDataSource(@NotNull Map<String, List<FeatureRange>> featuresBySource,
-                                         long featureCount) implements TrackDataSource {
+                                         long featureCount,
+                                         boolean hasSignalValues) implements TrackDataSource {
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
       long total = 0L;
+      boolean hasSignalValues = false;
       try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
         String line;
         long lineNo = 0L;
@@ -1532,17 +1699,35 @@ public class Track1DManager {
           if (end <= start) {
             continue;
           }
-          final var label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
-          final var value = parseOptionalDouble(fields.length >= 5 ? fields[4] : null, 1.0d);
+          final var col4Numeric = fields.length >= 4 ? parseNullableDouble(fields[3]) : null;
+          final var col5Numeric = fields.length >= 5 ? parseNullableDouble(fields[4]) : null;
+          final var hasStrand = fields.length >= 6 && isBedStrandToken(fields[5]);
+          final String label;
+          final double value;
+          if (fields.length == 4 && col4Numeric != null) {
+            // BEDGraph-style row: chrom start end value
+            label = null;
+            value = Math.max(0.0d, col4Numeric);
+          } else if (hasStrand) {
+            // BED6 alignments: score is typically MAPQ-like, not quantitative signal; use unit coverage.
+            label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
+            value = 1.0d;
+          } else {
+            label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
+            value = Math.max(0.0d, col5Numeric != null ? col5Numeric : 1.0d);
+          }
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, Math.max(0.0d, value), label));
+            .add(new FeatureRange(start, end, value, label));
+          if (Math.abs(value - 1.0d) > 1e-9) {
+            hasSignalValues = true;
+          }
           total++;
         }
       } catch (final IOException e) {
         throw new RuntimeException("Failed to parse BED track " + filePath, e);
       }
       features.values().forEach(list -> list.sort(Comparator.comparingLong(FeatureRange::start)));
-      return new InMemoryTrackDataSource(features, total);
+      return new InMemoryTrackDataSource(features, total, hasSignalValues);
     }
 
     static @NotNull InMemoryTrackDataSource fromVcf(final @NotNull Path filePath) {
@@ -1576,7 +1761,7 @@ public class Track1DManager {
         throw new RuntimeException("Failed to parse VCF track " + filePath, e);
       }
       features.values().forEach(list -> list.sort(Comparator.comparingLong(FeatureRange::start)));
-      return new InMemoryTrackDataSource(features, total);
+      return new InMemoryTrackDataSource(features, total, false);
     }
 
     @Override
@@ -1642,6 +1827,121 @@ public class Track1DManager {
       }
       projected.sort(Comparator.comparingLong(ProjectedFeature::startPx));
       return projected;
+    }
+
+    public @NotNull List<TrackBin> queryBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                             final long queryStartPx,
+                                             final long queryEndPx,
+                                             final int widthPx,
+                                             final long bpResolution) {
+      final var bucketCount = Math.max(1, widthPx);
+      final var span = Math.max(1L, queryEndPx - queryStartPx);
+      final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+      if (this.hasSignalValues()) {
+        final double[] maxValues = new double[bucketCount];
+        final double[] weightedSums = new double[bucketCount];
+        final double[] overlapSums = new double[bucketCount];
+        final long[] counts = new long[bucketCount];
+        forEachProjectedFeature(
+          sourceToAssemblySegments,
+          queryStartPx,
+          queryEndPx,
+          bpResolution,
+          feature -> accumulateBigWigValue(
+            feature.startPx(),
+            feature.endPx(),
+            feature.value(),
+            queryStartPx,
+            queryEndPx,
+            bucketSpan,
+            maxValues,
+            weightedSums,
+            overlapSums,
+            counts
+          )
+        );
+        return finalizeBigWigBins(
+          queryStartPx,
+          queryEndPx,
+          bucketSpan,
+          maxValues,
+          weightedSums,
+          overlapSums,
+          counts,
+          BigWigAggregationMode.MAX
+        );
+      }
+      final double[] values = new double[bucketCount];
+      final long[] counts = new long[bucketCount];
+      forEachProjectedFeature(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        bpResolution,
+        feature -> accumulateCoverageValue(
+          feature.startPx(),
+          feature.endPx(),
+          queryStartPx,
+          queryEndPx,
+          bucketSpan,
+          values,
+          counts
+        )
+      );
+      return finalizeBins(queryStartPx, queryEndPx, bucketSpan, values, counts);
+    }
+
+    private void forEachProjectedFeature(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                         final long queryStartPx,
+                                         final long queryEndPx,
+                                         final long bpResolution,
+                                         final @NotNull java.util.function.Consumer<ProjectedFeature> consumer) {
+      for (final var entry : this.featuresBySource.entrySet()) {
+        final var sourceName = entry.getKey();
+        final var sourceFeatures = entry.getValue();
+        if (sourceFeatures.isEmpty()) {
+          continue;
+        }
+        final var assemblySegments = sourceToAssemblySegments.get(sourceName);
+        if (assemblySegments == null || assemblySegments.isEmpty()) {
+          continue;
+        }
+        for (final var segment : assemblySegments) {
+          final var sourceIntervalOptional = mapVisiblePxIntervalToSegmentSource(
+            segment,
+            queryStartPx,
+            queryEndPx,
+            bpResolution
+          );
+          if (sourceIntervalOptional.isEmpty()) {
+            continue;
+          }
+          final var sourceInterval = sourceIntervalOptional.get();
+          int index = lowerBoundByStart(sourceFeatures, sourceInterval.start());
+          if (index > 0) {
+            index--;
+          }
+          for (int i = index; i < sourceFeatures.size(); i++) {
+            final var feature = sourceFeatures.get(i);
+            if (feature.start() >= sourceInterval.end()) {
+              break;
+            }
+            if (feature.end() <= sourceInterval.start()) {
+              continue;
+            }
+            projectSourceIntervalOnSegment(
+              segment,
+              feature.start(),
+              feature.end(),
+              feature.value(),
+              feature.label(),
+              queryStartPx,
+              queryEndPx,
+              bpResolution
+            ).ifPresent(consumer);
+          }
+        }
+      }
     }
 
     private static int lowerBoundByStart(final @NotNull List<FeatureRange> features, final long targetStart) {
@@ -2044,8 +2344,11 @@ public class Track1DManager {
   private record PrecomputeTask(long bpResolution,
                                 @NotNull String modeKey,
                                 long totalVisiblePixels,
-                                @NotNull String assemblySignature,
-                                @NotNull Path sidecarFile) {
+                                @NotNull String assemblySignature) {
+  }
+
+  private record ComputedPrecomputeTask(@NotNull PrecomputeTask task,
+                                        @NotNull PrecomputedSeries series) {
   }
 
   private record PrecomputedSeriesKey(@NotNull String trackId,

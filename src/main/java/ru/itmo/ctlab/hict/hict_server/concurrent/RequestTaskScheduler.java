@@ -32,6 +32,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -56,6 +57,8 @@ public final class RequestTaskScheduler implements AutoCloseable {
   private final @NotNull EnumMap<CancellationDomain, AtomicLong> generations;
   private final @NotNull EnumMap<CancellationDomain, ConcurrentHashMap<Long, Set<FutureTask<?>>>> trackedTasks;
   private final @NotNull Semaphore globalElasticPermits;
+  private final int totalMaxWorkers;
+  private final int reservedMinWorkers;
 
   @Getter
   public static final class PoolSizing {
@@ -98,6 +101,37 @@ public final class RequestTaskScheduler implements AutoCloseable {
     EXPORT
   }
 
+  public record PoolDiagnostics(
+    int corePoolSize,
+    int maxPoolSize,
+    int currentPoolSize,
+    int largestPoolSize,
+    int activeCount,
+    int queueSize,
+    int queueCapacity,
+    long completedTaskCount,
+    long taskCount
+  ) {
+  }
+
+  public record CancellationDomainDiagnostics(
+    long currentGeneration,
+    int trackedTaskCount,
+    @NotNull Map<Long, Integer> trackedTasksByGeneration
+  ) {
+  }
+
+  public record SchedulerDiagnostics(
+    long timestampMs,
+    int totalMaxWorkers,
+    int reservedMinWorkers,
+    int elasticWorkersInUse,
+    int elasticWorkersAvailable,
+    @NotNull Map<RequestPriority, PoolDiagnostics> pools,
+    @NotNull Map<CancellationDomain, CancellationDomainDiagnostics> cancellationDomains
+  ) {
+  }
+
   @FunctionalInterface
   public interface ThrowingSupplier<T> {
     T get() throws Exception;
@@ -132,6 +166,8 @@ public final class RequestTaskScheduler implements AutoCloseable {
     final int totalMaxWorkers = Math.max(minTotal, config.totalMaxWorkers());
     final int elasticBudget = Math.max(0, totalMaxWorkers - minTotal);
     this.globalElasticPermits = new Semaphore(elasticBudget, true);
+    this.totalMaxWorkers = totalMaxWorkers;
+    this.reservedMinWorkers = minTotal;
 
     for (final var domain : CancellationDomain.values()) {
       this.generations.put(domain, new AtomicLong(0L));
@@ -257,6 +293,57 @@ public final class RequestTaskScheduler implements AutoCloseable {
     bumpGeneration(CancellationDomain.TILE);
     bumpGeneration(CancellationDomain.TRACK);
     bumpGeneration(CancellationDomain.EXPORT);
+  }
+
+  public @NotNull SchedulerDiagnostics diagnosticsSnapshot() {
+    final var poolSnapshots = new EnumMap<RequestPriority, PoolDiagnostics>(RequestPriority.class);
+    for (final var entry : this.pools.entrySet()) {
+      final var pool = entry.getValue();
+      final int queueSize = pool.getQueue().size();
+      final int queueCapacity = queueSize + pool.getQueue().remainingCapacity();
+      poolSnapshots.put(
+        entry.getKey(),
+        new PoolDiagnostics(
+          pool.getCorePoolSize(),
+          pool.getMaximumPoolSize(),
+          pool.getPoolSize(),
+          pool.getLargestPoolSize(),
+          pool.getActiveCount(),
+          queueSize,
+          queueCapacity,
+          pool.getCompletedTaskCount(),
+          pool.getTaskCount()
+        )
+      );
+    }
+    final var cancellationSnapshots = new EnumMap<CancellationDomain, CancellationDomainDiagnostics>(CancellationDomain.class);
+    for (final var domain : CancellationDomain.values()) {
+      final var trackedByGeneration = new LinkedHashMap<Long, Integer>();
+      int trackedCount = 0;
+      for (final var entry : this.trackedTasks.get(domain).entrySet()) {
+        final int size = entry.getValue().size();
+        trackedCount += size;
+        trackedByGeneration.put(entry.getKey(), size);
+      }
+      cancellationSnapshots.put(
+        domain,
+        new CancellationDomainDiagnostics(
+          this.currentGeneration(domain),
+          trackedCount,
+          trackedByGeneration
+        )
+      );
+    }
+    final int elasticAvailable = this.globalElasticPermits.availablePermits();
+    return new SchedulerDiagnostics(
+      System.currentTimeMillis(),
+      this.totalMaxWorkers,
+      this.reservedMinWorkers,
+      Math.max(0, this.totalMaxWorkers - this.reservedMinWorkers - elasticAvailable),
+      elasticAvailable,
+      poolSnapshots,
+      cancellationSnapshots
+    );
   }
 
   public long currentGeneration(final @NotNull CancellationDomain domain) {

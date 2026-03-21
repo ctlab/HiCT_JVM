@@ -439,6 +439,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
           }
+          final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+          if (trackManagerWrapper != null) {
+            trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
+          }
           return AssemblyInfoDTO.generateFromChunkedFile(chunkedFile);
         },
         response -> ctx.response().end(Json.encode(response))
