@@ -41,6 +41,9 @@ repositories {
   maven {
     url = uri("https://maven.scijava.org/content/repositories/public/")
   }
+  maven {
+    url = uri("https://nexus.bioviz.org/repository/maven-releases/")
+  }
 }
 
 val vertxVersion = "4.4.1"
@@ -68,7 +71,7 @@ val webUIRepositoryDirectory =
   if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
-val webUIBranch = "dev-0.1.5"
+val webUIBranch = "migrate-converters-update-ui-1dtracks"
 
 version = readVersion()
 
@@ -132,6 +135,8 @@ dependencies {
   // https://mvnrepository.com/artifact/org.scijava/native-lib-loader
   implementation("org.scijava:native-lib-loader:2.4.0")
   implementation("info.picocli:picocli:4.7.6")
+  implementation("com.github.samtools:htsjdk:4.1.3")
+  implementation("org.broad.igv:bigwig:3.0.0")
 
 
 }
@@ -252,13 +257,10 @@ tasks.register("buildWebUI") {
   doLast {
     try {
       if (localWebUIRepositoryDirectory.asFile.exists()) {
-        println("Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath}")
-        project.exec {
-          commandLine("git", "checkout", webUIBranch)
-          workingDir = localWebUIRepositoryDirectory.asFile
-          standardOutput = System.out
-          isIgnoreExitValue = true
-        }
+        println(
+          "Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath} " +
+            "(branch/working tree will not be modified by Gradle)"
+        )
         project.exec {
           commandLine("npm", "install")
           workingDir = localWebUIRepositoryDirectory.asFile

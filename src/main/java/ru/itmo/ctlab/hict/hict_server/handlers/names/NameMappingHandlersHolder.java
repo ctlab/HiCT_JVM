@@ -33,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.names.ImportNameMappingRequestDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.request.names.RenameContigRequestDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.request.names.RenameScaffoldRequestDTO;
@@ -53,95 +54,125 @@ public class NameMappingHandlersHolder extends HandlersHolder {
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
-    router.post("/names/contig").blockingHandler(ctx -> {
+    router.post("/names/contig").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final var request = RenameContigRequestDTO.fromJSONObject(ctx.body().asJsonObject());
-      final var chunkedFile = extractChunkedFile(ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-
-      final var newName = normalizeName(request.newName());
-      validateContigRename(chunkedFile, request.contigId(), newName);
-      chunkedFile.setContigNameOverride(request.contigId(), newName);
-
-      final var newVersion = incrementVersionAndResetTileStats(chunkedFile);
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final var chunkedFile = extractChunkedFile();
+          final var newName = normalizeName(request.newName());
+          validateContigRename(chunkedFile, request.contigId(), newName);
+          chunkedFile.setContigNameOverride(request.contigId(), newName);
+          final var newVersion = incrementVersionAndResetTileStats(chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
 
-    router.post("/names/scaffold").blockingHandler(ctx -> {
+    router.post("/names/scaffold").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final var request = RenameScaffoldRequestDTO.fromJSONObject(ctx.body().asJsonObject());
-      final var chunkedFile = extractChunkedFile(ctx);
-      if (chunkedFile == null) {
-        return;
-      }
-
-      final var newName = normalizeName(request.newName());
-      validateScaffoldRename(chunkedFile, request.scaffoldId(), newName);
-      chunkedFile.setScaffoldNameOverride(request.scaffoldId(), newName);
-
-      final var newVersion = incrementVersionAndResetTileStats(chunkedFile);
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final var chunkedFile = extractChunkedFile();
+          final var newName = normalizeName(request.newName());
+          validateScaffoldRename(chunkedFile, request.scaffoldId(), newName);
+          chunkedFile.setScaffoldNameOverride(request.scaffoldId(), newName);
+          final var newVersion = incrementVersionAndResetTileStats(chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
 
-    router.get("/names/export").blockingHandler(ctx -> {
-      final var chunkedFile = extractChunkedFile(ctx);
-      if (chunkedFile == null) {
+    router.get("/names/export").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
         return;
       }
-
-      final var contigs = chunkedFile.getContigTree().getOrderedContigList().stream().map(tuple ->
-        new NameMappingDTO.ContigNameMappingDTO(
-          tuple.descriptor().getContigId(),
-          chunkedFile.getContigOriginalName(tuple.descriptor().getContigId()),
-          chunkedFile.getContigDisplayName(tuple.descriptor().getContigId())
-        )
-      ).toList();
-
-      final var scaffolds = chunkedFile.getScaffoldTree().getScaffoldList().stream().map(tuple ->
-        new NameMappingDTO.ScaffoldNameMappingDTO(
-          tuple.scaffoldDescriptor().scaffoldId(),
-          chunkedFile.getScaffoldOriginalName(tuple.scaffoldDescriptor().scaffoldId()),
-          chunkedFile.getScaffoldDisplayName(tuple.scaffoldDescriptor().scaffoldId())
-        )
-      ).toList();
-
-      ctx.response().end(Json.encode(new NameMappingDTO(contigs, scaffolds)));
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.EXPORT,
+        RequestTaskScheduler.CancellationDomain.EXPORT,
+        () -> {
+          final var chunkedFile = extractChunkedFile();
+          final var contigs = chunkedFile.getContigTree().getOrderedContigList().stream().map(tuple ->
+            new NameMappingDTO.ContigNameMappingDTO(
+              tuple.descriptor().getContigId(),
+              chunkedFile.getContigOriginalName(tuple.descriptor().getContigId()),
+              chunkedFile.getContigDisplayName(tuple.descriptor().getContigId())
+            )
+          ).toList();
+          final var scaffolds = chunkedFile.getScaffoldTree().getScaffoldList().stream().map(tuple ->
+            new NameMappingDTO.ScaffoldNameMappingDTO(
+              tuple.scaffoldDescriptor().scaffoldId(),
+              chunkedFile.getScaffoldOriginalName(tuple.scaffoldDescriptor().scaffoldId()),
+              chunkedFile.getScaffoldDisplayName(tuple.scaffoldDescriptor().scaffoldId())
+            )
+          ).toList();
+          return new NameMappingDTO(contigs, scaffolds);
+        },
+        dto -> ctx.response().end(Json.encode(dto)),
+        () -> ctx.response().end(Json.encode(new NameMappingDTO(java.util.List.of(), java.util.List.of())))
+      );
     });
 
-    router.post("/names/import").blockingHandler(ctx -> {
+    router.post("/names/import").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
       final var request = ImportNameMappingRequestDTO.fromJSONObject(ctx.body().asJsonObject());
-      final var chunkedFile = extractChunkedFile(ctx);
-      if (chunkedFile == null) {
-        return;
-      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final var chunkedFile = extractChunkedFile();
 
-      final Map<Integer, String> contigUpdates = new HashMap<>();
-      request.contigs().forEach(entry -> contigUpdates.put(entry.contigId(), normalizeName(entry.name())));
-      final Map<Long, String> scaffoldUpdates = new HashMap<>();
-      request.scaffolds().forEach(entry -> scaffoldUpdates.put(entry.scaffoldId(), normalizeName(entry.name())));
+          final Map<Integer, String> contigUpdates = new HashMap<>();
+          request.contigs().forEach(entry -> contigUpdates.put(entry.contigId(), normalizeName(entry.name())));
+          final Map<Long, String> scaffoldUpdates = new HashMap<>();
+          request.scaffolds().forEach(entry -> scaffoldUpdates.put(entry.scaffoldId(), normalizeName(entry.name())));
 
-      validateContigMappingImport(chunkedFile, contigUpdates);
-      validateScaffoldMappingImport(chunkedFile, scaffoldUpdates);
+          validateContigMappingImport(chunkedFile, contigUpdates);
+          validateScaffoldMappingImport(chunkedFile, scaffoldUpdates);
 
-      contigUpdates.forEach(chunkedFile::setContigNameOverride);
-      scaffoldUpdates.forEach(chunkedFile::setScaffoldNameOverride);
+          contigUpdates.forEach(chunkedFile::setContigNameOverride);
+          scaffoldUpdates.forEach(chunkedFile::setScaffoldNameOverride);
 
-      final var newVersion = incrementVersionAndResetTileStats(chunkedFile);
-      ctx.response().end(Json.encode(new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion)));
+          final var newVersion = incrementVersionAndResetTileStats(chunkedFile, scheduler);
+          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+        },
+        dto -> ctx.response().end(Json.encode(dto))
+      );
     });
   }
 
-  private ChunkedFile extractChunkedFile(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+  private ChunkedFile extractChunkedFile() {
     final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (chunkedFileWrapper == null) {
-      ctx.fail(new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?"));
-      return null;
+      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
     }
     return chunkedFileWrapper.getChunkedFile();
   }
 
-  private long incrementVersionAndResetTileStats(final @NotNull ChunkedFile chunkedFile) {
+  private long incrementVersionAndResetTileStats(final @NotNull ChunkedFile chunkedFile,
+                                                 final @NotNull RequestTaskScheduler scheduler) {
     final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
     if (stats == null) {
@@ -149,7 +180,22 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     }
     final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
     map.put("TileStatisticHolder", newStats);
+    scheduler.bumpAssemblyGeneration();
+    final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+    if (trackManagerWrapper != null) {
+      trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
+    }
     return newStats.versionCounter().get();
+  }
+
+  private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+    final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+    if (wrapper == null) {
+      ctx.fail(new IllegalStateException("Request scheduler is not initialized"));
+      return null;
+    }
+    return wrapper.getRequestTaskScheduler();
   }
 
   private static @NotNull String normalizeName(final String name) {
