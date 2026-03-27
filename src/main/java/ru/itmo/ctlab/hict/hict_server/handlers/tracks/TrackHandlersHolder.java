@@ -106,6 +106,37 @@ public class TrackHandlersHolder extends HandlersHolder {
       );
     });
 
+    router.post("/tracks/probe").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var filename = request.getString("filename");
+      if (filename == null || filename.isBlank()) {
+        ctx.fail(new IllegalArgumentException("Track filename is required"));
+        return;
+      }
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.TRACK,
+        null,
+        () -> manager.probeTrackCompatibility(chunkedFile, filename),
+        report -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(report))
+      );
+    });
+
     router.post("/tracks/list").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {

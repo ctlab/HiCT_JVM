@@ -69,13 +69,17 @@ import java.util.zip.GZIPInputStream;
 @Slf4j
 public class Track1DManager {
   private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
-    ".bed", ".bed.gz", ".vcf", ".vcf.gz", ".bw", ".bigwig", ".bam"
+    ".bed", ".bed.gz",
+    ".vcf", ".vcf.gz",
+    ".gff", ".gff.gz", ".gff3", ".gff3.gz", ".gtf", ".gtf.gz",
+    ".bw", ".bigwig", ".bam"
   );
   private static final List<String> COLOR_PALETTE = List.of(
     "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ab"
   );
   private static final int MAX_FEATURES_PER_QUERY = 250_000;
+  private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String PRECOMPUTE_CACHE_VERSION = "1";
   private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
   private static final int PRECOMPUTE_JOB_THREADS = resolveThreadCount("HICT_TRACK_PRECOMPUTE_JOB_THREADS", 2);
@@ -177,7 +181,7 @@ public class Track1DManager {
     final var trackType = TrackType.fromPath(resolvedPath);
     if (trackType == TrackType.UNSUPPORTED) {
       throw new IllegalArgumentException(
-        "Unsupported track format for " + relativeFilename + ". Supported: BED/VCF/BigWig/BAM."
+        "Unsupported track format for " + relativeFilename + ". Supported: BED/VCF/GFF/GTF/BigWig/BAM."
       );
     }
     final var trackId = "trk_" + this.trackCounter.incrementAndGet();
@@ -185,13 +189,7 @@ public class Track1DManager {
       ? resolvedPath.getFileName().toString()
       : requestedName.trim();
     final var color = normalizeColor(requestedColor, colorForIndex((int) this.trackCounter.get() - 1));
-    final TrackDataSource dataSource = switch (trackType) {
-      case BED -> InMemoryTrackDataSource.fromBed(resolvedPath);
-      case VCF -> InMemoryTrackDataSource.fromVcf(resolvedPath);
-      case BIGWIG -> new BigWigTrackDataSource(resolvedPath);
-      case BAM -> new BamTrackDataSource(resolvedPath);
-      case UNSUPPORTED -> throw new IllegalStateException("Unexpected unsupported track type");
-    };
+    final TrackDataSource dataSource = createDataSource(trackType, resolvedPath);
     final var state = new TrackState(
       trackId,
       resolvedName,
@@ -213,6 +211,61 @@ public class Track1DManager {
       this.lock.writeLock().unlock();
     }
     return state.toSummary();
+  }
+
+  public @NotNull TrackCompatibilityReport probeTrackCompatibility(final @NotNull ChunkedFile chunkedFile,
+                                                                   final @NotNull String relativeFilename) {
+    final var resolvedPath = resolveDataPath(relativeFilename);
+    final var trackType = TrackType.fromPath(resolvedPath);
+    if (trackType == TrackType.UNSUPPORTED) {
+      throw new IllegalArgumentException(
+        "Unsupported track format for " + relativeFilename + ". Supported: BED/VCF/GFF/GTF/BigWig/BAM."
+      );
+    }
+    final var sourceNameSet = buildSourceNameSet(chunkedFile, this.linkedFastaAliasesBySource);
+    final var assemblyNameSet = buildAssemblyNameSet(chunkedFile);
+    final TrackDataSource dataSource = createDataSource(trackType, resolvedPath);
+    try {
+      final var trackNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+      trackNames.addAll(dataSource.sourceNames());
+      final int total = trackNames.size();
+      int matchedSource = 0;
+      int matchedAssembly = 0;
+      int matchedAny = 0;
+      final var unknownNames = new ArrayList<String>();
+      for (final var name : trackNames) {
+        final var inSource = sourceNameSet.contains(name);
+        final var inAssembly = assemblyNameSet.contains(name);
+        if (inSource) {
+          matchedSource++;
+        }
+        if (inAssembly) {
+          matchedAssembly++;
+        }
+        if (inSource || inAssembly) {
+          matchedAny++;
+        } else if (unknownNames.size() < 32) {
+          unknownNames.add(name);
+        }
+      }
+      final var status = resolveCompatibilityStatus(total, matchedAny);
+      final var recommendation = matchedSource >= matchedAssembly ? "SOURCE" : "ASSEMBLY";
+      final var message = buildCompatibilityMessage(trackType, total, matchedAny, unknownNames.size());
+      return new TrackCompatibilityReport(
+        relativeFilename,
+        trackType.name(),
+        status,
+        total,
+        matchedSource,
+        matchedAssembly,
+        matchedAny,
+        unknownNames,
+        recommendation,
+        message
+      );
+    } finally {
+      closeDataSourceQuietly(dataSource);
+    }
   }
 
   public @NotNull List<TrackSummary> listTracks() {
@@ -500,6 +553,9 @@ public class Track1DManager {
 
   private void maybeScheduleTrackPrecomputeFromQuery(final @NotNull ChunkedFile chunkedFile,
                                                      final @NotNull TrackState track) {
+    if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
+      return;
+    }
     final var runtime = this.precomputeRuntimeByTrackId.get(track.trackId());
     if (runtime != null && runtime.isActive()) {
       return;
@@ -571,6 +627,9 @@ public class Track1DManager {
                                                              final @NotNull TrackState track,
                                                              final @NotNull Path sidecarPath,
                                                              final boolean force) {
+    if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
+      return List.of();
+    }
     final var tasks = new ArrayList<PrecomputeTask>();
     final var resolutions = Arrays.stream(chunkedFile.getResolutions()).boxed().sorted(Comparator.reverseOrder()).toList();
     final var modeKeys = modeKeysForTrack(track);
@@ -614,6 +673,9 @@ public class Track1DManager {
                                                           final int widthPx,
                                                           final long bpResolution,
                                                           final @NotNull String assemblySignature) {
+    if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
+      return null;
+    }
     final var totalVisiblePixels = orderedSegments.isEmpty() ? 0L : orderedSegments.get(orderedSegments.size() - 1).visiblePxEnd();
     if (totalVisiblePixels <= 0L || totalVisiblePixels > MAX_PRECOMPUTE_VISIBLE_PIXELS) {
       return null;
@@ -640,7 +702,16 @@ public class Track1DManager {
     final var strategy = aggregationStrategy(track);
     final var bins = aggregatePrecomputedSeries(series, queryStartPx, queryEndPx, widthPx, strategy);
     final var maxValue = bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0.0d);
-    return new TrackRender(track.trackId(), track.name(), track.type().name(), track.color(), bins, maxValue, null);
+    return new TrackRender(
+      track.trackId(),
+      track.name(),
+      track.type().name(),
+      track.color(),
+      track.dataSource().renderStyle().name(),
+      bins,
+      maxValue,
+      null
+    );
   }
 
   private @NotNull PrecomputedSeries computePrecomputedSeries(final @NotNull ChunkedFile chunkedFile,
@@ -887,7 +958,7 @@ public class Track1DManager {
     return switch (track.type()) {
       case BIGWIG -> List.of("MAX", "MEAN", "SUM");
       case BAM -> List.of("COVERAGE", "READ_DENSITY");
-      case BED, VCF -> List.of("DEFAULT");
+      case BED, VCF, GFF_GTF -> List.of("DEFAULT");
       case UNSUPPORTED -> List.of("DEFAULT");
     };
   }
@@ -896,7 +967,7 @@ public class Track1DManager {
     return switch (track.type()) {
       case BIGWIG -> track.bigWigAggregationMode().name();
       case BAM -> track.bamRenderMode().name();
-      case BED, VCF, UNSUPPORTED -> "DEFAULT";
+      case BED, VCF, GFF_GTF, UNSUPPORTED -> "DEFAULT";
     };
   }
 
@@ -930,7 +1001,7 @@ public class Track1DManager {
         case COVERAGE -> PrecomputeAggregationStrategy.MEAN_ALL_PIXELS;
         case READ_DENSITY -> PrecomputeAggregationStrategy.SUM;
       };
-      case BED, VCF, UNSUPPORTED -> PrecomputeAggregationStrategy.MAX;
+      case BED, VCF, GFF_GTF, UNSUPPORTED -> PrecomputeAggregationStrategy.MAX;
     };
   }
 
@@ -950,6 +1021,8 @@ public class Track1DManager {
       final ContigTree.ContigTuple tuple = contigs.get(contigIndex);
       final var descriptor = tuple.descriptor();
       final var sourceName = descriptor.getContigNameInSourceFASTA();
+      final var originalName = descriptor.getContigName();
+      final var displayName = chunkedFile.getContigDisplayName(descriptor.getContigId());
       final var sourceStart = descriptor.getOffsetInSourceFASTA();
       final var sourceEnd = sourceStart + descriptor.getLengthBp();
       final var assemblyStart = assemblyCursor;
@@ -968,6 +1041,14 @@ public class Track1DManager {
         );
         orderedSegments.add(segment);
         sourceToAssemblySegments.computeIfAbsent(sourceName, key -> new ArrayList<>()).add(segment);
+        if (originalName != null && !originalName.isBlank() && !originalName.equals(sourceName)) {
+          sourceToAssemblySegments.computeIfAbsent(originalName, key -> new ArrayList<>()).add(segment);
+        }
+        if (displayName != null && !displayName.isBlank()
+          && !displayName.equals(sourceName)
+          && !displayName.equals(originalName)) {
+          sourceToAssemblySegments.computeIfAbsent(displayName, key -> new ArrayList<>()).add(segment);
+        }
         final var aliasName = linkedFastaAliasesBySource.get(sourceName);
         if (aliasName != null && !aliasName.equals(sourceName)) {
           sourceToAssemblySegments.computeIfAbsent(aliasName, key -> new ArrayList<>()).add(segment);
@@ -1012,6 +1093,75 @@ public class Track1DManager {
       return "#4e79a7";
     }
     return COLOR_PALETTE.get(Math.floorMod(index, COLOR_PALETTE.size()));
+  }
+
+  private static @NotNull TrackDataSource createDataSource(final @NotNull TrackType trackType,
+                                                           final @NotNull Path resolvedPath) {
+    return switch (trackType) {
+      case BED -> InMemoryTrackDataSource.fromBed(resolvedPath);
+      case VCF -> InMemoryTrackDataSource.fromVcf(resolvedPath);
+      case GFF_GTF -> InMemoryTrackDataSource.fromGffOrGtf(resolvedPath);
+      case BIGWIG -> new BigWigTrackDataSource(resolvedPath);
+      case BAM -> new BamTrackDataSource(resolvedPath);
+      case UNSUPPORTED -> throw new IllegalStateException("Unexpected unsupported track type");
+    };
+  }
+
+  private static @NotNull Set<String> buildSourceNameSet(final @NotNull ChunkedFile chunkedFile,
+                                                          final @NotNull Map<String, String> linkedFastaAliasesBySource) {
+    final var names = new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+    for (final var tuple : chunkedFile.getAssemblyInfo().contigs()) {
+      final var sourceName = tuple.descriptor().getContigNameInSourceFASTA();
+      if (sourceName != null && !sourceName.isBlank()) {
+        names.add(sourceName);
+      }
+      final var alias = linkedFastaAliasesBySource.get(sourceName);
+      if (alias != null && !alias.isBlank()) {
+        names.add(alias);
+      }
+    }
+    return names;
+  }
+
+  private static @NotNull Set<String> buildAssemblyNameSet(final @NotNull ChunkedFile chunkedFile) {
+    final var names = new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+    for (final var tuple : chunkedFile.getAssemblyInfo().contigs()) {
+      final var descriptor = tuple.descriptor();
+      final var originalName = descriptor.getContigName();
+      if (originalName != null && !originalName.isBlank()) {
+        names.add(originalName);
+      }
+      final var displayName = chunkedFile.getContigDisplayName(descriptor.getContigId());
+      if (displayName != null && !displayName.isBlank()) {
+        names.add(displayName);
+      }
+    }
+    return names;
+  }
+
+  private static @NotNull String resolveCompatibilityStatus(final int totalNames, final int matchedAny) {
+    if (totalNames <= 0 || matchedAny >= totalNames) {
+      return "ok";
+    }
+    final var ratio = matchedAny / (double) Math.max(1, totalNames);
+    if (ratio >= 0.5d) {
+      return "warning";
+    }
+    return "error";
+  }
+
+  private static @NotNull String buildCompatibilityMessage(final @NotNull TrackType trackType,
+                                                           final int totalNames,
+                                                           final int matchedAny,
+                                                           final int unknownNamesCount) {
+    if (totalNames <= 0) {
+      return "Track has no contig/chromosome names to validate.";
+    }
+    if (matchedAny >= totalNames) {
+      return "Track names are compatible with the current assembly.";
+    }
+    return "Track " + trackType.name() + " contains " + unknownNamesCount
+      + " names that do not match current/source assembly names.";
   }
 
   private static @NotNull BamRenderMode parseBamRenderMode(final String mode, final @NotNull BamRenderMode fallback) {
@@ -1081,6 +1231,66 @@ public class Track1DManager {
     }
     final var trimmed = token.trim();
     return "+".equals(trimmed) || "-".equals(trimmed) || ".".equals(trimmed);
+  }
+
+  private static @Nullable String normalizeStrand(final String token) {
+    if (!isBedStrandToken(token)) {
+      return null;
+    }
+    final var trimmed = token.trim();
+    return ".".equals(trimmed) ? null : trimmed;
+  }
+
+  private static @NotNull Map<String, String> parseGffAttributes(final @Nullable String rawAttributes,
+                                                                  final boolean gtfMode) {
+    if (rawAttributes == null || rawAttributes.isBlank() || ".".equals(rawAttributes.trim())) {
+      return Map.of();
+    }
+    final var parsed = new LinkedHashMap<String, String>();
+    final var tokens = rawAttributes.split(";");
+    for (final var token : tokens) {
+      if (token == null || token.isBlank()) {
+        continue;
+      }
+      final var trimmed = token.trim();
+      if (gtfMode) {
+        final int firstSpace = trimmed.indexOf(' ');
+        if (firstSpace <= 0 || firstSpace >= trimmed.length() - 1) {
+          continue;
+        }
+        final var key = trimmed.substring(0, firstSpace).trim();
+        var value = trimmed.substring(firstSpace + 1).trim();
+        if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
+          value = value.substring(1, value.length() - 1);
+        }
+        if (!key.isBlank() && !value.isBlank()) {
+          parsed.putIfAbsent(key, value);
+        }
+      } else {
+        final int eqIndex = trimmed.indexOf('=');
+        if (eqIndex <= 0 || eqIndex >= trimmed.length() - 1) {
+          continue;
+        }
+        final var key = trimmed.substring(0, eqIndex).trim();
+        final var value = trimmed.substring(eqIndex + 1).trim();
+        if (!key.isBlank() && !value.isBlank()) {
+          parsed.putIfAbsent(key, value);
+        }
+      }
+    }
+    return parsed;
+  }
+
+  private static @Nullable String firstNonBlank(final @Nullable String... candidates) {
+    if (candidates == null) {
+      return null;
+    }
+    for (final var candidate : candidates) {
+      if (candidate != null && !candidate.isBlank()) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   private static @NotNull BufferedReader openMaybeGzipReader(final @NotNull Path filePath) throws IOException {
@@ -1229,6 +1439,83 @@ public class Track1DManager {
                                                                                      final long queryStartPx,
                                                                                      final long queryEndPx,
                                                                                      final long bpResolution) {
+    return projectSourceIntervalOnSegmentRaw(
+      segment,
+      sourceStart,
+      sourceEnd,
+      value,
+      label,
+      queryStartPx,
+      queryEndPx,
+      bpResolution
+    );
+  }
+
+  private static @NotNull Optional<ProjectedFeature> projectSourceFeatureOnSegment(final @NotNull AssemblySegment segment,
+                                                                                    final @NotNull FeatureRange feature,
+                                                                                    final long queryStartPx,
+                                                                                    final long queryEndPx,
+                                                                                    final long bpResolution) {
+    final var projectedBase = projectSourceIntervalOnSegmentRaw(
+      segment,
+      feature.start(),
+      feature.end(),
+      feature.value(),
+      feature.label(),
+      queryStartPx,
+      queryEndPx,
+      bpResolution
+    );
+    if (projectedBase.isEmpty()) {
+      return Optional.empty();
+    }
+    Long thickStartBp = null;
+    Long thickEndBp = null;
+    Long thickStartPx = null;
+    Long thickEndPx = null;
+    if (feature.thickStart() != null && feature.thickEnd() != null && feature.thickEnd() > feature.thickStart()) {
+      final var projectedThick = projectSourceIntervalOnSegmentRaw(
+        segment,
+        feature.thickStart(),
+        feature.thickEnd(),
+        feature.value(),
+        null,
+        queryStartPx,
+        queryEndPx,
+        bpResolution
+      );
+      if (projectedThick.isPresent()) {
+        thickStartBp = projectedThick.get().startBp();
+        thickEndBp = projectedThick.get().endBp();
+        thickStartPx = projectedThick.get().startPx();
+        thickEndPx = projectedThick.get().endPx();
+      }
+    }
+    final var projected = projectedBase.get();
+    return Optional.of(new ProjectedFeature(
+      projected.startBp(),
+      projected.endBp(),
+      projected.startPx(),
+      projected.endPx(),
+      projected.value(),
+      projected.label(),
+      feature.strand(),
+      thickStartBp,
+      thickEndBp,
+      thickStartPx,
+      thickEndPx,
+      feature.featureType()
+    ));
+  }
+
+  private static @NotNull Optional<ProjectedFeature> projectSourceIntervalOnSegmentRaw(final @NotNull AssemblySegment segment,
+                                                                                        final long sourceStart,
+                                                                                        final long sourceEnd,
+                                                                                        final double value,
+                                                                                        final String label,
+                                                                                        final long queryStartPx,
+                                                                                        final long queryEndPx,
+                                                                                        final long bpResolution) {
     final var clippedSourceStart = Math.max(sourceStart, segment.sourceStart());
     final var clippedSourceEnd = Math.min(sourceEnd, segment.sourceEnd());
     if (clippedSourceEnd <= clippedSourceStart) {
@@ -1272,7 +1559,13 @@ public class Track1DManager {
       clippedStartPx,
       clippedEndPx,
       Math.max(0.0d, value),
-      label
+      label,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
     ));
   }
 
@@ -1559,7 +1852,21 @@ public class Track1DManager {
 
   private static @NotNull List<TrackBin> toBins(final @NotNull List<ProjectedFeature> projectedFeatures) {
     return projectedFeatures.stream()
-      .map(f -> new TrackBin(f.startBp(), f.endBp(), f.value(), 1L, f.label(), f.startPx(), f.endPx()))
+      .map(f -> new TrackBin(
+        f.startBp(),
+        f.endBp(),
+        f.value(),
+        1L,
+        f.label(),
+        f.startPx(),
+        f.endPx(),
+        f.strand(),
+        f.thickStartBp(),
+        f.thickEndBp(),
+        f.thickStartPx(),
+        f.thickEndPx(),
+        f.featureType()
+      ))
       .toList();
   }
 
@@ -1592,7 +1899,7 @@ public class Track1DManager {
         bigWigAggregationMode
       );
     }
-    if (type == TrackType.BED) {
+    if (type == TrackType.BED || type == TrackType.GFF_GTF) {
       if (dataSource instanceof InMemoryTrackDataSource inMemoryTrackDataSource) {
         return inMemoryTrackDataSource.queryBins(
           sourceToAssemblySegments,
@@ -1626,6 +1933,7 @@ public class Track1DManager {
   private enum TrackType {
     BED,
     VCF,
+    GFF_GTF,
     BIGWIG,
     BAM,
     UNSUPPORTED;
@@ -1637,6 +1945,14 @@ public class Track1DManager {
       }
       if (lowered.endsWith(".vcf") || lowered.endsWith(".vcf.gz")) {
         return VCF;
+      }
+      if (lowered.endsWith(".gff")
+        || lowered.endsWith(".gff.gz")
+        || lowered.endsWith(".gff3")
+        || lowered.endsWith(".gff3.gz")
+        || lowered.endsWith(".gtf")
+        || lowered.endsWith(".gtf.gz")) {
+        return GFF_GTF;
       }
       if (lowered.endsWith(".bw") || lowered.endsWith(".bigwig")) {
         return BIGWIG;
@@ -1659,8 +1975,21 @@ public class Track1DManager {
     SUM
   }
 
+  private enum RenderStyle {
+    SIGNAL,
+    FEATURE
+  }
+
   private interface TrackDataSource extends AutoCloseable {
     long featureCountHint();
+
+    @NotNull
+    Set<String> sourceNames();
+
+    @NotNull
+    default RenderStyle renderStyle() {
+      return RenderStyle.SIGNAL;
+    }
 
     @NotNull
     List<ProjectedFeature> projectFeatures(@NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
@@ -1676,11 +2005,17 @@ public class Track1DManager {
 
   private record InMemoryTrackDataSource(@NotNull Map<String, List<FeatureRange>> featuresBySource,
                                          long featureCount,
-                                         boolean hasSignalValues) implements TrackDataSource {
+                                         boolean hasSignalValues,
+                                         boolean hasStructuredFeatures,
+                                         @NotNull RenderStyle preferredRenderStyle) implements TrackDataSource {
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
       long total = 0L;
       boolean hasSignalValues = false;
+      boolean hasStructuredFeatures = false;
+      boolean hasStrandFeatures = false;
+      boolean hasThickFeatures = false;
+      boolean hasBed12Rows = false;
       try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
         String line;
         long lineNo = 0L;
@@ -1702,24 +2037,49 @@ public class Track1DManager {
           final var col4Numeric = fields.length >= 4 ? parseNullableDouble(fields[3]) : null;
           final var col5Numeric = fields.length >= 5 ? parseNullableDouble(fields[4]) : null;
           final var hasStrand = fields.length >= 6 && isBedStrandToken(fields[5]);
-          final String label;
+          final String strand = hasStrand ? normalizeStrand(fields[5]) : null;
+          final String label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
+          Long thickStart = null;
+          Long thickEnd = null;
+          if (fields.length >= 8) {
+            try {
+              final var parsedThickStart = Long.parseLong(fields[6]);
+              final var parsedThickEnd = Long.parseLong(fields[7]);
+              final var clampedThickStart = Math.max(start, Math.min(parsedThickStart, end));
+              final var clampedThickEnd = Math.max(clampedThickStart, Math.min(parsedThickEnd, end));
+              if (clampedThickEnd > clampedThickStart) {
+                thickStart = clampedThickStart;
+                thickEnd = clampedThickEnd;
+                hasThickFeatures = true;
+              }
+            } catch (final NumberFormatException ignored) {
+              // Optional BED fields, ignore malformed thickStart/thickEnd.
+            }
+          }
           final double value;
           if (fields.length == 4 && col4Numeric != null) {
-            // BEDGraph-style row: chrom start end value
-            label = null;
+            // BEDGraph row: chrom start end value
             value = Math.max(0.0d, col4Numeric);
           } else if (hasStrand) {
-            // BED6 alignments: score is typically MAPQ-like, not quantitative signal; use unit coverage.
-            label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
+            // BED6/BED12 annotation-like rows are rendered as features.
             value = 1.0d;
           } else {
-            label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
             value = Math.max(0.0d, col5Numeric != null ? col5Numeric : 1.0d);
           }
+          final var featureType = (fields.length >= 12) ? "BED12" : (hasStrand ? "BED6" : "BED");
+          if (fields.length >= 12) {
+            hasBed12Rows = true;
+          }
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, value, label));
+            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType));
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
+          }
+          if (strand != null || (thickStart != null && thickEnd != null)) {
+            hasStructuredFeatures = true;
+            if (strand != null) {
+              hasStrandFeatures = true;
+            }
           }
           total++;
         }
@@ -1727,7 +2087,13 @@ public class Track1DManager {
         throw new RuntimeException("Failed to parse BED track " + filePath, e);
       }
       features.values().forEach(list -> list.sort(Comparator.comparingLong(FeatureRange::start)));
-      return new InMemoryTrackDataSource(features, total, hasSignalValues);
+      return new InMemoryTrackDataSource(
+        features,
+        total,
+        hasSignalValues,
+        hasStructuredFeatures,
+        resolveBedRenderStyle(total, hasStrandFeatures, hasThickFeatures, hasBed12Rows)
+      );
     }
 
     static @NotNull InMemoryTrackDataSource fromVcf(final @NotNull Path filePath) {
@@ -1754,14 +2120,65 @@ public class Track1DManager {
           final var alt = fields[4];
           final var label = (id != null) ? id : (ref + ">" + alt);
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, 1.0d, label));
+            .add(new FeatureRange(start, end, 1.0d, label, null, null, null, "VCF"));
           total++;
         }
       } catch (final IOException e) {
         throw new RuntimeException("Failed to parse VCF track " + filePath, e);
       }
       features.values().forEach(list -> list.sort(Comparator.comparingLong(FeatureRange::start)));
-      return new InMemoryTrackDataSource(features, total, false);
+      return new InMemoryTrackDataSource(features, total, false, true, RenderStyle.FEATURE);
+    }
+
+    static @NotNull InMemoryTrackDataSource fromGffOrGtf(final @NotNull Path filePath) {
+      final var features = new HashMap<String, List<FeatureRange>>();
+      long total = 0L;
+      boolean hasSignalValues = false;
+      final var lowered = filePath.getFileName().toString().toLowerCase(Locale.ROOT);
+      final var gtfMode = lowered.endsWith(".gtf") || lowered.endsWith(".gtf.gz");
+      try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
+        String line;
+        long lineNo = 0L;
+        while ((line = reader.readLine()) != null) {
+          lineNo++;
+          if (line.isBlank() || line.startsWith("#")) {
+            continue;
+          }
+          final var fields = line.split("\t");
+          if (fields.length < 9) {
+            continue;
+          }
+          final var sourceName = fields[0];
+          final var featureType = (fields[2] == null || fields[2].isBlank()) ? "feature" : fields[2];
+          final long start1Based = parseLongOrThrow(fields[3], "GFF/GTF start", lineNo);
+          final long end1Based = parseLongOrThrow(fields[4], "GFF/GTF end", lineNo);
+          final long start = Math.max(0L, start1Based - 1L);
+          final long end = Math.max(start + 1L, end1Based);
+          final var score = parseNullableDouble(fields[5]);
+          final double value = Math.max(0.0d, score != null ? score : 1.0d);
+          final var strand = normalizeStrand(fields[6]);
+          final var attributes = parseGffAttributes(fields[8], gtfMode);
+          final var label = firstNonBlank(
+            attributes.get("Name"),
+            attributes.get("gene_name"),
+            attributes.get("gene_id"),
+            attributes.get("transcript_id"),
+            attributes.get("ID"),
+            attributes.get("Parent"),
+            featureType
+          );
+          features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
+            .add(new FeatureRange(start, end, value, label, strand, null, null, featureType));
+          if (Math.abs(value - 1.0d) > 1e-9) {
+            hasSignalValues = true;
+          }
+          total++;
+        }
+      } catch (final IOException e) {
+        throw new RuntimeException("Failed to parse GFF/GTF track " + filePath, e);
+      }
+      features.values().forEach(list -> list.sort(Comparator.comparingLong(FeatureRange::start)));
+      return new InMemoryTrackDataSource(features, total, hasSignalValues, true, RenderStyle.FEATURE);
     }
 
     @Override
@@ -1770,62 +2187,33 @@ public class Track1DManager {
     }
 
     @Override
+    public @NotNull Set<String> sourceNames() {
+      return this.featuresBySource.keySet();
+    }
+
+    @Override
+    public @NotNull RenderStyle renderStyle() {
+      return this.preferredRenderStyle;
+    }
+
+    @Override
     public @NotNull List<ProjectedFeature> projectFeatures(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
                                                            final long queryStartPx,
                                                            final long queryEndPx,
                                                            final long bpResolution) {
       final var projected = new ArrayList<ProjectedFeature>();
-      for (final var entry : this.featuresBySource.entrySet()) {
-        final var sourceName = entry.getKey();
-        final var sourceFeatures = entry.getValue();
-        if (sourceFeatures.isEmpty()) {
-          continue;
-        }
-        final var assemblySegments = sourceToAssemblySegments.get(sourceName);
-        if (assemblySegments == null || assemblySegments.isEmpty()) {
-          continue;
-        }
-        for (final var segment : assemblySegments) {
-          final var sourceIntervalOptional = mapVisiblePxIntervalToSegmentSource(
-            segment,
-            queryStartPx,
-            queryEndPx,
-            bpResolution
-          );
-          if (sourceIntervalOptional.isEmpty()) {
-            continue;
-          }
-          final var sourceInterval = sourceIntervalOptional.get();
-          int index = lowerBoundByStart(sourceFeatures, sourceInterval.start());
-          if (index > 0) {
-            index--;
-          }
-          for (int i = index; i < sourceFeatures.size(); i++) {
-            final var feature = sourceFeatures.get(i);
-            if (feature.start() >= sourceInterval.end()) {
-              break;
-            }
-            if (feature.end() <= sourceInterval.start()) {
-              continue;
-            }
-            projectSourceIntervalOnSegment(
-              segment,
-              feature.start(),
-              feature.end(),
-              feature.value(),
-              feature.label(),
-              queryStartPx,
-              queryEndPx,
-              bpResolution
-            ).ifPresent(projected::add);
-            if (projected.size() > MAX_FEATURES_PER_QUERY) {
-              projected.sort(Comparator.comparingLong(ProjectedFeature::startPx));
-              return projected;
-            }
-          }
-        }
-      }
+      forEachProjectedFeature(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        bpResolution,
+        feature -> projected.add(feature),
+        MAX_FEATURES_PER_QUERY + 1
+      );
       projected.sort(Comparator.comparingLong(ProjectedFeature::startPx));
+      if (projected.size() > MAX_FEATURES_PER_QUERY) {
+        return projected.subList(0, MAX_FEATURES_PER_QUERY);
+      }
       return projected;
     }
 
@@ -1837,6 +2225,24 @@ public class Track1DManager {
       final var bucketCount = Math.max(1, widthPx);
       final var span = Math.max(1L, queryEndPx - queryStartPx);
       final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+
+      if (this.renderStyle() == RenderStyle.FEATURE && bucketSpan <= 3.0d) {
+        final int maxDirectFeatures = Math.max(widthPx * 12, 8192);
+        final var projected = new ArrayList<ProjectedFeature>(Math.min(maxDirectFeatures, 8192));
+        forEachProjectedFeature(
+          sourceToAssemblySegments,
+          queryStartPx,
+          queryEndPx,
+          bpResolution,
+          projected::add,
+          maxDirectFeatures + 1
+        );
+        projected.sort(Comparator.comparingLong(ProjectedFeature::startPx));
+        if (projected.size() <= maxDirectFeatures) {
+          return toBins(projected);
+        }
+      }
+
       if (this.hasSignalValues()) {
         final double[] maxValues = new double[bucketCount];
         final double[] weightedSums = new double[bucketCount];
@@ -1858,7 +2264,8 @@ public class Track1DManager {
             weightedSums,
             overlapSums,
             counts
-          )
+          ),
+          Integer.MAX_VALUE
         );
         return finalizeBigWigBins(
           queryStartPx,
@@ -1871,6 +2278,7 @@ public class Track1DManager {
           BigWigAggregationMode.MAX
         );
       }
+
       final double[] values = new double[bucketCount];
       final long[] counts = new long[bucketCount];
       forEachProjectedFeature(
@@ -1886,16 +2294,32 @@ public class Track1DManager {
           bucketSpan,
           values,
           counts
-        )
+        ),
+        Integer.MAX_VALUE
       );
       return finalizeBins(queryStartPx, queryEndPx, bucketSpan, values, counts);
+    }
+
+    private static @NotNull RenderStyle resolveBedRenderStyle(final long featureCount,
+                                                              final boolean hasStrandFeatures,
+                                                              final boolean hasThickFeatures,
+                                                              final boolean hasBed12Rows) {
+      if (hasThickFeatures || hasBed12Rows) {
+        return RenderStyle.FEATURE;
+      }
+      if (!hasStrandFeatures) {
+        return RenderStyle.SIGNAL;
+      }
+      return featureCount <= BED_FEATURE_STYLE_MAX_FEATURES ? RenderStyle.FEATURE : RenderStyle.SIGNAL;
     }
 
     private void forEachProjectedFeature(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
                                          final long queryStartPx,
                                          final long queryEndPx,
                                          final long bpResolution,
-                                         final @NotNull java.util.function.Consumer<ProjectedFeature> consumer) {
+                                         final @NotNull java.util.function.Consumer<ProjectedFeature> consumer,
+                                         final int maxFeatures) {
+      int emitted = 0;
       for (final var entry : this.featuresBySource.entrySet()) {
         final var sourceName = entry.getKey();
         final var sourceFeatures = entry.getValue();
@@ -1929,16 +2353,21 @@ public class Track1DManager {
             if (feature.end() <= sourceInterval.start()) {
               continue;
             }
-            projectSourceIntervalOnSegment(
+            final var projected = projectSourceFeatureOnSegment(
               segment,
-              feature.start(),
-              feature.end(),
-              feature.value(),
-              feature.label(),
+              feature,
               queryStartPx,
               queryEndPx,
               bpResolution
-            ).ifPresent(consumer);
+            );
+            if (projected.isEmpty()) {
+              continue;
+            }
+            consumer.accept(projected.get());
+            emitted++;
+            if (emitted >= maxFeatures) {
+              return;
+            }
           }
         }
       }
@@ -1981,6 +2410,11 @@ public class Track1DManager {
     @Override
     public long featureCountHint() {
       return -1L;
+    }
+
+    @Override
+    public @NotNull Set<String> sourceNames() {
+      return this.sourceNames;
     }
 
     @Override
@@ -2190,6 +2624,11 @@ public class Track1DManager {
     }
 
     @Override
+    public @NotNull Set<String> sourceNames() {
+      return this.sequenceNames;
+    }
+
+    @Override
     public synchronized @NotNull List<ProjectedFeature> projectFeatures(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
                                                                         final long queryStartPx,
                                                                         final long queryEndPx,
@@ -2382,7 +2821,14 @@ public class Track1DManager {
                                  long visiblePxEnd) {
   }
 
-  private record FeatureRange(long start, long end, double value, String label) {
+  private record FeatureRange(long start,
+                              long end,
+                              double value,
+                              String label,
+                              String strand,
+                              Long thickStart,
+                              Long thickEnd,
+                              String featureType) {
   }
 
   private record ProjectedFeature(long startBp,
@@ -2390,7 +2836,13 @@ public class Track1DManager {
                                   long startPx,
                                   long endPx,
                                   double value,
-                                  String label) {
+                                  String label,
+                                  String strand,
+                                  Long thickStartBp,
+                                  Long thickEndBp,
+                                  Long thickStartPx,
+                                  Long thickEndPx,
+                                  String featureType) {
   }
 
   @Getter
@@ -2413,6 +2865,21 @@ public class Track1DManager {
     private final @NotNull List<TrackPrecomputeStatus> tracks;
     private final int runningJobs;
     private final @NotNull String processedDirectory;
+  }
+
+  @Getter
+  @RequiredArgsConstructor
+  public static final class TrackCompatibilityReport {
+    private final @NotNull String filename;
+    private final @NotNull String trackType;
+    private final @NotNull String status;
+    private final int totalNames;
+    private final int matchedSourceNames;
+    private final int matchedAssemblyNames;
+    private final int matchedAnyNames;
+    private final @NotNull List<String> unknownNames;
+    private final @NotNull String recommendation;
+    private final @NotNull String message;
   }
 
   private static final class TrackPrecomputeRuntime {
@@ -2527,6 +2994,7 @@ public class Track1DManager {
     private final @NotNull String color;
     private final boolean visible;
     private final long featureCount;
+    private final @NotNull String renderStyle;
     private final @NotNull String renderMode;
     private final @NotNull String aggregationMode;
   }
@@ -2538,6 +3006,7 @@ public class Track1DManager {
     private final @NotNull String name;
     private final @NotNull String type;
     private final @NotNull String color;
+    private final @NotNull String renderStyle;
     private final @NotNull List<TrackBin> bins;
     private final double maxValue;
     private final String error;
@@ -2552,13 +3021,19 @@ public class Track1DManager {
     private final String label;
     private final Long startPx;
     private final Long endPx;
+    private final String strand;
+    private final Long thickStartBp;
+    private final Long thickEndBp;
+    private final Long thickStartPx;
+    private final Long thickEndPx;
+    private final String featureType;
 
     public TrackBin(final long startBp,
                     final long endBp,
                     final double value,
                     final long count,
                     final String label) {
-      this(startBp, endBp, value, count, label, null, null);
+      this(startBp, endBp, value, count, label, null, null, null, null, null, null, null, null);
     }
 
     public TrackBin(final long startBp,
@@ -2568,6 +3043,22 @@ public class Track1DManager {
                     final String label,
                     final Long startPx,
                     final Long endPx) {
+      this(startBp, endBp, value, count, label, startPx, endPx, null, null, null, null, null, null);
+    }
+
+    public TrackBin(final long startBp,
+                    final long endBp,
+                    final double value,
+                    final long count,
+                    final String label,
+                    final Long startPx,
+                    final Long endPx,
+                    final String strand,
+                    final Long thickStartBp,
+                    final Long thickEndBp,
+                    final Long thickStartPx,
+                    final Long thickEndPx,
+                    final String featureType) {
       this.startBp = startBp;
       this.endBp = endBp;
       this.value = value;
@@ -2575,6 +3066,12 @@ public class Track1DManager {
       this.label = label;
       this.startPx = startPx;
       this.endPx = endPx;
+      this.strand = strand;
+      this.thickStartBp = thickStartBp;
+      this.thickEndBp = thickEndBp;
+      this.thickStartPx = thickStartPx;
+      this.thickEndPx = thickEndPx;
+      this.featureType = featureType;
     }
   }
 
@@ -2596,6 +3093,7 @@ public class Track1DManager {
         color,
         visible,
         dataSource.featureCountHint(),
+        dataSource.renderStyle().name(),
         bamRenderMode.name(),
         bigWigAggregationMode.name()
       );
@@ -2607,6 +3105,7 @@ public class Track1DManager {
         name,
         type.name(),
         color,
+        dataSource.renderStyle().name(),
         List.of(),
         0.0d,
         message
@@ -2648,7 +3147,16 @@ public class Track1DManager {
         bigWigAggregationMode
       );
       final var maxValue = bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0.0d);
-      return new TrackRender(trackId, name, type.name(), color, bins, maxValue, null);
+      return new TrackRender(
+        trackId,
+        name,
+        type.name(),
+        color,
+        dataSource.renderStyle().name(),
+        bins,
+        maxValue,
+        null
+      );
     }
   }
 }
