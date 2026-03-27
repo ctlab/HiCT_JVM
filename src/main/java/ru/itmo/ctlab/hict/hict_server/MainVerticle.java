@@ -142,28 +142,28 @@ public class MainVerticle extends AbstractVerticle {
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.UI_UX,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MIN", 4),
           getIntegerSetting(event.result(), "HICT_WORKERS_UI_MAX", defaultPoolMax)
         )
       );
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MIN", 4),
           getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MAX", defaultPoolMax)
         )
       );
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.TILE,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MIN", 8),
           getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MAX", defaultPoolMax)
         )
       );
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.TRACK,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MIN", 4),
           getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MAX", defaultPoolMax)
         )
       );
