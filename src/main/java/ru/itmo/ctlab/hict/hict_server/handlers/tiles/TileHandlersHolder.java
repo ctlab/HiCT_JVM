@@ -465,6 +465,16 @@ public class TileHandlersHolder extends HandlersHolder {
     final var resolutionDescriptor = matrixWithWeights.resolutionDescriptor();
     final var bpResolution = chunkedFile.getResolutions()[resolutionDescriptor.getResolutionOrderInArray()];
     final var bpResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(0);
+    final var totalVisiblePixels = chunkedFile.getContigTree().getLengthInUnits(
+      QueryLengthUnit.PIXELS,
+      resolutionDescriptor
+    );
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var matrixSizeBins = chunkedFile.getMatrixSizeBins();
+    final var totalBinsAtResolution =
+      resolutionOrder >= 0 && resolutionOrder < matrixSizeBins.length
+        ? matrixSizeBins[resolutionOrder]
+        : Long.MAX_VALUE;
 
     final var rowPxValues = new long[rowCount];
     final var rowBinValues = new long[rowCount];
@@ -520,15 +530,26 @@ public class TileHandlersHolder extends HandlersHolder {
       final var rowBin = rowBinValues[row];
       final var rowBp = rowBpValues[row];
       for (int col = 0; col < columnCount; ++col) {
+        final var primaryValue = primaryValues[row][col];
+        final var colPx = colPxValues[col];
+        final var colBin = colBinValues[col];
+        final var rowOutside =
+          rowPx < 0L || rowPx >= totalVisiblePixels || rowBin < 0L || rowBin >= totalBinsAtResolution;
+        final var colOutside =
+          colPx < 0L || colPx >= totalVisiblePixels || colBin < 0L || colBin >= totalBinsAtResolution;
+        if (rowOutside || colOutside || !Double.isFinite(primaryValue)) {
+          rgba[pixelIndex++] = 0x00000000;
+          continue;
+        }
         final var colWeight = colWeights != null && col < colWeights.length ? colWeights[col] : 1.0d;
-        context.primaryValue = primaryValues[row][col];
-        context.secondaryValue = primaryValues[row][col];
+        context.primaryValue = primaryValue;
+        context.secondaryValue = primaryValue;
         context.rowWeight = rowWeight;
         context.colWeight = colWeight;
         context.rowPx = rowPx;
-        context.colPx = colPxValues[col];
+        context.colPx = colPx;
         context.rowBin = rowBin;
-        context.colBin = colBinValues[col];
+        context.colBin = colBin;
         context.rowBp = rowBp;
         context.colBp = colBpValues[col];
         context.bpResolution = bpResolution;
