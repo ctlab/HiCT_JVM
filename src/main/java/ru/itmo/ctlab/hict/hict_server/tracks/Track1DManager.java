@@ -43,6 +43,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
@@ -80,6 +81,7 @@ public class Track1DManager {
   );
   private static final int MAX_FEATURES_PER_QUERY = 250_000;
   private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
+  private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String PRECOMPUTE_CACHE_VERSION = "1";
   private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
   private static final int PRECOMPUTE_JOB_THREADS = resolveThreadCount("HICT_TRACK_PRECOMPUTE_JOB_THREADS", 2);
@@ -199,7 +201,40 @@ public class Track1DManager {
       true,
       dataSource,
       BamRenderMode.COVERAGE,
-      BigWigAggregationMode.MAX
+      BigWigAggregationMode.MAX,
+      false
+    );
+    try {
+      this.lock.writeLock().lock();
+      this.tracks.put(trackId, state);
+    } catch (final RuntimeException ex) {
+      closeDataSourceQuietly(dataSource);
+      throw ex;
+    } finally {
+      this.lock.writeLock().unlock();
+    }
+    return state.toSummary();
+  }
+
+  public @NotNull TrackSummary openCoolerWeightsTrack(final String requestedName,
+                                                      final String requestedColor) {
+    final var trackId = "trk_" + this.trackCounter.incrementAndGet();
+    final var resolvedName = (requestedName == null || requestedName.isBlank())
+      ? "Cooler weights"
+      : requestedName.trim();
+    final var color = normalizeColor(requestedColor, colorForIndex((int) this.trackCounter.get() - 1));
+    final TrackDataSource dataSource = new CoolerWeightsTrackDataSource();
+    final var state = new TrackState(
+      trackId,
+      resolvedName,
+      TrackType.COOLER_WEIGHTS,
+      COOLER_WEIGHTS_SOURCE_FILE,
+      color,
+      true,
+      dataSource,
+      BamRenderMode.COVERAGE,
+      BigWigAggregationMode.MAX,
+      false
     );
     try {
       this.lock.writeLock().lock();
@@ -282,7 +317,8 @@ public class Track1DManager {
                                            final String color,
                                            final String name,
                                            final String renderMode,
-                                           final String aggregationMode) {
+                                           final String aggregationMode,
+                                           final Boolean logScale) {
     try {
       this.lock.writeLock().lock();
       final var current = this.tracks.get(trackId);
@@ -294,7 +330,8 @@ public class Track1DManager {
         (color == null || color.isBlank()) ? current.color : normalizeColor(color, current.color),
         (name == null || name.isBlank()) ? current.name : name.trim(),
         parseBamRenderMode(renderMode, current.bamRenderMode()),
-        parseBigWigAggregationMode(aggregationMode, current.bigWigAggregationMode())
+        parseBigWigAggregationMode(aggregationMode, current.bigWigAggregationMode()),
+        logScale == null ? current.logScale() : logScale
       );
       this.tracks.put(trackId, updated);
       return updated.toSummary();
@@ -460,7 +497,15 @@ public class Track1DManager {
             if (maybePrecomputed != null) {
               trackRenders.add(maybePrecomputed);
             } else {
-              trackRenders.add(track.query(sourceToAssemblySegments, queryStartPx, queryEndPx, safeWidth, bpResolution));
+              trackRenders.add(track.query(
+                chunkedFile,
+                sourceToAssemblySegments,
+                segmentsBuildResult.orderedSegments(),
+                queryStartPx,
+                queryEndPx,
+                safeWidth,
+                bpResolution
+              ));
             }
           } catch (final RuntimeException ex) {
             final var message = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
@@ -723,8 +768,10 @@ public class Track1DManager {
     final var bigWigAggregationMode = bigWigModeForKey(track.bigWigAggregationMode(), task.modeKey());
     final var bins = queryBinsForTrack(
       track.type(),
+      chunkedFile,
       track.dataSource(),
       segmentsBuildResult.sourceToAssemblySegments(),
+      segmentsBuildResult.orderedSegments(),
       0L,
       task.totalVisiblePixels(),
       totalVisiblePixels,
@@ -876,19 +923,30 @@ public class Track1DManager {
 
   private @NotNull Path sidecarPathForTrackCache(final @NotNull ChunkedFile chunkedFile,
                                                  final @NotNull TrackState track) {
-    final var trackSource = resolveDataPath(track.sourceFile());
     final var hictPath = chunkedFile.getHdfFilePath();
     final String fingerprint;
     try {
-      fingerprint = String.join("|",
-        PRECOMPUTE_CACHE_VERSION,
-        trackSource.toString(),
-        String.valueOf(Files.size(trackSource)),
-        String.valueOf(Files.getLastModifiedTime(trackSource).toMillis()),
-        hictPath.toString(),
-        String.valueOf(Files.size(hictPath)),
-        String.valueOf(Files.getLastModifiedTime(hictPath).toMillis())
-      );
+      if (track.type() == TrackType.COOLER_WEIGHTS) {
+        fingerprint = String.join("|",
+          PRECOMPUTE_CACHE_VERSION,
+          track.type().name(),
+          track.sourceFile(),
+          hictPath.toString(),
+          String.valueOf(Files.size(hictPath)),
+          String.valueOf(Files.getLastModifiedTime(hictPath).toMillis())
+        );
+      } else {
+        final var trackSource = resolveDataPath(track.sourceFile());
+        fingerprint = String.join("|",
+          PRECOMPUTE_CACHE_VERSION,
+          trackSource.toString(),
+          String.valueOf(Files.size(trackSource)),
+          String.valueOf(Files.getLastModifiedTime(trackSource).toMillis()),
+          hictPath.toString(),
+          String.valueOf(Files.size(hictPath)),
+          String.valueOf(Files.getLastModifiedTime(hictPath).toMillis())
+        );
+      }
     } catch (final IOException e) {
       throw new RuntimeException("Cannot build precompute fingerprint for " + track.sourceFile(), e);
     }
@@ -958,7 +1016,7 @@ public class Track1DManager {
     return switch (track.type()) {
       case BIGWIG -> List.of("MAX", "MEAN", "SUM");
       case BAM -> List.of("COVERAGE", "READ_DENSITY");
-      case BED, VCF, GFF_GTF -> List.of("DEFAULT");
+      case BED, VCF, GFF_GTF, COOLER_WEIGHTS -> List.of("DEFAULT");
       case UNSUPPORTED -> List.of("DEFAULT");
     };
   }
@@ -967,7 +1025,7 @@ public class Track1DManager {
     return switch (track.type()) {
       case BIGWIG -> track.bigWigAggregationMode().name();
       case BAM -> track.bamRenderMode().name();
-      case BED, VCF, GFF_GTF, UNSUPPORTED -> "DEFAULT";
+      case BED, VCF, GFF_GTF, COOLER_WEIGHTS, UNSUPPORTED -> "DEFAULT";
     };
   }
 
@@ -1001,7 +1059,7 @@ public class Track1DManager {
         case COVERAGE -> PrecomputeAggregationStrategy.MEAN_ALL_PIXELS;
         case READ_DENSITY -> PrecomputeAggregationStrategy.SUM;
       };
-      case BED, VCF, GFF_GTF, UNSUPPORTED -> PrecomputeAggregationStrategy.MAX;
+      case BED, VCF, GFF_GTF, COOLER_WEIGHTS, UNSUPPORTED -> PrecomputeAggregationStrategy.MAX;
     };
   }
 
@@ -1103,6 +1161,7 @@ public class Track1DManager {
       case GFF_GTF -> InMemoryTrackDataSource.fromGffOrGtf(resolvedPath);
       case BIGWIG -> new BigWigTrackDataSource(resolvedPath);
       case BAM -> new BamTrackDataSource(resolvedPath);
+      case COOLER_WEIGHTS -> new CoolerWeightsTrackDataSource();
       case UNSUPPORTED -> throw new IllegalStateException("Unexpected unsupported track type");
     };
   }
@@ -1871,8 +1930,10 @@ public class Track1DManager {
   }
 
   private static @NotNull List<TrackBin> queryBinsForTrack(final @NotNull TrackType type,
+                                                           final @NotNull ChunkedFile chunkedFile,
                                                            final @NotNull TrackDataSource dataSource,
                                                            final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                           final @NotNull List<AssemblySegment> orderedSegments,
                                                            final long queryStartPx,
                                                            final long queryEndPx,
                                                            final int widthPx,
@@ -1897,6 +1958,16 @@ public class Track1DManager {
         widthPx,
         bpResolution,
         bigWigAggregationMode
+      );
+    }
+    if (type == TrackType.COOLER_WEIGHTS && dataSource instanceof CoolerWeightsTrackDataSource coolerWeightsTrackDataSource) {
+      return coolerWeightsTrackDataSource.queryBins(
+        chunkedFile,
+        orderedSegments,
+        queryStartPx,
+        queryEndPx,
+        widthPx,
+        bpResolution
       );
     }
     if (type == TrackType.BED || type == TrackType.GFF_GTF) {
@@ -1936,6 +2007,7 @@ public class Track1DManager {
     GFF_GTF,
     BIGWIG,
     BAM,
+    COOLER_WEIGHTS,
     UNSUPPORTED;
 
     private static @NotNull TrackType fromPath(final @NotNull Path path) {
@@ -2385,6 +2457,136 @@ public class Track1DManager {
         }
       }
       return lo;
+    }
+  }
+
+  private static final class CoolerWeightsTrackDataSource implements TrackDataSource {
+    @Override
+    public long featureCountHint() {
+      return -1L;
+    }
+
+    @Override
+    public @NotNull Set<String> sourceNames() {
+      return Set.of();
+    }
+
+    @Override
+    public @NotNull List<ProjectedFeature> projectFeatures(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                           final long queryStartPx,
+                                                           final long queryEndPx,
+                                                           final long bpResolution) {
+      return List.of();
+    }
+
+    public @NotNull List<TrackBin> queryBins(final @NotNull ChunkedFile chunkedFile,
+                                             final @NotNull List<AssemblySegment> orderedSegments,
+                                             final long queryStartPx,
+                                             final long queryEndPx,
+                                             final int widthPx,
+                                             final long bpResolution) {
+      final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
+      if (resolutionOrder == null || resolutionOrder <= 0) {
+        return List.of();
+      }
+      final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
+      final var atus = chunkedFile.matrixQueries().getATUsForRange(
+        resolutionDescriptor,
+        queryStartPx,
+        queryEndPx,
+        true
+      );
+      if (atus.isEmpty()) {
+        return List.of();
+      }
+
+      final int bucketCount = Math.max(1, widthPx);
+      final long span = Math.max(1L, queryEndPx - queryStartPx);
+      final double bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+      final double[] maxValues = new double[bucketCount];
+      final long[] counts = new long[bucketCount];
+
+      long pxCursor = queryStartPx;
+      for (final var atu : atus) {
+        final var weights = atu.getStripeDescriptor().bin_weights();
+        final var start = atu.getStartIndexInStripeIncl();
+        final var end = atu.getEndIndexInStripeExcl();
+        if (start < 0 || end <= start || end > weights.length) {
+          continue;
+        }
+        if (atu.getDirection() == ATUDirection.FORWARD) {
+          for (int i = start; i < end; i++) {
+            accumulateCoolerWeightValue(
+              pxCursor,
+              weights[i],
+              queryStartPx,
+              bucketSpan,
+              maxValues,
+              counts
+            );
+            pxCursor++;
+          }
+        } else {
+          for (int i = end - 1; i >= start; i--) {
+            accumulateCoolerWeightValue(
+              pxCursor,
+              weights[i],
+              queryStartPx,
+              bucketSpan,
+              maxValues,
+              counts
+            );
+            pxCursor++;
+          }
+        }
+      }
+      return finalizeCoolerWeightBins(
+        queryStartPx,
+        queryEndPx,
+        bucketSpan,
+        orderedSegments,
+        bpResolution,
+        maxValues,
+        counts
+      );
+    }
+
+    private static void accumulateCoolerWeightValue(final long valuePx,
+                                                    final double value,
+                                                    final long queryStartPx,
+                                                    final double bucketSpan,
+                                                    final double[] maxValues,
+                                                    final long[] counts) {
+      if (!Double.isFinite(value)) {
+        return;
+      }
+      final var safeValue = Math.max(0.0d, value);
+      int idx = (int) Math.floor((valuePx - queryStartPx) / bucketSpan);
+      idx = Math.max(0, Math.min(idx, maxValues.length - 1));
+      maxValues[idx] = Math.max(maxValues[idx], safeValue);
+      counts[idx]++;
+    }
+
+    private static @NotNull List<TrackBin> finalizeCoolerWeightBins(final long queryStartPx,
+                                                                     final long queryEndPx,
+                                                                     final double bucketSpan,
+                                                                     final @NotNull List<AssemblySegment> orderedSegments,
+                                                                     final long bpResolution,
+                                                                     final double[] maxValues,
+                                                                     final long[] counts) {
+      final var bins = new ArrayList<TrackBin>(counts.length);
+      for (int i = 0; i < counts.length; i++) {
+        if (counts[i] <= 0L) {
+          continue;
+        }
+        final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
+        final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
+        final var safeEndPx = Math.max(startPx + 1L, endPx);
+        final var startBp = mapVisiblePxToAssemblyBp(startPx, orderedSegments, bpResolution);
+        final var endBp = mapVisiblePxToAssemblyBp(Math.max(startPx, safeEndPx - 1L), orderedSegments, bpResolution) + bpResolution;
+        bins.add(new TrackBin(startBp, endBp, maxValues[i], counts[i], null, startPx, safeEndPx));
+      }
+      return bins;
     }
   }
 
@@ -2997,6 +3199,7 @@ public class Track1DManager {
     private final @NotNull String renderStyle;
     private final @NotNull String renderMode;
     private final @NotNull String aggregationMode;
+    private final boolean logScale;
   }
 
   @Getter
@@ -3083,7 +3286,8 @@ public class Track1DManager {
                             boolean visible,
                             @NotNull TrackDataSource dataSource,
                             @NotNull BamRenderMode bamRenderMode,
-                            @NotNull BigWigAggregationMode bigWigAggregationMode) {
+                            @NotNull BigWigAggregationMode bigWigAggregationMode,
+                            boolean logScale) {
     private TrackSummary toSummary() {
       return new TrackSummary(
         trackId,
@@ -3095,7 +3299,8 @@ public class Track1DManager {
         dataSource.featureCountHint(),
         dataSource.renderStyle().name(),
         bamRenderMode.name(),
-        bigWigAggregationMode.name()
+        bigWigAggregationMode.name(),
+        logScale
       );
     }
 
@@ -3116,7 +3321,8 @@ public class Track1DManager {
                                    final @NotNull String newColor,
                                    final @NotNull String newName,
                                    final @NotNull BamRenderMode newBamRenderMode,
-                                   final @NotNull BigWigAggregationMode newBigWigAggregationMode) {
+                                   final @NotNull BigWigAggregationMode newBigWigAggregationMode,
+                                   final boolean newLogScale) {
       return new TrackState(
         trackId,
         newName,
@@ -3126,19 +3332,24 @@ public class Track1DManager {
         newVisible,
         dataSource,
         newBamRenderMode,
-        newBigWigAggregationMode
+        newBigWigAggregationMode,
+        newLogScale
       );
     }
 
-    private TrackRender query(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+    private TrackRender query(final @NotNull ChunkedFile chunkedFile,
+                              final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                              final @NotNull List<AssemblySegment> orderedSegments,
                               final long queryStartPx,
                               final long queryEndPx,
                               final int widthPx,
                               final long bpResolution) {
       final var bins = queryBinsForTrack(
         type,
+        chunkedFile,
         dataSource,
         sourceToAssemblySegments,
+        orderedSegments,
         queryStartPx,
         queryEndPx,
         widthPx,

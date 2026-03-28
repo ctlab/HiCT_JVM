@@ -106,6 +106,39 @@ public class TrackHandlersHolder extends HandlersHolder {
       );
     });
 
+    router.post("/tracks/open_cooler_weights").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final var request = ctx.body() == null ? null : ctx.body().asJsonObject();
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final var summary = manager.openCoolerWeightsTrack(
+            request == null ? null : request.getString("name"),
+            request == null ? null : request.getString("color")
+          );
+          manager.startPrecompute(chunkedFile, summary.getTrackId(), false);
+          return summary;
+        },
+        summary -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(summary))
+      );
+    });
+
     router.post("/tracks/probe").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -180,7 +213,8 @@ public class TrackHandlersHolder extends HandlersHolder {
           request.getString("color"),
           request.getString("name"),
           request.getString("renderMode"),
-          request.getString("aggregationMode")
+          request.getString("aggregationMode"),
+          request.containsKey("logScale") ? request.getBoolean("logScale") : null
         ),
         updated -> ctx.response()
           .putHeader("content-type", "application/json")

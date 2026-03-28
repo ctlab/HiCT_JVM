@@ -31,6 +31,7 @@ import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
 import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 
 import java.nio.file.Path;
@@ -64,5 +65,11 @@ public class ShareableWrappers {
   @RequiredArgsConstructor
   public static class RequestTaskSchedulerWrapper implements Shareable {
     private final @NotNull RequestTaskScheduler requestTaskScheduler;
+  }
+
+  @Getter
+  @RequiredArgsConstructor
+  public static class RenderPipelineConfigWrapper implements Shareable {
+    private final @NotNull RenderPipelineConfig renderPipelineConfig;
   }
 }

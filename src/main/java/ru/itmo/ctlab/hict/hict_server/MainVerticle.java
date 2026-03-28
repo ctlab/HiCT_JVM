@@ -56,6 +56,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tracks.TrackHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
@@ -208,6 +209,10 @@ public class MainVerticle extends AbstractVerticle {
 
         map.put("visualizationOptions",
             new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions));
+        map.put(
+          RenderPipelineConfig.LOCAL_MAP_KEY,
+          new ShareableWrappers.RenderPipelineConfigWrapper(RenderPipelineConfig.disabled())
+        );
 
         log.info("Added to local map");
       } finally {
