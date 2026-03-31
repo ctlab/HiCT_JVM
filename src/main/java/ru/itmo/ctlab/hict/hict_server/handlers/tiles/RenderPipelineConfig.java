@@ -26,6 +26,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 
 public final class RenderPipelineConfig {
   public static final String LOCAL_MAP_KEY = "renderPipelineConfig";
@@ -52,6 +53,18 @@ public final class RenderPipelineConfig {
   public static @NotNull RenderPipelineConfig disabled() {
     final var defaultNode = defaultSourceNode("PRIMARY");
     return new RenderPipelineConfig(false, false, defaultNode, defaultNode);
+  }
+
+  public static @NotNull RenderPipelineConfig fromVisualizationOptions(final @NotNull SimpleVisualizationOptions options,
+                                                                       final boolean enabled,
+                                                                       final boolean swapUpperLower) {
+    final var expression = buildExpressionFromVisualizationOptions(options);
+    return new RenderPipelineConfig(
+      enabled,
+      swapUpperLower,
+      expression,
+      expression.copy()
+    );
   }
 
   public static @NotNull RenderPipelineConfig fromJson(final JsonObject json) {
@@ -82,6 +95,10 @@ public final class RenderPipelineConfig {
     return this.enabled;
   }
 
+  public boolean swapUpperLower() {
+    return this.swapUpperLower;
+  }
+
   public double evaluate(final boolean upperTriangle, final @NotNull MutablePixelContext context) {
     final var useUpper = this.swapUpperLower ? !upperTriangle : upperTriangle;
     final var raw = useUpper ? this.upperExpression.eval(context) : this.lowerExpression.eval(context);
@@ -95,6 +112,85 @@ public final class RenderPipelineConfig {
     return new JsonObject()
       .put("type", "source")
       .put("source", source);
+  }
+
+  private static @NotNull JsonObject constantNode(final double value) {
+    return new JsonObject()
+      .put("type", "constant")
+      .put("value", value);
+  }
+
+  private static @NotNull JsonObject dynamicNode(final @NotNull String field) {
+    return new JsonObject()
+      .put("type", "dynamic")
+      .put("field", field);
+  }
+
+  private static @NotNull JsonObject unaryNode(final @NotNull String op,
+                                               final @NotNull JsonObject input) {
+    return new JsonObject()
+      .put("type", "unary")
+      .put("op", op)
+      .put("input", input.copy());
+  }
+
+  private static @NotNull JsonObject binaryNode(final @NotNull String op,
+                                                final @NotNull JsonObject left,
+                                                final @NotNull JsonObject right) {
+    return new JsonObject()
+      .put("type", "binary")
+      .put("op", op)
+      .put("left", left.copy())
+      .put("right", right.copy());
+  }
+
+  private static @NotNull JsonObject applyLogByBase(final @NotNull JsonObject input,
+                                                     final double base) {
+    if (!Double.isFinite(base) || base <= 0.0d) {
+      return input;
+    }
+    final var lnBase = Math.log(Math.max(Double.MIN_NORMAL, base));
+    if (!Double.isFinite(lnBase) || lnBase <= 0.0d) {
+      return input;
+    }
+    return binaryNode(
+      "DIV",
+      unaryNode("LOG1P", input),
+      constantNode(lnBase)
+    );
+  }
+
+  private static @NotNull JsonObject buildExpressionFromVisualizationOptions(final @NotNull SimpleVisualizationOptions options) {
+    JsonObject expression = defaultSourceNode("PRIMARY");
+
+    expression = applyLogByBase(expression, options.getPreLogBase());
+
+    if (options.isResolutionScaling()) {
+      expression = binaryNode(
+        "MUL",
+        expression,
+        dynamicNode("RESOLUTION_SCALING_COEFF")
+      );
+    }
+
+    if (options.isResolutionLinearScaling()) {
+      expression = binaryNode(
+        "MUL",
+        expression,
+        dynamicNode("RESOLUTION_LINEAR_SCALING_COEFF")
+      );
+    }
+
+    if (options.isApplyCoolerWeights()) {
+      expression = binaryNode(
+        "MUL",
+        binaryNode("MUL", expression, dynamicNode("ROW_WEIGHT")),
+        dynamicNode("COL_WEIGHT")
+      );
+    }
+
+    expression = applyLogByBase(expression, options.getPostLogBase());
+    return expression;
   }
 
   private static @NotNull CompiledExpression compileExpression(final @NotNull JsonObject node) {
@@ -123,6 +219,8 @@ public final class RenderPipelineConfig {
           case "COL_PX" -> context -> context.colPx;
           case "ROW_WEIGHT" -> context -> context.rowWeight;
           case "COL_WEIGHT" -> context -> context.colWeight;
+          case "RESOLUTION_SCALING_COEFF" -> context -> context.resolutionScalingCoeff;
+          case "RESOLUTION_LINEAR_SCALING_COEFF" -> context -> context.resolutionLinearScalingCoeff;
           case "DIAG_BP_DISTANCE" -> context -> Math.abs(context.rowBp - context.colBp);
           case "DIAG_BIN_DISTANCE" -> context -> Math.abs(context.rowBin - context.colBin);
           case "DIAG_PX_DISTANCE" -> context -> Math.abs(context.rowPx - context.colPx);
@@ -182,6 +280,8 @@ public final class RenderPipelineConfig {
     public double secondaryValue;
     public double rowWeight;
     public double colWeight;
+    public double resolutionScalingCoeff;
+    public double resolutionLinearScalingCoeff;
     public long rowPx;
     public long colPx;
     public long rowBin;

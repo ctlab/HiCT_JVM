@@ -80,7 +80,21 @@ public class TileHandlersHolder extends HandlersHolder {
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
-          map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(request.toEntity()));
+          final var optionsEntity = request.toEntity();
+          map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(optionsEntity));
+          final var previousPipelineWrapper =
+            (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
+          final var previousPipeline =
+            previousPipelineWrapper != null ? previousPipelineWrapper.getRenderPipelineConfig() : RenderPipelineConfig.disabled();
+          final var syncedPipeline = RenderPipelineConfig.fromVisualizationOptions(
+            optionsEntity,
+            previousPipeline.enabled(),
+            previousPipeline.swapUpperLower()
+          );
+          map.put(
+            RenderPipelineConfig.LOCAL_MAP_KEY,
+            new ShareableWrappers.RenderPipelineConfigWrapper(syncedPipeline)
+          );
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
             throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
@@ -93,6 +107,7 @@ public class TileHandlersHolder extends HandlersHolder {
             throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
           }
           map.put("TileStatisticHolder", TileStatisticHolder.resetRangesKeepingVersion(stats, chunkedFile.getResolutions().length));
+          scheduler.bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
           final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
           if (visualizationOptionsWrapper == null) {
             throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
@@ -523,6 +538,16 @@ public class TileHandlersHolder extends HandlersHolder {
     final var context = new RenderPipelineConfig.MutablePixelContext();
     final var rowWeights = primaryTile.rowWeights();
     final var colWeights = primaryTile.columnWeights();
+    final var resolutionScalingCoeffs = chunkedFile.getResolutionScalingCoefficient();
+    final var resolutionLinearScalingCoeffs = chunkedFile.getResolutionLinearScalingCoefficient();
+    final var resolutionScalingCoeff =
+      resolutionOrder >= 0 && resolutionOrder < resolutionScalingCoeffs.length
+        ? resolutionScalingCoeffs[resolutionOrder]
+        : 1.0d;
+    final var resolutionLinearScalingCoeff =
+      resolutionOrder >= 0 && resolutionOrder < resolutionLinearScalingCoeffs.length
+        ? resolutionLinearScalingCoeffs[resolutionOrder]
+        : 1.0d;
     int pixelIndex = 0;
     for (int row = 0; row < rowCount; ++row) {
       final var rowWeight = rowWeights != null && row < rowWeights.length ? rowWeights[row] : 1.0d;
@@ -546,6 +571,8 @@ public class TileHandlersHolder extends HandlersHolder {
         context.secondaryValue = primaryValue;
         context.rowWeight = rowWeight;
         context.colWeight = colWeight;
+        context.resolutionScalingCoeff = resolutionScalingCoeff;
+        context.resolutionLinearScalingCoeff = resolutionLinearScalingCoeff;
         context.rowPx = rowPx;
         context.colPx = colPx;
         context.rowBin = rowBin;
