@@ -74,6 +74,9 @@ WARNING: WebUI conversion is experimental and may be slower or less stable than 
 
 WARNING: The API is still evolving. Endpoints, parameters, and response formats may change.
 
+For the Python client-oriented endpoint contract used in `jvm-api-v1`, see:
+`docs/jvm_api_v1.md`.
+
 Example (Python) for fetching a submatrix tile as an image:
 
 ```python
