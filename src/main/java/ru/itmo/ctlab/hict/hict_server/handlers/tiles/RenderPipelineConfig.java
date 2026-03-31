@@ -38,6 +38,7 @@ import java.util.Set;
 
 public final class RenderPipelineConfig {
   public static final String LOCAL_MAP_KEY = "renderPipelineConfig";
+  public static final String BUILTIN_COOLER_WEIGHTS_TRACK_ID = "__builtin_cooler_weights__";
 
   private final boolean enabled;
   private final boolean swapUpperLower;
@@ -62,8 +63,8 @@ public final class RenderPipelineConfig {
   }
 
   public static @NotNull RenderPipelineConfig disabled() {
-    final var defaultNode = defaultSourceNode("PRIMARY");
-    return new RenderPipelineConfig(false, false, defaultNode, defaultNode);
+    final var defaultExpression = defaultColdHotExpression();
+    return new RenderPipelineConfig(false, false, defaultExpression, defaultExpression.copy());
   }
 
   public static @NotNull RenderPipelineConfig fromVisualizationOptions(final @NotNull SimpleVisualizationOptions options,
@@ -89,8 +90,8 @@ public final class RenderPipelineConfig {
     return new RenderPipelineConfig(
       enabled,
       swapUpperLower,
-      upper != null ? upper : defaultSourceNode("PRIMARY"),
-      lower != null ? lower : defaultSourceNode("PRIMARY")
+      upper != null ? upper : defaultColdHotExpression(),
+      lower != null ? lower : defaultColdHotExpression()
     );
   }
 
@@ -153,12 +154,36 @@ public final class RenderPipelineConfig {
       .put("field", field);
   }
 
+  private static @NotNull JsonObject trackNode(final @NotNull String trackId,
+                                               final @NotNull String axis) {
+    return new JsonObject()
+      .put("type", "track1d")
+      .put("trackId", trackId)
+      .put("axis", axis);
+  }
+
   private static @NotNull JsonObject unaryNode(final @NotNull String op,
                                                final @NotNull JsonObject input) {
     return new JsonObject()
       .put("type", "unary")
       .put("op", op)
       .put("input", input.copy());
+  }
+
+  private static @NotNull JsonObject logNode(final @NotNull JsonObject input,
+                                             final double base) {
+    return new JsonObject()
+      .put("type", "log")
+      .put("input", input.copy())
+      .put("base", base);
+  }
+
+  private static @NotNull JsonObject logInputNode(final @NotNull JsonObject input,
+                                                  final @NotNull JsonObject baseExpression) {
+    return new JsonObject()
+      .put("type", "log_input")
+      .put("input", input.copy())
+      .put("base", baseExpression.copy());
   }
 
   private static @NotNull JsonObject binaryNode(final @NotNull String op,
@@ -198,18 +223,10 @@ public final class RenderPipelineConfig {
 
   private static @NotNull JsonObject applyLogByBase(final @NotNull JsonObject input,
                                                      final double base) {
-    if (!Double.isFinite(base) || base <= 0.0d) {
+    if (!Double.isFinite(base) || base <= 0.0d || Math.abs(base - 1.0d) < 1e-9d) {
       return input;
     }
-    final var lnBase = Math.log(Math.max(Double.MIN_NORMAL, base));
-    if (!Double.isFinite(lnBase) || lnBase <= 0.0d) {
-      return input;
-    }
-    return binaryNode(
-      "DIV",
-      unaryNode("LOG1P", input),
-      constantNode(lnBase)
-    );
+    return logNode(input, base);
   }
 
   private static @NotNull String colorToHex(final @NotNull Color color) {
@@ -241,10 +258,15 @@ public final class RenderPipelineConfig {
     }
 
     if (options.isApplyCoolerWeights()) {
+      final var coolerWeights = binaryNode(
+        "MUL",
+        trackNode(BUILTIN_COOLER_WEIGHTS_TRACK_ID, "ROW"),
+        trackNode(BUILTIN_COOLER_WEIGHTS_TRACK_ID, "COL")
+      );
       signalExpression = binaryNode(
         "MUL",
-        binaryNode("MUL", signalExpression, dynamicNode("ROW_WEIGHT")),
-        dynamicNode("COL_WEIGHT")
+        signalExpression,
+        coolerWeights
       );
     }
 
@@ -261,18 +283,35 @@ public final class RenderPipelineConfig {
       maxSignal = gradient.getMaxSignal();
     }
 
-    final var clampedSignal = clampNode(
-      signalExpression,
-      minSignal,
-      maxSignal
-    );
-
     return colormapNode(
-      clampedSignal,
+      signalExpression,
       colorToHex(startColor),
       colorToHex(endColor),
       minSignal,
       maxSignal
+    );
+  }
+
+  private static @NotNull JsonObject defaultColdHotExpression() {
+    var signalExpression = defaultSourceNode("PRIMARY");
+    signalExpression = applyLogByBase(signalExpression, 10.0d);
+    final var coolerWeights = binaryNode(
+      "MUL",
+      trackNode(BUILTIN_COOLER_WEIGHTS_TRACK_ID, "ROW"),
+      trackNode(BUILTIN_COOLER_WEIGHTS_TRACK_ID, "COL")
+    );
+    signalExpression = binaryNode(
+      "MUL",
+      signalExpression,
+      coolerWeights
+    );
+    signalExpression = applyLogByBase(signalExpression, 5.0d);
+    return colormapNode(
+      signalExpression,
+      "#0013e300",
+      "#e80000ff",
+      0.0d,
+      0.75d
     );
   }
 
@@ -283,7 +322,7 @@ public final class RenderPipelineConfig {
       final var colorExpression = compileColorExpression(node, requiredTrackBindings);
       final CompiledNumericExpression fallbackSignalExpression =
         "COLORMAP".equals(nodeType)
-          ? compileNumericExpression(node.getJsonObject("input", defaultSourceNode("PRIMARY")), requiredTrackBindings)
+          ? compileImplicitColormapSignalExpression(node, requiredTrackBindings)
           : context -> 0.0d;
       return new CompiledRootExpression(true, fallbackSignalExpression, colorExpression);
     }
@@ -337,6 +376,9 @@ public final class RenderPipelineConfig {
       case "TRACK1D" -> {
         final var trackId = node.getString("trackId", "").trim();
         final var axis = parseTrackAxis(node.getString("axis", "ROW"));
+        if (isBuiltinCoolerWeightsTrackId(trackId)) {
+          yield axis == TrackAxis.ROW ? context -> context.rowWeight : context -> context.colWeight;
+        }
         if (!trackId.isBlank()) {
           requiredTrackBindings.add(new TrackBinding(trackId, axis));
         }
@@ -357,6 +399,28 @@ public final class RenderPipelineConfig {
           case "NEG" -> context -> -inputExpression.eval(context);
           default -> throw new IllegalArgumentException("Unsupported unary operation: " + op);
         };
+      }
+      case "LOG" -> {
+        final var inputExpression = compileNumericExpression(
+          node.getJsonObject("input", defaultSourceNode("PRIMARY")),
+          requiredTrackBindings
+        );
+        final var base = node.getDouble("base", Math.E);
+        yield context -> evalLogByBase(inputExpression.eval(context), base);
+      }
+      case "LOG_INPUT" -> {
+        final var inputExpression = compileNumericExpression(
+          node.getJsonObject("input", defaultSourceNode("PRIMARY")),
+          requiredTrackBindings
+        );
+        final var baseExpression = compileNumericChildExpression(
+          node,
+          "base",
+          "baseValue",
+          Math.E,
+          requiredTrackBindings
+        );
+        yield context -> evalLogByBase(inputExpression.eval(context), baseExpression.eval(context));
       }
       case "BINARY" -> {
         final var op = node.getString("op", "ADD").trim().toUpperCase(Locale.ROOT);
@@ -408,6 +472,54 @@ public final class RenderPipelineConfig {
       case "COLORMAP" -> compileNumericExpression(node.getJsonObject("input", defaultSourceNode("PRIMARY")), requiredTrackBindings);
       default -> throw new IllegalArgumentException("Unsupported expression type: " + nodeType);
     };
+  }
+
+  private static double evalLogByBase(final double rawValue,
+                                      final double rawBase) {
+    final var value = Math.max(0.0d, rawValue);
+    final var base = rawBase;
+    if (!Double.isFinite(base) || base <= 0.0d || Math.abs(base - 1.0d) < 1e-9d) {
+      return Math.log1p(value);
+    }
+    final var denominator = Math.log(base);
+    if (!Double.isFinite(denominator) || Math.abs(denominator) < 1e-12d) {
+      return Math.log1p(value);
+    }
+    return Math.log1p(value) / denominator;
+  }
+
+  private static boolean isBuiltinCoolerWeightsTrackId(final @NotNull String trackId) {
+    final var normalized = trackId.trim().toLowerCase(Locale.ROOT);
+    return BUILTIN_COOLER_WEIGHTS_TRACK_ID.equals(normalized) || "__builtin_cooler_weights".equals(normalized);
+  }
+
+  private static @NotNull CompiledNumericExpression compileImplicitColormapSignalExpression(
+    final @NotNull JsonObject colormapNode,
+    final @NotNull Set<TrackBinding> requiredTrackBindings
+  ) {
+    final var clampNode = new JsonObject()
+      .put("type", "clamp")
+      .put("input", colormapNode.getJsonObject("input", defaultSourceNode("PRIMARY")));
+
+    final var minNode = colormapNode.getValue("min");
+    final var maxNode = colormapNode.getValue("max");
+    if (minNode instanceof JsonObject minExpression) {
+      clampNode.put("min", minExpression.copy());
+    } else if (colormapNode.containsKey("minValue")) {
+      clampNode.put("minValue", colormapNode.getValue("minValue"));
+    } else {
+      clampNode.put("minValue", colormapNode.getDouble("minSignal", 0.0d));
+    }
+
+    if (maxNode instanceof JsonObject maxExpression) {
+      clampNode.put("max", maxExpression.copy());
+    } else if (colormapNode.containsKey("maxValue")) {
+      clampNode.put("maxValue", colormapNode.getValue("maxValue"));
+    } else {
+      clampNode.put("maxValue", colormapNode.getDouble("maxSignal", 1.0d));
+    }
+
+    return compileNumericExpression(clampNode, requiredTrackBindings);
   }
 
   private static @NotNull CompiledNumericExpression compileNumericChildExpression(final @NotNull JsonObject node,

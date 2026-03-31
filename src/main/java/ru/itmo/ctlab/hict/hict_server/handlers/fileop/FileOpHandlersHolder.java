@@ -60,6 +60,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
   private static final String PRIMARY_CHUNKED_FILE_KEY = "chunkedFile";
   private static final String SECONDARY_CHUNKED_FILE_KEY = "chunkedFileSecondary";
   private static final String OPENED_SECONDARY_FILENAME_KEY = "openedSecondaryFilename";
+  private static final String SECONDARY_COMPATIBILITY_KEY = "secondarySourceCompatibility";
   private static final String ASSEMBLY_SOURCE_KEY = "assemblyInfoSource";
   private static final String ASSEMBLY_SOURCE_PRIMARY = "PRIMARY";
   private static final String ASSEMBLY_SOURCE_SECONDARY = "SECONDARY";
@@ -104,6 +105,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
+          map.remove(SECONDARY_COMPATIBILITY_KEY);
           map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
 
           final var oldTrackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
@@ -213,6 +215,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           final var requestJson = ctx.body().asJsonObject();
           final var filename = requestJson.getString("filename");
+          final var allowMismatch = requestJson.getBoolean("allowMismatch", false);
           if (filename == null || filename.isBlank()) {
             throw new IllegalArgumentException("Secondary source filename is required");
           }
@@ -231,8 +234,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
               (int) map.getOrDefault("MAX_DS_POOL", 16)
             )
           );
+          final SecondaryCompatibility compatibility;
           try {
-            validateSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryChunkedFile);
+            compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryChunkedFile);
           } catch (final RuntimeException ex) {
             try {
               secondaryChunkedFile.close();
@@ -241,15 +245,32 @@ public class FileOpHandlersHolder extends HandlersHolder {
             }
             throw ex;
           }
+          if (!compatibility.exactMatch() && !allowMismatch) {
+            try {
+              secondaryChunkedFile.close();
+            } catch (final Exception ignored) {
+              // no-op
+            }
+            final var currentStatus = secondaryStatusJson(map);
+            return currentStatus
+              .put("requiresConfirmation", true)
+              .put("requestedFilename", filename)
+              .put("compatibility", compatibility.toJson())
+              .put("warnings", compatibility.warningsAsJsonArray());
+          }
           closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
           map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
+          map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
           map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
           }
-          return secondaryStatusJson(map);
+          return secondaryStatusJson(map)
+            .put("requiresConfirmation", false)
+            .put("compatibility", compatibility.toJson())
+            .put("warnings", compatibility.warningsAsJsonArray());
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -271,6 +292,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
+          map.remove(SECONDARY_COMPATIBILITY_KEY);
           if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))) {
             map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
           }
@@ -389,6 +411,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
+          map.remove(SECONDARY_COMPATIBILITY_KEY);
           map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
           map.remove("TileStatisticHolder");
           map.remove("openedFilename");
@@ -633,24 +656,76 @@ public class FileOpHandlersHolder extends HandlersHolder {
     }
   }
 
-  private static void validateSecondaryCompatibility(final @NotNull ChunkedFile primary,
-                                                     final @NotNull ChunkedFile secondary) {
-    if (!Arrays.equals(primary.getResolutions(), secondary.getResolutions())) {
-      throw new IllegalArgumentException("Secondary source has different resolution set");
-    }
-    if (!Arrays.equals(primary.getMatrixSizeBins(), secondary.getMatrixSizeBins())) {
-      throw new IllegalArgumentException("Secondary source has different matrix sizes per resolution");
-    }
+  private static @NotNull SecondaryCompatibility analyzeSecondaryCompatibility(final @NotNull ChunkedFile primary,
+                                                                               final @NotNull ChunkedFile secondary) {
+    final var primaryResolutions = primary.getResolutions().clone();
+    final var secondaryResolutions = secondary.getResolutions().clone();
+    final var primaryMatrixSizeBins = primary.getMatrixSizeBins().clone();
+    final var secondaryMatrixSizeBins = secondary.getMatrixSizeBins().clone();
+    return new SecondaryCompatibility(
+      Arrays.equals(primaryResolutions, secondaryResolutions),
+      Arrays.equals(primaryMatrixSizeBins, secondaryMatrixSizeBins),
+      primaryMatrixSizeBins,
+      secondaryMatrixSizeBins
+    );
   }
 
   private io.vertx.core.json.JsonObject secondaryStatusJson(final @NotNull LocalMap<String, Object> map) {
     final var attached = map.get(SECONDARY_CHUNKED_FILE_KEY) instanceof ShareableWrappers.ChunkedFileWrapper;
     final var assemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
     final var filename = String.valueOf(map.getOrDefault(OPENED_SECONDARY_FILENAME_KEY, ""));
-    return new io.vertx.core.json.JsonObject()
+    final var status = new io.vertx.core.json.JsonObject()
       .put("attached", attached)
       .put("filename", attached ? filename : "")
       .put("assemblySource", assemblySource);
+    final var compatibility = map.get(SECONDARY_COMPATIBILITY_KEY);
+    if (attached && compatibility instanceof io.vertx.core.json.JsonObject compatibilityJson) {
+      status.put("compatibility", compatibilityJson.copy());
+    }
+    return status;
+  }
+
+  private record SecondaryCompatibility(boolean sameResolutions,
+                                        boolean sameMatrixSizes,
+                                        long[] primaryMatrixSizeBins,
+                                        long[] secondaryMatrixSizeBins) {
+    private boolean exactMatch() {
+      return sameResolutions && sameMatrixSizes;
+    }
+
+    private io.vertx.core.json.JsonArray warningsAsJsonArray() {
+      final var warnings = new io.vertx.core.json.JsonArray();
+      if (!sameResolutions) {
+        warnings.add("Primary and secondary sources expose different resolution sets.");
+      }
+      if (!sameMatrixSizes) {
+        warnings.add("Primary and secondary sources have different matrix sizes. Smaller source will be padded with background.");
+      }
+      return warnings;
+    }
+
+    private io.vertx.core.json.JsonObject toJson() {
+      final var maxLength = Math.max(primaryMatrixSizeBins.length, secondaryMatrixSizeBins.length);
+      final var mismatchedOrders = new io.vertx.core.json.JsonArray();
+      for (int idx = 0; idx < maxLength; idx++) {
+        final var primaryValue = idx < primaryMatrixSizeBins.length ? primaryMatrixSizeBins[idx] : -1L;
+        final var secondaryValue = idx < secondaryMatrixSizeBins.length ? secondaryMatrixSizeBins[idx] : -1L;
+        if (primaryValue != secondaryValue) {
+          mismatchedOrders.add(idx);
+        }
+      }
+      final var primaryMaxBins = Arrays.stream(primaryMatrixSizeBins).max().orElse(0L);
+      final var secondaryMaxBins = Arrays.stream(secondaryMatrixSizeBins).max().orElse(0L);
+      return new io.vertx.core.json.JsonObject()
+        .put("sameResolutions", sameResolutions)
+        .put("sameMatrixSizes", sameMatrixSizes)
+        .put("exactMatch", exactMatch())
+        .put("primaryMaxBins", primaryMaxBins)
+        .put("secondaryMaxBins", secondaryMaxBins)
+        .put("primaryBinsByResolution", Arrays.stream(primaryMatrixSizeBins).boxed().toList())
+        .put("secondaryBinsByResolution", Arrays.stream(secondaryMatrixSizeBins).boxed().toList())
+        .put("mismatchedResolutionOrders", mismatchedOrders);
+    }
   }
 
   private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {

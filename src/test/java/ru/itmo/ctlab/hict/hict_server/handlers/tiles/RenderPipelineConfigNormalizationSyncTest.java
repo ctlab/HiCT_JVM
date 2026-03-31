@@ -90,10 +90,10 @@ class RenderPipelineConfigNormalizationSyncTest {
     final var upperJson = config.toJson().getJsonObject("upperExpression");
     assertNotNull(upperJson);
     assertTrue(containsNodeType(upperJson, "colormap"));
-    assertTrue(containsNodeType(upperJson, "clamp"));
-    assertTrue(containsUnaryOp(upperJson, "LOG1P"));
-    assertTrue(containsDynamicField(upperJson, "ROW_WEIGHT"));
-    assertTrue(containsDynamicField(upperJson, "COL_WEIGHT"));
+    assertFalse(containsNodeType(upperJson, "clamp"));
+    assertTrue(containsNodeType(upperJson, "log"));
+    assertTrue(containsTrackAxis(upperJson, "ROW"));
+    assertTrue(containsTrackAxis(upperJson, "COL"));
     assertTrue(containsDynamicField(upperJson, "RESOLUTION_SCALING_COEFF"));
     assertTrue(containsDynamicField(upperJson, "RESOLUTION_LINEAR_SCALING_COEFF"));
   }
@@ -160,6 +160,26 @@ class RenderPipelineConfigNormalizationSyncTest {
       final var current = queue.removeFirst();
       if ("dynamic".equalsIgnoreCase(current.getString("type", ""))
         && expectedField.equalsIgnoreCase(current.getString("field", ""))) {
+        return true;
+      }
+      for (final var key : current.fieldNames()) {
+        final var value = current.getValue(key);
+        if (value instanceof JsonObject jsonObject) {
+          queue.addLast(jsonObject);
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean containsTrackAxis(final JsonObject root, final String expectedAxis) {
+    final Deque<JsonObject> queue = new ArrayDeque<>();
+    queue.add(root);
+    while (!queue.isEmpty()) {
+      final var current = queue.removeFirst();
+      if ("track1d".equalsIgnoreCase(current.getString("type", ""))
+        && RenderPipelineConfig.BUILTIN_COOLER_WEIGHTS_TRACK_ID.equals(current.getString("trackId", ""))
+        && expectedAxis.equalsIgnoreCase(current.getString("axis", ""))) {
         return true;
       }
       for (final var key : current.fieldNames()) {

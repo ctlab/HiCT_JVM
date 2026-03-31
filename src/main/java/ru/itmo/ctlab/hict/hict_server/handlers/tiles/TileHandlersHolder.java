@@ -33,6 +33,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
@@ -388,15 +389,13 @@ public class TileHandlersHolder extends HandlersHolder {
       endColPx,
       true
     );
-    final var secondaryMatrixWithWeights = secondaryChunkedFile == null
-      ? null
-      : secondaryChunkedFile.matrixQueries().getSubmatrix(
+    final var secondaryMatrixWithWeights = querySecondarySubmatrix(
+      secondaryChunkedFile,
       ResolutionDescriptor.fromResolutionOrder(level),
       startRowPx,
       startColPx,
       endRowPx,
-      endColPx,
-      true
+      endColPx
     );
     final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
     final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
@@ -521,7 +520,29 @@ public class TileHandlersHolder extends HandlersHolder {
       return result;
     }
     final var primaryRgba = primaryImage.getRGB(0, 0, columnCount, rowCount, null, 0, columnCount);
-    final var secondaryRgba = secondaryImage.getRGB(0, 0, columnCount, rowCount, null, 0, columnCount);
+    final var secondaryRgba = new int[rowCount * columnCount];
+    final var secondaryRows = secondaryImage.getHeight();
+    final var secondaryCols = secondaryImage.getWidth();
+    final var secondaryOffsetRow =
+      Math.max(0, (int) (secondaryMatrixWithWeights.startRowIncl() - primaryMatrixWithWeights.startRowIncl()));
+    final var secondaryOffsetCol =
+      Math.max(0, (int) (secondaryMatrixWithWeights.startColIncl() - primaryMatrixWithWeights.startColIncl()));
+    if (secondaryRows > 0 && secondaryCols > 0) {
+      final var rawSecondaryRgba = secondaryImage.getRGB(0, 0, secondaryCols, secondaryRows, null, 0, secondaryCols);
+      for (int srcRow = 0; srcRow < secondaryRows; srcRow++) {
+        final var dstRow = secondaryOffsetRow + srcRow;
+        if (dstRow < 0 || dstRow >= rowCount) {
+          continue;
+        }
+        for (int srcCol = 0; srcCol < secondaryCols; srcCol++) {
+          final var dstCol = secondaryOffsetCol + srcCol;
+          if (dstCol < 0 || dstCol >= columnCount) {
+            continue;
+          }
+          secondaryRgba[dstRow * columnCount + dstCol] = rawSecondaryRgba[srcRow * secondaryCols + srcCol];
+        }
+      }
+    }
     final var merged = new int[rowCount * columnCount];
     final var rowStartPx = primaryMatrixWithWeights.startRowIncl();
     final var colStartPx = primaryMatrixWithWeights.startColIncl();
@@ -556,11 +577,33 @@ public class TileHandlersHolder extends HandlersHolder {
       return image;
     }
 
-    long[][] secondaryValues = primaryValues;
+    final var secondaryValues = new double[rowCount][columnCount];
     if (secondaryMatrixWithWeights != null && secondaryChunkedFile != null) {
       final var candidate = secondaryMatrixWithWeights.matrix();
-      if (candidate.length == rowCount && (rowCount == 0 || candidate[0].length == columnCount)) {
-        secondaryValues = candidate;
+      final var candidateRowCount = candidate.length;
+      final var candidateColCount =
+        candidateRowCount > 0 && candidate[0] != null ? candidate[0].length : 0;
+      final var rowOffset =
+        (int) (secondaryMatrixWithWeights.startRowIncl() - primaryMatrixWithWeights.startRowIncl());
+      final var colOffset =
+        (int) (secondaryMatrixWithWeights.startColIncl() - primaryMatrixWithWeights.startColIncl());
+      for (int row = 0; row < candidateRowCount; row++) {
+        final var dstRow = row + rowOffset;
+        if (dstRow < 0 || dstRow >= rowCount) {
+          continue;
+        }
+        final var sourceRow = candidate[row];
+        if (sourceRow == null) {
+          continue;
+        }
+        final var sourceColCount = Math.min(sourceRow.length, candidateColCount);
+        for (int col = 0; col < sourceColCount; col++) {
+          final var dstCol = col + colOffset;
+          if (dstCol < 0 || dstCol >= columnCount) {
+            continue;
+          }
+          secondaryValues[dstRow][dstCol] = sourceRow[col];
+        }
       }
     }
 
@@ -678,7 +721,7 @@ public class TileHandlersHolder extends HandlersHolder {
       final var rowBp = rowBpValues[row];
       for (int col = 0; col < columnCount; ++col) {
         final var primaryValue = (double) primaryValues[row][col];
-        final var secondaryValue = (double) secondaryValues[row][col];
+        final var secondaryValue = secondaryValues[row][col];
         final var colPx = colPxValues[col];
         final var colBin = colBinValues[col];
         final var rowOutside =
@@ -727,5 +770,45 @@ public class TileHandlersHolder extends HandlersHolder {
     final var result = new double[safeLength];
     System.arraycopy(sampled, 0, result, 0, Math.min(sampled.length, safeLength));
     return result;
+  }
+
+  private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights querySecondarySubmatrix(
+    final @Nullable ChunkedFile secondaryChunkedFile,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final long startRowPx,
+    final long startColPx,
+    final long endRowPx,
+    final long endColPx
+  ) {
+    if (secondaryChunkedFile == null) {
+      return null;
+    }
+    final var maxVisiblePixels = secondaryChunkedFile.getContigTree().getLengthInUnits(
+      QueryLengthUnit.PIXELS,
+      resolutionDescriptor
+    );
+    if (maxVisiblePixels <= 0L) {
+      return null;
+    }
+    final var clampedStartRow = Math.max(0L, Math.min(startRowPx, maxVisiblePixels));
+    final var clampedEndRow = Math.max(clampedStartRow, Math.min(endRowPx, maxVisiblePixels));
+    final var clampedStartCol = Math.max(0L, Math.min(startColPx, maxVisiblePixels));
+    final var clampedEndCol = Math.max(clampedStartCol, Math.min(endColPx, maxVisiblePixels));
+    if (clampedEndRow <= clampedStartRow || clampedEndCol <= clampedStartCol) {
+      return null;
+    }
+    try {
+      return secondaryChunkedFile.matrixQueries().getSubmatrix(
+        resolutionDescriptor,
+        clampedStartRow,
+        clampedStartCol,
+        clampedEndRow,
+        clampedEndCol,
+        true
+      );
+    } catch (final RuntimeException ex) {
+      log.debug("Failed to query secondary submatrix for requested window", ex);
+      return null;
+    }
   }
 }
