@@ -36,11 +36,11 @@ import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
-import ru.itmo.ctlab.hict.hict_library.visualization.TileWithWeights;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.VisualizationOptionsDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
+import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import javax.imageio.ImageIO;
@@ -49,6 +49,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Collections;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -318,11 +319,13 @@ public class TileHandlersHolder extends HandlersHolder {
     final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
 
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-    final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-    if (chunkedFileWrapper == null) {
+    final var primaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+    if (primaryChunkedFileWrapper == null) {
       throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
     }
-    final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+    final var chunkedFile = primaryChunkedFileWrapper.getChunkedFile();
+    final var secondaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFileSecondary")));
+    final var secondaryChunkedFile = secondaryChunkedFileWrapper != null ? secondaryChunkedFileWrapper.getChunkedFile() : null;
     final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
     if (visualizationOptionsWrapper == null) {
       throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
@@ -377,10 +380,50 @@ public class TileHandlersHolder extends HandlersHolder {
       endColPx = (col + 1) * tileWidth;
     }
 
-    final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(ResolutionDescriptor.fromResolutionOrder(level), startRowPx, startColPx, endRowPx, endColPx, true);
-    final BufferedImage image = renderPipelineConfig.enabled()
-      ? renderPipelineTile(chunkedFile, matrixWithWeights, options, renderPipelineConfig)
-      : chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options);
+    final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
+      ResolutionDescriptor.fromResolutionOrder(level),
+      startRowPx,
+      startColPx,
+      endRowPx,
+      endColPx,
+      true
+    );
+    final var secondaryMatrixWithWeights = secondaryChunkedFile == null
+      ? null
+      : secondaryChunkedFile.matrixQueries().getSubmatrix(
+      ResolutionDescriptor.fromResolutionOrder(level),
+      startRowPx,
+      startColPx,
+      endRowPx,
+      endColPx,
+      true
+    );
+    final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+    final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
+
+    final BufferedImage image;
+    if (renderPipelineConfig.enabled()) {
+      image = renderPipelineTile(
+        chunkedFile,
+        secondaryChunkedFile,
+        matrixWithWeights,
+        secondaryMatrixWithWeights,
+        options,
+        renderPipelineConfig,
+        track1DManager
+      );
+    } else if (secondaryChunkedFile != null && secondaryMatrixWithWeights != null) {
+      image = renderTraditionalDualSourceTile(
+        chunkedFile,
+        secondaryChunkedFile,
+        matrixWithWeights,
+        secondaryMatrixWithWeights,
+        options,
+        renderPipelineConfig.swapUpperLower()
+      );
+    } else {
+      image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options);
+    }
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
     try {
@@ -463,12 +506,48 @@ public class TileHandlersHolder extends HandlersHolder {
                                      Buffer binaryBody) {
   }
 
-  private @NotNull BufferedImage renderPipelineTile(final @NotNull ChunkedFile chunkedFile,
-                                                    final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrixWithWeights,
+  private @NotNull BufferedImage renderTraditionalDualSourceTile(final @NotNull ChunkedFile primaryChunkedFile,
+                                                                 final @NotNull ChunkedFile secondaryChunkedFile,
+                                                                 final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights primaryMatrixWithWeights,
+                                                                 final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights secondaryMatrixWithWeights,
+                                                                 final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
+                                                                 final boolean swapUpperLower) {
+    final var primaryImage = primaryChunkedFile.tileVisualizationProcessor().visualizeTile(primaryMatrixWithWeights, options);
+    final var secondaryImage = secondaryChunkedFile.tileVisualizationProcessor().visualizeTile(secondaryMatrixWithWeights, options);
+    final var rowCount = primaryImage.getHeight();
+    final var columnCount = primaryImage.getWidth();
+    final var result = new BufferedImage(columnCount, rowCount, BufferedImage.TYPE_INT_ARGB);
+    if (rowCount <= 0 || columnCount <= 0) {
+      return result;
+    }
+    final var primaryRgba = primaryImage.getRGB(0, 0, columnCount, rowCount, null, 0, columnCount);
+    final var secondaryRgba = secondaryImage.getRGB(0, 0, columnCount, rowCount, null, 0, columnCount);
+    final var merged = new int[rowCount * columnCount];
+    final var rowStartPx = primaryMatrixWithWeights.startRowIncl();
+    final var colStartPx = primaryMatrixWithWeights.startColIncl();
+    int index = 0;
+    for (int row = 0; row < rowCount; row++) {
+      final long rowPx = rowStartPx + row;
+      for (int col = 0; col < columnCount; col++) {
+        final long colPx = colStartPx + col;
+        final boolean upperTriangle = rowPx <= colPx;
+        final boolean usePrimary = swapUpperLower ? !upperTriangle : upperTriangle;
+        merged[index] = usePrimary ? primaryRgba[index] : secondaryRgba[index];
+        index++;
+      }
+    }
+    result.setRGB(0, 0, columnCount, rowCount, merged, 0, columnCount);
+    return result;
+  }
+
+  private @NotNull BufferedImage renderPipelineTile(final @NotNull ChunkedFile primaryChunkedFile,
+                                                    final ChunkedFile secondaryChunkedFile,
+                                                    final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights primaryMatrixWithWeights,
+                                                    final ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights secondaryMatrixWithWeights,
                                                     final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
-                                                    final @NotNull RenderPipelineConfig pipelineConfig) {
-    final TileWithWeights primaryTile = chunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options);
-    final var primaryValues = primaryTile.values();
+                                                    final @NotNull RenderPipelineConfig pipelineConfig,
+                                                    final Track1DManager track1DManager) {
+    final var primaryValues = primaryMatrixWithWeights.matrix();
     final var rowCount = primaryValues.length;
     final var columnCount = rowCount > 0 ? primaryValues[0].length : 0;
     final var image = new BufferedImage(columnCount, rowCount, BufferedImage.TYPE_INT_ARGB);
@@ -477,15 +556,23 @@ public class TileHandlersHolder extends HandlersHolder {
       return image;
     }
 
-    final var resolutionDescriptor = matrixWithWeights.resolutionDescriptor();
-    final var bpResolution = chunkedFile.getResolutions()[resolutionDescriptor.getResolutionOrderInArray()];
+    long[][] secondaryValues = primaryValues;
+    if (secondaryMatrixWithWeights != null && secondaryChunkedFile != null) {
+      final var candidate = secondaryMatrixWithWeights.matrix();
+      if (candidate.length == rowCount && (rowCount == 0 || candidate[0].length == columnCount)) {
+        secondaryValues = candidate;
+      }
+    }
+
+    final var resolutionDescriptor = primaryMatrixWithWeights.resolutionDescriptor();
+    final var bpResolution = primaryChunkedFile.getResolutions()[resolutionDescriptor.getResolutionOrderInArray()];
     final var bpResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(0);
-    final var totalVisiblePixels = chunkedFile.getContigTree().getLengthInUnits(
+    final var totalVisiblePixels = primaryChunkedFile.getContigTree().getLengthInUnits(
       QueryLengthUnit.PIXELS,
       resolutionDescriptor
     );
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
-    final var matrixSizeBins = chunkedFile.getMatrixSizeBins();
+    final var matrixSizeBins = primaryChunkedFile.getMatrixSizeBins();
     final var totalBinsAtResolution =
       resolutionOrder >= 0 && resolutionOrder < matrixSizeBins.length
         ? matrixSizeBins[resolutionOrder]
@@ -495,16 +582,16 @@ public class TileHandlersHolder extends HandlersHolder {
     final var rowBinValues = new long[rowCount];
     final var rowBpValues = new long[rowCount];
     for (int row = 0; row < rowCount; ++row) {
-      final var rowPx = matrixWithWeights.startRowIncl() + row;
+      final var rowPx = primaryMatrixWithWeights.startRowIncl() + row;
       rowPxValues[row] = rowPx;
-      rowBinValues[row] = chunkedFile.convertUnits(
+      rowBinValues[row] = primaryChunkedFile.convertUnits(
         rowPx,
         resolutionDescriptor,
         QueryLengthUnit.PIXELS,
         resolutionDescriptor,
         QueryLengthUnit.BINS
       );
-      rowBpValues[row] = chunkedFile.convertUnits(
+      rowBpValues[row] = primaryChunkedFile.convertUnits(
         rowPx,
         resolutionDescriptor,
         QueryLengthUnit.PIXELS,
@@ -517,16 +604,16 @@ public class TileHandlersHolder extends HandlersHolder {
     final var colBinValues = new long[columnCount];
     final var colBpValues = new long[columnCount];
     for (int col = 0; col < columnCount; ++col) {
-      final var colPx = matrixWithWeights.startColIncl() + col;
+      final var colPx = primaryMatrixWithWeights.startColIncl() + col;
       colPxValues[col] = colPx;
-      colBinValues[col] = chunkedFile.convertUnits(
+      colBinValues[col] = primaryChunkedFile.convertUnits(
         colPx,
         resolutionDescriptor,
         QueryLengthUnit.PIXELS,
         resolutionDescriptor,
         QueryLengthUnit.BINS
       );
-      colBpValues[col] = chunkedFile.convertUnits(
+      colBpValues[col] = primaryChunkedFile.convertUnits(
         colPx,
         resolutionDescriptor,
         QueryLengthUnit.PIXELS,
@@ -536,10 +623,10 @@ public class TileHandlersHolder extends HandlersHolder {
     }
 
     final var context = new RenderPipelineConfig.MutablePixelContext();
-    final var rowWeights = primaryTile.rowWeights();
-    final var colWeights = primaryTile.columnWeights();
-    final var resolutionScalingCoeffs = chunkedFile.getResolutionScalingCoefficient();
-    final var resolutionLinearScalingCoeffs = chunkedFile.getResolutionLinearScalingCoefficient();
+    final var rowWeights = primaryMatrixWithWeights.rowWeights();
+    final var colWeights = primaryMatrixWithWeights.colWeights();
+    final var resolutionScalingCoeffs = primaryChunkedFile.getResolutionScalingCoefficient();
+    final var resolutionLinearScalingCoeffs = primaryChunkedFile.getResolutionLinearScalingCoefficient();
     final var resolutionScalingCoeff =
       resolutionOrder >= 0 && resolutionOrder < resolutionScalingCoeffs.length
         ? resolutionScalingCoeffs[resolutionOrder]
@@ -548,6 +635,41 @@ public class TileHandlersHolder extends HandlersHolder {
       resolutionOrder >= 0 && resolutionOrder < resolutionLinearScalingCoeffs.length
         ? resolutionLinearScalingCoeffs[resolutionOrder]
         : 1.0d;
+
+    final var rowTrackValuesByTrackId = new HashMap<String, double[]>();
+    final var colTrackValuesByTrackId = new HashMap<String, double[]>();
+    if (track1DManager != null) {
+      for (final var binding : pipelineConfig.requiredTrackBindings()) {
+        if (binding.axis() == RenderPipelineConfig.TrackAxis.ROW) {
+          if (!rowTrackValuesByTrackId.containsKey(binding.trackId())) {
+            final var sampled = track1DManager.sampleTrackValues(
+              primaryChunkedFile,
+              binding.trackId(),
+              primaryMatrixWithWeights.startRowIncl(),
+              primaryMatrixWithWeights.startRowIncl() + rowCount,
+              bpResolution,
+              QueryLengthUnit.PIXELS
+            );
+            rowTrackValuesByTrackId.put(binding.trackId(), normalizeTrackValues(sampled, rowCount));
+          }
+        } else {
+          if (!colTrackValuesByTrackId.containsKey(binding.trackId())) {
+            final var sampled = track1DManager.sampleTrackValues(
+              primaryChunkedFile,
+              binding.trackId(),
+              primaryMatrixWithWeights.startColIncl(),
+              primaryMatrixWithWeights.startColIncl() + columnCount,
+              bpResolution,
+              QueryLengthUnit.PIXELS
+            );
+            colTrackValuesByTrackId.put(binding.trackId(), normalizeTrackValues(sampled, columnCount));
+          }
+        }
+      }
+    }
+    context.rowTrackValuesByTrackId = rowTrackValuesByTrackId;
+    context.colTrackValuesByTrackId = colTrackValuesByTrackId;
+
     int pixelIndex = 0;
     for (int row = 0; row < rowCount; ++row) {
       final var rowWeight = rowWeights != null && row < rowWeights.length ? rowWeights[row] : 1.0d;
@@ -555,20 +677,21 @@ public class TileHandlersHolder extends HandlersHolder {
       final var rowBin = rowBinValues[row];
       final var rowBp = rowBpValues[row];
       for (int col = 0; col < columnCount; ++col) {
-        final var primaryValue = primaryValues[row][col];
+        final var primaryValue = (double) primaryValues[row][col];
+        final var secondaryValue = (double) secondaryValues[row][col];
         final var colPx = colPxValues[col];
         final var colBin = colBinValues[col];
         final var rowOutside =
           rowPx < 0L || rowPx >= totalVisiblePixels || rowBin < 0L || rowBin >= totalBinsAtResolution;
         final var colOutside =
           colPx < 0L || colPx >= totalVisiblePixels || colBin < 0L || colBin >= totalBinsAtResolution;
-        if (rowOutside || colOutside || !Double.isFinite(primaryValue)) {
+        if (rowOutside || colOutside) {
           rgba[pixelIndex++] = 0x00000000;
           continue;
         }
         final var colWeight = colWeights != null && col < colWeights.length ? colWeights[col] : 1.0d;
-        context.primaryValue = primaryValue;
-        context.secondaryValue = primaryValue;
+        context.primaryValue = Double.isFinite(primaryValue) ? primaryValue : 0.0d;
+        context.secondaryValue = Double.isFinite(secondaryValue) ? secondaryValue : 0.0d;
         context.rowWeight = rowWeight;
         context.colWeight = colWeight;
         context.resolutionScalingCoeff = resolutionScalingCoeff;
@@ -580,17 +703,29 @@ public class TileHandlersHolder extends HandlersHolder {
         context.rowBp = rowBp;
         context.colBp = colBpValues[col];
         context.bpResolution = bpResolution;
-
-        final var value = pipelineConfig.evaluate(context.rowPx <= context.colPx, context);
-        final Color color = options.getColormap().mapSignal(value);
-        rgba[pixelIndex++] =
-          ((color.getAlpha() & 0xFF) << 24)
-            | ((color.getRed() & 0xFF) << 16)
-            | ((color.getGreen() & 0xFF) << 8)
-            | (color.getBlue() & 0xFF);
+        context.rowLocalIndex = row;
+        context.colLocalIndex = col;
+        rgba[pixelIndex++] = pipelineConfig.evaluateArgb(context.rowPx <= context.colPx, context, options);
       }
     }
     image.setRGB(0, 0, columnCount, rowCount, rgba, 0, columnCount);
     return image;
+  }
+
+  private double @NotNull [] normalizeTrackValues(final double[] sampled,
+                                                   final int expectedLength) {
+    final var safeLength = Math.max(0, expectedLength);
+    if (safeLength == 0) {
+      return new double[0];
+    }
+    if (sampled == null || sampled.length == 0) {
+      return new double[safeLength];
+    }
+    if (sampled.length == safeLength) {
+      return sampled;
+    }
+    final var result = new double[safeLength];
+    System.arraycopy(sampled, 0, result, 0, Math.min(sampled.length, safeLength));
+    return result;
   }
 }

@@ -24,11 +24,14 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
+import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -77,11 +80,22 @@ class RenderPipelineConfigNormalizationSyncTest {
       * ctx.resolutionLinearScalingCoeff
       * ctx.rowWeight
       * ctx.colWeight;
-    final var expected = Math.log1p(weighted) / Math.log(2.0d);
+    final var expectedSignal = Math.log1p(weighted) / Math.log(2.0d);
+    final var expected = Math.max(0.0d, Math.min(1.0d, expectedSignal));
     final var actualUpper = config.evaluate(true, ctx);
     final var actualLower = config.evaluate(false, ctx);
     assertEquals(expected, actualUpper, 1e-12);
     assertEquals(expected, actualLower, 1e-12);
+
+    final var upperJson = config.toJson().getJsonObject("upperExpression");
+    assertNotNull(upperJson);
+    assertTrue(containsNodeType(upperJson, "colormap"));
+    assertTrue(containsNodeType(upperJson, "clamp"));
+    assertTrue(containsUnaryOp(upperJson, "LOG1P"));
+    assertTrue(containsDynamicField(upperJson, "ROW_WEIGHT"));
+    assertTrue(containsDynamicField(upperJson, "COL_WEIGHT"));
+    assertTrue(containsDynamicField(upperJson, "RESOLUTION_SCALING_COEFF"));
+    assertTrue(containsDynamicField(upperJson, "RESOLUTION_LINEAR_SCALING_COEFF"));
   }
 
   @Test
@@ -98,8 +112,63 @@ class RenderPipelineConfigNormalizationSyncTest {
     ctx.colWeight = 9.0d;
     ctx.resolutionScalingCoeff = 0.123d;
     ctx.resolutionLinearScalingCoeff = 0.456d;
-    assertEquals(42.75d, config.evaluate(true, ctx), 1e-12);
-    assertEquals(42.75d, config.evaluate(false, ctx), 1e-12);
+    assertEquals(1.0d, config.evaluate(true, ctx), 1e-12);
+    assertEquals(1.0d, config.evaluate(false, ctx), 1e-12);
+  }
+
+  private static boolean containsNodeType(final JsonObject root, final String expectedType) {
+    final Deque<JsonObject> queue = new ArrayDeque<>();
+    queue.add(root);
+    while (!queue.isEmpty()) {
+      final var current = queue.removeFirst();
+      if (expectedType.equalsIgnoreCase(current.getString("type", ""))) {
+        return true;
+      }
+      for (final var key : current.fieldNames()) {
+        final var value = current.getValue(key);
+        if (value instanceof JsonObject jsonObject) {
+          queue.addLast(jsonObject);
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean containsUnaryOp(final JsonObject root, final String expectedOp) {
+    final Deque<JsonObject> queue = new ArrayDeque<>();
+    queue.add(root);
+    while (!queue.isEmpty()) {
+      final var current = queue.removeFirst();
+      if ("unary".equalsIgnoreCase(current.getString("type", ""))
+        && expectedOp.equalsIgnoreCase(current.getString("op", ""))) {
+        return true;
+      }
+      for (final var key : current.fieldNames()) {
+        final var value = current.getValue(key);
+        if (value instanceof JsonObject jsonObject) {
+          queue.addLast(jsonObject);
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean containsDynamicField(final JsonObject root, final String expectedField) {
+    final Deque<JsonObject> queue = new ArrayDeque<>();
+    queue.add(root);
+    while (!queue.isEmpty()) {
+      final var current = queue.removeFirst();
+      if ("dynamic".equalsIgnoreCase(current.getString("type", ""))
+        && expectedField.equalsIgnoreCase(current.getString("field", ""))) {
+        return true;
+      }
+      for (final var key : current.fieldNames()) {
+        final var value = current.getValue(key);
+        if (value instanceof JsonObject jsonObject) {
+          queue.addLast(jsonObject);
+        }
+      }
+    }
+    return false;
   }
 }
-

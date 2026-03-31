@@ -466,6 +466,88 @@ public class Track1DManager {
     return queryVisibleTracksInternal(chunkedFile, segmentsBuildResult, queryStartPx, queryEndPx, safeWidth, bpResolution);
   }
 
+  public double @NotNull [] sampleTrackValues(final @NotNull ChunkedFile chunkedFile,
+                                               final @NotNull String trackId,
+                                               final long start,
+                                               final long end,
+                                               final long bpResolution,
+                                               final @NotNull QueryLengthUnit units) {
+    final TrackState track;
+    try {
+      this.lock.readLock().lock();
+      track = this.tracks.get(trackId);
+    } finally {
+      this.lock.readLock().unlock();
+    }
+    if (track == null) {
+      return new double[0];
+    }
+
+    final var segmentsBuildResult =
+      buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
+    final var totalVisiblePixels = segmentsBuildResult.totalVisiblePixels();
+    if (totalVisiblePixels <= 0L) {
+      return new double[0];
+    }
+
+    final var pxRange = resolveQueryPxRange(
+      chunkedFile,
+      start,
+      end,
+      bpResolution,
+      units,
+      segmentsBuildResult.orderedSegments(),
+      totalVisiblePixels
+    );
+    final var queryStartPx = pxRange.startPx();
+    final var queryEndPx = pxRange.endPx();
+    final int widthPx = (int) Math.max(1L, Math.min(Integer.MAX_VALUE, queryEndPx - queryStartPx));
+
+    final var bins = queryBinsForTrack(
+      track.type(),
+      chunkedFile,
+      track.dataSource(),
+      segmentsBuildResult.sourceToAssemblySegments(),
+      segmentsBuildResult.orderedSegments(),
+      queryStartPx,
+      queryEndPx,
+      widthPx,
+      bpResolution,
+      track.bamRenderMode(),
+      track.bigWigAggregationMode()
+    );
+
+    final var values = new double[widthPx];
+    Arrays.fill(values, Double.NaN);
+    for (final var bin : bins) {
+      final long rawStartPx = bin.getStartPx() != null
+        ? bin.getStartPx()
+        : mapAssemblyBpToVisiblePx(bin.getStartBp(), segmentsBuildResult.orderedSegments(), bpResolution, totalVisiblePixels);
+      final long rawEndPx = bin.getEndPx() != null
+        ? bin.getEndPx()
+        : mapAssemblyBpToVisiblePx(Math.max(bin.getStartBp(), bin.getEndBp() - bpResolution), segmentsBuildResult.orderedSegments(), bpResolution, totalVisiblePixels) + 1L;
+      final int from = (int) Math.max(0L, Math.min(rawStartPx - queryStartPx, widthPx - 1L));
+      final int to = (int) Math.max(from + 1L, Math.min(rawEndPx - queryStartPx, widthPx));
+      final var value = bin.getValue();
+      for (int idx = from; idx < to; idx++) {
+        if (!Double.isFinite(value)) {
+          continue;
+        }
+        if (Double.isNaN(values[idx])) {
+          values[idx] = value;
+        } else {
+          values[idx] = Math.max(values[idx], value);
+        }
+      }
+    }
+    for (int i = 0; i < values.length; i++) {
+      if (Double.isNaN(values[i]) || !Double.isFinite(values[i])) {
+        values[i] = 0.0d;
+      }
+    }
+    return values;
+  }
+
   private @NotNull QueryResult queryVisibleTracksInternal(final @NotNull ChunkedFile chunkedFile,
                                                           final @NotNull SegmentBuildResult segmentsBuildResult,
                                                           final long queryStartPx,
