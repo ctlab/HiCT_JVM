@@ -135,6 +135,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     }
                     final var direction = requestJson.getString("direction", "mcool-to-hict");
                     final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
+                    final var overwrite = requestJson.getBoolean("overwrite", false);
                     final var resolutions = parseResolutions(requestJson.getString("resolutions"));
                     final var compression = requestJson.getInteger("compression", 6);
                     final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
@@ -154,9 +155,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     }
 
                     final var outputPath = deriveOutputPath(sourcePath);
-                    if (Files.exists(outputPath)) {
-                        throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
-                    }
+                    prepareOutputPath(outputPath, overwrite);
 
                     final var options = new ConversionOptions(
                         sourcePath,
@@ -201,6 +200,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     }
                     final var parallelJobs = Math.max(1, requestJson.getInteger("parallelJobs", 1));
                     final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
+                    final var overwrite = requestJson.getBoolean("overwrite", false);
                     final var resolutions = parseResolutions(requestJson.getString("resolutions"));
                     final var compression = requestJson.getInteger("compression", 6);
                     final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
@@ -226,9 +226,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             throw new IllegalArgumentException("Source file not found: " + filename);
                         }
                         final var outputPath = deriveOutputPath(sourcePath);
-                        if (Files.exists(outputPath)) {
-                            throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
-                        }
+                        prepareOutputPath(outputPath, overwrite);
                         final var options = new ConversionOptions(
                             sourcePath,
                             outputPath,
@@ -414,6 +412,20 @@ public class ConversionHandlersHolder extends HandlersHolder {
             base = filename;
         }
         return sourcePath.getParent().resolve(base + ".hict.hdf5");
+    }
+
+    private static void prepareOutputPath(final @NotNull Path outputPath, final boolean overwrite) {
+        if (!Files.exists(outputPath)) {
+            return;
+        }
+        if (!overwrite) {
+            throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
+        }
+        try {
+            Files.delete(outputPath);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to overwrite existing output file: " + outputPath.getFileName(), e);
+        }
     }
 
     private ConversionJob createJob(final @NotNull Path sourcePath, final @NotNull Path outputPath, final @NotNull String direction, final int parallelism, final boolean deleteSourceOnCleanup, final boolean deleteOutputOnCleanup) throws IOException {
