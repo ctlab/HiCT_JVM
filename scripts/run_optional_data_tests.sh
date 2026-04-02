@@ -125,6 +125,23 @@ curl -fsS -X POST "http://localhost:${PORT}/tracks/query_1d" \
   -d '{"unit":"BP","startBP":0,"endBP":300000000,"widthPx":1200,"bpResolution":50000}' \
   | jq -e '.tracks | length >= 0' >/dev/null
 
+echo "[optional] Querying numeric matrix in JSON and binary modes"
+MATRIX_JSON="$(curl -fsS -X POST "http://localhost:${PORT}/matrix/query" \
+  -H "content-type: application/json" \
+  -d '{"bpResolution":50000,"unit":"PIXELS","startRowPx":0,"endRowPx":32,"startColPx":0,"endColPx":32,"signalMode":"TRADITIONAL_NORMALIZED","format":"JSON"}')"
+echo "${MATRIX_JSON}" | jq -e '.rows == 32 and .cols == 32 and (.values|length)==1024' >/dev/null
+
+MATRIX_BIN_HEADERS="$(mktemp)"
+MATRIX_BIN_BODY="$(mktemp)"
+curl -fsS -D "${MATRIX_BIN_HEADERS}" -o "${MATRIX_BIN_BODY}" -X POST "http://localhost:${PORT}/matrix/query" \
+  -H "content-type: application/json" \
+  -d '{"bpResolution":50000,"unit":"PIXELS","startRowPx":0,"endRowPx":16,"startColPx":0,"endColPx":16,"signalMode":"COOLER_WEIGHTED","format":"BINARY_FLOAT32"}' >/dev/null
+grep -qi '^x-hict-rows: 16' "${MATRIX_BIN_HEADERS}"
+grep -qi '^x-hict-cols: 16' "${MATRIX_BIN_HEADERS}"
+grep -qi '^x-hict-dtype: float32' "${MATRIX_BIN_HEADERS}"
+[[ "$(wc -c < "${MATRIX_BIN_BODY}")" -eq $((16 * 16 * 4)) ]]
+rm -f "${MATRIX_BIN_HEADERS}" "${MATRIX_BIN_BODY}"
+
 echo "[optional] Cooler weights query sanity check"
 curl -fsS -X POST "http://localhost:${PORT}/tracks/query_1d" \
   -H "content-type: application/json" \

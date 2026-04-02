@@ -46,6 +46,7 @@ Typically:
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/get_tile` | Fetch rendered tile/region |
+| `POST` | `/matrix/query` | Fetch numeric submatrix (raw/weighted/normalized/pipeline signal) |
 | `POST` | `/tiles/reload` | Invalidate tile caches and bump versions |
 | `POST` | `/get_visualization_options` | Get current visualization options |
 | `POST` | `/set_visualization_options` | Set visualization options |
@@ -58,6 +59,12 @@ Typically:
 - `JSON_PNG_WITH_RANGES` (JSON with base64 PNG + ranges)
 - `PNG` (raw PNG bytes)
 - `PNG_BY_PIXELS` (raw PNG bytes for arbitrary pixel-space region)
+
+`/matrix/query` supports:
+
+- Units: `PIXELS`, `BINS`, `BP`
+- Signal modes: `RAW_COUNTS`, `COOLER_WEIGHTED`, `TRADITIONAL_NORMALIZED`, `PIPELINE_SIGNAL`
+- Response formats: `BINARY_FLOAT32`, `BINARY_FLOAT64`, `BINARY_INT64`, `JSON`
 
 ### Scaffolding operations
 

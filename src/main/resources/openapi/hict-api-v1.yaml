@@ -447,6 +447,59 @@ paths:
               schema:
                 type: string
                 format: binary
+  /matrix/query:
+    post:
+      tags: [Tiles]
+      summary: Fetch rectangular submatrix as numeric tensor-ready payload
+      operationId: queryMatrix
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MatrixQueryRequest' }
+            examples:
+              normalizedPixels:
+                summary: Traditional normalized signal in visible pixels
+                value:
+                  bpResolution: 50000
+                  unit: PIXELS
+                  startRowPx: 0
+                  endRowPx: 256
+                  startColPx: 0
+                  endColPx: 256
+                  signalMode: TRADITIONAL_NORMALIZED
+                  format: BINARY_FLOAT32
+              rawBins:
+                summary: Raw counts in bins as int64 JSON
+                value:
+                  bpResolution: 50000
+                  unit: BINS
+                  startRowBin: 0
+                  endRowBin: 32
+                  startColBin: 0
+                  endColBin: 32
+                  signalMode: RAW_COUNTS
+                  format: JSON
+      responses:
+        '200':
+          description: Matrix payload
+          headers:
+            x-hict-rows:
+              schema: { type: integer }
+            x-hict-cols:
+              schema: { type: integer }
+            x-hict-dtype:
+              schema: { type: string, enum: [float32, float64, int64] }
+            x-hict-signal-mode:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixQueryJsonResponse'
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
 
   /reverse_selection_range:
     post:
@@ -1113,6 +1166,113 @@ components:
             upperBounds:
               type: object
               additionalProperties: { type: number }
+
+    MatrixQueryRequest:
+      type: object
+      properties:
+        bpResolution:
+          type: integer
+          format: int64
+          description: Resolution in base pairs for matrix extraction.
+        unit:
+          type: string
+          enum: [PIXELS, BINS, BP]
+          default: PIXELS
+        units:
+          type: string
+          enum: [PIXELS, BINS, BP]
+          description: Alias for `unit`.
+        startRow:
+          type: integer
+          format: int64
+        endRow:
+          type: integer
+          format: int64
+        startCol:
+          type: integer
+          format: int64
+        endCol:
+          type: integer
+          format: int64
+        startRowPx:
+          type: integer
+          format: int64
+        endRowPx:
+          type: integer
+          format: int64
+        startColPx:
+          type: integer
+          format: int64
+        endColPx:
+          type: integer
+          format: int64
+        startRowBin:
+          type: integer
+          format: int64
+        endRowBin:
+          type: integer
+          format: int64
+        startColBin:
+          type: integer
+          format: int64
+        endColBin:
+          type: integer
+          format: int64
+        startRowBP:
+          type: integer
+          format: int64
+        endRowBP:
+          type: integer
+          format: int64
+        startColBP:
+          type: integer
+          format: int64
+        endColBP:
+          type: integer
+          format: int64
+        rows:
+          type: integer
+          description: Optional height if end is not provided.
+        cols:
+          type: integer
+          description: Optional width if end is not provided.
+        signalMode:
+          type: string
+          enum: [RAW_COUNTS, COOLER_WEIGHTED, TRADITIONAL_NORMALIZED, PIPELINE_SIGNAL]
+          default: TRADITIONAL_NORMALIZED
+        format:
+          type: string
+          enum: [JSON, BINARY_FLOAT32, BINARY_FLOAT64, BINARY_INT64]
+          default: BINARY_FLOAT32
+        includeWeights:
+          type: boolean
+          default: false
+      required: [bpResolution]
+
+    MatrixQueryJsonResponse:
+      type: object
+      properties:
+        rows: { type: integer }
+        cols: { type: integer }
+        dtype: { type: string, enum: [float64, int64] }
+        signalMode: { type: string }
+        unit: { type: string, enum: [PIXELS] }
+        startRowPx: { type: integer, format: int64 }
+        endRowPx: { type: integer, format: int64 }
+        startColPx: { type: integer, format: int64 }
+        endColPx: { type: integer, format: int64 }
+        values:
+          type: array
+          items:
+            oneOf:
+              - type: number
+              - type: integer
+        rowWeights:
+          type: array
+          items: { type: number }
+        colWeights:
+          type: array
+          items: { type: number }
 
     RangeRequest:
       type: object

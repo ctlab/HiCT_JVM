@@ -110,6 +110,13 @@ To apply visualization settings before fetching tiles:
 * Optionally POST `/render_pipeline/set` for custom graph pipeline.
 * Then call `/get_tile` as shown above.
 
+For tensor workflows (NumPy/Torch), numeric submatrices are available via:
+
+* `POST /matrix/query`
+** units: `PIXELS`, `BINS`, `BP`
+** signal modes: `RAW_COUNTS`, `COOLER_WEIGHTED`, `TRADITIONAL_NORMALIZED`, `PIPELINE_SIGNAL`
+** binary formats for fast transfer: `BINARY_FLOAT32`, `BINARY_FLOAT64`, `BINARY_INT64`
+
 === Supported platforms / JDK details
 
 * *OS/CPU (prebuilt libs):* Linux (glibc) and Windows, AMD64.
