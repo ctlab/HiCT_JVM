@@ -74,6 +74,10 @@ WARNING: WebUI conversion is experimental and may be slower or less stable than 
 
 WARNING: The API is still evolving. Endpoints, parameters, and response formats may change.
 
+Interactive OpenAPI docs are available at:
+
+* `http://localhost:5000/api/v1/`
+
 For the Python client-oriented endpoint contract used in `jvm-api-v1`, see:
 `docs/jvm_api_v1.md`.
 
@@ -100,10 +104,10 @@ png_data_url = data["image"]
 print(png_data_url[:64])
 ```
 
-To apply visualization/normalization settings before fetching tiles:
+To apply visualization settings before fetching tiles:
 
 * POST `/set_visualization_options` with visualization parameters.
-* POST `/set_normalization` with normalization settings.
+* Optionally POST `/render_pipeline/set` for custom graph pipeline.
 * Then call `/get_tile` as shown above.
 
 === Supported platforms / JDK details

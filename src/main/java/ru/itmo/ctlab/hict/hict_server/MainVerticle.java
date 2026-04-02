@@ -55,6 +55,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.info.ApiDocsHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
@@ -275,6 +276,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
     handlersHolders.add(new InfoHandlersHolder(vertx));
+    handlersHolders.add(new ApiDocsHandlersHolder());
     handlersHolders.add(new TrackHandlersHolder(vertx));
 
     router.route().failureHandler(ctx -> {

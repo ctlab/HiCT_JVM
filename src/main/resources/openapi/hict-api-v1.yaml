@@ -1,0 +1,1307 @@
+openapi: 3.0.3
+info:
+  title: HiCT JVM API
+  version: v1
+  description: |
+    HTTP API for HiCT_JVM server.
+
+    This specification is intended for WebUI integration, Python `hict`/`hict_jvm_api`
+    clients and programmatic data-processing pipelines.
+servers:
+  - url: /
+tags:
+  - name: Info
+  - name: Files
+  - name: Secondary source
+  - name: Tiles
+  - name: Rendering
+  - name: Scaffolding
+  - name: Names
+  - name: Tracks
+  - name: Conversion
+paths:
+  /version:
+    get:
+      tags: [Info]
+      summary: Get backend/server version metadata
+      operationId: getVersion
+      responses:
+        '200':
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+  /diagnostics/workers:
+    post:
+      tags: [Info]
+      summary: Get worker scheduler diagnostics snapshot
+      operationId: getWorkerDiagnostics
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: Scheduler diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericMap'
+  /api/v1:
+    get:
+      tags: [Info]
+      summary: Redirect to interactive API docs
+      operationId: apiDocsRedirect
+      responses:
+        '307':
+          description: Temporary redirect to `/api/v1/`
+  /api/v1/:
+    get:
+      tags: [Info]
+      summary: Interactive API docs (Swagger UI HTML)
+      operationId: apiDocsHtml
+      responses:
+        '200':
+          description: HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/v1/openapi:
+    get:
+      tags: [Info]
+      summary: Redirect to OpenAPI source document
+      operationId: apiSpecRedirect
+      responses:
+        '307':
+          description: Temporary redirect to `/api/v1/openapi.yaml`
+  /api/v1/openapi.yaml:
+    get:
+      tags: [Info]
+      summary: OpenAPI v1 source specification
+      operationId: apiSpecYaml
+      responses:
+        '200':
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /list_files:
+    post:
+      tags: [Files]
+      summary: List openable HiCT files in DATA_DIR
+      operationId: listFiles
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Relative paths
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+  /list_files_detailed:
+    post:
+      tags: [Files]
+      summary: List DATA_DIR files with metadata
+      operationId: listFilesDetailed
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: File entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileEntry'
+  /list_fasta_files:
+    post:
+      tags: [Files]
+      summary: List FASTA files in DATA_DIR
+      operationId: listFastaFiles
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: FASTA paths
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+  /list_agp_files:
+    post:
+      tags: [Files]
+      summary: List AGP files in DATA_DIR
+      operationId: listAgpFiles
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: AGP paths
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+  /list_coolers:
+    post:
+      tags: [Files]
+      summary: List cooler/mcool files in DATA_DIR
+      operationId: listCoolers
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Cooler paths
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+
+  /open:
+    post:
+      tags: [Files]
+      summary: Open primary HiCT source
+      operationId: openPrimarySource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenFileRequest'
+            example:
+              filename: build/quad/combined_ind2_4DN.hict.hdf5
+              fastaFilename: build/quad/quad_combined_ind2.fasta
+      responses:
+        '200':
+          description: Opened file metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenFileResponse'
+  /open_progress:
+    post:
+      tags: [Files]
+      summary: Get progress of current open operation
+      operationId: getOpenProgress
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Open progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenProgressResponse'
+  /attach:
+    post:
+      tags: [Files]
+      summary: Attach to currently opened session
+      operationId: attachSession
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Attached session info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachResponse'
+  /close:
+    post:
+      tags: [Files]
+      summary: Close current session
+      operationId: closeSession
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Session close status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericMap'
+
+  /secondary/status:
+    post:
+      tags: [Secondary source]
+      summary: Get secondary source status
+      operationId: getSecondaryStatus
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Secondary source status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondarySourceStatus'
+  /secondary/open:
+    post:
+      tags: [Secondary source]
+      summary: Open secondary source
+      operationId: openSecondarySource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenSecondaryRequest'
+            example:
+              filename: build/quad/combined_ind1_4DN.hict.hdf5
+              allowMismatch: false
+      responses:
+        '200':
+          description: Secondary source status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondarySourceStatus'
+  /secondary/close:
+    post:
+      tags: [Secondary source]
+      summary: Close secondary source
+      operationId: closeSecondarySource
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Secondary source status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecondarySourceStatus'
+  /secondary/set_assembly_source:
+    post:
+      tags: [Secondary source]
+      summary: Choose source of assembly descriptors (PRIMARY/SECONDARY)
+      operationId: setAssemblySource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetAssemblySourceRequest'
+      responses:
+        '200':
+          description: New assembly source and assembly payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericMap'
+
+  /set_visualization_options:
+    post:
+      tags: [Rendering]
+      summary: Set visualization options and synchronize default rendering pipeline
+      operationId: setVisualizationOptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VisualizationOptionsRequest'
+      responses:
+        '200':
+          description: Effective visualization options
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericMap'
+  /get_visualization_options:
+    post:
+      tags: [Rendering]
+      summary: Get current visualization options
+      operationId: getVisualizationOptions
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Current visualization options
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericMap'
+  /render_pipeline/get:
+    post:
+      tags: [Rendering]
+      summary: Get current rendering pipeline graph configuration
+      operationId: getRenderPipeline
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Render pipeline config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderPipelineConfig'
+  /render_pipeline/set:
+    post:
+      tags: [Rendering]
+      summary: Replace rendering pipeline graph configuration
+      operationId: setRenderPipeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenderPipelineConfig'
+      responses:
+        '200':
+          description: Render pipeline config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderPipelineConfig'
+  /render_pipeline/reset:
+    post:
+      tags: [Rendering]
+      summary: Reset rendering pipeline to disabled/default state
+      operationId: resetRenderPipeline
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Render pipeline config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderPipelineConfig'
+
+  /tiles/reload:
+    post:
+      tags: [Tiles]
+      summary: Drop tile/track caches and increment generation
+      operationId: reloadTiles
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: New generation version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                    format: int64
+                required: [version]
+  /get_tile:
+    get:
+      tags: [Tiles]
+      summary: Fetch map tile or arbitrary pixel rectangle
+      operationId: getTile
+      parameters:
+        - in: query
+          name: row
+          required: true
+          schema: { type: integer, format: int64 }
+          description: Tile row index, or start row in pixels for PNG_BY_PIXELS.
+        - in: query
+          name: col
+          required: true
+          schema: { type: integer, format: int64 }
+          description: Tile column index, or start col in pixels for PNG_BY_PIXELS.
+        - in: query
+          name: version
+          required: false
+          schema: { type: integer, format: int64, default: 0 }
+        - in: query
+          name: format
+          required: false
+          schema:
+            type: string
+            enum: [JSON_PNG_WITH_RANGES, PNG, PNG_BY_PIXELS]
+            default: JSON_PNG_WITH_RANGES
+        - in: query
+          name: bpResolution
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Exact bp resolution. Optional alternative to `level`.
+        - in: query
+          name: level
+          required: false
+          schema: { type: integer }
+          description: Resolution level in reversed order. Optional alternative to `bpResolution`.
+        - in: query
+          name: tile_size
+          required: false
+          schema: { type: integer, default: 256 }
+          description: Tile edge size for tile-based queries.
+        - in: query
+          name: rows
+          required: false
+          schema: { type: integer }
+          description: Height in pixels for PNG_BY_PIXELS.
+        - in: query
+          name: cols
+          required: false
+          schema: { type: integer }
+          description: Width in pixels for PNG_BY_PIXELS.
+      responses:
+        '200':
+          description: Tile payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TileWithRangesResponse'
+            image/png:
+              schema:
+                type: string
+                format: binary
+
+  /reverse_selection_range:
+    post:
+      tags: [Scaffolding]
+      summary: Reverse orientation of selected assembly range
+      operationId: reverseSelectionRange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RangeRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /move_selection_range:
+    post:
+      tags: [Scaffolding]
+      summary: Move selected range to a new target position
+      operationId: moveSelectionRange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoveSelectionRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /split_contig_at_bin:
+    post:
+      tags: [Scaffolding]
+      summary: Split contig at a given position
+      operationId: splitContigAtBin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SplitContigRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /group_contigs_into_scaffold:
+    post:
+      tags: [Scaffolding]
+      summary: Group selected range into scaffold
+      operationId: groupIntoScaffold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupContigsRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /ungroup_contigs_from_scaffold:
+    post:
+      tags: [Scaffolding]
+      summary: Ungroup selected scaffold segment
+      operationId: ungroupFromScaffold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RangeRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /move_selection_to_debris:
+    post:
+      tags: [Scaffolding]
+      summary: Move selected range to debris
+      operationId: moveSelectionToDebris
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RangeRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+
+  /link_fasta:
+    post:
+      tags: [Files]
+      summary: Link FASTA file to opened assembly
+      operationId: linkFasta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LinkFastaRequest' }
+      responses:
+        '200':
+          description: FASTA link validation report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /get_fasta_for_assembly:
+    post:
+      tags: [Files]
+      summary: Export FASTA for current full assembly
+      operationId: exportFastaAssembly
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: FASTA text
+          content:
+            text/plain:
+              schema:
+                type: string
+  /get_fasta_for_selection:
+    post:
+      tags: [Files]
+      summary: Export FASTA for current selection
+      operationId: exportFastaSelection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FastaSelectionRequest' }
+      responses:
+        '200':
+          description: FASTA text
+          content:
+            text/plain:
+              schema:
+                type: string
+  /get_agp_for_assembly:
+    post:
+      tags: [Files]
+      summary: Export AGP for current assembly
+      operationId: exportAgpAssembly
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GetAgpRequest' }
+      responses:
+        '200':
+          description: AGP text
+          content:
+            text/plain:
+              schema:
+                type: string
+  /load_agp:
+    post:
+      tags: [Files]
+      summary: Apply AGP to opened assembly
+      operationId: loadAgp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoadAgpRequest' }
+      responses:
+        '200':
+          description: Updated assembly info
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+
+  /names/contig:
+    post:
+      tags: [Names]
+      summary: Rename contig display name
+      operationId: renameContig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RenameContigRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /names/scaffold:
+    post:
+      tags: [Names]
+      summary: Rename scaffold display name
+      operationId: renameScaffold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RenameScaffoldRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /names/export:
+    get:
+      tags: [Names]
+      summary: Export name mappings
+      operationId: exportNameMappings
+      responses:
+        '200':
+          description: Name mappings payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /names/import:
+    post:
+      tags: [Names]
+      summary: Import contig/scaffold name mappings
+      operationId: importNameMappings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ImportNameMappingRequest' }
+      responses:
+        '200':
+          description: Updated assembly info with version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+
+  /tracks/list_files:
+    post:
+      tags: [Tracks]
+      summary: List available 1D track files in DATA_DIR
+      operationId: listTrackFiles
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Track filenames
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+  /tracks/open:
+    post:
+      tags: [Tracks]
+      summary: Open 1D track (BigWig/BED/BAM/GFF/GTF)
+      operationId: openTrack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenTrackRequest' }
+      responses:
+        '200':
+          description: Track summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/open_cooler_weights:
+    post:
+      tags: [Tracks]
+      summary: Open Cooler weights virtual 1D track
+      operationId: openCoolerWeightsTrack
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenCoolerWeightsTrackRequest' }
+      responses:
+        '200':
+          description: Track summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/probe:
+    post:
+      tags: [Tracks]
+      summary: Probe track compatibility with opened assembly
+      operationId: probeTrackCompatibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeTrackRequest' }
+      responses:
+        '200':
+          description: Compatibility report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/list:
+    post:
+      tags: [Tracks]
+      summary: List currently opened tracks
+      operationId: listTracks
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Track summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/update:
+    post:
+      tags: [Tracks]
+      summary: Update track configuration
+      operationId: updateTrack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTrackRequest' }
+      responses:
+        '200':
+          description: Updated track summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/remove:
+    post:
+      tags: [Tracks]
+      summary: Remove opened track
+      operationId: removeTrack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrackIdRequest' }
+      responses:
+        '200':
+          description: Remove status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/precompute/status:
+    post:
+      tags: [Tracks]
+      summary: Get 1D track precompute status
+      operationId: getTrackPrecomputeStatus
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Precompute status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/precompute/start:
+    post:
+      tags: [Tracks]
+      summary: Start 1D track precompute job
+      operationId: startTrackPrecompute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrackPrecomputeStartRequest' }
+      responses:
+        '200':
+          description: Precompute status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/query_1d:
+    post:
+      tags: [Tracks]
+      summary: Query visible 1D track segments in given unit/range
+      operationId: queryTracks1D
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrackQueryRequest' }
+      responses:
+        '200':
+          description: Queried tracks values and ranges
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+
+  /convert/upload:
+    post:
+      tags: [Conversion]
+      summary: Upload and convert one file (multipart)
+      operationId: uploadAndConvert
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Conversion submission status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversionSubmitResponse' }
+  /convert/jobs:
+    post:
+      tags: [Conversion]
+      summary: Start conversion job from DATA_DIR source
+      operationId: startConversionJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartConversionJobRequest' }
+      responses:
+        '200':
+          description: Conversion submission status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversionSubmitResponse' }
+    get:
+      tags: [Conversion]
+      summary: List conversion jobs
+      operationId: listConversionJobsGet
+      responses:
+        '200':
+          description: Job list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
+  /convert/jobs/list:
+    post:
+      tags: [Conversion]
+      summary: List conversion jobs (POST variant)
+      operationId: listConversionJobsPost
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Job list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
+  /convert/jobs/batch:
+    post:
+      tags: [Conversion]
+      summary: Start batch conversion jobs
+      operationId: startBatchConversionJobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartBatchConversionRequest' }
+      responses:
+        '200':
+          description: Batch submission status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /convert/jobs/{jobId}:
+    get:
+      tags: [Conversion]
+      summary: Get conversion job details
+      operationId: getConversionJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+    post:
+      tags: [Conversion]
+      summary: Get conversion job details (POST variant)
+      operationId: getConversionJobPost
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /convert/jobs/{jobId}/stop:
+    post:
+      tags: [Conversion]
+      summary: Request conversion job cancellation
+      operationId: stopConversionJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Stop status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /convert/download/{jobId}:
+    get:
+      tags: [Conversion]
+      summary: Download conversion result file for completed job
+      operationId: downloadConversionResult
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Converted artifact stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+components:
+  parameters:
+    jobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: string }
+  requestBodies:
+    EmptyBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EmptyObject'
+          example: {}
+  schemas:
+    EmptyObject:
+      type: object
+      additionalProperties: false
+    GenericMap:
+      type: object
+      additionalProperties: true
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    VersionResponse:
+      type: object
+      properties:
+        version: { type: string }
+        webuiVersion: { type: string }
+      required: [version, webuiVersion]
+    FileEntry:
+      type: object
+      properties:
+        path: { type: string }
+        name: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        modifiedAtMs: { type: integer, format: int64 }
+        extension: { type: string }
+
+    OpenFileRequest:
+      type: object
+      properties:
+        filename: { type: string }
+        fastaFilename: { type: string }
+      required: [filename]
+    OpenFileResponse:
+      type: object
+      properties:
+        status: { type: string }
+        dtype: { type: string }
+        resolutions: { type: array, items: { type: integer, format: int64 } }
+        resolutionScales: { type: array, items: { type: number } }
+        denseBlockSize: { type: integer }
+        assemblyInfo: { type: object, additionalProperties: true }
+        matrixSizeBins: { type: array, items: { type: integer } }
+      required: [status, resolutions, assemblyInfo]
+    OpenProgressResponse:
+      type: object
+      properties:
+        stage: { type: string }
+        progress: { type: number }
+      required: [stage, progress]
+    AttachResponse:
+      type: object
+      properties:
+        filename: { type: string }
+        fastaFilename: { type: string }
+        openFileResponse: { $ref: '#/components/schemas/OpenFileResponse' }
+
+    OpenSecondaryRequest:
+      type: object
+      properties:
+        filename: { type: string }
+        allowMismatch: { type: boolean, default: false }
+      required: [filename]
+    SetAssemblySourceRequest:
+      type: object
+      properties:
+        assemblySource:
+          type: string
+          enum: [PRIMARY, SECONDARY]
+      required: [assemblySource]
+    SecondarySourceStatus:
+      type: object
+      properties:
+        attached: { type: boolean }
+        filename: { type: string }
+        assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }
+        requiresConfirmation: { type: boolean }
+        requestedFilename: { type: string }
+        warnings:
+          type: array
+          items: { type: string }
+        compatibility:
+          $ref: '#/components/schemas/SecondaryCompatibility'
+      required: [attached, filename, assemblySource]
+    SecondaryCompatibility:
+      type: object
+      properties:
+        sameResolutions: { type: boolean }
+        sameMatrixSizes: { type: boolean }
+        exactMatch: { type: boolean }
+        primaryMaxBins: { type: integer, format: int64 }
+        secondaryMaxBins: { type: integer, format: int64 }
+        primaryBinsByResolution:
+          type: array
+          items: { type: integer, format: int64 }
+        secondaryBinsByResolution:
+          type: array
+          items: { type: integer, format: int64 }
+        mismatchedResolutionOrders:
+          type: array
+          items: { type: integer }
+
+    VisualizationOptionsRequest:
+      type: object
+      additionalProperties: true
+    RenderPipelineConfig:
+      type: object
+      additionalProperties: true
+
+    TileWithRangesResponse:
+      type: object
+      properties:
+        image:
+          type: string
+          description: data:image/png;base64,...
+        ranges:
+          type: object
+          properties:
+            lowerBounds:
+              type: object
+              additionalProperties: { type: number }
+            upperBounds:
+              type: object
+              additionalProperties: { type: number }
+
+    RangeRequest:
+      type: object
+      properties:
+        startBP: { type: integer, format: int64 }
+        endBP: { type: integer, format: int64 }
+      required: [startBP, endBP]
+    MoveSelectionRequest:
+      type: object
+      properties:
+        startBP: { type: integer, format: int64 }
+        endBP: { type: integer, format: int64 }
+        targetStartBP: { type: integer, format: int64 }
+      required: [startBP, endBP, targetStartBP]
+    SplitContigRequest:
+      type: object
+      properties:
+        splitPx: { type: integer, format: int64 }
+        bpResolution: { type: integer, format: int64 }
+      required: [splitPx, bpResolution]
+    GroupContigsRequest:
+      type: object
+      properties:
+        startBP: { type: integer, format: int64 }
+        endBP: { type: integer, format: int64 }
+        newScaffoldName: { type: string }
+        spacerLength: { type: integer, format: int64 }
+      required: [startBP, endBP]
+
+    LinkFastaRequest:
+      type: object
+      properties:
+        fastaFilename: { type: string }
+        allowMismatch: { type: boolean, default: false }
+      required: [fastaFilename]
+    FastaSelectionRequest:
+      type: object
+      properties:
+        fromBpX: { type: integer, format: int64 }
+        fromBpY: { type: integer, format: int64 }
+        toBpX: { type: integer, format: int64 }
+        toBpY: { type: integer, format: int64 }
+      required: [fromBpX, fromBpY, toBpX, toBpY]
+    GetAgpRequest:
+      type: object
+      properties:
+        defaultSpacerLength: { type: integer, format: int64, default: 1000 }
+    LoadAgpRequest:
+      type: object
+      properties:
+        agpFilename: { type: string }
+      required: [agpFilename]
+
+    RenameContigRequest:
+      type: object
+      properties:
+        contigId: { type: integer }
+        newName:
+          type: string
+          nullable: true
+      required: [contigId]
+    RenameScaffoldRequest:
+      type: object
+      properties:
+        scaffoldId: { type: integer, format: int64 }
+        newName:
+          type: string
+          nullable: true
+      required: [scaffoldId]
+    ImportNameMappingRequest:
+      type: object
+      properties:
+        contigs:
+          type: array
+          items:
+            type: object
+            properties:
+              contigId: { type: integer }
+              name: { type: string }
+            required: [contigId, name]
+        scaffolds:
+          type: array
+          items:
+            type: object
+            properties:
+              scaffoldId: { type: integer, format: int64 }
+              name: { type: string }
+            required: [scaffoldId, name]
+      required: [contigs, scaffolds]
+
+    OpenTrackRequest:
+      type: object
+      properties:
+        filename: { type: string }
+        name: { type: string }
+        color: { type: string, description: CSS color string }
+      required: [filename]
+    OpenCoolerWeightsTrackRequest:
+      type: object
+      properties:
+        name: { type: string }
+        color: { type: string }
+    ProbeTrackRequest:
+      type: object
+      properties:
+        filename: { type: string }
+      required: [filename]
+    UpdateTrackRequest:
+      type: object
+      properties:
+        trackId: { type: string }
+        visible: { type: boolean }
+        color: { type: string }
+        name: { type: string }
+        renderMode: { type: string }
+        aggregationMode: { type: string }
+        logScale: { type: boolean }
+      required: [trackId]
+    TrackIdRequest:
+      type: object
+      properties:
+        trackId: { type: string }
+      required: [trackId]
+    TrackPrecomputeStartRequest:
+      type: object
+      properties:
+        trackId: { type: string, description: Optional; all tracks if omitted }
+        force: { type: boolean, default: false }
+    TrackQueryRequest:
+      type: object
+      properties:
+        widthPx: { type: integer, default: 512 }
+        bpResolution: { type: integer, format: int64 }
+        unit:
+          type: string
+          enum: [PIXELS, BINS, BP]
+        units:
+          type: string
+          enum: [PIXELS, BINS, BP]
+        start: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        startPx: { type: integer, format: int64 }
+        endPx: { type: integer, format: int64 }
+        startBin: { type: integer, format: int64 }
+        endBin: { type: integer, format: int64 }
+        startBP: { type: integer, format: int64 }
+        endBP: { type: integer, format: int64 }
+      required: [bpResolution]
+
+    StartConversionJobRequest:
+      type: object
+      properties:
+        filename: { type: string }
+        direction:
+          type: string
+          enum: [mcool-to-hict, hict-to-mcool]
+          default: mcool-to-hict
+        overwrite: { type: boolean, default: false }
+        resolutions:
+          type: string
+          description: Comma-separated resolution list, e.g. "1000,5000,10000"
+        compression: { type: integer, default: 6 }
+        compressionAlgorithm:
+          type: string
+          enum: [deflate, lzf, zstd, none]
+          default: deflate
+        chunkSize: { type: integer, default: 8192 }
+        parallelism: { type: integer }
+      required: [filename]
+    StartBatchConversionRequest:
+      type: object
+      properties:
+        files:
+          type: array
+          items: { type: string }
+        parallelJobs: { type: integer, default: 1 }
+        parallelism: { type: integer }
+        overwrite: { type: boolean, default: false }
+        resolutions: { type: string }
+        compression: { type: integer, default: 6 }
+        compressionAlgorithm:
+          type: string
+          enum: [deflate, lzf, zstd, none]
+          default: deflate
+        chunkSize: { type: integer, default: 8192 }
+      required: [files]
+    ConversionSubmitResponse:
+      type: object
+      properties:
+        status: { type: string }
+        jobId: { type: string }
+      required: [status]

@@ -3,6 +3,11 @@
 This document describes the endpoint subset used by the `jvm-api-v1` Python library.
 All endpoints are served by HiCT_JVM API server (`start-api-server` or `start-server`).
 
+Interactive documentation is served by the backend itself:
+
+- `GET /api/v1/` - Swagger UI
+- `GET /api/v1/openapi.yaml` - OpenAPI v1 source
+
 ## Base URL
 
 Typically:
