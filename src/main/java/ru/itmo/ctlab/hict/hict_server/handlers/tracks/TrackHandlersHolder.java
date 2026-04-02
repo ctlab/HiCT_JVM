@@ -347,6 +347,114 @@ public class TrackHandlersHolder extends HandlersHolder {
           )))
       );
     });
+
+    router.post("/tracks/search_features").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var query = request.getString("query", request.getString("q", ""));
+      final var limit = request.getInteger("limit", 50);
+      final var offset = request.getInteger("offset", 0);
+      final var trackId = request.getString("trackId");
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.TRACK,
+        RequestTaskScheduler.CancellationDomain.TRACK,
+        () -> manager.searchFeatures(chunkedFile, query, limit, offset, trackId),
+        result -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(result)),
+        () -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(new Track1DManager.FeatureSearchResponse(
+            query == null ? "" : query.trim(),
+            Math.max(1, limit),
+            Math.max(0, offset),
+            false,
+            List.of()
+          )))
+      );
+    });
+
+    router.post("/tracks/feature_context").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var widthPx = request.getInteger("widthPx", 1024);
+      final var bpResolution = request.getLong("bpResolution", 1L);
+      final var marginScreens = request.getDouble("marginScreens", 1.0d);
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      final var resolvedUnits = resolveUnits(request);
+      final var start = resolveStart(request, resolvedUnits);
+      final var end = resolveEnd(request, resolvedUnits, start + 1L);
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.TRACK,
+        RequestTaskScheduler.CancellationDomain.TRACK,
+        () -> {
+          final var initialQuery = manager.queryVisibleTracks(
+            chunkedFile,
+            start,
+            end,
+            Math.max(2, widthPx),
+            bpResolution,
+            resolvedUnits
+          );
+          return manager.queryFeatureContext(
+            chunkedFile,
+            initialQuery.getStartBp(),
+            initialQuery.getEndBp(),
+            widthPx,
+            bpResolution,
+            marginScreens
+          );
+        },
+        result -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(result)),
+        () -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(new Track1DManager.FeatureContextResponse(
+            0L,
+            1L,
+            0L,
+            1L,
+            marginScreens,
+            Math.max(1, widthPx),
+            bpResolution,
+            new Track1DManager.QueryResult(
+              0L,
+              1L,
+              0L,
+              1L,
+              Math.max(1, widthPx),
+              bpResolution,
+              List.of()
+            )
+          )))
+      );
+    });
   }
 
   private static @NotNull QueryLengthUnit resolveUnits(final @NotNull io.vertx.core.json.JsonObject request) {

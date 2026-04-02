@@ -890,6 +890,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/search_features:
+    post:
+      tags: [Tracks]
+      summary: Whole-genome feature search across loaded 1D feature tracks
+      operationId: searchTrackFeatures
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrackFeatureSearchRequest' }
+      responses:
+        '200':
+          description: Search results with pagination hint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/feature_context:
+    post:
+      tags: [Tracks]
+      summary: Query 1D tracks around selected feature with screen-margin prefetch window
+      operationId: getTrackFeatureContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrackFeatureContextRequest' }
+      responses:
+        '200':
+          description: Feature context window with queried tracks payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
 
   /convert/upload:
     post:
@@ -1421,6 +1453,35 @@ components:
         startBP: { type: integer, format: int64 }
         endBP: { type: integer, format: int64 }
       required: [bpResolution]
+    TrackFeatureSearchRequest:
+      type: object
+      properties:
+        query: { type: string, minLength: 1 }
+        limit: { type: integer, minimum: 1, default: 50 }
+        offset: { type: integer, minimum: 0, default: 0 }
+        trackId: { type: string, description: Optional track filter }
+      required: [query]
+    TrackFeatureContextRequest:
+      type: object
+      properties:
+        widthPx: { type: integer, minimum: 1, default: 1024 }
+        bpResolution: { type: integer, format: int64 }
+        marginScreens: { type: number, format: double, default: 1.0 }
+        unit:
+          type: string
+          enum: [PIXELS, BINS, BP]
+        units:
+          type: string
+          enum: [PIXELS, BINS, BP]
+        start: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        startPx: { type: integer, format: int64 }
+        endPx: { type: integer, format: int64 }
+        startBin: { type: integer, format: int64 }
+        endBin: { type: integer, format: int64 }
+        startBP: { type: integer, format: int64 }
+        endBP: { type: integer, format: int64 }
+      required: [bpResolution, widthPx]
 
     StartConversionJobRequest:
       type: object
