@@ -251,6 +251,37 @@ public class TrackHandlersHolder extends HandlersHolder {
       );
     });
 
+    router.post("/tracks/reorder").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var trackId = request.getString("trackId");
+      if (trackId == null || trackId.isBlank()) {
+        ctx.fail(new IllegalArgumentException("trackId is required"));
+        return;
+      }
+      if (!request.containsKey("targetIndex")) {
+        ctx.fail(new IllegalArgumentException("targetIndex is required"));
+        return;
+      }
+      final var targetIndex = request.getInteger("targetIndex", 0);
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> manager.reorderTrack(trackId, targetIndex),
+        tracks -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(tracks))
+      );
+    });
+
     router.post("/tracks/precompute/status").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {

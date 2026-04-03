@@ -354,6 +354,28 @@ public class Track1DManager {
     }
   }
 
+  public @NotNull List<TrackSummary> reorderTrack(final @NotNull String trackId,
+                                                  final int targetIndex) {
+    try {
+      this.lock.writeLock().lock();
+      final var entries = new ArrayList<>(this.tracks.values());
+      final var sourceIndex = findTrackIndex(entries, trackId);
+      if (sourceIndex < 0) {
+        throw new IllegalArgumentException("Unknown track id " + trackId);
+      }
+      final var moved = entries.remove(sourceIndex);
+      final var clampedTarget = Math.max(0, Math.min(targetIndex, entries.size()));
+      entries.add(clampedTarget, moved);
+      this.tracks.clear();
+      for (final var entry : entries) {
+        this.tracks.put(entry.trackId(), entry);
+      }
+      return this.tracks.values().stream().map(TrackState::toSummary).toList();
+    } finally {
+      this.lock.writeLock().unlock();
+    }
+  }
+
   public void close() {
     try {
       this.lock.writeLock().lock();
@@ -1360,6 +1382,16 @@ public class Track1DManager {
     return fallback;
   }
 
+  private static int findTrackIndex(final @NotNull List<TrackState> entries,
+                                    final @NotNull String trackId) {
+    for (int i = 0; i < entries.size(); i++) {
+      if (entries.get(i).trackId().equals(trackId)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   private static @NotNull String colorForIndex(final int index) {
     if (COLOR_PALETTE.isEmpty()) {
       return "#4e79a7";
@@ -1566,6 +1598,80 @@ public class Track1DManager {
     return null;
   }
 
+  private static boolean isGffBlockLikeFeature(final @NotNull String featureTypeLower) {
+    return switch (featureTypeLower) {
+      case "exon", "cds", "utr", "five_prime_utr", "three_prime_utr", "start_codon", "stop_codon" -> true;
+      default -> false;
+    };
+  }
+
+  private static boolean isGffTranscriptLikeFeature(final @NotNull String featureTypeLower) {
+    return switch (featureTypeLower) {
+      case "transcript",
+        "mrna",
+        "ncrna",
+        "trna",
+        "rrna",
+        "snrna",
+        "snorna",
+        "lncrna",
+        "mirna",
+        "pirna",
+        "guide_rna",
+        "primary_transcript",
+        "pseudogenic_transcript" -> true;
+      default -> false;
+    };
+  }
+
+  private static boolean isGffGeneLikeFeature(final @NotNull String featureTypeLower) {
+    return "gene".equals(featureTypeLower) || "pseudogene".equals(featureTypeLower);
+  }
+
+  private static boolean isGffCodingFeature(final @NotNull String featureTypeLower) {
+    return "cds".equals(featureTypeLower) || "start_codon".equals(featureTypeLower) || "stop_codon".equals(featureTypeLower);
+  }
+
+  private static @Nullable String sanitizeGffGroupToken(final @Nullable String token) {
+    if (token == null || token.isBlank()) {
+      return null;
+    }
+    final var primary = token.split(",")[0].trim();
+    if (primary.isBlank()) {
+      return null;
+    }
+    if (primary.startsWith("\"") && primary.endsWith("\"") && primary.length() > 1) {
+      return primary.substring(1, primary.length() - 1);
+    }
+    return primary;
+  }
+
+  private static @Nullable String resolveGffGroupKey(final @NotNull Map<String, String> attributes,
+                                                      final @NotNull String featureTypeLower) {
+    final var transcriptLike = sanitizeGffGroupToken(firstNonBlank(
+      attributes.get("transcript_id"),
+      attributes.get("transcriptId"),
+      attributes.get("Parent"),
+      attributes.get("ID")
+    ));
+    if (transcriptLike != null) {
+      return "tx:" + transcriptLike;
+    }
+    if (isGffGeneLikeFeature(featureTypeLower) || isGffTranscriptLikeFeature(featureTypeLower)) {
+      final var geneLike = sanitizeGffGroupToken(firstNonBlank(
+        attributes.get("gene_id"),
+        attributes.get("gene"),
+        attributes.get("gene_name"),
+        attributes.get("Name"),
+        attributes.get("ID")
+      ));
+      if (geneLike != null) {
+        return "gene:" + geneLike;
+      }
+    }
+    return null;
+  }
+
   private static @NotNull BufferedReader openMaybeGzipReader(final @NotNull Path filePath) throws IOException {
     final InputStream baseStream = Files.newInputStream(filePath);
     final InputStream dataStream;
@@ -1764,6 +1870,33 @@ public class Track1DManager {
         thickEndPx = projectedThick.get().endPx();
       }
     }
+    final var projectedBlocks = new ArrayList<ProjectedBlock>();
+    for (final var block : feature.blocks()) {
+      if (block == null || block.end() <= block.start()) {
+        continue;
+      }
+      final var projectedBlock = projectSourceIntervalOnSegmentRaw(
+        segment,
+        block.start(),
+        block.end(),
+        feature.value(),
+        null,
+        queryStartPx,
+        queryEndPx,
+        bpResolution
+      );
+      if (projectedBlock.isPresent()) {
+        final var interval = projectedBlock.get();
+        projectedBlocks.add(new ProjectedBlock(
+          interval.startBp(),
+          interval.endBp(),
+          interval.startPx(),
+          interval.endPx(),
+          block.coding()
+        ));
+      }
+    }
+    projectedBlocks.sort(Comparator.comparingLong(ProjectedBlock::startPx));
     final var projected = projectedBase.get();
     return Optional.of(new ProjectedFeature(
       projected.startBp(),
@@ -1777,7 +1910,8 @@ public class Track1DManager {
       thickEndBp,
       thickStartPx,
       thickEndPx,
-      feature.featureType()
+      feature.featureType(),
+      projectedBlocks
     ));
   }
 
@@ -1838,7 +1972,8 @@ public class Track1DManager {
       null,
       null,
       null,
-      null
+      null,
+      List.of()
     ));
   }
 
@@ -2228,7 +2363,16 @@ public class Track1DManager {
         f.thickEndBp(),
         f.thickStartPx(),
         f.thickEndPx(),
-        f.featureType()
+        f.featureType(),
+        f.blocks().stream()
+          .map(block -> new TrackBin.TrackBinBlock(
+            block.startBp(),
+            block.endBp(),
+            block.startPx(),
+            block.endPx(),
+            block.coding()
+          ))
+          .toList()
       ))
       .toList();
   }
@@ -2447,7 +2591,7 @@ public class Track1DManager {
             hasBed12Rows = true;
           }
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType));
+            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType, List.of()));
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
           }
@@ -2496,7 +2640,7 @@ public class Track1DManager {
           final var alt = fields[4];
           final var label = (id != null) ? id : (ref + ">" + alt);
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, 1.0d, label, null, null, null, "VCF"));
+            .add(new FeatureRange(start, end, 1.0d, label, null, null, null, "VCF", List.of()));
           total++;
         }
       } catch (final IOException e) {
@@ -2508,6 +2652,7 @@ public class Track1DManager {
 
     static @NotNull InMemoryTrackDataSource fromGffOrGtf(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
+      final var groupedFeatures = new HashMap<String, Map<String, GffTranscriptFeatureBuilder>>();
       long total = 0L;
       boolean hasSignalValues = false;
       final var lowered = filePath.getFileName().toString().toLowerCase(Locale.ROOT);
@@ -2526,6 +2671,7 @@ public class Track1DManager {
           }
           final var sourceName = fields[0];
           final var featureType = (fields[2] == null || fields[2].isBlank()) ? "feature" : fields[2];
+          final var featureTypeLower = featureType.trim().toLowerCase(Locale.ROOT);
           final long start1Based = parseLongOrThrow(fields[3], "GFF/GTF start", lineNo);
           final long end1Based = parseLongOrThrow(fields[4], "GFF/GTF end", lineNo);
           final long start = Math.max(0L, start1Based - 1L);
@@ -2543,8 +2689,33 @@ public class Track1DManager {
             attributes.get("Parent"),
             featureType
           );
-          features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, value, label, strand, null, null, featureType));
+          final var groupKey = resolveGffGroupKey(attributes, featureTypeLower);
+          final boolean groupable =
+            groupKey != null &&
+              (isGffBlockLikeFeature(featureTypeLower) ||
+                isGffTranscriptLikeFeature(featureTypeLower));
+          if (groupable) {
+            final var bySource = groupedFeatures.computeIfAbsent(sourceName, ignored -> new LinkedHashMap<>());
+            final var builder = bySource.computeIfAbsent(
+              groupKey,
+              ignored -> new GffTranscriptFeatureBuilder(groupKey)
+            );
+            builder.accept(
+              start,
+              end,
+              value,
+              label,
+              strand,
+              featureType,
+              featureTypeLower,
+              attributes
+            );
+          } else {
+            if (!isGffGeneLikeFeature(featureTypeLower)) {
+              features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
+                .add(new FeatureRange(start, end, value, label, strand, null, null, featureType, List.of()));
+            }
+          }
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
           }
@@ -2552,6 +2723,16 @@ public class Track1DManager {
         }
       } catch (final IOException e) {
         throw new RuntimeException("Failed to parse GFF/GTF track " + filePath, e);
+      }
+      for (final var entry : groupedFeatures.entrySet()) {
+        final var sourceName = entry.getKey();
+        final var destination = features.computeIfAbsent(sourceName, ignored -> new ArrayList<>());
+        entry.getValue().values().forEach(builder -> {
+          final var aggregated = builder.toFeatureRange();
+          if (aggregated != null) {
+            destination.add(aggregated);
+          }
+        });
       }
       features.values().forEach(list -> list.sort(Comparator.comparingLong(FeatureRange::start)));
       return new InMemoryTrackDataSource(features, total, hasSignalValues, true, RenderStyle.FEATURE);
@@ -3337,6 +3518,180 @@ public class Track1DManager {
                                  long visiblePxEnd) {
   }
 
+  private static final class GffTranscriptFeatureBuilder {
+    private final String groupKey;
+    private final List<LongInterval> exonIntervals = new ArrayList<>();
+    private final List<LongInterval> codingIntervals = new ArrayList<>();
+    private long start = Long.MAX_VALUE;
+    private long end = Long.MIN_VALUE;
+    private String label;
+    private String strand;
+    private String featureType;
+    private double maxValue = 1.0d;
+    private boolean hasCustomValue = false;
+
+    private GffTranscriptFeatureBuilder(final @NotNull String groupKey) {
+      this.groupKey = groupKey;
+    }
+
+    private void accept(final long start,
+                        final long end,
+                        final double value,
+                        final String fallbackLabel,
+                        final String strand,
+                        final String featureType,
+                        final String featureTypeLower,
+                        final @NotNull Map<String, String> attributes) {
+      this.start = Math.min(this.start, start);
+      this.end = Math.max(this.end, end);
+      if (strand != null && this.strand == null) {
+        this.strand = strand;
+      }
+      final var resolvedLabel = firstNonBlank(
+        attributes.get("Name"),
+        attributes.get("transcript_name"),
+        attributes.get("gene_name"),
+        attributes.get("gene_id"),
+        attributes.get("transcript_id"),
+        attributes.get("ID"),
+        attributes.get("Parent"),
+        fallbackLabel
+      );
+      if (shouldPreferLabel(this.label, resolvedLabel, this.featureType)) {
+        this.label = resolvedLabel;
+      }
+      if (this.featureType == null || isGffTranscriptLikeFeature(featureTypeLower) || isGffGeneLikeFeature(featureTypeLower)) {
+        this.featureType = featureType;
+      }
+      if (Math.abs(value - 1.0d) > 1e-9) {
+        this.maxValue = Math.max(this.maxValue, value);
+        this.hasCustomValue = true;
+      }
+      if (isGffBlockLikeFeature(featureTypeLower)) {
+        final var interval = new LongInterval(start, end);
+        this.exonIntervals.add(interval);
+        if (isGffCodingFeature(featureTypeLower)) {
+          this.codingIntervals.add(interval);
+        }
+      }
+    }
+
+    private @Nullable FeatureRange toFeatureRange() {
+      final var mergedExons = mergeIntervals(this.exonIntervals);
+      final var mergedCoding = mergeIntervals(this.codingIntervals);
+      final var blockIntervals = mergedExons.isEmpty() ? mergedCoding : mergedExons;
+      final var blocks = new ArrayList<FeatureBlock>(blockIntervals.size());
+      for (final var interval : blockIntervals) {
+        blocks.add(new FeatureBlock(
+          interval.start(),
+          interval.end(),
+          overlapsAny(mergedCoding, interval)
+        ));
+      }
+      long effectiveStart = this.start;
+      long effectiveEnd = this.end;
+      if (effectiveStart == Long.MAX_VALUE || effectiveEnd <= effectiveStart) {
+        if (!blockIntervals.isEmpty()) {
+          effectiveStart = blockIntervals.get(0).start();
+          effectiveEnd = blockIntervals.get(blockIntervals.size() - 1).end();
+        } else {
+          return null;
+        }
+      }
+      Long thickStart = null;
+      Long thickEnd = null;
+      if (!mergedCoding.isEmpty()) {
+        thickStart = mergedCoding.get(0).start();
+        thickEnd = mergedCoding.get(mergedCoding.size() - 1).end();
+      }
+      final var resolvedFeatureType = firstNonBlank(this.featureType, "transcript");
+      final var resolvedLabel = firstNonBlank(this.label, this.groupKey, resolvedFeatureType);
+      final var resolvedValue = this.hasCustomValue ? this.maxValue : 1.0d;
+      return new FeatureRange(
+        effectiveStart,
+        Math.max(effectiveStart + 1L, effectiveEnd),
+        resolvedValue,
+        resolvedLabel,
+        this.strand,
+        thickStart,
+        thickEnd,
+        resolvedFeatureType,
+        blocks
+      );
+    }
+
+    private static @NotNull List<LongInterval> mergeIntervals(final @NotNull List<LongInterval> intervals) {
+      if (intervals.isEmpty()) {
+        return List.of();
+      }
+      final var sorted = new ArrayList<>(intervals);
+      sorted.sort(Comparator.comparingLong(LongInterval::start).thenComparingLong(LongInterval::end));
+      final var merged = new ArrayList<LongInterval>(sorted.size());
+      long currentStart = sorted.get(0).start();
+      long currentEnd = sorted.get(0).end();
+      for (int i = 1; i < sorted.size(); i++) {
+        final var interval = sorted.get(i);
+        if (interval.start() <= currentEnd) {
+          currentEnd = Math.max(currentEnd, interval.end());
+          continue;
+        }
+        merged.add(new LongInterval(currentStart, currentEnd));
+        currentStart = interval.start();
+        currentEnd = interval.end();
+      }
+      merged.add(new LongInterval(currentStart, currentEnd));
+      return merged;
+    }
+
+    private static boolean overlapsAny(final @NotNull List<LongInterval> codingIntervals,
+                                       final @NotNull LongInterval target) {
+      for (final var coding : codingIntervals) {
+        if (coding.end() <= target.start()) {
+          continue;
+        }
+        if (coding.start() >= target.end()) {
+          break;
+        }
+        return true;
+      }
+      return false;
+    }
+
+    private static boolean shouldPreferLabel(final @Nullable String current,
+                                             final @Nullable String candidate,
+                                             final @Nullable String featureType) {
+      if (candidate == null || candidate.isBlank()) {
+        return false;
+      }
+      if (current == null || current.isBlank()) {
+        return true;
+      }
+      final var currentLower = current.trim().toLowerCase(Locale.ROOT);
+      final var candidateLower = candidate.trim().toLowerCase(Locale.ROOT);
+      if (currentLower.equals(candidateLower)) {
+        return false;
+      }
+      final var featureTypeLower = featureType == null ? "" : featureType.trim().toLowerCase(Locale.ROOT);
+      final boolean currentGeneric =
+        currentLower.equals(featureTypeLower) ||
+          currentLower.startsWith("tx:") ||
+          currentLower.startsWith("gene:");
+      final boolean candidateGeneric =
+        candidateLower.equals(featureTypeLower) ||
+          candidateLower.startsWith("tx:") ||
+          candidateLower.startsWith("gene:");
+      return currentGeneric && !candidateGeneric;
+    }
+  }
+
+  private record LongInterval(long start, long end) {
+  }
+
+  private record FeatureBlock(long start,
+                              long end,
+                              boolean coding) {
+  }
+
   private record FeatureRange(long start,
                               long end,
                               double value,
@@ -3344,7 +3699,15 @@ public class Track1DManager {
                               String strand,
                               Long thickStart,
                               Long thickEnd,
-                              String featureType) {
+                              String featureType,
+                              @NotNull List<FeatureBlock> blocks) {
+  }
+
+  private record ProjectedBlock(long startBp,
+                                long endBp,
+                                long startPx,
+                                long endPx,
+                                boolean coding) {
   }
 
   private record ProjectedFeature(long startBp,
@@ -3358,7 +3721,8 @@ public class Track1DManager {
                                   Long thickEndBp,
                                   Long thickStartPx,
                                   Long thickEndPx,
-                                  String featureType) {
+                                  String featureType,
+                                  @NotNull List<ProjectedBlock> blocks) {
   }
 
   @Getter
@@ -3580,13 +3944,14 @@ public class Track1DManager {
     private final Long thickStartPx;
     private final Long thickEndPx;
     private final String featureType;
+    private final List<TrackBinBlock> blocks;
 
     public TrackBin(final long startBp,
                     final long endBp,
                     final double value,
                     final long count,
                     final String label) {
-      this(startBp, endBp, value, count, label, null, null, null, null, null, null, null, null);
+      this(startBp, endBp, value, count, label, null, null, null, null, null, null, null, null, List.of());
     }
 
     public TrackBin(final long startBp,
@@ -3596,7 +3961,7 @@ public class Track1DManager {
                     final String label,
                     final Long startPx,
                     final Long endPx) {
-      this(startBp, endBp, value, count, label, startPx, endPx, null, null, null, null, null, null);
+      this(startBp, endBp, value, count, label, startPx, endPx, null, null, null, null, null, null, List.of());
     }
 
     public TrackBin(final long startBp,
@@ -3612,6 +3977,38 @@ public class Track1DManager {
                     final Long thickStartPx,
                     final Long thickEndPx,
                     final String featureType) {
+      this(
+        startBp,
+        endBp,
+        value,
+        count,
+        label,
+        startPx,
+        endPx,
+        strand,
+        thickStartBp,
+        thickEndBp,
+        thickStartPx,
+        thickEndPx,
+        featureType,
+        List.of()
+      );
+    }
+
+    public TrackBin(final long startBp,
+                    final long endBp,
+                    final double value,
+                    final long count,
+                    final String label,
+                    final Long startPx,
+                    final Long endPx,
+                    final String strand,
+                    final Long thickStartBp,
+                    final Long thickEndBp,
+                    final Long thickStartPx,
+                    final Long thickEndPx,
+                    final String featureType,
+                    final List<TrackBinBlock> blocks) {
       this.startBp = startBp;
       this.endBp = endBp;
       this.value = value;
@@ -3625,6 +4022,17 @@ public class Track1DManager {
       this.thickStartPx = thickStartPx;
       this.thickEndPx = thickEndPx;
       this.featureType = featureType;
+      this.blocks = blocks == null ? List.of() : blocks;
+    }
+
+    @Getter
+    @RequiredArgsConstructor
+    public static final class TrackBinBlock {
+      private final long startBp;
+      private final long endBp;
+      private final long startPx;
+      private final long endPx;
+      private final boolean coding;
     }
   }
 

@@ -846,6 +846,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/reorder:
+    post:
+      tags: [Tracks]
+      summary: Reorder loaded 1D tracks
+      operationId: reorderTracks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrackReorderRequest' }
+      responses:
+        '200':
+          description: Updated track list in render order
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
   /tracks/precompute/status:
     post:
       tags: [Tracks]
@@ -1428,6 +1446,12 @@ components:
       properties:
         trackId: { type: string }
       required: [trackId]
+    TrackReorderRequest:
+      type: object
+      properties:
+        trackId: { type: string }
+        targetIndex: { type: integer, minimum: 0 }
+      required: [trackId, targetIndex]
     TrackPrecomputeStartRequest:
       type: object
       properties:

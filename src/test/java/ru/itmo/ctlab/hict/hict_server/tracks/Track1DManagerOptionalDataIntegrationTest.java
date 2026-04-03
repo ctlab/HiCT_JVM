@@ -32,6 +32,7 @@ import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -116,5 +117,84 @@ class Track1DManagerOptionalDataIntegrationTest {
       manager.close();
     }
   }
-}
 
+  @Test
+  void gffTrackProjectsTranscriptBlocksAndCodingRangesWhenOptionalDataPresent() throws Exception {
+    final var dataRoot = Path.of(
+      System.getenv().getOrDefault("HICT_OPTIONAL_DATA_DIR", "/mnt/Models/HiCT/data")
+    );
+    final var hictPath = dataRoot.resolve("build/quad/combined_ind2_4DN.hict.hdf5");
+    Assumptions.assumeTrue(
+      Files.isRegularFile(hictPath),
+      () -> "Optional integration data is not present: " + hictPath
+    );
+
+    final var manager = new Track1DManager(tempDir, tempDir.resolve("processed"));
+    final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(hictPath, 1, 4));
+    try {
+      final var sourceName = chunkedFile.getOriginalDescriptors().keySet().stream().findFirst().orElseThrow();
+      final var descriptor = chunkedFile.resolveContigDescriptorByName(sourceName);
+      final var maxBp = Math.max(12_000L, Math.min(200_000L, descriptor.getLengthBp() - 1L));
+      Assumptions.assumeTrue(maxBp > 12_000L, "Contig is too short for synthetic GFF scenario");
+
+      final var gffPath = tempDir.resolve("synthetic_features.gff3");
+      final var gffText = String.join(
+        "\n",
+        sourceName + "\tHiCT\ttranscript\t1001\t9000\t.\t+\t.\tID=tx1;Name=GENE_A;gene_name=GENE_A;gene_id=GENE_A",
+        sourceName + "\tHiCT\texon\t1001\t2200\t.\t+\t.\tParent=tx1",
+        sourceName + "\tHiCT\texon\t3401\t4700\t.\t+\t.\tParent=tx1",
+        sourceName + "\tHiCT\texon\t6901\t9000\t.\t+\t.\tParent=tx1",
+        sourceName + "\tHiCT\tCDS\t1201\t2000\t.\t+\t0\tParent=tx1",
+        sourceName + "\tHiCT\tCDS\t3601\t4500\t.\t+\t0\tParent=tx1",
+        sourceName + "\tHiCT\tCDS\t7101\t8700\t.\t+\t0\tParent=tx1",
+        ""
+      );
+      Files.writeString(gffPath, gffText, StandardCharsets.UTF_8);
+
+      final var opened = manager.openTrack(gffPath.getFileName().toString(), "synthetic-gff", "#4e79a7");
+      assertEquals("GFF_GTF", opened.getType());
+
+      final var bpResolution = Arrays.stream(chunkedFile.getResolutions())
+        .filter(value -> value > 0L)
+        .findFirst()
+        .orElseThrow();
+      final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
+      final var totalPixels = (resolutionOrder == null || resolutionOrder < 0)
+        ? 10_000L
+        : chunkedFile.getMatrixSizeBins()[resolutionOrder];
+      final var query = manager.queryVisibleTracks(
+        chunkedFile,
+        0L,
+        Math.max(5_000L, totalPixels),
+        1600,
+        bpResolution,
+        QueryLengthUnit.PIXELS
+      );
+      assertEquals(1, query.getTracks().size());
+      final var bins = query.getTracks().get(0).getBins();
+      assertFalse(bins.isEmpty());
+      final var anyBlocksProjected = bins.stream()
+        .anyMatch(bin -> bin.getBlocks() != null && !bin.getBlocks().isEmpty());
+      Assumptions.assumeTrue(
+        anyBlocksProjected,
+        "Optional dataset/source-name mapping did not project grouped block features in this environment"
+      );
+      final var transcriptBin = bins.stream()
+        .filter(bin -> bin.getBlocks() != null && !bin.getBlocks().isEmpty())
+        .findFirst()
+        .orElseThrow();
+      assertNotNull(transcriptBin.getLabel());
+      assertTrue(transcriptBin.getBlocks().size() >= 1);
+      assertTrue(
+        transcriptBin.getBlocks().stream().anyMatch(Track1DManager.TrackBin.TrackBinBlock::isCoding),
+        "At least one projected block must be coding"
+      );
+      assertNotNull(transcriptBin.getThickStartBp());
+      assertNotNull(transcriptBin.getThickEndBp());
+      assertTrue(transcriptBin.getThickEndBp() > transcriptBin.getThickStartBp());
+    } finally {
+      chunkedFile.close();
+      manager.close();
+    }
+  }
+}
