@@ -57,6 +57,13 @@ import java.util.Objects;
 @Slf4j
 public class FileOpHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private static final String PRIMARY_CHUNKED_FILE_KEY = "chunkedFile";
+  private static final String SECONDARY_CHUNKED_FILE_KEY = "chunkedFileSecondary";
+  private static final String OPENED_SECONDARY_FILENAME_KEY = "openedSecondaryFilename";
+  private static final String SECONDARY_COMPATIBILITY_KEY = "secondarySourceCompatibility";
+  private static final String ASSEMBLY_SOURCE_KEY = "assemblyInfoSource";
+  private static final String ASSEMBLY_SOURCE_PRIMARY = "PRIMARY";
+  private static final String ASSEMBLY_SOURCE_SECONDARY = "SECONDARY";
   private record JsonRouteResult(int statusCode, @NotNull io.vertx.core.json.JsonObject payload) {}
 
   @Override
@@ -93,6 +100,14 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
 
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY));
+          map.remove(PRIMARY_CHUNKED_FILE_KEY);
+          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
+          map.remove(SECONDARY_CHUNKED_FILE_KEY);
+          map.remove(OPENED_SECONDARY_FILENAME_KEY);
+          map.remove(SECONDARY_COMPATIBILITY_KEY);
+          map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+
           final var oldTrackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
           if (oldTrackManagerWrapper != null) {
             oldTrackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
@@ -121,7 +136,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           ));
           final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
           log.info("Putting chunkedFile into the local map");
-          map.put("chunkedFile", chunkedFileWrapper);
+          map.put(PRIMARY_CHUNKED_FILE_KEY, chunkedFileWrapper);
           map.put("openedFilename", filename);
           map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
 
@@ -163,6 +178,179 @@ public class FileOpHandlersHolder extends HandlersHolder {
         .end(((io.vertx.core.json.JsonObject) progressObj).encode());
     });
 
+    router.post("/secondary/status").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.UI_UX,
+        null,
+        () -> secondaryStatusJson(vertx.sharedData().getLocalMap("hict_server")),
+        response -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(response.encode())
+      );
+    });
+
+    router.post("/secondary/open").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+          if (primaryWrapper == null) {
+            throw new IllegalStateException("Open primary Hi-C source before attaching secondary source");
+          }
+          final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
+          if (dataDirectoryWrapper == null) {
+            throw new RuntimeException("Data directory is not present in local map");
+          }
+          final var requestJson = ctx.body().asJsonObject();
+          final var filename = requestJson.getString("filename");
+          final var allowMismatch = requestJson.getBoolean("allowMismatch", false);
+          if (filename == null || filename.isBlank()) {
+            throw new IllegalArgumentException("Secondary source filename is required");
+          }
+          final var dataDirectory = dataDirectoryWrapper.getPath();
+          final var filePath = dataDirectory.resolve(filename).normalize().toAbsolutePath();
+          if (!filePath.startsWith(dataDirectory)) {
+            throw new IllegalArgumentException("Secondary source path " + filename + " is outside DATA_DIR");
+          }
+          if (!Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+            throw new IllegalArgumentException("Secondary source file " + filename + " does not exist");
+          }
+          final var secondaryChunkedFile = new ChunkedFile(
+            new ChunkedFile.ChunkedFileOptions(
+              filePath,
+              (int) map.getOrDefault("MIN_DS_POOL", 4),
+              (int) map.getOrDefault("MAX_DS_POOL", 16)
+            )
+          );
+          final SecondaryCompatibility compatibility;
+          try {
+            compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryChunkedFile);
+          } catch (final RuntimeException ex) {
+            try {
+              secondaryChunkedFile.close();
+            } catch (final Exception ignored) {
+              // no-op
+            }
+            throw ex;
+          }
+          if (!compatibility.exactMatch() && !allowMismatch) {
+            try {
+              secondaryChunkedFile.close();
+            } catch (final Exception ignored) {
+              // no-op
+            }
+            final var currentStatus = secondaryStatusJson(map);
+            return currentStatus
+              .put("requiresConfirmation", true)
+              .put("requestedFilename", filename)
+              .put("compatibility", compatibility.toJson())
+              .put("warnings", compatibility.warningsAsJsonArray());
+          }
+          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
+          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
+          map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
+          map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
+          map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+          final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+          if (schedulerWrapper != null) {
+            schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
+          }
+          return secondaryStatusJson(map)
+            .put("requiresConfirmation", false)
+            .put("compatibility", compatibility.toJson())
+            .put("warnings", compatibility.warningsAsJsonArray());
+        },
+        response -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(response.encode())
+      );
+    });
+
+    router.post("/secondary/close").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
+          map.remove(SECONDARY_CHUNKED_FILE_KEY);
+          map.remove(OPENED_SECONDARY_FILENAME_KEY);
+          map.remove(SECONDARY_COMPATIBILITY_KEY);
+          if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))) {
+            map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+          }
+          final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+          if (schedulerWrapper != null) {
+            schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
+          }
+          return secondaryStatusJson(map);
+        },
+        response -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(response.encode())
+      );
+    });
+
+    router.post("/secondary/set_assembly_source").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var requestJson = ctx.body().asJsonObject();
+          final var requestedSource = String.valueOf(requestJson.getString("assemblySource", ASSEMBLY_SOURCE_PRIMARY))
+            .trim()
+            .toUpperCase();
+          final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+          if (primaryWrapper == null) {
+            throw new IllegalStateException("Open primary Hi-C source first");
+          }
+          final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+          final ChunkedFile sourceChunkedFile;
+          final String normalizedSource;
+          if (ASSEMBLY_SOURCE_SECONDARY.equals(requestedSource)) {
+            if (secondaryWrapper == null) {
+              throw new IllegalStateException("Secondary source is not attached");
+            }
+            normalizedSource = ASSEMBLY_SOURCE_SECONDARY;
+            sourceChunkedFile = secondaryWrapper.getChunkedFile();
+          } else {
+            normalizedSource = ASSEMBLY_SOURCE_PRIMARY;
+            sourceChunkedFile = primaryWrapper.getChunkedFile();
+          }
+          map.put(ASSEMBLY_SOURCE_KEY, normalizedSource);
+          return new io.vertx.core.json.JsonObject()
+            .put("assemblySource", normalizedSource)
+            .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(sourceChunkedFile)));
+        },
+        response -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(response.encode())
+      );
+    });
+
     router.post("/attach").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -174,7 +362,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         null,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get(PRIMARY_CHUNKED_FILE_KEY)));
           if (chunkedFileWrapper == null) {
             return new JsonRouteResult(
               404,
@@ -183,11 +371,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
           final var filename = (String) map.getOrDefault("openedFilename", "");
+          final var secondaryStatus = secondaryStatusJson(map);
           return new JsonRouteResult(
             200,
             new io.vertx.core.json.JsonObject()
               .put("filename", filename)
               .put("fastaFilename", map.getOrDefault("linkedFastaFilename", ""))
+              .put("secondarySource", secondaryStatus)
               .put("openFileResponse", generateOpenFileResponse(chunkedFile))
           );
         },
@@ -209,7 +399,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         null,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get(PRIMARY_CHUNKED_FILE_KEY)));
           if (chunkedFileWrapper != null) {
             try {
               chunkedFileWrapper.getChunkedFile().close();
@@ -217,7 +407,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
               log.warn("Failed to close chunked file", e);
             }
           }
-          map.remove("chunkedFile");
+          map.remove(PRIMARY_CHUNKED_FILE_KEY);
+          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
+          map.remove(SECONDARY_CHUNKED_FILE_KEY);
+          map.remove(OPENED_SECONDARY_FILENAME_KEY);
+          map.remove(SECONDARY_COMPATIBILITY_KEY);
+          map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
           map.remove("TileStatisticHolder");
           map.remove("openedFilename");
           map.remove("linkedFastaPath");
@@ -448,6 +643,89 @@ public class FileOpHandlersHolder extends HandlersHolder {
         response -> ctx.response().end(Json.encode(response))
       );
     });
+  }
+
+  private static void closeChunkedFileWrapper(final ShareableWrappers.ChunkedFileWrapper wrapper) {
+    if (wrapper == null) {
+      return;
+    }
+    try {
+      wrapper.getChunkedFile().close();
+    } catch (final Exception ignored) {
+      // no-op
+    }
+  }
+
+  private static @NotNull SecondaryCompatibility analyzeSecondaryCompatibility(final @NotNull ChunkedFile primary,
+                                                                               final @NotNull ChunkedFile secondary) {
+    final var primaryResolutions = primary.getResolutions().clone();
+    final var secondaryResolutions = secondary.getResolutions().clone();
+    final var primaryMatrixSizeBins = primary.getMatrixSizeBins().clone();
+    final var secondaryMatrixSizeBins = secondary.getMatrixSizeBins().clone();
+    return new SecondaryCompatibility(
+      Arrays.equals(primaryResolutions, secondaryResolutions),
+      Arrays.equals(primaryMatrixSizeBins, secondaryMatrixSizeBins),
+      primaryMatrixSizeBins,
+      secondaryMatrixSizeBins
+    );
+  }
+
+  private io.vertx.core.json.JsonObject secondaryStatusJson(final @NotNull LocalMap<String, Object> map) {
+    final var attached = map.get(SECONDARY_CHUNKED_FILE_KEY) instanceof ShareableWrappers.ChunkedFileWrapper;
+    final var assemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
+    final var filename = String.valueOf(map.getOrDefault(OPENED_SECONDARY_FILENAME_KEY, ""));
+    final var status = new io.vertx.core.json.JsonObject()
+      .put("attached", attached)
+      .put("filename", attached ? filename : "")
+      .put("assemblySource", assemblySource);
+    final var compatibility = map.get(SECONDARY_COMPATIBILITY_KEY);
+    if (attached && compatibility instanceof io.vertx.core.json.JsonObject compatibilityJson) {
+      status.put("compatibility", compatibilityJson.copy());
+    }
+    return status;
+  }
+
+  private record SecondaryCompatibility(boolean sameResolutions,
+                                        boolean sameMatrixSizes,
+                                        long[] primaryMatrixSizeBins,
+                                        long[] secondaryMatrixSizeBins) {
+    private boolean exactMatch() {
+      return sameResolutions && sameMatrixSizes;
+    }
+
+    private io.vertx.core.json.JsonArray warningsAsJsonArray() {
+      final var warnings = new io.vertx.core.json.JsonArray();
+      if (!sameResolutions) {
+        warnings.add("Primary and secondary sources expose different resolution sets.");
+      }
+      if (!sameMatrixSizes) {
+        warnings.add("Primary and secondary sources have different matrix sizes. Smaller source will be padded with background.");
+      }
+      return warnings;
+    }
+
+    private io.vertx.core.json.JsonObject toJson() {
+      final var maxLength = Math.max(primaryMatrixSizeBins.length, secondaryMatrixSizeBins.length);
+      final var mismatchedOrders = new io.vertx.core.json.JsonArray();
+      for (int idx = 0; idx < maxLength; idx++) {
+        final var primaryValue = idx < primaryMatrixSizeBins.length ? primaryMatrixSizeBins[idx] : -1L;
+        final var secondaryValue = idx < secondaryMatrixSizeBins.length ? secondaryMatrixSizeBins[idx] : -1L;
+        if (primaryValue != secondaryValue) {
+          mismatchedOrders.add(idx);
+        }
+      }
+      final var primaryMaxBins = Arrays.stream(primaryMatrixSizeBins).max().orElse(0L);
+      final var secondaryMaxBins = Arrays.stream(secondaryMatrixSizeBins).max().orElse(0L);
+      return new io.vertx.core.json.JsonObject()
+        .put("sameResolutions", sameResolutions)
+        .put("sameMatrixSizes", sameMatrixSizes)
+        .put("exactMatch", exactMatch())
+        .put("primaryMaxBins", primaryMaxBins)
+        .put("secondaryMaxBins", secondaryMaxBins)
+        .put("primaryBinsByResolution", Arrays.stream(primaryMatrixSizeBins).boxed().toList())
+        .put("secondaryBinsByResolution", Arrays.stream(secondaryMatrixSizeBins).boxed().toList())
+        .put("mismatchedResolutionOrders", mismatchedOrders);
+    }
   }
 
   private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {

@@ -77,6 +77,35 @@ public class FSHandlersHolder extends HandlersHolder {
       );
     });
 
+    router.post("/list_files_detailed").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.UI_UX,
+        null,
+        () -> {
+          final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+          if (dataDirectoryWrapper == null) {
+            throw new RuntimeException("Data directory is not present in local map");
+          }
+          final var dataDirectory = dataDirectoryWrapper.getPath();
+          try (final var fileStream = Files.walk(dataDirectory)) {
+            return fileStream
+              .filter(Files::isRegularFile)
+              .map(path -> toDetailedFileEntry(dataDirectory, path))
+              .sorted(java.util.Comparator.comparing(FileEntry::path))
+              .toList();
+          } catch (final IOException e) {
+            throw new RuntimeException(e);
+          }
+        },
+        files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
+      );
+    });
+
     router.post("/list_agp_files").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -174,5 +203,27 @@ public class FSHandlersHolder extends HandlersHolder {
   private static boolean isFastaFilename(final @NotNull String path) {
     final var lowered = path.toLowerCase();
     return FASTA_SUFFIXES.stream().anyMatch(lowered::endsWith);
+  }
+
+  private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
+                                                        final @NotNull java.nio.file.Path path) {
+    final var relative = dataDirectory.relativize(path).toString();
+    final var fileName = path.getFileName() == null ? relative : path.getFileName().toString();
+    final var lowered = fileName.toLowerCase();
+    final int dotIndex = lowered.lastIndexOf('.');
+    final var extension = dotIndex >= 0 ? lowered.substring(dotIndex) : "";
+    try {
+      final var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
+      return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension);
+    } catch (final IOException e) {
+      return new FileEntry(relative, fileName, -1L, 0L, extension);
+    }
+  }
+
+  private record FileEntry(@NotNull String path,
+                           @NotNull String name,
+                           long sizeBytes,
+                           long modifiedAtMs,
+                           @NotNull String extension) {
   }
 }

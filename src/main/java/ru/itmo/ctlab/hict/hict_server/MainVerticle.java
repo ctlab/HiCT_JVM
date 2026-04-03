@@ -55,7 +55,9 @@ import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.info.ApiDocsHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tracks.TrackHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
@@ -142,28 +144,28 @@ public class MainVerticle extends AbstractVerticle {
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.UI_UX,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MIN", 4),
           getIntegerSetting(event.result(), "HICT_WORKERS_UI_MAX", defaultPoolMax)
         )
       );
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MIN", 4),
           getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MAX", defaultPoolMax)
         )
       );
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.TILE,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MIN", 8),
           getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MAX", defaultPoolMax)
         )
       );
       perPrioritySizing.put(
         RequestTaskScheduler.RequestPriority.TRACK,
         new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MIN", 2),
+          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MIN", 4),
           getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MAX", defaultPoolMax)
         )
       );
@@ -208,6 +210,10 @@ public class MainVerticle extends AbstractVerticle {
 
         map.put("visualizationOptions",
             new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions));
+        map.put(
+          RenderPipelineConfig.LOCAL_MAP_KEY,
+          new ShareableWrappers.RenderPipelineConfigWrapper(RenderPipelineConfig.disabled())
+        );
 
         log.info("Added to local map");
       } finally {
@@ -270,6 +276,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
     handlersHolders.add(new InfoHandlersHolder(vertx));
+    handlersHolders.add(new ApiDocsHandlersHolder());
     handlersHolders.add(new TrackHandlersHolder(vertx));
 
     router.route().failureHandler(ctx -> {

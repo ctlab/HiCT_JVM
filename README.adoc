@@ -83,6 +83,13 @@ WARNING: WebUI conversion is experimental and may be slower or less stable than 
 
 WARNING: The API is still evolving. Endpoints, parameters, and response formats may change.
 
+Interactive OpenAPI docs are available at:
+
+* `http://localhost:5000/api/v1/`
+
+For the Python client-oriented endpoint contract used in `jvm-api-v1`, see:
+`docs/jvm_api_v1.md`.
+
 Example (Python) for fetching a submatrix tile as an image:
 
 ```python
@@ -106,11 +113,18 @@ png_data_url = data["image"]
 print(png_data_url[:64])
 ```
 
-To apply visualization/normalization settings before fetching tiles:
+To apply visualization settings before fetching tiles:
 
 * POST `/set_visualization_options` with visualization parameters.
-* POST `/set_normalization` with normalization settings.
+* Optionally POST `/render_pipeline/set` for custom graph pipeline.
 * Then call `/get_tile` as shown above.
+
+For tensor workflows (NumPy/Torch), numeric submatrices are available via:
+
+* `POST /matrix/query`
+** units: `PIXELS`, `BINS`, `BP`
+** signal modes: `RAW_COUNTS`, `COOLER_WEIGHTED`, `TRADITIONAL_NORMALIZED`, `PIPELINE_SIGNAL`
+** binary formats for fast transfer: `BINARY_FLOAT32`, `BINARY_FLOAT64`, `BINARY_INT64`
 
 === Supported platforms / JDK details
 

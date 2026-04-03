@@ -106,6 +106,70 @@ public class TrackHandlersHolder extends HandlersHolder {
       );
     });
 
+    router.post("/tracks/open_cooler_weights").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final var request = ctx.body() == null ? null : ctx.body().asJsonObject();
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final var summary = manager.openCoolerWeightsTrack(
+            request == null ? null : request.getString("name"),
+            request == null ? null : request.getString("color")
+          );
+          manager.startPrecompute(chunkedFile, summary.getTrackId(), false);
+          return summary;
+        },
+        summary -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(summary))
+      );
+    });
+
+    router.post("/tracks/probe").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var filename = request.getString("filename");
+      if (filename == null || filename.isBlank()) {
+        ctx.fail(new IllegalArgumentException("Track filename is required"));
+        return;
+      }
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.TRACK,
+        null,
+        () -> manager.probeTrackCompatibility(chunkedFile, filename),
+        report -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(report))
+      );
+    });
+
     router.post("/tracks/list").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -149,7 +213,8 @@ public class TrackHandlersHolder extends HandlersHolder {
           request.getString("color"),
           request.getString("name"),
           request.getString("renderMode"),
-          request.getString("aggregationMode")
+          request.getString("aggregationMode"),
+          request.containsKey("logScale") ? request.getBoolean("logScale") : null
         ),
         updated -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -183,6 +248,37 @@ public class TrackHandlersHolder extends HandlersHolder {
         response -> ctx.response()
           .putHeader("content-type", "application/json")
           .end(Json.encode(response))
+      );
+    });
+
+    router.post("/tracks/reorder").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var trackId = request.getString("trackId");
+      if (trackId == null || trackId.isBlank()) {
+        ctx.fail(new IllegalArgumentException("trackId is required"));
+        return;
+      }
+      if (!request.containsKey("targetIndex")) {
+        ctx.fail(new IllegalArgumentException("targetIndex is required"));
+        return;
+      }
+      final var targetIndex = request.getInteger("targetIndex", 0);
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> manager.reorderTrack(trackId, targetIndex),
+        tracks -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(tracks))
       );
     });
 
@@ -279,6 +375,114 @@ public class TrackHandlersHolder extends HandlersHolder {
             widthPx,
             bpResolution,
             List.of()
+          )))
+      );
+    });
+
+    router.post("/tracks/search_features").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var query = request.getString("query", request.getString("q", ""));
+      final var limit = request.getInteger("limit", 50);
+      final var offset = request.getInteger("offset", 0);
+      final var trackId = request.getString("trackId");
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.TRACK,
+        RequestTaskScheduler.CancellationDomain.TRACK,
+        () -> manager.searchFeatures(chunkedFile, query, limit, offset, trackId),
+        result -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(result)),
+        () -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(new Track1DManager.FeatureSearchResponse(
+            query == null ? "" : query.trim(),
+            Math.max(1, limit),
+            Math.max(0, offset),
+            false,
+            List.of()
+          )))
+      );
+    });
+
+    router.post("/tracks/feature_context").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final var request = ctx.body().asJsonObject();
+      final var widthPx = request.getInteger("widthPx", 1024);
+      final var bpResolution = request.getLong("bpResolution", 1L);
+      final var marginScreens = request.getDouble("marginScreens", 1.0d);
+      final var manager = getTrackManager(ctx);
+      if (manager == null) {
+        return;
+      }
+      final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
+      final var chunkedFile = extractChunkedFile(map, ctx);
+      if (chunkedFile == null) {
+        return;
+      }
+      final var resolvedUnits = resolveUnits(request);
+      final var start = resolveStart(request, resolvedUnits);
+      final var end = resolveEnd(request, resolvedUnits, start + 1L);
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.TRACK,
+        RequestTaskScheduler.CancellationDomain.TRACK,
+        () -> {
+          final var initialQuery = manager.queryVisibleTracks(
+            chunkedFile,
+            start,
+            end,
+            Math.max(2, widthPx),
+            bpResolution,
+            resolvedUnits
+          );
+          return manager.queryFeatureContext(
+            chunkedFile,
+            initialQuery.getStartBp(),
+            initialQuery.getEndBp(),
+            widthPx,
+            bpResolution,
+            marginScreens
+          );
+        },
+        result -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(result)),
+        () -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .end(Json.encode(new Track1DManager.FeatureContextResponse(
+            0L,
+            1L,
+            0L,
+            1L,
+            marginScreens,
+            Math.max(1, widthPx),
+            bpResolution,
+            new Track1DManager.QueryResult(
+              0L,
+              1L,
+              0L,
+              1L,
+              Math.max(1, widthPx),
+              bpResolution,
+              List.of()
+            )
           )))
       );
     });

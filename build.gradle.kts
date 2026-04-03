@@ -71,7 +71,7 @@ val webUIRepositoryDirectory =
   if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
-val webUIBranch = "migrate-converters-update-ui-1dtracks"
+val webUIBranch = "master"
 
 version = readVersion()
 
