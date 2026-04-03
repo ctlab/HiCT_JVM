@@ -2711,10 +2711,8 @@ public class Track1DManager {
               attributes
             );
           } else {
-            if (!isGffGeneLikeFeature(featureTypeLower)) {
-              features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-                .add(new FeatureRange(start, end, value, label, strand, null, null, featureType, List.of()));
-            }
+            features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
+              .add(new FeatureRange(start, end, value, label, strand, null, null, featureType, List.of()));
           }
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
@@ -2783,21 +2781,14 @@ public class Track1DManager {
       final var span = Math.max(1L, queryEndPx - queryStartPx);
       final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
 
-      if (this.renderStyle() == RenderStyle.FEATURE && bucketSpan <= 3.0d) {
-        final int maxDirectFeatures = Math.max(widthPx * 12, 8192);
-        final var projected = new ArrayList<ProjectedFeature>(Math.min(maxDirectFeatures, 8192));
-        forEachProjectedFeature(
+      if (this.renderStyle() == RenderStyle.FEATURE) {
+        return queryFeatureBins(
           sourceToAssemblySegments,
           queryStartPx,
           queryEndPx,
-          bpResolution,
-          projected::add,
-          maxDirectFeatures + 1
+          widthPx,
+          bpResolution
         );
-        projected.sort(Comparator.comparingLong(ProjectedFeature::startPx));
-        if (projected.size() <= maxDirectFeatures) {
-          return toBins(projected);
-        }
       }
 
       if (this.hasSignalValues()) {
@@ -2855,6 +2846,128 @@ public class Track1DManager {
         Integer.MAX_VALUE
       );
       return finalizeBins(queryStartPx, queryEndPx, bucketSpan, values, counts);
+    }
+
+    private @NotNull List<TrackBin> queryFeatureBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                     final long queryStartPx,
+                                                     final long queryEndPx,
+                                                     final int widthPx,
+                                                     final long bpResolution) {
+      final int safeWidth = Math.max(1, widthPx);
+      final int maxDirectFeatures = Math.max(
+        8192,
+        Math.min(MAX_FEATURES_PER_QUERY, safeWidth * 48)
+      );
+      final var projected = new ArrayList<ProjectedFeature>(Math.min(maxDirectFeatures, 8192));
+      forEachProjectedFeature(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        bpResolution,
+        projected::add,
+        maxDirectFeatures + 1
+      );
+      projected.sort(
+        Comparator.comparingLong(ProjectedFeature::startPx)
+          .thenComparingLong(ProjectedFeature::endPx)
+      );
+      if (projected.size() <= maxDirectFeatures) {
+        return toBins(projected);
+      }
+      return downsampleFeatureBins(projected, queryStartPx, queryEndPx, safeWidth);
+    }
+
+    private static @NotNull List<TrackBin> downsampleFeatureBins(final @NotNull List<ProjectedFeature> projected,
+                                                                 final long queryStartPx,
+                                                                 final long queryEndPx,
+                                                                 final int widthPx) {
+      if (projected.isEmpty()) {
+        return List.of();
+      }
+      final int bucketCount = Math.max(1, widthPx);
+      final double bucketSpan = Math.max(1.0d, Math.max(1L, queryEndPx - queryStartPx) / (double) bucketCount);
+      final int maxFeaturesPerBucket = 3;
+      @SuppressWarnings("unchecked")
+      final ArrayList<ProjectedFeature>[] byBucket = new ArrayList[bucketCount];
+      for (final var feature : projected) {
+        if (feature.endPx() <= queryStartPx || feature.startPx() >= queryEndPx) {
+          continue;
+        }
+        final var centerPx = feature.startPx() + Math.max(0L, (feature.endPx() - feature.startPx()) / 2L);
+        final int bucket = Math.max(
+          0,
+          Math.min(
+            bucketCount - 1,
+            (int) Math.floor((centerPx - queryStartPx) / bucketSpan)
+          )
+        );
+        var list = byBucket[bucket];
+        if (list == null) {
+          list = new ArrayList<>(maxFeaturesPerBucket + 1);
+          byBucket[bucket] = list;
+        }
+        list.add(feature);
+      }
+
+      final var selected = new ArrayList<ProjectedFeature>(bucketCount * maxFeaturesPerBucket);
+      for (final var bucketFeatures : byBucket) {
+        if (bucketFeatures == null || bucketFeatures.isEmpty()) {
+          continue;
+        }
+        bucketFeatures.sort(InMemoryTrackDataSource::compareProjectedFeaturesForDisplay);
+        for (int idx = 0; idx < Math.min(maxFeaturesPerBucket, bucketFeatures.size()); idx++) {
+          selected.add(bucketFeatures.get(idx));
+        }
+      }
+      selected.sort(
+        Comparator.comparingLong(ProjectedFeature::startPx)
+          .thenComparingInt(feature -> featureHierarchyDepth(feature.featureType()))
+          .thenComparingLong(ProjectedFeature::endPx)
+      );
+      return toBins(selected);
+    }
+
+    private static int compareProjectedFeaturesForDisplay(final @NotNull ProjectedFeature left,
+                                                          final @NotNull ProjectedFeature right) {
+      final int depthCmp = Integer.compare(
+        featureHierarchyDepth(right.featureType()),
+        featureHierarchyDepth(left.featureType())
+      );
+      if (depthCmp != 0) {
+        return depthCmp;
+      }
+      final int blockCmp = Integer.compare(right.blocks().size(), left.blocks().size());
+      if (blockCmp != 0) {
+        return blockCmp;
+      }
+      final long leftSpan = Math.max(1L, left.endPx() - left.startPx());
+      final long rightSpan = Math.max(1L, right.endPx() - right.startPx());
+      final int spanCmp = Long.compare(rightSpan, leftSpan);
+      if (spanCmp != 0) {
+        return spanCmp;
+      }
+      final int startCmp = Long.compare(left.startPx(), right.startPx());
+      if (startCmp != 0) {
+        return startCmp;
+      }
+      return Long.compare(left.endPx(), right.endPx());
+    }
+
+    private static int featureHierarchyDepth(final @Nullable String featureType) {
+      if (featureType == null || featureType.isBlank()) {
+        return 1;
+      }
+      final var normalized = featureType.trim().toLowerCase(Locale.ROOT);
+      if (isGffGeneLikeFeature(normalized)) {
+        return 0;
+      }
+      if (isGffTranscriptLikeFeature(normalized)) {
+        return 1;
+      }
+      if (isGffBlockLikeFeature(normalized)) {
+        return 2;
+      }
+      return 1;
     }
 
     private static @NotNull RenderStyle resolveBedRenderStyle(final long featureCount,

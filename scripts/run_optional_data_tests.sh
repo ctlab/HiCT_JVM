@@ -13,13 +13,26 @@ HICT_REL="build/quad/combined_ind2_4DN.hict.hdf5"
 FASTA_REL="build/quad/quad_combined_ind2.fasta"
 BW_REL="build/quad/ind2.coverage.bw"
 BED_REL="build/quad/ind2.alignments.bed.gz"
-GFF_REL="build/quad/ind2.features.gff3"
+GFF_REL=""
+for candidate in \
+  "build/quad/annotation_miniprot/ind2.miniprot.gff3" \
+  "build/quad/ind2.miniprot.gff3" \
+  "build/quad/ind2.features.gff3"
+do
+  if [[ -f "${DATA_DIR}/${candidate}" ]]; then
+    GFF_REL="${candidate}"
+    break
+  fi
+done
 
 HICT_ABS="${DATA_DIR}/${HICT_REL}"
 FASTA_ABS="${DATA_DIR}/${FASTA_REL}"
 BW_ABS="${DATA_DIR}/${BW_REL}"
 BED_ABS="${DATA_DIR}/${BED_REL}"
-GFF_ABS="${DATA_DIR}/${GFF_REL}"
+GFF_ABS=""
+if [[ -n "${GFF_REL}" ]]; then
+  GFF_ABS="${DATA_DIR}/${GFF_REL}"
+fi
 
 cd "${JVM_DIR}"
 
@@ -104,7 +117,7 @@ if [[ -f "${BED_ABS}" ]]; then
     -d "{\"filename\":\"${BED_REL}\"}" >/dev/null
 fi
 
-if [[ -f "${GFF_ABS}" ]]; then
+if [[ -n "${GFF_ABS}" && -f "${GFF_ABS}" ]]; then
   echo "[optional] Opening GFF track"
   curl -fsS -X POST "http://localhost:${PORT}/tracks/open" \
     -H "content-type: application/json" \
@@ -161,6 +174,28 @@ if [[ -f "${BW_ABS}" && -f "${BED_ABS}" ]]; then
       exit 1
     fi
   fi
+fi
+
+if [[ -n "${GFF_ABS}" && -f "${GFF_ABS}" ]]; then
+  echo "[optional] GFF/GTF structured bins sanity check"
+  GFF_QUERY_JSON="$(curl -fsS -X POST "http://localhost:${PORT}/tracks/query_1d" \
+    -H "content-type: application/json" \
+    -d '{"unit":"PIXELS","startPx":0,"endPx":7000,"widthPx":1536,"bpResolution":50000}')"
+  echo "${GFF_QUERY_JSON}" | jq -e '
+    .tracks[]
+    | select(.type=="GFF_GTF")
+    | (.bins | length) > 0
+  ' >/dev/null
+  echo "${GFF_QUERY_JSON}" | jq -e '
+    .tracks[]
+    | select(.type=="GFF_GTF")
+    | (.bins | any((.blocks // []) | length > 0))
+  ' >/dev/null
+  echo "${GFF_QUERY_JSON}" | jq -e '
+    .tracks[]
+    | select(.type=="GFF_GTF")
+    | (.bins | any(.strand == "+" or .strand == "-"))
+  ' >/dev/null
 fi
 
 echo "[optional] OK"
