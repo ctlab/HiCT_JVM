@@ -574,8 +574,9 @@ public class TileHandlersHolder extends HandlersHolder {
       endColPx,
       true
     );
-    final var rowCount = matrixWithWeights.matrix().length;
-    final var columnCount = rowCount > 0 ? matrixWithWeights.matrix()[0].length : 0;
+    final var rawMatrix = matrixWithWeights.matrix();
+    final var rowCount = rawMatrix.rows();
+    final var columnCount = rawMatrix.cols();
     final long elementCount = (long) rowCount * (long) columnCount;
     if (elementCount > MAX_MATRIX_QUERY_ELEMENTS) {
       throw new IllegalArgumentException(
@@ -588,7 +589,6 @@ public class TileHandlersHolder extends HandlersHolder {
     final var includeWeights = request.getBoolean("includeWeights", false);
 
     final double[][] signalMatrix;
-    final long[][] rawMatrix = matrixWithWeights.matrix();
     switch (signalMode) {
       case RAW_COUNTS -> signalMatrix = null;
       case COOLER_WEIGHTED -> signalMatrix = computeCoolerWeightedSignal(rawMatrix, matrixWithWeights.rowWeights(), matrixWithWeights.colWeights());
@@ -636,8 +636,15 @@ public class TileHandlersHolder extends HandlersHolder {
         .put("startColPx", matrixWithWeights.startColIncl())
         .put("endColPx", matrixWithWeights.startColIncl() + columnCount);
       if (signalMode == MatrixSignalMode.RAW_COUNTS) {
-        payload.put("dtype", "int64");
-        payload.put("values", flattenLongMatrix(rawMatrix, rowCount, columnCount));
+        if (rawMatrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.DoubleMatrix doubleMatrix) {
+          payload.put("dtype", "float64");
+          payload.put("values", flattenDoubleMatrix(doubleMatrix.values(), rowCount, columnCount));
+        } else if (rawMatrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix longMatrix) {
+          payload.put("dtype", "int64");
+          payload.put("values", flattenLongMatrix(longMatrix.values(), rowCount, columnCount));
+        } else {
+          throw new IllegalStateException("Unsupported raw matrix type: " + rawMatrix.getClass().getName());
+        }
       } else {
         payload.put("dtype", "float64");
         payload.put("values", flattenDoubleMatrix(signalMatrix, rowCount, columnCount));
@@ -652,23 +659,29 @@ public class TileHandlersHolder extends HandlersHolder {
 
     switch (format) {
       case BINARY_INT64 -> {
-        headers.put("x-hict-dtype", "int64");
-        final var binary = encodeLongMatrixLittleEndian(rawMatrix, rowCount, columnCount);
+        final byte[] binary;
+        if (signalMode == MatrixSignalMode.RAW_COUNTS) {
+          if (rawMatrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix longMatrix) {
+            headers.put("x-hict-dtype", "int64");
+            binary = encodeLongMatrixLittleEndian(longMatrix.values(), rowCount, columnCount);
+          } else {
+            throw new IllegalArgumentException("BINARY_INT64 is not supported for float-backed RAW_COUNTS matrices");
+          }
+        } else {
+          headers.put("x-hict-dtype", "int64");
+          binary = encodeLongMatrixLittleEndian(signalMatrix, rowCount, columnCount);
+        }
         return new MatrixResponsePayload("application/octet-stream", null, Buffer.buffer(binary), headers);
       }
       case BINARY_FLOAT64 -> {
         headers.put("x-hict-dtype", "float64");
-        final var source = signalMode == MatrixSignalMode.RAW_COUNTS
-          ? asDoubleMatrix(rawMatrix, rowCount, columnCount)
-          : signalMatrix;
+        final var source = signalMode == MatrixSignalMode.RAW_COUNTS ? toDoubleMatrix(rawMatrix) : signalMatrix;
         final var binary = encodeDoubleMatrixLittleEndian(source, rowCount, columnCount);
         return new MatrixResponsePayload("application/octet-stream", null, Buffer.buffer(binary), headers);
       }
       case BINARY_FLOAT32 -> {
         headers.put("x-hict-dtype", "float32");
-        final var source = signalMode == MatrixSignalMode.RAW_COUNTS
-          ? asDoubleMatrix(rawMatrix, rowCount, columnCount)
-          : signalMatrix;
+        final var source = signalMode == MatrixSignalMode.RAW_COUNTS ? toDoubleMatrix(rawMatrix) : signalMatrix;
         final var binary = encodeFloatMatrixLittleEndian(source, rowCount, columnCount);
         return new MatrixResponsePayload("application/octet-stream", null, Buffer.buffer(binary), headers);
       }
@@ -676,17 +689,17 @@ public class TileHandlersHolder extends HandlersHolder {
     }
   }
 
-  private static double[][] computeCoolerWeightedSignal(final long[][] rawMatrix,
+  private static double[][] computeCoolerWeightedSignal(final ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.RawMatrix rawMatrix,
                                                         final double[] rowWeights,
                                                         final double[] colWeights) {
-    final var rowCount = rawMatrix.length;
-    final var columnCount = rowCount > 0 ? rawMatrix[0].length : 0;
+    final var rowCount = rawMatrix.rows();
+    final var columnCount = rawMatrix.cols();
     final var result = new double[rowCount][columnCount];
     for (int row = 0; row < rowCount; row++) {
       final var rowWeight = rowWeights != null && row < rowWeights.length ? rowWeights[row] : 1.0d;
       for (int col = 0; col < columnCount; col++) {
         final var colWeight = colWeights != null && col < colWeights.length ? colWeights[col] : 1.0d;
-        result[row][col] = rawMatrix[row][col] * rowWeight * colWeight;
+        result[row][col] = rawMatrix.getAsDouble(row, col) * rowWeight * colWeight;
       }
     }
     return result;
@@ -700,8 +713,8 @@ public class TileHandlersHolder extends HandlersHolder {
                                                  final @NotNull RenderPipelineConfig pipelineConfig,
                                                  final Track1DManager track1DManager) {
     final var primaryValues = primaryMatrixWithWeights.matrix();
-    final var rowCount = primaryValues.length;
-    final var columnCount = rowCount > 0 ? primaryValues[0].length : 0;
+    final var rowCount = primaryValues.rows();
+    final var columnCount = primaryValues.cols();
     final var result = new double[rowCount][columnCount];
     if (rowCount == 0 || columnCount == 0) {
       return result;
@@ -710,9 +723,8 @@ public class TileHandlersHolder extends HandlersHolder {
     final var secondaryValues = new double[rowCount][columnCount];
     if (secondaryMatrixWithWeights != null && secondaryChunkedFile != null) {
       final var candidate = secondaryMatrixWithWeights.matrix();
-      final var candidateRowCount = candidate.length;
-      final var candidateColCount =
-        candidateRowCount > 0 && candidate[0] != null ? candidate[0].length : 0;
+      final var candidateRowCount = candidate.rows();
+      final var candidateColCount = candidate.cols();
       final var rowOffset =
         (int) (secondaryMatrixWithWeights.startRowIncl() - primaryMatrixWithWeights.startRowIncl());
       final var colOffset =
@@ -722,17 +734,12 @@ public class TileHandlersHolder extends HandlersHolder {
         if (dstRow < 0 || dstRow >= rowCount) {
           continue;
         }
-        final var sourceRow = candidate[row];
-        if (sourceRow == null) {
-          continue;
-        }
-        final var sourceColCount = Math.min(sourceRow.length, candidateColCount);
-        for (int col = 0; col < sourceColCount; col++) {
+        for (int col = 0; col < candidateColCount; col++) {
           final var dstCol = col + colOffset;
           if (dstCol < 0 || dstCol >= columnCount) {
             continue;
           }
-          secondaryValues[dstRow][dstCol] = sourceRow[col];
+          secondaryValues[dstRow][dstCol] = candidate.getAsDouble(row, col);
         }
       }
     }
@@ -849,7 +856,7 @@ public class TileHandlersHolder extends HandlersHolder {
       final var rowBin = rowBinValues[row];
       final var rowBp = rowBpValues[row];
       for (int col = 0; col < columnCount; ++col) {
-        final var primaryValue = (double) primaryValues[row][col];
+        final var primaryValue = primaryValues.getAsDouble(row, col);
         final var secondaryValue = secondaryValues[row][col];
         final var colPx = colPxValues[col];
         final var colBin = colBinValues[col];
@@ -916,16 +923,15 @@ public class TileHandlersHolder extends HandlersHolder {
     return bb.array();
   }
 
-  private static double[][] asDoubleMatrix(final long[][] source, final int rows, final int cols) {
-    final var result = new double[rows][cols];
+  private static byte[] encodeLongMatrixLittleEndian(final double[][] matrix, final int rows, final int cols) {
+    final var bb = ByteBuffer.allocate(rows * cols * Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
     for (int row = 0; row < rows; row++) {
-      final var src = source[row];
-      final var dst = result[row];
+      final var sourceRow = matrix[row];
       for (int col = 0; col < cols; col++) {
-        dst[col] = src[col];
+        bb.putLong(Math.round(sourceRow[col]));
       }
     }
-    return result;
+    return bb.array();
   }
 
   private static ArrayList<Double> toJsonArray(final double[] values, final int expectedLength) {
@@ -933,6 +939,17 @@ public class TileHandlersHolder extends HandlersHolder {
     for (int i = 0; i < expectedLength; i++) {
       final var value = values != null && i < values.length ? values[i] : 1.0d;
       result.add(value);
+    }
+    return result;
+  }
+
+  private static ArrayList<Double> flattenDoubleMatrix(final double[][] matrix, final int rows, final int cols) {
+    final var result = new ArrayList<Double>(rows * cols);
+    for (int row = 0; row < rows; row++) {
+      final var sourceRow = matrix[row];
+      for (int col = 0; col < cols; col++) {
+        result.add(sourceRow[col]);
+      }
     }
     return result;
   }
@@ -948,15 +965,25 @@ public class TileHandlersHolder extends HandlersHolder {
     return result;
   }
 
-  private static ArrayList<Double> flattenDoubleMatrix(final double[][] matrix, final int rows, final int cols) {
-    final var result = new ArrayList<Double>(rows * cols);
-    for (int row = 0; row < rows; row++) {
-      final var sourceRow = matrix[row];
-      for (int col = 0; col < cols; col++) {
-        result.add(sourceRow[col]);
-      }
+  private static double[][] toDoubleMatrix(final ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.RawMatrix matrix) {
+    if (matrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.DoubleMatrix doubleMatrix) {
+      return doubleMatrix.values();
     }
-    return result;
+    if (matrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix longMatrix) {
+      final var rows = longMatrix.rows();
+      final var cols = longMatrix.cols();
+      final var result = new double[rows][cols];
+      final var source = longMatrix.values();
+      for (int row = 0; row < rows; row++) {
+        final var sourceRow = source[row];
+        final var targetRow = result[row];
+        for (int col = 0; col < cols; col++) {
+          targetRow[col] = sourceRow[col];
+        }
+      }
+      return result;
+    }
+    throw new IllegalStateException("Unsupported raw matrix type: " + matrix.getClass().getName());
   }
 
   private long resolveRangeStart(final @NotNull JsonObject request,
@@ -1210,8 +1237,8 @@ public class TileHandlersHolder extends HandlersHolder {
                                                     final @NotNull RenderPipelineConfig pipelineConfig,
                                                     final Track1DManager track1DManager) {
     final var primaryValues = primaryMatrixWithWeights.matrix();
-    final var rowCount = primaryValues.length;
-    final var columnCount = rowCount > 0 ? primaryValues[0].length : 0;
+    final var rowCount = primaryValues.rows();
+    final var columnCount = primaryValues.cols();
     final var image = new BufferedImage(columnCount, rowCount, BufferedImage.TYPE_INT_ARGB);
     final var rgba = new int[Math.max(0, rowCount * columnCount)];
     if (rowCount == 0 || columnCount == 0) {
@@ -1221,9 +1248,8 @@ public class TileHandlersHolder extends HandlersHolder {
     final var secondaryValues = new double[rowCount][columnCount];
     if (secondaryMatrixWithWeights != null && secondaryChunkedFile != null) {
       final var candidate = secondaryMatrixWithWeights.matrix();
-      final var candidateRowCount = candidate.length;
-      final var candidateColCount =
-        candidateRowCount > 0 && candidate[0] != null ? candidate[0].length : 0;
+      final var candidateRowCount = candidate.rows();
+      final var candidateColCount = candidate.cols();
       final var rowOffset =
         (int) (secondaryMatrixWithWeights.startRowIncl() - primaryMatrixWithWeights.startRowIncl());
       final var colOffset =
@@ -1233,17 +1259,12 @@ public class TileHandlersHolder extends HandlersHolder {
         if (dstRow < 0 || dstRow >= rowCount) {
           continue;
         }
-        final var sourceRow = candidate[row];
-        if (sourceRow == null) {
-          continue;
-        }
-        final var sourceColCount = Math.min(sourceRow.length, candidateColCount);
-        for (int col = 0; col < sourceColCount; col++) {
+        for (int col = 0; col < candidateColCount; col++) {
           final var dstCol = col + colOffset;
           if (dstCol < 0 || dstCol >= columnCount) {
             continue;
           }
-          secondaryValues[dstRow][dstCol] = sourceRow[col];
+          secondaryValues[dstRow][dstCol] = candidate.getAsDouble(row, col);
         }
       }
     }
@@ -1361,7 +1382,7 @@ public class TileHandlersHolder extends HandlersHolder {
       final var rowBin = rowBinValues[row];
       final var rowBp = rowBpValues[row];
       for (int col = 0; col < columnCount; ++col) {
-        final var primaryValue = (double) primaryValues[row][col];
+        final var primaryValue = primaryValues.getAsDouble(row, col);
         final var secondaryValue = secondaryValues[row][col];
         final var colPx = colPxValues[col];
         final var colBin = colBinValues[col];
