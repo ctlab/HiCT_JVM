@@ -1,7 +1,9 @@
 package ru.itmo.ctlab.hict.hict_library.converters;
 
+import ch.systemsx.cisd.base.mdarray.MDDoubleArray;
 import ch.systemsx.cisd.base.mdarray.MDLongArray;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
+import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import ch.systemsx.cisd.hdf5.HDF5FloatStorageFeatures;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
@@ -166,6 +168,8 @@ public class McoolToHictConverter {
     dst.int64().setAttr(treapRoot, "stripes_count", stripeCount);
 
     final var allRowsStartIndices = src.int64().readArray(resolutionRoot + "/indexes/bin1_offset");
+    final var sourceCountsPath = resolutionRoot + "/pixels/count";
+    final var floatingPointSignal = isFloatingPointDataset(src, sourceCountsPath);
 
     logConsumer.accept("Resolution " + resolution + ": counting sparse and dense blocks");
     final var countingProgress = new PhaseProgressTracker(
@@ -174,7 +178,7 @@ public class McoolToHictConverter {
       logConsumer
     );
     final int stripeWorkers = Math.max(1, Math.min(stripeWorkersRequested, Math.max(1, stripeCount)));
-    final var counts = countDenseAndSparse(inputPath, resolution, stripeCount, allRowsStartIndices, stripeWorkers, countingProgress::report);
+    final var counts = countDenseAndSparse(inputPath, resolution, stripeCount, allRowsStartIndices, stripeWorkers, floatingPointSignal, countingProgress::report);
     countingProgress.finish();
     final var denseBlockCount = counts.denseTotal();
     logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
@@ -188,18 +192,21 @@ public class McoolToHictConverter {
 
     dst.int64().createArray(blockRowsPath, nonzeroPixelCount, safeChunkLen(nonzeroPixelCount, chunkSize), intStorageFeatures);
     dst.int64().createArray(blockColsPath, nonzeroPixelCount, safeChunkLen(nonzeroPixelCount, chunkSize), intStorageFeatures);
-    dst.int64().createArray(blockValsPath, nonzeroPixelCount, safeChunkLen(nonzeroPixelCount, chunkSize), intStorageFeatures);
+    createNumericArray(dst, blockValsPath, nonzeroPixelCount, chunkSize, floatingPointSignal, intStorageFeatures, floatStorageFeatures);
 
     final var totalBlockCount = (long) stripeCount * stripeCount;
     dst.int64().createArray(blockOffsetPath, totalBlockCount, safeChunkLen(totalBlockCount, chunkSize), intStorageFeatures);
     dst.int64().createArray(blockLengthPath, totalBlockCount, safeChunkLen(totalBlockCount, chunkSize), intStorageFeatures);
 
     final var denseDatasetSize = Math.max(1L, denseBlockCount);
-    dst.int64().createMDArray(
+    createNumericMDArray(
+      dst,
       denseBlocksPath,
       new long[]{denseDatasetSize, 1L, SUBMATRIX_SIZE, SUBMATRIX_SIZE},
       new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE},
-      intStorageFeatures
+      floatingPointSignal,
+      intStorageFeatures,
+      floatStorageFeatures
     );
 
     final var stripeSparseBase = new long[stripeCount];
@@ -253,7 +260,8 @@ public class McoolToHictConverter {
               blockValsPath,
               blockOffsetPath,
               blockLengthPath,
-              denseBlocksPath
+              denseBlocksPath,
+              floatingPointSignal
             );
           }
           written++;
@@ -288,7 +296,7 @@ public class McoolToHictConverter {
       final int end = Math.min(stripeCount, batchStart + batchSize);
       futures.add(stripeExecutor.submit(() -> {
         try {
-          final var batchBlocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices);
+          final var batchBlocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices, floatingPointSignal);
           for (int i = 0; i < batchBlocks.length; i++) {
             checkInterrupted();
             final int stripeIdx = start + i;
@@ -354,7 +362,8 @@ public class McoolToHictConverter {
     final @NotNull String blockValsPath,
     final @NotNull String blockOffsetPath,
     final @NotNull String blockLengthPath,
-    final @NotNull String denseBlocksPath
+    final @NotNull String denseBlocksPath,
+    final boolean floatingPointSignal
   ) {
     long sparseOffset = stripeSparseOffset;
     long denseOffset = stripeDenseOffset;
@@ -364,9 +373,6 @@ public class McoolToHictConverter {
     final var denseFlags = blocks.denseFlags();
     final var sparseRows = blocks.sparseRows();
     final var sparseCols = blocks.sparseCols();
-    final var sparseVals = blocks.sparseVals();
-    final var denseFlats = blocks.denseFlats();
-
     long stripeSparseLen = 0L;
     for (int i = 0; i < colStripes.length; i++) {
       if (!denseFlags[i]) {
@@ -378,45 +384,89 @@ public class McoolToHictConverter {
     final long[] lengthRow = new long[stripeCount];
     final long[] stripeRows = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
     final long[] stripeCols = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
-    final long[] stripeVals = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
     int stripePos = 0;
+    if (floatingPointSignal) {
+      final var typedBlocks = (DoubleStripeBlocks) blocks;
+      final var sparseVals = typedBlocks.sparseVals();
+      final var denseFlats = typedBlocks.denseFlats();
+      final double[] stripeVals = stripeSparseLen > 0 ? new double[(int) stripeSparseLen] : new double[0];
+      for (int i = 0; i < colStripes.length; i++) {
+        final int blockLen = lengths[i];
+        if (blockLen <= 0) {
+          continue;
+        }
+        final int colStripe = colStripes[i];
 
-    for (int i = 0; i < colStripes.length; i++) {
-      final int blockLen = lengths[i];
-      if (blockLen <= 0) {
-        continue;
+        if (denseFlags[i]) {
+          offsetRow[colStripe] = -denseOffset - 1L;
+          lengthRow[colStripe] = blockLen;
+          final var denseMd = new MDDoubleArray(denseFlats[i], new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE});
+          dst.float64().writeMDArrayBlockWithOffset(denseBlocksPath, denseMd, new long[]{denseOffset, 0L, 0L, 0L});
+          denseOffset++;
+        } else {
+          offsetRow[colStripe] = sparseOffset;
+          lengthRow[colStripe] = blockLen;
+          final var blockRows = sparseRows[i];
+          final var blockCols = sparseCols[i];
+          final var blockVals = sparseVals[i];
+          System.arraycopy(blockRows, 0, stripeRows, stripePos, blockLen);
+          System.arraycopy(blockCols, 0, stripeCols, stripePos, blockLen);
+          System.arraycopy(blockVals, 0, stripeVals, stripePos, blockLen);
+          stripePos += blockLen;
+          sparseOffset += blockLen;
+        }
       }
-      final int colStripe = colStripes[i];
+      final long rowBase = (long) rowStripe * stripeCount;
+      dst.int64().writeArrayBlockWithOffset(blockOffsetPath, offsetRow, stripeCount, rowBase);
+      dst.int64().writeArrayBlockWithOffset(blockLengthPath, lengthRow, stripeCount, rowBase);
+      if (stripeSparseLen > 0) {
+        dst.int64().writeArrayBlockWithOffset(blockRowsPath, stripeRows, (int) stripeSparseLen, stripeSparseOffset);
+        dst.int64().writeArrayBlockWithOffset(blockColsPath, stripeCols, (int) stripeSparseLen, stripeSparseOffset);
+        dst.float64().writeArrayBlockWithOffset(blockValsPath, stripeVals, (int) stripeSparseLen, stripeSparseOffset);
+      }
+    } else {
+      final var typedBlocks = (LongStripeBlocks) blocks;
+      final var sparseVals = typedBlocks.sparseVals();
+      final var denseFlats = typedBlocks.denseFlats();
+      final long[] stripeVals = stripeSparseLen > 0 ? new long[(int) stripeSparseLen] : new long[0];
+      for (int i = 0; i < colStripes.length; i++) {
+        final int blockLen = lengths[i];
+        if (blockLen <= 0) {
+          continue;
+        }
+        final int colStripe = colStripes[i];
 
-      if (denseFlags[i]) {
-        offsetRow[colStripe] = -denseOffset - 1L;
-        lengthRow[colStripe] = blockLen;
-        final var denseMd = new MDLongArray(denseFlats[i], new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE});
-        dst.int64().writeMDArrayBlockWithOffset(denseBlocksPath, denseMd, new long[]{denseOffset, 0L, 0L, 0L});
-        denseOffset++;
-      } else {
-        offsetRow[colStripe] = sparseOffset;
-        lengthRow[colStripe] = blockLen;
-        final var blockRows = sparseRows[i];
-        final var blockCols = sparseCols[i];
-        final var blockVals = sparseVals[i];
-        System.arraycopy(blockRows, 0, stripeRows, stripePos, blockLen);
-        System.arraycopy(blockCols, 0, stripeCols, stripePos, blockLen);
-        System.arraycopy(blockVals, 0, stripeVals, stripePos, blockLen);
-        stripePos += blockLen;
-        sparseOffset += blockLen;
+        if (denseFlags[i]) {
+          offsetRow[colStripe] = -denseOffset - 1L;
+          lengthRow[colStripe] = blockLen;
+          dst.int64().writeMDArrayBlockWithOffset(
+            denseBlocksPath,
+            new MDLongArray(denseFlats[i], new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE}),
+            new long[]{denseOffset, 0L, 0L, 0L}
+          );
+          denseOffset++;
+        } else {
+          offsetRow[colStripe] = sparseOffset;
+          lengthRow[colStripe] = blockLen;
+          final var blockRows = sparseRows[i];
+          final var blockCols = sparseCols[i];
+          final var blockVals = sparseVals[i];
+          System.arraycopy(blockRows, 0, stripeRows, stripePos, blockLen);
+          System.arraycopy(blockCols, 0, stripeCols, stripePos, blockLen);
+          System.arraycopy(blockVals, 0, stripeVals, stripePos, blockLen);
+          stripePos += blockLen;
+          sparseOffset += blockLen;
+        }
+      }
+      final long rowBase = (long) rowStripe * stripeCount;
+      dst.int64().writeArrayBlockWithOffset(blockOffsetPath, offsetRow, stripeCount, rowBase);
+      dst.int64().writeArrayBlockWithOffset(blockLengthPath, lengthRow, stripeCount, rowBase);
+      if (stripeSparseLen > 0) {
+        dst.int64().writeArrayBlockWithOffset(blockRowsPath, stripeRows, (int) stripeSparseLen, stripeSparseOffset);
+        dst.int64().writeArrayBlockWithOffset(blockColsPath, stripeCols, (int) stripeSparseLen, stripeSparseOffset);
+        dst.int64().writeArrayBlockWithOffset(blockValsPath, stripeVals, (int) stripeSparseLen, stripeSparseOffset);
       }
     }
-
-    final long rowBase = (long) rowStripe * stripeCount;
-    dst.int64().writeArrayBlockWithOffset(blockOffsetPath, offsetRow, stripeCount, rowBase);
-    dst.int64().writeArrayBlockWithOffset(blockLengthPath, lengthRow, stripeCount, rowBase);
-    if (stripeSparseLen > 0) {
-      dst.int64().writeArrayBlockWithOffset(blockRowsPath, stripeRows, (int) stripeSparseLen, stripeSparseOffset);
-      dst.int64().writeArrayBlockWithOffset(blockColsPath, stripeCols, (int) stripeSparseLen, stripeSparseOffset);
-      dst.int64().writeArrayBlockWithOffset(blockValsPath, stripeVals, (int) stripeSparseLen, stripeSparseOffset);
-    }
-
     return new SaveBlockResult(sparseOffset, denseOffset);
   }
 
@@ -426,6 +476,7 @@ public class McoolToHictConverter {
     final int stripeCount,
     final long @NotNull [] allRowsStartIndices,
     final int stripeWorkers,
+    final boolean floatingPointSignal,
     final @NotNull java.util.function.IntConsumer countingProgressReporter
   ) {
     if (stripeCount <= 0) {
@@ -447,7 +498,7 @@ public class McoolToHictConverter {
         for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
           checkInterrupted();
           final int end = Math.min(stripeCount, batchStart + batchSize);
-          final var blocks = readStripeBatch(readerHolder.get(), resolution, batchStart, end, allRowsStartIndices);
+          final var blocks = readStripeBatch(readerHolder.get(), resolution, batchStart, end, allRowsStartIndices, floatingPointSignal);
           for (int i = 0; i < blocks.length; i++) {
             final int stripeIdx = batchStart + i;
             final var block = blocks[i];
@@ -466,7 +517,7 @@ public class McoolToHictConverter {
           final int end = Math.min(stripeCount, batchStart + batchSize);
           futures.add(stripeExecutor.submit(() -> {
             checkInterrupted();
-            final var blocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices);
+            final var blocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices, floatingPointSignal);
             for (int i = 0; i < blocks.length; i++) {
               final int stripeIdx = start + i;
               final var block = blocks[i];
@@ -553,7 +604,8 @@ public class McoolToHictConverter {
     final long resolution,
     final int startStripe,
     final int endStripe,
-    final long @NotNull [] allRowsStartIndices
+    final long @NotNull [] allRowsStartIndices,
+    final boolean floatingPointSignal
   ) {
     final int actualEnd = Math.max(startStripe, endStripe);
     final int count = actualEnd - startStripe;
@@ -568,7 +620,9 @@ public class McoolToHictConverter {
     final int length = (int) (endOffset - startOffset);
     if (length <= 0) {
       for (int i = 0; i < count; i++) {
-        blocks[i] = new PixelBlock(new long[0], new long[0], new long[0]);
+        blocks[i] = floatingPointSignal
+          ? new DoublePixelBlock(new long[0], new long[0], new double[0])
+          : new LongPixelBlock(new long[0], new long[0], new long[0]);
       }
       return blocks;
     }
@@ -576,7 +630,8 @@ public class McoolToHictConverter {
     final var base = "/resolutions/" + resolution + "/pixels/";
     final var rows = src.int64().readArrayBlockWithOffset(base + "bin1_id", length, startOffset);
     final var cols = src.int64().readArrayBlockWithOffset(base + "bin2_id", length, startOffset);
-    final var vals = src.int64().readArrayBlockWithOffset(base + "count", length, startOffset);
+    final var doubleVals = floatingPointSignal ? src.float64().readArrayBlockWithOffset(base + "count", length, startOffset) : null;
+    final var longVals = floatingPointSignal ? null : src.int64().readArrayBlockWithOffset(base + "count", length, startOffset);
 
     for (int i = 0; i < count; i++) {
       final int stripeIdx = startStripe + i;
@@ -586,12 +641,20 @@ public class McoolToHictConverter {
       final int stripeEnd = (int) (allRowsStartIndices[stripeEndBin] - startOffset);
       final int stripeLen = Math.max(0, stripeEnd - stripeStart);
       if (stripeLen <= 0) {
-        blocks[i] = new PixelBlock(new long[0], new long[0], new long[0]);
+        blocks[i] = floatingPointSignal
+          ? new DoublePixelBlock(new long[0], new long[0], new double[0])
+          : new LongPixelBlock(new long[0], new long[0], new long[0]);
       } else {
-        blocks[i] = new PixelBlock(
+        blocks[i] = floatingPointSignal
+          ? new DoublePixelBlock(
           Arrays.copyOfRange(rows, stripeStart, stripeEnd),
           Arrays.copyOfRange(cols, stripeStart, stripeEnd),
-          Arrays.copyOfRange(vals, stripeStart, stripeEnd)
+          Arrays.copyOfRange(doubleVals, stripeStart, stripeEnd)
+        )
+          : new LongPixelBlock(
+          Arrays.copyOfRange(rows, stripeStart, stripeEnd),
+          Arrays.copyOfRange(cols, stripeStart, stripeEnd),
+          Arrays.copyOfRange(longVals, stripeStart, stripeEnd)
         );
       }
     }
@@ -607,6 +670,103 @@ public class McoolToHictConverter {
 
   private static @NotNull StripeBlocks buildStripeBlocks(
     final @NotNull PixelBlock block,
+    final int stripeCount
+  ) {
+    if (block instanceof DoublePixelBlock doubleBlock) {
+      return buildStripeBlocks(doubleBlock, stripeCount);
+    }
+    if (block instanceof LongPixelBlock longBlock) {
+      return buildStripeBlocks(longBlock, stripeCount);
+    }
+    throw new IllegalStateException("Unsupported pixel block type: " + block.getClass().getName());
+  }
+
+  private static @NotNull StripeBlocks buildStripeBlocks(
+    final @NotNull DoublePixelBlock block,
+    final int stripeCount
+  ) {
+    final var rows = block.rows();
+    final var cols = block.cols();
+    final var values = block.values();
+    final int n = rows.length;
+
+    final int maxTouched = Math.min(stripeCount, n);
+    final var buffer = acquireCountBuffer(stripeCount, maxTouched);
+    final int[] counts = buffer.counts();
+    final int[] touched = buffer.touched();
+    int touchedCount = 0;
+
+    for (int i = 0; i < n; i++) {
+      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      if (counts[colStripe]++ == 0) {
+        touched[touchedCount++] = colStripe;
+      }
+    }
+
+    Arrays.sort(touched, 0, touchedCount);
+    final int nonEmptyBlocks = touchedCount;
+    final int[] blockColStripes = new int[nonEmptyBlocks];
+    final boolean[] denseFlags = new boolean[nonEmptyBlocks];
+    final int[] blockLengths = new int[nonEmptyBlocks];
+
+    for (int i = 0; i < touchedCount; i++) {
+      final int colStripe = touched[i];
+      final int count = counts[colStripe];
+      counts[colStripe] = 0;
+      blockColStripes[i] = colStripe;
+      blockLengths[i] = count;
+      denseFlags[i] = count >= DENSE_THRESHOLD;
+    }
+
+    final long[][] sparseRows = new long[nonEmptyBlocks][];
+    final long[][] sparseCols = new long[nonEmptyBlocks][];
+    final double[][] sparseVals = new double[nonEmptyBlocks][];
+    final double[][] denseFlats = new double[nonEmptyBlocks][];
+
+    for (int i = 0; i < nonEmptyBlocks; i++) {
+      if (denseFlags[i]) {
+        denseFlats[i] = new double[SUBMATRIX_SIZE * SUBMATRIX_SIZE];
+      } else {
+        final int len = blockLengths[i];
+        sparseRows[i] = new long[len];
+        sparseCols[i] = new long[len];
+        sparseVals[i] = new double[len];
+      }
+    }
+
+    final int[] colStripeToIndex = new int[stripeCount];
+    Arrays.fill(colStripeToIndex, -1);
+    for (int i = 0; i < nonEmptyBlocks; i++) {
+      colStripeToIndex[blockColStripes[i]] = i;
+    }
+
+    final int[] sparsePositions = new int[nonEmptyBlocks];
+    for (int i = 0; i < n; i++) {
+      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      final int idx = colStripeToIndex[colStripe];
+      final int intraRow = (int) (rows[i] % SUBMATRIX_SIZE);
+      final int intraCol = (int) (cols[i] % SUBMATRIX_SIZE);
+      if (denseFlags[idx]) {
+        denseFlats[idx][intraRow * SUBMATRIX_SIZE + intraCol] += values[i];
+      } else {
+        final int pos = sparsePositions[idx]++;
+        sparseRows[idx][pos] = intraRow;
+        sparseCols[idx][pos] = intraCol;
+        sparseVals[idx][pos] = values[i];
+      }
+    }
+
+    for (int i = 0; i < nonEmptyBlocks; i++) {
+      if (!denseFlags[i] && blockLengths[i] > 1) {
+        sortSparseBlockRowMajor(sparseRows[i], sparseCols[i], sparseVals[i]);
+      }
+    }
+
+    return new DoubleStripeBlocks(blockColStripes, blockLengths, denseFlags, sparseRows, sparseCols, sparseVals, denseFlats);
+  }
+
+  private static @NotNull StripeBlocks buildStripeBlocks(
+    final @NotNull LongPixelBlock block,
     final int stripeCount
   ) {
     final var rows = block.rows();
@@ -686,7 +846,45 @@ public class McoolToHictConverter {
       }
     }
 
-    return new StripeBlocks(blockColStripes, blockLengths, denseFlags, sparseRows, sparseCols, sparseVals, denseFlats);
+    return new LongStripeBlocks(blockColStripes, blockLengths, denseFlags, sparseRows, sparseCols, sparseVals, denseFlats);
+  }
+
+  private static void sortSparseBlockRowMajor(
+    final long @NotNull [] rows,
+    final long @NotNull [] cols,
+    final double @NotNull [] vals
+  ) {
+    final int n = rows.length;
+    if (n <= 1) {
+      return;
+    }
+    final int bucketSize = SUBMATRIX_SIZE * SUBMATRIX_SIZE;
+    final int[] counts = new int[bucketSize];
+    final int[] keys = new int[n];
+    for (int i = 0; i < n; i++) {
+      final int key = (int) (rows[i] * SUBMATRIX_SIZE + cols[i]);
+      keys[i] = key;
+      counts[key]++;
+    }
+    int sum = 0;
+    for (int i = 0; i < bucketSize; i++) {
+      final int c = counts[i];
+      counts[i] = sum;
+      sum += c;
+    }
+    final long[] sortedRows = new long[n];
+    final long[] sortedCols = new long[n];
+    final double[] sortedVals = new double[n];
+    for (int i = 0; i < n; i++) {
+      final int key = keys[i];
+      final int pos = counts[key]++;
+      sortedRows[pos] = rows[i];
+      sortedCols[pos] = cols[i];
+      sortedVals[pos] = vals[i];
+    }
+    System.arraycopy(sortedRows, 0, rows, 0, n);
+    System.arraycopy(sortedCols, 0, cols, 0, n);
+    System.arraycopy(sortedVals, 0, vals, 0, n);
   }
 
   private static void sortSparseBlockRowMajor(
@@ -751,7 +949,9 @@ public class McoolToHictConverter {
         checkInterrupted();
         final var block = blocks[i];
         if (block.length() > 0) {
-          sortedBatch[i] = sortStripePixels(block.rows(), block.cols(), block.values());
+          sortedBatch[i] = block instanceof DoublePixelBlock doubleBlock
+            ? sortStripePixels(doubleBlock.rows(), doubleBlock.cols(), doubleBlock.values())
+            : sortStripePixels(((LongPixelBlock) block).rows(), ((LongPixelBlock) block).cols(), toDoubleArray(((LongPixelBlock) block).values()));
         }
       }
       return sortedBatch;
@@ -764,7 +964,9 @@ public class McoolToHictConverter {
         checkInterrupted();
         final var block = blocks[idx];
         if (block.length() > 0) {
-          sortedBatch[idx] = sortStripePixels(block.rows(), block.cols(), block.values());
+          sortedBatch[idx] = block instanceof DoublePixelBlock doubleBlock
+            ? sortStripePixels(doubleBlock.rows(), doubleBlock.cols(), doubleBlock.values())
+            : sortStripePixels(((LongPixelBlock) block).rows(), ((LongPixelBlock) block).cols(), toDoubleArray(((LongPixelBlock) block).values()));
         }
       }));
     }
@@ -827,22 +1029,26 @@ public class McoolToHictConverter {
     final int nextBin = Math.min((rowStripe + 1) * SUBMATRIX_SIZE, allRowsStartIndices.length - 1);
     final long endOffset = allRowsStartIndices[nextBin];
     final int length = (int) (endOffset - startOffset);
+    final var base = "/resolutions/" + resolution + "/pixels/";
+    final var floatingPointSignal = isFloatingPointDataset(src, base + "count");
 
     if (length <= 0) {
-      return new PixelBlock(new long[0], new long[0], new long[0]);
+      return floatingPointSignal
+        ? new DoublePixelBlock(new long[0], new long[0], new double[0])
+        : new LongPixelBlock(new long[0], new long[0], new long[0]);
     }
 
-    final var base = "/resolutions/" + resolution + "/pixels/";
     final var rows = src.int64().readArrayBlockWithOffset(base + "bin1_id", length, startOffset);
     final var cols = src.int64().readArrayBlockWithOffset(base + "bin2_id", length, startOffset);
-    final var vals = src.int64().readArrayBlockWithOffset(base + "count", length, startOffset);
-    return new PixelBlock(rows, cols, vals);
+    return floatingPointSignal
+      ? new DoublePixelBlock(rows, cols, src.float64().readArrayBlockWithOffset(base + "count", length, startOffset))
+      : new LongPixelBlock(rows, cols, src.int64().readArrayBlockWithOffset(base + "count", length, startOffset));
   }
 
   private static @NotNull SortedStripePixels sortStripePixels(
     final long @NotNull [] rows,
     final long @NotNull [] cols,
-    final long @NotNull [] values
+    final double @NotNull [] values
   ) {
     final int n = rows.length;
     final var order = new Integer[n];
@@ -860,7 +1066,7 @@ public class McoolToHictConverter {
     final var sortedColStripes = new long[n];
     final var sortedIntraRows = new int[n];
     final var sortedIntraCols = new int[n];
-    final var sortedValues = new long[n];
+    final var sortedValues = new double[n];
 
     for (int i = 0; i < n; i++) {
       final int srcIdx = order[i];
@@ -1163,6 +1369,74 @@ public class McoolToHictConverter {
     }
   }
 
+  private static boolean isFloatingPointDataset(final @NotNull IHDF5Reader reader, final @NotNull String path) {
+    return reader.object().getDataSetInformation(path).getTypeInformation().getDataClass() == HDF5DataClass.FLOAT;
+  }
+
+  private static double @NotNull [] readNumericArrayBlockWithOffset(
+    final @NotNull IHDF5Reader reader,
+    final @NotNull String path,
+    final int length,
+    final long offset
+  ) {
+    if (isFloatingPointDataset(reader, path)) {
+      return reader.float64().readArrayBlockWithOffset(path, length, offset);
+    }
+    return toDoubleArray(reader.int64().readArrayBlockWithOffset(path, length, offset));
+  }
+
+  private static void createNumericArray(
+    final @NotNull IHDF5Writer writer,
+    final @NotNull String path,
+    final long length,
+    final int chunkSize,
+    final boolean floatingPoint,
+    final @NotNull HDF5IntStorageFeatures intStorageFeatures,
+    final @NotNull HDF5FloatStorageFeatures floatStorageFeatures
+  ) {
+    if (floatingPoint) {
+      writer.float64().createArray(path, length, safeChunkLen(length, chunkSize), floatStorageFeatures);
+    } else {
+      writer.int64().createArray(path, length, safeChunkLen(length, chunkSize), intStorageFeatures);
+    }
+  }
+
+  private static void createNumericMDArray(
+    final @NotNull IHDF5Writer writer,
+    final @NotNull String path,
+    final long @NotNull [] dimensions,
+    final int @NotNull [] blockDimensions,
+    final boolean floatingPoint,
+    final @NotNull HDF5IntStorageFeatures intStorageFeatures,
+    final @NotNull HDF5FloatStorageFeatures floatStorageFeatures
+  ) {
+    if (floatingPoint) {
+      writer.float64().createMDArray(path, dimensions, blockDimensions, floatStorageFeatures);
+    } else {
+      writer.int64().createMDArray(path, dimensions, blockDimensions, intStorageFeatures);
+    }
+  }
+
+  private static double @NotNull [] toDoubleArray(final long @NotNull [] input) {
+    final var result = new double[input.length];
+    for (int i = 0; i < input.length; i++) {
+      result[i] = input[i];
+    }
+    return result;
+  }
+
+  private static long @NotNull [] toLongArray(final double @NotNull [] input) {
+    final var result = new long[input.length];
+    for (int i = 0; i < input.length; i++) {
+      result[i] = Math.round(input[i]);
+    }
+    return result;
+  }
+
+  private static @NotNull MDLongArray toLongMdArray(final double @NotNull [] input) {
+    return new MDLongArray(toLongArray(input), new int[]{1, 1, SUBMATRIX_SIZE, SUBMATRIX_SIZE});
+  }
+
   private static @NotNull String resolveNameLengthPath(final @NotNull IHDF5Reader src, final long resolution) {
     final var perResolution = "/resolutions/" + resolution + "/chroms";
     if (src.object().isGroup(perResolution) && src.object().isDataSet(perResolution + "/name") && src.object().isDataSet(perResolution + "/length")) {
@@ -1290,10 +1564,26 @@ public class McoolToHictConverter {
   }
 
   private static final StripeBlocks EMPTY_BLOCKS =
-    new StripeBlocks(new int[0], new int[0], new boolean[0], new long[0][], new long[0][], new long[0][], new long[0][]);
+    new LongStripeBlocks(new int[0], new int[0], new boolean[0], new long[0][], new long[0][], new long[0][], new long[0][]);
 
-  private record PixelBlock(long @NotNull [] rows, long @NotNull [] cols, long @NotNull [] values) {
-    int length() {
+  private sealed interface PixelBlock permits LongPixelBlock, DoublePixelBlock {
+    long @NotNull [] rows();
+
+    long @NotNull [] cols();
+
+    int length();
+  }
+
+  private record LongPixelBlock(long @NotNull [] rows, long @NotNull [] cols, long @NotNull [] values) implements PixelBlock {
+    @Override
+    public int length() {
+      return rows.length;
+    }
+  }
+
+  private record DoublePixelBlock(long @NotNull [] rows, long @NotNull [] cols, double @NotNull [] values) implements PixelBlock {
+    @Override
+    public int length() {
       return rows.length;
     }
   }
@@ -1302,11 +1592,23 @@ public class McoolToHictConverter {
     long @NotNull [] colStripes,
     int @NotNull [] intraRows,
     int @NotNull [] intraCols,
-    long @NotNull [] values
+    double @NotNull [] values
   ) {
   }
 
-  private record StripeBlocks(
+  private sealed interface StripeBlocks permits LongStripeBlocks, DoubleStripeBlocks {
+    int @NotNull [] colStripes();
+
+    int @NotNull [] blockLengths();
+
+    boolean @NotNull [] denseFlags();
+
+    long @NotNull [] @NotNull [] sparseRows();
+
+    long @NotNull [] @NotNull [] sparseCols();
+  }
+
+  private record LongStripeBlocks(
     int @NotNull [] colStripes,
     int @NotNull [] blockLengths,
     boolean @NotNull [] denseFlags,
@@ -1314,7 +1616,18 @@ public class McoolToHictConverter {
     long @NotNull [] @NotNull [] sparseCols,
     long @NotNull [] @NotNull [] sparseVals,
     long @NotNull [] @NotNull [] denseFlats
-  ) {
+  ) implements StripeBlocks {
+  }
+
+  private record DoubleStripeBlocks(
+    int @NotNull [] colStripes,
+    int @NotNull [] blockLengths,
+    boolean @NotNull [] denseFlags,
+    long @NotNull [] @NotNull [] sparseRows,
+    long @NotNull [] @NotNull [] sparseCols,
+    double @NotNull [] @NotNull [] sparseVals,
+    double @NotNull [] @NotNull [] denseFlats
+  ) implements StripeBlocks {
   }
 
   private record StripeCounts(long sparseElementCount, long denseBlockCount) {

@@ -37,7 +37,6 @@ import java.util.Arrays;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.DoubleStream;
-import java.util.stream.LongStream;
 import java.util.stream.Stream;
 
 @RequiredArgsConstructor
@@ -49,21 +48,6 @@ public class TileVisualizationProcessor {
     var doubleStream = rowStream;
     if (rowWeight != 1.0) {
       doubleStream = doubleStream.map(signal -> signal * rowWeight);
-    }
-
-    if (columnWeights != null) {
-      final var atomicColumnIndex = new AtomicInteger();
-      doubleStream = doubleStream.sequential().map(signal -> signal * columnWeights[atomicColumnIndex.getAndIncrement()]);
-    }
-    return doubleStream;
-  }
-
-  protected DoubleStream applyCoolerWeightsToRow(final LongStream rowStream, final double rowWeight, final double @Nullable [] columnWeights) {
-    DoubleStream doubleStream;
-    if (rowWeight != 1.0) {
-      doubleStream = rowStream.mapToDouble(signal -> signal * rowWeight);
-    } else {
-      doubleStream = rowStream.mapToDouble(signal -> (double) signal);
     }
 
     if (columnWeights != null) {
@@ -99,7 +83,7 @@ public class TileVisualizationProcessor {
           final var rawRow = rawValues[rowIndex];
           final var wRow = new double[columnCount];
           for (int j = 0; j < columnCount; j++) {
-            wRow[j] = ((double) rawRow[j]) * rowWeights[rowIndex] * colWeights[j];
+            wRow[j] = rawRow[j] * rowWeights[rowIndex] * colWeights[j];
           }
           weightedValues[rowIndex] = wRow;
         });
@@ -116,22 +100,29 @@ public class TileVisualizationProcessor {
     final var input = rawTile.matrix();
     final var rowWeights = rawTile.rowWeights();
     final var columnWeights = rawTile.colWeights();
-    final var rowCount = input.length;
-    final var columnCount = (rowCount > 0) ? input[0].length : 0;
+    final var rowCount = input.rows();
+    final var columnCount = input.cols();
     final var result = new double[rowCount][columnCount];
     final var resolutionScalingCoeffs = this.chunkedFile.getResolutionScalingCoefficient();
     final var resolutionLinearScalingCoeffs = this.chunkedFile.getResolutionLinearScalingCoefficient();
     final var resolutionScalingCoeff = resolutionScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
     final var resolutionLinearScalingCoeff = resolutionLinearScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
 
-    for (int rowIndex = 0; rowIndex < input.length; ++rowIndex) {
-      final var startStream = Arrays.stream(input[rowIndex]).parallel();
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+      final DoubleStream startStream;
+      if (input instanceof MatrixQueries.DoubleMatrix doubleMatrix) {
+        startStream = Arrays.stream(doubleMatrix.values()[rowIndex]).parallel();
+      } else if (input instanceof MatrixQueries.LongMatrix longMatrix) {
+        startStream = Arrays.stream(longMatrix.values()[rowIndex]).parallel().mapToDouble(value -> value);
+      } else {
+        throw new IllegalStateException("Unsupported raw matrix type: " + input.getClass().getName());
+      }
       final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
 
       final var pre = visualizationOptions.getLnPreLogBase();
       final var post = visualizationOptions.getLnPostLogBase();
 
-      DoubleStream doubleStream = startStream.mapToDouble(signal -> (double) signal);
+      DoubleStream doubleStream = startStream;
 
       if (pre > 0) {
         doubleStream = doubleStream.map(signal -> Math.log1p(signal) / pre);
@@ -160,8 +151,8 @@ public class TileVisualizationProcessor {
 
   public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions options) {
     final var input = rawTile.matrix();
-    final var rowCount = input.length;
-    final var columnCount = (rowCount > 0) ? input[0].length : 0;
+    final var rowCount = input.rows();
+    final var columnCount = input.cols();
     final var normalized = processTile(rawTile, options);
     final var colormap = options.getColormap();
     final var boxedARGBValues = Arrays.stream(normalized.values())

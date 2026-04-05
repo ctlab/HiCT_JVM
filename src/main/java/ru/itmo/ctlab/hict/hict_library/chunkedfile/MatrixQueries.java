@@ -24,6 +24,7 @@
 
 package ru.itmo.ctlab.hict.hict_library.chunkedfile;
 
+import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import ch.systemsx.cisd.hdf5.IndexMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -72,7 +73,6 @@ public class MatrixQueries {
 
     final var queryRows = (int) (endRowExcl - startRowIncl);
     final var queryCols = (int) (endColExcl - startColIncl);
-    final long[][] result = new long[queryRows][queryCols];
 
     int deltaRow = (int) (startRow - startRowIncl);
     int deltaCol = (int) (startCol - startColIncl);
@@ -96,39 +96,36 @@ public class MatrixQueries {
         Objects.requireNonNull(dsBundle);
         final var blockMetaCache = new HashMap<Long, BlockMeta>();
         prefillBlockMetaCache(dsBundle, resolutionOrder, rowATUs, colATUs, blockMetaCache);
-        if (symmetricQuery) {
-          final var atuCount = rowATUs.size();
-          var startDeltaCol = (int) (startCol - startColIncl);
-          for (int i = 0; i < atuCount; ++i) {
-            final var rowATU = rowATUs.get(i);
-            deltaCol = startDeltaCol;
-            final var rowCount = rowATU.getLength();
-            for (int j = i; j < atuCount; ++j) {
-              final var colATU = colATUs.get(j);
-              final var colCount = colATU.getLength();
-              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
-              if (i != j) {
-                for (int k = 0; k < rowCount; k++) {
-                  for (int l = 0; l < colCount; l++) {
-                    result[deltaCol + l][deltaRow + k] = result[deltaRow + k][deltaCol + l];
-                  }
-                }
-              }
-              deltaCol += colCount;
-            }
-            startDeltaCol += colATUs.get(i).getLength();
-            deltaRow += rowCount;
-          }
-        } else {
-          for (final var rowATU : rowATUs) {
-            deltaCol = (int) (startCol - startColIncl);
-            for (final var colATU : colATUs) {
-              fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
-              deltaCol += colATU.getLength();
-            }
-            deltaRow += rowATU.getLength();
-          }
-        }
+        final var result = isFloatingPointDataset(dsBundle.getReader(), dsBundle.getBlockValuesDataSet())
+          ? fillSubmatrixAsDoubles(
+          dsBundle,
+          resolutionDescriptor,
+          rowATUs,
+          colATUs,
+          queryRows,
+          queryCols,
+          symmetricQuery,
+          startRow,
+          startRowIncl,
+          startCol,
+          startColIncl,
+          blockMetaCache
+        )
+          : fillSubmatrixAsLongs(
+          dsBundle,
+          resolutionDescriptor,
+          rowATUs,
+          colATUs,
+          queryRows,
+          queryCols,
+          symmetricQuery,
+          startRow,
+          startRowIncl,
+          startCol,
+          startColIncl,
+          blockMetaCache
+        );
+        return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
       } catch (final Exception ex) {
         throw new RuntimeException("Dense matrix fetch failed", ex);
       } finally {
@@ -143,7 +140,113 @@ public class MatrixQueries {
     }
 
 
-    return new MatrixQueries.MatrixWithWeights(result, paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
+    return new MatrixQueries.MatrixWithWeights(new LongMatrix(new long[queryRows][queryCols]), paddedRowWeights, paddedColWeights, startRow, startCol, endRow, endCol, units, resolutionDescriptor);
+  }
+
+  private @NotNull RawMatrix fillSubmatrixAsLongs(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final @NotNull List<@NotNull ATUDescriptor> rowATUs,
+    final @NotNull List<@NotNull ATUDescriptor> colATUs,
+    final int queryRows,
+    final int queryCols,
+    final boolean symmetricQuery,
+    final long startRow,
+    final long startRowIncl,
+    final long startCol,
+    final long startColIncl,
+    final @NotNull Map<Long, BlockMeta> blockMetaCache
+  ) {
+    final var result = new long[queryRows][queryCols];
+    int deltaRow = (int) (startRow - startRowIncl);
+    int deltaCol;
+    if (symmetricQuery) {
+      final var atuCount = rowATUs.size();
+      var startDeltaCol = (int) (startCol - startColIncl);
+      for (int i = 0; i < atuCount; ++i) {
+        final var rowATU = rowATUs.get(i);
+        deltaCol = startDeltaCol;
+        final var rowCount = rowATU.getLength();
+        for (int j = i; j < atuCount; ++j) {
+          final var colATU = colATUs.get(j);
+          final var colCount = colATU.getLength();
+          fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
+          if (i != j) {
+            for (int k = 0; k < rowCount; k++) {
+              for (int l = 0; l < colCount; l++) {
+                result[deltaCol + l][deltaRow + k] = result[deltaRow + k][deltaCol + l];
+              }
+            }
+          }
+          deltaCol += colCount;
+        }
+        startDeltaCol += colATUs.get(i).getLength();
+        deltaRow += rowCount;
+      }
+    } else {
+      for (final var rowATU : rowATUs) {
+        deltaCol = (int) (startCol - startColIncl);
+        for (final var colATU : colATUs) {
+          fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
+          deltaCol += colATU.getLength();
+        }
+        deltaRow += rowATU.getLength();
+      }
+    }
+    return new LongMatrix(result);
+  }
+
+  private @NotNull RawMatrix fillSubmatrixAsDoubles(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final @NotNull List<@NotNull ATUDescriptor> rowATUs,
+    final @NotNull List<@NotNull ATUDescriptor> colATUs,
+    final int queryRows,
+    final int queryCols,
+    final boolean symmetricQuery,
+    final long startRow,
+    final long startRowIncl,
+    final long startCol,
+    final long startColIncl,
+    final @NotNull Map<Long, BlockMeta> blockMetaCache
+  ) {
+    final var result = new double[queryRows][queryCols];
+    int deltaRow = (int) (startRow - startRowIncl);
+    int deltaCol;
+    if (symmetricQuery) {
+      final var atuCount = rowATUs.size();
+      var startDeltaCol = (int) (startCol - startColIncl);
+      for (int i = 0; i < atuCount; ++i) {
+        final var rowATU = rowATUs.get(i);
+        deltaCol = startDeltaCol;
+        final var rowCount = rowATU.getLength();
+        for (int j = i; j < atuCount; ++j) {
+          final var colATU = colATUs.get(j);
+          final var colCount = colATU.getLength();
+          fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
+          if (i != j) {
+            for (int k = 0; k < rowCount; k++) {
+              for (int l = 0; l < colCount; l++) {
+                result[deltaCol + l][deltaRow + k] = result[deltaRow + k][deltaCol + l];
+              }
+            }
+          }
+          deltaCol += colCount;
+        }
+        startDeltaCol += colATUs.get(i).getLength();
+        deltaRow += rowCount;
+      }
+    } else {
+      for (final var rowATU : rowATUs) {
+        deltaCol = (int) (startCol - startColIncl);
+        for (final var colATU : colATUs) {
+          fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, result, deltaRow, deltaCol, false, blockMetaCache);
+          deltaCol += colATU.getLength();
+        }
+        deltaRow += rowATU.getLength();
+      }
+    }
+    return new DoubleMatrix(result);
   }
 
   private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus) {
@@ -402,11 +505,11 @@ public class MatrixQueries {
     return reducedATUs;
   }
 
-  public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU) {
+  public double @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU) {
     return getATUIntersection(resolutionDescriptor, rowATU, colATU, false);
   }
 
-  public long @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU, final boolean needsTranspose) {
+  public double @NotNull [][] getATUIntersection(final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull ATUDescriptor rowATU, final @NotNull ATUDescriptor colATU, final boolean needsTranspose) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final @NotNull var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
     @Nullable HDF5FileDatasetsBundle dsBundle = null;
@@ -427,7 +530,7 @@ public class MatrixQueries {
     }
   }
 
-  private long @NotNull [][] getATUIntersectionWithBundle(
+  private double @NotNull [][] getATUIntersectionWithBundle(
     final @NotNull HDF5FileDatasetsBundle dsBundle,
     final @NotNull ResolutionDescriptor resolutionDescriptor,
     final @NotNull ATUDescriptor rowATU,
@@ -435,7 +538,7 @@ public class MatrixQueries {
     final boolean needsTranspose,
     final @Nullable Map<Long, BlockMeta> blockMetaCache
   ) {
-    final var denseMatrix = new long[needsTranspose ? colATU.getLength() : rowATU.getLength()][needsTranspose ? rowATU.getLength() : colATU.getLength()];
+    final var denseMatrix = new double[needsTranspose ? colATU.getLength() : rowATU.getLength()][needsTranspose ? rowATU.getLength() : colATU.getLength()];
     fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, rowATU, colATU, denseMatrix, 0, 0, needsTranspose, blockMetaCache);
     return denseMatrix;
   }
@@ -445,7 +548,7 @@ public class MatrixQueries {
     final @NotNull ResolutionDescriptor resolutionDescriptor,
     final @NotNull ATUDescriptor rowATU,
     final @NotNull ATUDescriptor colATU,
-    final long[][] target,
+    final double[][] target,
     final int dstRow,
     final int dstCol,
     final boolean needsTranspose,
@@ -506,14 +609,14 @@ public class MatrixQueries {
       final var cachedPayload = this.blockDataCache.get(cacheKey);
 
       if (savedAsSparse) {
-        final SparseBlockData sparseBlockData;
-        if (cachedPayload instanceof SparseBlockData cachedSparse) {
+        final SparseDoubleBlockData sparseBlockData;
+        if (cachedPayload instanceof SparseDoubleBlockData cachedSparse) {
           sparseBlockData = cachedSparse;
         } else {
-          sparseBlockData = new SparseBlockData(
+          sparseBlockData = new SparseDoubleBlockData(
             reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
             reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
-            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
+            readNumericArrayBlockWithOffset(reader, dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
           );
           this.blockDataCache.put(cacheKey, sparseBlockData);
         }
@@ -556,17 +659,12 @@ public class MatrixQueries {
           }
         }
       } else {
-        final DenseBlockData denseBlockData;
-        if (cachedPayload instanceof DenseBlockData cachedDense) {
+        final DenseDoubleBlockData denseBlockData;
+        if (cachedPayload instanceof DenseDoubleBlockData cachedDense) {
           denseBlockData = cachedDense;
         } else {
           final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
-          final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
-            dsBundle.getDenseBlockDataSet(),
-            new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()},
-            new long[]{0L, 0L},
-            idx
-          );
+          final var block = readNumericDenseBlock(reader, dsBundle.getDenseBlockDataSet(), this.chunkedFile.getDenseBlockSize(), idx);
           final var denseBlock = block.toMatrix();
           if (blockOnMainDiagonal) {
             for (int i = 0; i < denseBlock.length; ++i) {
@@ -575,7 +673,7 @@ public class MatrixQueries {
               }
             }
           }
-          denseBlockData = new DenseBlockData(denseBlock);
+          denseBlockData = new DenseDoubleBlockData(denseBlock);
           this.blockDataCache.put(cacheKey, denseBlockData);
         }
         final var denseBlock = denseBlockData.matrix();
@@ -607,6 +705,201 @@ public class MatrixQueries {
       }
     } catch (Exception e) {
       throw new RuntimeException(e);
+    }
+  }
+
+  private void fillATUIntersectionIntoWithBundle(
+    final @NotNull HDF5FileDatasetsBundle dsBundle,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final @NotNull ATUDescriptor rowATU,
+    final @NotNull ATUDescriptor colATU,
+    final long[][] target,
+    final int dstRow,
+    final int dstCol,
+    final boolean needsTranspose,
+    final @Nullable Map<Long, BlockMeta> blockMetaCache
+  ) {
+    if (rowATU.getStripeDescriptor().stripeId() > colATU.getStripeDescriptor().stripeId()) {
+      fillATUIntersectionIntoWithBundle(dsBundle, resolutionDescriptor, colATU, rowATU, target, dstRow, dstCol, !needsTranspose, blockMetaCache);
+      return;
+    }
+
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var rowStripe = rowATU.getStripeDescriptor();
+    final var colStripe = colATU.getStripeDescriptor();
+    final var rowStripeId = rowStripe.stripeId();
+    final var colStripeId = colStripe.stripeId();
+    final var blockOnMainDiagonal = (rowStripeId == colStripeId);
+
+    final long blockIndexInDatasets = ((long) rowStripeId) * this.chunkedFile.getStripeCount()[resolutionOrder] + colStripeId;
+    final long blockLength;
+    final long blockOffset;
+    try {
+      final var reader = dsBundle.getReader();
+      final BlockMeta blockMeta;
+      if (blockMetaCache != null) {
+        blockMeta = blockMetaCache.computeIfAbsent(blockIndexInDatasets, key -> {
+          final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
+          final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
+          final long[] blockLengthBuf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, key.longValue());
+          final long[] blockOffsetBuf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, key.longValue());
+          return new BlockMeta(blockLengthBuf[0], blockOffsetBuf[0]);
+        });
+      } else {
+        final var blockLengthDataset = dsBundle.getBlockLengthDataSet();
+        final var blockOffsetDataset = dsBundle.getBlockOffsetDataSet();
+        final long[] blockLengthBuf = reader.int64().readArrayBlockWithOffset(blockLengthDataset, 1, blockIndexInDatasets);
+        final long[] blockOffsetBuf = reader.int64().readArrayBlockWithOffset(blockOffsetDataset, 1, blockIndexInDatasets);
+        blockMeta = new BlockMeta(blockLengthBuf[0], blockOffsetBuf[0]);
+      }
+      blockLength = blockMeta.blockLength();
+      blockOffset = blockMeta.blockOffset();
+
+      if (blockLength == 0L) {
+        return;
+      }
+
+      final var firstRow = rowATU.getStartIndexInStripeIncl();
+      final var firstCol = colATU.getStartIndexInStripeIncl();
+      final var lastRow = rowATU.getEndIndexInStripeExcl();
+      final var lastCol = colATU.getEndIndexInStripeExcl();
+      final var queryRowCount = lastRow - firstRow;
+      final var queryColCount = lastCol - firstCol;
+      final var flipRows = ATUDirection.REVERSED.equals(rowATU.getDirection());
+      final var flipCols = ATUDirection.REVERSED.equals(colATU.getDirection());
+      final var savedAsSparse = (blockOffset >= 0L);
+      final var cacheKey = new BlockCacheKey(resolutionOrder, blockIndexInDatasets);
+      final var cachedPayload = this.blockDataCache.get(cacheKey);
+
+      if (savedAsSparse) {
+        final SparseLongBlockData sparseBlockData;
+        if (cachedPayload instanceof SparseLongBlockData cachedSparse) {
+          sparseBlockData = cachedSparse;
+        } else {
+          sparseBlockData = new SparseLongBlockData(
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) blockLength, blockOffset),
+            reader.int64().readArrayBlockWithOffset(dsBundle.getBlockValuesDataSet(), (int) blockLength, blockOffset)
+          );
+          this.blockDataCache.put(cacheKey, sparseBlockData);
+        }
+
+        for (int i = 0; i < sparseBlockData.values().length; i++) {
+          final var value = sparseBlockData.values()[i];
+          writeSparseValueToTarget(
+            target,
+            dstRow,
+            dstCol,
+            sparseBlockData.rows()[i],
+            sparseBlockData.cols()[i],
+            value,
+            firstRow,
+            firstCol,
+            queryRowCount,
+            queryColCount,
+            flipRows,
+            flipCols,
+            needsTranspose
+          );
+          if (blockOnMainDiagonal && sparseBlockData.rows()[i] != sparseBlockData.cols()[i]) {
+            writeSparseValueToTarget(
+              target,
+              dstRow,
+              dstCol,
+              sparseBlockData.cols()[i],
+              sparseBlockData.rows()[i],
+              value,
+              firstRow,
+              firstCol,
+              queryRowCount,
+              queryColCount,
+              flipRows,
+              flipCols,
+              needsTranspose
+            );
+          }
+        }
+      } else {
+        final DenseLongBlockData denseBlockData;
+        if (cachedPayload instanceof DenseLongBlockData cachedDense) {
+          denseBlockData = cachedDense;
+        } else {
+          final var idx = new IndexMap().bind(0, -(blockOffset + 1L)).bind(1, 0L);
+          final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
+            dsBundle.getDenseBlockDataSet(),
+            new int[]{this.chunkedFile.getDenseBlockSize(), this.chunkedFile.getDenseBlockSize()},
+            new long[]{0L, 0L},
+            idx
+          );
+          final var denseBlock = block.toMatrix();
+          if (blockOnMainDiagonal) {
+            for (int i = 0; i < denseBlock.length; ++i) {
+              for (int j = 1 + i; j < denseBlock.length; ++j) {
+                denseBlock[j][i] = denseBlock[i][j];
+              }
+            }
+          }
+          denseBlockData = new DenseLongBlockData(denseBlock);
+          this.blockDataCache.put(cacheKey, denseBlockData);
+        }
+        final var denseBlock = denseBlockData.matrix();
+        if (blockOnMainDiagonal) {
+          for (int outRow = 0; outRow < queryRowCount; outRow++) {
+            final int srcRow = flipRows ? (lastRow - 1 - outRow) : (firstRow + outRow);
+            for (int outCol = 0; outCol < queryColCount; outCol++) {
+              final int srcCol = flipCols ? (lastCol - 1 - outCol) : (firstCol + outCol);
+              if (needsTranspose) {
+                target[dstRow + outCol][dstCol + outRow] = denseBlock[srcRow][srcCol];
+              } else {
+                target[dstRow + outRow][dstCol + outCol] = denseBlock[srcRow][srcCol];
+              }
+            }
+          }
+        } else {
+          for (int outRow = 0; outRow < queryRowCount; outRow++) {
+            final int srcRow = flipRows ? (queryRowCount - 1 - outRow) : outRow;
+            for (int outCol = 0; outCol < queryColCount; outCol++) {
+              final int srcCol = flipCols ? (queryColCount - 1 - outCol) : outCol;
+              if (needsTranspose) {
+                target[dstRow + outCol][dstCol + outRow] = denseBlock[firstRow + srcRow][firstCol + srcCol];
+              } else {
+                target[dstRow + outRow][dstCol + outCol] = denseBlock[firstRow + srcRow][firstCol + srcCol];
+              }
+            }
+          }
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static void writeSparseValueToTarget(
+    final double[][] target,
+    final int dstRow,
+    final int dstCol,
+    final long row,
+    final long col,
+    final double value,
+    final int firstRow,
+    final int firstCol,
+    final int queryRowCount,
+    final int queryColCount,
+    final boolean flipRows,
+    final boolean flipCols,
+    final boolean needsTranspose
+  ) {
+    final int localRow = (int) row - firstRow;
+    final int localCol = (int) col - firstCol;
+    if (localRow < 0 || localRow >= queryRowCount || localCol < 0 || localCol >= queryColCount) {
+      return;
+    }
+    final int transformedRow = flipRows ? (queryRowCount - 1 - localRow) : localRow;
+    final int transformedCol = flipCols ? (queryColCount - 1 - localCol) : localCol;
+    if (needsTranspose) {
+      target[dstRow + transformedCol][dstCol + transformedRow] = value;
+    } else {
+      target[dstRow + transformedRow][dstCol + transformedCol] = value;
     }
   }
 
@@ -686,18 +979,35 @@ public class MatrixQueries {
   private record BlockCacheKey(int resolutionOrder, long blockIndex) {
   }
 
-  private sealed interface BlockPayload permits SparseBlockData, DenseBlockData {
+  private sealed interface BlockPayload permits SparseDoubleBlockData, SparseLongBlockData, DenseDoubleBlockData, DenseLongBlockData {
     long estimatedBytes();
   }
 
-  private record SparseBlockData(long[] rows, long[] cols, long[] values) implements BlockPayload {
+  private record SparseDoubleBlockData(long[] rows, long[] cols, double[] values) implements BlockPayload {
     @Override
     public long estimatedBytes() {
-      return ((long) rows.length + cols.length + values.length) * Long.BYTES;
+      return (((long) rows.length + cols.length) * Long.BYTES) + (((long) values.length) * Double.BYTES);
     }
   }
 
-  private record DenseBlockData(long[][] matrix) implements BlockPayload {
+  private record SparseLongBlockData(long[] rows, long[] cols, long[] values) implements BlockPayload {
+    @Override
+    public long estimatedBytes() {
+      return (((long) rows.length + cols.length + values.length) * Long.BYTES);
+    }
+  }
+
+  private record DenseDoubleBlockData(double[][] matrix) implements BlockPayload {
+    @Override
+    public long estimatedBytes() {
+      if (matrix.length == 0) {
+        return 0L;
+      }
+      return ((long) matrix.length) * matrix[0].length * Double.BYTES;
+    }
+  }
+
+  private record DenseLongBlockData(long[][] matrix) implements BlockPayload {
     @Override
     public long estimatedBytes() {
       if (matrix.length == 0) {
@@ -708,6 +1018,58 @@ public class MatrixQueries {
   }
 
   private record BlockMetaRow(long[] blockLengths, long[] blockOffsets) {
+  }
+
+  private static boolean isFloatingPointDataset(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
+    final @NotNull ch.systemsx.cisd.hdf5.HDF5DataSet dataSet
+  ) {
+    return reader.object().getDataSetInformation(dataSet.getDataSetPath()).getTypeInformation().getDataClass() == HDF5DataClass.FLOAT;
+  }
+
+  private static double @NotNull [] readNumericArrayBlockWithOffset(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
+    final @NotNull ch.systemsx.cisd.hdf5.HDF5DataSet dataSet,
+    final int length,
+    final long offset
+  ) {
+    if (isFloatingPointDataset(reader, dataSet)) {
+      return reader.float64().readArrayBlockWithOffset(dataSet, length, offset);
+    }
+    final var values = reader.int64().readArrayBlockWithOffset(dataSet, length, offset);
+    final var result = new double[values.length];
+    for (int i = 0; i < values.length; i++) {
+      result[i] = values[i];
+    }
+    return result;
+  }
+
+  private static @NotNull ch.systemsx.cisd.base.mdarray.MDDoubleArray readNumericDenseBlock(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
+    final @NotNull ch.systemsx.cisd.hdf5.HDF5DataSet dataSet,
+    final int denseBlockSize,
+    final @NotNull IndexMap idx
+  ) {
+    if (isFloatingPointDataset(reader, dataSet)) {
+      return reader.float64().readSlicedMDArrayBlockWithOffset(
+        dataSet,
+        new int[]{denseBlockSize, denseBlockSize},
+        new long[]{0L, 0L},
+        idx
+      );
+    }
+    final var block = reader.int64().readSlicedMDArrayBlockWithOffset(
+      dataSet,
+      new int[]{denseBlockSize, denseBlockSize},
+      new long[]{0L, 0L},
+      idx
+    );
+    final var longs = block.getAsFlatArray();
+    final var doubles = new double[longs.length];
+    for (int i = 0; i < longs.length; i++) {
+      doubles[i] = longs[i];
+    }
+    return new ch.systemsx.cisd.base.mdarray.MDDoubleArray(doubles, new int[]{denseBlockSize, denseBlockSize});
   }
 
   private static final class BlockMetaRowCache {
@@ -778,7 +1140,61 @@ public class MatrixQueries {
     }
   }
 
-  public record MatrixWithWeights(long @NotNull [][] matrix, double @NotNull [] rowWeights,
+  public sealed interface RawMatrix permits LongMatrix, DoubleMatrix {
+    int rows();
+
+    int cols();
+
+    boolean isFloatingPoint();
+
+    double getAsDouble(int row, int col);
+  }
+
+  public record LongMatrix(long @NotNull [][] values) implements RawMatrix {
+    @Override
+    public int rows() {
+      return values.length;
+    }
+
+    @Override
+    public int cols() {
+      return values.length > 0 ? values[0].length : 0;
+    }
+
+    @Override
+    public boolean isFloatingPoint() {
+      return false;
+    }
+
+    @Override
+    public double getAsDouble(final int row, final int col) {
+      return values[row][col];
+    }
+  }
+
+  public record DoubleMatrix(double @NotNull [][] values) implements RawMatrix {
+    @Override
+    public int rows() {
+      return values.length;
+    }
+
+    @Override
+    public int cols() {
+      return values.length > 0 ? values[0].length : 0;
+    }
+
+    @Override
+    public boolean isFloatingPoint() {
+      return true;
+    }
+
+    @Override
+    public double getAsDouble(final int row, final int col) {
+      return values[row][col];
+    }
+  }
+
+  public record MatrixWithWeights(@NotNull RawMatrix matrix, double @NotNull [] rowWeights,
                                   double @NotNull [] colWeights, long startRowIncl, long startColIncl, long endRowExcl,
                                   long endColExcl, @NotNull QueryLengthUnit units,
                                   @NotNull ResolutionDescriptor resolutionDescriptor) {
