@@ -320,10 +320,8 @@ public final class RenderPipelineConfig {
     final var nodeType = node.getString("type", "source").trim().toUpperCase(Locale.ROOT);
     if (isColorNode(nodeType)) {
       final var colorExpression = compileColorExpression(node, requiredTrackBindings);
-      final CompiledNumericExpression fallbackSignalExpression =
-        "COLORMAP".equals(nodeType)
-          ? compileImplicitColormapSignalExpression(node, requiredTrackBindings)
-          : context -> 0.0d;
+      final var fallbackSignalExpression =
+        compileRepresentativeSignalExpressionForColorNode(node, requiredTrackBindings);
       return new CompiledRootExpression(true, fallbackSignalExpression, colorExpression);
     }
     final var signalExpression = compileNumericExpression(node, requiredTrackBindings);
@@ -332,8 +330,30 @@ public final class RenderPipelineConfig {
 
   private static boolean isColorNode(final @NotNull String nodeType) {
     return switch (nodeType) {
-      case "COLORMAP", "RGB", "HSL", "HSV" -> true;
+      case "COLORMAP", "RGB", "HSL", "HSV", "PIXEL_BLEND" -> true;
       default -> false;
+    };
+  }
+
+  private static @NotNull CompiledNumericExpression compileRepresentativeSignalExpressionForColorNode(
+    final @NotNull JsonObject node,
+    final @NotNull Set<TrackBinding> requiredTrackBindings
+  ) {
+    final var nodeType = node.getString("type", "colormap").trim().toUpperCase(Locale.ROOT);
+    return switch (nodeType) {
+      case "COLORMAP" -> compileImplicitColormapSignalExpression(node, requiredTrackBindings);
+      case "PIXEL_BLEND" -> {
+        final var topNode = firstChildObject(node, "top", "foreground", "upper");
+        if (topNode != null) {
+          yield compileRootExpression(topNode, requiredTrackBindings).signalExpression();
+        }
+        final var bottomNode = firstChildObject(node, "bottom", "background", "lower");
+        if (bottomNode != null) {
+          yield compileRootExpression(bottomNode, requiredTrackBindings).signalExpression();
+        }
+        yield context -> 0.0d;
+      }
+      default -> context -> 0.0d;
     };
   }
 
@@ -566,6 +586,31 @@ public final class RenderPipelineConfig {
     return context -> fallbackValue;
   }
 
+  private static JsonObject firstChildObject(final @NotNull JsonObject node,
+                                             final @NotNull String... keys) {
+    for (final var key : keys) {
+      final var value = node.getValue(key);
+      if (value instanceof JsonObject objectNode) {
+        return objectNode;
+      }
+    }
+    return null;
+  }
+
+  private static @NotNull CompiledColorExpression compileColorChildExpression(final @NotNull JsonObject node,
+                                                                               final @NotNull String[] keys,
+                                                                               final int fallbackArgb,
+                                                                               final @NotNull Set<TrackBinding> requiredTrackBindings) {
+    final var childNode = firstChildObject(node, keys);
+    if (childNode != null) {
+      final var childType = childNode.getString("type", "colormap").trim().toUpperCase(Locale.ROOT);
+      if (isColorNode(childType)) {
+        return compileColorExpression(childNode, requiredTrackBindings);
+      }
+    }
+    return context -> fallbackArgb;
+  }
+
   private static @NotNull CompiledColorExpression compileColorExpression(final @NotNull JsonObject node,
                                                                           final @NotNull Set<TrackBinding> requiredTrackBindings) {
     final var nodeType = node.getString("type", "colormap").trim().toUpperCase(Locale.ROOT);
@@ -709,6 +754,42 @@ public final class RenderPipelineConfig {
           final var blue = rgbInt & 0xFF;
           return toArgb(red, green, blue, clampAlphaChannel(aExpression.eval(context)));
         };
+      }
+      case "PIXEL_BLEND" -> {
+        final var topExpression = compileColorChildExpression(
+          node,
+          new String[]{"top", "foreground", "upper"},
+          0x00000000,
+          requiredTrackBindings
+        );
+        final var bottomExpression = compileColorChildExpression(
+          node,
+          new String[]{"bottom", "background", "lower"},
+          0x00000000,
+          requiredTrackBindings
+        );
+        final var topOpacityExpression = compileNumericChildExpressionMulti(
+          node,
+          new String[]{"topOpacity", "topAlpha"},
+          new String[]{"topOpacityValue", "topAlphaValue"},
+          1.0d,
+          requiredTrackBindings
+        );
+        final var bottomOpacityExpression = compileNumericChildExpressionMulti(
+          node,
+          new String[]{"bottomOpacity", "bottomAlpha"},
+          new String[]{"bottomOpacityValue", "bottomAlphaValue"},
+          1.0d,
+          requiredTrackBindings
+        );
+        final var blendMode = parsePixelBlendMode(node.getString("mode", "OVER"));
+        yield context -> blendArgb(
+          topExpression.evalArgb(context),
+          bottomExpression.evalArgb(context),
+          topOpacityExpression.eval(context),
+          bottomOpacityExpression.eval(context),
+          blendMode
+        );
       }
       default -> throw new IllegalArgumentException("Unsupported color expression type: " + nodeType);
     };
@@ -876,6 +957,110 @@ public final class RenderPipelineConfig {
       | (blue & 0xFF);
   }
 
+  private static @NotNull PixelBlendMode parsePixelBlendMode(final String rawMode) {
+    if (rawMode == null || rawMode.isBlank()) {
+      return PixelBlendMode.OVER;
+    }
+    try {
+      return PixelBlendMode.valueOf(rawMode.trim().toUpperCase(Locale.ROOT));
+    } catch (final IllegalArgumentException ignored) {
+      return PixelBlendMode.OVER;
+    }
+  }
+
+  private static double normalizeOpacity(final double rawOpacity) {
+    final var safeOpacity = Double.isFinite(rawOpacity) ? rawOpacity : 1.0d;
+    if (safeOpacity <= 0.0d) {
+      return 0.0d;
+    }
+    if (safeOpacity <= 1.0d) {
+      return safeOpacity;
+    }
+    if (safeOpacity <= 100.0d) {
+      return safeOpacity / 100.0d;
+    }
+    if (safeOpacity <= 255.0d) {
+      return safeOpacity / 255.0d;
+    }
+    return 1.0d;
+  }
+
+  private static int blendArgb(final int topArgb,
+                               final int bottomArgb,
+                               final double rawTopOpacity,
+                               final double rawBottomOpacity,
+                               final @NotNull PixelBlendMode mode) {
+    final var top = toNormalizedRgba(topArgb, normalizeOpacity(rawTopOpacity));
+    final var bottom = toNormalizedRgba(bottomArgb, normalizeOpacity(rawBottomOpacity));
+    final var overlapAlpha = top[3] * bottom[3];
+    final var topOnlyAlpha = top[3] * (1.0d - bottom[3]);
+    final var bottomOnlyAlpha = bottom[3] * (1.0d - top[3]);
+    final var outAlpha = overlapAlpha + topOnlyAlpha + bottomOnlyAlpha;
+    if (outAlpha <= 1e-12d) {
+      return 0x00000000;
+    }
+
+    final var blendedRed = applyBlendMode(top[0], bottom[0], mode);
+    final var blendedGreen = applyBlendMode(top[1], bottom[1], mode);
+    final var blendedBlue = applyBlendMode(top[2], bottom[2], mode);
+
+    final var outRed = (
+      blendedRed * overlapAlpha
+        + top[0] * topOnlyAlpha
+        + bottom[0] * bottomOnlyAlpha
+      ) / outAlpha;
+    final var outGreen = (
+      blendedGreen * overlapAlpha
+        + top[1] * topOnlyAlpha
+        + bottom[1] * bottomOnlyAlpha
+      ) / outAlpha;
+    final var outBlue = (
+      blendedBlue * overlapAlpha
+        + top[2] * topOnlyAlpha
+        + bottom[2] * bottomOnlyAlpha
+      ) / outAlpha;
+
+    return toArgb(
+      clampColorChannel(outRed * 255.0d),
+      clampColorChannel(outGreen * 255.0d),
+      clampColorChannel(outBlue * 255.0d),
+      clampAlphaChannel(outAlpha * 255.0d)
+    );
+  }
+
+  private static double applyBlendMode(final double top,
+                                       final double bottom,
+                                       final @NotNull PixelBlendMode mode) {
+    final var safeTop = Math.max(0.0d, Math.min(1.0d, top));
+    final var safeBottom = Math.max(0.0d, Math.min(1.0d, bottom));
+    return switch (mode) {
+      case OVER -> safeTop;
+      case ADD -> Math.min(1.0d, safeTop + safeBottom);
+      case SUBTRACT -> Math.max(0.0d, safeTop - safeBottom);
+      case MULTIPLY -> safeTop * safeBottom;
+      case SCREEN -> 1.0d - ((1.0d - safeTop) * (1.0d - safeBottom));
+      case DIFFERENCE -> Math.abs(safeTop - safeBottom);
+      case LIGHTEN -> Math.max(safeTop, safeBottom);
+      case DARKEN -> Math.min(safeTop, safeBottom);
+      case XOR -> {
+        final var topByte = clampColorChannel(safeTop * 255.0d);
+        final var bottomByte = clampColorChannel(safeBottom * 255.0d);
+        yield (topByte ^ bottomByte) / 255.0d;
+      }
+    };
+  }
+
+  private static double[] toNormalizedRgba(final int argb,
+                                           final double layerOpacity) {
+    final var alpha = (((argb >> 24) & 0xFF) / 255.0d) * Math.max(0.0d, Math.min(1.0d, layerOpacity));
+    return new double[]{
+      ((argb >> 16) & 0xFF) / 255.0d,
+      ((argb >> 8) & 0xFF) / 255.0d,
+      (argb & 0xFF) / 255.0d,
+      alpha
+    };
+  }
+
   @FunctionalInterface
   private interface CompiledNumericExpression {
     double eval(@NotNull MutablePixelContext context);
@@ -908,6 +1093,18 @@ public final class RenderPipelineConfig {
   public enum TrackAxis {
     ROW,
     COL
+  }
+
+  private enum PixelBlendMode {
+    OVER,
+    ADD,
+    SUBTRACT,
+    MULTIPLY,
+    SCREEN,
+    DIFFERENCE,
+    LIGHTEN,
+    DARKEN,
+    XOR
   }
 
   public record TrackBinding(@NotNull String trackId,

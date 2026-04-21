@@ -44,8 +44,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
 
 @Slf4j
 public class WebUIVerticle extends AbstractVerticle {
@@ -65,86 +63,60 @@ public class WebUIVerticle extends AbstractVerticle {
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
       .setConfig(new JsonObject().put("keys", new JsonArray().add("SERVE_WEBUI").add("WEBUI_PORT")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
-    final ConfigRetriever myConfigRetriver = ConfigRetriever.create(vertx, myOptions);
-    myConfigRetriver.getConfig(asyncResults -> System.out.println(asyncResults.result().encodePrettily()));
-    final CyclicBarrier barrier = new CyclicBarrier(1);
-
-    myConfigRetriver.getConfig(event -> {
-      final var serveWebUI = resolveServeWebUI(event.result());
-      final var webuiPort = resolveWebuiPort(event.result());
-
+    final ConfigRetriever configRetriever = ConfigRetriever.create(vertx, myOptions);
+    configRetriever.getConfig(event -> {
+      if (event.failed()) {
+        log.error("Failed to load WebUI configuration", event.cause());
+        startPromise.fail(event.cause());
+        return;
+      }
       try {
-        log.info("Trying to write WebUI configuration to local map");
+        final var serveWebUI = resolveServeWebUI(event.result());
+        final var webuiPort = resolveWebuiPort(event.result());
+
+        log.info("Writing WebUI configuration to local shared state");
         final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("webui_server");
         map.put("WEBUI_PORT", webuiPort);
         map.put("SERVE_WEBUI", serveWebUI);
-        log.info("Added to local map");
-      } finally {
-        log.info("Finished configuration write to maps");
-      }
-      log.info("WebUI HTTP Server will start on port " + webuiPort);
-      try {
-        log.debug("Waiting for WebUI HTTP server to start");
-        barrier.await();
-        log.debug("Configuration barrier passed");
-      } catch (final InterruptedException | BrokenBarrierException e) {
-        log.error("Configuration barrier error", e);
-        throw new RuntimeException(e);
-      }
-    });
 
+        if (!serveWebUI) {
+          log.info("Not serving WebUI because SERVE_WEBUI=false");
+          startPromise.complete();
+          return;
+        }
 
-    final HttpServerOptions webuiServerOptions = new HttpServerOptions();
-    webuiServerOptions.setCompressionSupported(true);
-    final var webuiServer = vertx.createHttpServer(webuiServerOptions);
-    final var webuiRouter = Router.router(vertx);
+        final HttpServerOptions webuiServerOptions = new HttpServerOptions();
+        webuiServerOptions.setCompressionSupported(true);
+        final var webuiServer = vertx.createHttpServer(webuiServerOptions);
+        final var webuiRouter = Router.router(vertx);
 
-    webuiRouter.route().handler(CorsHandler.create()
-      .allowedMethod(io.vertx.core.http.HttpMethod.GET)
-      .allowedMethod(io.vertx.core.http.HttpMethod.POST)
-      .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
-      .allowedHeader("Access-Control-Request-Method")
-      .allowedHeader("Access-Control-Allow-Credentials")
-      .allowedHeader("Access-Control-Allow-Origin")
-      .allowedHeader("Access-Control-Allow-Headers")
-      .allowedHeader("Content-Type"));
-    log.debug("Awaiting WebUI configuration to be written into the local map");
-    barrier.await();
-    log.debug("Passed configuration barrier in WebUI main");
+        webuiRouter.route().handler(CorsHandler.create()
+          .allowedMethod(io.vertx.core.http.HttpMethod.GET)
+          .allowedMethod(io.vertx.core.http.HttpMethod.POST)
+          .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
+          .allowedHeader("Access-Control-Request-Method")
+          .allowedHeader("Access-Control-Allow-Credentials")
+          .allowedHeader("Access-Control-Allow-Origin")
+          .allowedHeader("Access-Control-Allow-Headers")
+          .allowedHeader("Content-Type"));
 
+        final var webuiStaticHandler = createWebuiStaticHandler();
+        webuiRouter.route("/").handler(ctx -> ctx.reroute("/index.html"));
+        webuiRouter.route("/*").handler(webuiStaticHandler);
 
-    final int webuiPort;
-    final boolean serve;
-    try {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("webui_server");
-      serve = (boolean) map.get("SERVE_WEBUI");
-      webuiPort = (int) map.get("WEBUI_PORT");
-    } finally {
-      log.debug("Read configuration of WebUI HTTP Server");
-    }
-
-    if (!serve) {
-      log.info("Not serving WebUI due to SERVE_WEBUI environment variable set to false");
-      startPromise.complete();
-      return;
-    }
-
-    log.info("WebUI Server will start on port " + webuiPort);
-
-
-    final var webuiStaticHandler = createWebuiStaticHandler();
-    webuiRouter.route("/").handler(ctx -> ctx.reroute("/index.html"));
-    webuiRouter.route("/*").handler(webuiStaticHandler);
-
-    log.info("WebUI router configured, binding HTTP server");
-    log.info("Starting WebUI server on port " + webuiPort);
-    webuiServer.requestHandler(webuiRouter).listen(webuiPort, "0.0.0.0", ar -> {
-      if (ar.succeeded()) {
-        log.info("WebUI Server started on 0.0.0.0:{}", webuiServer.actualPort());
-        startPromise.complete();
-      } else {
-        log.error("Failed to start WebUI server on port " + webuiPort, ar.cause());
-        startPromise.fail(ar.cause());
+        log.info("Starting WebUI server on port {}", webuiPort);
+        webuiServer.requestHandler(webuiRouter).listen(webuiPort, "0.0.0.0", ar -> {
+          if (ar.succeeded()) {
+            log.info("WebUI Server started on 0.0.0.0:{}", webuiServer.actualPort());
+            startPromise.complete();
+          } else {
+            log.error("Failed to start WebUI server on port {}", webuiPort, ar.cause());
+            startPromise.fail(ar.cause());
+          }
+        });
+      } catch (final Throwable t) {
+        log.error("WebUI verticle start failed", t);
+        startPromise.fail(t);
       }
     });
     } catch (Throwable t) {
