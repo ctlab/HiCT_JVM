@@ -68,8 +68,6 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
 
 @Slf4j(topic = "MainVerticle")
 public class MainVerticle extends AbstractVerticle {
@@ -119,190 +117,39 @@ public class MainVerticle extends AbstractVerticle {
               .add("HICT_WORKERS_EXPORT_MIN")
               .add("HICT_WORKERS_EXPORT_MAX")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
-    final ConfigRetriever myConfigRetriver = ConfigRetriever.create(vertx, myOptions);
-    myConfigRetriver.getConfig(asyncResults -> System.out.println(asyncResults.result().encodePrettily()));
-    final CyclicBarrier barrier = new CyclicBarrier(1);
+    final ConfigRetriever configRetriever = ConfigRetriever.create(vertx, myOptions);
+    configRetriever.getConfig(event -> {
+      if (event.failed()) {
+        log.error("Failed to load server configuration", event.cause());
+        startPromise.fail(event.cause());
+        return;
+      }
 
-    myConfigRetriver.getConfig(event -> {
-      final var dataDirectoryString = event.result().getString("DATA_DIR", ".");
-      final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
-      final var processedDirectoryString = event.result().getString("PROCESSED_DIR", dataDirectory.resolve("processed").toString());
-      final var processedDirectory = Path.of(processedDirectoryString).normalize().toAbsolutePath().normalize();
-      final var tileSize = getIntegerSetting(event.result(), "TILE_SIZE", 256);
-      final var minDSPool = getIntegerSetting(event.result(), "MIN_DS_POOL", 4);
-      final var maxDSPool = getIntegerSetting(event.result(), "MAX_DS_POOL", 16);
-      final var port = getIntegerSetting(event.result(), "VXPORT", 5000);
-      final int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
-      final int totalWorkersDefault = Math.max(10, cores * 2);
-      final int totalWorkers = getIntegerSetting(event.result(), "HICT_WORKERS_TOTAL_MAX", totalWorkersDefault);
-      final int queueCapacity = getIntegerSetting(event.result(), "HICT_WORKERS_QUEUE_CAPACITY", 32);
-      final int keepAliveSeconds = getIntegerSetting(event.result(), "HICT_WORKERS_KEEPALIVE_SECONDS", 30);
-      final int defaultPoolMax = Math.max(2, Math.min(totalWorkers, cores));
-      final var perPrioritySizing = new EnumMap<RequestTaskScheduler.RequestPriority, RequestTaskScheduler.PoolSizing>(
-        RequestTaskScheduler.RequestPriority.class
-      );
-      perPrioritySizing.put(
-        RequestTaskScheduler.RequestPriority.UI_UX,
-        new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MIN", 4),
-          getIntegerSetting(event.result(), "HICT_WORKERS_UI_MAX", defaultPoolMax)
-        )
-      );
-      perPrioritySizing.put(
-        RequestTaskScheduler.RequestPriority.ASSEMBLY,
-        new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MIN", 4),
-          getIntegerSetting(event.result(), "HICT_WORKERS_ASSEMBLY_MAX", defaultPoolMax)
-        )
-      );
-      perPrioritySizing.put(
-        RequestTaskScheduler.RequestPriority.TILE,
-        new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MIN", 8),
-          getIntegerSetting(event.result(), "HICT_WORKERS_TILE_MAX", defaultPoolMax)
-        )
-      );
-      perPrioritySizing.put(
-        RequestTaskScheduler.RequestPriority.TRACK,
-        new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MIN", 4),
-          getIntegerSetting(event.result(), "HICT_WORKERS_TRACK_MAX", defaultPoolMax)
-        )
-      );
-      perPrioritySizing.put(
-        RequestTaskScheduler.RequestPriority.EXPORT,
-        new RequestTaskScheduler.PoolSizing(
-          getIntegerSetting(event.result(), "HICT_WORKERS_EXPORT_MIN", 2),
-          getIntegerSetting(event.result(), "HICT_WORKERS_EXPORT_MAX", defaultPoolMax)
-        )
-      );
-
+      final int port;
       try {
-        log.info("Trying to write configuration to local map");
-        final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-        map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataDirectory));
-        map.put("processedDirectory", new ShareableWrappers.PathWrapper(processedDirectory));
-        map.put("tileSize", tileSize);
-        map.put("VXPORT", port);
-        map.put("MIN_DS_POOL", minDSPool);
-        map.put("MAX_DS_POOL", maxDSPool);
-        this.requestTaskScheduler = new RequestTaskScheduler(
-          vertx,
-          new RequestTaskScheduler.SchedulerConfig(
-            totalWorkers,
-            queueCapacity,
-            keepAliveSeconds,
-            perPrioritySizing
-          )
-        );
-        map.put(
-          RequestTaskScheduler.LOCAL_MAP_KEY,
-          new ShareableWrappers.RequestTaskSchedulerWrapper(this.requestTaskScheduler)
-        );
-
-        final var defaultVisualizationOptions = new SimpleVisualizationOptions(10.0, 0.0, false, false, false,
-            new SimpleLinearGradient(
-                32,
-                new Color(255, 255, 255, 0),
-                new Color(0, 96, 0, 255),
-                0.0d,
-                1.0d));
-
-        map.put("visualizationOptions",
-            new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions));
-        map.put(
-          RenderPipelineConfig.LOCAL_MAP_KEY,
-          new ShareableWrappers.RenderPipelineConfigWrapper(RenderPipelineConfig.disabled())
-        );
-
-        log.info("Added to local map");
-      } finally {
-        log.info("Finished configuration write to maps");
+        port = configureServerState(event.result());
+      } catch (final Exception ex) {
+        log.error("Failed to initialize server state", ex);
+        startPromise.fail(ex);
+        return;
       }
 
-      log.info("Using " + dataDirectory + " as data directory");
-      log.info("Using " + processedDirectory + " as processed directory");
-      log.info("Using tile size " + tileSize);
-      log.info("Server will start on port " + port);
-      try {
-        barrier.await();
-      } catch (final InterruptedException | BrokenBarrierException e) {
-        throw new RuntimeException(e);
-      }
-    });
+      final HttpServerOptions serverOptions = new HttpServerOptions();
+      serverOptions.setCompressionSupported(true);
+      final var server = vertx.createHttpServer(serverOptions);
+      final var router = createRouter();
 
-    final HttpServerOptions serverOptions = new HttpServerOptions();
-    serverOptions.setCompressionSupported(true);
-    final var server = vertx.createHttpServer(serverOptions);
-    final var router = Router.router(vertx);
-
-    router.route().handler(CorsHandler.create()
-        .allowedMethod(io.vertx.core.http.HttpMethod.GET)
-        .allowedMethod(io.vertx.core.http.HttpMethod.POST)
-        .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
-        .allowedHeader("Access-Control-Request-Method")
-        .allowedHeader("Access-Control-Allow-Credentials")
-        .allowedHeader("Access-Control-Allow-Origin")
-        .allowedHeader("Access-Control-Allow-Headers")
-        .allowedHeader("Content-Type"));
-    router.route().handler(BodyHandler.create().setUploadsDirectory("/tmp").setBodyLimit(2L * 1024 * 1024 * 1024));
-    // router.route().handler(ErrorHandler.create(Vertx.vertx()));
-    vertx.exceptionHandler(event -> {
-      log.error("An exception was caught at the top level", event);
-      log.debug(event.getMessage());
-    });
-    log.info("Awaiting configuration to be written into the local map");
-    barrier.await();
-
-    final int port;
-    try {
-      final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-      port = (int) map.get("VXPORT");
-    } finally {
-      log.info("Finished maps");
-    }
-
-    getVertx().exceptionHandler(err -> {
-      log.error("An exception was caught at VertX top-level", err);
-      Vertx.currentContext().exceptionHandler().handle(err);
-    });
-
-    log.info("Initializing handlers");
-    final List<HandlersHolder> handlersHolders = new ArrayList<>();
-    handlersHolders.add(new FSHandlersHolder(vertx));
-    handlersHolders.add(new TileHandlersHolder(vertx));
-    handlersHolders.add(new FileOpHandlersHolder(vertx));
-    handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
-    handlersHolders.add(new NameMappingHandlersHolder(vertx));
-    handlersHolders.add(new ConversionHandlersHolder(vertx));
-    handlersHolders.add(new InfoHandlersHolder(vertx));
-    handlersHolders.add(new ApiDocsHandlersHolder());
-    handlersHolders.add(new TrackHandlersHolder(vertx));
-
-    router.route().failureHandler(ctx -> {
-      log.error("An exception was caught at router top-level", ctx.failure());
-      final var message = ctx.failure() != null && ctx.failure().getMessage() != null
-        ? ctx.failure().getMessage()
-        : "Request failed";
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .end(Json.encode(Map.of("error", message)));
-    });
-
-    log.info("Configuring router");
-    handlersHolders.forEach(handlersHolder -> handlersHolder.addHandlersToRouter(router));
-
-    log.info("Starting server on port " + port);
-    server.requestHandler(router).listen(port);
-    log.info("Server started");
-
-    log.info("Deploying WebUI Verticle");
-    vertx.deployVerticle(new WebUIVerticle(), ar -> {
-      if (ar.succeeded()) {
-        log.info("WebUI verticle deployed");
-      } else {
-        log.error("WebUI verticle deployment failed", ar.cause());
-      }
+      log.info("Starting server on port {}", port);
+      server.requestHandler(router).listen(port, ar -> {
+        if (ar.succeeded()) {
+          log.info("Server started on port {}", ar.result().actualPort());
+          deployWebUiVerticle();
+          startPromise.complete();
+        } else {
+          log.error("Failed to start server on port {}", port, ar.cause());
+          startPromise.fail(ar.cause());
+        }
+      });
     });
   }
 
@@ -338,5 +185,173 @@ public class MainVerticle extends AbstractVerticle {
       }
     }
     return defaultValue;
+  }
+
+  private int configureServerState(final @NotNull JsonObject config) {
+    final var dataDirectoryString = config.getString("DATA_DIR", ".");
+    final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
+    final var processedDirectoryString = config.getString(
+      "PROCESSED_DIR",
+      dataDirectory.resolve("processed").toString()
+    );
+    final var processedDirectory = Path.of(processedDirectoryString).normalize().toAbsolutePath().normalize();
+    final var tileSize = getIntegerSetting(config, "TILE_SIZE", 256);
+    final var minDSPool = getIntegerSetting(config, "MIN_DS_POOL", 4);
+    final var maxDSPool = getIntegerSetting(config, "MAX_DS_POOL", 16);
+    final var port = getIntegerSetting(config, "VXPORT", 5000);
+    final int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
+    final int totalWorkersDefault = Math.max(10, cores * 2);
+    final int totalWorkers = getIntegerSetting(config, "HICT_WORKERS_TOTAL_MAX", totalWorkersDefault);
+    final int queueCapacity = getIntegerSetting(config, "HICT_WORKERS_QUEUE_CAPACITY", 32);
+    final int keepAliveSeconds = getIntegerSetting(config, "HICT_WORKERS_KEEPALIVE_SECONDS", 30);
+    final int defaultPoolMax = Math.max(2, Math.min(totalWorkers, cores));
+    final var perPrioritySizing = new EnumMap<RequestTaskScheduler.RequestPriority, RequestTaskScheduler.PoolSizing>(
+      RequestTaskScheduler.RequestPriority.class
+    );
+    perPrioritySizing.put(
+      RequestTaskScheduler.RequestPriority.UI_UX,
+      new RequestTaskScheduler.PoolSizing(
+        getIntegerSetting(config, "HICT_WORKERS_UI_MIN", 4),
+        getIntegerSetting(config, "HICT_WORKERS_UI_MAX", defaultPoolMax)
+      )
+    );
+    perPrioritySizing.put(
+      RequestTaskScheduler.RequestPriority.ASSEMBLY,
+      new RequestTaskScheduler.PoolSizing(
+        getIntegerSetting(config, "HICT_WORKERS_ASSEMBLY_MIN", 4),
+        getIntegerSetting(config, "HICT_WORKERS_ASSEMBLY_MAX", defaultPoolMax)
+      )
+    );
+    perPrioritySizing.put(
+      RequestTaskScheduler.RequestPriority.TILE,
+      new RequestTaskScheduler.PoolSizing(
+        getIntegerSetting(config, "HICT_WORKERS_TILE_MIN", 8),
+        getIntegerSetting(config, "HICT_WORKERS_TILE_MAX", defaultPoolMax)
+      )
+    );
+    perPrioritySizing.put(
+      RequestTaskScheduler.RequestPriority.TRACK,
+      new RequestTaskScheduler.PoolSizing(
+        getIntegerSetting(config, "HICT_WORKERS_TRACK_MIN", 4),
+        getIntegerSetting(config, "HICT_WORKERS_TRACK_MAX", defaultPoolMax)
+      )
+    );
+    perPrioritySizing.put(
+      RequestTaskScheduler.RequestPriority.EXPORT,
+      new RequestTaskScheduler.PoolSizing(
+        getIntegerSetting(config, "HICT_WORKERS_EXPORT_MIN", 2),
+        getIntegerSetting(config, "HICT_WORKERS_EXPORT_MAX", defaultPoolMax)
+      )
+    );
+
+    log.info("Writing server configuration to local shared state");
+    final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataDirectory));
+    map.put("processedDirectory", new ShareableWrappers.PathWrapper(processedDirectory));
+    map.put("tileSize", tileSize);
+    map.put("VXPORT", port);
+    map.put("MIN_DS_POOL", minDSPool);
+    map.put("MAX_DS_POOL", maxDSPool);
+    this.requestTaskScheduler = new RequestTaskScheduler(
+      vertx,
+      new RequestTaskScheduler.SchedulerConfig(
+        totalWorkers,
+        queueCapacity,
+        keepAliveSeconds,
+        perPrioritySizing
+      )
+    );
+    map.put(
+      RequestTaskScheduler.LOCAL_MAP_KEY,
+      new ShareableWrappers.RequestTaskSchedulerWrapper(this.requestTaskScheduler)
+    );
+
+    final var defaultVisualizationOptions = new SimpleVisualizationOptions(
+      10.0,
+      0.0,
+      false,
+      false,
+      false,
+      new SimpleLinearGradient(
+        32,
+        new Color(255, 255, 255, 0),
+        new Color(0, 96, 0, 255),
+        0.0d,
+        1.0d
+      )
+    );
+
+    map.put(
+      "visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(defaultVisualizationOptions)
+    );
+    map.put(
+      RenderPipelineConfig.LOCAL_MAP_KEY,
+      new ShareableWrappers.RenderPipelineConfigWrapper(RenderPipelineConfig.disabled())
+    );
+
+    log.info("Using {} as data directory", dataDirectory);
+    log.info("Using {} as processed directory", processedDirectory);
+    log.info("Using tile size {}", tileSize);
+    return port;
+  }
+
+  private @NotNull Router createRouter() {
+    final var router = Router.router(vertx);
+    router.route().handler(CorsHandler.create()
+      .allowedMethod(io.vertx.core.http.HttpMethod.GET)
+      .allowedMethod(io.vertx.core.http.HttpMethod.POST)
+      .allowedMethod(io.vertx.core.http.HttpMethod.OPTIONS)
+      .allowedHeader("Access-Control-Request-Method")
+      .allowedHeader("Access-Control-Allow-Credentials")
+      .allowedHeader("Access-Control-Allow-Origin")
+      .allowedHeader("Access-Control-Allow-Headers")
+      .allowedHeader("Content-Type"));
+    router.route().handler(BodyHandler.create().setUploadsDirectory("/tmp").setBodyLimit(2L * 1024 * 1024 * 1024));
+
+    vertx.exceptionHandler(event -> {
+      log.error("An exception was caught at the top level", event);
+      log.debug(event.getMessage());
+    });
+
+    getVertx().exceptionHandler(err -> log.error("An exception was caught at VertX top-level", err));
+
+    final List<HandlersHolder> handlersHolders = new ArrayList<>();
+    handlersHolders.add(new FSHandlersHolder(vertx));
+    handlersHolders.add(new TileHandlersHolder(vertx));
+    handlersHolders.add(new FileOpHandlersHolder(vertx));
+    handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
+    handlersHolders.add(new NameMappingHandlersHolder(vertx));
+    handlersHolders.add(new ConversionHandlersHolder(vertx));
+    handlersHolders.add(new InfoHandlersHolder(vertx));
+    handlersHolders.add(new ApiDocsHandlersHolder());
+    handlersHolders.add(new TrackHandlersHolder(vertx));
+
+    router.route().failureHandler(ctx -> {
+      log.error("An exception was caught at router top-level", ctx.failure());
+      final var message = ctx.failure() != null && ctx.failure().getMessage() != null
+        ? ctx.failure().getMessage()
+        : "Request failed";
+      final int statusCode = ctx.statusCode() > 0 ? ctx.statusCode() : 500;
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(statusCode)
+        .end(Json.encode(Map.of("error", message)));
+    });
+
+    log.info("Configuring router");
+    handlersHolders.forEach(handlersHolder -> handlersHolder.addHandlersToRouter(router));
+    return router;
+  }
+
+  private void deployWebUiVerticle() {
+    log.info("Deploying WebUI Verticle");
+    vertx.deployVerticle(new WebUIVerticle(), ar -> {
+      if (ar.succeeded()) {
+        log.info("WebUI verticle deployed");
+      } else {
+        log.error("WebUI verticle deployment failed", ar.cause());
+      }
+    });
   }
 }
