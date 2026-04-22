@@ -335,7 +335,7 @@ paths:
   /set_visualization_options:
     post:
       tags: [Rendering]
-      summary: Set visualization options and synchronize default rendering pipeline
+      summary: Set visualization options and optionally preserve the active custom rendering pipeline
       operationId: setVisualizationOptions
       requestBody:
         required: true
@@ -1275,6 +1275,11 @@ components:
     VisualizationOptionsRequest:
       type: object
       additionalProperties: true
+      properties:
+        preserveRenderPipeline:
+          type: boolean
+          default: false
+          description: Leave the active custom render pipeline untouched while updating stored visualization options.
     RenderPipelineConfig:
       type: object
       additionalProperties: true
@@ -1370,6 +1375,11 @@ components:
           default: TRADITIONAL_NORMALIZED
           description: |
             `TRADITIONAL_NORMALIZED` applies the currently selected visualization normalization and display mode.
+        source:
+          type: string
+          enum: [PRIMARY, SECONDARY]
+          default: PRIMARY
+          description: Query raw or normalized signal from the selected source in two-map sessions.
         format:
           type: string
           enum: [JSON, BINARY_FLOAT32, BINARY_FLOAT64, BINARY_INT64]

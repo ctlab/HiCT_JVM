@@ -80,6 +80,7 @@ public class TileHandlersHolder extends HandlersHolder {
       final @NotNull var requestJSON = requestBody.asJsonObject();
 
       final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
+      final var preserveRenderPipeline = requestJSON.getBoolean("preserveRenderPipeline", false);
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
@@ -89,19 +90,21 @@ public class TileHandlersHolder extends HandlersHolder {
           log.debug("Got map");
           final var optionsEntity = request.toEntity();
           map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(optionsEntity));
-          final var previousPipelineWrapper =
-            (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
-          final var previousPipeline =
-            previousPipelineWrapper != null ? previousPipelineWrapper.getRenderPipelineConfig() : RenderPipelineConfig.disabled();
-          final var syncedPipeline = RenderPipelineConfig.fromVisualizationOptions(
-            optionsEntity,
-            previousPipeline.enabled(),
-            previousPipeline.swapUpperLower()
-          );
-          map.put(
-            RenderPipelineConfig.LOCAL_MAP_KEY,
-            new ShareableWrappers.RenderPipelineConfigWrapper(syncedPipeline)
-          );
+          if (!preserveRenderPipeline) {
+            final var previousPipelineWrapper =
+              (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
+            final var previousPipeline =
+              previousPipelineWrapper != null ? previousPipelineWrapper.getRenderPipelineConfig() : RenderPipelineConfig.disabled();
+            final var syncedPipeline = RenderPipelineConfig.fromVisualizationOptions(
+              optionsEntity,
+              previousPipeline.enabled(),
+              previousPipeline.swapUpperLower()
+            );
+            map.put(
+              RenderPipelineConfig.LOCAL_MAP_KEY,
+              new ShareableWrappers.RenderPipelineConfigWrapper(syncedPipeline)
+            );
+          }
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
           if (chunkedFileWrapper == null) {
             throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
@@ -566,14 +569,35 @@ public class TileHandlersHolder extends HandlersHolder {
     final var endRowPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, endRowInUnits);
     final var endColPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, endColInUnits);
 
-    final var matrixWithWeights = primaryChunkedFile.matrixQueries().getSubmatrix(
-      resolutionDescriptor,
-      startRowPx,
-      startColPx,
-      endRowPx,
-      endColPx,
-      true
-    );
+    final var requestedSource = "SECONDARY".equalsIgnoreCase(request.getString("source", "PRIMARY"))
+      ? "SECONDARY"
+      : "PRIMARY";
+    final var requestedChunkedFile =
+      "SECONDARY".equals(requestedSource) ? secondaryChunkedFile : primaryChunkedFile;
+    if (requestedChunkedFile == null) {
+      throw new IllegalStateException("Secondary source is not attached");
+    }
+    final var matrixWithWeights =
+      "SECONDARY".equals(requestedSource)
+        ? querySecondarySubmatrix(
+          secondaryChunkedFile,
+          resolutionDescriptor,
+          startRowPx,
+          startColPx,
+          endRowPx,
+          endColPx
+        )
+        : primaryChunkedFile.matrixQueries().getSubmatrix(
+          resolutionDescriptor,
+          startRowPx,
+          startColPx,
+          endRowPx,
+          endColPx,
+          true
+        );
+    if (matrixWithWeights == null) {
+      throw new IllegalArgumentException("Requested matrix window is outside the available extent for the selected source");
+    }
     final var rawMatrix = matrixWithWeights.matrix();
     final var rowCount = rawMatrix.rows();
     final var columnCount = rawMatrix.cols();
@@ -592,8 +616,11 @@ public class TileHandlersHolder extends HandlersHolder {
     switch (signalMode) {
       case RAW_COUNTS -> signalMatrix = null;
       case COOLER_WEIGHTED -> signalMatrix = computeCoolerWeightedSignal(rawMatrix, matrixWithWeights.rowWeights(), matrixWithWeights.colWeights());
-      case TRADITIONAL_NORMALIZED -> signalMatrix = primaryChunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options).values();
+      case TRADITIONAL_NORMALIZED -> signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options).values();
       case PIPELINE_SIGNAL -> {
+        if ("SECONDARY".equals(requestedSource)) {
+          throw new IllegalArgumentException("PIPELINE_SIGNAL queries are supported only for the primary source");
+        }
         final var secondaryMatrixWithWeights = querySecondarySubmatrix(
           secondaryChunkedFile,
           resolutionDescriptor,
@@ -619,6 +646,7 @@ public class TileHandlersHolder extends HandlersHolder {
     headers.put("x-hict-rows", Integer.toString(rowCount));
     headers.put("x-hict-cols", Integer.toString(columnCount));
     headers.put("x-hict-signal-mode", signalMode.name());
+    headers.put("x-hict-source", requestedSource);
     headers.put("x-hict-unit", "PIXELS");
     headers.put("x-hict-start-row-px", Long.toString(matrixWithWeights.startRowIncl()));
     headers.put("x-hict-end-row-px", Long.toString(matrixWithWeights.startRowIncl() + rowCount));
