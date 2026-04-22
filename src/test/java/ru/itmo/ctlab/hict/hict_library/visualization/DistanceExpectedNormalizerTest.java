@@ -26,8 +26,10 @@ package ru.itmo.ctlab.hict.hict_library.visualization;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DistanceExpectedNormalizerTest {
   @Test
@@ -105,5 +107,82 @@ class DistanceExpectedNormalizerTest {
     assertEquals(5.0d, expectedTopLeft[0][1], 1e-12);
     assertEquals(8.5d, expectedBottomRight[0][0], 1e-12);
     assertEquals(5.0d, expectedBottomRight[0][1], 1e-12);
+  }
+
+  @Test
+  void chunkAccumulatorMatchesWholeWindowProfile() {
+    final var fullSignal = new double[][]{
+      {10.0d, 6.0d, 3.0d, 1.0d},
+      {6.0d, 9.0d, 5.0d, 2.0d},
+      {3.0d, 5.0d, 8.0d, 4.0d},
+      {1.0d, 2.0d, 4.0d, 7.0d}
+    };
+    final var wholeProfile = DistanceExpectedNormalizer.buildProfile(fullSignal, 50L, 80L, 4);
+    final var accumulator = DistanceExpectedNormalizer.newAccumulator(4, 50L, 54L, 80L, 84L);
+
+    accumulator.addSignal(
+      new double[][]{
+        {10.0d, 6.0d},
+        {6.0d, 9.0d}
+      },
+      50L,
+      80L
+    );
+    accumulator.addSignal(
+      new double[][]{
+        {3.0d, 1.0d},
+        {5.0d, 2.0d}
+      },
+      50L,
+      82L
+    );
+    accumulator.addSignal(
+      new double[][]{
+        {3.0d, 5.0d},
+        {1.0d, 2.0d}
+      },
+      52L,
+      80L
+    );
+    accumulator.addSignal(
+      new double[][]{
+        {8.0d, 4.0d},
+        {4.0d, 7.0d}
+      },
+      52L,
+      82L
+    );
+
+    final var chunkedProfile = accumulator.toProfile();
+
+    assertEquals(wholeProfile.minDiagonal(), chunkedProfile.minDiagonal());
+    assertEquals(wholeProfile.startRowPx(), chunkedProfile.startRowPx());
+    assertEquals(wholeProfile.endRowPx(), chunkedProfile.endRowPx());
+    assertEquals(wholeProfile.startColPx(), chunkedProfile.startColPx());
+    assertEquals(wholeProfile.endColPx(), chunkedProfile.endColPx());
+    assertArrayEquals(wholeProfile.means(), chunkedProfile.means(), 1e-12);
+    assertTrue(chunkedProfile.matchesResolutionWindow(50L, 80L, 4, 4));
+  }
+
+  @Test
+  void diagonalBoundsHandleWindowsThatCrossMainDiagonalAwayFromCorners() {
+    final var signal = new double[][]{
+      {1.0d, 1.0d, 1.0d},
+      {1.0d, 1.0d, 1.0d},
+      {1.0d, 1.0d, 1.0d}
+    };
+
+    final var expected = assertDoesNotThrow(() ->
+      DistanceExpectedNormalizer.transformSignal(
+        signal,
+        10L,
+        11L,
+        SignalDisplayMode.EXPECTED
+      )
+    );
+
+    assertArrayEquals(new double[]{1.0d, 1.0d, 1.0d}, expected[0], 1e-12);
+    assertArrayEquals(new double[]{1.0d, 1.0d, 1.0d}, expected[1], 1e-12);
+    assertArrayEquals(new double[]{1.0d, 1.0d, 1.0d}, expected[2], 1e-12);
   }
 }

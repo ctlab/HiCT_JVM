@@ -31,6 +31,20 @@ public final class DistanceExpectedNormalizer {
   private DistanceExpectedNormalizer() {
   }
 
+  public static @NotNull DiagonalAccumulator newAccumulator(final int resolutionOrder,
+                                                            final long startRowPx,
+                                                            final long endRowPx,
+                                                            final long startColPx,
+                                                            final long endColPx) {
+    return new DiagonalAccumulator(
+      resolutionOrder,
+      startRowPx,
+      endRowPx,
+      startColPx,
+      endColPx
+    );
+  }
+
   public static @NotNull DiagonalProfile buildProfile(final double @NotNull [][] signal,
                                                       final long startRowPx,
                                                       final long startColPx,
@@ -137,24 +151,137 @@ public final class DistanceExpectedNormalizer {
     }
   }
 
+  public static final class DiagonalAccumulator {
+    private final int resolutionOrder;
+    private final long startRowPx;
+    private final long endRowPx;
+    private final long startColPx;
+    private final long endColPx;
+    private final long minDiagonal;
+    private final double[] sums;
+    private final long[] counts;
+
+    private DiagonalAccumulator(final int resolutionOrder,
+                                final long startRowPx,
+                                final long endRowPx,
+                                final long startColPx,
+                                final long endColPx) {
+      this.resolutionOrder = resolutionOrder;
+      this.startRowPx = startRowPx;
+      this.endRowPx = Math.max(startRowPx, endRowPx);
+      this.startColPx = startColPx;
+      this.endColPx = Math.max(startColPx, endColPx);
+      if (this.endRowPx <= this.startRowPx || this.endColPx <= this.startColPx) {
+        this.minDiagonal = 0L;
+        this.sums = new double[0];
+        this.counts = new long[0];
+        return;
+      }
+      final var diagonalBounds = diagonalBounds(
+        this.startRowPx,
+        this.endRowPx - 1L,
+        this.startColPx,
+        this.endColPx - 1L
+      );
+      this.minDiagonal = diagonalBounds.minDiagonal();
+      final var diagonalCount = (int) Math.max(
+        0L,
+        diagonalBounds.maxDiagonal() - diagonalBounds.minDiagonal() + 1L
+      );
+      this.sums = new double[diagonalCount];
+      this.counts = new long[diagonalCount];
+    }
+
+    public void addSignal(final double @NotNull [][] signal,
+                          final long chunkStartRowPx,
+                          final long chunkStartColPx) {
+      if (signal.length == 0 || this.sums.length == 0) {
+        return;
+      }
+      final var rowCount = signal.length;
+      final var columnCount = signal[0].length;
+      if (columnCount == 0) {
+        return;
+      }
+      for (int row = 0; row < rowCount; row++) {
+        for (int col = 0; col < columnCount; col++) {
+          final var value = sanitizeSignal(signal[row][col]);
+          if (value <= 0.0d) {
+            continue;
+          }
+          final long diagonal = Math.abs((chunkStartColPx + col) - (chunkStartRowPx + row));
+          final int diagonalIndex = (int) (diagonal - this.minDiagonal);
+          if (diagonalIndex < 0 || diagonalIndex >= this.sums.length) {
+            continue;
+          }
+          this.sums[diagonalIndex] += value;
+          this.counts[diagonalIndex] += 1L;
+        }
+      }
+    }
+
+    public @NotNull DiagonalProfile toProfile() {
+      final var means = new double[this.sums.length];
+      for (int index = 0; index < this.sums.length; index++) {
+        means[index] =
+          this.counts[index] > 0L
+            ? (this.sums[index] / this.counts[index])
+            : 0.0d;
+      }
+      return new DiagonalProfile(
+        this.resolutionOrder,
+        this.startRowPx,
+        this.endRowPx,
+        this.startColPx,
+        this.endColPx,
+        this.minDiagonal,
+        means
+      );
+    }
+  }
+
+  private record DiagonalBounds(long minDiagonal, long maxDiagonal) {
+  }
+
+  private static @NotNull DiagonalBounds diagonalBounds(final long topRowPx,
+                                                        final long bottomRowPx,
+                                                        final long leftColPx,
+                                                        final long rightColPx) {
+    final long[] cornerDiagonals = {
+      Math.abs(leftColPx - topRowPx),
+      Math.abs(rightColPx - topRowPx),
+      Math.abs(leftColPx - bottomRowPx),
+      Math.abs(rightColPx - bottomRowPx)
+    };
+    long minDiagonal = cornerDiagonals[0];
+    long maxDiagonal = cornerDiagonals[0];
+    for (final var cornerDiagonal : cornerDiagonals) {
+      maxDiagonal = Math.max(maxDiagonal, cornerDiagonal);
+    }
+    if (rightColPx < topRowPx) {
+      minDiagonal = topRowPx - rightColPx;
+    } else if (bottomRowPx < leftColPx) {
+      minDiagonal = leftColPx - bottomRowPx;
+    } else {
+      minDiagonal = 0L;
+    }
+    return new DiagonalBounds(minDiagonal, maxDiagonal);
+  }
+
   private record DiagonalStats(long minDiagonal, long startRowPx, long startColPx, double[] means) {
     private static @NotNull DiagonalStats fromSignal(final double @NotNull [][] signal,
                                                     final long startRowPx,
                                                     final long startColPx) {
       final var rowCount = signal.length;
       final var columnCount = signal[0].length;
-      final long[] cornerDiagonals = {
-        Math.abs(startColPx - startRowPx),
-        Math.abs((startColPx + columnCount - 1L) - startRowPx),
-        Math.abs(startColPx - (startRowPx + rowCount - 1L)),
-        Math.abs((startColPx + columnCount - 1L) - (startRowPx + rowCount - 1L))
-      };
-      long minDiagonal = cornerDiagonals[0];
-      long maxDiagonal = cornerDiagonals[0];
-      for (final var cornerDiagonal : cornerDiagonals) {
-        minDiagonal = Math.min(minDiagonal, cornerDiagonal);
-        maxDiagonal = Math.max(maxDiagonal, cornerDiagonal);
-      }
+      final var diagonalBounds = diagonalBounds(
+        startRowPx,
+        startRowPx + rowCount - 1L,
+        startColPx,
+        startColPx + columnCount - 1L
+      );
+      final var minDiagonal = diagonalBounds.minDiagonal();
+      final var maxDiagonal = diagonalBounds.maxDiagonal();
       final int diagonalCount = (int) (maxDiagonal - minDiagonal + 1L);
       final var sums = new double[diagonalCount];
       final var counts = new int[diagonalCount];

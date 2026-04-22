@@ -218,21 +218,66 @@ public class TileHandlersHolder extends HandlersHolder {
             throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
           }
           final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
-          final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
-            resolutionDescriptor,
-            startRowPx,
-            startColPx,
-            endRowPx,
-            endColPx,
-            true
+          final var totalAssemblyLength = chunkedFile.getContigTree().getLengthInUnits(
+            QueryLengthUnit.PIXELS,
+            resolutionDescriptor
           );
-          final var baseSignal = chunkedFile.tileVisualizationProcessor().prepareSignalMatrix(matrixWithWeights, options);
-          final var profile = DistanceExpectedNormalizer.buildProfile(
-            baseSignal,
-            matrixWithWeights.startRowIncl(),
-            matrixWithWeights.startColIncl(),
-            resolutionOrder
+          final long clampedStartRowPx = Math.max(0L, Math.min(startRowPx, totalAssemblyLength));
+          final long clampedEndRowPx = Math.max(
+            clampedStartRowPx,
+            Math.min(endRowPx, totalAssemblyLength)
           );
+          final long clampedStartColPx = Math.max(0L, Math.min(startColPx, totalAssemblyLength));
+          final long clampedEndColPx = Math.max(
+            clampedStartColPx,
+            Math.min(endColPx, totalAssemblyLength)
+          );
+          if (clampedEndRowPx <= clampedStartRowPx || clampedEndColPx <= clampedStartColPx) {
+            map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+            return new JsonObject()
+              .put("status", "empty")
+              .put("resolutionOrder", resolutionOrder)
+              .put("startRowPx", clampedStartRowPx)
+              .put("endRowPx", clampedEndRowPx)
+              .put("startColPx", clampedStartColPx)
+              .put("endColPx", clampedEndColPx);
+          }
+
+          final var chunkSize = Math.max(
+            32,
+            ((Number) map.getOrDefault("tileSize", 256)).intValue()
+          );
+          final var accumulator = DistanceExpectedNormalizer.newAccumulator(
+            resolutionOrder,
+            clampedStartRowPx,
+            clampedEndRowPx,
+            clampedStartColPx,
+            clampedEndColPx
+          );
+          for (long chunkStartRowPx = clampedStartRowPx; chunkStartRowPx < clampedEndRowPx; chunkStartRowPx += chunkSize) {
+            final var chunkEndRowPx = Math.min(clampedEndRowPx, chunkStartRowPx + chunkSize);
+            for (long chunkStartColPx = clampedStartColPx; chunkStartColPx < clampedEndColPx; chunkStartColPx += chunkSize) {
+              final var chunkEndColPx = Math.min(clampedEndColPx, chunkStartColPx + chunkSize);
+              final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
+                resolutionDescriptor,
+                chunkStartRowPx,
+                chunkStartColPx,
+                chunkEndRowPx,
+                chunkEndColPx,
+                true
+              );
+              final var baseSignal = chunkedFile.tileVisualizationProcessor().prepareSignalMatrix(
+                matrixWithWeights,
+                options
+              );
+              accumulator.addSignal(
+                baseSignal,
+                matrixWithWeights.startRowIncl(),
+                matrixWithWeights.startColIncl()
+              );
+            }
+          }
+          final var profile = accumulator.toProfile();
           map.put(
             EXPECTED_PROFILE_LOCAL_MAP_KEY,
             new ShareableWrappers.DiagonalExpectedProfileWrapper(profile)
@@ -240,6 +285,10 @@ public class TileHandlersHolder extends HandlersHolder {
           return new JsonObject()
             .put("status", "ok")
             .put("resolutionOrder", resolutionOrder)
+            .put("startRowPx", clampedStartRowPx)
+            .put("endRowPx", clampedEndRowPx)
+            .put("startColPx", clampedStartColPx)
+            .put("endColPx", clampedEndColPx)
             .put("minDiagonal", profile.minDiagonal())
             .put("diagonalCount", profile.means().length);
         },
