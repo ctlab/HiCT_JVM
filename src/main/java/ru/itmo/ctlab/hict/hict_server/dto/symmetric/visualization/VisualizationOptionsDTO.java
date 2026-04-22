@@ -27,6 +27,7 @@ package ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization;
 import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 
 public record VisualizationOptionsDTO(double preLogBase,
@@ -34,6 +35,9 @@ public record VisualizationOptionsDTO(double preLogBase,
                                       boolean applyCoolerWeights,
                                       boolean resolutionScaling,
                                       boolean resolutionLinearScaling,
+                                      boolean autoThresholdEnabled,
+                                      double autoThresholdQuantile,
+                                      String signalDisplayMode,
                                       ColormapDTO colormap
 ) {
   public static @NotNull VisualizationOptionsDTO fromEntity(final @NotNull SimpleVisualizationOptions options, final @NotNull ChunkedFile chunkedFile) {
@@ -43,6 +47,9 @@ public record VisualizationOptionsDTO(double preLogBase,
       options.isApplyCoolerWeights(),
       options.isResolutionScaling(),
       options.isResolutionLinearScaling(),
+      options.isAutoThresholdEnabled(),
+      options.getAutoThresholdQuantile(),
+      options.getSignalDisplayMode().name(),
       ColormapDTO.fromEntity(options.getColormap(), chunkedFile)
     );
   }
@@ -54,6 +61,9 @@ public record VisualizationOptionsDTO(double preLogBase,
       json.getBoolean("applyCoolerWeights"),
       json.getBoolean("resolutionScaling"),
       json.getBoolean("resolutionLinearScaling"),
+      json.getBoolean("autoThresholdEnabled", false),
+      json.getDouble("autoThresholdQuantile", 0.995d),
+      json.getString("signalDisplayMode", SignalDisplayMode.OBSERVED.name()),
       ColormapDTO.fromJSONObject(json.getJsonObject("colormap"))
     );
   }
@@ -65,6 +75,9 @@ public record VisualizationOptionsDTO(double preLogBase,
       this.applyCoolerWeights,
       this.resolutionScaling,
       this.resolutionLinearScaling,
+      this.autoThresholdEnabled,
+      this.autoThresholdQuantile,
+      SignalDisplayMode.fromRaw(this.signalDisplayMode),
       this.colormap.toEntity()
     );
   }

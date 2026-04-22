@@ -135,6 +135,8 @@ For tensor workflows (NumPy/Torch), numeric submatrices are available via:
 ** units: `PIXELS`, `BINS`, `BP`
 ** signal modes: `RAW_COUNTS`, `COOLER_WEIGHTED`, `TRADITIONAL_NORMALIZED`, `PIPELINE_SIGNAL`
 ** binary formats for fast transfer: `BINARY_FLOAT32`, `BINARY_FLOAT64`, `BINARY_INT64`
+** `TRADITIONAL_NORMALIZED` follows the active visualization settings, including `Observed`, `Expected`, and `O/E` display modes
+** `Expected` and `O/E` use a distance-expected signal estimated from the currently fetched tile/query window after the selected raw-or-balanced normalization steps
 
 === Supported platforms / JDK details
 

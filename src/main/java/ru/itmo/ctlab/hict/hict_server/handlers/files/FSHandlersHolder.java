@@ -26,6 +26,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.files;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.RequiredArgsConstructor;
@@ -33,10 +34,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
+import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
+import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -44,6 +49,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class FSHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private final FileFingerprintService fingerprintService = new FileFingerprintService();
   private static final List<String> FASTA_SUFFIXES = List.of(
     ".fasta", ".fa", ".fna", ".fas",
     ".fasta.gz", ".fa.gz", ".fna.gz", ".fas.gz"
@@ -168,6 +174,60 @@ public class FSHandlersHolder extends HandlersHolder {
 
     router.post("/list_coolers").handler(this::handleConvertibleMatrixList);
     router.post("/list_convertible_matrices").handler(this::handleConvertibleMatrixList);
+
+    router.post("/resolve_matrix_source").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.UI_UX,
+        null,
+        () -> {
+          final var request = ctx.body() != null && ctx.body().asJsonObject() != null
+            ? ctx.body().asJsonObject()
+            : new JsonObject();
+          final var filename = request.getString("filename");
+          if (filename == null || filename.isBlank()) {
+            throw new IllegalArgumentException("filename is required");
+          }
+          return cacheManager().resolveOpenPath(filename).toJson();
+        },
+        response -> ctx.response().putHeader("content-type", "application/json").end(response.encode())
+      );
+    });
+
+    router.post("/cache/drop_all").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> {
+          final var cacheManager = cacheManager();
+          final var matrixDeleted = cacheManager.dropAllMetadata();
+          final var processedDirectory = processedDirectory();
+          final var trackPrecomputeDir = processedDirectory.resolve("track_precompute");
+          final var trackDeleted = deleteRecursively(trackPrecomputeDir);
+          final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+          if (trackManagerWrapper != null) {
+            final Track1DManager manager = trackManagerWrapper.getTrack1DManager();
+            manager.invalidateInMemoryCache();
+            manager.clearPrecomputeStatus();
+          }
+          return new JsonObject()
+            .put("status", "dropped")
+            .put("matrixMetadataDeleted", matrixDeleted)
+            .put("trackCacheEntriesDeleted", trackDeleted);
+        },
+        response -> ctx.response().putHeader("content-type", "application/json").end(response.encode())
+      );
+    });
   }
 
   private void handleConvertibleMatrixList(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
@@ -241,5 +301,45 @@ public class FSHandlersHolder extends HandlersHolder {
                            long sizeBytes,
                            long modifiedAtMs,
                            @NotNull String extension) {
+  }
+
+  private @NotNull MatrixConversionCacheManager cacheManager() {
+    return new MatrixConversionCacheManager(dataDirectory(), processedDirectory(), this.fingerprintService);
+  }
+
+  private @NotNull Path dataDirectory() {
+    final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+    if (dataDirectoryWrapper == null) {
+      throw new RuntimeException("Data directory is not present in local map");
+    }
+    return dataDirectoryWrapper.getPath();
+  }
+
+  private @NotNull Path processedDirectory() {
+    final var processedDirectoryWrapper =
+      (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("processedDirectory");
+    return processedDirectoryWrapper != null
+      ? processedDirectoryWrapper.getPath()
+      : dataDirectory().resolve("processed").normalize().toAbsolutePath();
+  }
+
+  private static int deleteRecursively(final @NotNull Path root) {
+    if (!Files.exists(root)) {
+      return 0;
+    }
+    final var deletedCount = new int[]{0};
+    try (final var stream = Files.walk(root)) {
+      stream.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+        try {
+          Files.deleteIfExists(path);
+          deletedCount[0]++;
+        } catch (final IOException e) {
+          throw new RuntimeException("Failed to delete cache path " + path, e);
+        }
+      });
+      return deletedCount[0];
+    } catch (final IOException e) {
+      throw new RuntimeException("Failed to delete cache tree " + root, e);
+    }
   }
 }

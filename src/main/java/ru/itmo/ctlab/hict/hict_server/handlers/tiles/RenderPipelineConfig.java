@@ -27,6 +27,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
+import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
@@ -70,6 +71,9 @@ public final class RenderPipelineConfig {
   public static @NotNull RenderPipelineConfig fromVisualizationOptions(final @NotNull SimpleVisualizationOptions options,
                                                                        final boolean enabled,
                                                                        final boolean swapUpperLower) {
+    if (options.getSignalDisplayMode() != SignalDisplayMode.OBSERVED) {
+      return disabled();
+    }
     final var expression = buildExpressionFromVisualizationOptions(options);
     return new RenderPipelineConfig(
       enabled,

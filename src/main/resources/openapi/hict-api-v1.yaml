@@ -176,6 +176,34 @@ paths:
               schema:
                 type: array
                 items: { type: string }
+  /resolve_matrix_source:
+    post:
+      tags: [Files]
+      summary: Resolve a matrix file to either a direct-open path or a cache-aware conversion target
+      operationId: resolveMatrixSource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeTrackRequest' }
+      responses:
+        '200':
+          description: Matrix source resolution
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixSourceResolution' }
+  /cache/drop_all:
+    post:
+      tags: [Files]
+      summary: Drop matrix conversion metadata and 1D track precompute caches
+      operationId: dropAllCaches
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Cache drop summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
 
   /open:
     post:
@@ -465,6 +493,10 @@ paths:
     post:
       tags: [Tiles]
       summary: Fetch rectangular submatrix as numeric tensor-ready payload
+      description: |
+        `TRADITIONAL_NORMALIZED` follows the active visualization settings. When the UI is set to `Expected` or `O/E`,
+        the returned signal uses a distance-expected estimate computed from the fetched query window after the selected
+        raw-or-balanced normalization steps.
       operationId: queryMatrix
       requestBody:
         required: true
@@ -633,7 +665,11 @@ paths:
       tags: [Files]
       summary: Export FASTA for current full assembly
       operationId: exportFastaAssembly
-      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GetFastaForAssemblyRequest' }
       responses:
         '200':
           description: FASTA text
@@ -890,6 +926,22 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /tracks/precompute/probe:
+    post:
+      tags: [Tracks]
+      summary: Probe whether a selected track already has a current precompute sidecar
+      operationId: probeTrackPrecompute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeTrackRequest' }
+      responses:
+        '200':
+          description: Track precompute cache probe
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackPrecomputeProbeResponse' }
   /tracks/precompute/start:
     post:
       tags: [Tracks]
@@ -1316,6 +1368,8 @@ components:
           type: string
           enum: [RAW_COUNTS, COOLER_WEIGHTED, TRADITIONAL_NORMALIZED, PIPELINE_SIGNAL]
           default: TRADITIONAL_NORMALIZED
+          description: |
+            `TRADITIONAL_NORMALIZED` applies the currently selected visualization normalization and display mode.
         format:
           type: string
           enum: [JSON, BINARY_FLOAT32, BINARY_FLOAT64, BINARY_INT64]
@@ -1383,7 +1437,16 @@ components:
       properties:
         fastaFilename: { type: string }
         allowMismatch: { type: boolean, default: false }
+        source:
+          type: string
+          enum: [PRIMARY, SECONDARY]
       required: [fastaFilename]
+    GetFastaForAssemblyRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [PRIMARY, SECONDARY]
     FastaSelectionRequest:
       type: object
       properties:
@@ -1391,6 +1454,12 @@ components:
         fromBpY: { type: integer, format: int64 }
         toBpX: { type: integer, format: int64 }
         toBpY: { type: integer, format: int64 }
+        horizontalSource:
+          type: string
+          enum: [PRIMARY, SECONDARY]
+        verticalSource:
+          type: string
+          enum: [PRIMARY, SECONDARY]
       required: [fromBpX, fromBpY, toBpX, toBpY]
     GetAgpRequest:
       type: object
@@ -1400,6 +1469,9 @@ components:
       type: object
       properties:
         agpFilename: { type: string }
+        source:
+          type: string
+          enum: [PRIMARY, SECONDARY]
       required: [agpFilename]
 
     RenameContigRequest:

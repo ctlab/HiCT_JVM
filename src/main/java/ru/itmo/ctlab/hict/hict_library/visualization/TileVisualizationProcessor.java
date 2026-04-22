@@ -102,51 +102,57 @@ public class TileVisualizationProcessor {
     final var columnWeights = rawTile.colWeights();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
-    final var result = new double[rowCount][columnCount];
+    final var baseSignal = new double[rowCount][columnCount];
     final var resolutionScalingCoeffs = this.chunkedFile.getResolutionScalingCoefficient();
     final var resolutionLinearScalingCoeffs = this.chunkedFile.getResolutionLinearScalingCoefficient();
     final var resolutionScalingCoeff = resolutionScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
     final var resolutionLinearScalingCoeff = resolutionLinearScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
+    final var pre = visualizationOptions.getLnPreLogBase();
+    final var post = visualizationOptions.getLnPostLogBase();
 
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-      final DoubleStream startStream;
-      if (input instanceof MatrixQueries.DoubleMatrix doubleMatrix) {
-        startStream = Arrays.stream(doubleMatrix.values()[rowIndex]).parallel();
-      } else if (input instanceof MatrixQueries.LongMatrix longMatrix) {
-        startStream = Arrays.stream(longMatrix.values()[rowIndex]).parallel().mapToDouble(value -> value);
-      } else {
-        throw new IllegalStateException("Unsupported raw matrix type: " + input.getClass().getName());
-      }
       final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
-
-      final var pre = visualizationOptions.getLnPreLogBase();
-      final var post = visualizationOptions.getLnPostLogBase();
-
-      DoubleStream doubleStream = startStream;
-
-      if (pre > 0) {
-        doubleStream = doubleStream.map(signal -> Math.log1p(signal) / pre);
+      final var resultRow = baseSignal[rowIndex];
+      for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
+        var signal = input.getAsDouble(rowIndex, colIndex);
+        if (!Double.isFinite(signal) || signal < 0.0d) {
+          signal = 0.0d;
+        }
+        if (pre > 0) {
+          signal = Math.log1p(signal) / pre;
+        }
+        if (visualizationOptions.isResolutionScaling()) {
+          signal *= resolutionScalingCoeff;
+        }
+        if (visualizationOptions.isResolutionLinearScaling()) {
+          signal *= resolutionLinearScalingCoeff;
+        }
+        if (visualizationOptions.isApplyCoolerWeights()) {
+          final var columnWeight = (columnWeights != null && colIndex < columnWeights.length) ? columnWeights[colIndex] : 1.0d;
+          signal *= rowWeight * columnWeight;
+        }
+        resultRow[colIndex] = Double.isFinite(signal) ? signal : 0.0d;
       }
-
-      if (visualizationOptions.isResolutionScaling()) {
-        doubleStream = doubleStream.map(signal -> signal * resolutionScalingCoeff);
-      }
-
-      if (visualizationOptions.isResolutionLinearScaling()) {
-        doubleStream = doubleStream.map(signal -> signal * resolutionLinearScalingCoeff);
-      }
-
-      if (visualizationOptions.isApplyCoolerWeights()) {
-        doubleStream = applyCoolerWeightsToRow(doubleStream, rowWeight, columnWeights);
-      }
-
-      if (post > 0) {
-        doubleStream = doubleStream.map(signal -> Math.log1p(signal) / post);
-      }
-
-      result[rowIndex] = doubleStream.toArray();
     }
-    return new TileWithWeights(result, rowWeights, columnWeights);
+
+    final var transformedSignal = DistanceExpectedNormalizer.transformSignal(
+      baseSignal,
+      rawTile.startRowIncl(),
+      rawTile.startColIncl(),
+      visualizationOptions.getSignalDisplayMode()
+    );
+    if (post > 0) {
+      for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        final var row = transformedSignal[rowIndex];
+        for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
+          final var value = row[colIndex];
+          row[colIndex] = Double.isFinite(value) && value > 0.0d
+            ? (Math.log1p(value) / post)
+            : 0.0d;
+        }
+      }
+    }
+    return new TileWithWeights(transformedSignal, rowWeights, columnWeights);
   }
 
   public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions options) {

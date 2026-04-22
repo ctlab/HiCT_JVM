@@ -48,6 +48,8 @@ import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
+import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprint;
+import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -83,6 +85,7 @@ public class Track1DManager {
   private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String PRECOMPUTE_CACHE_VERSION = "1";
+  private static final String PRECOMPUTE_META_GROUP_PATH = "/cache_meta";
   private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
   private static final int PRECOMPUTE_JOB_THREADS = resolveThreadCount("HICT_TRACK_PRECOMPUTE_JOB_THREADS", 2);
   private static final int PRECOMPUTE_WORKER_THREADS = resolveThreadCount(
@@ -103,6 +106,7 @@ public class Track1DManager {
   private final @NotNull ExecutorService precomputeWriterExecutor;
   private final @NotNull ConcurrentHashMap<PrecomputedSeriesKey, PrecomputedSeries> precomputedSeriesCache = new ConcurrentHashMap<>();
   private final @NotNull ConcurrentHashMap<String, TrackPrecomputeRuntime> precomputeRuntimeByTrackId = new ConcurrentHashMap<>();
+  private final @NotNull FileFingerprintService fingerprintService = new FileFingerprintService();
   private volatile @NotNull Map<String, String> linkedFastaAliasesBySource = Map.of();
 
   public Track1DManager(final @NotNull Path dataDirectory) {
@@ -397,6 +401,10 @@ public class Track1DManager {
 
   public void invalidateInMemoryCache() {
     this.precomputedSeriesCache.clear();
+  }
+
+  public void clearPrecomputeStatus() {
+    this.precomputeRuntimeByTrackId.clear();
   }
 
   public @NotNull TracksPrecomputeStatus getPrecomputeStatus() {
@@ -865,8 +873,9 @@ public class Track1DManager {
                                   final boolean force,
                                   final @NotNull TrackPrecomputeRuntime runtime) {
     try {
-      final var sidecarPath = sidecarPathForTrackCache(chunkedFile, track);
-      final var tasks = buildPrecomputeTasks(chunkedFile, track, sidecarPath, force);
+      final var cacheContext = precomputeCacheContextForTrack(chunkedFile, track);
+      final var sidecarPath = cacheContext.sidecarPath();
+      final var tasks = buildPrecomputeTasks(chunkedFile, track, sidecarPath, cacheContext, force);
       runtime.setTotalTasks(tasks.size());
       if (tasks.isEmpty()) {
         runtime.markFinished();
@@ -886,7 +895,7 @@ public class Track1DManager {
         runtime.markRunning(task.bpResolution() + "bp/" + task.modeKey(), completed);
         final var key = new PrecomputedSeriesKey(track.trackId(), task.bpResolution(), task.assemblySignature(), task.modeKey());
         this.precomputedSeriesCache.put(key, computed.series());
-        writeFutures.add(this.precomputeWriterExecutor.submit(() -> persistPrecomputedSeries(sidecarPath, task, computed.series())));
+        writeFutures.add(this.precomputeWriterExecutor.submit(() -> persistPrecomputedSeries(sidecarPath, task, computed.series(), cacheContext)));
         completed++;
         runtime.markTaskDone(completed);
       }
@@ -907,6 +916,7 @@ public class Track1DManager {
   private @NotNull List<PrecomputeTask> buildPrecomputeTasks(final @NotNull ChunkedFile chunkedFile,
                                                              final @NotNull TrackState track,
                                                              final @NotNull Path sidecarPath,
+                                                             final @NotNull PrecomputeCacheContext cacheContext,
                                                              final boolean force) {
     if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
       return List.of();
@@ -932,7 +942,8 @@ public class Track1DManager {
             bpResolution,
             modeKey,
             assemblySignature,
-            totalVisiblePixels
+            totalVisiblePixels,
+            cacheContext
           );
           if (cached.isPresent()) {
             this.precomputedSeriesCache.put(key, cached.get());
@@ -965,13 +976,15 @@ public class Track1DManager {
     final var key = new PrecomputedSeriesKey(track.trackId(), bpResolution, assemblySignature, modeKey);
     var series = this.precomputedSeriesCache.get(key);
     if (series == null) {
-      final var sidecar = sidecarPathForTrackCache(chunkedFile, track);
+      final var cacheContext = precomputeCacheContextForTrack(chunkedFile, track);
+      final var sidecar = cacheContext.sidecarPath();
       series = loadPrecomputedSeriesFromSidecar(
         sidecar,
         bpResolution,
         modeKey,
         assemblySignature,
-        totalVisiblePixels
+        totalVisiblePixels,
+        cacheContext
       ).orElse(null);
       if (series != null) {
         this.precomputedSeriesCache.put(key, series);
@@ -1077,7 +1090,8 @@ public class Track1DManager {
                                                                                  final long bpResolution,
                                                                                  final @NotNull String modeKey,
                                                                                  final @NotNull String assemblySignature,
-                                                                                 final long expectedLength) {
+                                                                                 final long expectedLength,
+                                                                                 final @NotNull PrecomputeCacheContext cacheContext) {
     if (!Files.exists(sidecarPath) || !Files.isRegularFile(sidecarPath)) {
       return Optional.empty();
     }
@@ -1085,6 +1099,9 @@ public class Track1DManager {
     final var valuesPath = groupPath + "/values";
     final var supportPath = groupPath + "/support";
     try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
+      if (!sidecarMetadataMatches(reader, cacheContext)) {
+        return Optional.empty();
+      }
       if (!reader.object().isDataSet(valuesPath) || !reader.object().isDataSet(supportPath)) {
         return Optional.empty();
       }
@@ -1106,7 +1123,8 @@ public class Track1DManager {
 
   private void persistPrecomputedSeries(final @NotNull Path sidecarPath,
                                         final @NotNull PrecomputeTask task,
-                                        final @NotNull PrecomputedSeries series) {
+                                        final @NotNull PrecomputedSeries series,
+                                        final @NotNull PrecomputeCacheContext cacheContext) {
     try {
       Files.createDirectories(sidecarPath.getParent());
       final var groupPath = precomputeGroupPath(task.bpResolution(), task.modeKey(), task.assemblySignature());
@@ -1117,6 +1135,14 @@ public class Track1DManager {
         Math.min(PRECOMPUTE_DATASET_CHUNK_SIZE, Math.max(series.values().length, series.support().length))
       );
       try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
+        ensureGroupPath(writer, PRECOMPUTE_META_GROUP_PATH);
+        writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "cacheVersion", PRECOMPUTE_CACHE_VERSION);
+        writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "trackType", cacheContext.trackType().name());
+        writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "sourceIdentity", cacheContext.sourceIdentity());
+        if (cacheContext.sourceFingerprint() != null) {
+          writeFingerprintAttrs(writer, PRECOMPUTE_META_GROUP_PATH, "source", cacheContext.sourceFingerprint());
+        }
+        writeFingerprintAttrs(writer, PRECOMPUTE_META_GROUP_PATH, "hict", cacheContext.hictFingerprint());
         ensureGroupPath(writer, groupPath);
         writer.string().setAttr(groupPath, "version", PRECOMPUTE_CACHE_VERSION);
         writer.int64().setAttr(groupPath, "bpResolution", task.bpResolution());
@@ -1159,35 +1185,139 @@ public class Track1DManager {
 
   private @NotNull Path sidecarPathForTrackCache(final @NotNull ChunkedFile chunkedFile,
                                                  final @NotNull TrackState track) {
-    final var hictPath = chunkedFile.getHdfFilePath();
-    final String fingerprint;
-    try {
-      if (track.type() == TrackType.COOLER_WEIGHTS) {
-        fingerprint = String.join("|",
-          PRECOMPUTE_CACHE_VERSION,
-          track.type().name(),
-          track.sourceFile(),
-          hictPath.toString(),
-          String.valueOf(Files.size(hictPath)),
-          String.valueOf(Files.getLastModifiedTime(hictPath).toMillis())
-        );
-      } else {
-        final var trackSource = resolveDataPath(track.sourceFile());
-        fingerprint = String.join("|",
-          PRECOMPUTE_CACHE_VERSION,
-          trackSource.toString(),
-          String.valueOf(Files.size(trackSource)),
-          String.valueOf(Files.getLastModifiedTime(trackSource).toMillis()),
-          hictPath.toString(),
-          String.valueOf(Files.size(hictPath)),
-          String.valueOf(Files.getLastModifiedTime(hictPath).toMillis())
-        );
-      }
-    } catch (final IOException e) {
-      throw new RuntimeException("Cannot build precompute fingerprint for " + track.sourceFile(), e);
+    final var cacheContext = precomputeCacheContextForTrack(chunkedFile, track);
+    return cacheContext.sidecarPath();
+  }
+
+  public @NotNull TrackPrecomputeCacheProbe probePrecomputeCache(final @NotNull ChunkedFile chunkedFile,
+                                                                 final @NotNull String relativeFilename) {
+    final var resolvedPath = resolveDataPath(relativeFilename);
+    final var trackType = TrackType.fromPath(resolvedPath);
+    if (trackType == TrackType.UNSUPPORTED) {
+      throw new IllegalArgumentException(
+        "Unsupported track format for " + relativeFilename + ". Supported: BED/VCF/GFF/GTF/BigWig/BAM."
+      );
     }
+    final var cacheContext = precomputeCacheContextForTrackSource(chunkedFile, relativeFilename, trackType);
+    final var cacheAvailable = hasCompatiblePrecomputeSidecar(cacheContext);
+    final var warnings = new ArrayList<String>();
+    if (!cacheAvailable) {
+      warnings.add("No valid precomputed cache exists for the selected track and current HiCT source.");
+    }
+    return new TrackPrecomputeCacheProbe(
+      relativeFilename,
+      trackType.name(),
+      true,
+      cacheAvailable,
+      cacheAvailable,
+      cacheContext.sidecarPath().toString(),
+      warnings,
+      cacheContext.sourceFingerprint(),
+      cacheContext.hictFingerprint()
+    );
+  }
+
+  private boolean hasCompatiblePrecomputeSidecar(final @NotNull PrecomputeCacheContext cacheContext) {
+    final var sidecarPath = cacheContext.sidecarPath();
+    if (!Files.exists(sidecarPath) || !Files.isRegularFile(sidecarPath)) {
+      return false;
+    }
+    try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
+      return sidecarMetadataMatches(reader, cacheContext);
+    } catch (final Exception e) {
+      return false;
+    }
+  }
+
+  private @NotNull PrecomputeCacheContext precomputeCacheContextForTrack(final @NotNull ChunkedFile chunkedFile,
+                                                                         final @NotNull TrackState track) {
+    if (track.type() == TrackType.COOLER_WEIGHTS) {
+      final var hictPath = chunkedFile.getHdfFilePath().normalize().toAbsolutePath();
+      final var hictFingerprint = this.fingerprintService.fingerprint(hictPath);
+      return new PrecomputeCacheContext(
+        sidecarPathForTrackCache(COOLER_WEIGHTS_SOURCE_FILE, track.type(), hictPath),
+        track.type(),
+        COOLER_WEIGHTS_SOURCE_FILE,
+        null,
+        hictFingerprint
+      );
+    }
+    return precomputeCacheContextForTrackSource(chunkedFile, track.sourceFile(), track.type());
+  }
+
+  private @NotNull PrecomputeCacheContext precomputeCacheContextForTrackSource(final @NotNull ChunkedFile chunkedFile,
+                                                                               final @NotNull String relativeFilename,
+                                                                               final @NotNull TrackType trackType) {
+    final var trackSource = resolveDataPath(relativeFilename).normalize().toAbsolutePath();
+    final var hictPath = chunkedFile.getHdfFilePath().normalize().toAbsolutePath();
+    return new PrecomputeCacheContext(
+      sidecarPathForTrackCache(trackSource.toString(), trackType, hictPath),
+      trackType,
+      trackSource.toString(),
+      this.fingerprintService.fingerprint(trackSource),
+      this.fingerprintService.fingerprint(hictPath)
+    );
+  }
+
+  private @NotNull Path sidecarPathForTrackCache(final @NotNull String sourceIdentity,
+                                                 final @NotNull TrackType trackType,
+                                                 final @NotNull Path hictPath) {
+    final var fingerprint = String.join("|",
+      PRECOMPUTE_CACHE_VERSION,
+      trackType.name(),
+      sourceIdentity,
+      hictPath.toString()
+    );
     final var fileName = sha256Hex(fingerprint) + ".h5";
     return this.processedDirectory.resolve("track_precompute").resolve(fileName);
+  }
+
+  private static void writeFingerprintAttrs(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer writer,
+                                            final @NotNull String groupPath,
+                                            final @NotNull String prefix,
+                                            final @NotNull FileFingerprint fingerprint) {
+    writer.int64().setAttr(groupPath, prefix + "_sizeBytes", fingerprint.sizeBytes());
+    writer.int64().setAttr(groupPath, prefix + "_modifiedAtMs", fingerprint.modifiedAtMs());
+    writer.string().setAttr(groupPath, prefix + "_sha256", fingerprint.sha256());
+    writer.string().setAttr(groupPath, prefix + "_sha512", fingerprint.sha512());
+  }
+
+  private static boolean sidecarMetadataMatches(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
+                                                final @NotNull PrecomputeCacheContext cacheContext) {
+    try {
+      if (!reader.object().isGroup(PRECOMPUTE_META_GROUP_PATH)) {
+        return false;
+      }
+      final var cacheVersion = reader.string().getAttr(PRECOMPUTE_META_GROUP_PATH, "cacheVersion");
+      final var trackType = reader.string().getAttr(PRECOMPUTE_META_GROUP_PATH, "trackType");
+      final var sourceIdentity = reader.string().getAttr(PRECOMPUTE_META_GROUP_PATH, "sourceIdentity");
+      if (!PRECOMPUTE_CACHE_VERSION.equals(cacheVersion)
+        || !cacheContext.trackType().name().equals(trackType)
+        || !cacheContext.sourceIdentity().equals(sourceIdentity)) {
+        return false;
+      }
+      if (cacheContext.sourceFingerprint() != null) {
+        final var storedSourceFingerprint = readFingerprintAttrs(reader, PRECOMPUTE_META_GROUP_PATH, "source");
+        if (!storedSourceFingerprint.matches(cacheContext.sourceFingerprint())) {
+          return false;
+        }
+      }
+      final var storedHictFingerprint = readFingerprintAttrs(reader, PRECOMPUTE_META_GROUP_PATH, "hict");
+      return storedHictFingerprint.matches(cacheContext.hictFingerprint());
+    } catch (final RuntimeException e) {
+      return false;
+    }
+  }
+
+  private static @NotNull FileFingerprint readFingerprintAttrs(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
+                                                               final @NotNull String groupPath,
+                                                               final @NotNull String prefix) {
+    return new FileFingerprint(
+      reader.int64().getAttr(groupPath, prefix + "_sizeBytes"),
+      reader.int64().getAttr(groupPath, prefix + "_modifiedAtMs"),
+      reader.string().getAttr(groupPath, prefix + "_sha256"),
+      reader.string().getAttr(groupPath, prefix + "_sha512")
+    );
   }
 
   private static @NotNull String precomputeGroupPath(final long bpResolution,
@@ -3587,6 +3717,24 @@ public class Track1DManager {
                                 @NotNull String modeKey,
                                 long totalVisiblePixels,
                                 @NotNull String assemblySignature) {
+  }
+
+  private record PrecomputeCacheContext(@NotNull Path sidecarPath,
+                                        @NotNull TrackType trackType,
+                                        @NotNull String sourceIdentity,
+                                        FileFingerprint sourceFingerprint,
+                                        @NotNull FileFingerprint hictFingerprint) {
+  }
+
+  public record TrackPrecomputeCacheProbe(@NotNull String filename,
+                                          @NotNull String trackType,
+                                          boolean supported,
+                                          boolean cacheAvailable,
+                                          boolean cacheCurrent,
+                                          @NotNull String cacheSidecarPath,
+                                          @NotNull List<String> warnings,
+                                          FileFingerprint sourceFingerprint,
+                                          @NotNull FileFingerprint hictFingerprint) {
   }
 
   private record ComputedPrecomputeTask(@NotNull PrecomputeTask task,

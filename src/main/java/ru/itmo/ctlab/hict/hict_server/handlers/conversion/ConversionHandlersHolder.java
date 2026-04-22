@@ -15,6 +15,8 @@ import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.response.conversion.ConversionJobDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.conversion.ConversionSubmitResponseDTO;
+import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
+import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.IOException;
@@ -59,6 +61,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
     private final ConcurrentHashMap<String, ConversionJobGroup> groups = new ConcurrentHashMap<>();
     private final ExternalToolchainManager toolchainManager = new ExternalToolchainManager();
     private final HictkConversionPipeline hictkConversionPipeline = new HictkConversionPipeline(this.toolchainManager);
+    private final FileFingerprintService fingerprintService = new FileFingerprintService();
 
     @Override
     public void addHandlersToRouter(final @NotNull Router router) {
@@ -500,6 +503,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             } else {
                 throw new IllegalArgumentException("Unknown conversion direction: " + job.direction.wireName());
             }
+            recordSuccessfulConversionIfPossible(job);
             job.overallProgress = 1.0d;
             job.stageProgress = 1.0d;
             job.status = job.cancelRequested.get() ? "cancelled" : "finished";
@@ -517,6 +521,21 @@ public class ConversionHandlersHolder extends HandlersHolder {
             job.finishedAtMs = Instant.now().toEpochMilli();
             group.onJobFinished();
         }
+    }
+
+    private void recordSuccessfulConversionIfPossible(final @NotNull ConversionJob job) {
+        final var map = this.vertx.sharedData().getLocalMap("hict_server");
+        final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
+        if (dataDirectoryWrapper == null) {
+            return;
+        }
+        final var dataDirectory = dataDirectoryWrapper.getPath();
+        final var processedDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+        final var processedDirectory = processedDirectoryWrapper != null
+            ? processedDirectoryWrapper.getPath()
+            : dataDirectory.resolve("processed").normalize().toAbsolutePath();
+        final var cacheManager = new MatrixConversionCacheManager(dataDirectory, processedDirectory, this.fingerprintService);
+        cacheManager.recordSuccessfulConversion(job.sourcePath, job.outputPath, job.direction);
     }
 
     private void parseProgress(final @NotNull ConversionJob job, final @NotNull String message) {
