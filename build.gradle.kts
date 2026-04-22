@@ -23,6 +23,7 @@
  */
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
+import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -71,6 +72,7 @@ val webUIRepositoryDirectory =
   if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
+val bundledToolchainSourceDirectory = layout.projectDirectory.dir("toolchains-dist")
 val webUIBranch = "master"
 
 version = readVersion()
@@ -352,8 +354,11 @@ tasks.named("clean") {
   dependsOn("cleanWebUI")
 }
 
-tasks.named("processResources") {
+tasks.named<ProcessResources>("processResources") {
   dependsOn("copyWebUI")
+  from(bundledToolchainSourceDirectory) {
+    into("toolchains")
+  }
   doLast {
     Files.copy(
       versionFile.toPath(),
@@ -367,6 +372,23 @@ tasks.named("processResources") {
         StandardCopyOption.REPLACE_EXISTING
       )
     }
+  }
+}
+
+tasks.register("describeBundledToolchains") {
+  group = "distribution"
+  description = "List locally prepared external toolchain payloads that will be embedded into the fat JAR."
+  doLast {
+    val root = bundledToolchainSourceDirectory.asFile
+    if (!root.exists()) {
+      println("No bundled toolchains found in ${root.absolutePath}")
+      return@doLast
+    }
+
+    root.walkTopDown()
+      .filter { it.isFile && it.name == "manifest.json" }
+      .sortedBy { it.absolutePath }
+      .forEach { println("Bundled toolchain manifest: ${it.absolutePath}") }
   }
 }
 

@@ -48,6 +48,9 @@ public class FSHandlersHolder extends HandlersHolder {
     ".fasta", ".fa", ".fna", ".fas",
     ".fasta.gz", ".fa.gz", ".fna.gz", ".fas.gz"
   );
+  private static final List<String> CONVERTIBLE_MATRIX_SUFFIXES = List.of(
+    ".hic", ".cool", ".mcool"
+  );
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
@@ -163,31 +166,39 @@ public class FSHandlersHolder extends HandlersHolder {
       );
     });
 
-    router.post("/list_coolers").handler(ctx -> {
-      final var scheduler = getScheduler(ctx);
-      if (scheduler == null) {
-        return;
-      }
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.UI_UX,
-        null,
-        () -> {
-          final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
-          if (dataDirectoryWrapper == null) {
-            throw new RuntimeException("Data directory is not present in local map");
-          }
-          final var dataDirectory = dataDirectoryWrapper.getPath();
+    router.post("/list_coolers").handler(this::handleConvertibleMatrixList);
+    router.post("/list_convertible_matrices").handler(this::handleConvertibleMatrixList);
+  }
 
-          try (final var fileStream = Files.walk(dataDirectory)) {
-            return fileStream.filter(Files::isRegularFile).map(dataDirectory::relativize).map(Object::toString).filter(p -> p.toLowerCase().endsWith(".cool") || p.toLowerCase().endsWith(".mcool")).collect(Collectors.toList());
-          } catch (final IOException e) {
-            throw new RuntimeException(e);
-          }
-        },
-        files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
-      );
-    });
+  private void handleConvertibleMatrixList(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+    final var scheduler = getScheduler(ctx);
+    if (scheduler == null) {
+      return;
+    }
+    scheduler.submit(
+      ctx,
+      RequestTaskScheduler.RequestPriority.UI_UX,
+      null,
+      () -> {
+        final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+        if (dataDirectoryWrapper == null) {
+          throw new RuntimeException("Data directory is not present in local map");
+        }
+        final var dataDirectory = dataDirectoryWrapper.getPath();
+
+        try (final var fileStream = Files.walk(dataDirectory)) {
+          return fileStream
+            .filter(Files::isRegularFile)
+            .map(dataDirectory::relativize)
+            .map(Object::toString)
+            .filter(FSHandlersHolder::isConvertibleMatrixFilename)
+            .collect(Collectors.toList());
+        } catch (final IOException e) {
+          throw new RuntimeException(e);
+        }
+      },
+      files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
+    );
   }
 
   private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
@@ -203,6 +214,11 @@ public class FSHandlersHolder extends HandlersHolder {
   private static boolean isFastaFilename(final @NotNull String path) {
     final var lowered = path.toLowerCase();
     return FASTA_SUFFIXES.stream().anyMatch(lowered::endsWith);
+  }
+
+  private static boolean isConvertibleMatrixFilename(final @NotNull String path) {
+    final var lowered = path.toLowerCase();
+    return CONVERTIBLE_MATRIX_SUFFIXES.stream().anyMatch(lowered::endsWith);
   }
 
   private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,

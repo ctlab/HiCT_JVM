@@ -42,6 +42,8 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 
+import java.awt.Desktop;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -61,7 +63,7 @@ public class WebUIVerticle extends AbstractVerticle {
     log.info("Logging for WebUI initialized");
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
-      .setConfig(new JsonObject().put("keys", new JsonArray().add("SERVE_WEBUI").add("WEBUI_PORT")));
+      .setConfig(new JsonObject().put("keys", new JsonArray().add("SERVE_WEBUI").add("WEBUI_PORT").add("AUTO_OPEN_BROWSER")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
     final ConfigRetriever configRetriever = ConfigRetriever.create(vertx, myOptions);
     configRetriever.getConfig(event -> {
@@ -73,11 +75,13 @@ public class WebUIVerticle extends AbstractVerticle {
       try {
         final var serveWebUI = resolveServeWebUI(event.result());
         final var webuiPort = resolveWebuiPort(event.result());
+        final var autoOpenBrowser = resolveAutoOpenBrowser(event.result());
 
         log.info("Writing WebUI configuration to local shared state");
         final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("webui_server");
         map.put("WEBUI_PORT", webuiPort);
         map.put("SERVE_WEBUI", serveWebUI);
+        map.put("AUTO_OPEN_BROWSER", autoOpenBrowser);
 
         if (!serveWebUI) {
           log.info("Not serving WebUI because SERVE_WEBUI=false");
@@ -108,6 +112,9 @@ public class WebUIVerticle extends AbstractVerticle {
         webuiServer.requestHandler(webuiRouter).listen(webuiPort, "0.0.0.0", ar -> {
           if (ar.succeeded()) {
             log.info("WebUI Server started on 0.0.0.0:{}", webuiServer.actualPort());
+            if (autoOpenBrowser) {
+              tryOpenBrowser(webuiServer.actualPort());
+            }
             startPromise.complete();
           } else {
             log.error("Failed to start WebUI server on port {}", webuiPort, ar.cause());
@@ -143,6 +150,26 @@ public class WebUIVerticle extends AbstractVerticle {
       }
     }
     return config.getInteger("WEBUI_PORT", 8080);
+  }
+
+  private boolean resolveAutoOpenBrowser(final @NotNull JsonObject config) {
+    final var systemOverride = System.getProperty("AUTO_OPEN_BROWSER");
+    if (systemOverride != null && !systemOverride.isBlank()) {
+      return Boolean.parseBoolean(systemOverride.trim());
+    }
+    return config.getBoolean("AUTO_OPEN_BROWSER", false);
+  }
+
+  private void tryOpenBrowser(final int port) {
+    try {
+      if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+        log.info("Desktop browsing is not supported on this system, skipping automatic WebUI launch");
+        return;
+      }
+      Desktop.getDesktop().browse(URI.create("http://localhost:" + port + "/"));
+    } catch (final Throwable t) {
+      log.warn("Failed to open WebUI in the default browser", t);
+    }
   }
 
   private @NotNull StaticHandler createWebuiStaticHandler() {

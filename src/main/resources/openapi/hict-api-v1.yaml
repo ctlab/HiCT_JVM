@@ -151,12 +151,26 @@ paths:
   /list_coolers:
     post:
       tags: [Files]
-      summary: List cooler/mcool files in DATA_DIR
+      summary: List convertible matrix files in DATA_DIR (.hic/.cool/.mcool)
       operationId: listCoolers
       requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
       responses:
         '200':
           description: Cooler paths
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+  /list_convertible_matrices:
+    post:
+      tags: [Files]
+      summary: List convertible matrix files in DATA_DIR (.hic/.cool/.mcool)
+      operationId: listConvertibleMatrices
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Convertible matrix paths
           content:
             application/json:
               schema:
@@ -1057,6 +1071,18 @@ paths:
       responses:
         '200':
           description: Stop status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /convert/toolchain:
+    post:
+      tags: [Conversion]
+      summary: Inspect external conversion toolchain availability
+      operationId: getConversionToolchainStatus
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Toolchain status
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }

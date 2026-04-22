@@ -33,6 +33,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.ApiDocsHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
@@ -130,6 +131,7 @@ class ApiHttpIntegrationTest {
   void infoAndFileEndpointsRespondOverHttpWithScheduler() throws Exception {
     Files.createDirectories(tempDataDir.resolve("build/quad"));
     Files.writeString(tempDataDir.resolve("build/quad/a.hict.hdf5"), "x", StandardCharsets.UTF_8);
+    Files.writeString(tempDataDir.resolve("build/quad/source.hic"), "x", StandardCharsets.UTF_8);
     Files.writeString(tempDataDir.resolve("build/quad/b.cool"), "x", StandardCharsets.UTF_8);
     Files.writeString(tempDataDir.resolve("build/quad/c.mcool"), "x", StandardCharsets.UTF_8);
     Files.writeString(tempDataDir.resolve("build/quad/genome.fasta"), ">chr1\nACGT\n", StandardCharsets.UTF_8);
@@ -159,8 +161,20 @@ class ApiHttpIntegrationTest {
 
     final var coolers = post("/list_coolers", "{}");
     assertEquals(200, coolers.statusCode());
+    assertTrue(coolers.body().contains(".hic"));
     assertTrue(coolers.body().contains("b.cool"));
     assertTrue(coolers.body().contains("c.mcool"));
+
+    final var convertibleMatrices = post("/list_convertible_matrices", "{}");
+    assertEquals(200, convertibleMatrices.statusCode());
+    assertTrue(convertibleMatrices.body().contains(".hic"));
+    assertTrue(convertibleMatrices.body().contains("b.cool"));
+    assertTrue(convertibleMatrices.body().contains("c.mcool"));
+
+    final var toolchain = post("/convert/toolchain", "{}");
+    assertEquals(200, toolchain.statusCode());
+    assertTrue(toolchain.body().contains("\"hicConversionAvailable\""));
+    assertTrue(toolchain.body().contains("\"summary\""));
 
     final var fasta = post("/list_fasta_files", "{}");
     assertEquals(200, fasta.statusCode());
@@ -196,6 +210,7 @@ class ApiHttpIntegrationTest {
 
     new InfoHandlersHolder(vertx).addHandlersToRouter(router);
     new FSHandlersHolder(vertx).addHandlersToRouter(router);
+    new ConversionHandlersHolder(vertx).addHandlersToRouter(router);
     new ApiDocsHandlersHolder().addHandlersToRouter(router);
 
     server = vertx.createHttpServer();

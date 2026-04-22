@@ -4,6 +4,9 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -43,6 +46,27 @@ public class ConversionCliLauncher {
     switch (command) {
       case "hict-to-mcool" -> new HictToMcoolConverter().convert(options, stdoutLogger(verbose));
       case "mcool-to-hict" -> new McoolToHictConverter().convert(options, stdoutLogger(verbose));
+      case "hic-to-mcool" -> new HictkConversionPipeline(new ExternalToolchainManager()).convert(
+        ConversionDirection.HIC_TO_MCOOL,
+        options,
+        new ExternalToolchainManager().requireHictkToolchain(),
+        stdoutLogger(verbose),
+        process -> {
+        },
+        () -> false
+      );
+      case "hic-to-hict" -> {
+        HDF5LibraryInitializer.initializeHDF5Library();
+        new HictkConversionPipeline(new ExternalToolchainManager()).convert(
+          ConversionDirection.HIC_TO_HICT,
+          options,
+          new ExternalToolchainManager().requireHictkToolchain(),
+          stdoutLogger(verbose),
+          process -> {
+          },
+          () -> false
+        );
+      }
       default -> throw new IllegalArgumentException("Unknown command: " + command);
     }
   }
@@ -71,6 +95,8 @@ public class ConversionCliLauncher {
     System.out.println("Usage:");
     System.out.println("  hict-to-mcool --input=<in.hict> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--agp=foo.agp --apply-agp] [--parallelism=N] [--verbose]");
     System.out.println("  mcool-to-hict --input=<in.mcool> --output=<out.hict> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
+    System.out.println("  hic-to-mcool --input=<in.hic> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
+    System.out.println("  hic-to-hict --input=<in.hic> --output=<out.hict.hdf5> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
   }
 
   private record ArgParser(String[] args) {
