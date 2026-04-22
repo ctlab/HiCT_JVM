@@ -363,6 +363,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericMap'
+  /visualization/expected_profile:
+    post:
+      tags: [Rendering]
+      summary: Recompute the viewport-shared expected profile used by Expected and O/E display modes
+      operationId: setViewportExpectedProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpectedProfileViewportRequest'
+      responses:
+        '200':
+          description: Status of the cached expected-profile refresh
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericMap'
   /render_pipeline/get:
     post:
       tags: [Rendering]
@@ -1280,6 +1298,15 @@ components:
           type: boolean
           default: false
           description: Leave the active custom render pipeline untouched while updating stored visualization options.
+    ExpectedProfileViewportRequest:
+      type: object
+      required: [bpResolution, startRowPx, endRowPx, startColPx, endColPx]
+      properties:
+        bpResolution: { type: integer, format: int64 }
+        startRowPx: { type: integer, format: int64 }
+        endRowPx: { type: integer, format: int64 }
+        startColPx: { type: integer, format: int64 }
+        endColPx: { type: integer, format: int64 }
     RenderPipelineConfig:
       type: object
       additionalProperties: true

@@ -97,6 +97,11 @@ public class TileVisualizationProcessor {
   }
 
   public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions visualizationOptions) {
+    return processTile(rawTile, visualizationOptions, null);
+  }
+
+  public double @NotNull [][] prepareSignalMatrix(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                                  final @NotNull SimpleVisualizationOptions visualizationOptions) {
     final var input = rawTile.matrix();
     final var rowWeights = rawTile.rowWeights();
     final var columnWeights = rawTile.colWeights();
@@ -108,7 +113,6 @@ public class TileVisualizationProcessor {
     final var resolutionScalingCoeff = resolutionScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
     final var resolutionLinearScalingCoeff = resolutionLinearScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
     final var pre = visualizationOptions.getLnPreLogBase();
-    final var post = visualizationOptions.getLnPostLogBase();
 
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
       final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
@@ -134,12 +138,24 @@ public class TileVisualizationProcessor {
         resultRow[colIndex] = Double.isFinite(signal) ? signal : 0.0d;
       }
     }
+    return baseSignal;
+  }
 
+  public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                     final @NotNull SimpleVisualizationOptions visualizationOptions,
+                                     final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    final var rowWeights = rawTile.rowWeights();
+    final var columnWeights = rawTile.colWeights();
+    final var rowCount = rawTile.matrix().rows();
+    final var columnCount = rawTile.matrix().cols();
+    final var baseSignal = prepareSignalMatrix(rawTile, visualizationOptions);
+    final var post = visualizationOptions.getLnPostLogBase();
     final var transformedSignal = DistanceExpectedNormalizer.transformSignal(
       baseSignal,
       rawTile.startRowIncl(),
       rawTile.startColIncl(),
-      visualizationOptions.getSignalDisplayMode()
+      visualizationOptions.getSignalDisplayMode(),
+      expectedProfile
     );
     if (post > 0) {
       for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
@@ -156,10 +172,16 @@ public class TileVisualizationProcessor {
   }
 
   public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions options) {
+    return visualizeTile(rawTile, options, null);
+  }
+
+  public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                              final @NotNull SimpleVisualizationOptions options,
+                                              final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
     final var input = rawTile.matrix();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
-    final var normalized = processTile(rawTile, options);
+    final var normalized = processTile(rawTile, options, expectedProfile);
     final var colormap = options.getColormap();
     final var boxedARGBValues = Arrays.stream(normalized.values())
       .flatMap(arrayRow ->

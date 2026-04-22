@@ -25,15 +25,51 @@
 package ru.itmo.ctlab.hict.hict_library.visualization;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public final class DistanceExpectedNormalizer {
   private DistanceExpectedNormalizer() {
+  }
+
+  public static @NotNull DiagonalProfile buildProfile(final double @NotNull [][] signal,
+                                                      final long startRowPx,
+                                                      final long startColPx,
+                                                      final int resolutionOrder) {
+    if (signal.length == 0 || signal[0].length == 0) {
+      return new DiagonalProfile(
+        resolutionOrder,
+        startRowPx,
+        startRowPx,
+        startColPx,
+        startColPx,
+        0L,
+        new double[0]
+      );
+    }
+    final var stats = DiagonalStats.fromSignal(signal, startRowPx, startColPx);
+    return new DiagonalProfile(
+      resolutionOrder,
+      startRowPx,
+      startRowPx + signal.length,
+      startColPx,
+      startColPx + signal[0].length,
+      stats.minDiagonal(),
+      stats.means().clone()
+    );
   }
 
   public static double @NotNull [][] transformSignal(final double @NotNull [][] signal,
                                                      final long startRowPx,
                                                      final long startColPx,
                                                      final @NotNull SignalDisplayMode displayMode) {
+    return transformSignal(signal, startRowPx, startColPx, displayMode, null);
+  }
+
+  public static double @NotNull [][] transformSignal(final double @NotNull [][] signal,
+                                                     final long startRowPx,
+                                                     final long startColPx,
+                                                     final @NotNull SignalDisplayMode displayMode,
+                                                     final @Nullable DiagonalProfile profile) {
     if (signal.length == 0 || displayMode == SignalDisplayMode.OBSERVED) {
       return signal;
     }
@@ -43,12 +79,17 @@ public final class DistanceExpectedNormalizer {
       return signal;
     }
 
-    final var diagonalStats = DiagonalStats.fromSignal(signal, startRowPx, startColPx);
+    final var diagonalMeans =
+      profile != null && profile.matchesResolutionWindow(startRowPx, startColPx, rowCount, columnCount)
+        ? profile
+        : DiagonalStats.fromSignal(signal, startRowPx, startColPx).toProfile(-1);
     final var result = new double[rowCount][columnCount];
     for (int row = 0; row < rowCount; row++) {
       for (int col = 0; col < columnCount; col++) {
         final var observed = sanitizeSignal(signal[row][col]);
-        final var expected = diagonalStats.meanFor(row, col);
+        final var expected = diagonalMeans.meanForAbsoluteDiagonal(
+          Math.abs((startColPx + col) - (startRowPx + row))
+        );
         if (displayMode == SignalDisplayMode.EXPECTED) {
           result[row][col] = expected;
         } else {
@@ -67,6 +108,33 @@ public final class DistanceExpectedNormalizer {
       return 0.0d;
     }
     return rawValue;
+  }
+
+  public record DiagonalProfile(int resolutionOrder,
+                                long startRowPx,
+                                long endRowPx,
+                                long startColPx,
+                                long endColPx,
+                                long minDiagonal,
+                                double[] means) {
+    public boolean matchesResolutionWindow(final long queryStartRowPx,
+                                           final long queryStartColPx,
+                                           final int rowCount,
+                                           final int columnCount) {
+      return this.means.length > 0
+        && queryStartRowPx >= this.startRowPx
+        && queryStartColPx >= this.startColPx
+        && (queryStartRowPx + rowCount) <= this.endRowPx
+        && (queryStartColPx + columnCount) <= this.endColPx;
+    }
+
+    public double meanForAbsoluteDiagonal(final long absoluteDiagonal) {
+      final int diagonalIndex = (int) (absoluteDiagonal - this.minDiagonal);
+      if (diagonalIndex < 0 || diagonalIndex >= this.means.length) {
+        return 0.0d;
+      }
+      return this.means[diagonalIndex];
+    }
   }
 
   private record DiagonalStats(long minDiagonal, long startRowPx, long startColPx, double[] means) {
@@ -109,13 +177,16 @@ public final class DistanceExpectedNormalizer {
       return new DiagonalStats(minDiagonal, startRowPx, startColPx, means);
     }
 
-    private double meanFor(final int row, final int col) {
-      final long diagonal = Math.abs((this.startColPx + col) - (this.startRowPx + row));
-      final int diagonalIndex = (int) (diagonal - this.minDiagonal);
-      if (diagonalIndex < 0 || diagonalIndex >= this.means.length) {
-        return 0.0d;
-      }
-      return this.means[diagonalIndex];
+    private @NotNull DiagonalProfile toProfile(final int resolutionOrder) {
+      return new DiagonalProfile(
+        resolutionOrder,
+        this.startRowPx,
+        Long.MAX_VALUE,
+        this.startColPx,
+        Long.MAX_VALUE,
+        this.minDiagonal,
+        this.means.clone()
+      );
     }
   }
 }

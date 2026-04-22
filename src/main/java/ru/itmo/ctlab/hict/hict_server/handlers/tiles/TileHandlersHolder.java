@@ -38,6 +38,8 @@ import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
+import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.VisualizationOptionsDTO;
@@ -64,6 +66,7 @@ import java.util.stream.IntStream;
 @Slf4j
 public class TileHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private static final String EXPECTED_PROFILE_LOCAL_MAP_KEY = "ViewportExpectedProfile";
   private static final String TRANSPARENT_PNG_BASE64 =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z3ioAAAAASUVORK5CYII=";
   private static final byte[] TRANSPARENT_PNG_BYTES = Base64.getDecoder().decode(TRANSPARENT_PNG_BASE64);
@@ -90,6 +93,9 @@ public class TileHandlersHolder extends HandlersHolder {
           log.debug("Got map");
           final var optionsEntity = request.toEntity();
           map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(optionsEntity));
+          if (optionsEntity.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
+            map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+          }
           if (!preserveRenderPipeline) {
             final var previousPipelineWrapper =
               (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
@@ -161,6 +167,86 @@ public class TileHandlersHolder extends HandlersHolder {
           .putHeader("content-type", "application/json")
           .setStatusCode(200)
           .end(Json.encode(responseDto))
+      );
+    });
+
+    router.post("/visualization/expected_profile").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      final @NotNull var requestJSON = ctx.body().asJsonObject();
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.UI_UX,
+        null,
+        () -> {
+          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var chunkedFileWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
+          if (chunkedFileWrapper == null) {
+            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+          }
+          final var visualizationOptionsWrapper =
+            (ShareableWrappers.SimpleVisualizationOptionsWrapper) map.get("visualizationOptions");
+          if (visualizationOptionsWrapper == null) {
+            throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
+          }
+          final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
+          if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
+            map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+            return new JsonObject().put("status", "cleared");
+          }
+
+          final var bpResolution = requestJSON.getLong("bpResolution");
+          if (bpResolution == null || bpResolution <= 0L) {
+            throw new IllegalArgumentException("Field 'bpResolution' must be a positive integer");
+          }
+          final var startRowPx = requestJSON.getLong("startRowPx");
+          final var endRowPx = requestJSON.getLong("endRowPx");
+          final var startColPx = requestJSON.getLong("startColPx");
+          final var endColPx = requestJSON.getLong("endColPx");
+          if (startRowPx == null || endRowPx == null || startColPx == null || endColPx == null) {
+            throw new IllegalArgumentException("Viewport expected profile request must include start/end pixel coordinates");
+          }
+          if (endRowPx <= startRowPx || endColPx <= startColPx) {
+            throw new IllegalArgumentException("Viewport expected profile bounds must define a positive area");
+          }
+
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
+          if (resolutionOrder == null) {
+            throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
+          }
+          final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
+          final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
+            resolutionDescriptor,
+            startRowPx,
+            startColPx,
+            endRowPx,
+            endColPx,
+            true
+          );
+          final var baseSignal = chunkedFile.tileVisualizationProcessor().prepareSignalMatrix(matrixWithWeights, options);
+          final var profile = DistanceExpectedNormalizer.buildProfile(
+            baseSignal,
+            matrixWithWeights.startRowIncl(),
+            matrixWithWeights.startColIncl(),
+            resolutionOrder
+          );
+          map.put(
+            EXPECTED_PROFILE_LOCAL_MAP_KEY,
+            new ShareableWrappers.DiagonalExpectedProfileWrapper(profile)
+          );
+          return new JsonObject()
+            .put("status", "ok")
+            .put("resolutionOrder", resolutionOrder)
+            .put("minDiagonal", profile.minDiagonal())
+            .put("diagonalCount", profile.means().length);
+        },
+        response -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .setStatusCode(200)
+          .end(response.encode())
       );
     });
 
@@ -434,6 +520,7 @@ public class TileHandlersHolder extends HandlersHolder {
     );
     final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
     final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
+    final var expectedProfile = resolveExpectedProfile(map, ResolutionDescriptor.fromResolutionOrder(level));
 
     final BufferedImage image;
     if (renderPipelineConfig.enabled()) {
@@ -453,10 +540,11 @@ public class TileHandlersHolder extends HandlersHolder {
         matrixWithWeights,
         secondaryMatrixWithWeights,
         options,
-        renderPipelineConfig.swapUpperLower()
+        renderPipelineConfig.swapUpperLower(),
+        expectedProfile
       );
     } else {
-      image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options);
+      image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options, expectedProfile);
     }
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
@@ -554,6 +642,7 @@ public class TileHandlersHolder extends HandlersHolder {
       throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
     }
     final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
+    final var expectedProfile = resolveExpectedProfile(map, resolutionDescriptor);
 
     final var units = parseUnits(request.getString("unit", request.getString("units", "PIXELS")));
     final var startRowInUnits = resolveRangeStart(request, Axis.ROW, units);
@@ -616,7 +705,8 @@ public class TileHandlersHolder extends HandlersHolder {
     switch (signalMode) {
       case RAW_COUNTS -> signalMatrix = null;
       case COOLER_WEIGHTED -> signalMatrix = computeCoolerWeightedSignal(rawMatrix, matrixWithWeights.rowWeights(), matrixWithWeights.colWeights());
-      case TRADITIONAL_NORMALIZED -> signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options).values();
+      case TRADITIONAL_NORMALIZED ->
+        signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options, expectedProfile).values();
       case PIPELINE_SIGNAL -> {
         if ("SECONDARY".equals(requestedSource)) {
           throw new IllegalArgumentException("PIPELINE_SIGNAL queries are supported only for the primary source");
@@ -731,6 +821,21 @@ public class TileHandlersHolder extends HandlersHolder {
       }
     }
     return result;
+  }
+
+  private @Nullable DistanceExpectedNormalizer.DiagonalProfile resolveExpectedProfile(
+    final @NotNull LocalMap<String, Object> map,
+    final @NotNull ResolutionDescriptor resolutionDescriptor
+  ) {
+    final var wrapper =
+      (ShareableWrappers.DiagonalExpectedProfileWrapper) map.get(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+    if (wrapper == null) {
+      return null;
+    }
+    final var profile = wrapper.getDiagonalProfile();
+    return profile.resolutionOrder() == resolutionDescriptor.getResolutionOrderInArray()
+      ? profile
+      : null;
   }
 
   private double[][] computePipelineSignalMatrix(final @NotNull ChunkedFile primaryChunkedFile,
@@ -1206,9 +1311,10 @@ public class TileHandlersHolder extends HandlersHolder {
                                                                  final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights primaryMatrixWithWeights,
                                                                  final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights secondaryMatrixWithWeights,
                                                                  final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
-                                                                 final boolean swapUpperLower) {
-    final var primaryImage = primaryChunkedFile.tileVisualizationProcessor().visualizeTile(primaryMatrixWithWeights, options);
-    final var secondaryImage = secondaryChunkedFile.tileVisualizationProcessor().visualizeTile(secondaryMatrixWithWeights, options);
+                                                                 final boolean swapUpperLower,
+                                                                 final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    final var primaryImage = primaryChunkedFile.tileVisualizationProcessor().visualizeTile(primaryMatrixWithWeights, options, expectedProfile);
+    final var secondaryImage = secondaryChunkedFile.tileVisualizationProcessor().visualizeTile(secondaryMatrixWithWeights, options, expectedProfile);
     final var rowCount = primaryImage.getHeight();
     final var columnCount = primaryImage.getWidth();
     final var result = new BufferedImage(columnCount, rowCount, BufferedImage.TYPE_INT_ARGB);
