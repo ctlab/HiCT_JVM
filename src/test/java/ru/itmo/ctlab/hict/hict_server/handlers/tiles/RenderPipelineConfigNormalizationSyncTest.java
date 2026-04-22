@@ -26,6 +26,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
+import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
@@ -43,12 +44,33 @@ class RenderPipelineConfigNormalizationSyncTest {
     final boolean resolutionScaling,
     final boolean resolutionLinearScaling
   ) {
+    return buildOptions(
+      preLogBase,
+      postLogBase,
+      applyCoolerWeights,
+      resolutionScaling,
+      resolutionLinearScaling,
+      SignalDisplayMode.OBSERVED
+    );
+  }
+
+  private static SimpleVisualizationOptions buildOptions(
+    final double preLogBase,
+    final double postLogBase,
+    final boolean applyCoolerWeights,
+    final boolean resolutionScaling,
+    final boolean resolutionLinearScaling,
+    final SignalDisplayMode signalDisplayMode
+  ) {
     return new SimpleVisualizationOptions(
       preLogBase,
       postLogBase,
       applyCoolerWeights,
       resolutionScaling,
       resolutionLinearScaling,
+      false,
+      0.995d,
+      signalDisplayMode,
       new SimpleLinearGradient(
         32,
         new Color(0, 0, 0, 0),
@@ -114,6 +136,13 @@ class RenderPipelineConfigNormalizationSyncTest {
     ctx.resolutionLinearScalingCoeff = 0.456d;
     assertEquals(1.0d, config.evaluate(true, ctx), 1e-12);
     assertEquals(1.0d, config.evaluate(false, ctx), 1e-12);
+  }
+
+  @Test
+  void fromVisualizationOptions_expectedModeFallsBackToStandardRenderer() {
+    final var options = buildOptions(10.0d, 2.0d, true, true, true, SignalDisplayMode.EXPECTED);
+    final var config = RenderPipelineConfig.fromVisualizationOptions(options, true, false);
+    assertFalse(config.enabled());
   }
 
   private static boolean containsNodeType(final JsonObject root, final String expectedType) {

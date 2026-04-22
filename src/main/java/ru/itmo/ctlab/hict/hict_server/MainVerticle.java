@@ -272,6 +272,8 @@ public class MainVerticle extends AbstractVerticle {
       false,
       false,
       false,
+      false,
+      0.995d,
       new SimpleLinearGradient(
         32,
         new Color(255, 255, 255, 0),

@@ -29,6 +29,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
@@ -71,5 +72,11 @@ public class ShareableWrappers {
   @RequiredArgsConstructor
   public static class RenderPipelineConfigWrapper implements Shareable {
     private final @NotNull RenderPipelineConfig renderPipelineConfig;
+  }
+
+  @Getter
+  @RequiredArgsConstructor
+  public static class DiagonalExpectedProfileWrapper implements Shareable {
+    private final @NotNull DistanceExpectedNormalizer.DiagonalProfile diagonalProfile;
   }
 }

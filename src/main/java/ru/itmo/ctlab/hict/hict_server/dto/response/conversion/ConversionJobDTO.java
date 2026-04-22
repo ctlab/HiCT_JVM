@@ -10,6 +10,10 @@ public record ConversionJobDTO(
   @NotNull String sourceFilename,
   @NotNull String outputFilename,
   @NotNull String direction,
+  @NotNull String currentStage,
+  @NotNull String currentStageLabel,
+  @NotNull String stageDetail,
+  double stageProgress,
   double overallProgress,
   double resolutionProgress,
   long currentResolution,
@@ -19,6 +23,10 @@ public record ConversionJobDTO(
   long resolutionEtaMillis,
   long inputSizeBytes,
   long outputSizeBytes,
+  @NotNull String toolchainSource,
+  @NotNull String toolchainSummary,
+  @NotNull List<@NotNull String> toolchainNotices,
+  @NotNull List<@NotNull String> toolchainCitations,
   @NotNull List<@NotNull String> logs,
   @NotNull String error
 ) {

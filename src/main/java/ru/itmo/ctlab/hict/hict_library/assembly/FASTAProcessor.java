@@ -271,9 +271,30 @@ public class FASTAProcessor {
                                          final long fromBpY,
                                          final long toBpX,
                                          final long toBpY) {
-    final var sequences = readSequenceContents(fastaPath);
     final long selectionStart = Math.max(0L, Math.min(Math.min(fromBpX, fromBpY), Math.min(toBpX, toBpY)));
     final long selectionEnd = Math.max(selectionStart + 1L, Math.max(Math.max(fromBpX, fromBpY), Math.max(toBpX, toBpY)));
+    return exportInterval(
+      fastaPath,
+      selectionStart,
+      selectionEnd,
+      String.format(Locale.ROOT, "selection_%d_%d", selectionStart, selectionEnd)
+    );
+  }
+
+  public @NotNull String exportInterval(final @NotNull Path fastaPath,
+                                        final long fromBp,
+                                        final long toBp,
+                                        final @NotNull String recordName) {
+    final var sequences = readSequenceContents(fastaPath);
+    final long selectionStart = Math.max(0L, Math.min(fromBp, toBp));
+    final long selectionEnd = Math.max(selectionStart + 1L, Math.max(fromBp, toBp));
+    final var sequence = buildAssemblySlice(sequences, selectionStart, selectionEnd);
+    return renderRecords(List.of(new FASTARecord(recordName, sequence)));
+  }
+
+  private @NotNull String buildAssemblySlice(final @NotNull Map<String, String> sequences,
+                                             final long selectionStart,
+                                             final long selectionEnd) {
     final var builder = new StringBuilder();
     long assemblyPosition = 0L;
     for (final var contig : this.chunkedFile.getAssemblyInfo().contigs()) {
@@ -294,10 +315,7 @@ public class FASTAProcessor {
     if (builder.isEmpty()) {
       throw new IllegalArgumentException("Selected region does not intersect the current assembly");
     }
-    return renderRecords(List.of(new FASTARecord(
-      String.format(Locale.ROOT, "selection_%d_%d", selectionStart, selectionEnd),
-      builder.toString()
-    )));
+    return builder.toString();
   }
 
   private @NotNull List<AssemblyContigEntry> currentAssemblyEntries() {

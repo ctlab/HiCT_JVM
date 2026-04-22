@@ -97,63 +97,161 @@ public class TileVisualizationProcessor {
   }
 
   public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions visualizationOptions) {
+    return processTile(rawTile, visualizationOptions, null);
+  }
+
+  public double @NotNull [][] prepareSignalMatrix(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                                  final @NotNull SimpleVisualizationOptions visualizationOptions) {
     final var input = rawTile.matrix();
     final var rowWeights = rawTile.rowWeights();
     final var columnWeights = rawTile.colWeights();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
-    final var result = new double[rowCount][columnCount];
+    final var baseSignal = new double[rowCount][columnCount];
     final var resolutionScalingCoeffs = this.chunkedFile.getResolutionScalingCoefficient();
     final var resolutionLinearScalingCoeffs = this.chunkedFile.getResolutionLinearScalingCoefficient();
     final var resolutionScalingCoeff = resolutionScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
     final var resolutionLinearScalingCoeff = resolutionLinearScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
+    final var pre = visualizationOptions.getLnPreLogBase();
 
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-      final DoubleStream startStream;
-      if (input instanceof MatrixQueries.DoubleMatrix doubleMatrix) {
-        startStream = Arrays.stream(doubleMatrix.values()[rowIndex]).parallel();
-      } else if (input instanceof MatrixQueries.LongMatrix longMatrix) {
-        startStream = Arrays.stream(longMatrix.values()[rowIndex]).parallel().mapToDouble(value -> value);
-      } else {
-        throw new IllegalStateException("Unsupported raw matrix type: " + input.getClass().getName());
-      }
       final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
-
-      final var pre = visualizationOptions.getLnPreLogBase();
-      final var post = visualizationOptions.getLnPostLogBase();
-
-      DoubleStream doubleStream = startStream;
-
-      if (pre > 0) {
-        doubleStream = doubleStream.map(signal -> Math.log1p(signal) / pre);
+      final var resultRow = baseSignal[rowIndex];
+      for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
+        var signal = input.getAsDouble(rowIndex, colIndex);
+        if (!Double.isFinite(signal) || signal < 0.0d) {
+          signal = 0.0d;
+        }
+        if (pre > 0) {
+          signal = Math.log1p(signal) / pre;
+        }
+        if (visualizationOptions.isResolutionScaling()) {
+          signal *= resolutionScalingCoeff;
+        }
+        if (visualizationOptions.isResolutionLinearScaling()) {
+          signal *= resolutionLinearScalingCoeff;
+        }
+        if (visualizationOptions.isApplyCoolerWeights()) {
+          final var columnWeight = (columnWeights != null && colIndex < columnWeights.length) ? columnWeights[colIndex] : 1.0d;
+          signal *= rowWeight * columnWeight;
+        }
+        resultRow[colIndex] = Double.isFinite(signal) ? signal : 0.0d;
       }
-
-      if (visualizationOptions.isResolutionScaling()) {
-        doubleStream = doubleStream.map(signal -> signal * resolutionScalingCoeff);
-      }
-
-      if (visualizationOptions.isResolutionLinearScaling()) {
-        doubleStream = doubleStream.map(signal -> signal * resolutionLinearScalingCoeff);
-      }
-
-      if (visualizationOptions.isApplyCoolerWeights()) {
-        doubleStream = applyCoolerWeightsToRow(doubleStream, rowWeight, columnWeights);
-      }
-
-      if (post > 0) {
-        doubleStream = doubleStream.map(signal -> Math.log1p(signal) / post);
-      }
-
-      result[rowIndex] = doubleStream.toArray();
     }
-    return new TileWithWeights(result, rowWeights, columnWeights);
+    return baseSignal;
+  }
+
+  public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                     final @NotNull SimpleVisualizationOptions visualizationOptions,
+                                     final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    final var rowWeights = rawTile.rowWeights();
+    final var columnWeights = rawTile.colWeights();
+    final var rowCount = rawTile.matrix().rows();
+    final var columnCount = rawTile.matrix().cols();
+    final var baseSignal = prepareSignalMatrix(rawTile, visualizationOptions);
+    final var post = visualizationOptions.getLnPostLogBase();
+    final var validRowCount = resolveActualLength(
+      rawTile.startRowIncl(),
+      rawTile.endRowExcl(),
+      rowCount
+    );
+    final var validColumnCount = resolveActualLength(
+      rawTile.startColIncl(),
+      rawTile.endColExcl(),
+      columnCount
+    );
+    final double[][] transformedSignal;
+    if (validRowCount == rowCount && validColumnCount == columnCount) {
+      transformedSignal = DistanceExpectedNormalizer.transformSignal(
+        baseSignal,
+        rawTile.startRowIncl(),
+        rawTile.startColIncl(),
+        visualizationOptions.getSignalDisplayMode(),
+        expectedProfile
+      );
+    } else {
+      final var croppedSignal = cropTopLeftWindow(
+        baseSignal,
+        validRowCount,
+        validColumnCount
+      );
+      final var transformedCroppedSignal = DistanceExpectedNormalizer.transformSignal(
+        croppedSignal,
+        rawTile.startRowIncl(),
+        rawTile.startColIncl(),
+        visualizationOptions.getSignalDisplayMode(),
+        expectedProfile
+      );
+      transformedSignal = restoreTopLeftWindow(
+        transformedCroppedSignal,
+        rowCount,
+        columnCount
+      );
+    }
+    if (post > 0) {
+      for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        final var row = transformedSignal[rowIndex];
+        for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
+          final var value = row[colIndex];
+          row[colIndex] = Double.isFinite(value) && value > 0.0d
+            ? (Math.log1p(value) / post)
+            : 0.0d;
+        }
+      }
+    }
+    return new TileWithWeights(transformedSignal, rowWeights, columnWeights);
+  }
+
+  static int resolveActualLength(final long startIncl,
+                                 final long endExcl,
+                                 final int paddedLength) {
+    final var actualLength = Math.max(0L, endExcl - startIncl);
+    return (int) Math.max(0L, Math.min(actualLength, paddedLength));
+  }
+
+  static double[][] cropTopLeftWindow(final double[][] source,
+                                      final int rowCount,
+                                      final int columnCount) {
+    final var safeRowCount = Math.max(0, Math.min(rowCount, source.length));
+    final var result = new double[safeRowCount][columnCount];
+    for (int rowIndex = 0; rowIndex < safeRowCount; rowIndex++) {
+      final var sourceRow = source[rowIndex];
+      final var safeColumnCount = Math.max(
+        0,
+        Math.min(columnCount, sourceRow.length)
+      );
+      System.arraycopy(sourceRow, 0, result[rowIndex], 0, safeColumnCount);
+    }
+    return result;
+  }
+
+  static double[][] restoreTopLeftWindow(final double[][] source,
+                                         final int rowCount,
+                                         final int columnCount) {
+    final var result = new double[rowCount][columnCount];
+    final var safeRowCount = Math.max(0, Math.min(rowCount, source.length));
+    for (int rowIndex = 0; rowIndex < safeRowCount; rowIndex++) {
+      final var sourceRow = source[rowIndex];
+      final var safeColumnCount = Math.max(
+        0,
+        Math.min(columnCount, sourceRow.length)
+      );
+      System.arraycopy(sourceRow, 0, result[rowIndex], 0, safeColumnCount);
+    }
+    return result;
   }
 
   public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile, final @NotNull SimpleVisualizationOptions options) {
+    return visualizeTile(rawTile, options, null);
+  }
+
+  public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                              final @NotNull SimpleVisualizationOptions options,
+                                              final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
     final var input = rawTile.matrix();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
-    final var normalized = processTile(rawTile, options);
+    final var normalized = processTile(rawTile, options, expectedProfile);
     final var colormap = options.getColormap();
     final var boxedARGBValues = Arrays.stream(normalized.values())
       .flatMap(arrayRow ->

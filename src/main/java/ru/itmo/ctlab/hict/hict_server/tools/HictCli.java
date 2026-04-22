@@ -4,11 +4,13 @@ import io.vertx.core.Launcher;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 import ru.itmo.ctlab.hict.hict_server.MainVerticle;
 
 import java.nio.file.Path;
@@ -43,7 +45,9 @@ public class HictCli implements Runnable {
       .setCaseInsensitiveEnumValuesAllowed(true);
 
     if (args.length == 0) {
-      CommandLine.usage(commandLine.getCommand(), System.out);
+      if (System.getProperty("AUTO_OPEN_BROWSER") == null) {
+        System.setProperty("AUTO_OPEN_BROWSER", "true");
+      }
       commandLine.execute("start-server");
       return;
     }
@@ -99,7 +103,9 @@ public class HictCli implements Runnable {
     description = "Run file converters.",
     subcommands = {
       HictCli.HictToMcool.class,
-      HictCli.McoolToHict.class
+      HictCli.McoolToHict.class,
+      HictCli.HicToMcool.class,
+      HictCli.HicToHict.class
     }
   )
   static class Convert implements Runnable {
@@ -185,6 +191,10 @@ public class HictCli implements Runnable {
     void initializeHdf5() {
       HDF5LibraryInitializer.initializeHDF5Library();
     }
+
+    HictkConversionPipeline hictkPipeline() {
+      return new HictkConversionPipeline(new ExternalToolchainManager());
+    }
   }
 
   @Command(
@@ -217,6 +227,53 @@ public class HictCli implements Runnable {
     public Integer call() throws Exception {
       initializeHdf5();
       new McoolToHictConverter().convert(toOptions(ConversionOptions.NO_AGP, false), stdoutLogger());
+      return 0;
+    }
+  }
+
+  @Command(
+    name = "hic-to-mcool",
+    mixinStandardHelpOptions = true,
+    description = "Convert .hic to balanced .mcool through the external hictk pipeline."
+  )
+  static class HicToMcool extends BaseConvert {
+    @Override
+    public Integer call() throws Exception {
+      final var pipeline = hictkPipeline();
+      final var toolchain = pipeline.requireToolchain();
+      pipeline.convert(
+        ConversionDirection.HIC_TO_MCOOL,
+        toOptions(ConversionOptions.NO_AGP, false),
+        toolchain,
+        stdoutLogger(),
+        process -> {
+        },
+        () -> false
+      );
+      return 0;
+    }
+  }
+
+  @Command(
+    name = "hic-to-hict",
+    mixinStandardHelpOptions = true,
+    description = "Convert .hic to .hict.hdf5 through the external hictk pipeline."
+  )
+  static class HicToHict extends BaseConvert {
+    @Override
+    public Integer call() throws Exception {
+      initializeHdf5();
+      final var pipeline = hictkPipeline();
+      final var toolchain = pipeline.requireToolchain();
+      pipeline.convert(
+        ConversionDirection.HIC_TO_HICT,
+        toOptions(ConversionOptions.NO_AGP, false),
+        toolchain,
+        stdoutLogger(),
+        process -> {
+        },
+        () -> false
+      );
       return 0;
     }
   }

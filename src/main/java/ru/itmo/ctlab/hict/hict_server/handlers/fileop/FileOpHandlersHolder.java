@@ -64,6 +64,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
   private static final String ASSEMBLY_SOURCE_KEY = "assemblyInfoSource";
   private static final String ASSEMBLY_SOURCE_PRIMARY = "PRIMARY";
   private static final String ASSEMBLY_SOURCE_SECONDARY = "SECONDARY";
+  private static final String PRIMARY_FASTA_PATH_KEY = "linkedFastaPrimaryPath";
+  private static final String PRIMARY_FASTA_FILENAME_KEY = "linkedFastaPrimaryFilename";
+  private static final String SECONDARY_FASTA_PATH_KEY = "linkedFastaSecondaryPath";
+  private static final String SECONDARY_FASTA_FILENAME_KEY = "linkedFastaSecondaryFilename";
   private record JsonRouteResult(int statusCode, @NotNull io.vertx.core.json.JsonObject payload) {}
 
   @Override
@@ -115,6 +119,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           map.remove("linkedFastaPath");
           map.remove("linkedFastaFilename");
+          map.remove(PRIMARY_FASTA_PATH_KEY);
+          map.remove(PRIMARY_FASTA_FILENAME_KEY);
+          map.remove(SECONDARY_FASTA_PATH_KEY);
+          map.remove(SECONDARY_FASTA_FILENAME_KEY);
 
           map.put("openProgress", new io.vertx.core.json.JsonObject()
             .put("stage", "starting")
@@ -376,7 +384,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
             200,
             new io.vertx.core.json.JsonObject()
               .put("filename", filename)
-              .put("fastaFilename", map.getOrDefault("linkedFastaFilename", ""))
+              .put("fastaFilename", map.getOrDefault("linkedFastaFilename", map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, "")))
               .put("secondarySource", secondaryStatus)
               .put("openFileResponse", generateOpenFileResponse(chunkedFile))
           );
@@ -417,6 +425,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.remove("openedFilename");
           map.remove("linkedFastaPath");
           map.remove("linkedFastaFilename");
+          map.remove(PRIMARY_FASTA_PATH_KEY);
+          map.remove(PRIMARY_FASTA_FILENAME_KEY);
+          map.remove(SECONDARY_FASTA_PATH_KEY);
+          map.remove(SECONDARY_FASTA_FILENAME_KEY);
           final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.remove("Track1DManager");
           if (trackManagerWrapper != null) {
             trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
@@ -456,8 +468,24 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var requestJSON = ctx.body().asJsonObject();
           final var fastaFilename = requestJSON.getString("fastaFilename");
           final boolean allowMismatch = requestJSON.getBoolean("allowMismatch", false);
+          final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
+            .trim()
+            .toUpperCase();
           if (fastaFilename == null || fastaFilename.isBlank()) {
             throw new IllegalArgumentException("FASTA filename is required");
+          }
+          final ChunkedFile targetChunkedFile;
+          final String normalizedSource;
+          if (ASSEMBLY_SOURCE_SECONDARY.equals(requestedSource)) {
+            final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+            if (secondaryWrapper == null) {
+              throw new IllegalStateException("Attach a secondary source before linking a secondary FASTA");
+            }
+            targetChunkedFile = secondaryWrapper.getChunkedFile();
+            normalizedSource = ASSEMBLY_SOURCE_SECONDARY;
+          } else {
+            targetChunkedFile = chunkedFileWrapper.getChunkedFile();
+            normalizedSource = ASSEMBLY_SOURCE_PRIMARY;
           }
 
           final Path fastaPath = dataDirectoryWrapper.getPath().resolve(fastaFilename).normalize().toAbsolutePath();
@@ -468,16 +496,23 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw new IllegalArgumentException("FASTA file " + fastaFilename + " does not exist");
           }
 
-          final var report = chunkedFileWrapper.getChunkedFile().getFastaProcessor().analyzeLinkCandidate(fastaPath);
+          final var report = targetChunkedFile.getFastaProcessor().analyzeLinkCandidate(fastaPath);
           final boolean requiresConfirmation = report.hasWarnings() && !allowMismatch;
           if (!requiresConfirmation) {
-            map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
-            map.put("linkedFastaFilename", fastaFilename);
-            final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-            if (trackManagerWrapper != null) {
-              trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(
-                chunkedFileWrapper.getChunkedFile().getFastaProcessor().buildSourceNameAliases(fastaPath)
-              );
+            if (ASSEMBLY_SOURCE_SECONDARY.equals(normalizedSource)) {
+              map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
+              map.put(SECONDARY_FASTA_FILENAME_KEY, fastaFilename);
+            } else {
+              map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
+              map.put("linkedFastaFilename", fastaFilename);
+              map.put(PRIMARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
+              map.put(PRIMARY_FASTA_FILENAME_KEY, fastaFilename);
+              final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+              if (trackManagerWrapper != null) {
+                trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(
+                  chunkedFileWrapper.getChunkedFile().getFastaProcessor().buildSourceNameAliases(fastaPath)
+                );
+              }
             }
           }
           return FastaLinkResponseDTO.fromReport(report, !requiresConfirmation, requiresConfirmation);
@@ -499,11 +534,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
         RequestTaskScheduler.CancellationDomain.EXPORT,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-          if (chunkedFileWrapper == null) {
-            throw new IllegalStateException("Open a Hi-C file before exporting FASTA");
-          }
-          final var fastaPathWrapper = (ShareableWrappers.PathWrapper) map.get("linkedFastaPath");
+          final var source = String.valueOf(
+            ctx.body() != null && ctx.body().asJsonObject() != null
+              ? ctx.body().asJsonObject().getString("source", String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))
+              : map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)
+          ).trim().toUpperCase();
+          final var chunkedFileWrapper = resolveChunkedFileWrapperBySource(map, source);
+          final var fastaPathWrapper = resolveFastaPathWrapperBySource(map, source);
           if (fastaPathWrapper == null) {
             throw new IllegalStateException("Link a FASTA file before exporting FASTA");
           }
@@ -540,21 +577,65 @@ public class FileOpHandlersHolder extends HandlersHolder {
         RequestTaskScheduler.CancellationDomain.EXPORT,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-          if (chunkedFileWrapper == null) {
-            throw new IllegalStateException("Open a Hi-C file before exporting FASTA");
-          }
-          final var fastaPathWrapper = (ShareableWrappers.PathWrapper) map.get("linkedFastaPath");
-          if (fastaPathWrapper == null) {
+          final var horizontalSource = String.valueOf(requestJSON.getString("horizontalSource", ASSEMBLY_SOURCE_PRIMARY))
+            .trim()
+            .toUpperCase();
+          final var verticalSource = String.valueOf(
+            requestJSON.getString("verticalSource", horizontalSource)
+          ).trim().toUpperCase();
+          final var explicitAxisSources =
+            requestJSON.containsKey("horizontalSource") || requestJSON.containsKey("verticalSource");
+
+          final var horizontalChunkedFileWrapper = resolveChunkedFileWrapperBySource(map, horizontalSource);
+          final var horizontalFastaPathWrapper = resolveFastaPathWrapperBySource(map, horizontalSource);
+          if (horizontalFastaPathWrapper == null) {
             throw new IllegalStateException("Link a FASTA file before exporting FASTA");
           }
-          return chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportSelection(
-            fastaPathWrapper.getPath(),
-            fromBpX,
-            fromBpY,
-            toBpX,
-            toBpY
+          if (!explicitAxisSources) {
+            return horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportSelection(
+              horizontalFastaPathWrapper.getPath(),
+              fromBpX,
+              fromBpY,
+              toBpX,
+              toBpY
+            );
+          }
+
+          final long horizontalStart = Math.min(fromBpX, toBpX);
+          final long horizontalEnd = Math.max(fromBpX, toBpX);
+          final long verticalStart = Math.min(fromBpY, toBpY);
+          final long verticalEnd = Math.max(fromBpY, toBpY);
+          if (
+            Objects.equals(horizontalSource, verticalSource) &&
+              horizontalStart == verticalStart &&
+              horizontalEnd == verticalEnd
+          ) {
+            return horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportInterval(
+              horizontalFastaPathWrapper.getPath(),
+              horizontalStart,
+              horizontalEnd,
+              String.format("selection_%d_%d", horizontalStart, horizontalEnd)
+            );
+          }
+
+          final var verticalChunkedFileWrapper = resolveChunkedFileWrapperBySource(map, verticalSource);
+          final var verticalFastaPathWrapper = resolveFastaPathWrapperBySource(map, verticalSource);
+          if (verticalFastaPathWrapper == null) {
+            throw new IllegalStateException("Link a FASTA file for the vertical source before exporting FASTA");
+          }
+          final var horizontalFasta = horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportInterval(
+            horizontalFastaPathWrapper.getPath(),
+            horizontalStart,
+            horizontalEnd,
+            String.format("selection_horizontal_%d_%d_%s", horizontalStart, horizontalEnd, horizontalSource.toLowerCase())
           );
+          final var verticalFasta = verticalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportInterval(
+            verticalFastaPathWrapper.getPath(),
+            verticalStart,
+            verticalEnd,
+            String.format("selection_vertical_%d_%d_%s", verticalStart, verticalEnd, verticalSource.toLowerCase())
+          );
+          return horizontalFasta + verticalFasta;
         },
         fasta -> ctx.response()
           .setChunked(true)
@@ -618,6 +699,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final @NotNull var requestBody = ctx.body();
           final @NotNull var requestJSON = requestBody.asJsonObject();
           final var agpFilename = Objects.requireNonNull(requestJSON.getString("agpFilename"), "AGP filename must be provided to load it.");
+          final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
+            .trim()
+            .toUpperCase();
+          final ShareableWrappers.ChunkedFileWrapper targetWrapper =
+            resolveChunkedFileWrapperBySource(map, requestedSource);
+          final var targetChunkedFile = targetWrapper.getChunkedFile();
 
           final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
           if (dataDirectoryWrapper == null) {
@@ -626,7 +713,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var dataDirectory = dataDirectoryWrapper.getPath();
           final var agpFile = Path.of(dataDirectory.toString(), agpFilename);
           try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
-            chunkedFile.importAGP(reader);
+            targetChunkedFile.importAGP(reader);
           } catch (IOException | NoSuchFieldException e) {
             throw new RuntimeException(e);
           }
@@ -638,7 +725,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (trackManagerWrapper != null) {
             trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
           }
-          return AssemblyInfoDTO.generateFromChunkedFile(chunkedFile);
+          return AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile);
         },
         response -> ctx.response().end(Json.encode(response))
       );
@@ -654,6 +741,35 @@ public class FileOpHandlersHolder extends HandlersHolder {
     } catch (final Exception ignored) {
       // no-op
     }
+  }
+
+  private static @NotNull ShareableWrappers.ChunkedFileWrapper resolveChunkedFileWrapperBySource(final @NotNull LocalMap<String, Object> map,
+                                                                                                  final @NotNull String source) {
+    final ShareableWrappers.ChunkedFileWrapper wrapper;
+    if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(source)) {
+      wrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+      if (wrapper == null) {
+        throw new IllegalStateException("Secondary source is not attached");
+      }
+    } else {
+      wrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+      if (wrapper == null) {
+        throw new IllegalStateException("Open a Hi-C file before using FASTA/AGP operations");
+      }
+    }
+    return wrapper;
+  }
+
+  private static ShareableWrappers.PathWrapper resolveFastaPathWrapperBySource(final @NotNull LocalMap<String, Object> map,
+                                                                               final @NotNull String source) {
+    if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(source)) {
+      return (ShareableWrappers.PathWrapper) map.get(SECONDARY_FASTA_PATH_KEY);
+    }
+    final var legacy = (ShareableWrappers.PathWrapper) map.get("linkedFastaPath");
+    if (legacy != null) {
+      return legacy;
+    }
+    return (ShareableWrappers.PathWrapper) map.get(PRIMARY_FASTA_PATH_KEY);
   }
 
   private static @NotNull SecondaryCompatibility analyzeSecondaryCompatibility(final @NotNull ChunkedFile primary,
