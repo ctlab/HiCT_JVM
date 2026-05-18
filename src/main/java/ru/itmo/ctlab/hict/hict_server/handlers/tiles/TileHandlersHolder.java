@@ -66,11 +66,15 @@ import java.util.stream.IntStream;
 @Slf4j
 public class TileHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
-  private static final String EXPECTED_PROFILE_LOCAL_MAP_KEY = "ViewportExpectedProfile";
+  public static final String EXPECTED_PROFILE_LOCAL_MAP_KEY = "ViewportExpectedProfile";
   private static final String TRANSPARENT_PNG_BASE64 =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z3ioAAAAASUVORK5CYII=";
   private static final byte[] TRANSPARENT_PNG_BYTES = Base64.getDecoder().decode(TRANSPARENT_PNG_BASE64);
   private static final int MAX_MATRIX_QUERY_ELEMENTS = Integer.getInteger("HICT_MATRIX_QUERY_MAX_ELEMENTS", 16_777_216);
+
+  public static void clearExpectedProfileCache(final @NotNull LocalMap<String, Object> map) {
+    map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+  }
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
@@ -94,7 +98,7 @@ public class TileHandlersHolder extends HandlersHolder {
           final var optionsEntity = request.toEntity();
           map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(optionsEntity));
           if (optionsEntity.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
-            map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+            clearExpectedProfileCache(map);
           }
           if (!preserveRenderPipeline) {
             final var previousPipelineWrapper =
@@ -193,7 +197,7 @@ public class TileHandlersHolder extends HandlersHolder {
           }
           final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
           if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
-            map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+            clearExpectedProfileCache(map);
             return new JsonObject().put("status", "cleared");
           }
 
@@ -233,7 +237,7 @@ public class TileHandlersHolder extends HandlersHolder {
             Math.min(endColPx, totalAssemblyLength)
           );
           if (clampedEndRowPx <= clampedStartRowPx || clampedEndColPx <= clampedStartColPx) {
-            map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+            clearExpectedProfileCache(map);
             return new JsonObject()
               .put("status", "empty")
               .put("resolutionOrder", resolutionOrder)
@@ -243,16 +247,25 @@ public class TileHandlersHolder extends HandlersHolder {
               .put("endColPx", clampedEndColPx);
           }
 
-          final var chunkSize = Math.max(
-            32,
-            ((Number) map.getOrDefault("tileSize", 256)).intValue()
-          );
-          final var accumulator = DistanceExpectedNormalizer.newAccumulator(
-            resolutionOrder,
+          final var expectedDomains = buildExpectedDomains(
+            chunkedFile,
+            resolutionDescriptor,
             clampedStartRowPx,
             clampedEndRowPx,
             clampedStartColPx,
             clampedEndColPx
+          );
+          final var chunkSize = Math.max(
+            32,
+            ((Number) map.getOrDefault("tileSize", 256)).intValue()
+          );
+          final var accumulator = DistanceExpectedNormalizer.newSegmentedAccumulator(
+            resolutionOrder,
+            clampedStartRowPx,
+            clampedEndRowPx,
+            clampedStartColPx,
+            clampedEndColPx,
+            expectedDomains
           );
           for (long chunkStartRowPx = clampedStartRowPx; chunkStartRowPx < clampedEndRowPx; chunkStartRowPx += chunkSize) {
             final var chunkEndRowPx = Math.min(clampedEndRowPx, chunkStartRowPx + chunkSize);
@@ -289,6 +302,7 @@ public class TileHandlersHolder extends HandlersHolder {
             .put("endRowPx", clampedEndRowPx)
             .put("startColPx", clampedStartColPx)
             .put("endColPx", clampedEndColPx)
+            .put("domainCount", expectedDomains.length)
             .put("minDiagonal", profile.minDiagonal())
             .put("diagonalCount", profile.means().length);
         },
@@ -885,6 +899,86 @@ public class TileHandlersHolder extends HandlersHolder {
     return profile.resolutionOrder() == resolutionDescriptor.getResolutionOrderInArray()
       ? profile
       : null;
+  }
+
+  private DistanceExpectedNormalizer.PixelDomain @NotNull [] buildExpectedDomains(
+    final @NotNull ChunkedFile chunkedFile,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final long startRowPx,
+    final long endRowPx,
+    final long startColPx,
+    final long endColPx
+  ) {
+    final var scaffoldDomains = new ArrayList<DistanceExpectedNormalizer.PixelDomain>();
+    final var basePairsResolution = ResolutionDescriptor.fromResolutionOrder(0);
+    for (final var scaffold : chunkedFile.getScaffoldTree().getScaffoldList()) {
+      final var borders = scaffold.scaffoldBordersBP();
+      final var startPx = chunkedFile.convertUnits(
+        borders.startBP(),
+        basePairsResolution,
+        QueryLengthUnit.BASE_PAIRS,
+        resolutionDescriptor,
+        QueryLengthUnit.PIXELS
+      );
+      final var endPx = chunkedFile.convertUnits(
+        borders.endBP(),
+        basePairsResolution,
+        QueryLengthUnit.BASE_PAIRS,
+        resolutionDescriptor,
+        QueryLengthUnit.PIXELS
+      );
+      addExpectedDomain(
+        scaffoldDomains,
+        startPx,
+        endPx
+      );
+    }
+
+    final var domains = new ArrayList<>(scaffoldDomains);
+    long contigStartPx = 0L;
+    for (final var contig : chunkedFile.getContigTree().getOrderedContigList()) {
+      final var contigLengthPx = contig.descriptor().getLengthInUnits(
+        QueryLengthUnit.PIXELS,
+        resolutionDescriptor
+      );
+      final var currentContigStartPx = contigStartPx;
+      final var contigEndPx = currentContigStartPx + contigLengthPx;
+      if (contigLengthPx > 0L && scaffoldDomains.stream().noneMatch(domain ->
+        intervalsOverlap(currentContigStartPx, contigEndPx, domain.startPx(), domain.endPx())
+      )) {
+        addExpectedDomain(
+          domains,
+          currentContigStartPx,
+          contigEndPx
+        );
+      }
+      contigStartPx = contigEndPx;
+    }
+
+    return domains.stream()
+      .filter(domain -> domain.intersects(startRowPx, endRowPx))
+      .filter(domain -> domain.intersects(startColPx, endColPx))
+      .sorted((left, right) -> Long.compare(left.startPx(), right.startPx()))
+      .toArray(DistanceExpectedNormalizer.PixelDomain[]::new);
+  }
+
+  private static void addExpectedDomain(final @NotNull ArrayList<DistanceExpectedNormalizer.PixelDomain> domains,
+                                        final long startPx,
+                                        final long endPx) {
+    if (endPx <= startPx) {
+      return;
+    }
+    if (domains.stream().anyMatch(domain -> domain.startPx() == startPx && domain.endPx() == endPx)) {
+      return;
+    }
+    domains.add(new DistanceExpectedNormalizer.PixelDomain(startPx, endPx));
+  }
+
+  private static boolean intervalsOverlap(final long leftStart,
+                                          final long leftEnd,
+                                          final long rightStart,
+                                          final long rightEnd) {
+    return leftEnd > rightStart && leftStart < rightEnd;
   }
 
   private double[][] computePipelineSignalMatrix(final @NotNull ChunkedFile primaryChunkedFile,

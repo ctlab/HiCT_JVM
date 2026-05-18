@@ -1,0 +1,143 @@
+name: Portable Packages
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      bundle_hictk:
+        description: "Build and bundle hictk before packaging"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      create_windows_installer:
+        description: "Create official jpackage Windows installer EXE in addition to portable ZIP"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+
+jobs:
+  linux-portable:
+    name: Linux portable .run
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Temurin JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Install hictk build prerequisites
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build python3-venv file
+
+      - name: Grant execute permissions
+        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/toolchains/build_hictk_linux.sh
+
+      - name: Build bundled hictk
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        env:
+          ENABLE_MOSTLY_STATIC_RUNTIME: "1"
+        run: ./scripts/toolchains/build_hictk_linux.sh
+
+      - name: Build Linux portable package
+        run: ./scripts/portable/build_portable_linux.sh
+
+      - name: Upload Linux package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hict-linux-portable
+          path: |
+            build/distributions/HiCT-*-linux-x86_64.run
+            build/distributions/HiCT-*-linux-x86_64.tar.gz
+            build/distributions/HiCT-*-linux-x86_64.sha256
+
+      - name: Attach Linux package to release
+        if: ${{ github.event_name == 'release' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/distributions/HiCT-*-linux-x86_64.run
+            build/distributions/HiCT-*-linux-x86_64.tar.gz
+            build/distributions/HiCT-*-linux-x86_64.sha256
+
+  windows-portable:
+    name: Windows portable package
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Temurin JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Configure MSVC environment
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build bundled hictk
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: pwsh
+        run: .\scripts\toolchains\build_hictk_windows.ps1 -MostlyStaticRuntime
+
+      - name: Install WiX for jpackage EXE
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_installer == 'true') }}
+        shell: pwsh
+        run: choco install wixtoolset -y --no-progress
+
+      - name: Build Windows portable package and installer
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_installer == 'true') }}
+        shell: pwsh
+        run: .\scripts\portable\build_portable_windows.ps1 -CreateInstaller
+
+      - name: Build Windows portable package
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_installer != 'true' }}
+        shell: pwsh
+        run: .\scripts\portable\build_portable_windows.ps1
+
+      - name: Upload Windows package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hict-windows-portable
+          path: |
+            build/distributions/HiCT-*-windows-x86_64-portable.zip
+            build/distributions/HiCT-*-windows-x86_64-installer.exe
+            build/distributions/HiCT-*-windows-x86_64.sha256
+
+      - name: Attach Windows package to release
+        if: ${{ github.event_name == 'release' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/distributions/HiCT-*-windows-x86_64-portable.zip
+            build/distributions/HiCT-*-windows-x86_64-installer.exe
+            build/distributions/HiCT-*-windows-x86_64.sha256
