@@ -42,6 +42,7 @@ import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fasta.FastaLinkResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.OpenFileResponseDTO;
+import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
 import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
@@ -110,6 +111,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
           map.remove(SECONDARY_COMPATIBILITY_KEY);
+          TileHandlersHolder.clearExpectedProfileCache(map);
           map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
 
           final var oldTrackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
@@ -270,6 +272,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
           map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
+          TileHandlersHolder.clearExpectedProfileCache(map);
           map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
@@ -301,6 +304,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
           map.remove(SECONDARY_COMPATIBILITY_KEY);
+          TileHandlersHolder.clearExpectedProfileCache(map);
           if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))) {
             map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
           }
@@ -721,6 +725,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
           }
+          TileHandlersHolder.clearExpectedProfileCache(map);
           final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
           if (trackManagerWrapper != null) {
             trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();

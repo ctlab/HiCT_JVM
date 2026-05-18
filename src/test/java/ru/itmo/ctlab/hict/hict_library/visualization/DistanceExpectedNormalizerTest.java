@@ -185,4 +185,80 @@ class DistanceExpectedNormalizerTest {
     assertArrayEquals(new double[]{1.0d, 1.0d, 1.0d}, expected[1], 1e-12);
     assertArrayEquals(new double[]{1.0d, 1.0d, 1.0d}, expected[2], 1e-12);
   }
+
+  @Test
+  void segmentedProfileUsesOnlyIntraScaffoldSignal() {
+    final var signal = new double[][]{
+      {10.0d, 3.0d, 100.0d, 100.0d},
+      {3.0d, 10.0d, 100.0d, 100.0d},
+      {100.0d, 100.0d, 20.0d, 4.0d},
+      {100.0d, 100.0d, 4.0d, 20.0d}
+    };
+
+    final var accumulator = DistanceExpectedNormalizer.newSegmentedAccumulator(
+      2,
+      0L,
+      4L,
+      0L,
+      4L,
+      new DistanceExpectedNormalizer.PixelDomain[]{
+        new DistanceExpectedNormalizer.PixelDomain(0L, 2L),
+        new DistanceExpectedNormalizer.PixelDomain(2L, 4L)
+      }
+    );
+    accumulator.addSignal(signal, 0L, 0L);
+    final var profile = accumulator.toProfile();
+
+    final var expected = DistanceExpectedNormalizer.transformSignal(
+      signal,
+      0L,
+      0L,
+      SignalDisplayMode.EXPECTED,
+      profile
+    );
+    final var oe = DistanceExpectedNormalizer.transformSignal(
+      signal,
+      0L,
+      0L,
+      SignalDisplayMode.OBSERVED_OVER_EXPECTED,
+      profile
+    );
+
+    assertArrayEquals(new double[]{10.0d, 3.0d, 0.0d, 0.0d}, expected[0], 1e-12);
+    assertArrayEquals(new double[]{3.0d, 10.0d, 0.0d, 0.0d}, expected[1], 1e-12);
+    assertArrayEquals(new double[]{0.0d, 0.0d, 20.0d, 4.0d}, expected[2], 1e-12);
+    assertArrayEquals(new double[]{0.0d, 0.0d, 4.0d, 20.0d}, expected[3], 1e-12);
+
+    assertArrayEquals(new double[]{1.0d, 1.0d, 0.0d, 0.0d}, oe[0], 1e-12);
+    assertArrayEquals(new double[]{1.0d, 1.0d, 0.0d, 0.0d}, oe[1], 1e-12);
+    assertArrayEquals(new double[]{0.0d, 0.0d, 1.0d, 1.0d}, oe[2], 1e-12);
+    assertArrayEquals(new double[]{0.0d, 0.0d, 1.0d, 1.0d}, oe[3], 1e-12);
+  }
+
+  @Test
+  void emptySegmentedProfileKeepsCrossScaffoldViewportAtZeroExpected() {
+    final var signal = new double[][]{
+      {50.0d, 60.0d},
+      {70.0d, 80.0d}
+    };
+    final var profile = DistanceExpectedNormalizer.newSegmentedAccumulator(
+      1,
+      100L,
+      102L,
+      200L,
+      202L,
+      new DistanceExpectedNormalizer.PixelDomain[0]
+    ).toProfile();
+
+    final var expected = DistanceExpectedNormalizer.transformSignal(
+      signal,
+      100L,
+      200L,
+      SignalDisplayMode.EXPECTED,
+      profile
+    );
+
+    assertArrayEquals(new double[]{0.0d, 0.0d}, expected[0], 1e-12);
+    assertArrayEquals(new double[]{0.0d, 0.0d}, expected[1], 1e-12);
+  }
 }

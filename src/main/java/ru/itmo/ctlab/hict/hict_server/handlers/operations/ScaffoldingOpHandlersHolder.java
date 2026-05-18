@@ -40,6 +40,7 @@ import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding.*;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoWithVersionDTO;
+import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
@@ -231,6 +232,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
     }
     final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
     map.put("TileStatisticHolder", newStats);
+    TileHandlersHolder.clearExpectedProfileCache(map);
     scheduler.bumpAssemblyGeneration();
     final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
     if (trackManagerWrapper != null) {
