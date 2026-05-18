@@ -1,6 +1,3 @@
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
 param(
   [string]$HictkRef = $(if ($env:HICTK_REF) { $env:HICTK_REF } else { "latest" }),
   [string]$OutputDir = $(if ($env:OUTPUT_DIR) { $env:OUTPUT_DIR } else { (Join-Path $PSScriptRoot "..\..\toolchains-dist\windows_x86_64") }),
@@ -8,6 +5,9 @@ param(
   [switch]$RunTests,
   [switch]$MostlyStaticRuntime
 )
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
 function Require-Command {
   param([Parameter(Mandatory = $true)][string]$Name)

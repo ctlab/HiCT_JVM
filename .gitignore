@@ -190,6 +190,9 @@ nbdist/
 /build/*
 /toolchains-dist/
 .github/**
+!.github/
+!.github/workflows/
+!.github/workflows/portable-release.yml
 .gitignore
 /src/main/resources/webui/**
 data/**
