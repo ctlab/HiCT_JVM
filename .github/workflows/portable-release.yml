@@ -13,8 +13,13 @@ on:
         options:
           - "true"
           - "false"
-      create_windows_installer:
-        description: "Create official jpackage Windows installer EXE in addition to portable ZIP"
+      hictk_ref:
+        description: "Official hictk tag to bundle"
+        required: true
+        default: "v2.2.0"
+        type: string
+      create_windows_exe:
+        description: "Create portable single-file Windows EXE in addition to portable ZIP"
         required: true
         default: "true"
         type: choice
@@ -27,8 +32,10 @@ permissions:
 
 jobs:
   linux-portable:
-    name: Linux portable .run
+    name: Linux portable .run and AppImage
     runs-on: ubuntu-22.04
+    env:
+      HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,23 +52,40 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Install hictk build prerequisites
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+      - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build python3-venv file
+          sudo apt-get install -y --no-install-recommends curl file
 
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/toolchains/build_hictk_linux.sh
+        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/toolchains/build_hictk_linux.sh
+
+      - name: Restore bundled hictk cache
+        id: cache-hictk
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: toolchains-dist/linux_x86_64
+          key: hictk-linux-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+
+      - name: Install hictk build prerequisites
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        run: |
+          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build python3-venv
 
       - name: Build bundled hictk
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         env:
           ENABLE_MOSTLY_STATIC_RUNTIME: "1"
         run: ./scripts/toolchains/build_hictk_linux.sh
 
       - name: Build Linux portable package
         run: ./scripts/portable/build_portable_linux.sh
+
+      - name: Build Linux AppImage
+        env:
+          HICT_SKIP_PORTABLE: "1"
+        run: ./scripts/portable/build_appimage_linux.sh
 
       - name: Upload Linux package artifact
         uses: actions/upload-artifact@v4
@@ -71,6 +95,8 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.tar.gz
             build/distributions/HiCT-*-linux-x86_64.sha256
+            build/distributions/HiCT-*-x86_64.AppImage
+            build/distributions/HiCT-*-x86_64.AppImage.sha256
 
       - name: Attach Linux package to release
         if: ${{ github.event_name == 'release' }}
@@ -80,10 +106,14 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.tar.gz
             build/distributions/HiCT-*-linux-x86_64.sha256
+            build/distributions/HiCT-*-x86_64.AppImage
+            build/distributions/HiCT-*-x86_64.AppImage.sha256
 
   windows-portable:
-    name: Windows portable package
+    name: Windows portable ZIP and EXE
     runs-on: windows-latest
+    env:
+      HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,27 +130,35 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Configure MSVC environment
+      - name: Restore bundled hictk cache
+        id: cache-hictk
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: toolchains-dist/windows_x86_64
+          key: hictk-windows-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1') }}
+
+      - name: Configure MSVC environment
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build bundled hictk
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         shell: pwsh
         run: .\scripts\toolchains\build_hictk_windows.ps1 -MostlyStaticRuntime
 
-      - name: Install WiX for jpackage EXE
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_installer == 'true') }}
+      - name: Install 7-Zip for portable EXE
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
-        run: choco install wixtoolset -y --no-progress
+        run: choco install 7zip.install -y --no-progress
 
-      - name: Build Windows portable package and installer
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_installer == 'true') }}
+      - name: Build Windows portable package and EXE
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
-        run: .\scripts\portable\build_portable_windows.ps1 -CreateInstaller
+        run: .\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe
 
       - name: Build Windows portable package
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_installer != 'true' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_exe != 'true' }}
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1
 
@@ -130,7 +168,7 @@ jobs:
           name: hict-windows-portable
           path: |
             build/distributions/HiCT-*-windows-x86_64-portable.zip
-            build/distributions/HiCT-*-windows-x86_64-installer.exe
+            build/distributions/HiCT-*-windows-x86_64.exe
             build/distributions/HiCT-*-windows-x86_64.sha256
 
       - name: Attach Windows package to release
@@ -139,5 +177,5 @@ jobs:
         with:
           files: |
             build/distributions/HiCT-*-windows-x86_64-portable.zip
-            build/distributions/HiCT-*-windows-x86_64-installer.exe
+            build/distributions/HiCT-*-windows-x86_64.exe
             build/distributions/HiCT-*-windows-x86_64.sha256
