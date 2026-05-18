@@ -16,13 +16,21 @@ Download the latest fat JAR from the https://github.com/ctlab/HiCT_JVM/releases[
 
 1. Download the latest `-fat.jar` from the Releases page (Assets) and rename it to `hict-fat.jar`.
 2. Place your `.hict.hdf5`, `.mcool`, `.cool`, `.agp`, and `.fasta` files under a single directory.
-3. Run:
+If you have .hic files from Juicebox, you can convert them using `hictk` into Cooler format (use the finest resolution) and then use `cooler` to build zoom pyramid and compute balance weights, for example:
+```bash
+hictk convert arabiensis.hic arabiensis.1kb.cool --resolutions 1kbp
+cooler zoomify -n 8 -r 4DN --balance --balance-args '--nproc 8 --ignore-diags 3' -o arabiensis.hic.mcool arabiensis.1kb.cool
+```
+Next you can either convert that file into HiCT format through the WebUI (File -> Convert Coolers), or continue in CLI:
+```bash
+java -jar hict-fat.jar convert mcool-to-hict --input='arabiensis.hic.mcool' --output='arabiensis.hic.mcool.hict.hdf5' --compression-algorithm=DEFLATE --compression=6 --parallelism=-1
+```
+3. To start HiCT Server with WebUI execute the following command:
 +
 ```bash
-java -jar hict-fat.jar
+java -jar hict-fat.jar start-server
 ```
 +
-Running the fat JAR with no CLI arguments is the desktop-oriented path: it starts API + WebUI and, when desktop browsing is supported, opens the WebUI URL automatically.
 Directory with files is set using `DATA_DIR` environment variable, by default it scans subtree of the directory in which `hict-fat.jar` is launched from.
 In Linux you may set it as follows:
 +
@@ -35,10 +43,7 @@ DATA_DIR=/path/to/data/ java -jar hict-fat.jar start-server
 === CLI commands (summary)
 
 ```bash
-# API + WebUI desktop mode (default when no args are given)
-java -jar hict-fat.jar
-
-# API + WebUI explicitly
+# API + WebUI (default mode, includes converters in WebUI as descibed below)
 java -jar hict-fat.jar start-server
 
 # API only (no WebUI)
@@ -53,16 +58,6 @@ java -jar hict-fat.jar convert mcool-to-hict \
 java -jar hict-fat.jar convert hict-to-mcool \
   --input /data/sample.hict.hdf5 \
   --output /data/sample.mcool
-
-# Convert .hic -> .mcool (CLI mode, requires hictk toolchain)
-java -jar hict-fat.jar convert hic-to-mcool \
-  --input /data/sample.hic \
-  --output /data/sample.mcool
-
-# Convert .hic -> .hict.hdf5 (CLI mode, requires hictk toolchain)
-java -jar hict-fat.jar convert hic-to-hict \
-  --input /data/sample.hic \
-  --output /data/sample.hict.hdf5
 ```
 
 Get full CLI help:
@@ -74,8 +69,6 @@ java -jar hict-fat.jar start-api-server --help
 java -jar hict-fat.jar convert --help
 java -jar hict-fat.jar convert mcool-to-hict --help
 java -jar hict-fat.jar convert hict-to-mcool --help
-java -jar hict-fat.jar convert hic-to-mcool --help
-java -jar hict-fat.jar convert hic-to-hict --help
 ```
 
 === WebUI conversion (Experimental / W.I.P.)
@@ -83,11 +76,8 @@ java -jar hict-fat.jar convert hic-to-hict --help
 WARNING: WebUI conversion is experimental and may be slower or less stable than the CLI.
 
 1. Open the WebUI.
-2. Use *File → Convert matrices*.
+2. Use *File → Convert Coolers*.
 3. Track progress in the conversion window.
-
-`.cool` and `.mcool` inputs are converted using the built-in JVM converters.
-`.hic` inputs are converted through the external-toolchain bridge backed by `hictk` when that toolchain is available.
 
 === API access (Experimental / W.I.P.)
 
@@ -135,8 +125,6 @@ For tensor workflows (NumPy/Torch), numeric submatrices are available via:
 ** units: `PIXELS`, `BINS`, `BP`
 ** signal modes: `RAW_COUNTS`, `COOLER_WEIGHTED`, `TRADITIONAL_NORMALIZED`, `PIPELINE_SIGNAL`
 ** binary formats for fast transfer: `BINARY_FLOAT32`, `BINARY_FLOAT64`, `BINARY_INT64`
-** `TRADITIONAL_NORMALIZED` follows the active visualization settings, including `Observed`, `Expected`, and `O/E` display modes
-** `Expected` and `O/E` use a distance-expected signal estimated from the currently fetched tile/query window after the selected raw-or-balanced normalization steps
 
 === Supported platforms / JDK details
 
@@ -218,7 +206,7 @@ DATA_DIR=/home/${USER}/hict/data java -ea -Xms512M -Xmx16G -jar hict.jar start-a
 ./gradlew run --args="start-api-server"
 ```
 
-== Converter workflows (`.hic` / `.mcool` / `.cool` ↔ `.hict.hdf5`)
+== Converter workflows (`.mcool` ↔ `.hict.hdf5`)
 
 === CLI commands
 
@@ -234,73 +222,7 @@ java -jar hict.jar convert mcool-to-hict \
 java -jar hict.jar convert hict-to-mcool \
   --input /data/sample.hict.hdf5 \
   --output /data/sample.roundtrip.mcool
-
-# hic -> mcool (requires hictk)
-java -jar hict.jar convert hic-to-mcool \
-  --input /data/sample.hic \
-  --output /data/sample.mcool
-
-# hic -> hict.hdf5 (requires hictk)
-java -jar hict.jar convert hic-to-hict \
-  --input /data/sample.hic \
-  --output /data/sample.hict.hdf5
 ```
-
-=== External `.hic` toolchain packaging
-
-HiCT now exposes `.hic` conversion through the same asynchronous job system used by the WebUI converter modal.
-Toolchains are resolved in the following order:
-
-* explicit external directory via `HICT_TOOLCHAIN_DIR`
-* bundled fat-JAR resources under `/toolchains/<platform>/`
-* executables already available on `PATH`
-
-Runtime resolution details, notices, and citations are available through `POST /convert/toolchain`.
-
-IMPORTANT: the repository does not keep binary toolchains in version control by default.
-Instead, the provided build scripts stage redistributable payloads under `toolchains-dist/<platform>/`, and Gradle embeds that directory into the fat JAR under `/toolchains/<platform>/`.
-
-=== Building and bundling official `hictk`
-
-HiCT now ships build scripts that produce a bundled `hictk` payload in `toolchains-dist/<platform>/`.
-That directory is automatically embedded into the fat JAR by Gradle under `/toolchains/<platform>/`.
-
-Linux build on the current machine:
-
-[source,bash]
-----
-cd HiCT_JVM
-./scripts/toolchains/build_hictk_linux.sh
-./gradlew shadowJar
-----
-
-Windows build on a Windows machine:
-
-[source,powershell]
-----
-cd HiCT_JVM
-powershell -ExecutionPolicy Bypass -File .\scripts\toolchains\build_hictk_windows.ps1
-.\gradlew.bat shadowJar
-----
-
-Useful build overrides:
-
-* `HICTK_REF=v2.2.0` to pin a specific official `hictk` tag instead of the latest reachable tag.
-* `RUN_TESTS=1` to run `ctest` before staging the bundle.
-* `ENABLE_MOSTLY_STATIC_RUNTIME=1` on Linux GCC builds to add `-static-libstdc++ -static-libgcc`.
-* `-MostlyStaticRuntime` on Windows to request `/MT` runtime linking.
-
-IMPORTANT: upstream `hictk` already builds with `BUILD_SHARED_LIBS=OFF`, and their FAQ states that source builds statically link `hictk` dependencies into the executable.
-That still does *not* make the Linux binary universally portable: `libc` / `libstdc++` ABI compatibility still depends on the target system.
-For the broadest Linux portability, produce release binaries on an older glibc baseline or a dedicated release container/runner.
-
-Bundled files created by the scripts:
-
-* `bin/hictk` or `bin/hictk.exe`
-* upstream `LICENSE`
-* upstream `CITATION.cff`
-* a generated `build-info.txt`
-* `manifest.json` consumed by HiCT at runtime
 
 === Web conversion API flow
 
