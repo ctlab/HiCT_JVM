@@ -74,7 +74,9 @@ val webUIRepositoryDirectory =
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
 val bundledToolchainSourceDirectory = layout.projectDirectory.dir("toolchains-dist")
-val webUIBranch = "master"
+val webUIFallbackRef = "master"
+val webUISameAsJvmRefToken = "same-as-jvm"
+val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
 val npmExecutable = if (System.getProperty("os.name").lowercase().contains("windows")) "npm.cmd" else "npm"
 val requireBundledWebUI =
   (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
@@ -251,6 +253,34 @@ fun getGitHash(repositoryDir: File): String {
   return String(byteOut.toByteArray()).trim()
 }
 
+fun getCurrentJvmRefName(): String? {
+  val githubRefName = System.getenv("GITHUB_REF_NAME")
+  if (!githubRefName.isNullOrBlank()) {
+    return githubRefName.trim()
+  }
+
+  val byteOut = ByteArrayOutputStream()
+  val result = project.exec {
+    commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
+    standardOutput = byteOut
+    workingDir = layout.projectDirectory.asFile
+    isIgnoreExitValue = true
+  }
+  if (result.exitValue != 0) {
+    return null
+  }
+  val branch = String(byteOut.toByteArray()).trim()
+  return branch.takeIf { it.isNotBlank() && it != "HEAD" }
+}
+
+fun resolveWebUIRef(): String {
+  val override = webUIRefOverride?.trim()
+  if (!override.isNullOrBlank() && !override.equals(webUISameAsJvmRefToken, ignoreCase = true)) {
+    return override
+  }
+  return getCurrentJvmRefName() ?: webUIFallbackRef
+}
+
 val currentVersion: String by lazy { readVersion() }
 
 version = currentVersion
@@ -275,10 +305,11 @@ tasks.register("buildWebUI") {
   dependsOn("cleanWebUI")
   doLast {
     try {
+      val requestedWebUIRef = resolveWebUIRef()
       if (localWebUIRepositoryDirectory.asFile.exists()) {
         println(
           "Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath} " +
-            "(branch/working tree will not be modified by Gradle)"
+            "(branch/working tree will not be modified by Gradle; requested ref '${requestedWebUIRef}' is ignored)"
         )
         project.exec {
           commandLine(npmExecutable, "install")
@@ -293,6 +324,7 @@ tasks.register("buildWebUI") {
         return@doLast
       }
 
+      println("Preparing HiCT_WebUI ref '${requestedWebUIRef}' (fallback '${webUIFallbackRef}')")
       Files.createDirectories(webUICloneDirectory.asFile.toPath())
       val cloneResult = project.exec {
         commandLine("git", "clone", webUIRepositoryAddress)
@@ -303,36 +335,45 @@ tasks.register("buildWebUI") {
 
 
       if (cloneResult.exitValue != 0) {
-        print("Failed to clone WebUI repository, maybe it already exists. Trying to pull changes.")
-        val pullResult = project.exec {
-          commandLine("git", "pull")
-          workingDir = webUIRepositoryDirectory.asFile
-          standardOutput = System.out
-          isIgnoreExitValue = true
-        }
-
-        if (pullResult.exitValue != 0) {
-          handleMissingWebUI("Failed to pull changes from WebUI repository. Proceeding without baked-in WebUI.")
+        if (!webUIRepositoryDirectory.asFile.resolve(".git").exists()) {
+          handleMissingWebUI("Failed to clone WebUI repository. Proceeding without baked-in WebUI.")
           return@doLast
-        } else {
-          print("Successfully pulled changes")
         }
+        println("HiCT_WebUI clone already exists; fetching requested ref.")
       }
 
-      val checkOutResult = project.exec {
-        commandLine("git", "checkout", webUIBranch)
+      project.exec {
+        commandLine("git", "fetch", "origin", "--tags", "--prune")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
         isIgnoreExitValue = true
       }
 
+      var checkedOutRef = requestedWebUIRef
+      var checkOutResult = project.exec {
+        commandLine("git", "checkout", requestedWebUIRef)
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = System.out
+        isIgnoreExitValue = true
+      }
       if (checkOutResult.exitValue != 0) {
-        print("Failed to checkout branch ${webUIBranch}, will use main branch instead");
+        println("Failed to checkout HiCT_WebUI ref '${requestedWebUIRef}', trying fallback '${webUIFallbackRef}'.")
+        checkedOutRef = webUIFallbackRef
+        checkOutResult = project.exec {
+          commandLine("git", "checkout", webUIFallbackRef)
+          workingDir = webUIRepositoryDirectory.asFile
+          standardOutput = System.out
+          isIgnoreExitValue = true
+        }
+        if (checkOutResult.exitValue != 0) {
+          handleMissingWebUI("Failed to checkout HiCT_WebUI ref '${requestedWebUIRef}' or fallback '${webUIFallbackRef}'. Proceeding without baked-in WebUI.")
+          return@doLast
+        }
       }
 
-
+      println("Using HiCT_WebUI ref '${checkedOutRef}'.")
       project.exec {
-        commandLine("git", "pull")
+        commandLine("git", "pull", "--ff-only")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
         isIgnoreExitValue = true

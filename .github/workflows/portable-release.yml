@@ -18,6 +18,11 @@ on:
         required: true
         default: "v2.2.0"
         type: string
+      webui_ref:
+        description: "HiCT_WebUI branch/tag/ref to bundle; use same-as-jvm to match the selected HiCT_JVM branch"
+        required: true
+        default: "same-as-jvm"
+        type: string
       create_windows_exe:
         description: "Create portable single-file Windows EXE in addition to portable ZIP"
         required: true
@@ -36,6 +41,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
     steps:
       - name: Checkout
@@ -155,6 +161,7 @@ jobs:
     runs-on: windows-latest
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
     steps:
       - name: Checkout

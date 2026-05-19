@@ -452,6 +452,7 @@ Do not strip that directory from redistributed artifacts.
 
 `.github/workflows/portable-release.yml` builds Linux and Windows packages on matching runners.
 On release creation it attaches the portable artifacts and SHA-256 checksum files to the GitHub Release.
-The workflow can also be run manually and exposes toggles for bundled `hictk`, the `hictk` release tag, and the optional Windows SFX EXE.
+The workflow can also be run manually and exposes toggles for bundled `hictk`, the `hictk` release tag, the HiCT_WebUI ref, and the optional Windows SFX EXE.
+The WebUI ref input defaults to `same-as-jvm`, so a manual run from a HiCT_JVM branch such as `jvm-hic-converter` first tries to bundle the same-named HiCT_WebUI ref and falls back to `master` if that ref is absent.
 For workflow downloads it publishes four artifacts: the existing aggregate Linux package, the existing aggregate Windows package, a separate Linux `.run` artifact, and a separate Windows `.exe` artifact.
 Prepared `toolchains-dist/<platform>` hictk payloads and the underlying Conan package homes are restored and saved explicitly by OS, hictk tag, and toolchain script hash to avoid rebuilding hictk dependencies on every release.
