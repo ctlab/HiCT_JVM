@@ -4,7 +4,7 @@ param(
   [string]$RuntimeModules = $(if ($env:HICT_RUNTIME_MODULES) { $env:HICT_RUNTIME_MODULES } else { "java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.unsupported,jdk.zipfs" }),
   [string]$DistRoot = $(if ($env:HICT_PORTABLE_DIST_DIR) { $env:HICT_PORTABLE_DIST_DIR } else { (Join-Path $PSScriptRoot "..\..\build\portable") }),
   [string]$SevenZipRoot = $(if ($env:SEVENZIP_ROOT) { $env:SEVENZIP_ROOT } else { "C:\Program Files\7-Zip" }),
-  [string]$SevenZipExtraUrl = $(if ($env:SEVENZIP_EXTRA_URL) { $env:SEVENZIP_EXTRA_URL } else { "https://www.7-zip.org/a/7z2601-extra.7z" })
+  [string]$SevenZipSdkUrl = $(if ($env:SEVENZIP_SDK_URL) { $env:SEVENZIP_SDK_URL } else { "https://www.7-zip.org/a/lzma2601.7z" })
 )
 
 Set-StrictMode -Version Latest
@@ -41,6 +41,29 @@ function Get-JdkTool {
     return $cmd.Source
   }
   throw "Missing $Name. Use a full JDK, not a JRE."
+}
+
+function Find-InstallerSfxModules {
+  param([Parameter(Mandatory = $true)][string[]]$Roots)
+
+  $preferredNames = @("7zSD.sfx", "7zS.sfx", "7zS2con.sfx", "7zS2.sfx")
+  $found = New-Object 'System.Collections.Generic.List[string]'
+
+  foreach ($root in $Roots) {
+    if (-not (Test-Path $root)) {
+      continue
+    }
+
+    Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $preferredNames -contains $_.Name } |
+      ForEach-Object { $found.Add($_.FullName) }
+  }
+
+  return $found |
+    Sort-Object {
+      $name = Split-Path -Leaf $_
+      $preferredNames.IndexOf($name)
+    }, { $_ }
 }
 
 $projectDir = Resolve-Path (Join-Path $PSScriptRoot "..\..")
@@ -121,9 +144,9 @@ This package is assembled from:
   - Optional bundled hictk resources inside hict.jar when toolchains-dist was
     prepared before packaging. hictk is redistributed under its MIT license and
     should be cited when .hic conversion is used.
-  - Optional single-file Windows EXE packaging built with official 7-Zip SFX
-    modules when -CreateSelfExtractingExe is used. Keep the 7-Zip license notice
-    with redistributed artifacts.
+  - Optional single-file Windows EXE packaging built with official 7-Zip/LZMA
+    SDK SFX modules when -CreateSelfExtractingExe is used. Keep the 7-Zip SFX
+    notice with redistributed artifacts.
 
 The portable Windows ZIP remains the most transparent artifact. The optional
 EXE is an official 7-Zip self-extracting launcher for users who need a single
@@ -134,11 +157,13 @@ double-clickable file without MSI installation.
 7-Zip SFX notice
 ================
 
-Single-file Windows EXE artifacts are assembled with official 7-Zip SFX modules
-when requested by the release workflow. 7-Zip is distributed under LGPL terms
-with additional components noted by the upstream project. Keep this notice with
-redistributed portable packages and refer to the official 7-Zip license page for
-the exact license text of the module used by the build runner.
+Single-file Windows EXE artifacts are assembled with official 7-Zip/LZMA SDK
+SFX modules when requested by the release workflow. The build first checks the
+local 7-Zip installation and then downloads the official LZMA SDK when needed.
+7-Zip is distributed under LGPL terms with additional components noted by the
+upstream project. LZMA SDK is public domain. Keep this notice with redistributed
+portable packages and refer to the official 7-Zip license and SDK pages for the
+exact license text of the module used by the build runner.
 '@ | Set-Content -Encoding UTF8 (Join-Path $appDir "licenses\SevenZip_SFX_NOTICE.txt")
 
 & $jlink `
@@ -256,30 +281,31 @@ if ($CreateSelfExtractingExe) {
     throw "7z.exe is required for -CreateSelfExtractingExe. Install official 7-Zip or set SEVENZIP_ROOT."
   }
 
-  $sfxCandidates = @(
-    (Join-Path $SevenZipRoot "7zS.sfx"),
-    (Join-Path $SevenZipRoot "7zSD.sfx")
-  ) | Where-Object { Test-Path $_ }
-
   $sfxBuildDir = Join-Path $DistRoot "windows-sfx"
   if (Test-Path $sfxBuildDir) {
     Remove-Item -Recurse -Force $sfxBuildDir
   }
   New-Item -ItemType Directory -Force -Path $sfxBuildDir | Out-Null
 
+  $sfxCandidates = @(Find-InstallerSfxModules -Roots @($SevenZipRoot))
+
   if (-not $sfxCandidates) {
-    $extraArchive = Join-Path $sfxBuildDir "7zip-extra.7z"
-    $extraDir = Join-Path $sfxBuildDir "7zip-extra"
-    Invoke-WebRequest -Uri $SevenZipExtraUrl -OutFile $extraArchive
-    Invoke-Native -FilePath $sevenZipExe -Arguments @("x", $extraArchive, "-o$extraDir", "-y")
-    $sfxCandidates = Get-ChildItem -Path $extraDir -Recurse -Include "7zS.sfx", "7zSD.sfx" |
-      Sort-Object FullName |
-      Select-Object -ExpandProperty FullName
+    $sdkArchive = Join-Path $sfxBuildDir "lzma-sdk.7z"
+    $sdkDir = Join-Path $sfxBuildDir "lzma-sdk"
+    Write-Host "Downloading official LZMA SDK from $SevenZipSdkUrl"
+    Invoke-WebRequest -Uri $SevenZipSdkUrl -OutFile $sdkArchive
+    Invoke-Native -FilePath $sevenZipExe -Arguments @("x", $sdkArchive, "-o$sdkDir", "-y")
+    $sdkNotice = Join-Path $sdkDir "DOC\lzma-sdk.txt"
+    if (Test-Path $sdkNotice) {
+      Copy-Item -Force $sdkNotice (Join-Path $appDir "licenses\LZMA_SDK_NOTICE.txt")
+    }
+    $sfxCandidates = @(Find-InstallerSfxModules -Roots @($sdkDir))
   }
   if (-not $sfxCandidates) {
-    throw "No installer-capable official 7-Zip SFX module (7zS.sfx/7zSD.sfx) was found."
+    throw "No installer-capable official 7-Zip/LZMA SDK SFX module (7zSD.sfx, 7zS.sfx, 7zS2con.sfx, or 7zS2.sfx) was found."
   }
   $sfxModule = $sfxCandidates[0]
+  Write-Host "Using official SFX module $sfxModule"
 
   $archivePath = Join-Path $sfxBuildDir "payload.7z"
   $configPath = Join-Path $sfxBuildDir "config.txt"
