@@ -392,6 +392,7 @@ Windows portable ZIP:
 When no CLI arguments are provided, HiCT starts API + WebUI and opens `http://localhost:8080/` in the default browser when desktop browsing is available.
 The Windows portable launcher also starts a small browser-opener helper so browser launch does not depend on Java Desktop integration.
 All normal HiCT CLI subcommands remain available from the ZIP.
+Portable launchers enter `DATA_DIR` before Java starts, so file dialogs and relative paths begin from the portable data location rather than the shell or system directory that launched HiCT.
 
 Portable `DATA_DIR` defaults:
 
@@ -399,7 +400,7 @@ Portable `DATA_DIR` defaults:
 * Linux `.AppImage`: directory containing the AppImage.
 * Linux extracted `.tar.gz`: extracted app directory.
 * Windows portable ZIP: extracted app directory.
-* Windows SFX EXE: directory containing the EXE when the launcher can infer it from the parent process; otherwise the temporary extraction directory used by the official 7-Zip/LZMA SDK SFX module.
+* Windows SFX EXE: directory containing the EXE when the launcher can infer it from the parent process; otherwise the temporary extracted app directory used by the official 7-Zip/LZMA SDK SFX module.
 * Explicit `DATA_DIR` always wins.
 
 === Building portable packages locally
@@ -449,4 +450,5 @@ Do not strip that directory from redistributed artifacts.
 `.github/workflows/portable-release.yml` builds Linux and Windows packages on matching runners.
 On release creation it attaches the portable artifacts and SHA-256 checksum files to the GitHub Release.
 The workflow can also be run manually and exposes toggles for bundled `hictk`, the `hictk` release tag, and the optional Windows SFX EXE.
+For workflow downloads it publishes four artifacts: the existing aggregate Linux package, the existing aggregate Windows package, a separate Linux `.run` artifact, and a separate Windows `.exe` artifact.
 Prepared `toolchains-dist/<platform>` hictk payloads and the underlying Conan package homes are restored and saved explicitly by OS, hictk tag, and toolchain script hash to avoid rebuilding hictk dependencies on every release.

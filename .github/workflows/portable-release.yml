@@ -131,6 +131,14 @@ jobs:
             build/distributions/HiCT-*-x86_64.AppImage
             build/distributions/HiCT-*-x86_64.AppImage.sha256
 
+      - name: Upload Linux runfile artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hict-linux-runfile
+          path: |
+            build/distributions/HiCT-*-linux-x86_64.run
+            build/distributions/HiCT-*-linux-x86_64.sha256
+
       - name: Attach Linux package to release
         if: ${{ github.event_name == 'release' }}
         uses: softprops/action-gh-release@v2
@@ -235,6 +243,15 @@ jobs:
           name: hict-windows-portable
           path: |
             build/distributions/HiCT-*-windows-x86_64-portable.zip
+            build/distributions/HiCT-*-windows-x86_64.exe
+            build/distributions/HiCT-*-windows-x86_64.sha256
+
+      - name: Upload Windows EXE artifact
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: hict-windows-exe
+          path: |
             build/distributions/HiCT-*-windows-x86_64.exe
             build/distributions/HiCT-*-windows-x86_64.sha256
 

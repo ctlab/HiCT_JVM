@@ -154,6 +154,8 @@ if [[ -z "${WEBUI_ROOT:-}" && -d "${APP_HOME}/webui" ]]; then
 fi
 
 mkdir -p "${DATA_DIR}"
+cd "${DATA_DIR}"
+export DATA_DIR="$(pwd -P)"
 
 JAVA_OPTS=()
 if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
@@ -186,6 +188,9 @@ DATA_DIR defaults:
   - extracted app directory when running ./bin/hict directly
   - directory containing the .run file when running the .run wrapper
   - explicit DATA_DIR always wins
+
+The launcher enters DATA_DIR before Java starts, so file dialogs and relative
+paths begin from the portable data location.
 
 Java runtime notices:
   The embedded runtime keeps its jlink-generated legal/ directory intact. For
