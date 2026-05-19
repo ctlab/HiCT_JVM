@@ -281,6 +281,68 @@ fun resolveWebUIRef(): String {
   return getCurrentJvmRefName() ?: webUIFallbackRef
 }
 
+fun verifyWebUIConverterDtoRegression(webUIDir: File) {
+  val requestSource = webUIDir.resolve("src/app/core/net/api/request.ts")
+  val requestDtoSource = webUIDir.resolve("src/app/core/net/dto/requestDTO.ts")
+  val builtRequestDto = webUIDir.resolve("dist/electron/app/core/net/dto/requestDTO.js")
+  val browserAssetsDir = webUIDir.resolve("dist/assets")
+
+  val sourceChecks = listOf(
+    requestSource to listOf(
+      "class ListConvertibleMatrixFilesRequest",
+      "requestPath = \"/list_convertible_matrices\""
+    ),
+    requestDtoSource to listOf(
+      "class ListConvertibleMatrixFilesRequestDTO",
+      "instanceof ListConvertibleMatrixFilesRequest",
+      "case \"/list_convertible_matrices\"",
+      "class EmptyRequestDTO",
+      "\"options\" in entity"
+    )
+  )
+
+  val failures = mutableListOf<String>()
+  for ((file, requiredSnippets) in sourceChecks) {
+    if (!file.isFile) {
+      failures += "missing ${file.relativeToOrSelf(webUIDir)}"
+      continue
+    }
+    val text = file.readText()
+    for (snippet in requiredSnippets) {
+      if (!text.contains(snippet)) {
+        failures += "${file.relativeToOrSelf(webUIDir)} does not contain '$snippet'"
+      }
+    }
+  }
+
+  if (!builtRequestDto.isFile) {
+    failures += "missing built DTO file ${builtRequestDto.relativeToOrSelf(webUIDir)}"
+  } else {
+    val text = builtRequestDto.readText()
+    for (snippet in listOf("class ListConvertibleMatrixFilesRequestDTO", "case \"/list_convertible_matrices\"", "class EmptyRequestDTO")) {
+      if (!text.contains(snippet)) {
+        failures += "${builtRequestDto.relativeToOrSelf(webUIDir)} does not contain '$snippet'"
+      }
+    }
+  }
+
+  val browserBundles = if (browserAssetsDir.isDirectory) {
+    browserAssetsDir.walkTopDown().filter { it.isFile && it.extension == "js" }.toList()
+  } else {
+    emptyList()
+  }
+  if (browserBundles.none { it.readText().contains("/list_convertible_matrices") }) {
+    failures += "browser bundle does not contain /list_convertible_matrices request support"
+  }
+
+  if (failures.isNotEmpty()) {
+    throw GradleException(
+      "HiCT_WebUI converter DTO regression detected; refusing to embed a WebUI bundle that cannot open the converter dialog:\n" +
+        failures.joinToString(separator = "\n") { "- $it" }
+    )
+  }
+}
+
 val currentVersion: String by lazy { readVersion() }
 
 version = currentVersion
@@ -321,6 +383,7 @@ tasks.register("buildWebUI") {
           workingDir = localWebUIRepositoryDirectory.asFile
           standardOutput = System.out
         }
+        verifyWebUIConverterDtoRegression(localWebUIRepositoryDirectory.asFile)
         return@doLast
       }
 
@@ -391,7 +454,11 @@ tasks.register("buildWebUI") {
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
       }
+      verifyWebUIConverterDtoRegression(webUIRepositoryDirectory.asFile)
     } catch (e: Exception) {
+      if (e is GradleException && e.message?.startsWith("HiCT_WebUI converter DTO regression detected") == true) {
+        throw e
+      }
       handleMissingWebUI("Caught an exception during building WebUI.", e)
       return@doLast
     }

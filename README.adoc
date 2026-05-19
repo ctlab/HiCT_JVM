@@ -365,9 +365,11 @@ These packages include the HiCT JVM fat JAR, the built HiCT WebUI resources, an 
 * `HiCT-<version>-windows-x86_64.exe` -- optional single-file Windows 7-Zip/LZMA SDK SFX launcher, not an MSI installer.
 
 The Windows ZIP is the most transparent portable artifact.
-The Windows EXE is built only from official 7-Zip/LZMA SDK SFX modules (`7zS2con.sfx`, `7zS2.sfx`, `7zSD.sfx`, or `7zS.sfx`) and runs the same portable app without installation.
-The build prefers the non-installer console SFX module (`7zS2con.sfx`) to avoid unnecessary UAC elevation prompts.
+The Windows EXE is built only from official 7-Zip/LZMA SDK SFX modules (`7zSD.sfx`, `7zS.sfx`, `7zS2con.sfx`, or `7zS2.sfx`) and runs the same portable app without installation.
+The build prefers the progress-capable installer SFX module.
 It opens a console window and keeps it open after no-argument double-click launches, so errors remain visible after HiCT exits.
+Avoiding Windows trust/UAC prompts for downloaded single-file EXE artifacts requires Authenticode signing with a trusted code-signing certificate; changing the SFX module alone is not a reliable substitute.
+Use the ZIP artifact when local policy forbids unsigned SFX launchers or elevation prompts.
 
 === Portable startup behavior
 

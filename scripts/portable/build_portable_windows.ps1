@@ -46,10 +46,10 @@ function Get-JdkTool {
 function Find-SfxModules {
   param([Parameter(Mandatory = $true)][string[]]$Roots)
 
-  # Prefer the official console small SFX module for the portable EXE. Unlike
-  # the installer SFX path, it does not present itself to Windows as an
-  # installer and should not request elevation.
-  $preferredNames = @("7zS2con.sfx", "7zS2.sfx", "7zSD.sfx", "7zS.sfx")
+  # Prefer the progress-capable official installer SFX modules. The small
+  # console modules are kept as a fallback for environments where the installer
+  # SFX is unavailable.
+  $preferredNames = @("7zSD.sfx", "7zS.sfx", "7zS2con.sfx", "7zS2.sfx")
   $found = New-Object 'System.Collections.Generic.List[string]'
 
   foreach ($root in $Roots) {
@@ -149,8 +149,8 @@ This package is assembled from:
     should be cited when .hic conversion is used.
   - Optional single-file Windows EXE packaging built with official 7-Zip/LZMA
     SDK SFX modules when -CreateSelfExtractingExe is used. The build prefers
-    the non-installer console SFX module to avoid unnecessary UAC elevation.
-    Keep the 7-Zip SFX notice with redistributed artifacts.
+    the progress-capable installer SFX module. Keep the 7-Zip SFX notice with
+    redistributed artifacts.
 
 The portable Windows ZIP remains the most transparent artifact. The optional
 EXE is an official 7-Zip self-extracting launcher for users who need a single
@@ -336,12 +336,12 @@ if ($CreateSelfExtractingExe) {
 
   $sfxCandidates = @(Find-SfxModules -Roots @($SevenZipRoot))
 
-  $hasNonInstallerSfx = @(($sfxCandidates | Where-Object {
+  $hasProgressSfx = @(($sfxCandidates | Where-Object {
     $name = Split-Path -Leaf $_
-    $name -in @("7zS2con.sfx", "7zS2.sfx")
+    $name -in @("7zSD.sfx", "7zS.sfx")
   })).Count -gt 0
 
-  if (-not $sfxCandidates -or -not $hasNonInstallerSfx) {
+  if (-not $sfxCandidates -or -not $hasProgressSfx) {
     $sdkArchive = Join-Path $sfxBuildDir "lzma-sdk.7z"
     $sdkDir = Join-Path $sfxBuildDir "lzma-sdk"
     try {
@@ -358,11 +358,11 @@ if ($CreateSelfExtractingExe) {
       if (-not $sfxCandidates) {
         throw
       }
-      Write-Warning "Could not obtain the official non-installer LZMA SFX module; falling back to the locally available installer SFX module, which may trigger Windows UAC."
+      Write-Warning "Could not obtain the official progress-capable LZMA SFX module; falling back to the locally available SFX module."
     }
   }
   if (-not $sfxCandidates) {
-    throw "No official 7-Zip/LZMA SDK SFX module (7zS2con.sfx, 7zS2.sfx, 7zSD.sfx, or 7zS.sfx) was found."
+    throw "No official 7-Zip/LZMA SDK SFX module (7zSD.sfx, 7zS.sfx, 7zS2con.sfx, or 7zS2.sfx) was found."
   }
   $sfxModule = $sfxCandidates[0]
   $sfxModuleName = (Split-Path -Leaf $sfxModule)
@@ -385,6 +385,7 @@ if ($CreateSelfExtractingExe) {
     @'
 ;!@Install@!UTF-8!
 Title="HiCT Portable"
+Progress="yes"
 Directory=""
 RunProgram="cmd.exe /d /k call run.cmd"
 ;!@InstallEnd@!
