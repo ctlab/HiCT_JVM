@@ -431,6 +431,7 @@ cd HiCT_JVM
 If `toolchains-dist/<platform>/` exists before packaging, Gradle embeds that platform's `hictk` payload into the fat JAR.
 Use `scripts/toolchains/build_hictk_linux.sh` or `scripts/toolchains/build_hictk_windows.ps1` first when release artifacts must include `.hic` conversion support without requiring external tools.
 When bundled hictk is enabled, HiCT release artifacts redistribute the platform-specific `hictk` executable built from the official hictk source release selected by `HICTK_REF`/workflow input.
+Portable ZIP, `.run`, AppImage, and Windows EXE packages additionally extract the platform payload under `toolchains/` and launch HiCT with `HICT_TOOLCHAIN_DIR` pointing there, so `.hic` conversion does not depend on extracting an executable from the JAR into the system temporary directory at runtime.
 
 === Redistribution and license notes
 

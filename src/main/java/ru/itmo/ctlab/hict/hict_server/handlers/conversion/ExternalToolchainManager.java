@@ -119,7 +119,10 @@ public final class ExternalToolchainManager {
       }
       final var target = extractionRoot.resolve(relative).normalize();
       Files.createDirectories(target.getParent());
-      if (Files.exists(target)) {
+      if (Files.isRegularFile(target) && Files.size(target) > 0L) {
+        if (target.startsWith(extractionRoot.resolve("bin")) && !isWindows()) {
+          target.toFile().setExecutable(true, true);
+        }
         continue;
       }
       final var resourcePath = BUNDLED_ROOT + "/" + platform + "/" + relative;
@@ -237,7 +240,7 @@ public final class ExternalToolchainManager {
       return null;
     }
     final var resolved = root.resolve(relative).normalize();
-    return Files.exists(resolved) ? resolved : null;
+    return isUsableCommand(resolved) ? resolved : null;
   }
 
   private static @NotNull Optional<String> readSetting(final @NotNull String key) {
@@ -261,7 +264,7 @@ public final class ExternalToolchainManager {
       final var dir = Path.of(rawDir);
       for (final var candidate : candidates) {
         final var maybe = dir.resolve(candidate);
-        if (Files.isRegularFile(maybe) && Files.isExecutable(maybe)) {
+        if (isUsableCommand(maybe)) {
           return maybe.toAbsolutePath().normalize();
         }
       }
@@ -274,7 +277,7 @@ public final class ExternalToolchainManager {
                                               final @Nullable Path... candidates) {
     if (explicit != null && explicit.isPresent()) {
       final var normalized = explicit.get().toAbsolutePath().normalize();
-      if (Files.exists(normalized)) {
+      if (isUsableCommand(normalized)) {
         return normalized;
       }
     }
@@ -282,7 +285,7 @@ public final class ExternalToolchainManager {
       return null;
     }
     for (final var candidate : candidates) {
-      if (candidate != null && Files.exists(candidate)) {
+      if (candidate != null && isUsableCommand(candidate)) {
         return candidate.toAbsolutePath().normalize();
       }
     }
@@ -304,6 +307,10 @@ public final class ExternalToolchainManager {
 
   private static boolean isWindows() {
     return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+  }
+
+  private static boolean isUsableCommand(final @NotNull Path path) {
+    return Files.isRegularFile(path) && (isWindows() || Files.isExecutable(path));
   }
 
   private static @NotNull List<String> stringList(final @Nullable JsonArray array) {
