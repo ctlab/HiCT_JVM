@@ -60,6 +60,7 @@ import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tracks.TrackHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.info.AttributionInfo;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.awt.*;
@@ -145,6 +146,7 @@ public class MainVerticle extends AbstractVerticle {
       server.requestHandler(router).listen(port, this.bindHost, ar -> {
         if (ar.succeeded()) {
           log.info("Server started on {}:{}", this.bindHost, ar.result().actualPort());
+          AttributionInfo.startupBannerLines().forEach(log::info);
           deployWebUiVerticle();
           startPromise.complete();
         } else {
