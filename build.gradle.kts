@@ -22,6 +22,7 @@
  * SOFTWARE.
  */
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.gradle.api.GradleException
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.ByteArrayOutputStream
@@ -74,6 +75,22 @@ val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
 val bundledToolchainSourceDirectory = layout.projectDirectory.dir("toolchains-dist")
 val webUIBranch = "master"
+val npmExecutable = if (System.getProperty("os.name").lowercase().contains("windows")) "npm.cmd" else "npm"
+val requireBundledWebUI =
+  (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
+    ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
+    ?: false
+
+fun handleMissingWebUI(message: String, cause: Throwable? = null) {
+  if (requireBundledWebUI) {
+    throw GradleException(message, cause)
+  }
+  if (cause == null) {
+    logger.warn(message)
+  } else {
+    logger.warn(message, cause)
+  }
+}
 
 version = readVersion()
 
@@ -218,7 +235,7 @@ fun incrementPatchVersion(currentVersion: String): String {
     val webuiGitHash = getGitHash(webUIRepositoryDirectory.asFile)
     "webui_$webuiGitHash"
   } else "nowebui"
-  val (semver, oldHash) = currentVersion.split("-")
+  val semver = currentVersion.substringBefore("-")
   val (major, minor, patch) = semver.split(".")
   val newPatch = patch.toInt() + 1
   return "$major.$minor.$newPatch-$gitHash-$webuiVer"
@@ -264,12 +281,12 @@ tasks.register("buildWebUI") {
             "(branch/working tree will not be modified by Gradle)"
         )
         project.exec {
-          commandLine("npm", "install")
+          commandLine(npmExecutable, "install")
           workingDir = localWebUIRepositoryDirectory.asFile
           standardOutput = System.out
         }
         project.exec {
-          commandLine("npm", "run", "build")
+          commandLine(npmExecutable, "run", "build")
           workingDir = localWebUIRepositoryDirectory.asFile
           standardOutput = System.out
         }
@@ -295,7 +312,7 @@ tasks.register("buildWebUI") {
         }
 
         if (pullResult.exitValue != 0) {
-          print("Failed to pull changes from WebUI repository. Proceeding without baked-in WebUI.")
+          handleMissingWebUI("Failed to pull changes from WebUI repository. Proceeding without baked-in WebUI.")
           return@doLast
         } else {
           print("Successfully pulled changes")
@@ -323,19 +340,18 @@ tasks.register("buildWebUI") {
 
 
       project.exec {
-        commandLine("npm", "install")
+        commandLine(npmExecutable, "install")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
       }
 
       project.exec {
-        commandLine("npm", "run", "build")
+        commandLine(npmExecutable, "run", "build")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
       }
     } catch (e: Exception) {
-      print("Caught an exception during building WebUI, proceeding without it")
-      print(e)
+      handleMissingWebUI("Caught an exception during building WebUI.", e)
       return@doLast
     }
   }

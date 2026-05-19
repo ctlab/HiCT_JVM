@@ -68,7 +68,7 @@ if [[ -z "${JAR_TOOL}" || ! -x "${JAR_TOOL}" ]]; then
 fi
 
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
-  (cd "${PROJECT_DIR}" && ./gradlew shadowJar)
+  (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true shadowJar)
 fi
 
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"

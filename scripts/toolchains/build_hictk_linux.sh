@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_DIR}/toolchains-dist/linux_x86_64}"
 WORK_DIR="${WORK_DIR:-/tmp/hictk-build-linux-x86_64}"
+CONAN_HOME_DIR="${HICTK_CONAN_HOME:-${CONAN_HOME:-${WORK_DIR}/conan-home}}"
 REPO_URL="${HICTK_REPO_URL:-https://github.com/paulsengroup/hictk.git}"
 REF="${HICTK_REF:-latest}"
 RUN_TESTS="${RUN_TESTS:-0}"
@@ -20,6 +21,7 @@ Environment overrides:
   HICTK_REF=v2.2.0                     Build a specific official tag. Default: latest tag.
   OUTPUT_DIR=/path/to/toolchains-dist/linux_x86_64
   WORK_DIR=/tmp/hictk-build-linux-x86_64
+  HICTK_CONAN_HOME=/path/to/cacheable/conan-home
   COMPILER=gcc|clang                   Default: gcc
   RUN_TESTS=1                          Run ctest after building.
   ENABLE_MOSTLY_STATIC_RUNTIME=1       Add -static-libstdc++ -static-libgcc on GCC builds.
@@ -73,6 +75,7 @@ if [[ -z "${REF}" ]]; then
 fi
 
 echo "[hictk/linux] Building ${REF} into ${OUTPUT_DIR}"
+echo "[hictk/linux] Using Conan home ${CONAN_HOME_DIR}"
 
 SOURCE_DIR="${WORK_DIR}/src"
 VENV_DIR="${WORK_DIR}/venv"
@@ -80,7 +83,7 @@ BUILD_DIR="${SOURCE_DIR}/build"
 STAGE_DIR="${WORK_DIR}/stage"
 
 rm -rf "${WORK_DIR}"
-mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}"
+mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}" "${CONAN_HOME_DIR}"
 
 python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip setuptools wheel
@@ -91,7 +94,7 @@ python3 -m venv "${VENV_DIR}"
 git clone --depth 1 --branch "${REF}" "${REPO_URL}" "${SOURCE_DIR}"
 
 export PATH="${VENV_DIR}/bin:${PATH}"
-export CONAN_HOME="${WORK_DIR}/conan-home"
+export CONAN_HOME="${CONAN_HOME_DIR}"
 export CONAN_CPU_COUNT="${BUILD_JOBS}"
 export CMAKE_BUILD_PARALLEL_LEVEL="${BUILD_JOBS}"
 

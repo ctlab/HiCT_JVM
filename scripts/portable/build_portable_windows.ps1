@@ -57,7 +57,10 @@ Require-Command "powershell"
 if (-not $SkipGradle) {
   Push-Location $projectDir
   try {
-    & .\gradlew.bat shadowJar
+    & .\gradlew.bat -PrequireBundledWebUI=true shadowJar
+    if ($LASTEXITCODE -ne 0) {
+      throw "Gradle shadowJar failed with exit code $LASTEXITCODE"
+    }
   }
   finally {
     Pop-Location

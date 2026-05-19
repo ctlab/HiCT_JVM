@@ -2,6 +2,7 @@ param(
   [string]$HictkRef = $(if ($env:HICTK_REF) { $env:HICTK_REF } else { "latest" }),
   [string]$OutputDir = $(if ($env:OUTPUT_DIR) { $env:OUTPUT_DIR } else { (Join-Path $PSScriptRoot "..\..\toolchains-dist\windows_x86_64") }),
   [string]$WorkDir = $(if ($env:WORK_DIR) { $env:WORK_DIR } else { (Join-Path $env:TEMP "hictk-build-windows-x86_64") }),
+  [string]$ConanHome = $(if ($env:HICTK_CONAN_HOME) { $env:HICTK_CONAN_HOME } elseif ($env:CONAN_HOME) { $env:CONAN_HOME } else { (Join-Path $env:TEMP "hictk-conan-windows-x86_64") }),
   [switch]$RunTests,
   [switch]$MostlyStaticRuntime
 )
@@ -56,6 +57,7 @@ if ($HictkRef -eq "latest") {
 }
 
 Write-Host "[hictk/windows] Building $HictkRef into $OutputDir"
+Write-Host "[hictk/windows] Using Conan home $ConanHome"
 
 $repoUrl = "https://github.com/paulsengroup/hictk.git"
 $sourceDir = Join-Path $WorkDir "src"
@@ -68,6 +70,7 @@ if (Test-Path $WorkDir) {
 }
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ConanHome | Out-Null
 Invoke-Native -FilePath "python" -Arguments @("-m", "venv", $venvDir)
 
 $pythonExe = Join-Path $venvDir "Scripts\python.exe"
@@ -81,7 +84,7 @@ Invoke-Native -FilePath $pipExe -Arguments @("-m", "pip", "install", "conan>=2",
 Invoke-Native -FilePath "git" -Arguments @("clone", "--depth", "1", "--branch", $HictkRef, $repoUrl, $sourceDir)
 
 $env:PATH = "$(Join-Path $venvDir 'Scripts');$env:PATH"
-$env:CONAN_HOME = Join-Path $WorkDir "conan-home"
+$env:CONAN_HOME = $ConanHome
 Invoke-Native -FilePath $conanExe -Arguments @("profile", "detect", "--force")
 
 Push-Location $sourceDir
