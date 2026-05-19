@@ -43,10 +43,13 @@ function Get-JdkTool {
   throw "Missing $Name. Use a full JDK, not a JRE."
 }
 
-function Find-InstallerSfxModules {
+function Find-SfxModules {
   param([Parameter(Mandatory = $true)][string[]]$Roots)
 
-  $preferredNames = @("7zSD.sfx", "7zS.sfx", "7zS2con.sfx", "7zS2.sfx")
+  # Prefer the official console small SFX module for the portable EXE. Unlike
+  # the installer SFX path, it does not present itself to Windows as an
+  # installer and should not request elevation.
+  $preferredNames = @("7zS2con.sfx", "7zS2.sfx", "7zSD.sfx", "7zS.sfx")
   $found = New-Object 'System.Collections.Generic.List[string]'
 
   foreach ($root in $Roots) {
@@ -145,8 +148,9 @@ This package is assembled from:
     prepared before packaging. hictk is redistributed under its MIT license and
     should be cited when .hic conversion is used.
   - Optional single-file Windows EXE packaging built with official 7-Zip/LZMA
-    SDK SFX modules when -CreateSelfExtractingExe is used. Keep the 7-Zip SFX
-    notice with redistributed artifacts.
+    SDK SFX modules when -CreateSelfExtractingExe is used. The build prefers
+    the non-installer console SFX module to avoid unnecessary UAC elevation.
+    Keep the 7-Zip SFX notice with redistributed artifacts.
 
 The portable Windows ZIP remains the most transparent artifact. The optional
 EXE is an official 7-Zip self-extracting launcher for users who need a single
@@ -185,6 +189,9 @@ if not defined DATA_DIR (
 )
 if not defined WEBUI_ROOT (
   if exist "%APP_HOME%\webui\index.html" set "WEBUI_ROOT=%APP_HOME%\webui"
+)
+if not defined HICT_BIND_HOST (
+  set "HICT_BIND_HOST=127.0.0.1"
 )
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>nul
@@ -226,6 +233,19 @@ exit /b 1
 @echo off
 call "%~dp0bin\hict.cmd" %*
 '@ | Set-Content -Encoding ASCII (Join-Path $appDir "HiCT.cmd")
+
+@'
+@echo off
+call "%~dp0HiCT-SFX.cmd" %*
+set "HICT_EXIT_CODE=%ERRORLEVEL%"
+if "%~1"=="" (
+  echo.
+  echo HiCT exited with code %HICT_EXIT_CODE%.
+  echo Press any key to close this window.
+  pause >nul
+)
+exit /b %HICT_EXIT_CODE%
+'@ | Set-Content -Encoding ASCII (Join-Path $appDir "run.cmd")
 
 @'
 @echo off
@@ -271,6 +291,10 @@ the EXE when it can infer that location from the parent process. The launcher
 enters DATA_DIR before Java starts so file dialogs and relative paths begin from
 the portable data location. Explicit DATA_DIR always wins.
 
+HICT_BIND_HOST defaults to 127.0.0.1 in this portable launcher. Set
+HICT_BIND_HOST=0.0.0.0 explicitly if remote machines must connect to this HiCT
+server.
+
 Java runtime notices:
   The embedded runtime keeps its jlink-generated legal\ directory intact. For
   Temurin/OpenJDK builds this includes the OpenJDK GPLv2 + Classpath Exception
@@ -310,24 +334,39 @@ if ($CreateSelfExtractingExe) {
   }
   New-Item -ItemType Directory -Force -Path $sfxBuildDir | Out-Null
 
-  $sfxCandidates = @(Find-InstallerSfxModules -Roots @($SevenZipRoot))
+  $sfxCandidates = @(Find-SfxModules -Roots @($SevenZipRoot))
 
-  if (-not $sfxCandidates) {
+  $hasNonInstallerSfx = @(($sfxCandidates | Where-Object {
+    $name = Split-Path -Leaf $_
+    $name -in @("7zS2con.sfx", "7zS2.sfx")
+  })).Count -gt 0
+
+  if (-not $sfxCandidates -or -not $hasNonInstallerSfx) {
     $sdkArchive = Join-Path $sfxBuildDir "lzma-sdk.7z"
     $sdkDir = Join-Path $sfxBuildDir "lzma-sdk"
-    Write-Host "Downloading official LZMA SDK from $SevenZipSdkUrl"
-    Invoke-WebRequest -Uri $SevenZipSdkUrl -OutFile $sdkArchive
-    Invoke-Native -FilePath $sevenZipExe -Arguments @("x", $sdkArchive, "-o$sdkDir", "-y")
-    $sdkNotice = Join-Path $sdkDir "DOC\lzma-sdk.txt"
-    if (Test-Path $sdkNotice) {
-      Copy-Item -Force $sdkNotice (Join-Path $appDir "licenses\LZMA_SDK_NOTICE.txt")
+    try {
+      Write-Host "Downloading official LZMA SDK from $SevenZipSdkUrl"
+      Invoke-WebRequest -Uri $SevenZipSdkUrl -OutFile $sdkArchive
+      Invoke-Native -FilePath $sevenZipExe -Arguments @("x", $sdkArchive, "-o$sdkDir", "-y")
+      $sdkNotice = Join-Path $sdkDir "DOC\lzma-sdk.txt"
+      if (Test-Path $sdkNotice) {
+        Copy-Item -Force $sdkNotice (Join-Path $appDir "licenses\LZMA_SDK_NOTICE.txt")
+      }
+      $sdkSfxCandidates = @(Find-SfxModules -Roots @($sdkDir))
+      $sfxCandidates = @($sdkSfxCandidates + $sfxCandidates)
+    } catch {
+      if (-not $sfxCandidates) {
+        throw
+      }
+      Write-Warning "Could not obtain the official non-installer LZMA SFX module; falling back to the locally available installer SFX module, which may trigger Windows UAC."
     }
-    $sfxCandidates = @(Find-InstallerSfxModules -Roots @($sdkDir))
   }
   if (-not $sfxCandidates) {
-    throw "No installer-capable official 7-Zip/LZMA SDK SFX module (7zSD.sfx, 7zS.sfx, 7zS2con.sfx, or 7zS2.sfx) was found."
+    throw "No official 7-Zip/LZMA SDK SFX module (7zS2con.sfx, 7zS2.sfx, 7zSD.sfx, or 7zS.sfx) was found."
   }
   $sfxModule = $sfxCandidates[0]
+  $sfxModuleName = (Split-Path -Leaf $sfxModule)
+  $sfxUsesInstallerConfig = $sfxModuleName -notin @("7zS2con.sfx", "7zS2.sfx")
   Write-Host "Using official SFX module $sfxModule"
 
   $archivePath = Join-Path $sfxBuildDir "payload.7z"
@@ -336,26 +375,33 @@ if ($CreateSelfExtractingExe) {
 
   Push-Location $appDir
   try {
-    Invoke-Native -FilePath $sevenZipExe -Arguments @("a", "-t7z", "-mx=7", "-mmt=on", $archivePath, ".\*")
+    Invoke-Native -FilePath $sevenZipExe -Arguments @("a", "-t7z", "-mx=7", "-mmt=on", "-ms=off", $archivePath, ".\*")
   }
   finally {
     Pop-Location
   }
 
-  @'
+  if ($sfxUsesInstallerConfig) {
+    @'
 ;!@Install@!UTF-8!
 Title="HiCT Portable"
 Directory=""
-RunProgram="cmd.exe /d /k call HiCT-SFX.cmd"
+RunProgram="cmd.exe /d /k call run.cmd"
 ;!@InstallEnd@!
 '@ | Set-Content -Encoding UTF8 $configPath
+  }
 
   if (Test-Path $exePath) {
     Remove-Item -Force $exePath
   }
   $out = [System.IO.File]::Create($exePath)
   try {
-    foreach ($part in @($sfxModule, $configPath, $archivePath)) {
+    $sfxParts = if ($sfxUsesInstallerConfig) {
+      @($sfxModule, $configPath, $archivePath)
+    } else {
+      @($sfxModule, $archivePath)
+    }
+    foreach ($part in $sfxParts) {
       $bytes = [System.IO.File]::ReadAllBytes($part)
       $out.Write($bytes, 0, $bytes.Length)
     }

@@ -152,6 +152,7 @@ fi
 if [[ -z "${WEBUI_ROOT:-}" && -d "${APP_HOME}/webui" ]]; then
   export WEBUI_ROOT="${APP_HOME}/webui"
 fi
+export HICT_BIND_HOST="${HICT_BIND_HOST:-127.0.0.1}"
 
 mkdir -p "${DATA_DIR}"
 cd "${DATA_DIR}"
@@ -191,6 +192,10 @@ DATA_DIR defaults:
 
 The launcher enters DATA_DIR before Java starts, so file dialogs and relative
 paths begin from the portable data location.
+
+HICT_BIND_HOST defaults to 127.0.0.1 in this portable launcher. Set
+HICT_BIND_HOST=0.0.0.0 explicitly if remote machines must connect to this HiCT
+server.
 
 Java runtime notices:
   The embedded runtime keeps its jlink-generated legal/ directory intact. For

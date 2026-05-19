@@ -72,6 +72,7 @@ import java.util.Map;
 @Slf4j(topic = "MainVerticle")
 public class MainVerticle extends AbstractVerticle {
   private RequestTaskScheduler requestTaskScheduler;
+  private String bindHost = "0.0.0.0";
 
   static {
     HDF5LibraryInitializer.initializeHDF5Library();
@@ -101,6 +102,7 @@ public class MainVerticle extends AbstractVerticle {
               .add("PROCESSED_DIR")
               .add("TILE_SIZE")
               .add("VXPORT")
+              .add("HICT_BIND_HOST")
               .add("MIN_DS_POOL")
               .add("MAX_DS_POOL")
               .add("HICT_WORKERS_TOTAL_MAX")
@@ -139,14 +141,14 @@ public class MainVerticle extends AbstractVerticle {
       final var server = vertx.createHttpServer(serverOptions);
       final var router = createRouter();
 
-      log.info("Starting server on port {}", port);
-      server.requestHandler(router).listen(port, ar -> {
+      log.info("Starting server on {}:{}", this.bindHost, port);
+      server.requestHandler(router).listen(port, this.bindHost, ar -> {
         if (ar.succeeded()) {
-          log.info("Server started on port {}", ar.result().actualPort());
+          log.info("Server started on {}:{}", this.bindHost, ar.result().actualPort());
           deployWebUiVerticle();
           startPromise.complete();
         } else {
-          log.error("Failed to start server on port {}", port, ar.cause());
+          log.error("Failed to start server on {}:{}", this.bindHost, port, ar.cause());
           startPromise.fail(ar.cause());
         }
       });
@@ -187,6 +189,20 @@ public class MainVerticle extends AbstractVerticle {
     return defaultValue;
   }
 
+  private static @NotNull String getStringSetting(final @NotNull JsonObject config,
+                                                  final @NotNull String key,
+                                                  final @NotNull String defaultValue) {
+    final Object raw = config.getValue(key);
+    if (raw instanceof String value && !value.isBlank()) {
+      return value.trim();
+    }
+    final String systemPropertyValue = System.getProperty(key);
+    if (systemPropertyValue != null && !systemPropertyValue.isBlank()) {
+      return systemPropertyValue.trim();
+    }
+    return defaultValue;
+  }
+
   private int configureServerState(final @NotNull JsonObject config) {
     final var dataDirectoryString = config.getString("DATA_DIR", ".");
     final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
@@ -199,6 +215,8 @@ public class MainVerticle extends AbstractVerticle {
     final var minDSPool = getIntegerSetting(config, "MIN_DS_POOL", 4);
     final var maxDSPool = getIntegerSetting(config, "MAX_DS_POOL", 16);
     final var port = getIntegerSetting(config, "VXPORT", 5000);
+    final var bindHost = getStringSetting(config, "HICT_BIND_HOST", "0.0.0.0");
+    this.bindHost = bindHost;
     final int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
     final int totalWorkersDefault = Math.max(10, cores * 2);
     final int totalWorkers = getIntegerSetting(config, "HICT_WORKERS_TOTAL_MAX", totalWorkersDefault);
@@ -250,6 +268,7 @@ public class MainVerticle extends AbstractVerticle {
     map.put("processedDirectory", new ShareableWrappers.PathWrapper(processedDirectory));
     map.put("tileSize", tileSize);
     map.put("VXPORT", port);
+    map.put("HICT_BIND_HOST", bindHost);
     map.put("MIN_DS_POOL", minDSPool);
     map.put("MAX_DS_POOL", maxDSPool);
     this.requestTaskScheduler = new RequestTaskScheduler(

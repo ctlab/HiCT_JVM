@@ -154,6 +154,7 @@ Environment variables supported by the server startup:
 * `DATA_DIR` -- directory that is scanned recursively for `.hict.hdf5`, `.agp`, `fasta`, `.cool`, and `.mcool` files.
 * `VXPORT` -- API gateway port, default `5000`.
 * `WEBUI_PORT` -- WebUI port, default `8080`.
+* `HICT_BIND_HOST` -- interface address for API and WebUI servers, default `0.0.0.0`; portable launchers default it to `127.0.0.1`.
 * `SERVE_WEBUI` -- `true`/`false`, default `true`.
 * `TILE_SIZE` -- default visualization tile size, default `256`.
 * `MIN_DS_POOL` / `MAX_DS_POOL` -- min/max pool sizes used when opening chunked datasets.
@@ -364,8 +365,9 @@ These packages include the HiCT JVM fat JAR, the built HiCT WebUI resources, an 
 * `HiCT-<version>-windows-x86_64.exe` -- optional single-file Windows 7-Zip/LZMA SDK SFX launcher, not an MSI installer.
 
 The Windows ZIP is the most transparent portable artifact.
-The Windows EXE is built only from official 7-Zip/LZMA SDK SFX modules (`7zSD.sfx`, `7zS.sfx`, `7zS2con.sfx`, or `7zS2.sfx`) and runs the same portable app without installation.
-It opens a console window and keeps it open through `cmd /k`, so errors remain visible after HiCT exits.
+The Windows EXE is built only from official 7-Zip/LZMA SDK SFX modules (`7zS2con.sfx`, `7zS2.sfx`, `7zSD.sfx`, or `7zS.sfx`) and runs the same portable app without installation.
+The build prefers the non-installer console SFX module (`7zS2con.sfx`) to avoid unnecessary UAC elevation prompts.
+It opens a console window and keeps it open after no-argument double-click launches, so errors remain visible after HiCT exits.
 
 === Portable startup behavior
 
@@ -393,6 +395,7 @@ When no CLI arguments are provided, HiCT starts API + WebUI and opens `http://lo
 The Windows portable launcher also starts a small browser-opener helper so browser launch does not depend on Java Desktop integration.
 All normal HiCT CLI subcommands remain available from the ZIP.
 Portable launchers enter `DATA_DIR` before Java starts, so file dialogs and relative paths begin from the portable data location rather than the shell or system directory that launched HiCT.
+They also bind API and WebUI servers to `127.0.0.1` by default, which keeps the packaged Java process local-only and reduces firewall prompts on Windows. Set `HICT_BIND_HOST=0.0.0.0` explicitly if remote machines must connect to the HiCT server.
 
 Portable `DATA_DIR` defaults:
 
