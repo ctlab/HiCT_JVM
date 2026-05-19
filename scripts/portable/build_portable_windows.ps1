@@ -196,7 +196,7 @@ if errorlevel 1 (
 
 set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
 if "%~1"=="" (
-  start "" /min "%ComSpec%" /d /c ""%APP_HOME%\bin\open-browser-when-ready.cmd" "http://localhost:8080/""
+  start "" /min "%ComSpec%" /c ""%APP_HOME%\bin\open-browser-when-ready.cmd" "http://localhost:8080/""
   "%JAVA_EXE%" -DAUTO_OPEN_BROWSER=false %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
 ) else (
   "%JAVA_EXE%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
@@ -235,8 +235,15 @@ for %%I in ("%SCRIPT_DIR%.") do set "APP_HOME=%%~fI"
 if not defined DATA_DIR (
   for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$skip = @('cmd.exe','powershell.exe','pwsh.exe','conhost.exe'); $current = $PID; for ($i = 0; $i -lt 10; $i++) { $self = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $current); if (-not $self -or -not $self.ParentProcessId) { break }; $parent = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $self.ParentProcessId); if (-not $parent) { break }; $path = $parent.ExecutablePath; if ($path) { $name = [IO.Path]::GetFileName($path).ToLowerInvariant(); if (($skip -notcontains $name) -and $name.StartsWith('hict') -and $name.EndsWith('.exe')) { Split-Path -Parent $path; break } }; $current = $parent.ProcessId }" 2^>nul`) do set "DATA_DIR=%%I"
 )
+if defined DATA_DIR (
+  if not exist "%DATA_DIR%\" set "DATA_DIR="
+)
 if not defined DATA_DIR (
   set "DATA_DIR=%APP_HOME%"
+)
+if not exist "%APP_HOME%\HiCT.cmd" (
+  echo HiCT portable payload is incomplete: "%APP_HOME%\HiCT.cmd" was not found.
+  exit /b 1
 )
 call "%APP_HOME%\HiCT.cmd" %*
 '@ | Set-Content -Encoding ASCII (Join-Path $appDir "HiCT-SFX.cmd")
@@ -338,8 +345,8 @@ if ($CreateSelfExtractingExe) {
   @'
 ;!@Install@!UTF-8!
 Title="HiCT Portable"
-ExecuteFile="cmd.exe"
-ExecuteParameters="/d /k call \"%%T\\HiCT-SFX.cmd\""
+Directory=""
+RunProgram="cmd.exe /d /k call HiCT-SFX.cmd"
 ;!@InstallEnd@!
 '@ | Set-Content -Encoding UTF8 $configPath
 
