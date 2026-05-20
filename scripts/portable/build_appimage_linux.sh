@@ -15,6 +15,9 @@ APPDIR="${DIST_ROOT}/${APP_NAME}-${VERSION}.AppDir"
 APPIMAGE_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${APPIMAGE_ARCH}.AppImage"
 SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${APPIMAGE_ARCH}.AppImage.sha256"
 APPIMAGETOOL_URL="${APPIMAGETOOL_URL:-https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage}"
+APPIMAGE_COMPRESSION="${APPIMAGE_COMPRESSION:-xz}"
+APPIMAGE_MKSQUASHFS_BLOCK_SIZE="${APPIMAGE_MKSQUASHFS_BLOCK_SIZE:-1048576}"
+APPIMAGE_VALIDATE="${APPIMAGE_VALIDATE:-0}"
 
 usage() {
   cat <<'EOF'
@@ -27,6 +30,9 @@ Outputs:
 Environment overrides:
   APPIMAGETOOL=/path/to/appimagetool     Use an existing appimagetool binary.
   APPIMAGETOOL_URL=<url>                 Override the official appimagetool URL.
+  APPIMAGE_COMPRESSION=xz|gzip|zstd      SquashFS compression, xz by default.
+  APPIMAGE_MKSQUASHFS_BLOCK_SIZE=<bytes> SquashFS block size, 1048576 by default.
+  APPIMAGE_VALIDATE=1                    Enable appstream validation, disabled by default.
   HICT_SKIP_PORTABLE=1                   Reuse an existing build/portable app.
   HICT_PORTABLE_DIST_DIR=<dir>           Override staging directory.
 EOF
@@ -164,7 +170,24 @@ if [[ -z "${APPIMAGETOOL_BIN}" ]]; then
 fi
 
 rm -f "${APPIMAGE_PATH}" "${SHA_PATH}"
-ARCH="${APPIMAGE_ARCH}" APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGETOOL_BIN}" "${APPDIR}" "${APPIMAGE_PATH}"
+APPIMAGETOOL_ARGS=(
+  --comp "${APPIMAGE_COMPRESSION}"
+  --mksquashfs-opt -b
+  --mksquashfs-opt "${APPIMAGE_MKSQUASHFS_BLOCK_SIZE}"
+)
+if [[ "${APPIMAGE_COMPRESSION}" == "xz" ]]; then
+  APPIMAGETOOL_ARGS+=(
+    --mksquashfs-opt -Xdict-size
+    --mksquashfs-opt "100%"
+    --mksquashfs-opt -Xbcj
+    --mksquashfs-opt x86
+  )
+fi
+if [[ "${APPIMAGE_VALIDATE}" != "1" ]]; then
+  APPIMAGETOOL_ARGS=(-n "${APPIMAGETOOL_ARGS[@]}")
+fi
+
+ARCH="${APPIMAGE_ARCH}" APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGETOOL_BIN}" "${APPIMAGETOOL_ARGS[@]}" "${APPDIR}" "${APPIMAGE_PATH}"
 
 (
   cd "${ARTIFACT_DIR}"

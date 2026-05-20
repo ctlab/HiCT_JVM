@@ -106,7 +106,7 @@ public final class HictLauncherGui {
   private record ConfigSpec(String key, String label, String defaultValue, PathKind pathKind) {
   }
 
-  private record BrowserBundle(String name, Path root, Path executable) {
+  private record BrowserBundle(String name, Path root, Path executable, List<String> arguments) {
   }
 
   private static final class LauncherWindow {
@@ -570,7 +570,11 @@ public final class HictLauncherGui {
       final var url = webUiUrl();
       if (this.useBundledBrowserCheckbox.isSelected() && this.browserBundle != null) {
         try {
-          new ProcessBuilder(this.browserBundle.executable().toString(), url)
+          final var command = new ArrayList<String>();
+          command.add(this.browserBundle.executable().toString());
+          command.addAll(this.browserBundle.arguments());
+          command.add(url);
+          new ProcessBuilder(command)
             .directory(this.browserBundle.root().toFile())
             .start();
           appendLog("Opened WebUI in bundled browser: " + url);
@@ -910,7 +914,7 @@ public final class HictLauncherGui {
         if (!Files.isRegularFile(executable)) {
           return null;
         }
-        return new BrowserBundle(name, root, executable);
+        return new BrowserBundle(name, root, executable, extractJsonStringArray(manifestText, "arguments"));
       } catch (final IOException ignored) {
         return null;
       }
@@ -925,6 +929,50 @@ public final class HictLauncherGui {
       return matcher.group(1)
         .replace("\\\\", "\\")
         .replace("\\\"", "\"");
+    }
+
+    private static List<String> extractJsonStringArray(final String text, final String key) {
+      final var pattern = Pattern.compile("\"%s\"\\s*:\\s*\\[(.*?)]".formatted(Pattern.quote(key)), Pattern.DOTALL);
+      final Matcher matcher = pattern.matcher(text);
+      if (!matcher.find()) {
+        return List.of();
+      }
+      final var values = new ArrayList<String>();
+      final Matcher valueMatcher = Pattern.compile("\"((?:\\\\.|[^\"])*)\"").matcher(matcher.group(1));
+      while (valueMatcher.find()) {
+        values.add(unescapeJsonString(valueMatcher.group(1)));
+      }
+      return List.copyOf(values);
+    }
+
+    private static String unescapeJsonString(final String value) {
+      final var result = new StringBuilder(value.length());
+      boolean escaping = false;
+      for (int i = 0; i < value.length(); i++) {
+        final var ch = value.charAt(i);
+        if (!escaping) {
+          if (ch == '\\') {
+            escaping = true;
+          } else {
+            result.append(ch);
+          }
+          continue;
+        }
+        result.append(switch (ch) {
+          case '"', '\\', '/' -> ch;
+          case 'b' -> '\b';
+          case 'f' -> '\f';
+          case 'n' -> '\n';
+          case 'r' -> '\r';
+          case 't' -> '\t';
+          default -> ch;
+        });
+        escaping = false;
+      }
+      if (escaping) {
+        result.append('\\');
+      }
+      return result.toString();
     }
 
     private static String resolveJavaExecutable() {

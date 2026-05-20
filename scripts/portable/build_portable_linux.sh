@@ -10,6 +10,7 @@ VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
 APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.unsupported,jdk.zipfs}"
+RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
 
 usage() {
   cat <<'EOF'
@@ -24,8 +25,9 @@ Environment overrides:
   HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
   HICT_RUNTIME_MODULES=<modules>     Override jlink modules.
   HICT_PORTABLE_DIST_DIR=<dir>       Override staging directory.
+  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload, default 2.
 
-The .run file is a transparent shell script with a tar.gz payload appended. It
+The .run file is a transparent shell script with a tar.xz payload appended. It
 extracts to the user's cache and sets DATA_DIR to the directory containing the
 .run file unless DATA_DIR was explicitly provided.
 EOF
@@ -45,6 +47,8 @@ require_cmd() {
 
 require_cmd bash
 require_cmd tar
+require_cmd gzip
+require_cmd xz
 require_cmd sha256sum
 require_cmd awk
 require_cmd grep
@@ -147,9 +151,9 @@ This package is assembled from:
     packaging; browser payloads must be curated with their upstream license,
     trademark, and update requirements before redistribution.
 
-The Linux .run artifact is a transparent shell wrapper with an appended tar.gz
-payload. It is used to keep the release inspectable and avoid opaque native
-self-extracting packers.
+The Linux .run artifact is a transparent shell wrapper with an appended tar.xz
+payload. It is used to keep the release inspectable, reduce bundled-browser
+release size, and avoid opaque native self-extracting packers.
 EOF
 
 "${JLINK}" \
@@ -256,10 +260,10 @@ EOF
 TAR_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.tar.gz"
 RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.run"
 SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.sha256"
-PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.gz"
+PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.xz"
 
-tar -C "${DIST_ROOT}" -czf "${TAR_PATH}" "${APP_NAME}-${VERSION}-${PLATFORM}"
-cp "${TAR_PATH}" "${PAYLOAD_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(sha256sum "${PAYLOAD_PATH}" | awk '{print $1}')"
 
 cat > "${RUN_PATH}" <<EOF
@@ -298,10 +302,10 @@ HiCT portable launcher cannot start because required command '\$1' is not availa
 Install the standard archive/shell utilities for your Linux distribution, then
 run this file again. Common commands:
 
-  Debian/Ubuntu: sudo apt-get install coreutils gawk tar gzip
-  Fedora/RHEL:   sudo dnf install coreutils gawk tar gzip
-  Arch Linux:    sudo pacman -S coreutils gawk tar gzip
-  openSUSE:      sudo zypper install coreutils gawk tar gzip
+  Debian/Ubuntu: sudo apt-get install coreutils gawk tar xz-utils
+  Fedora/RHEL:   sudo dnf install coreutils gawk tar xz
+  Arch Linux:    sudo pacman -S coreutils gawk tar xz
+  openSUSE:      sudo zypper install coreutils gawk tar xz
 
 If this machine is locked down, use the .tar.gz portable artifact instead and
 extract it on a machine that has these standard tools.
@@ -317,7 +321,7 @@ fi
 require_runtime_cmd awk
 require_runtime_cmd tail
 require_runtime_cmd tar
-require_runtime_cmd gzip
+require_runtime_cmd xz
 require_runtime_cmd mkdir
 require_runtime_cmd touch
 require_runtime_cmd cat
@@ -334,7 +338,7 @@ if [[ "\${1:-}" == "--hict-extract-only" ]]; then
     exit 1
   fi
   mkdir -p "\$2"
-  tail -n +"\${payload_line}" "\${SELF_PATH}" | tar -xzf - -C "\$2"
+  tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\$2"
   echo "Extracted HiCT to \$2/${APP_NAME}-${VERSION}-${PLATFORM}"
   exit 0
 fi
@@ -356,7 +360,7 @@ marker_file="\${extract_root}/.payload.sha256"
 if [[ ! -x "\${app_home}/bin/hict" || ! -f "\${marker_file}" || "\$(cat "\${marker_file}" 2>/dev/null || true)" != "\${PAYLOAD_SHA256}" ]]; then
   rm -rf "\${extract_root}"
   mkdir -p "\${extract_root}"
-  tail -n +"\${payload_line}" "\${SELF_PATH}" | tar -xzf - -C "\${extract_root}"
+  tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\${extract_root}"
   printf '%s\n' "\${PAYLOAD_SHA256}" > "\${marker_file}"
 fi
 

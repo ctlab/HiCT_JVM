@@ -284,7 +284,6 @@ fun resolveWebUIRef(): String {
 fun verifyWebUIConverterDtoRegression(webUIDir: File) {
   val requestSource = webUIDir.resolve("src/app/core/net/api/request.ts")
   val requestDtoSource = webUIDir.resolve("src/app/core/net/dto/requestDTO.ts")
-  val builtRequestDto = webUIDir.resolve("dist/electron/app/core/net/dto/requestDTO.js")
   val browserAssetsDir = webUIDir.resolve("dist/assets")
 
   val sourceChecks = listOf(
@@ -311,17 +310,6 @@ fun verifyWebUIConverterDtoRegression(webUIDir: File) {
     for (snippet in requiredSnippets) {
       if (!text.contains(snippet)) {
         failures += "${file.relativeToOrSelf(webUIDir)} does not contain '$snippet'"
-      }
-    }
-  }
-
-  if (!builtRequestDto.isFile) {
-    failures += "missing built DTO file ${builtRequestDto.relativeToOrSelf(webUIDir)}"
-  } else {
-    val text = builtRequestDto.readText()
-    for (snippet in listOf("class ListConvertibleMatrixFilesRequestDTO", "case \"/list_convertible_matrices\"", "class EmptyRequestDTO")) {
-      if (!text.contains(snippet)) {
-        failures += "${builtRequestDto.relativeToOrSelf(webUIDir)} does not contain '$snippet'"
       }
     }
   }

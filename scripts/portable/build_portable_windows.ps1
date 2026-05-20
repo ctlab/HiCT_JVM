@@ -419,7 +419,7 @@ if ($CreateSelfExtractingExe) {
 
   Push-Location $appDir
   try {
-    Invoke-Native -FilePath $sevenZipExe -Arguments @("a", "-t7z", "-mx=7", "-mmt=on", "-ms=off", $archivePath, ".\*")
+    Invoke-Native -FilePath $sevenZipExe -Arguments @("a", "-t7z", "-mx=9", "-mmt=on", "-ms=off", $archivePath, ".\*")
   }
   finally {
     Pop-Location
