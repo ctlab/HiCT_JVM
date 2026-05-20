@@ -74,6 +74,7 @@ import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -106,7 +107,7 @@ public final class HictLauncherGui {
   private record ConfigSpec(String key, String label, String defaultValue, PathKind pathKind) {
   }
 
-  private record BrowserBundle(String name, Path root, Path executable, List<String> arguments) {
+  private record BrowserBundle(String name, String engine, int priority, Path root, Path executable, List<String> arguments) {
   }
 
   private static final class LauncherWindow {
@@ -153,7 +154,8 @@ public final class HictLauncherGui {
     private final CountDownLatch closed;
     private final Path appHome;
     private final Path jarPath;
-    private final BrowserBundle browserBundle;
+    private final Path browserPayloadRoot;
+    private final List<BrowserBundle> browserBundles;
     private final HttpClient httpClient;
     private final ExecutorService backgroundExecutor;
     private final Map<String, JTextField> fields = new LinkedHashMap<>();
@@ -182,7 +184,8 @@ public final class HictLauncherGui {
       this.closed = closed;
       this.appHome = detectAppHome();
       this.jarPath = detectJarPath(this.appHome);
-      this.browserBundle = detectBrowserBundle(this.appHome);
+      this.browserPayloadRoot = detectBrowserPayloadRoot(this.appHome);
+      this.browserBundles = detectBrowserBundles(this.browserPayloadRoot);
       this.httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(600))
         .build();
@@ -225,10 +228,10 @@ public final class HictLauncherGui {
       this.frame.setLocationRelativeTo(null);
       this.frame.setVisible(true);
       appendLog("Launcher ready. DATA_DIR=" + getFieldValue("DATA_DIR"));
-      if (this.browserBundle == null) {
+      if (this.browserBundles.isEmpty()) {
         appendLog("No bundled browser payload was found; the system browser will be used.");
       } else {
-        appendLog("Bundled browser detected: " + this.browserBundle.name() + " (" + this.browserBundle.executable() + ")");
+        appendLog("Bundled browsers detected: " + browserBundleNames(this.browserBundles));
       }
     }
 
@@ -368,8 +371,8 @@ public final class HictLauncherGui {
       this.openAfterStartCheckbox = new JCheckBox("Open WebUI after start");
       this.openAfterStartCheckbox.setSelected(getBooleanSetting("openAfterStart", true));
       this.useBundledBrowserCheckbox = new JCheckBox("Use bundled browser when available");
-      this.useBundledBrowserCheckbox.setSelected(getBooleanSetting("useBundledBrowser", this.browserBundle != null));
-      this.useBundledBrowserCheckbox.setEnabled(this.browserBundle != null);
+      this.useBundledBrowserCheckbox.setSelected(getBooleanSetting("useBundledBrowser", !this.browserBundles.isEmpty()));
+      this.useBundledBrowserCheckbox.setEnabled(!this.browserBundles.isEmpty());
       optionPanel.add(this.openAfterStartCheckbox);
       optionPanel.add(this.useBundledBrowserCheckbox);
 
@@ -515,8 +518,8 @@ public final class HictLauncherGui {
       if (getFieldValue("HICT_TOOLCHAIN_DIR").isBlank() && Files.isRegularFile(platformToolchain.resolve("manifest.json"))) {
         env.put("HICT_TOOLCHAIN_DIR", platformToolchain.toString());
       }
-      if (this.browserBundle != null) {
-        env.put("HICT_BROWSER_DIR", this.browserBundle.root().toString());
+      if (!this.browserBundles.isEmpty()) {
+        env.put("HICT_BROWSER_DIR", this.browserPayloadRoot.toString());
       }
     }
 
@@ -568,19 +571,14 @@ public final class HictLauncherGui {
 
     private void openWebUi() {
       final var url = webUiUrl();
-      if (this.useBundledBrowserCheckbox.isSelected() && this.browserBundle != null) {
-        try {
-          final var command = new ArrayList<String>();
-          command.add(this.browserBundle.executable().toString());
-          command.addAll(this.browserBundle.arguments());
-          command.add(url);
-          new ProcessBuilder(command)
-            .directory(this.browserBundle.root().toFile())
-            .start();
-          appendLog("Opened WebUI in bundled browser: " + url);
-          return;
-        } catch (final IOException ex) {
-          appendLog("Bundled browser failed, falling back to the system browser: " + ex.getMessage());
+      if (this.useBundledBrowserCheckbox.isSelected()) {
+        for (final var bundle : this.browserBundles) {
+          if (tryOpenBundledBrowser(bundle, url)) {
+            return;
+          }
+        }
+        if (!this.browserBundles.isEmpty()) {
+          appendLog("All bundled browsers failed, falling back to the system browser.");
         }
       }
 
@@ -589,6 +587,36 @@ public final class HictLauncherGui {
         appendLog("Opened WebUI in the system browser: " + url);
       } catch (final Exception ex) {
         showError("Failed to open WebUI", ex);
+      }
+    }
+
+    private boolean tryOpenBundledBrowser(final BrowserBundle bundle, final String url) {
+      final var command = new ArrayList<String>();
+      command.add(bundle.executable().toString());
+      command.addAll(bundle.arguments());
+      command.add(url);
+      final var processBuilder = new ProcessBuilder(command)
+        .directory(bundle.root().toFile())
+        .redirectErrorStream(true);
+      try {
+        final var process = processBuilder.start();
+        if (process.waitFor(1_200, TimeUnit.MILLISECONDS)) {
+          final var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+          appendLog("Bundled browser " + bundle.name() + " exited immediately with code " + process.exitValue() + ".");
+          if (!output.isBlank()) {
+            appendLog(output);
+          }
+          return false;
+        }
+        appendLog("Opened WebUI in bundled browser " + bundle.name() + ": " + url);
+        return true;
+      } catch (final IOException ex) {
+        appendLog("Bundled browser " + bundle.name() + " failed to start: " + ex.getMessage());
+        return false;
+      } catch (final InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        appendLog("Interrupted while starting bundled browser " + bundle.name() + ".");
+        return false;
       }
     }
 
@@ -663,11 +691,11 @@ public final class HictLauncherGui {
     }
 
     private void updateBrowserStatus() {
-      if (this.browserBundle == null) {
+      if (this.browserBundles.isEmpty()) {
         this.browserStatusLabel.setText("system default browser");
         return;
       }
-      this.browserStatusLabel.setText("bundled " + this.browserBundle.name() + " available; system browser fallback enabled");
+      this.browserStatusLabel.setText("bundled " + browserBundleNames(this.browserBundles) + "; system browser fallback enabled");
     }
 
     private void updateButtons() {
@@ -894,11 +922,36 @@ public final class HictLauncherGui {
       return null;
     }
 
-    private static BrowserBundle detectBrowserBundle(final Path appHome) {
+    private static Path detectBrowserPayloadRoot(final Path appHome) {
       final var explicit = firstNonBlank(System.getenv("HICT_BROWSER_DIR"), System.getProperty("HICT_BROWSER_DIR"));
-      final var root = explicit == null
+      return explicit == null
         ? appHome.resolve("browsers").resolve(platformId())
         : normalizePath(explicit);
+    }
+
+    private static List<BrowserBundle> detectBrowserBundles(final Path root) {
+      final var bundles = new ArrayList<BrowserBundle>();
+      final var rootBundle = detectBrowserBundle(root);
+      if (rootBundle != null) {
+        bundles.add(rootBundle);
+      }
+      if (Files.isDirectory(root)) {
+        try (var children = Files.list(root)) {
+          children
+            .filter(Files::isDirectory)
+            .sorted()
+            .map(LauncherWindow::detectBrowserBundle)
+            .filter(Objects::nonNull)
+            .forEach(bundles::add);
+        } catch (final IOException ignored) {
+          // No bundled browser is still a valid portable configuration.
+        }
+      }
+      bundles.sort(Comparator.comparingInt(BrowserBundle::priority).thenComparing(BrowserBundle::name));
+      return List.copyOf(bundles);
+    }
+
+    private static BrowserBundle detectBrowserBundle(final Path root) {
       final var manifest = root.resolve("manifest.json");
       if (!Files.isRegularFile(manifest)) {
         return null;
@@ -906,6 +959,8 @@ public final class HictLauncherGui {
       try {
         final var manifestText = Files.readString(manifest);
         final var name = Objects.requireNonNullElse(extractJsonString(manifestText, "name"), "Bundled browser");
+        final var engine = Objects.requireNonNullElse(extractJsonString(manifestText, "engine"), "unknown");
+        final var priority = extractJsonInt(manifestText, "priority", defaultBrowserPriority(engine));
         final var command = extractJsonString(manifestText, "command");
         if (command == null || command.isBlank()) {
           return null;
@@ -914,10 +969,28 @@ public final class HictLauncherGui {
         if (!Files.isRegularFile(executable)) {
           return null;
         }
-        return new BrowserBundle(name, root, executable, extractJsonStringArray(manifestText, "arguments"));
+        return new BrowserBundle(name, engine, priority, root, executable, extractJsonStringArray(manifestText, "arguments"));
       } catch (final IOException ignored) {
         return null;
       }
+    }
+
+    private static int defaultBrowserPriority(final String engine) {
+      final var normalized = engine.toLowerCase(Locale.ROOT);
+      if (normalized.contains("tauri")) {
+        return 10;
+      }
+      if (normalized.contains("electron") || normalized.contains("chromium")) {
+        return 50;
+      }
+      return 100;
+    }
+
+    private static String browserBundleNames(final List<BrowserBundle> bundles) {
+      return bundles.stream()
+        .map(bundle -> bundle.name() + " [" + bundle.engine() + "]")
+        .reduce((left, right) -> left + ", " + right)
+        .orElse("none");
     }
 
     private static String extractJsonString(final String text, final String key) {
@@ -929,6 +1002,19 @@ public final class HictLauncherGui {
       return matcher.group(1)
         .replace("\\\\", "\\")
         .replace("\\\"", "\"");
+    }
+
+    private static int extractJsonInt(final String text, final String key, final int fallback) {
+      final var pattern = Pattern.compile("\"%s\"\\s*:\\s*(-?\\d+)".formatted(Pattern.quote(key)));
+      final Matcher matcher = pattern.matcher(text);
+      if (!matcher.find()) {
+        return fallback;
+      }
+      try {
+        return Integer.parseInt(matcher.group(1));
+      } catch (final NumberFormatException ignored) {
+        return fallback;
+      }
     }
 
     private static List<String> extractJsonStringArray(final String text, final String key) {

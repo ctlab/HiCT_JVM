@@ -6,19 +6,18 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WEBUI_REPO_URL="${HICT_WEBUI_REPO_URL:-https://github.com/ctlab/HiCT_WebUI.git}"
 WEBUI_REF="${HICT_WEBUI_REF:-same-as-jvm}"
 PLATFORM="${HICT_BROWSER_PLATFORM:-linux_x86_64}"
-OUTPUT_DIR="${HICT_BROWSER_OUTPUT_DIR:-${PROJECT_DIR}/browsers-dist/${PLATFORM}/electron}"
-WORK_ROOT="${HICT_BROWSER_BUILD_ROOT:-${PROJECT_DIR}/build/electron-browser}"
+OUTPUT_DIR="${HICT_BROWSER_OUTPUT_DIR:-${PROJECT_DIR}/browsers-dist/${PLATFORM}/tauri}"
+WORK_ROOT="${HICT_BROWSER_BUILD_ROOT:-${PROJECT_DIR}/build/tauri-browser}"
 
 usage() {
   cat <<'EOF'
-Prepare the optional Electron browser payload consumed by HiCT portable packages.
+Prepare the default Tauri browser payload consumed by HiCT portable packages.
 
 Environment overrides:
   HICT_WEBUI_DIR=/path/to/HiCT_WebUI      Use an existing checkout.
   HICT_WEBUI_REF=<ref>                    HiCT_WebUI branch/tag/ref to clone; same-as-jvm by default.
   HICT_WEBUI_REPO_URL=<url>               HiCT_WebUI Git URL.
   HICT_BROWSER_OUTPUT_DIR=<dir>           Payload output directory.
-  HICT_ELECTRON_KEEP_LOCALES=en-US,fr     Comma-separated Chromium locale .pak names to keep.
   HICT_SKIP_NPM_INSTALL=1                 Reuse existing HiCT_WebUI node_modules.
 EOF
 }
@@ -35,6 +34,7 @@ require_cmd() {
   fi
 }
 
+require_cmd cargo
 require_cmd git
 require_cmd node
 require_cmd npm
@@ -85,13 +85,13 @@ resolve_webui_source() {
 }
 
 WEBUI_DIR="$(resolve_webui_source)"
-echo "[electron-browser] Using HiCT_WebUI source: ${WEBUI_DIR}"
-echo "[electron-browser] Writing payload to: ${OUTPUT_DIR}"
+echo "[tauri-browser] Using HiCT_WebUI source: ${WEBUI_DIR}"
+echo "[tauri-browser] Writing payload to: ${OUTPUT_DIR}"
 
 (
   cd "${WEBUI_DIR}"
   if [[ "${HICT_SKIP_NPM_INSTALL:-0}" == "1" ]]; then
-    echo "[electron-browser] Reusing existing HiCT_WebUI node_modules."
+    echo "[tauri-browser] Reusing existing HiCT_WebUI node_modules."
   else
     if [[ -f package-lock.json ]]; then
       npm ci
@@ -102,4 +102,4 @@ echo "[electron-browser] Writing payload to: ${OUTPUT_DIR}"
   npm run build
 )
 
-node "${WEBUI_DIR}/scripts/build-electron-browser-payload.mjs" --platform "${PLATFORM}" --output "${OUTPUT_DIR}"
+node "${WEBUI_DIR}/scripts/build-tauri-browser-payload.mjs" --platform "${PLATFORM}" --output "${OUTPUT_DIR}"

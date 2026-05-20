@@ -116,16 +116,19 @@ if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
   "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" --version >/dev/null
 fi
 
-if [[ -f "${PROJECT_DIR}/browsers-dist/linux_x86_64/manifest.json" ]]; then
+if [[ -d "${PROJECT_DIR}/browsers-dist/linux_x86_64" ]] &&
+   find "${PROJECT_DIR}/browsers-dist/linux_x86_64" -name manifest.json -type f | grep -q .; then
   mkdir -p "${APP_DIR}/browsers"
   cp -a "${PROJECT_DIR}/browsers-dist/linux_x86_64" "${APP_DIR}/browsers/"
-  BROWSER_MANIFEST="${APP_DIR}/browsers/linux_x86_64/manifest.json"
-  BROWSER_COMMAND="$(grep -E '"command"[[:space:]]*:' "${BROWSER_MANIFEST}" | head -n 1 | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-  if [[ -z "${BROWSER_COMMAND}" || ! -f "${APP_DIR}/browsers/linux_x86_64/${BROWSER_COMMAND}" ]]; then
-    echo "browsers-dist/linux_x86_64/manifest.json must contain a valid relative command path." >&2
-    exit 1
-  fi
-  chmod 0755 "${APP_DIR}/browsers/linux_x86_64/${BROWSER_COMMAND}" 2>/dev/null || true
+  while IFS= read -r BROWSER_MANIFEST; do
+    BROWSER_ROOT="$(dirname "${BROWSER_MANIFEST}")"
+    BROWSER_COMMAND="$(grep -E '"command"[[:space:]]*:' "${BROWSER_MANIFEST}" | head -n 1 | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+    if [[ -z "${BROWSER_COMMAND}" || ! -f "${BROWSER_ROOT}/${BROWSER_COMMAND}" ]]; then
+      echo "${BROWSER_MANIFEST} must contain a valid relative command path." >&2
+      exit 1
+    fi
+    chmod 0755 "${BROWSER_ROOT}/${BROWSER_COMMAND}" 2>/dev/null || true
+  done < <(find "${APP_DIR}/browsers/linux_x86_64" -name manifest.json -type f | sort)
 fi
 
 cat > "${APP_DIR}/licenses/PORTABLE_DISTRIBUTION_NOTICE.txt" <<'EOF'
@@ -192,9 +195,38 @@ fi
 if [[ -z "${HICT_TOOLCHAIN_DIR:-}" && -f "${APP_HOME}/toolchains/linux_x86_64/manifest.json" ]]; then
   export HICT_TOOLCHAIN_DIR="${APP_HOME}/toolchains/linux_x86_64"
 fi
-if [[ -z "${HICT_BROWSER_DIR:-}" && -f "${APP_HOME}/browsers/linux_x86_64/manifest.json" ]]; then
+if [[ -z "${HICT_BROWSER_DIR:-}" && -d "${APP_HOME}/browsers/linux_x86_64" ]]; then
   export HICT_BROWSER_DIR="${APP_HOME}/browsers/linux_x86_64"
 fi
+
+warn_missing_tauri_webview_dependencies() {
+  local browser_root="${HICT_BROWSER_DIR:-${APP_HOME}/browsers/linux_x86_64}"
+  if [[ ! -d "${browser_root}" ]] || ! grep -R -q '"engine"[[:space:]]*:[[:space:]]*"tauri-system-webview"' "${browser_root}" 2>/dev/null; then
+    return 0
+  fi
+  if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -Eq 'libwebkit2gtk-4\.1\.so|libwebkitgtk-6\.0\.so'; then
+    return 0
+  fi
+  if find /usr/lib /usr/lib64 /lib /lib64 \( -name 'libwebkit2gtk-4.1.so*' -o -name 'libwebkitgtk-6.0.so*' \) 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  cat >&2 <<'EOW'
+WARNING: HiCT includes the small Tauri WebView browser, but Linux WebKitGTK
+runtime libraries were not detected. The launcher will try Tauri first and then
+fall back to Electron or the system browser if available.
+
+Install WebKitGTK for your distribution if the bundled Tauri browser does not
+open:
+
+  Debian/Ubuntu: sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0
+  Fedora/RHEL:   sudo dnf install webkit2gtk4.1 gtk3
+  Arch Linux:    sudo pacman -S webkit2gtk-4.1 gtk3
+  openSUSE:      sudo zypper install libwebkit2gtk-4_1-0 gtk3
+
+EOW
+}
+warn_missing_tauri_webview_dependencies
+
 export HICT_BIND_HOST="${HICT_BIND_HOST:-127.0.0.1}"
 if [[ "$#" -eq 0 ]]; then
   export HICT_LAUNCHER_MODE="${HICT_LAUNCHER_MODE:-gui}"
@@ -265,6 +297,11 @@ PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.xz"
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(sha256sum "${PAYLOAD_PATH}" | awk '{print $1}')"
+BUNDLED_TAURI_BROWSER="0"
+if [[ -d "${APP_DIR}/browsers/linux_x86_64" ]] &&
+   grep -R -q '"engine"[[:space:]]*:[[:space:]]*"tauri-system-webview"' "${APP_DIR}/browsers/linux_x86_64" 2>/dev/null; then
+  BUNDLED_TAURI_BROWSER="1"
+fi
 
 cat > "${RUN_PATH}" <<EOF
 #!/usr/bin/env bash
@@ -274,6 +311,7 @@ APP_NAME="${APP_NAME}"
 APP_VERSION="${VERSION}"
 APP_PLATFORM="${PLATFORM}"
 PAYLOAD_SHA256="${PAYLOAD_SHA}"
+BUNDLED_TAURI_BROWSER="${BUNDLED_TAURI_BROWSER}"
 
 SELF_PATH="\$(readlink -f "\$0" 2>/dev/null || realpath "\$0" 2>/dev/null || printf '%s\n' "\$0")"
 SELF_DIR="\$(cd "\$(dirname "\${SELF_PATH}")" && pwd)"
@@ -325,6 +363,34 @@ require_runtime_cmd xz
 require_runtime_cmd mkdir
 require_runtime_cmd touch
 require_runtime_cmd cat
+
+warn_missing_tauri_webview_dependencies() {
+  if [[ "\${BUNDLED_TAURI_BROWSER}" != "1" ]]; then
+    return 0
+  fi
+  if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -Eq 'libwebkit2gtk-4\.1\.so|libwebkitgtk-6\.0\.so'; then
+    return 0
+  fi
+  if find /usr/lib /usr/lib64 /lib /lib64 \( -name 'libwebkit2gtk-4.1.so*' -o -name 'libwebkitgtk-6.0.so*' \) 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  cat >&2 <<'EOW'
+WARNING: This HiCT package includes the small Tauri WebView browser, but Linux
+WebKitGTK runtime libraries were not detected before launch. HiCT can still run:
+the launcher will try Tauri first and then fall back to Electron or the system
+browser if available.
+
+Install WebKitGTK for your distribution if the bundled Tauri browser does not
+open:
+
+  Debian/Ubuntu: sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0
+  Fedora/RHEL:   sudo dnf install webkit2gtk4.1 gtk3
+  Arch Linux:    sudo pacman -S webkit2gtk-4.1 gtk3
+  openSUSE:      sudo zypper install libwebkit2gtk-4_1-0 gtk3
+
+EOW
+}
+warn_missing_tauri_webview_dependencies
 
 payload_line="\$(awk "/^\${MARKER}\$/ { print NR + 1; exit 0; }" "\${SELF_PATH}")"
 if [[ -z "\${payload_line}" ]]; then

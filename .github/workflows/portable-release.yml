@@ -31,10 +31,18 @@ on:
         options:
           - "true"
           - "false"
+      bundle_tauri_browser:
+        description: "Build and bundle the HiCT Tauri WebView browser payload"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       bundle_electron_browser:
         description: "Build and bundle the HiCT Electron browser payload"
         required: true
-        default: "true"
+        default: "false"
         type: choice
         options:
           - "true"
@@ -46,7 +54,7 @@ permissions:
 jobs:
   linux-portable:
     name: Linux portable .run and AppImage
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
@@ -72,13 +80,37 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Set up Rust
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Restore Tauri cargo cache
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/tauri-target/linux_x86_64
+          key: tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_linux.sh') }}
+          restore-keys: |
+            tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-linux-x86_64-
+
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl file gzip tar xz-utils
 
+      - name: Install Linux Tauri build prerequisites
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        run: |
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh
+        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh
 
       - name: Restore bundled hictk cache
         id: cache-hictk
@@ -86,7 +118,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: toolchains-dist/linux_x86_64
-          key: hictk-linux-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: hictk-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
 
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
@@ -94,10 +126,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/hictk-conan/linux_x86_64
-          key: hictk-conan-linux-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
           restore-keys: |
-            hictk-conan-linux-x86_64-${{ env.HICTK_REF }}-
-            hictk-conan-linux-x86_64-
+            hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-
+            hictk-conan-linux-x86_64-ubuntu2404-
 
       - name: Install hictk build prerequisites
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
@@ -126,8 +158,15 @@ jobs:
           path: toolchains-dist/linux_x86_64
           key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
 
+      - name: Build bundled Tauri browser
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
+          CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/tauri-target/linux_x86_64
+        run: ./scripts/portable/prepare_tauri_browser_payload_linux.sh
+
       - name: Build bundled Electron browser
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true' }}
         env:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
         run: ./scripts/portable/prepare_electron_browser_payload_linux.sh
@@ -207,6 +246,26 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Set up Rust
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Restore Tauri cargo cache
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/tauri-target/windows_x86_64
+          key: tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_windows.ps1') }}
+          restore-keys: |
+            tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-windows-x86_64-
+
       - name: Restore bundled hictk cache
         id: cache-hictk
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -256,8 +315,16 @@ jobs:
         shell: pwsh
         run: choco install 7zip.install -y --no-progress
 
+      - name: Build bundled Tauri browser
+        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        shell: pwsh
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..
+          CARGO_TARGET_DIR: ${{ github.workspace }}\.cache\tauri-target\windows_x86_64
+        run: .\scripts\portable\prepare_tauri_browser_payload_windows.ps1
+
       - name: Build bundled Electron browser
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true' }}
         shell: pwsh
         env:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..

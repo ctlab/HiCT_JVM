@@ -96,7 +96,7 @@ if [[ -z "${WEBUI_ROOT:-}" && -d "${APPDIR}/usr/lib/hict/webui" ]]; then
 fi
 export HICT_APP_HOME="${APPDIR}/usr/lib/hict"
 export HICT_JAR_PATH="${APPDIR}/usr/lib/hict/lib/hict.jar"
-if [[ -z "${HICT_BROWSER_DIR:-}" && -f "${APPDIR}/usr/lib/hict/browsers/linux_x86_64/manifest.json" ]]; then
+if [[ -z "${HICT_BROWSER_DIR:-}" && -d "${APPDIR}/usr/lib/hict/browsers/linux_x86_64" ]]; then
   export HICT_BROWSER_DIR="${APPDIR}/usr/lib/hict/browsers/linux_x86_64"
 fi
 

@@ -161,7 +161,7 @@ Environment variables supported by the server startup:
 * `MIN_DS_POOL` / `MAX_DS_POOL` -- min/max pool sizes used when opening chunked datasets.
 * `HICT_LAUNCHER_MODE=gui` -- open the graphical launcher when the fat JAR is started without CLI arguments. Portable packages set this automatically for no-argument double-click launches.
 * `HICT_APP_HOME` / `HICT_JAR_PATH` -- portable launcher internals used to locate the extracted app and fat JAR.
-* `HICT_BROWSER_DIR` -- optional bundled browser payload directory with `manifest.json`.
+* `HICT_BROWSER_DIR` -- optional bundled browser payload root; it may contain one `manifest.json` or child directories with `manifest.json` files.
 
 === Launch examples (fat JAR)
 
@@ -446,13 +446,35 @@ Use `scripts/toolchains/build_hictk_linux.sh` or `scripts/toolchains/build_hictk
 When bundled hictk is enabled, HiCT release artifacts redistribute the platform-specific `hictk` executable built from the official hictk source release selected by `HICTK_REF`/workflow input.
 Portable ZIP, `.run`, AppImage, and Windows EXE packages additionally extract the platform payload under `toolchains/` and launch HiCT with `HICT_TOOLCHAIN_DIR` pointing there, so `.hic` conversion does not depend on extracting an executable from the JAR into the system temporary directory at runtime.
 
-=== Optional bundled browser payload
+=== Bundled browser payloads
 
 Portable packages can include a browser only when a vetted payload is prepared under `browsers-dist/<platform>/` before packaging.
 The packaging scripts copy that payload into `browsers/<platform>/`, set `HICT_BROWSER_DIR`, and let the launcher expose "Use bundled browser when available".
-The supported bundled browser payload is the HiCT_WebUI Electron wrapper, which acts only as a local browser for the JVM-served WebUI; the lightweight Java launcher remains the default process controller.
+The lightweight Java launcher remains the default process controller.
+When multiple payloads are present, HiCT tries the smaller Tauri WebView browser first, then Electron/Chromium, then the user's system browser.
 
-Build the Electron payload from a HiCT_WebUI checkout:
+Build the default Tauri payload from a HiCT_WebUI checkout:
+
+[source,bash]
+----
+cd HiCT_JVM
+./scripts/portable/prepare_tauri_browser_payload_linux.sh
+----
+
+Windows:
+
+[source,powershell]
+----
+cd HiCT_JVM
+.\scripts\portable\prepare_tauri_browser_payload_windows.ps1
+----
+
+The Tauri payload does not bundle Chromium.
+It uses the operating system WebView runtime: WebKitGTK on Linux and Microsoft Edge WebView2 on Windows.
+Portable launchers warn before startup when a Tauri payload is present but the expected Linux WebKitGTK libraries or Windows WebView2 runtime are not detected, including distribution-specific install commands.
+This keeps the default `.run`, AppImage, and Windows EXE substantially smaller than Chromium-bundled releases while still providing a built-in WebUI path on machines with the standard WebView runtime.
+
+Build the optional Electron/Chromium payload from a HiCT_WebUI checkout only when a fully bundled Chromium fallback is needed:
 
 [source,bash]
 ----
@@ -477,20 +499,21 @@ Minimal manifest:
 [source,json]
 ----
 {
-  "name": "HiCT Electron 42.2.0",
-  "engine": "electron-chromium",
-  "license": "Electron MIT; Chromium and bundled third-party components under their upstream licenses",
-  "command": "electron/electron",
-  "arguments": ["app"]
+  "name": "HiCT Tauri WebView",
+  "engine": "tauri-system-webview",
+  "priority": 10,
+  "command": "bin/hict-tauri-browser",
+  "arguments": []
 }
 ----
 
 Generic browser binaries are intentionally not downloaded by the HiCT packaging scripts.
+The Tauri payload builder uses the Rust/Tauri dependencies declared by HiCT_WebUI, stores Cargo dependency metadata in the payload, and relies on the user's OS WebView runtime license terms.
 The Electron payload builder uses the Electron package already declared by HiCT_WebUI, preserves `electron/LICENSE` and `electron/LICENSES.chromium.html`, flips Electron security fuses when supported by the installed Electron version, and writes a payload manifest with size and SHA-256 tree digest.
 For Firefox-family payloads, distribute only compliant unaltered official binaries or properly rebranded builds and preserve Mozilla license/trademark/update requirements.
 For Chromium-family payloads, preserve the complete third-party license and credits set for the exact binary being redistributed.
 If no vetted payload is present, the launcher uses the user's system browser.
-Electron/Chromium is intentionally optional because it materially increases portable artifact size; leave `bundle_electron_browser=false` in the manual workflow when a smaller system-browser-only release is required.
+Electron/Chromium is intentionally optional because it materially increases portable artifact size; leave `bundle_electron_browser=false` in the manual workflow unless a Chromium fallback must be bundled.
 
 === Redistribution and license notes
 
@@ -515,7 +538,8 @@ Do not strip that directory from redistributed artifacts.
 
 `.github/workflows/portable-release.yml` builds Linux and Windows packages on matching runners.
 On release creation it attaches the portable artifacts and SHA-256 checksum files to the GitHub Release.
-The workflow can also be run manually and exposes toggles for bundled `hictk`, the bundled Electron browser, the `hictk` release tag, the HiCT_WebUI ref, and the optional Windows SFX EXE.
+The workflow can also be run manually and exposes toggles for bundled `hictk`, the default bundled Tauri browser, the optional bundled Electron browser, the `hictk` release tag, the HiCT_WebUI ref, and the optional Windows SFX EXE.
+`bundle_tauri_browser` defaults to `true`; `bundle_electron_browser` defaults to `false`.
 The WebUI ref input defaults to `same-as-jvm`, so a manual run from a HiCT_JVM branch such as `jvm-hic-converter` first tries to bundle the same-named HiCT_WebUI ref and falls back to `master` if that ref is absent.
 For workflow downloads it publishes aggregate Linux and Windows packages plus separate single-file runnable artifacts for Linux `.run`, Linux AppImage, and Windows `.exe`.
 Prepared `toolchains-dist/<platform>` hictk payloads and the underlying Conan package homes are restored and saved explicitly by OS, hictk tag, and toolchain script hash to avoid rebuilding hictk dependencies on every release.

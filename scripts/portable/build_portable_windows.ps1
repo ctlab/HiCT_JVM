@@ -143,19 +143,25 @@ if ($hasPreparedWindowsToolchain) {
 }
 
 $browserSource = Join-Path $projectDir "browsers-dist\windows_x86_64"
-if (Test-Path (Join-Path $browserSource "manifest.json")) {
+$browserManifests = @()
+if (Test-Path $browserSource) {
+  $browserManifests = @(Get-ChildItem -Path $browserSource -Recurse -Filter "manifest.json" -File -ErrorAction SilentlyContinue)
+}
+if ($browserManifests.Count -gt 0) {
   $browserTargetRoot = Join-Path $appDir "browsers"
   $browserTarget = Join-Path $browserTargetRoot "windows_x86_64"
   New-Item -ItemType Directory -Force -Path $browserTargetRoot | Out-Null
   Copy-Item -Recurse -Force $browserSource $browserTargetRoot
-  $browserManifest = Get-Content -Raw (Join-Path $browserTarget "manifest.json") | ConvertFrom-Json
-  if (-not $browserManifest.command) {
-    throw "browsers-dist\windows_x86_64\manifest.json must contain a command field."
-  }
-  $browserCommand = [string]$browserManifest.command
-  $browserExecutable = Join-Path $browserTarget ($browserCommand -replace '/', '\')
-  if (-not (Test-Path $browserExecutable)) {
-    throw "Bundled browser command path does not exist: $browserExecutable"
+  foreach ($browserManifestPath in Get-ChildItem -Path $browserTarget -Recurse -Filter "manifest.json" -File) {
+    $browserManifest = Get-Content -Raw $browserManifestPath.FullName | ConvertFrom-Json
+    if (-not $browserManifest.command) {
+      throw "$($browserManifestPath.FullName) must contain a command field."
+    }
+    $browserCommand = [string]$browserManifest.command
+    $browserExecutable = Join-Path $browserManifestPath.DirectoryName ($browserCommand -replace '/', '\')
+    if (-not (Test-Path $browserExecutable)) {
+      throw "Bundled browser command path does not exist: $browserExecutable"
+    }
   }
 }
 
@@ -230,11 +236,13 @@ if not defined HICT_TOOLCHAIN_DIR (
   if exist "%APP_HOME%\toolchains\windows_x86_64\manifest.json" set "HICT_TOOLCHAIN_DIR=%APP_HOME%\toolchains\windows_x86_64"
 )
 if not defined HICT_BROWSER_DIR (
-  if exist "%APP_HOME%\browsers\windows_x86_64\manifest.json" set "HICT_BROWSER_DIR=%APP_HOME%\browsers\windows_x86_64"
+  if exist "%APP_HOME%\browsers\windows_x86_64" set "HICT_BROWSER_DIR=%APP_HOME%\browsers\windows_x86_64"
 )
 if not defined HICT_BIND_HOST (
   set "HICT_BIND_HOST=127.0.0.1"
 )
+
+call :WarnWebView2IfNeeded
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>nul
 pushd "%DATA_DIR%" >nul 2>nul
@@ -253,6 +261,24 @@ if "%~1"=="" (
 set "HICT_EXIT_CODE=%ERRORLEVEL%"
 popd >nul 2>nul
 exit /b %HICT_EXIT_CODE%
+
+:WarnWebView2IfNeeded
+if not exist "%APP_HOME%\browsers\windows_x86_64" exit /b 0
+findstr /S /I /C:"tauri-system-webview" "%APP_HOME%\browsers\windows_x86_64\manifest.json" "%APP_HOME%\browsers\windows_x86_64\*\manifest.json" >nul 2>nul
+if errorlevel 1 exit /b 0
+reg query "HKCU\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv >nul 2>nul
+if not errorlevel 1 exit /b 0
+reg query "HKLM\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv >nul 2>nul
+if not errorlevel 1 exit /b 0
+reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv >nul 2>nul
+if not errorlevel 1 exit /b 0
+if exist "%ProgramFiles%\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe" exit /b 0
+if exist "%ProgramFiles(x86)%\Microsoft\EdgeWebView\Application\*\msedgewebview2.exe" exit /b 0
+echo WARNING: HiCT includes the small Tauri WebView browser, but Microsoft Edge WebView2 Runtime was not detected.
+echo The launcher will try Tauri first and then fall back to Electron or the system browser if available.
+echo Install Microsoft Edge WebView2 Runtime if the bundled Tauri browser does not open:
+echo   https://developer.microsoft.com/microsoft-edge/webview2/
+exit /b 0
 '@ | Set-Content -Encoding ASCII (Join-Path $appDir "bin\hict.cmd")
 
 @'

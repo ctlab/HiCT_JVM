@@ -13,10 +13,10 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectDir = Resolve-Path (Join-Path $scriptDir "..\..")
 if (-not $OutputDir) {
-  $OutputDir = Join-Path $projectDir "browsers-dist\$Platform\electron"
+  $OutputDir = Join-Path $projectDir "browsers-dist\$Platform\tauri"
 }
 if (-not $WorkRoot) {
-  $WorkRoot = Join-Path $projectDir "build\electron-browser"
+  $WorkRoot = Join-Path $projectDir "build\tauri-browser"
 }
 
 function Require-Command {
@@ -76,18 +76,19 @@ function Resolve-WebUiSource {
   throw "Could not clone HiCT_WebUI ref '$requestedRef'."
 }
 
+Require-Command cargo
 Require-Command git
 Require-Command node
 Require-Command npm.cmd
 
 $resolvedWebUiDir = Resolve-WebUiSource
-Write-Host "[electron-browser] Using HiCT_WebUI source: $resolvedWebUiDir"
-Write-Host "[electron-browser] Writing payload to: $OutputDir"
+Write-Host "[tauri-browser] Using HiCT_WebUI source: $resolvedWebUiDir"
+Write-Host "[tauri-browser] Writing payload to: $OutputDir"
 
 Push-Location $resolvedWebUiDir
 try {
   if ($SkipNpmInstall) {
-    Write-Host "[electron-browser] Reusing existing HiCT_WebUI node_modules."
+    Write-Host "[tauri-browser] Reusing existing HiCT_WebUI node_modules."
   } else {
     if (Test-Path "package-lock.json") {
       & npm.cmd ci
@@ -107,7 +108,7 @@ try {
   Pop-Location
 }
 
-& node (Join-Path $resolvedWebUiDir "scripts\build-electron-browser-payload.mjs") --platform $Platform --output $OutputDir
+& node (Join-Path $resolvedWebUiDir "scripts\build-tauri-browser-payload.mjs") --platform $Platform --output $OutputDir
 if ($LASTEXITCODE -ne 0) {
-  throw "Electron browser payload build failed."
+  throw "Tauri browser payload build failed."
 }
