@@ -45,13 +45,19 @@ import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
@@ -107,6 +113,7 @@ public final class HictLauncherGui {
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final int MAX_LOG_CHARS = 200_000;
     private static final Pattern JSON_STRING_FIELD_PATTERN = Pattern.compile("\"%s\"\\s*:\\s*\"([^\"]*)\"");
+    private static final double REFERENCE_SCREEN_DIAGONAL = Math.hypot(1920, 1080);
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
       new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY),
@@ -151,6 +158,7 @@ public final class HictLauncherGui {
     private final ExecutorService backgroundExecutor;
     private final Map<String, JTextField> fields = new LinkedHashMap<>();
     private final Properties settings = new Properties();
+    private final UiScale uiScale;
 
     private JFrame frame;
     private JPanel configurationPanel;
@@ -178,6 +186,7 @@ public final class HictLauncherGui {
       this.httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(600))
         .build();
+      this.uiScale = UiScale.detect();
       this.backgroundExecutor = Executors.newCachedThreadPool(runnable -> {
         final var thread = new Thread(runnable, "hict-launcher-worker");
         thread.setDaemon(true);
@@ -191,9 +200,9 @@ public final class HictLauncherGui {
 
       this.frame = new JFrame("HiCT Launcher");
       this.frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
-      this.frame.setMinimumSize(new Dimension(780, 560));
-      this.frame.setPreferredSize(new Dimension(980, 720));
-      this.frame.setLayout(new BorderLayout(10, 10));
+      this.frame.setMinimumSize(this.uiScale.windowMinimumSize());
+      this.frame.setPreferredSize(this.uiScale.windowPreferredSize());
+      this.frame.setLayout(new BorderLayout(this.uiScale.gap(), this.uiScale.gap()));
 
       this.frame.add(createHeader(), BorderLayout.NORTH);
       this.frame.add(createCenter(), BorderLayout.CENTER);
@@ -212,6 +221,7 @@ public final class HictLauncherGui {
       this.statusTimer.start();
 
       this.frame.pack();
+      clampFrameToScreen();
       this.frame.setLocationRelativeTo(null);
       this.frame.setVisible(true);
       appendLog("Launcher ready. DATA_DIR=" + getFieldValue("DATA_DIR"));
@@ -223,14 +233,14 @@ public final class HictLauncherGui {
     }
 
     private JPanel createHeader() {
-      final var panel = new JPanel(new BorderLayout(12, 8));
-      panel.setBorder(BorderFactory.createEmptyBorder(10, 12, 0, 12));
+      final var panel = new JPanel(new BorderLayout(this.uiScale.gapLarge(), this.uiScale.gap()));
+      panel.setBorder(BorderFactory.createEmptyBorder(this.uiScale.gap(), this.uiScale.gapLarge(), 0, this.uiScale.gapLarge()));
 
       final var title = new JLabel("HiCT portable launcher");
-      title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
+      title.setFont(title.getFont().deriveFont(Font.BOLD, this.uiScale.titleFontSize()));
       panel.add(title, BorderLayout.WEST);
 
-      final var buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+      final var buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), 0));
       this.startButton = new JButton("Start HiCT");
       this.startButton.addActionListener(ignored -> startHiCT());
       this.openWebUiButton = new JButton("Open HiCT WebUI");
@@ -251,12 +261,12 @@ public final class HictLauncherGui {
     }
 
     private JPanel createCenter() {
-      final var panel = new JPanel(new BorderLayout(8, 8));
-      panel.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
+      final var panel = new JPanel(new BorderLayout(this.uiScale.gap(), this.uiScale.gap()));
+      panel.setBorder(BorderFactory.createEmptyBorder(0, this.uiScale.gapLarge(), 0, this.uiScale.gapLarge()));
 
       panel.add(createStatusPanel(), BorderLayout.NORTH);
 
-      final var body = new JPanel(new BorderLayout(8, 8));
+      final var body = new JPanel(new BorderLayout(this.uiScale.gap(), this.uiScale.gap()));
       this.configurationPanel = createConfigurationPanel();
       this.configurationPanel.setVisible(false);
       body.add(this.configurationPanel, BorderLayout.NORTH);
@@ -265,7 +275,8 @@ public final class HictLauncherGui {
       this.logArea.setEditable(false);
       this.logArea.setLineWrap(true);
       this.logArea.setWrapStyleWord(true);
-      this.logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+      this.logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, this.uiScale.logFontSize()));
+      this.logArea.setRows(this.uiScale.logRows());
       final var logScroll = new JScrollPane(this.logArea);
       logScroll.setBorder(BorderFactory.createTitledBorder("HiCT server log"));
       body.add(logScroll, BorderLayout.CENTER);
@@ -278,10 +289,10 @@ public final class HictLauncherGui {
       final var panel = new JPanel(new GridBagLayout());
       panel.setBorder(BorderFactory.createCompoundBorder(
         BorderFactory.createLineBorder(new Color(210, 215, 220)),
-        BorderFactory.createEmptyBorder(8, 8, 8, 8)
+        BorderFactory.createEmptyBorder(this.uiScale.gap(), this.uiScale.gap(), this.uiScale.gap(), this.uiScale.gap())
       ));
       final var gbc = new GridBagConstraints();
-      gbc.insets = new Insets(3, 4, 3, 12);
+      gbc.insets = this.uiScale.formInsets();
       gbc.anchor = GridBagConstraints.WEST;
 
       this.processStatusLabel = new JLabel();
@@ -323,7 +334,7 @@ public final class HictLauncherGui {
 
       final var form = new JPanel(new GridBagLayout());
       final var gbc = new GridBagConstraints();
-      gbc.insets = new Insets(3, 4, 3, 4);
+      gbc.insets = this.uiScale.formInsets();
       gbc.anchor = GridBagConstraints.WEST;
       gbc.fill = GridBagConstraints.HORIZONTAL;
 
@@ -338,14 +349,14 @@ public final class HictLauncherGui {
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
-        final var field = new JTextField(resolveInitialValue(spec), 32);
+        final var field = new JTextField(resolveInitialValue(spec), this.uiScale.fieldColumns());
         this.fields.put(spec.key(), field);
         form.add(field, gbc);
 
         gbc.gridx = 2;
         gbc.weightx = 0.0;
         if (spec.pathKind() == PathKind.NONE) {
-          form.add(Box.createHorizontalStrut(88), gbc);
+          form.add(Box.createHorizontalStrut(this.uiScale.browseButtonPlaceholderWidth()), gbc);
         } else {
           final var browse = new JButton("Browse");
           browse.addActionListener(ignored -> browsePath(spec, field));
@@ -353,7 +364,7 @@ public final class HictLauncherGui {
         }
       }
 
-      final var optionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 14, 4));
+      final var optionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), this.uiScale.gapSmall()));
       this.openAfterStartCheckbox = new JCheckBox("Open WebUI after start");
       this.openAfterStartCheckbox.setSelected(getBooleanSetting("openAfterStart", true));
       this.useBundledBrowserCheckbox = new JCheckBox("Use bundled browser when available");
@@ -362,7 +373,7 @@ public final class HictLauncherGui {
       optionPanel.add(this.openAfterStartCheckbox);
       optionPanel.add(this.useBundledBrowserCheckbox);
 
-      final var buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+      final var buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), this.uiScale.gapSmall()));
       final var saveButton = new JButton("Save settings");
       saveButton.addActionListener(ignored -> {
         saveSettings();
@@ -373,12 +384,13 @@ public final class HictLauncherGui {
       outer.add(new JScrollPane(form), BorderLayout.CENTER);
       outer.add(optionPanel, BorderLayout.NORTH);
       outer.add(buttonPanel, BorderLayout.SOUTH);
+      this.uiScale.applyFonts(outer);
       return outer;
     }
 
     private JPanel createFooter() {
       final var panel = new JPanel(new BorderLayout(8, 0));
-      panel.setBorder(BorderFactory.createEmptyBorder(0, 12, 10, 12));
+      panel.setBorder(BorderFactory.createEmptyBorder(0, this.uiScale.gapLarge(), this.uiScale.gap(), this.uiScale.gapLarge()));
       final var hint = new JLabel("Explicit CLI commands still work: hict --help, hict start-server, hict convert --help.");
       hint.setForeground(new Color(90, 96, 104));
       panel.add(hint, BorderLayout.WEST);
@@ -390,6 +402,14 @@ public final class HictLauncherGui {
       this.configureButton.setText(this.configurationPanel.isVisible() ? "Hide configuration" : "Configure");
       this.frame.revalidate();
       this.frame.repaint();
+    }
+
+    private void clampFrameToScreen() {
+      final var bounds = this.uiScale.usableScreenBounds();
+      final var preferred = this.frame.getSize();
+      final var width = Math.min(preferred.width, Math.max(this.uiScale.minWindowWidth(), bounds.width));
+      final var height = Math.min(preferred.height, Math.max(this.uiScale.minWindowHeight(), bounds.height));
+      this.frame.setSize(width, height);
     }
 
     private void browsePath(final ConfigSpec spec, final JTextField field) {
@@ -1013,6 +1033,131 @@ public final class HictLauncherGui {
         Thread.sleep(millis);
       } catch (final InterruptedException interrupted) {
         Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  private record UiScale(double scale, Rectangle screenBounds) {
+    private static UiScale detect() {
+      final var screen = detectScreenBounds();
+      final double geometryScale = clamp(Math.hypot(screen.getWidth(), screen.getHeight()) / LauncherWindow.REFERENCE_SCREEN_DIAGONAL, 0.95, 1.55);
+      final double densityScale = clamp(detectDeviceScaleFactor(), 1.0, 2.25);
+      final double scale = clamp(Math.max(geometryScale, densityScale * 0.92), 1.0, 2.0);
+      return new UiScale(scale, screen);
+    }
+
+    private static Rectangle detectScreenBounds() {
+      try {
+        final GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        final GraphicsDevice device = environment.getDefaultScreenDevice();
+        final GraphicsConfiguration configuration = device.getDefaultConfiguration();
+        final Rectangle bounds = new Rectangle(configuration.getBounds());
+        final Insets insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(configuration);
+        bounds.x += insets.left;
+        bounds.y += insets.top;
+        bounds.width = Math.max(640, bounds.width - insets.left - insets.right);
+        bounds.height = Math.max(480, bounds.height - insets.top - insets.bottom);
+        return bounds;
+      } catch (final Exception ignored) {
+        return new Rectangle(0, 0, 1280, 720);
+      }
+    }
+
+    private static double detectDeviceScaleFactor() {
+      try {
+        final GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        final GraphicsConfiguration configuration = environment.getDefaultScreenDevice().getDefaultConfiguration();
+        return Math.max(
+          configuration.getDefaultTransform().getScaleX(),
+          configuration.getDefaultTransform().getScaleY()
+        );
+      } catch (final Exception ignored) {
+        return 1.0;
+      }
+    }
+
+    private static double clamp(final double value, final double min, final double max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    private int scaled(final int value) {
+      return Math.max(1, (int) Math.round(value * this.scale));
+    }
+
+    private int gapSmall() {
+      return scaled(4);
+    }
+
+    private int gap() {
+      return scaled(8);
+    }
+
+    private int gapLarge() {
+      return scaled(12);
+    }
+
+    private int titleFontSize() {
+      return scaled(18);
+    }
+
+    private int logFontSize() {
+      return Math.max(12, scaled(12));
+    }
+
+    private int logRows() {
+      return this.screenBounds.height < 650 ? 10 : 16;
+    }
+
+    private int fieldColumns() {
+      if (this.screenBounds.width < 900) {
+        return 20;
+      }
+      if (this.screenBounds.width > 2500) {
+        return 42;
+      }
+      return 32;
+    }
+
+    private int browseButtonPlaceholderWidth() {
+      return scaled(88);
+    }
+
+    private int minWindowWidth() {
+      return Math.min(scaled(720), Math.max(560, this.screenBounds.width));
+    }
+
+    private int minWindowHeight() {
+      return Math.min(scaled(500), Math.max(420, this.screenBounds.height));
+    }
+
+    private Dimension windowMinimumSize() {
+      return new Dimension(minWindowWidth(), minWindowHeight());
+    }
+
+    private Dimension windowPreferredSize() {
+      final int preferredWidth = Math.min(scaled(980), Math.max(minWindowWidth(), this.screenBounds.width - scaled(80)));
+      final int preferredHeight = Math.min(scaled(720), Math.max(minWindowHeight(), this.screenBounds.height - scaled(80)));
+      return new Dimension(preferredWidth, preferredHeight);
+    }
+
+    private Insets formInsets() {
+      return new Insets(scaled(3), scaled(4), scaled(3), scaled(8));
+    }
+
+    private Rectangle usableScreenBounds() {
+      return new Rectangle(this.screenBounds);
+    }
+
+    private void applyFonts(final Component component) {
+      final Font font = component.getFont();
+      if (font != null) {
+        final int size = Math.max(font.getSize(), scaled(font.getSize()));
+        component.setFont(font.deriveFont((float) size));
+      }
+      if (component instanceof Container container) {
+        for (final Component child : container.getComponents()) {
+          applyFonts(child);
+        }
       }
     }
   }

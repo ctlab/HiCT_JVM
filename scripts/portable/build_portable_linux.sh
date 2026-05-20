@@ -288,10 +288,39 @@ explicitly to use a different data directory.
 EOU
 }
 
+require_runtime_cmd() {
+  if command -v "\$1" >/dev/null 2>&1; then
+    return 0
+  fi
+  cat >&2 <<EOM
+HiCT portable launcher cannot start because required command '\$1' is not available.
+
+Install the standard archive/shell utilities for your Linux distribution, then
+run this file again. Common commands:
+
+  Debian/Ubuntu: sudo apt-get install coreutils gawk tar gzip
+  Fedora/RHEL:   sudo dnf install coreutils gawk tar gzip
+  Arch Linux:    sudo pacman -S coreutils gawk tar gzip
+  openSUSE:      sudo zypper install coreutils gawk tar gzip
+
+If this machine is locked down, use the .tar.gz portable artifact instead and
+extract it on a machine that has these standard tools.
+EOM
+  exit 127
+}
+
 if [[ "\${1:-}" == "--hict-run-help" ]]; then
   usage
   exit 0
 fi
+
+require_runtime_cmd awk
+require_runtime_cmd tail
+require_runtime_cmd tar
+require_runtime_cmd gzip
+require_runtime_cmd mkdir
+require_runtime_cmd touch
+require_runtime_cmd cat
 
 payload_line="\$(awk "/^\${MARKER}\$/ { print NR + 1; exit 0; }" "\${SELF_PATH}")"
 if [[ -z "\${payload_line}" ]]; then
