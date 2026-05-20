@@ -137,6 +137,7 @@ The fat JAR is runnable and exposes a CLI with subcommands:
 
 * `start-server` -- API + WebUI (default when no args are given)
 * `start-api-server` -- API only (no WebUI)
+* `launcher` -- small graphical launcher for portable desktop use
 * `convert` -- conversion tools
 ** `convert mcool-to-hict`
 ** `convert hict-to-mcool`
@@ -158,6 +159,9 @@ Environment variables supported by the server startup:
 * `SERVE_WEBUI` -- `true`/`false`, default `true`.
 * `TILE_SIZE` -- default visualization tile size, default `256`.
 * `MIN_DS_POOL` / `MAX_DS_POOL` -- min/max pool sizes used when opening chunked datasets.
+* `HICT_LAUNCHER_MODE=gui` -- open the graphical launcher when the fat JAR is started without CLI arguments. Portable packages set this automatically for no-argument double-click launches.
+* `HICT_APP_HOME` / `HICT_JAR_PATH` -- portable launcher internals used to locate the extracted app and fat JAR.
+* `HICT_BROWSER_DIR` -- optional bundled browser payload directory with `manifest.json`.
 
 === Launch examples (fat JAR)
 
@@ -165,6 +169,10 @@ Environment variables supported by the server startup:
 
 ```bash
 DATA_DIR=/home/${USER}/hict/data java -jar hict.jar
+
+# Graphical launcher
+HICT_LAUNCHER_MODE=gui java -jar hict.jar
+java -jar hict.jar launcher
 
 # API only
 DATA_DIR=/home/${USER}/hict/data java -jar hict.jar start-api-server
@@ -367,7 +375,7 @@ These packages include the HiCT JVM fat JAR, the built HiCT WebUI resources, an 
 The Windows ZIP is the most transparent portable artifact.
 The Windows EXE is built only from official 7-Zip/LZMA SDK SFX modules (`7zSD.sfx`, `7zS.sfx`, `7zS2con.sfx`, or `7zS2.sfx`) and runs the same portable app without installation.
 The build prefers the progress-capable installer SFX module.
-It opens a console window and keeps it open after no-argument double-click launches, so errors remain visible after HiCT exits.
+No-argument double-click launches open the graphical HiCT launcher; server output is shown inside the launcher log panel.
 Avoiding Windows trust/UAC prompts for downloaded single-file EXE artifacts requires Authenticode signing with a trusted code-signing certificate; changing the SFX module alone is not a reliable substitute.
 Use the ZIP artifact when local policy forbids unsigned SFX launchers or elevation prompts.
 
@@ -393,8 +401,8 @@ Windows portable ZIP:
 .\HiCT.cmd convert --help
 ----
 
-When no CLI arguments are provided, HiCT starts API + WebUI and opens `http://localhost:8080/` in the default browser when desktop browsing is available.
-The Windows portable launcher also starts a small browser-opener helper so browser launch does not depend on Java Desktop integration.
+When no CLI arguments are provided, HiCT opens the graphical launcher.
+The launcher can start and stop the managed JVM server process, show API/WebUI status, edit the common environment-based settings, and open `http://localhost:8080/` in either the system browser or an optional bundled browser payload.
 All normal HiCT CLI subcommands remain available from the ZIP.
 Portable launchers enter `DATA_DIR` before Java starts, so file dialogs and relative paths begin from the portable data location rather than the shell or system directory that launched HiCT.
 They also bind API and WebUI servers to `127.0.0.1` by default, which keeps the packaged Java process local-only and reduces firewall prompts on Windows. Set `HICT_BIND_HOST=0.0.0.0` explicitly if remote machines must connect to the HiCT server.
@@ -433,6 +441,28 @@ Use `scripts/toolchains/build_hictk_linux.sh` or `scripts/toolchains/build_hictk
 When bundled hictk is enabled, HiCT release artifacts redistribute the platform-specific `hictk` executable built from the official hictk source release selected by `HICTK_REF`/workflow input.
 Portable ZIP, `.run`, AppImage, and Windows EXE packages additionally extract the platform payload under `toolchains/` and launch HiCT with `HICT_TOOLCHAIN_DIR` pointing there, so `.hic` conversion does not depend on extracting an executable from the JAR into the system temporary directory at runtime.
 
+=== Optional bundled browser payload
+
+Portable packages can include a browser only when a vetted payload is prepared under `browsers-dist/<platform>/` before packaging.
+The packaging scripts copy that payload into `browsers/<platform>/`, set `HICT_BROWSER_DIR`, and let the launcher expose "Use bundled browser when available".
+
+Minimal manifest:
+
+[source,json]
+----
+{
+  "name": "Browser name and version",
+  "engine": "gecko-or-chromium",
+  "license": "upstream license identifier",
+  "command": "relative/path/to/browser-executable"
+}
+----
+
+Browser binaries are intentionally not downloaded by the HiCT packaging scripts.
+For Firefox-family payloads, distribute only compliant unaltered official binaries or properly rebranded builds and preserve Mozilla license/trademark/update requirements.
+For Chromium-family payloads, preserve the complete third-party license and credits set for the exact binary being redistributed.
+If no vetted payload is present, the launcher uses the user's system browser.
+
 === Redistribution and license notes
 
 The portable package scripts keep the following license and attribution material with the release:
@@ -444,6 +474,7 @@ The portable package scripts keep the following license and attribution material
 * `licenses/LZMA_SDK_NOTICE.txt` in Windows SFX payloads when the official LZMA SDK supplied the SFX module
 * the complete `runtime/legal/` directory generated by `jlink`
 * bundled `hictk` license/citation files inside the fat JAR resources when `toolchains-dist` was prepared before packaging
+* bundled browser license, notice, trademark, and credits files when `browsers-dist` was prepared before packaging
 
 Bundled hictk is redistributed under the upstream hictk MIT license and is invoked by HiCT for `.hic` conversion.
 Keep the bundled hictk license and citation files with release artifacts, and cite hictk when using this conversion path.

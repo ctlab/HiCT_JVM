@@ -88,6 +88,11 @@ fi
 if [[ -z "${WEBUI_ROOT:-}" && -d "${APPDIR}/usr/lib/hict/webui" ]]; then
   export WEBUI_ROOT="${APPDIR}/usr/lib/hict/webui"
 fi
+export HICT_APP_HOME="${APPDIR}/usr/lib/hict"
+export HICT_JAR_PATH="${APPDIR}/usr/lib/hict/lib/hict.jar"
+if [[ -z "${HICT_BROWSER_DIR:-}" && -f "${APPDIR}/usr/lib/hict/browsers/linux_x86_64/manifest.json" ]]; then
+  export HICT_BROWSER_DIR="${APPDIR}/usr/lib/hict/browsers/linux_x86_64"
+fi
 
 exec "${APPDIR}/usr/lib/hict/bin/hict" "$@"
 EOF
@@ -101,7 +106,7 @@ Comment=Hi-C scaffolding and visualization workstation
 Exec=HiCT
 Icon=hict
 Categories=Science;
-Terminal=true
+Terminal=false
 EOF
 cp "${APPDIR}/${DESKTOP_ID}.desktop" "${APPDIR}/usr/share/applications/${DESKTOP_ID}.desktop"
 
