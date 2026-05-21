@@ -61,6 +61,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
 jobs:
   linux-portable:
@@ -258,7 +259,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-          cache: gradle
 
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -301,7 +301,76 @@ jobs:
 
       - name: Configure MSVC environment
         if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true') || (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
-        uses: ilammy/msvc-dev-cmd@v1
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found. Visual Studio Build Tools are required for hictk/custom EXE builds."
+          }
+
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) {
+            throw "No Visual Studio installation with MSVC x64 tools was found."
+          }
+
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) {
+            throw "vcvars64.bat was not found at $vcvars."
+          }
+
+          $env:VSCMD_SKIP_SENDTELEMETRY = "1"
+          $envDump = cmd.exe /s /c "`"$vcvars`" >nul && set"
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcvars64.bat failed with exit code $LASTEXITCODE."
+          }
+
+          $namesToExport = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+          @(
+            "Path",
+            "INCLUDE",
+            "LIB",
+            "LIBPATH",
+            "EXTERNAL_INCLUDE",
+            "CommandPromptType",
+            "DevEnvDir",
+            "ExtensionSdkDir",
+            "FrameworkDir",
+            "FrameworkDir64",
+            "FrameworkVersion",
+            "FrameworkVersion64",
+            "IFCPATH",
+            "NETFXSDKDir",
+            "Platform",
+            "UCRTVersion",
+            "UniversalCRTSdkDir",
+            "VCIDEInstallDir",
+            "VCINSTALLDIR",
+            "VCPKG_ROOT",
+            "VCToolsInstallDir",
+            "VCToolsRedistDir",
+            "VCToolsVersion",
+            "VisualStudioVersion",
+            "VSINSTALLDIR",
+            "WindowsLibPath",
+            "WindowsSdkBinPath",
+            "WindowsSdkDir",
+            "WindowsSDKLibVersion",
+            "WindowsSdkVerBinPath",
+            "WindowsSDKVersion"
+          ) | ForEach-Object { [void]$namesToExport.Add($_) }
+
+          foreach ($line in $envDump) {
+            $separator = $line.IndexOf("=")
+            if ($separator -le 0) {
+              continue
+            }
+            $name = $line.Substring(0, $separator)
+            if (-not $namesToExport.Contains($name)) {
+              continue
+            }
+            $value = $line.Substring($separator + 1)
+            "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
 
       - name: Build bundled hictk
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
@@ -353,6 +422,15 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_exe != 'true' }}
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1
+
+      - name: Stop Gradle daemons
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if (Test-Path ".\gradlew.bat") {
+            .\gradlew.bat --stop
+          }
+        continue-on-error: true
 
       - name: Upload Windows package artifact
         uses: actions/upload-artifact@v6
