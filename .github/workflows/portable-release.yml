@@ -31,6 +31,14 @@ on:
         options:
           - "true"
           - "false"
+      windows_exe_mode:
+        description: "Windows EXE packaging mode: custom cached launcher by default, or legacy official 7-Zip SFX"
+        required: true
+        default: "custom"
+        type: choice
+        options:
+          - "custom"
+          - "7zip-sfx"
       bundle_tauri_browser:
         description: "Build and bundle the HiCT Tauri WebView browser payload"
         required: true
@@ -51,6 +59,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   linux-portable:
     name: Linux portable .run and AppImage
@@ -61,12 +72,13 @@ jobs:
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
+          package-manager-cache: false
 
       - name: Verify Node.js tooling
         run: |
@@ -74,7 +86,7 @@ jobs:
           npm --version
 
       - name: Set up Temurin JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -88,7 +100,7 @@ jobs:
 
       - name: Restore Tauri cargo cache
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -115,7 +127,7 @@ jobs:
       - name: Restore bundled hictk cache
         id: cache-hictk
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
           key: hictk-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
@@ -123,7 +135,7 @@ jobs:
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64
           key: hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
@@ -144,7 +156,7 @@ jobs:
 
       - name: Save hictk Conan package cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         continue-on-error: true
         with:
           path: .cache/hictk-conan/linux_x86_64
@@ -152,7 +164,7 @@ jobs:
 
       - name: Save bundled hictk cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         continue-on-error: true
         with:
           path: toolchains-dist/linux_x86_64
@@ -180,7 +192,7 @@ jobs:
         run: ./scripts/portable/build_appimage_linux.sh
 
       - name: Upload Linux package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hict-linux-portable
           path: |
@@ -191,7 +203,7 @@ jobs:
             build/distributions/HiCT-*-x86_64.AppImage.sha256
 
       - name: Upload Linux runfile artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hict-linux-runfile
           path: |
@@ -199,7 +211,7 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.sha256
 
       - name: Upload Linux AppImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hict-linux-appimage
           path: |
@@ -219,19 +231,21 @@ jobs:
 
   windows-portable:
     name: Windows portable ZIP and EXE
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
+      HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          node-version: "24"
+          package-manager-cache: false
 
       - name: Verify Node.js tooling
         shell: pwsh
@@ -240,7 +254,7 @@ jobs:
           npm.cmd --version
 
       - name: Set up Temurin JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -255,7 +269,7 @@ jobs:
 
       - name: Restore Tauri cargo cache
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -269,7 +283,7 @@ jobs:
       - name: Restore bundled hictk cache
         id: cache-hictk
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/windows_x86_64
           key: hictk-windows-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1') }}
@@ -277,16 +291,16 @@ jobs:
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
-          path: .cache\hictk-conan\windows_x86_64
+          path: .cache/hictk-conan/windows_x86_64
           key: hictk-conan-windows-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1') }}
           restore-keys: |
             hictk-conan-windows-x86_64-${{ env.HICTK_REF }}-
             hictk-conan-windows-x86_64-
 
       - name: Configure MSVC environment
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true') || (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build bundled hictk
@@ -296,15 +310,15 @@ jobs:
 
       - name: Save hictk Conan package cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         continue-on-error: true
         with:
-          path: .cache\hictk-conan\windows_x86_64
+          path: .cache/hictk-conan/windows_x86_64
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
       - name: Save bundled hictk cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         continue-on-error: true
         with:
           path: toolchains-dist/windows_x86_64
@@ -333,7 +347,7 @@ jobs:
       - name: Build Windows portable package and EXE
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
-        run: .\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe
+        run: .\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe -WindowsExeMode $env:HICT_WINDOWS_EXE_MODE
 
       - name: Build Windows portable package
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_exe != 'true' }}
@@ -341,7 +355,7 @@ jobs:
         run: .\scripts\portable\build_portable_windows.ps1
 
       - name: Upload Windows package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hict-windows-portable
           path: |
@@ -351,7 +365,7 @@ jobs:
 
       - name: Upload Windows EXE artifact
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hict-windows-exe
           path: |

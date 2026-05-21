@@ -978,11 +978,25 @@ public final class HictLauncherGui {
     }
 
     private BrowserMode resolveInitialBrowserMode() {
-      final var requested = BrowserMode.fromWireName(firstNonBlank(
+      final var configuredMode = firstNonBlank(
         this.settings.getProperty("browserMode"),
         System.getenv("HICT_BROWSER_MODE")
-      ));
-      return hasBrowserMode(requested) ? requested : BrowserMode.SYSTEM;
+      );
+      if (configuredMode != null && !configuredMode.isBlank()) {
+        final var requested = BrowserMode.fromWireName(configuredMode);
+        return hasBrowserMode(requested) ? requested : preferredBrowserMode();
+      }
+      return preferredBrowserMode();
+    }
+
+    private BrowserMode preferredBrowserMode() {
+      if (hasBrowserMode(BrowserMode.TAURI)) {
+        return BrowserMode.TAURI;
+      }
+      if (hasBrowserMode(BrowserMode.ELECTRON)) {
+        return BrowserMode.ELECTRON;
+      }
+      return BrowserMode.SYSTEM;
     }
 
     private void selectBrowserMode(final BrowserMode mode) {

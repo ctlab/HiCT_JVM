@@ -1,6 +1,8 @@
 param(
   [switch]$SkipGradle,
   [switch]$CreateSelfExtractingExe,
+  [ValidateSet("custom", "7zip-sfx")]
+  [string]$WindowsExeMode = $(if ($env:HICT_WINDOWS_EXE_MODE) { $env:HICT_WINDOWS_EXE_MODE } else { "custom" }),
   [string]$RuntimeModules = $(if ($env:HICT_RUNTIME_MODULES) { $env:HICT_RUNTIME_MODULES } else { "java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.unsupported,jdk.zipfs" }),
   [string]$DistRoot = $(if ($env:HICT_PORTABLE_DIST_DIR) { $env:HICT_PORTABLE_DIST_DIR } else { (Join-Path $PSScriptRoot "..\..\build\portable") }),
   [string]$SevenZipRoot = $(if ($env:SEVENZIP_ROOT) { $env:SEVENZIP_ROOT } else { "C:\Program Files\7-Zip" }),
@@ -67,6 +69,160 @@ function Find-SfxModules {
       $name = Split-Path -Leaf $_
       $preferredNames.IndexOf($name)
     }, { $_ }
+}
+
+function Find-StandaloneSevenZipExtractors {
+  param([Parameter(Mandatory = $true)][string[]]$Roots)
+
+  $found = New-Object 'System.Collections.Generic.List[string]'
+  foreach ($root in $Roots) {
+    if (-not (Test-Path $root)) {
+      continue
+    }
+    Get-ChildItem -Path $root -Recurse -File -Filter "7zr.exe" -ErrorAction SilentlyContinue |
+      ForEach-Object { $found.Add($_.FullName) }
+  }
+  return $found | Sort-Object { $_ }
+}
+
+function Expand-LzmaSdk {
+  param(
+    [Parameter(Mandatory = $true)][string]$SevenZipExe,
+    [Parameter(Mandatory = $true)][string]$BuildDir,
+    [Parameter(Mandatory = $true)][string]$NoticeTarget
+  )
+
+  $sdkArchive = Join-Path $BuildDir "lzma-sdk.7z"
+  $sdkDir = Join-Path $BuildDir "lzma-sdk"
+  if (Test-Path $sdkDir) {
+    return $sdkDir
+  }
+
+  Write-Host "Downloading official LZMA SDK from $SevenZipSdkUrl"
+  Invoke-WebRequest -Uri $SevenZipSdkUrl -OutFile $sdkArchive
+  Invoke-Native -FilePath $SevenZipExe -Arguments @("x", $sdkArchive, "-o$sdkDir", "-y")
+  $sdkNotice = Join-Path $sdkDir "DOC\lzma-sdk.txt"
+  if (Test-Path $sdkNotice) {
+    Copy-Item -Force $sdkNotice $NoticeTarget
+  }
+  return $sdkDir
+}
+
+function Get-LittleEndianUInt64Bytes {
+  param([Parameter(Mandatory = $true)][UInt64]$Value)
+  return [BitConverter]::GetBytes($Value)
+}
+
+function Build-CustomPortableExe {
+  param(
+    [Parameter(Mandatory = $true)][string]$SevenZipExe,
+    [Parameter(Mandatory = $true)][string]$BuildDir,
+    [Parameter(Mandatory = $true)][string]$ExePath,
+    [Parameter(Mandatory = $true)][string]$AppDirectory,
+    [Parameter(Mandatory = $true)][string]$DistDirectory,
+    [Parameter(Mandatory = $true)][string]$AppDirectoryName
+  )
+
+  $archivePath = Join-Path $BuildDir "payload.7z"
+  $launcherStub = Join-Path $BuildDir "HiCTPortableLauncher.stub.exe"
+  $launcherSource = Join-Path $PSScriptRoot "windows_launcher\HiCTPortableLauncher.cpp"
+  $lzmaNoticeTarget = Join-Path $AppDirectory "licenses\LZMA_SDK_NOTICE.txt"
+
+  $extractorCandidates = @(Find-StandaloneSevenZipExtractors -Roots @($SevenZipRoot, $BuildDir))
+  if (-not $extractorCandidates) {
+    $sdkDir = Expand-LzmaSdk -SevenZipExe $SevenZipExe -BuildDir $BuildDir -NoticeTarget $lzmaNoticeTarget
+    $extractorCandidates = @(Find-StandaloneSevenZipExtractors -Roots @($sdkDir))
+  }
+  if (-not $extractorCandidates) {
+    throw "No official standalone 7zr.exe was found in 7-Zip or the LZMA SDK."
+  }
+  $extractorPath = $extractorCandidates[0]
+
+  Push-Location $DistDirectory
+  try {
+    Invoke-Native -FilePath $SevenZipExe -Arguments @("a", "-t7z", "-mx=9", "-mmt=on", "-ms=off", $archivePath, ".\$AppDirectoryName")
+  }
+  finally {
+    Pop-Location
+  }
+
+  $clExe = Get-Command "cl.exe" -ErrorAction SilentlyContinue
+  if (-not $clExe) {
+    throw "cl.exe is required for the custom Windows portable EXE. Run from a Visual Studio Developer shell or configure MSVC in CI."
+  }
+  Invoke-Native -FilePath $clExe.Source -Arguments @(
+    "/nologo",
+    "/std:c++17",
+    "/O2",
+    "/MT",
+    "/EHsc",
+    "/DUNICODE",
+    "/D_UNICODE",
+    "/D_WIN32_WINNT=0x0601",
+    "/Fe:$launcherStub",
+    $launcherSource,
+    "shell32.lib",
+    "/link",
+    "/SUBSYSTEM:CONSOLE,6.01"
+  )
+
+  $launcherManifest = Join-Path $BuildDir "HiCTPortableLauncher.manifest"
+  @'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity version="1.0.0.0" processorArchitecture="amd64" name="HiCT.PortableLauncher" type="win32"/>
+  <description>HiCT portable launcher</description>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>
+'@ | Set-Content -Encoding UTF8 $launcherManifest
+  $mtExe = Get-Command "mt.exe" -ErrorAction SilentlyContinue
+  if ($mtExe) {
+    Invoke-Native -FilePath $mtExe.Source -Arguments @("-nologo", "-manifest", $launcherManifest, "-outputresource:$launcherStub;1")
+  } else {
+    Write-Warning "mt.exe was not found; custom launcher will be built without an embedded asInvoker manifest."
+  }
+
+  $stubBytes = [System.IO.File]::ReadAllBytes($launcherStub)
+  $extractorBytes = [System.IO.File]::ReadAllBytes($extractorPath)
+  $payloadBytes = [System.IO.File]::ReadAllBytes($archivePath)
+  $extractorOffset = [UInt64]$stubBytes.Length
+  $payloadOffset = [UInt64]($stubBytes.Length + $extractorBytes.Length)
+  $payloadHash = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
+  $extractorHash = (Get-FileHash -Algorithm SHA256 $extractorPath).Hash.ToLowerInvariant()
+  $manifest = [ordered]@{
+    format = "hict-portable-launcher-v1"
+    appDirName = $AppDirectoryName
+    payloadSha256 = $payloadHash
+    extractorSha256 = $extractorHash
+    extractorOffset = $extractorOffset
+    extractorSize = [UInt64]$extractorBytes.Length
+    payloadOffset = $payloadOffset
+    payloadSize = [UInt64]$payloadBytes.Length
+  }
+  $manifestJson = $manifest | ConvertTo-Json -Depth 4 -Compress
+  $manifestBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($manifestJson)
+  $manifestLengthBytes = Get-LittleEndianUInt64Bytes -Value ([UInt64]$manifestBytes.Length)
+  $magicBytes = [System.Text.Encoding]::ASCII.GetBytes("HICT-PORTABLE-LAUNCHER-V1")
+
+  if (Test-Path $ExePath) {
+    Remove-Item -Force $ExePath
+  }
+  $out = [System.IO.File]::Create($ExePath)
+  try {
+    foreach ($bytes in @($stubBytes, $extractorBytes, $payloadBytes, $manifestBytes, $manifestLengthBytes, $magicBytes)) {
+      $out.Write($bytes, 0, $bytes.Length)
+    }
+  }
+  finally {
+    $out.Dispose()
+  }
+  Write-Host "Built custom portable EXE with content-addressed cache support: $ExePath"
 }
 
 $projectDir = Resolve-Path (Join-Path $PSScriptRoot "..\..")
@@ -187,28 +343,31 @@ This package is assembled from:
     prepared before packaging. HiCT does not download browser binaries during
     packaging; browser payloads must be curated with their upstream license,
     trademark, and update requirements before redistribution.
-  - Optional single-file Windows EXE packaging built with official 7-Zip/LZMA
-    SDK SFX modules when -CreateSelfExtractingExe is used. The build prefers
-    the progress-capable installer SFX module. Keep the 7-Zip SFX notice with
-    redistributed artifacts.
+  - Optional single-file Windows EXE packaging when -CreateSelfExtractingExe is
+    used. The default EXE mode is a small HiCT launcher that embeds an official
+    7-Zip runtime extractor and reuses a content-addressed per-user cache.
+    Legacy official 7-Zip/LZMA SDK SFX packaging can be selected explicitly.
+    Keep the 7-Zip notice with redistributed artifacts.
 
 The portable Windows ZIP remains the most transparent artifact. The optional
-EXE is an official 7-Zip self-extracting launcher for users who need a single
-double-clickable file without MSI installation.
+EXE is a single double-clickable launcher without MSI installation.
 '@ | Set-Content -Encoding UTF8 (Join-Path $appDir "licenses\PORTABLE_DISTRIBUTION_NOTICE.txt")
 
 @'
-7-Zip SFX notice
-================
+7-Zip/LZMA SDK notice
+=====================
 
-Single-file Windows EXE artifacts are assembled with official 7-Zip/LZMA SDK
-SFX modules when requested by the release workflow. The build first checks the
-local 7-Zip installation and then downloads the official LZMA SDK when needed.
+Single-file Windows EXE artifacts use official 7-Zip/LZMA SDK components when
+requested by the release workflow. The default custom launcher embeds the
+standalone 7zr.exe extractor and a .7z payload; the legacy mode assembles an
+official 7-Zip/LZMA SDK SFX module. The build first checks the local 7-Zip
+installation and then downloads the official LZMA SDK when needed.
+
 7-Zip is distributed under LGPL terms with additional components noted by the
 upstream project. LZMA SDK is public domain. Keep this notice with redistributed
 portable packages and refer to the official 7-Zip license and SDK pages for the
-exact license text of the module used by the build runner.
-'@ | Set-Content -Encoding UTF8 (Join-Path $appDir "licenses\SevenZip_SFX_NOTICE.txt")
+exact license text of the component used by the build runner.
+'@ | Set-Content -Encoding UTF8 (Join-Path $appDir "licenses\SevenZip_NOTICE.txt")
 
 & $jlink `
   --add-modules $RuntimeModules `
@@ -356,10 +515,10 @@ With no arguments, HiCT.cmd opens the graphical launcher. Explicit CLI
 subcommands keep the traditional command-line behavior.
 
 DATA_DIR defaults to this extracted portable directory when running HiCT.cmd
-directly. The optional SFX EXE wrapper sets DATA_DIR to the directory containing
-the EXE when it can infer that location from the parent process. The launcher
-enters DATA_DIR before Java starts so file dialogs and relative paths begin from
-the portable data location. Explicit DATA_DIR always wins.
+directly. The optional single-file EXE wrapper sets DATA_DIR to the directory
+containing the EXE when possible. The launcher enters DATA_DIR before Java
+starts so file dialogs and relative paths begin from the portable data location.
+Explicit DATA_DIR always wins.
 
 HICT_BIND_HOST defaults to 127.0.0.1 in this portable launcher. Set
 HICT_BIND_HOST=0.0.0.0 explicitly if remote machines must connect to this HiCT
@@ -372,8 +531,9 @@ Java runtime notices:
 
 Windows single-file note:
   The ZIP is the transparent portable artifact. If the release also contains a
-  .exe, that EXE is an official 7-Zip SFX wrapper around the same portable app,
-  not an MSI installer.
+  .exe, that EXE is a portable launcher around the same app, not an MSI
+  installer. The default custom EXE reuses a content-addressed per-user cache;
+  the legacy 7-Zip SFX mode can be selected at build time.
 "@ | Set-Content -Encoding UTF8 (Join-Path $appDir "README_PORTABLE.txt")
 
 $zipPath = Join-Path $artifactDir "$appName-$version-$platform-portable.zip"
@@ -398,61 +558,56 @@ if ($CreateSelfExtractingExe) {
     throw "7z.exe is required for -CreateSelfExtractingExe. Install official 7-Zip or set SEVENZIP_ROOT."
   }
 
-  $sfxBuildDir = Join-Path $DistRoot "windows-sfx"
+  $sfxBuildDir = Join-Path $DistRoot "windows-exe"
   if (Test-Path $sfxBuildDir) {
     Remove-Item -Recurse -Force $sfxBuildDir
   }
   New-Item -ItemType Directory -Force -Path $sfxBuildDir | Out-Null
 
-  $sfxCandidates = @(Find-SfxModules -Roots @($SevenZipRoot))
-
-  $hasProgressSfx = @(($sfxCandidates | Where-Object {
-    $name = Split-Path -Leaf $_
-    $name -in @("7zSD.sfx", "7zS.sfx")
-  })).Count -gt 0
-
-  if (-not $sfxCandidates -or -not $hasProgressSfx) {
-    $sdkArchive = Join-Path $sfxBuildDir "lzma-sdk.7z"
-    $sdkDir = Join-Path $sfxBuildDir "lzma-sdk"
-    try {
-      Write-Host "Downloading official LZMA SDK from $SevenZipSdkUrl"
-      Invoke-WebRequest -Uri $SevenZipSdkUrl -OutFile $sdkArchive
-      Invoke-Native -FilePath $sevenZipExe -Arguments @("x", $sdkArchive, "-o$sdkDir", "-y")
-      $sdkNotice = Join-Path $sdkDir "DOC\lzma-sdk.txt"
-      if (Test-Path $sdkNotice) {
-        Copy-Item -Force $sdkNotice (Join-Path $appDir "licenses\LZMA_SDK_NOTICE.txt")
-      }
-      $sdkSfxCandidates = @(Find-SfxModules -Roots @($sdkDir))
-      $sfxCandidates = @($sdkSfxCandidates + $sfxCandidates)
-    } catch {
-      if (-not $sfxCandidates) {
-        throw
-      }
-      Write-Warning "Could not obtain the official progress-capable LZMA SFX module; falling back to the locally available SFX module."
-    }
-  }
-  if (-not $sfxCandidates) {
-    throw "No official 7-Zip/LZMA SDK SFX module (7zSD.sfx, 7zS.sfx, 7zS2con.sfx, or 7zS2.sfx) was found."
-  }
-  $sfxModule = $sfxCandidates[0]
-  $sfxModuleName = (Split-Path -Leaf $sfxModule)
-  $sfxUsesInstallerConfig = $sfxModuleName -notin @("7zS2con.sfx", "7zS2.sfx")
-  Write-Host "Using official SFX module $sfxModule"
-
-  $archivePath = Join-Path $sfxBuildDir "payload.7z"
-  $configPath = Join-Path $sfxBuildDir "config.txt"
   $exePath = Join-Path $artifactDir "$appName-$version-$platform.exe"
 
-  Push-Location $appDir
-  try {
-    Invoke-Native -FilePath $sevenZipExe -Arguments @("a", "-t7z", "-mx=9", "-mmt=on", "-ms=off", $archivePath, ".\*")
-  }
-  finally {
-    Pop-Location
-  }
+  if ($WindowsExeMode -eq "custom") {
+    Build-CustomPortableExe `
+      -SevenZipExe $sevenZipExe `
+      -BuildDir $sfxBuildDir `
+      -ExePath $exePath `
+      -AppDirectory $appDir `
+      -DistDirectory $DistRoot `
+      -AppDirectoryName "$appName-$version-$platform"
+  } else {
+    $sfxCandidates = @(Find-SfxModules -Roots @($SevenZipRoot))
 
-  if ($sfxUsesInstallerConfig) {
-    @'
+    $hasProgressSfx = @(($sfxCandidates | Where-Object {
+      $name = Split-Path -Leaf $_
+      $name -in @("7zSD.sfx", "7zS.sfx")
+    })).Count -gt 0
+
+    if (-not $sfxCandidates -or -not $hasProgressSfx) {
+      $sdkDir = Expand-LzmaSdk -SevenZipExe $sevenZipExe -BuildDir $sfxBuildDir -NoticeTarget (Join-Path $appDir "licenses\LZMA_SDK_NOTICE.txt")
+      $sdkSfxCandidates = @(Find-SfxModules -Roots @($sdkDir))
+      $sfxCandidates = @($sdkSfxCandidates + $sfxCandidates)
+    }
+    if (-not $sfxCandidates) {
+      throw "No official 7-Zip/LZMA SDK SFX module (7zSD.sfx, 7zS.sfx, 7zS2con.sfx, or 7zS2.sfx) was found."
+    }
+    $sfxModule = $sfxCandidates[0]
+    $sfxModuleName = (Split-Path -Leaf $sfxModule)
+    $sfxUsesInstallerConfig = $sfxModuleName -notin @("7zS2con.sfx", "7zS2.sfx")
+    Write-Host "Using official SFX module $sfxModule"
+
+    $archivePath = Join-Path $sfxBuildDir "payload.7z"
+    $configPath = Join-Path $sfxBuildDir "config.txt"
+
+    Push-Location $appDir
+    try {
+      Invoke-Native -FilePath $sevenZipExe -Arguments @("a", "-t7z", "-mx=9", "-mmt=on", "-ms=off", $archivePath, ".\*")
+    }
+    finally {
+      Pop-Location
+    }
+
+    if ($sfxUsesInstallerConfig) {
+      @'
 ;!@Install@!UTF-8!
 Title="HiCT Portable"
 Progress="yes"
@@ -460,25 +615,26 @@ Directory=""
 RunProgram="cmd.exe /d /c call run.cmd"
 ;!@InstallEnd@!
 '@ | Set-Content -Encoding UTF8 $configPath
-  }
+    }
 
-  if (Test-Path $exePath) {
-    Remove-Item -Force $exePath
-  }
-  $out = [System.IO.File]::Create($exePath)
-  try {
-    $sfxParts = if ($sfxUsesInstallerConfig) {
-      @($sfxModule, $configPath, $archivePath)
-    } else {
-      @($sfxModule, $archivePath)
+    if (Test-Path $exePath) {
+      Remove-Item -Force $exePath
     }
-    foreach ($part in $sfxParts) {
-      $bytes = [System.IO.File]::ReadAllBytes($part)
-      $out.Write($bytes, 0, $bytes.Length)
+    $out = [System.IO.File]::Create($exePath)
+    try {
+      $sfxParts = if ($sfxUsesInstallerConfig) {
+        @($sfxModule, $configPath, $archivePath)
+      } else {
+        @($sfxModule, $archivePath)
+      }
+      foreach ($part in $sfxParts) {
+        $bytes = [System.IO.File]::ReadAllBytes($part)
+        $out.Write($bytes, 0, $bytes.Length)
+      }
     }
-  }
-  finally {
-    $out.Dispose()
+    finally {
+      $out.Dispose()
+    }
   }
   $hashLines += "$((Get-FileHash -Algorithm SHA256 $exePath).Hash.ToLowerInvariant())  $(Split-Path -Leaf $exePath)"
 }
@@ -487,6 +643,6 @@ $hashLines | Set-Content -Encoding ASCII $shaPath
 
 Write-Host "Built $zipPath"
 if ($CreateSelfExtractingExe) {
-  Write-Host "Built optional portable SFX EXE in $artifactDir"
+  Write-Host "Built optional portable $WindowsExeMode EXE in $artifactDir"
 }
 Write-Host "Wrote $shaPath"
