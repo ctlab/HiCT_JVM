@@ -513,8 +513,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                 job.error = "Cancelled";
             } else {
                 job.status = "failed";
-                job.error = e.getMessage();
-                job.logs.add("ERROR: " + e.getMessage());
+                job.error = e.getMessage() == null ? e.toString() : e.getMessage();
+                job.logs.add("ERROR: " + job.error);
             }
         } finally {
             job.activeProcess = null;

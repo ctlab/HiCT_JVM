@@ -28,6 +28,7 @@ import ru.itmo.ctlab.hict.hict_server.tools.HictCli;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
@@ -35,6 +36,7 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
@@ -47,6 +49,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -110,6 +113,33 @@ public final class HictLauncherGui {
   private record BrowserBundle(String name, String engine, int priority, Path root, Path executable, List<String> arguments) {
   }
 
+  private enum BrowserMode {
+    SYSTEM("system", "System browser"),
+    TAURI("tauri", "Tauri"),
+    ELECTRON("electron", "Electron");
+
+    private final String wireName;
+    private final String label;
+
+    BrowserMode(final String wireName, final String label) {
+      this.wireName = wireName;
+      this.label = label;
+    }
+
+    private static BrowserMode fromWireName(final String value) {
+      if (value == null || value.isBlank()) {
+        return SYSTEM;
+      }
+      final var normalized = value.trim().toLowerCase(Locale.ROOT);
+      for (final var mode : values()) {
+        if (mode.wireName.equals(normalized)) {
+          return mode;
+        }
+      }
+      return SYSTEM;
+    }
+  }
+
   private static final class LauncherWindow {
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final int MAX_LOG_CHARS = 200_000;
@@ -168,13 +198,16 @@ public final class HictLauncherGui {
     private JLabel apiStatusLabel;
     private JLabel webUiStatusLabel;
     private JLabel processStatusLabel;
-    private JLabel addressLabel;
+    private JButton apiLinkButton;
+    private JButton webUiLinkButton;
     private JLabel browserStatusLabel;
     private JButton startButton;
     private JButton stopButton;
     private JButton openWebUiButton;
     private JButton configureButton;
-    private JCheckBox useBundledBrowserCheckbox;
+    private JRadioButton systemBrowserRadio;
+    private JRadioButton tauriBrowserRadio;
+    private JRadioButton electronBrowserRadio;
     private JCheckBox openAfterStartCheckbox;
     private Timer statusTimer;
     private volatile Process serverProcess;
@@ -246,8 +279,9 @@ public final class HictLauncherGui {
       final var buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), 0));
       this.startButton = new JButton("Start HiCT");
       this.startButton.addActionListener(ignored -> startHiCT());
-      this.openWebUiButton = new JButton("Open HiCT WebUI");
+      this.openWebUiButton = new JButton("Re-open WebUI");
       this.openWebUiButton.addActionListener(ignored -> openWebUi());
+      this.openWebUiButton.setVisible(false);
       this.configureButton = new JButton("Configure");
       this.configureButton.addActionListener(ignored -> toggleConfiguration());
       this.stopButton = new JButton("Stop HiCT");
@@ -301,22 +335,24 @@ public final class HictLauncherGui {
       this.processStatusLabel = new JLabel();
       this.apiStatusLabel = new JLabel();
       this.webUiStatusLabel = new JLabel();
-      this.addressLabel = new JLabel();
+      this.apiLinkButton = createLinkButton(apiUrl(""));
+      this.webUiLinkButton = createLinkButton(webUiUrl());
       this.browserStatusLabel = new JLabel();
 
       addStatusRow(panel, gbc, 0, "Process:", this.processStatusLabel);
       addStatusRow(panel, gbc, 1, "API:", this.apiStatusLabel);
       addStatusRow(panel, gbc, 2, "WebUI:", this.webUiStatusLabel);
-      addStatusRow(panel, gbc, 3, "Addresses:", this.addressLabel);
+      addStatusRow(panel, gbc, 3, "Addresses:", createAddressLinksPanel());
       addStatusRow(panel, gbc, 4, "Browser:", this.browserStatusLabel);
+      addStatusRow(panel, gbc, 5, "Open in:", createBrowserModePanel());
       return panel;
     }
 
-    private static void addStatusRow(final JPanel panel,
-                                     final GridBagConstraints gbc,
-                                     final int row,
-                                     final String name,
-                                     final JLabel value) {
+    private void addStatusRow(final JPanel panel,
+                              final GridBagConstraints gbc,
+                              final int row,
+                              final String name,
+                              final Component value) {
       gbc.gridx = 0;
       gbc.gridy = row;
       gbc.weightx = 0.0;
@@ -329,6 +365,56 @@ public final class HictLauncherGui {
       gbc.weightx = 1.0;
       gbc.fill = GridBagConstraints.HORIZONTAL;
       panel.add(value, gbc);
+    }
+
+    private JPanel createAddressLinksPanel() {
+      final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), 0));
+      panel.add(this.apiLinkButton);
+      panel.add(this.webUiLinkButton);
+      return panel;
+    }
+
+    private JButton createLinkButton(final String url) {
+      final var button = new JButton(url);
+      button.setBorderPainted(false);
+      button.setContentAreaFilled(false);
+      button.setFocusPainted(false);
+      button.setOpaque(false);
+      button.setForeground(new Color(24, 95, 180));
+      button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+      button.setToolTipText("Open in the system default browser");
+      button.addActionListener(ignored -> openSystemBrowserFromLauncher(button.getText()));
+      return button;
+    }
+
+    private JPanel createBrowserModePanel() {
+      final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), 0));
+      final var group = new ButtonGroup();
+      this.systemBrowserRadio = new JRadioButton(BrowserMode.SYSTEM.label);
+      this.tauriBrowserRadio = new JRadioButton(BrowserMode.TAURI.label);
+      this.electronBrowserRadio = new JRadioButton(BrowserMode.ELECTRON.label);
+
+      this.tauriBrowserRadio.setEnabled(hasBrowserMode(BrowserMode.TAURI));
+      this.electronBrowserRadio.setEnabled(hasBrowserMode(BrowserMode.ELECTRON));
+      this.tauriBrowserRadio.setToolTipText(this.tauriBrowserRadio.isEnabled()
+        ? "Use the bundled Tauri/WebView browser"
+        : "Tauri browser is not bundled in this package");
+      this.electronBrowserRadio.setToolTipText(this.electronBrowserRadio.isEnabled()
+        ? "Use the bundled Electron/Chromium browser"
+        : "Electron browser is not bundled in this package");
+
+      group.add(this.systemBrowserRadio);
+      group.add(this.tauriBrowserRadio);
+      group.add(this.electronBrowserRadio);
+      panel.add(this.systemBrowserRadio);
+      panel.add(this.tauriBrowserRadio);
+      panel.add(this.electronBrowserRadio);
+
+      selectBrowserMode(resolveInitialBrowserMode());
+      this.systemBrowserRadio.addActionListener(ignored -> onBrowserModeChanged());
+      this.tauriBrowserRadio.addActionListener(ignored -> onBrowserModeChanged());
+      this.electronBrowserRadio.addActionListener(ignored -> onBrowserModeChanged());
+      return panel;
     }
 
     private JPanel createConfigurationPanel() {
@@ -370,11 +456,7 @@ public final class HictLauncherGui {
       final var optionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), this.uiScale.gapSmall()));
       this.openAfterStartCheckbox = new JCheckBox("Open WebUI after start");
       this.openAfterStartCheckbox.setSelected(getBooleanSetting("openAfterStart", true));
-      this.useBundledBrowserCheckbox = new JCheckBox("Use bundled browser when available");
-      this.useBundledBrowserCheckbox.setSelected(getBooleanSetting("useBundledBrowser", !this.browserBundles.isEmpty()));
-      this.useBundledBrowserCheckbox.setEnabled(!this.browserBundles.isEmpty());
       optionPanel.add(this.openAfterStartCheckbox);
-      optionPanel.add(this.useBundledBrowserCheckbox);
 
       final var buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), this.uiScale.gapSmall()));
       final var saveButton = new JButton("Save settings");
@@ -384,7 +466,10 @@ public final class HictLauncherGui {
       });
       buttonPanel.add(saveButton);
 
-      outer.add(new JScrollPane(form), BorderLayout.CENTER);
+      final var formScroll = new JScrollPane(form);
+      formScroll.setPreferredSize(this.uiScale.configurationScrollPreferredSize());
+      formScroll.setMinimumSize(new Dimension(this.uiScale.minWindowWidth() / 2, this.uiScale.scaled(120)));
+      outer.add(formScroll, BorderLayout.CENTER);
       outer.add(optionPanel, BorderLayout.NORTH);
       outer.add(buttonPanel, BorderLayout.SOUTH);
       this.uiScale.applyFonts(outer);
@@ -565,21 +650,23 @@ public final class HictLauncherGui {
           }
           sleepQuietly(800);
         }
-        appendLog("WebUI did not become reachable within 90 seconds; use Open HiCT WebUI after startup completes.");
+        appendLog("WebUI did not become reachable within 90 seconds; use Re-open WebUI after startup completes.");
       });
     }
 
     private void openWebUi() {
       final var url = webUiUrl();
-      if (this.useBundledBrowserCheckbox.isSelected()) {
-        for (final var bundle : this.browserBundles) {
+      final var selectedMode = selectedBrowserMode();
+      final var bundledCandidates = browserBundlesForMode(selectedMode);
+      if (!bundledCandidates.isEmpty()) {
+        for (final var bundle : bundledCandidates) {
           if (tryOpenBundledBrowser(bundle, url)) {
             return;
           }
         }
-        if (!this.browserBundles.isEmpty()) {
-          appendLog("All bundled browsers failed, falling back to the system browser.");
-        }
+        appendLog("Selected bundled browser failed, falling back to the system browser.");
+      } else if (selectedMode != BrowserMode.SYSTEM) {
+        appendLog(selectedMode.label + " browser is not bundled, falling back to the system browser.");
       }
 
       try {
@@ -598,6 +685,8 @@ public final class HictLauncherGui {
       final var processBuilder = new ProcessBuilder(command)
         .directory(bundle.root().toFile())
         .redirectErrorStream(true);
+      processBuilder.environment().put("HICT_ELECTRON_URL", url);
+      processBuilder.environment().put("HICT_TAURI_URL", url);
       try {
         final var process = processBuilder.start();
         if (process.waitFor(1_200, TimeUnit.MILLISECONDS)) {
@@ -605,6 +694,10 @@ public final class HictLauncherGui {
           appendLog("Bundled browser " + bundle.name() + " exited immediately with code " + process.exitValue() + ".");
           if (!output.isBlank()) {
             appendLog(output);
+          }
+          if (process.exitValue() == 0 && isElectronBundle(bundle)) {
+            appendLog("Electron can hand off to a child process and exit cleanly; treating this launch as successful.");
+            return true;
           }
           return false;
         }
@@ -686,23 +779,101 @@ public final class HictLauncherGui {
       this.apiStatusLabel.setForeground(apiReachable ? new Color(20, 118, 55) : new Color(120, 58, 58));
       this.webUiStatusLabel.setText(webUiReachable ? "reachable" : "not reachable");
       this.webUiStatusLabel.setForeground(webUiReachable ? new Color(20, 118, 55) : new Color(120, 58, 58));
-      this.addressLabel.setText(apiUrl("") + "  |  " + webUiUrl());
+      this.apiLinkButton.setText(apiUrl(""));
+      this.webUiLinkButton.setText(webUiUrl());
       updateButtons();
     }
 
     private void updateBrowserStatus() {
-      if (this.browserBundles.isEmpty()) {
+      final var selectedMode = selectedBrowserMode();
+      if (selectedMode == BrowserMode.SYSTEM) {
         this.browserStatusLabel.setText("system default browser");
         return;
       }
-      this.browserStatusLabel.setText("bundled " + browserBundleNames(this.browserBundles) + "; system browser fallback enabled");
+      final var candidates = browserBundlesForMode(selectedMode);
+      if (candidates.isEmpty()) {
+        this.browserStatusLabel.setText(selectedMode.label + " is not bundled; system browser fallback");
+        return;
+      }
+      this.browserStatusLabel.setText("bundled " + browserBundleNames(candidates) + "; system browser fallback enabled");
     }
 
     private void updateButtons() {
       final var alive = isProcessAlive();
       this.startButton.setEnabled(!alive && !this.closing);
       this.stopButton.setEnabled(alive && !this.closing);
-      this.openWebUiButton.setEnabled(!this.closing);
+      this.openWebUiButton.setVisible(alive && !this.closing);
+      this.openWebUiButton.setEnabled(alive && !this.closing);
+      if (this.frame != null) {
+        this.frame.revalidate();
+      }
+    }
+
+    private void onBrowserModeChanged() {
+      this.settings.setProperty("browserMode", selectedBrowserMode().wireName);
+      updateBrowserStatus();
+      saveSettings();
+    }
+
+    private BrowserMode selectedBrowserMode() {
+      if (this.tauriBrowserRadio != null && this.tauriBrowserRadio.isSelected()) {
+        return BrowserMode.TAURI;
+      }
+      if (this.electronBrowserRadio != null && this.electronBrowserRadio.isSelected()) {
+        return BrowserMode.ELECTRON;
+      }
+      return BrowserMode.SYSTEM;
+    }
+
+    private BrowserMode resolveInitialBrowserMode() {
+      final var requested = BrowserMode.fromWireName(firstNonBlank(
+        this.settings.getProperty("browserMode"),
+        System.getenv("HICT_BROWSER_MODE")
+      ));
+      return hasBrowserMode(requested) ? requested : BrowserMode.SYSTEM;
+    }
+
+    private void selectBrowserMode(final BrowserMode mode) {
+      final var selectableMode = hasBrowserMode(mode) ? mode : BrowserMode.SYSTEM;
+      switch (selectableMode) {
+        case TAURI -> this.tauriBrowserRadio.setSelected(true);
+        case ELECTRON -> this.electronBrowserRadio.setSelected(true);
+        case SYSTEM -> this.systemBrowserRadio.setSelected(true);
+      }
+    }
+
+    private boolean hasBrowserMode(final BrowserMode mode) {
+      return switch (mode) {
+        case SYSTEM -> true;
+        case TAURI -> this.browserBundles.stream().anyMatch(LauncherWindow::isTauriBundle);
+        case ELECTRON -> this.browserBundles.stream().anyMatch(LauncherWindow::isElectronBundle);
+      };
+    }
+
+    private List<BrowserBundle> browserBundlesForMode(final BrowserMode mode) {
+      if (mode == BrowserMode.SYSTEM) {
+        return List.of();
+      }
+      final var selected = this.browserBundles.stream()
+        .filter(bundle -> mode == BrowserMode.TAURI ? isTauriBundle(bundle) : isElectronBundle(bundle))
+        .toList();
+      if (mode != BrowserMode.TAURI || selected.isEmpty()) {
+        return selected;
+      }
+      final var withFallback = new ArrayList<>(selected);
+      this.browserBundles.stream()
+        .filter(LauncherWindow::isElectronBundle)
+        .forEach(withFallback::add);
+      return List.copyOf(withFallback);
+    }
+
+    private void openSystemBrowserFromLauncher(final String url) {
+      try {
+        openSystemBrowser(url);
+        appendLog("Opened " + url + " in the system browser.");
+      } catch (final IOException ex) {
+        showError("Failed to open " + url, ex);
+      }
     }
 
     private boolean isProcessAlive() {
@@ -802,7 +973,7 @@ public final class HictLauncherGui {
         this.settings.setProperty(spec.key(), getFieldValue(spec.key()));
       }
       this.settings.setProperty("openAfterStart", Boolean.toString(this.openAfterStartCheckbox == null || this.openAfterStartCheckbox.isSelected()));
-      this.settings.setProperty("useBundledBrowser", Boolean.toString(this.useBundledBrowserCheckbox != null && this.useBundledBrowserCheckbox.isSelected()));
+      this.settings.setProperty("browserMode", selectedBrowserMode().wireName);
       final Path dataDir;
       try {
         dataDir = normalizePath(getFieldValue("DATA_DIR"));
@@ -984,6 +1155,16 @@ public final class HictLauncherGui {
         return 50;
       }
       return 100;
+    }
+
+    private static boolean isTauriBundle(final BrowserBundle bundle) {
+      final var normalized = (bundle.engine() + " " + bundle.name()).toLowerCase(Locale.ROOT);
+      return normalized.contains("tauri");
+    }
+
+    private static boolean isElectronBundle(final BrowserBundle bundle) {
+      final var normalized = (bundle.engine() + " " + bundle.name()).toLowerCase(Locale.ROOT);
+      return normalized.contains("electron") || normalized.contains("chromium");
     }
 
     private static String browserBundleNames(final List<BrowserBundle> bundles) {
@@ -1254,6 +1435,12 @@ public final class HictLauncherGui {
 
     private int browseButtonPlaceholderWidth() {
       return scaled(88);
+    }
+
+    private Dimension configurationScrollPreferredSize() {
+      final int width = Math.min(scaled(820), Math.max(scaled(520), this.screenBounds.width - scaled(160)));
+      final int height = Math.max(scaled(180), Math.min(scaled(340), this.screenBounds.height / 3));
+      return new Dimension(width, height);
     }
 
     private int minWindowWidth() {

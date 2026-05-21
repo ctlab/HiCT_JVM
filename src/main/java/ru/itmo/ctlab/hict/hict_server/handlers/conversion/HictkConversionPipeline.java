@@ -102,7 +102,7 @@ public final class HictkConversionPipeline {
           "--resolutions",
           Long.toString(baseResolution),
           "--threads",
-          Integer.toString(Math.max(2, normalizeParallelism(options.parallelism()))),
+          Integer.toString(normalizeParallelism(options.parallelism())),
           "--compression-lvl",
           Integer.toString(options.compressionLevel()),
           "--force"
@@ -130,7 +130,7 @@ public final class HictkConversionPipeline {
       zoomifyCommand.add(mcoolOutputPath.toString());
       zoomifyCommand.add("--force");
       zoomifyCommand.add("--threads");
-      zoomifyCommand.add(Integer.toString(Math.max(1, normalizeParallelism(options.parallelism()))));
+      zoomifyCommand.add(Integer.toString(normalizeParallelism(options.parallelism())));
       zoomifyCommand.add("--compression-lvl");
       zoomifyCommand.add(Integer.toString(options.compressionLevel()));
       zoomifyCommand.add("--resolutions");
@@ -168,7 +168,7 @@ public final class HictkConversionPipeline {
             "balance",
             "ice",
             "--threads",
-            Integer.toString(Math.max(1, normalizeParallelism(options.parallelism()))),
+            Integer.toString(normalizeParallelism(options.parallelism())),
             "--tmpdir",
             tmpDirectory.toString(),
             "--ignore-diags",
@@ -298,6 +298,7 @@ public final class HictkConversionPipeline {
       .redirectErrorStream(true)
       .start();
     processSink.accept(process);
+    final var output = new StringBuilder();
     try (final var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
@@ -305,6 +306,7 @@ public final class HictkConversionPipeline {
           process.destroyForcibly();
           throw new InterruptedException("External conversion was cancelled");
         }
+        output.append(line).append(System.lineSeparator());
         lineObserver.accept(line);
       }
     } finally {
@@ -312,7 +314,7 @@ public final class HictkConversionPipeline {
     }
     final var exitCode = process.waitFor();
     if (exitCode != 0) {
-      throw new IllegalStateException("External command failed with exit code " + exitCode + ": " + String.join(" ", command));
+      throw externalCommandFailure(command, exitCode, output.toString());
     }
   }
 
@@ -341,9 +343,28 @@ public final class HictkConversionPipeline {
     }
     final var exitCode = process.waitFor();
     if (exitCode != 0) {
-      throw new IllegalStateException("External command failed with exit code " + exitCode + ": " + String.join(" ", command));
+      throw externalCommandFailure(command, exitCode, output.toString());
     }
     return output.toString().trim();
+  }
+
+  private static @NotNull IllegalStateException externalCommandFailure(final @NotNull List<String> command,
+                                                                       final int exitCode,
+                                                                       final @NotNull String output) {
+    final var message = new StringBuilder()
+      .append("External command failed with exit code ")
+      .append(exitCode)
+      .append(": ")
+      .append(String.join(" ", command));
+    final var trimmedOutput = output.trim();
+    if (!trimmedOutput.isBlank()) {
+      message
+        .append(System.lineSeparator())
+        .append("External command output:")
+        .append(System.lineSeparator())
+        .append(trimmedOutput);
+    }
+    return new IllegalStateException(message.toString());
   }
 
   private static void emitStage(final @NotNull Consumer<String> logger,
@@ -383,7 +404,11 @@ public final class HictkConversionPipeline {
   }
 
   private static int normalizeParallelism(final int parallelism) {
-    return parallelism <= 0 ? Runtime.getRuntime().availableProcessors() : parallelism;
+    final var availableProcessors = Math.max(1, Runtime.getRuntime().availableProcessors());
+    if (parallelism <= 0) {
+      return availableProcessors;
+    }
+    return Math.max(1, Math.min(parallelism, availableProcessors));
   }
 
   private static @NotNull String stripSuffix(final @NotNull String filename) {
