@@ -847,8 +847,8 @@ public final class HictLauncherGui {
           if (!output.isBlank()) {
             appendLog(output);
           }
-          if (process.exitValue() == 0 && isElectronBundle(bundle)) {
-            appendLog("Electron can hand off to a child process and exit cleanly; treating this launch as successful.");
+          if (process.exitValue() == 0) {
+            appendLog("Bundled browser can hand off to a GUI child process and exit cleanly; treating this launch as successful.");
             return true;
           }
           return false;
