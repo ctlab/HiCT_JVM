@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov, Pavel Avdeyev, Nikolay Cherkasov and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,14 +29,40 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 
 public final class AttributionInfo {
+  private static final @NotNull String AUTHORS_LINE = "Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov, Pavel Avdeyev, Nikolay Cherkasov and Computer Technologies Laboratory ITMO University team.";
+  private static final @NotNull String LICENSE_LINE = "MIT License";
+  private static final @NotNull List<String> USED_SOFTWARE_LINES = List.of(
+    "Eclipse Vert.x - HTTP API, routing and WebUI serving - https://vertx.io/",
+    "HDF5 and JHDF5 - matrix storage and native HDF5 access - https://www.hdfgroup.org/solutions/hdf5/ and https://unlimited.ethz.ch/spaces/JHDF/overview",
+    "hictk - optional .hic conversion path - https://github.com/paulsengroup/hictk",
+    "HTSJDK and IGV BigWig - FASTA/sequence and genomic track support - https://github.com/samtools/htsjdk and https://github.com/igvteam/igv",
+    "Apache Commons - JVM utilities - https://commons.apache.org/",
+    "SLF4J, Logback and picocli - logging and command-line interface - https://www.slf4j.org/, https://logback.qos.ch/ and https://picocli.info/",
+    "Vue, Pinia, Vite, TypeScript, Bootstrap, PrimeVue, OpenLayers, igv.js, jsPDF and LiteGraph - WebUI framework, visualization and exports.",
+    "Tauri and Electron - optional bundled WebUI browser runtimes - https://tauri.app/ and https://www.electronjs.org/",
+    "Eclipse Temurin / OpenJDK - optional Java runtime in portable packages - https://adoptium.net/temurin/"
+  );
+
   private AttributionInfo() {
+  }
+
+  public static @NotNull String authorsLine() {
+    return AUTHORS_LINE;
+  }
+
+  public static @NotNull String licenseLine() {
+    return LICENSE_LINE;
+  }
+
+  public static @NotNull List<String> usedSoftwareLines() {
+    return USED_SOFTWARE_LINES;
   }
 
   public static @NotNull List<String> startupBannerLines() {
     return List.of(
       "HiCT - Hi-C scaffolding and visualization workstation.",
-      "Team: Computer Technologies Laboratory, ITMO University; Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov and contributors.",
-      "License: HiCT is distributed under the MIT License.",
+      "Team: " + AUTHORS_LINE,
+      "License: HiCT is distributed under the " + LICENSE_LINE + ".",
       "Core libraries: Eclipse Vert.x (Eclipse Foundation), HDF5/JHDF5 (The HDF Group and ETH Zurich/CISD), HTSJDK/IGV BigWig (Broad Institute/IGV team), Apache Commons, SLF4J/Logback and picocli.",
       "WebUI libraries: Vue, Vite, Pinia, Bootstrap, OpenLayers, PrimeVue, igv.js, jsPDF, LiteGraph and contributors.",
       "Optional .hic conversion: bundled hictk builds are redistributed under the hictk MIT License; cite Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.",

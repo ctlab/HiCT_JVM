@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis and Computer Technologies Laboratory ITMO University team.
+ * Copyright (c) 2021-2026. Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis, Zakhar Lobanov, Nikita Zheleznov, Pavel Avdeyev, Nikolay Cherkasov and Computer Technologies Laboratory ITMO University team.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@
 
 package ru.itmo.ctlab.hict.hict_server.launcher;
 
+import ru.itmo.ctlab.hict.hict_server.info.AttributionInfo;
 import ru.itmo.ctlab.hict.hict_server.tools.HictCli;
 
 import javax.swing.BorderFactory;
@@ -39,6 +40,7 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -46,6 +48,7 @@ import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
@@ -194,17 +197,19 @@ public final class HictLauncherGui {
 
     private JFrame frame;
     private JPanel configurationPanel;
+    private JPanel logCardsPanel;
     private JTextArea logArea;
     private JLabel apiStatusLabel;
     private JLabel webUiStatusLabel;
     private JLabel processStatusLabel;
-    private JButton apiLinkButton;
+    private JLabel apiGatewayLabel;
     private JButton webUiLinkButton;
     private JLabel browserStatusLabel;
     private JButton startButton;
     private JButton stopButton;
     private JButton openWebUiButton;
     private JButton configureButton;
+    private JButton aboutButton;
     private JRadioButton systemBrowserRadio;
     private JRadioButton tauriBrowserRadio;
     private JRadioButton electronBrowserRadio;
@@ -279,22 +284,55 @@ public final class HictLauncherGui {
       final var buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), 0));
       this.startButton = new JButton("Start HiCT");
       this.startButton.addActionListener(ignored -> startHiCT());
+      styleActionButton(this.startButton, true);
       this.openWebUiButton = new JButton("Re-open WebUI");
       this.openWebUiButton.addActionListener(ignored -> openWebUi());
       this.openWebUiButton.setVisible(false);
-      this.configureButton = new JButton("Configure");
+      styleActionButton(this.openWebUiButton, false);
+      this.configureButton = new JButton("Show Configuration");
       this.configureButton.addActionListener(ignored -> toggleConfiguration());
+      styleActionButton(this.configureButton, false);
+      this.aboutButton = new JButton("About");
+      this.aboutButton.addActionListener(ignored -> showAboutDialog());
+      styleActionButton(this.aboutButton, false);
       this.stopButton = new JButton("Stop HiCT");
       this.stopButton.addActionListener(ignored -> stopHiCTInBackground(false));
+      styleActionButton(this.stopButton, false);
       buttons.add(this.startButton);
       buttons.add(this.openWebUiButton);
       buttons.add(this.configureButton);
+      buttons.add(this.aboutButton);
       buttons.add(this.stopButton);
       panel.add(buttons, BorderLayout.EAST);
 
       final var separator = new JSeparator();
       panel.add(separator, BorderLayout.SOUTH);
       return panel;
+    }
+
+    private void styleActionButton(final JButton button, final boolean primary) {
+      button.setFont(button.getFont().deriveFont(
+        primary ? Font.BOLD : Font.PLAIN,
+        (float) this.uiScale.actionFontSize()
+      ));
+      button.setMargin(this.uiScale.actionButtonInsets());
+      button.setMinimumSize(this.uiScale.actionButtonMinimumSize());
+      final var preferred = button.getPreferredSize();
+      final var minimum = this.uiScale.actionButtonMinimumSize();
+      button.setPreferredSize(new Dimension(
+        Math.max(preferred.width, minimum.width),
+        Math.max(preferred.height, minimum.height)
+      ));
+      if (primary) {
+        button.setToolTipText("Start the HiCT JVM server and open the configured WebUI browser");
+      }
+    }
+
+    private void styleHeroButton(final JButton button) {
+      button.setFont(button.getFont().deriveFont(Font.BOLD, (float) this.uiScale.primaryButtonFontSize()));
+      button.setMargin(this.uiScale.heroButtonInsets());
+      button.setMinimumSize(this.uiScale.heroButtonMinimumSize());
+      button.setPreferredSize(this.uiScale.heroButtonMinimumSize());
     }
 
     private JPanel createCenter() {
@@ -316,9 +354,38 @@ public final class HictLauncherGui {
       this.logArea.setRows(this.uiScale.logRows());
       final var logScroll = new JScrollPane(this.logArea);
       logScroll.setBorder(BorderFactory.createTitledBorder("HiCT server log"));
-      body.add(logScroll, BorderLayout.CENTER);
+      this.logCardsPanel = new JPanel(new CardLayout());
+      this.logCardsPanel.add(createLaunchPlaceholderPanel(), "start");
+      this.logCardsPanel.add(logScroll, "log");
+      body.add(this.logCardsPanel, BorderLayout.CENTER);
 
       panel.add(body, BorderLayout.CENTER);
+      return panel;
+    }
+
+    private JPanel createLaunchPlaceholderPanel() {
+      final var panel = new JPanel(new GridBagLayout());
+      panel.setBorder(BorderFactory.createCompoundBorder(
+        BorderFactory.createTitledBorder("HiCT server log"),
+        BorderFactory.createEmptyBorder(this.uiScale.gapLarge(), this.uiScale.gapLarge(), this.uiScale.gapLarge(), this.uiScale.gapLarge())
+      ));
+      final var content = new JPanel(new GridBagLayout());
+      final var gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 0;
+      gbc.insets = new Insets(0, 0, this.uiScale.gapLarge(), 0);
+      final var title = new JLabel("Start HiCT to open the WebUI.");
+      title.setFont(title.getFont().deriveFont(Font.BOLD, (float) this.uiScale.heroFontSize()));
+      content.add(title, gbc);
+
+      gbc.gridy = 1;
+      gbc.insets = new Insets(this.uiScale.gap(), 0, 0, 0);
+      final var duplicateStartButton = new JButton("Start HiCT");
+      duplicateStartButton.addActionListener(ignored -> startHiCT());
+      styleHeroButton(duplicateStartButton);
+      content.add(duplicateStartButton, gbc);
+
+      panel.add(content);
       return panel;
     }
 
@@ -335,14 +402,14 @@ public final class HictLauncherGui {
       this.processStatusLabel = new JLabel();
       this.apiStatusLabel = new JLabel();
       this.webUiStatusLabel = new JLabel();
-      this.apiLinkButton = createLinkButton(apiUrl(""));
       this.webUiLinkButton = createLinkButton(webUiUrl());
+      this.apiGatewayLabel = new JLabel(apiUrl(""));
       this.browserStatusLabel = new JLabel();
 
       addStatusRow(panel, gbc, 0, "Process:", this.processStatusLabel);
       addStatusRow(panel, gbc, 1, "API:", this.apiStatusLabel);
       addStatusRow(panel, gbc, 2, "WebUI:", this.webUiStatusLabel);
-      addStatusRow(panel, gbc, 3, "Addresses:", createAddressLinksPanel());
+      addStatusRow(panel, gbc, 3, "Links:", createAddressLinksPanel());
       addStatusRow(panel, gbc, 4, "Browser:", this.browserStatusLabel);
       addStatusRow(panel, gbc, 5, "Open in:", createBrowserModePanel());
       return panel;
@@ -368,9 +435,32 @@ public final class HictLauncherGui {
     }
 
     private JPanel createAddressLinksPanel() {
-      final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), 0));
-      panel.add(this.apiLinkButton);
-      panel.add(this.webUiLinkButton);
+      final var panel = new JPanel(new GridBagLayout());
+      final var gbc = new GridBagConstraints();
+      gbc.insets = new Insets(0, 0, this.uiScale.gapSmall(), this.uiScale.gap());
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.gridx = 0;
+      gbc.gridy = 0;
+      final var webUiLabel = new JLabel("WebUI Link:");
+      webUiLabel.setFont(webUiLabel.getFont().deriveFont(Font.BOLD));
+      panel.add(webUiLabel, gbc);
+      gbc.gridx = 1;
+      gbc.weightx = 1.0;
+      gbc.fill = GridBagConstraints.HORIZONTAL;
+      panel.add(this.webUiLinkButton, gbc);
+
+      gbc.gridx = 0;
+      gbc.gridy = 1;
+      gbc.weightx = 0.0;
+      gbc.fill = GridBagConstraints.NONE;
+      final var apiLabel = new JLabel("API Gateway:");
+      apiLabel.setFont(apiLabel.getFont().deriveFont(Font.BOLD));
+      panel.add(apiLabel, gbc);
+      gbc.gridx = 1;
+      gbc.weightx = 1.0;
+      gbc.fill = GridBagConstraints.HORIZONTAL;
+      this.apiGatewayLabel.setForeground(new Color(90, 96, 104));
+      panel.add(this.apiGatewayLabel, gbc);
       return panel;
     }
 
@@ -487,9 +577,59 @@ public final class HictLauncherGui {
 
     private void toggleConfiguration() {
       this.configurationPanel.setVisible(!this.configurationPanel.isVisible());
-      this.configureButton.setText(this.configurationPanel.isVisible() ? "Hide configuration" : "Configure");
+      this.configureButton.setText(this.configurationPanel.isVisible() ? "Hide Configuration" : "Show Configuration");
       this.frame.revalidate();
       this.frame.repaint();
+    }
+
+    private void showAboutDialog() {
+      final var tabs = new JTabbedPane();
+      tabs.addTab("About", new JScrollPane(createReadOnlyTextArea(aboutText())));
+      tabs.addTab("Attribution", new JScrollPane(createReadOnlyTextArea(attributionText())));
+      tabs.setPreferredSize(this.uiScale.aboutDialogPreferredSize());
+      JOptionPane.showMessageDialog(this.frame, tabs, "About HiCT", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private JTextArea createReadOnlyTextArea(final String text) {
+      final var textArea = new JTextArea(text);
+      textArea.setEditable(false);
+      textArea.setLineWrap(true);
+      textArea.setWrapStyleWord(true);
+      textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, this.uiScale.logFontSize()));
+      textArea.setBorder(BorderFactory.createEmptyBorder(
+        this.uiScale.gap(),
+        this.uiScale.gap(),
+        this.uiScale.gap(),
+        this.uiScale.gap()
+      ));
+      textArea.setCaretPosition(0);
+      return textArea;
+    }
+
+    private String aboutText() {
+      return "HiCT - Hi-C scaffolding and visualization workstation." + System.lineSeparator()
+        + System.lineSeparator()
+        + "Authors:" + System.lineSeparator()
+        + AttributionInfo.authorsLine() + System.lineSeparator()
+        + System.lineSeparator()
+        + "License: " + AttributionInfo.licenseLine() + System.lineSeparator()
+        + System.lineSeparator()
+        + "Portable home: " + this.appHome + System.lineSeparator()
+        + "Default data directory: " + defaultDataDir() + System.lineSeparator()
+        + System.lineSeparator()
+        + "Full third-party notices are kept in package metadata, portable licenses/, runtime/legal, and toolchains/<platform>/share when bundled.";
+    }
+
+    private String attributionText() {
+      final var builder = new StringBuilder();
+      builder.append("Used software").append(System.lineSeparator());
+      builder.append(System.lineSeparator());
+      for (final var line : AttributionInfo.usedSoftwareLines()) {
+        builder.append("- ").append(line).append(System.lineSeparator());
+      }
+      builder.append(System.lineSeparator());
+      builder.append("Optional hictk citation: Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.");
+      return builder.toString();
     }
 
     private void clampFrameToScreen() {
@@ -519,9 +659,11 @@ public final class HictLauncherGui {
 
     private void startHiCT() {
       if (isProcessAlive()) {
+        showLogPanel();
         appendLog("HiCT is already running.");
         return;
       }
+      showLogPanel();
       saveSettings();
 
       final Path dataDir;
@@ -556,6 +698,16 @@ public final class HictLauncherGui {
       if (this.openAfterStartCheckbox.isSelected()) {
         waitAndOpenWebUi();
       }
+    }
+
+    private void showLogPanel() {
+      if (this.logCardsPanel == null) {
+        return;
+      }
+      final var layout = (CardLayout) this.logCardsPanel.getLayout();
+      layout.show(this.logCardsPanel, "log");
+      this.logCardsPanel.revalidate();
+      this.logCardsPanel.repaint();
     }
 
     private List<String> buildServerCommand() {
@@ -779,7 +931,7 @@ public final class HictLauncherGui {
       this.apiStatusLabel.setForeground(apiReachable ? new Color(20, 118, 55) : new Color(120, 58, 58));
       this.webUiStatusLabel.setText(webUiReachable ? "reachable" : "not reachable");
       this.webUiStatusLabel.setForeground(webUiReachable ? new Color(20, 118, 55) : new Color(120, 58, 58));
-      this.apiLinkButton.setText(apiUrl(""));
+      this.apiGatewayLabel.setText(apiUrl(""));
       this.webUiLinkButton.setText(webUiUrl());
       updateButtons();
     }
@@ -1415,6 +1567,18 @@ public final class HictLauncherGui {
       return scaled(18);
     }
 
+    private int actionFontSize() {
+      return Math.max(13, scaled(13));
+    }
+
+    private int heroFontSize() {
+      return Math.max(18, scaled(18));
+    }
+
+    private int primaryButtonFontSize() {
+      return Math.max(20, scaled(22));
+    }
+
     private int logFontSize() {
       return Math.max(12, scaled(12));
     }
@@ -1435,6 +1599,28 @@ public final class HictLauncherGui {
 
     private int browseButtonPlaceholderWidth() {
       return scaled(88);
+    }
+
+    private Dimension actionButtonMinimumSize() {
+      return new Dimension(scaled(118), scaled(40));
+    }
+
+    private Dimension heroButtonMinimumSize() {
+      return new Dimension(scaled(260), scaled(72));
+    }
+
+    private Insets actionButtonInsets() {
+      return new Insets(scaled(8), scaled(14), scaled(8), scaled(14));
+    }
+
+    private Insets heroButtonInsets() {
+      return new Insets(scaled(14), scaled(24), scaled(14), scaled(24));
+    }
+
+    private Dimension aboutDialogPreferredSize() {
+      final int width = Math.min(scaled(820), Math.max(scaled(520), this.screenBounds.width - scaled(180)));
+      final int height = Math.min(scaled(560), Math.max(scaled(360), this.screenBounds.height - scaled(220)));
+      return new Dimension(width, height);
     }
 
     private Dimension configurationScrollPreferredSize() {
