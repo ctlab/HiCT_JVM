@@ -100,7 +100,7 @@ try {
     }
   }
 
-  & npm.cmd run build
+  & npm.cmd run build:web
   if ($LASTEXITCODE -ne 0) {
     throw "HiCT_WebUI build failed."
   }
