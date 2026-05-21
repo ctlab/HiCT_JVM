@@ -24,7 +24,7 @@ function Invoke-Native {
     [Parameter(Mandatory = $true)][string]$FilePath,
     [string[]]$Arguments = @()
   )
-  & $FilePath @Arguments
+  & $FilePath @Arguments 2>&1 | ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) {
     throw "Native command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
   }
@@ -46,7 +46,7 @@ function Get-JdkTool {
 }
 
 function Find-SfxModules {
-  param([Parameter(Mandatory = $true)][string[]]$Roots)
+  param([Parameter(Mandatory = $true)][AllowEmptyString()][string[]]$Roots)
 
   # Prefer the progress-capable official installer SFX modules. The small
   # console modules are kept as a fallback for environments where the installer
@@ -55,6 +55,9 @@ function Find-SfxModules {
   $found = New-Object 'System.Collections.Generic.List[string]'
 
   foreach ($root in $Roots) {
+    if ([string]::IsNullOrWhiteSpace($root)) {
+      continue
+    }
     if (-not (Test-Path $root)) {
       continue
     }
@@ -72,10 +75,13 @@ function Find-SfxModules {
 }
 
 function Find-StandaloneSevenZipExtractors {
-  param([Parameter(Mandatory = $true)][string[]]$Roots)
+  param([Parameter(Mandatory = $true)][AllowEmptyString()][string[]]$Roots)
 
   $found = New-Object 'System.Collections.Generic.List[string]'
   foreach ($root in $Roots) {
+    if ([string]::IsNullOrWhiteSpace($root)) {
+      continue
+    }
     if (-not (Test-Path $root)) {
       continue
     }
