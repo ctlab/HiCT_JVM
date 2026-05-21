@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <cctype>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -199,7 +200,7 @@ void removeTreeIfExists(const std::wstring &path) {
 std::wstring getWritableCacheRoot() {
   wchar_t localAppData[MAX_PATH]{};
   if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE, nullptr, SHGFP_TYPE_CURRENT, localAppData))) {
-    return joinPath(localAppData, L"HiCT\\portable");
+    return joinPath(localAppData, L"HiCT\\p");
   }
 
   DWORD needed = GetTempPathW(0, nullptr);
@@ -209,7 +210,37 @@ std::wstring getWritableCacheRoot() {
   std::wstring temp(needed, L'\0');
   GetTempPathW(needed, temp.data());
   temp.resize(std::wcslen(temp.c_str()));
-  return joinPath(temp, L"HiCT\\portable");
+  return joinPath(temp, L"HiCT\\p");
+}
+
+std::string shortPayloadCacheKey(const Manifest &manifest) {
+  std::string key;
+  key.reserve(18);
+  key += "p-";
+  for (const char ch : manifest.payloadSha256) {
+    const bool hex = (ch >= '0' && ch <= '9') ||
+        (ch >= 'a' && ch <= 'f') ||
+        (ch >= 'A' && ch <= 'F');
+    if (hex) {
+      key.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+    if (key.size() >= 18) {
+      break;
+    }
+  }
+  if (key.size() <= 2) {
+    key += "unknown";
+  }
+  return key;
+}
+
+void printStartupHeader() {
+  std::wcout
+      << L"HiCT portable launcher\n"
+      << L"Authors: Aleksandr Serdiukov, Anton Zamyatin, Aleksandr Sinitsyn, Vitalii Dravgelis,\n"
+      << L"         Zakhar Lobanov, Nikita Zheleznov, Pavel Avdeyev, Nikolay Cherkasov,\n"
+      << L"         and Computer Technologies Laboratory ITMO University team.\n"
+      << L"License: MIT. Third-party notices are included in licenses/, runtime/legal, and toolchains/.\n\n";
 }
 
 std::uint64_t fileSize(FILE *file) {
@@ -543,6 +574,7 @@ int extractPayload(const std::wstring &selfPath,
 int run() {
   const auto selfPath = getSelfPath();
   const auto manifest = readManifest(selfPath);
+  printStartupHeader();
 
   int argc = 0;
   LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -560,7 +592,7 @@ int run() {
     LocalFree(argv);
   }
 
-  const auto cacheRoot = joinPath(getWritableCacheRoot(), utf8ToWide(manifest.appDirName + "-" + manifest.payloadSha256));
+  const auto cacheRoot = joinPath(getWritableCacheRoot(), utf8ToWide(shortPayloadCacheKey(manifest)));
   const int extractExit = extractPayload(selfPath, manifest, cacheRoot, true);
   if (extractExit != 0) {
     pauseOnFailureIfNeeded(extractExit);

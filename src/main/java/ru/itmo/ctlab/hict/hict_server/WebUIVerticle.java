@@ -110,6 +110,13 @@ public class WebUIVerticle extends AbstractVerticle {
           .allowedHeader("Access-Control-Allow-Headers")
           .allowedHeader("Content-Type"));
 
+        webuiRouter.route("/*").handler(ctx -> {
+          ctx.response()
+            .putHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            .putHeader("Pragma", "no-cache")
+            .putHeader("Expires", "0");
+          ctx.next();
+        });
         final var webuiStaticHandler = createWebuiStaticHandler();
         webuiRouter.route("/").handler(ctx -> ctx.reroute("/index.html"));
         webuiRouter.route("/*").handler(webuiStaticHandler);
@@ -192,7 +199,7 @@ public class WebUIVerticle extends AbstractVerticle {
       final var explicitRootPath = Path.of(explicitRoot).toAbsolutePath().normalize();
       if (Files.isDirectory(explicitRootPath)) {
         log.info("Serving WebUI from WEBUI_ROOT={}", explicitRootPath);
-        return StaticHandler.create(FileSystemAccess.ROOT, explicitRootPath.toString());
+        return disableStaticCaching(StaticHandler.create(FileSystemAccess.ROOT, explicitRootPath.toString()));
       }
       log.warn("WEBUI_ROOT is set but does not exist: {}", explicitRootPath);
     }
@@ -200,16 +207,20 @@ public class WebUIVerticle extends AbstractVerticle {
     final var localDist = Path.of("../HiCT_WebUI/dist").toAbsolutePath().normalize();
     if (Files.isDirectory(localDist)) {
       log.info("Serving WebUI from local checkout: {}", localDist);
-      return StaticHandler.create(FileSystemAccess.ROOT, localDist.toString());
+      return disableStaticCaching(StaticHandler.create(FileSystemAccess.ROOT, localDist.toString()));
     }
 
     final var builtCloneDist = Path.of("build/webui/HiCT_WebUI/dist").toAbsolutePath().normalize();
     if (Files.isDirectory(builtCloneDist)) {
       log.info("Serving WebUI from gradle clone output: {}", builtCloneDist);
-      return StaticHandler.create(FileSystemAccess.ROOT, builtCloneDist.toString());
+      return disableStaticCaching(StaticHandler.create(FileSystemAccess.ROOT, builtCloneDist.toString()));
     }
 
     log.info("Serving WebUI from classpath resources: webui");
-    return StaticHandler.create("webui");
+    return disableStaticCaching(StaticHandler.create("webui"));
+  }
+
+  private @NotNull StaticHandler disableStaticCaching(final @NotNull StaticHandler handler) {
+    return handler.setCachingEnabled(false).setMaxAgeSeconds(0);
   }
 }

@@ -39,10 +39,12 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
+import javax.swing.JSlider;
 import javax.swing.JSeparator;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
@@ -81,6 +83,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Hashtable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -148,6 +151,7 @@ public final class HictLauncherGui {
     private static final int MAX_LOG_CHARS = 200_000;
     private static final Pattern JSON_STRING_FIELD_PATTERN = Pattern.compile("\"%s\"\\s*:\\s*\"([^\"]*)\"");
     private static final double REFERENCE_SCREEN_DIAGONAL = Math.hypot(1920, 1080);
+    private static final String[] LOG_LEVELS = {"ERROR", "WARN", "INFO", "DEBUG", "TRACE"};
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
       new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY),
@@ -214,6 +218,8 @@ public final class HictLauncherGui {
     private JRadioButton tauriBrowserRadio;
     private JRadioButton electronBrowserRadio;
     private JCheckBox openAfterStartCheckbox;
+    private JSlider logLevelSlider;
+    private JLabel logLevelValueLabel;
     private Timer statusTimer;
     private volatile Process serverProcess;
     private volatile boolean closing;
@@ -265,11 +271,11 @@ public final class HictLauncherGui {
       clampFrameToScreen();
       this.frame.setLocationRelativeTo(null);
       this.frame.setVisible(true);
-      appendLog("Launcher ready. DATA_DIR=" + getFieldValue("DATA_DIR"));
+      appendLauncherLog("Launcher ready. DATA_DIR=" + getFieldValue("DATA_DIR"));
       if (this.browserBundles.isEmpty()) {
-        appendLog("No bundled browser payload was found; the system browser will be used.");
+        appendLauncherLog("No bundled browser payload was found; the system browser will be used.");
       } else {
-        appendLog("Bundled browsers detected: " + browserBundleNames(this.browserBundles));
+        appendLauncherLog("Bundled browsers detected: " + browserBundleNames(this.browserBundles));
       }
     }
 
@@ -460,16 +466,19 @@ public final class HictLauncherGui {
       gbc.weightx = 1.0;
       gbc.fill = GridBagConstraints.HORIZONTAL;
       this.apiGatewayLabel.setForeground(new Color(90, 96, 104));
+      this.apiGatewayLabel.setHorizontalAlignment(SwingConstants.LEFT);
       panel.add(this.apiGatewayLabel, gbc);
       return panel;
     }
 
     private JButton createLinkButton(final String url) {
       final var button = new JButton(url);
+      button.setHorizontalAlignment(SwingConstants.LEFT);
       button.setBorderPainted(false);
       button.setContentAreaFilled(false);
       button.setFocusPainted(false);
       button.setOpaque(false);
+      button.setMargin(new Insets(0, 0, 0, 0));
       button.setForeground(new Color(24, 95, 180));
       button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
       button.setToolTipText("Open in the system default browser");
@@ -481,8 +490,8 @@ public final class HictLauncherGui {
       final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), 0));
       final var group = new ButtonGroup();
       this.systemBrowserRadio = new JRadioButton(BrowserMode.SYSTEM.label);
-      this.tauriBrowserRadio = new JRadioButton(BrowserMode.TAURI.label);
-      this.electronBrowserRadio = new JRadioButton(BrowserMode.ELECTRON.label);
+      this.tauriBrowserRadio = new JRadioButton(browserModeLabel(BrowserMode.TAURI));
+      this.electronBrowserRadio = new JRadioButton(browserModeLabel(BrowserMode.ELECTRON));
 
       this.tauriBrowserRadio.setEnabled(hasBrowserMode(BrowserMode.TAURI));
       this.electronBrowserRadio.setEnabled(hasBrowserMode(BrowserMode.ELECTRON));
@@ -547,12 +556,26 @@ public final class HictLauncherGui {
       this.openAfterStartCheckbox = new JCheckBox("Open WebUI after start");
       this.openAfterStartCheckbox.setSelected(getBooleanSetting("openAfterStart", true));
       optionPanel.add(this.openAfterStartCheckbox);
+      optionPanel.add(new JLabel("Verbosity:"));
+      this.logLevelSlider = new JSlider(0, LOG_LEVELS.length - 1, resolveInitialLogLevelIndex());
+      this.logLevelSlider.setMajorTickSpacing(1);
+      this.logLevelSlider.setSnapToTicks(true);
+      this.logLevelSlider.setPaintTicks(true);
+      this.logLevelSlider.setPaintLabels(true);
+      this.logLevelSlider.setLabelTable(logLevelSliderLabels());
+      this.logLevelSlider.setToolTipText("Controls HiCT JVM log verbosity for the next server start");
+      this.logLevelSlider.setPreferredSize(new Dimension(this.uiScale.scaled(280), this.uiScale.scaled(54)));
+      this.logLevelValueLabel = new JLabel(selectedLogLevel());
+      this.logLevelValueLabel.setFont(this.logLevelValueLabel.getFont().deriveFont(Font.BOLD));
+      this.logLevelSlider.addChangeListener(ignored -> updateLogLevelLabel());
+      optionPanel.add(this.logLevelSlider);
+      optionPanel.add(this.logLevelValueLabel);
 
       final var buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), this.uiScale.gapSmall()));
       final var saveButton = new JButton("Save settings");
       saveButton.addActionListener(ignored -> {
         saveSettings();
-        appendLog("Settings saved.");
+        appendLauncherLog("Settings saved.");
       });
       buttonPanel.add(saveButton);
 
@@ -564,6 +587,42 @@ public final class HictLauncherGui {
       outer.add(buttonPanel, BorderLayout.SOUTH);
       this.uiScale.applyFonts(outer);
       return outer;
+    }
+
+    private Hashtable<Integer, JLabel> logLevelSliderLabels() {
+      final var labels = new Hashtable<Integer, JLabel>();
+      for (int i = 0; i < LOG_LEVELS.length; i++) {
+        labels.put(i, new JLabel(LOG_LEVELS[i]));
+      }
+      return labels;
+    }
+
+    private int resolveInitialLogLevelIndex() {
+      final var configured = firstNonBlank(
+        this.settings.getProperty("logLevel"),
+        System.getenv("HICT_LOG_LEVEL"),
+        System.getProperty("HICT_LOG_LEVEL")
+      );
+      if (configured != null) {
+        final var normalized = configured.trim().toUpperCase(Locale.ROOT);
+        for (int i = 0; i < LOG_LEVELS.length; i++) {
+          if (LOG_LEVELS[i].equals(normalized)) {
+            return i;
+          }
+        }
+      }
+      return 2;
+    }
+
+    private String selectedLogLevel() {
+      final var index = this.logLevelSlider == null ? resolveInitialLogLevelIndex() : this.logLevelSlider.getValue();
+      return LOG_LEVELS[Math.max(0, Math.min(LOG_LEVELS.length - 1, index))];
+    }
+
+    private void updateLogLevelLabel() {
+      if (this.logLevelValueLabel != null) {
+        this.logLevelValueLabel.setText(selectedLogLevel());
+      }
     }
 
     private JPanel createFooter() {
@@ -660,7 +719,7 @@ public final class HictLauncherGui {
     private void startHiCT() {
       if (isProcessAlive()) {
         showLogPanel();
-        appendLog("HiCT is already running.");
+        appendLauncherLog("HiCT is already running.");
         return;
       }
       showLogPanel();
@@ -682,8 +741,8 @@ public final class HictLauncherGui {
       final var env = processBuilder.environment();
       applyEnvironment(env, dataDir);
 
-      appendLog("Starting HiCT with DATA_DIR=" + dataDir);
-      appendLog("Command: " + String.join(" ", command));
+      appendLauncherLog("Starting HiCT with DATA_DIR=" + dataDir);
+      appendLauncherLog("Command: " + String.join(" ", command));
 
       try {
         this.serverProcess = processBuilder.start();
@@ -716,6 +775,7 @@ public final class HictLauncherGui {
       command.add("-DAUTO_OPEN_BROWSER=false");
       command.add("-DSERVE_WEBUI=true");
       command.addAll(splitCommandLine(getFieldValue("HICT_JAVA_OPTS")));
+      command.add("-DHICT_LOG_LEVEL=" + selectedLogLevel());
 
       if (this.jarPath != null && Files.isRegularFile(this.jarPath)) {
         command.add("-jar");
@@ -739,6 +799,7 @@ public final class HictLauncherGui {
       }
       env.put("SERVE_WEBUI", "true");
       env.put("AUTO_OPEN_BROWSER", "false");
+      env.put("HICT_LOG_LEVEL", selectedLogLevel());
       env.putIfAbsent("HICT_BIND_HOST", "127.0.0.1");
       env.putIfAbsent("VXPORT", "5000");
       env.putIfAbsent("WEBUI_PORT", "8080");
@@ -771,18 +832,18 @@ public final class HictLauncherGui {
         try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
           String line;
           while ((line = reader.readLine()) != null) {
-            appendLog(line);
+            appendServerLog(line);
           }
         } catch (final IOException ex) {
-          appendLog("Failed to read server output: " + ex.getMessage());
+          appendLauncherLog("Failed to read server output: " + ex.getMessage());
         } finally {
           final int exitCode;
           try {
             exitCode = process.waitFor();
-            appendLog("HiCT server process exited with code " + exitCode + ".");
+            appendLauncherLog("HiCT server process exited with code " + exitCode + ".");
           } catch (final InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            appendLog("HiCT server process output reader was interrupted.");
+            appendLauncherLog("HiCT server process output reader was interrupted.");
           }
           if (this.serverProcess == process) {
             this.serverProcess = null;
@@ -802,28 +863,30 @@ public final class HictLauncherGui {
           }
           sleepQuietly(800);
         }
-        appendLog("WebUI did not become reachable within 90 seconds; use Re-open WebUI after startup completes.");
+        appendLauncherLog("WebUI did not become reachable within 90 seconds; use Re-open WebUI after startup completes.");
       });
     }
 
     private void openWebUi() {
-      final var url = webUiUrl();
+      final var url = webUiLaunchUrl();
       final var selectedMode = selectedBrowserMode();
       final var bundledCandidates = browserBundlesForMode(selectedMode);
+      appendLauncherLog("Opening WebUI. Requested browser mode=" + selectedMode.label + ", url=" + url);
       if (!bundledCandidates.isEmpty()) {
+        appendLauncherLog("Bundled browser candidates: " + browserBundleNames(bundledCandidates));
         for (final var bundle : bundledCandidates) {
           if (tryOpenBundledBrowser(bundle, url)) {
             return;
           }
         }
-        appendLog("Selected bundled browser failed, falling back to the system browser.");
+        appendLauncherLog("Selected bundled browser failed, falling back to the system browser.");
       } else if (selectedMode != BrowserMode.SYSTEM) {
-        appendLog(selectedMode.label + " browser is not bundled, falling back to the system browser.");
+        appendLauncherLog(selectedMode.label + " browser is not bundled, falling back to the system browser.");
       }
 
       try {
         openSystemBrowser(url);
-        appendLog("Opened WebUI in the system browser: " + url);
+        appendLauncherLog("Opened WebUI in the system browser: " + url);
       } catch (final Exception ex) {
         showError("Failed to open WebUI", ex);
       }
@@ -840,27 +903,32 @@ public final class HictLauncherGui {
       processBuilder.environment().put("HICT_ELECTRON_URL", url);
       processBuilder.environment().put("HICT_TAURI_URL", url);
       try {
+        appendLauncherLog("Starting bundled browser " + bundle.name()
+          + " [engine=" + bundle.engine()
+          + ", exe=" + bundle.executable()
+          + ", cwd=" + bundle.root() + "]");
         final var process = processBuilder.start();
         if (process.waitFor(1_200, TimeUnit.MILLISECONDS)) {
           final var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-          appendLog("Bundled browser " + bundle.name() + " exited immediately with code " + process.exitValue() + ".");
+          appendLauncherLog("Bundled browser " + bundle.name() + " exited immediately with code " + process.exitValue() + ".");
           if (!output.isBlank()) {
-            appendLog(output);
+            appendLauncherLog(output);
           }
           if (process.exitValue() == 0) {
-            appendLog("Bundled browser can hand off to a GUI child process and exit cleanly; treating this launch as successful.");
+            appendLauncherLog("Bundled browser can hand off to a GUI child process and exit cleanly; treating this launch as successful.");
             return true;
           }
           return false;
         }
-        appendLog("Opened WebUI in bundled browser " + bundle.name() + ": " + url);
+        appendLauncherLog("Opened WebUI in bundled browser " + bundle.name() + ": " + url);
         return true;
       } catch (final IOException ex) {
-        appendLog("Bundled browser " + bundle.name() + " failed to start: " + ex.getMessage());
+        appendLauncherLog("Bundled browser " + bundle.name() + " failed to start: " + ex.getMessage()
+          + " (pathLength=" + bundle.executable().toString().length() + ")");
         return false;
       } catch (final InterruptedException interrupted) {
         Thread.currentThread().interrupt();
-        appendLog("Interrupted while starting bundled browser " + bundle.name() + ".");
+        appendLauncherLog("Interrupted while starting bundled browser " + bundle.name() + ".");
         return false;
       }
     }
@@ -880,21 +948,21 @@ public final class HictLauncherGui {
     private void stopHiCT() {
       final var process = this.serverProcess;
       if (process == null) {
-        appendLog("No HiCT server process is owned by this launcher.");
+        appendLauncherLog("No HiCT server process is owned by this launcher.");
         return;
       }
 
-      appendLog("Stopping HiCT server process...");
+      appendLauncherLog("Stopping HiCT server process...");
       process.destroy();
       try {
         if (!process.waitFor(5, TimeUnit.SECONDS)) {
-          appendLog("HiCT did not stop gracefully within 5 seconds; terminating it forcibly.");
+          appendLauncherLog("HiCT did not stop gracefully within 5 seconds; terminating it forcibly.");
           process.destroyForcibly();
           process.waitFor(5, TimeUnit.SECONDS);
         }
       } catch (final InterruptedException interrupted) {
         Thread.currentThread().interrupt();
-        appendLog("Interrupted while stopping HiCT.");
+        appendLauncherLog("Interrupted while stopping HiCT.");
       } finally {
         if (this.serverProcess == process) {
           this.serverProcess = null;
@@ -938,6 +1006,7 @@ public final class HictLauncherGui {
 
     private void updateBrowserStatus() {
       final var selectedMode = selectedBrowserMode();
+      this.browserStatusLabel.setToolTipText(null);
       if (selectedMode == BrowserMode.SYSTEM) {
         this.browserStatusLabel.setText("system default browser");
         return;
@@ -947,7 +1016,8 @@ public final class HictLauncherGui {
         this.browserStatusLabel.setText(selectedMode.label + " is not bundled; system browser fallback");
         return;
       }
-      this.browserStatusLabel.setText("bundled " + browserBundleNames(candidates) + "; system browser fallback enabled");
+      this.browserStatusLabel.setText(selectedMode.label + " bundled; system browser fallback enabled");
+      this.browserStatusLabel.setToolTipText(browserBundleNames(candidates));
     }
 
     private void updateButtons() {
@@ -1008,6 +1078,10 @@ public final class HictLauncherGui {
       }
     }
 
+    private String browserModeLabel(final BrowserMode mode) {
+      return hasBrowserMode(mode) ? mode.label : mode.label + " (not bundled)";
+    }
+
     private boolean hasBrowserMode(final BrowserMode mode) {
       return switch (mode) {
         case SYSTEM -> true;
@@ -1036,7 +1110,7 @@ public final class HictLauncherGui {
     private void openSystemBrowserFromLauncher(final String url) {
       try {
         openSystemBrowser(url);
-        appendLog("Opened " + url + " in the system browser.");
+        appendLauncherLog("Opened " + url + " in the system browser.");
       } catch (final IOException ex) {
         showError("Failed to open " + url, ex);
       }
@@ -1066,6 +1140,10 @@ public final class HictLauncherGui {
 
     private String webUiUrl() {
       return "http://" + clientHost() + ":" + normalizedPort("WEBUI_PORT", "8080") + "/";
+    }
+
+    private String webUiLaunchUrl() {
+      return webUiUrl() + "?hict_launch=" + System.currentTimeMillis();
     }
 
     private String clientHost() {
@@ -1140,19 +1218,20 @@ public final class HictLauncherGui {
       }
       this.settings.setProperty("openAfterStart", Boolean.toString(this.openAfterStartCheckbox == null || this.openAfterStartCheckbox.isSelected()));
       this.settings.setProperty("browserMode", selectedBrowserMode().wireName);
+      this.settings.setProperty("logLevel", selectedLogLevel());
       final Path dataDir;
       try {
         dataDir = normalizePath(getFieldValue("DATA_DIR"));
         Files.createDirectories(dataDir);
       } catch (final Exception ex) {
-        appendLog("Could not save launcher settings because DATA_DIR is invalid: " + ex.getMessage());
+        appendLauncherLog("Could not save launcher settings because DATA_DIR is invalid: " + ex.getMessage());
         return;
       }
       final var configPath = settingsPath(dataDir);
       try (var out = Files.newOutputStream(configPath)) {
         this.settings.store(out, "HiCT portable launcher settings");
       } catch (final IOException ex) {
-        appendLog("Could not save launcher settings to " + configPath + ": " + ex.getMessage());
+        appendLauncherLog("Could not save launcher settings to " + configPath + ": " + ex.getMessage());
       }
     }
 
@@ -1188,12 +1267,20 @@ public final class HictLauncherGui {
       });
     }
 
+    private void appendLauncherLog(final String message) {
+      appendLog("Launcher | " + message);
+    }
+
+    private void appendServerLog(final String message) {
+      appendLog("Server   | " + message);
+    }
+
     private void appendLogEarly(final String message) {
       System.err.println("[HiCT launcher] " + message);
     }
 
     private void showError(final String title, final Exception ex) {
-      appendLog(title + ": " + ex.getMessage());
+      appendLauncherLog(title + ": " + ex.getMessage());
       SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
         this.frame,
         title + System.lineSeparator() + ex.getMessage(),

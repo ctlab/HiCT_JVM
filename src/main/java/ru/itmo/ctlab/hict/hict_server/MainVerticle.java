@@ -68,6 +68,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Slf4j(topic = "MainVerticle")
@@ -92,9 +93,10 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     final Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
-    root.setLevel(Level.INFO);
+    final var rootLogLevel = resolveRootLogLevel();
+    root.setLevel(rootLogLevel);
 
-    log.info("Logging initialized");
+    log.info("Logging initialized at {} level", rootLogLevel);
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
         .setConfig(new JsonObject().put("keys",
@@ -164,6 +166,26 @@ public class MainVerticle extends AbstractVerticle {
       this.requestTaskScheduler = null;
     }
     stopPromise.complete();
+  }
+
+  private static @NotNull Level resolveRootLogLevel() {
+    final var value = firstNonBlank(
+      System.getProperty("HICT_LOG_LEVEL"),
+      System.getenv("HICT_LOG_LEVEL")
+    );
+    if (value == null) {
+      return Level.INFO;
+    }
+    return Level.toLevel(value.trim().toUpperCase(Locale.ROOT), Level.INFO);
+  }
+
+  private static String firstNonBlank(final String... values) {
+    for (final var value : values) {
+      if (value != null && !value.isBlank()) {
+        return value;
+      }
+    }
+    return null;
   }
 
   private static int getIntegerSetting(final @NotNull JsonObject config,
