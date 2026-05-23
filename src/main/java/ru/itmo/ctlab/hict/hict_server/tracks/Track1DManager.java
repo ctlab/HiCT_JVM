@@ -210,7 +210,10 @@ public class Track1DManager {
       dataSource,
       BamRenderMode.COVERAGE,
       BigWigAggregationMode.MAX,
-      false
+      false,
+      true,
+      0.0d,
+      1.0d
     );
     try {
       this.lock.writeLock().lock();
@@ -242,7 +245,10 @@ public class Track1DManager {
       dataSource,
       BamRenderMode.COVERAGE,
       BigWigAggregationMode.MAX,
-      false
+      false,
+      true,
+      0.0d,
+      1.0d
     );
     try {
       this.lock.writeLock().lock();
@@ -327,6 +333,30 @@ public class Track1DManager {
                                            final String renderMode,
                                            final String aggregationMode,
                                            final Boolean logScale) {
+    return updateTrack(
+      trackId,
+      visible,
+      color,
+      name,
+      renderMode,
+      aggregationMode,
+      logScale,
+      null,
+      null,
+      null
+    );
+  }
+
+  public @NotNull TrackSummary updateTrack(final @NotNull String trackId,
+                                           final Boolean visible,
+                                           final String color,
+                                           final String name,
+                                           final String renderMode,
+                                           final String aggregationMode,
+                                           final Boolean logScale,
+                                           final Boolean rangeAuto,
+                                           final Double rangeMin,
+                                           final Double rangeMax) {
     try {
       this.lock.writeLock().lock();
       final var current = this.tracks.get(trackId);
@@ -339,7 +369,10 @@ public class Track1DManager {
         (name == null || name.isBlank()) ? current.name : name.trim(),
         parseBamRenderMode(renderMode, current.bamRenderMode()),
         parseBigWigAggregationMode(aggregationMode, current.bigWigAggregationMode()),
-        logScale == null ? current.logScale() : logScale
+        logScale == null ? current.logScale() : logScale,
+        rangeAuto == null ? current.rangeAuto() : rangeAuto,
+        sanitizeTrackRangeValue(rangeMin, current.rangeMin()),
+        sanitizeTrackRangeValue(rangeMax, current.rangeMax())
       );
       this.tracks.put(trackId, updated);
       return updated.toSummary();
@@ -730,7 +763,7 @@ public class Track1DManager {
         .filter(track -> track.visible)
         .forEach(track -> {
           try {
-            maybeScheduleTrackPrecomputeFromQuery(chunkedFile, track);
+            final var precomputeRuntime = maybeScheduleTrackPrecomputeFromQuery(chunkedFile, track);
             final var maybePrecomputed = getPrecomputedBinsIfReady(
               chunkedFile,
               track,
@@ -744,6 +777,8 @@ public class Track1DManager {
             );
             if (maybePrecomputed != null) {
               trackRenders.add(maybePrecomputed);
+            } else if (precomputeRuntime != null && precomputeRuntime.isActive()) {
+              trackRenders.add(track.toErrorRender("Optimizing 1D track index..."));
             } else {
               trackRenders.add(track.query(
                 chunkedFile,
@@ -844,16 +879,18 @@ public class Track1DManager {
     return new QueryPxRange(startPx, safeEndPx);
   }
 
-  private void maybeScheduleTrackPrecomputeFromQuery(final @NotNull ChunkedFile chunkedFile,
-                                                     final @NotNull TrackState track) {
-    if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
-      return;
-    }
+  private @Nullable TrackPrecomputeRuntime maybeScheduleTrackPrecomputeFromQuery(final @NotNull ChunkedFile chunkedFile,
+                                                                                 final @NotNull TrackState track) {
     final var runtime = this.precomputeRuntimeByTrackId.get(track.trackId());
     if (runtime != null && runtime.isActive()) {
-      return;
+      return runtime;
+    }
+    if (track.dataSource().renderStyle() == RenderStyle.FEATURE
+      && hasCompatiblePrecomputeSidecar(precomputeCacheContextForTrack(chunkedFile, track))) {
+      return runtime;
     }
     scheduleTrackPrecompute(chunkedFile, track, false);
+    return this.precomputeRuntimeByTrackId.get(track.trackId());
   }
 
   private void scheduleTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
@@ -879,6 +916,16 @@ public class Track1DManager {
     try {
       final var cacheContext = precomputeCacheContextForTrack(chunkedFile, track);
       final var sidecarPath = cacheContext.sidecarPath();
+      if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
+        runtime.setTotalTasks(1);
+        runtime.markRunning("Validating feature index", 0);
+        if (force || !hasCompatiblePrecomputeSidecar(cacheContext)) {
+          persistPrecomputeMetadataOnly(sidecarPath, cacheContext);
+        }
+        runtime.markTaskDone(1);
+        runtime.markFinished();
+        return;
+      }
       final var tasks = buildPrecomputeTasks(chunkedFile, track, sidecarPath, cacheContext, force);
       runtime.setTotalTasks(tasks.size());
       if (tasks.isEmpty()) {
@@ -1139,14 +1186,7 @@ public class Track1DManager {
         Math.min(PRECOMPUTE_DATASET_CHUNK_SIZE, Math.max(series.values().length, series.support().length))
       );
       try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
-        ensureGroupPath(writer, PRECOMPUTE_META_GROUP_PATH);
-        writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "cacheVersion", PRECOMPUTE_CACHE_VERSION);
-        writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "trackType", cacheContext.trackType().name());
-        writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "sourceIdentity", cacheContext.sourceIdentity());
-        if (cacheContext.sourceFingerprint() != null) {
-          writeFingerprintAttrs(writer, PRECOMPUTE_META_GROUP_PATH, "source", cacheContext.sourceFingerprint());
-        }
-        writeFingerprintAttrs(writer, PRECOMPUTE_META_GROUP_PATH, "hict", cacheContext.hictFingerprint());
+        writePrecomputeMetadata(writer, cacheContext);
         ensureGroupPath(writer, groupPath);
         writer.string().setAttr(groupPath, "version", PRECOMPUTE_CACHE_VERSION);
         writer.int64().setAttr(groupPath, "bpResolution", task.bpResolution());
@@ -1185,6 +1225,30 @@ public class Track1DManager {
     } catch (final Exception e) {
       log.warn("Failed to write precomputed sidecar {}", sidecarPath, e);
     }
+  }
+
+  private void persistPrecomputeMetadataOnly(final @NotNull Path sidecarPath,
+                                             final @NotNull PrecomputeCacheContext cacheContext) {
+    try {
+      Files.createDirectories(sidecarPath.getParent());
+      try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
+        writePrecomputeMetadata(writer, cacheContext);
+      }
+    } catch (final Exception e) {
+      log.warn("Failed to write track precompute metadata {}", sidecarPath, e);
+    }
+  }
+
+  private static void writePrecomputeMetadata(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer writer,
+                                              final @NotNull PrecomputeCacheContext cacheContext) {
+    ensureGroupPath(writer, PRECOMPUTE_META_GROUP_PATH);
+    writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "cacheVersion", PRECOMPUTE_CACHE_VERSION);
+    writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "trackType", cacheContext.trackType().name());
+    writer.string().setAttr(PRECOMPUTE_META_GROUP_PATH, "sourceIdentity", cacheContext.sourceIdentity());
+    if (cacheContext.sourceFingerprint() != null) {
+      writeFingerprintAttrs(writer, PRECOMPUTE_META_GROUP_PATH, "source", cacheContext.sourceFingerprint());
+    }
+    writeFingerprintAttrs(writer, PRECOMPUTE_META_GROUP_PATH, "hict", cacheContext.hictFingerprint());
   }
 
   private @NotNull Path sidecarPathForTrackCache(final @NotNull ChunkedFile chunkedFile,
@@ -1514,6 +1578,20 @@ public class Track1DManager {
       return trimmed.toLowerCase(Locale.ROOT);
     }
     return fallback;
+  }
+
+  private static double sanitizeTrackRangeValue(final @Nullable Double value, final double fallback) {
+    if (value == null || !Double.isFinite(value)) {
+      return fallback;
+    }
+    return value;
+  }
+
+  private static @NotNull SignalRange normalizeTrackRange(final double min, final double max) {
+    if (!Double.isFinite(min) || !Double.isFinite(max) || max <= min) {
+      return new SignalRange(0.0d, 1.0d);
+    }
+    return new SignalRange(min, max);
   }
 
   private static int findTrackIndex(final @NotNull List<TrackState> entries,
@@ -3720,6 +3798,9 @@ public class Track1DManager {
   private record QueryPxRange(long startPx, long endPx) {
   }
 
+  private record SignalRange(double min, double max) {
+  }
+
   private record PrecomputeTask(long bpResolution,
                                 @NotNull String modeKey,
                                 long totalVisiblePixels,
@@ -4189,6 +4270,9 @@ public class Track1DManager {
     private final @NotNull String renderMode;
     private final @NotNull String aggregationMode;
     private final boolean logScale;
+    private final boolean rangeAuto;
+    private final double rangeMin;
+    private final double rangeMax;
   }
 
   @Getter
@@ -4320,8 +4404,12 @@ public class Track1DManager {
                             @NotNull TrackDataSource dataSource,
                             @NotNull BamRenderMode bamRenderMode,
                             @NotNull BigWigAggregationMode bigWigAggregationMode,
-                            boolean logScale) {
+                            boolean logScale,
+                            boolean rangeAuto,
+                            double rangeMin,
+                            double rangeMax) {
     private TrackSummary toSummary() {
+      final var safeRange = normalizeTrackRange(rangeMin, rangeMax);
       return new TrackSummary(
         trackId,
         name,
@@ -4333,7 +4421,10 @@ public class Track1DManager {
         dataSource.renderStyle().name(),
         bamRenderMode.name(),
         bigWigAggregationMode.name(),
-        logScale
+        logScale,
+        rangeAuto,
+        safeRange.min(),
+        safeRange.max()
       );
     }
 
@@ -4355,7 +4446,11 @@ public class Track1DManager {
                                    final @NotNull String newName,
                                    final @NotNull BamRenderMode newBamRenderMode,
                                    final @NotNull BigWigAggregationMode newBigWigAggregationMode,
-                                   final boolean newLogScale) {
+                                   final boolean newLogScale,
+                                   final boolean newRangeAuto,
+                                   final double newRangeMin,
+                                   final double newRangeMax) {
+      final var safeRange = normalizeTrackRange(newRangeMin, newRangeMax);
       return new TrackState(
         trackId,
         newName,
@@ -4366,7 +4461,10 @@ public class Track1DManager {
         dataSource,
         newBamRenderMode,
         newBigWigAggregationMode,
-        newLogScale
+        newLogScale,
+        newRangeAuto,
+        safeRange.min(),
+        safeRange.max()
       );
     }
 

@@ -46,7 +46,7 @@ class Track1DManagerOptionalDataIntegrationTest {
   Path tempDir;
 
   @Test
-  void coolerWeightsTrackProducesBinsAcrossUnitsWhenOptionalDataPresent() {
+  void coolerWeightsTrackProducesBinsAcrossUnitsWhenOptionalDataPresent() throws InterruptedException {
     final var dataRoot = Path.of(
       System.getenv().getOrDefault("HICT_OPTIONAL_DATA_DIR", "/mnt/Models/HiCT/data")
     );
@@ -66,6 +66,7 @@ class Track1DManagerOptionalDataIntegrationTest {
         .filter(value -> value > 0L)
         .findFirst()
         .orElseThrow();
+      awaitTrackOptimization(manager, chunkedFile, opened.getTrackId());
 
       final var byPixels = manager.queryVisibleTracks(
         chunkedFile,
@@ -166,6 +167,7 @@ class Track1DManagerOptionalDataIntegrationTest {
       final var totalPixels = (resolutionOrder == null || resolutionOrder < 0)
         ? 10_000L
         : chunkedFile.getMatrixSizeBins()[resolutionOrder];
+      awaitTrackOptimization(manager, chunkedFile, opened.getTrackId());
       final var query = manager.queryVisibleTracks(
         chunkedFile,
         0L,
@@ -259,6 +261,7 @@ class Track1DManagerOptionalDataIntegrationTest {
       final var totalPixels = (resolutionOrder == null || resolutionOrder < 0)
         ? 5_000L
         : chunkedFile.getMatrixSizeBins()[resolutionOrder];
+      awaitTrackOptimization(manager, chunkedFile, opened.getTrackId());
 
       final var query = manager.queryVisibleTracks(
         chunkedFile,
@@ -290,5 +293,20 @@ class Track1DManagerOptionalDataIntegrationTest {
       chunkedFile.close();
       manager.close();
     }
+  }
+
+  private static void awaitTrackOptimization(final Track1DManager manager,
+                                             final ChunkedFile chunkedFile,
+                                             final String trackId) throws InterruptedException {
+    manager.startPrecompute(chunkedFile, trackId, false);
+    final long deadlineMs = System.currentTimeMillis() + 30_000L;
+    while (System.currentTimeMillis() < deadlineMs) {
+      final var status = manager.getPrecomputeStatus();
+      if (status.getRunningJobs() <= 0) {
+        return;
+      }
+      Thread.sleep(100L);
+    }
+    throw new AssertionError("Timed out waiting for track optimization");
   }
 }

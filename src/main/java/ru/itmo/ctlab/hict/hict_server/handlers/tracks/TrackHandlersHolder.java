@@ -214,7 +214,10 @@ public class TrackHandlersHolder extends HandlersHolder {
           request.getString("name"),
           request.getString("renderMode"),
           request.getString("aggregationMode"),
-          request.containsKey("logScale") ? request.getBoolean("logScale") : null
+          request.containsKey("logScale") ? request.getBoolean("logScale") : null,
+          request.containsKey("rangeAuto") ? request.getBoolean("rangeAuto") : null,
+          request.containsKey("rangeMin") ? request.getDouble("rangeMin") : null,
+          request.containsKey("rangeMax") ? request.getDouble("rangeMax") : null
         ),
         updated -> ctx.response()
           .putHeader("content-type", "application/json")
