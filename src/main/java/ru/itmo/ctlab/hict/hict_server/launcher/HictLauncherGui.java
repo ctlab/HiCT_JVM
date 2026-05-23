@@ -91,6 +91,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -193,6 +194,7 @@ public final class HictLauncherGui {
     private final Path jarPath;
     private final Path browserPayloadRoot;
     private final List<BrowserBundle> browserBundles;
+    private final List<Process> browserProcesses;
     private final HttpClient httpClient;
     private final ExecutorService backgroundExecutor;
     private final Map<String, JTextField> fields = new LinkedHashMap<>();
@@ -230,6 +232,7 @@ public final class HictLauncherGui {
       this.jarPath = detectJarPath(this.appHome);
       this.browserPayloadRoot = detectBrowserPayloadRoot(this.appHome);
       this.browserBundles = detectBrowserBundles(this.browserPayloadRoot);
+      this.browserProcesses = new CopyOnWriteArrayList<>();
       this.httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(600))
         .build();
@@ -848,6 +851,7 @@ public final class HictLauncherGui {
           if (this.serverProcess == process) {
             this.serverProcess = null;
           }
+          stopBundledBrowsers("because the HiCT server process exited");
           SwingUtilities.invokeLater(this::updateButtons);
         }
       });
@@ -920,6 +924,7 @@ public final class HictLauncherGui {
           }
           return false;
         }
+        registerBrowserProcess(process, bundle.name());
         appendLauncherLog("Opened WebUI in bundled browser " + bundle.name() + ": " + url);
         return true;
       } catch (final IOException ex) {
@@ -949,9 +954,11 @@ public final class HictLauncherGui {
       final var process = this.serverProcess;
       if (process == null) {
         appendLauncherLog("No HiCT server process is owned by this launcher.");
+        stopBundledBrowsers("because Stop HiCT was requested");
         return;
       }
 
+      stopBundledBrowsers("before stopping HiCT");
       appendLauncherLog("Stopping HiCT server process...");
       process.destroy();
       try {
@@ -969,6 +976,60 @@ public final class HictLauncherGui {
         }
         SwingUtilities.invokeLater(this::updateButtons);
       }
+    }
+
+    private void registerBrowserProcess(final Process process, final String browserName) {
+      this.browserProcesses.add(process);
+      this.backgroundExecutor.submit(() -> {
+        try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+          String line;
+          while ((line = reader.readLine()) != null) {
+            appendBrowserLog(browserName, line);
+          }
+        } catch (final IOException ex) {
+          if (process.isAlive()) {
+            appendLauncherLog("Failed to read bundled browser output from " + browserName + ": " + ex.getMessage());
+          }
+        }
+      });
+      this.backgroundExecutor.submit(() -> {
+        try {
+          final var exitCode = process.waitFor();
+          appendLauncherLog("Bundled browser " + browserName + " exited with code " + exitCode + ".");
+        } catch (final InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          appendLauncherLog("Interrupted while waiting for bundled browser " + browserName + " to exit.");
+        } finally {
+          this.browserProcesses.remove(process);
+        }
+      });
+    }
+
+    private void stopBundledBrowsers(final String reason) {
+      final var runningBrowsers = this.browserProcesses.stream()
+        .filter(Process::isAlive)
+        .toList();
+      if (runningBrowsers.isEmpty()) {
+        return;
+      }
+
+      appendLauncherLog("Stopping " + runningBrowsers.size() + " bundled browser process(es) " + reason + ".");
+      for (final var browserProcess : runningBrowsers) {
+        browserProcess.destroy();
+      }
+      for (final var browserProcess : runningBrowsers) {
+        try {
+          if (!browserProcess.waitFor(2, TimeUnit.SECONDS) && browserProcess.isAlive()) {
+            browserProcess.destroyForcibly();
+            browserProcess.waitFor(2, TimeUnit.SECONDS);
+          }
+        } catch (final InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          appendLauncherLog("Interrupted while stopping bundled browser processes.");
+          return;
+        }
+      }
+      this.browserProcesses.removeIf(process -> !process.isAlive());
     }
 
     private void shutdownAndClose() {
@@ -1273,6 +1334,10 @@ public final class HictLauncherGui {
 
     private void appendServerLog(final String message) {
       appendLog("Server   | " + message);
+    }
+
+    private void appendBrowserLog(final String browserName, final String message) {
+      appendLog("Browser  | " + browserName + " | " + message);
     }
 
     private void appendLogEarly(final String message) {

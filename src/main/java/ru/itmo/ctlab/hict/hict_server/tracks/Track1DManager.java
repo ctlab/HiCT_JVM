@@ -82,6 +82,10 @@ public class Track1DManager {
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ab"
   );
   private static final int MAX_FEATURES_PER_QUERY = 250_000;
+  private static final int FEATURE_DIRECT_RENDER_MIN_FEATURES = 1_024;
+  private static final int FEATURE_DIRECT_RENDER_MAX_FEATURES = 12_000;
+  private static final int FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL = 6;
+  private static final int FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL = 2;
   private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String PRECOMPUTE_CACHE_VERSION = "1";
@@ -2985,8 +2989,11 @@ public class Track1DManager {
                                                      final long bpResolution) {
       final int safeWidth = Math.max(1, widthPx);
       final int maxDirectFeatures = Math.max(
-        8192,
-        Math.min(MAX_FEATURES_PER_QUERY, safeWidth * 48)
+        FEATURE_DIRECT_RENDER_MIN_FEATURES,
+        Math.min(
+          Math.min(MAX_FEATURES_PER_QUERY, FEATURE_DIRECT_RENDER_MAX_FEATURES),
+          safeWidth * FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL
+        )
       );
       final var projected = new ArrayList<ProjectedFeature>(Math.min(maxDirectFeatures, 8192));
       forEachProjectedFeature(
@@ -3016,7 +3023,7 @@ public class Track1DManager {
       }
       final int bucketCount = Math.max(1, widthPx);
       final double bucketSpan = Math.max(1.0d, Math.max(1L, queryEndPx - queryStartPx) / (double) bucketCount);
-      final int maxFeaturesPerBucket = 3;
+      final int maxFeaturesPerBucket = FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL;
       @SuppressWarnings("unchecked")
       final ArrayList<ProjectedFeature>[] byBucket = new ArrayList[bucketCount];
       for (final var feature : projected) {
@@ -4086,7 +4093,7 @@ public class Track1DManager {
 
     private void markQueued() {
       this.status = "queued";
-      this.currentTask = "";
+      this.currentTask = "Waiting for precompute worker";
       this.error = null;
       this.completedTasks = 0;
       this.totalTasks = 0;
@@ -4095,6 +4102,9 @@ public class Track1DManager {
 
     private void setTotalTasks(final int totalTasks) {
       this.totalTasks = Math.max(0, totalTasks);
+      if (this.totalTasks == 0 && !"finished".equals(this.status)) {
+        this.currentTask = "No precomputable bins for this track style";
+      }
       this.lastUpdatedMs = System.currentTimeMillis();
     }
 
@@ -4134,7 +4144,11 @@ public class Track1DManager {
     }
 
     private TrackPrecomputeStatus toStatus() {
-      final var progress = this.totalTasks > 0 ? Math.min(1.0d, this.completedTasks / (double) this.totalTasks) : 0.0d;
+      final var progress = switch (this.status) {
+        case "finished" -> 1.0d;
+        case "failed" -> this.totalTasks > 0 ? Math.min(1.0d, this.completedTasks / (double) this.totalTasks) : 0.0d;
+        default -> this.totalTasks > 0 ? Math.min(1.0d, this.completedTasks / (double) this.totalTasks) : 0.0d;
+      };
       return new TrackPrecomputeStatus(
         this.trackId,
         this.trackName,
