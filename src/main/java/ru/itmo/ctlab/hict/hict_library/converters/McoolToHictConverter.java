@@ -14,6 +14,7 @@ import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.StripeDescriptor;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -570,6 +571,15 @@ public class McoolToHictConverter {
     final int stripeCount
   ) {
     final var cols = block.cols();
+    final var nativeCounts = NativeProcessingService.getInstance().tryCountStripeBlocks(
+      cols,
+      stripeCount,
+      SUBMATRIX_SIZE,
+      DENSE_THRESHOLD
+    );
+    if (nativeCounts != null) {
+      return new StripeCounts(nativeCounts[0], nativeCounts[1]);
+    }
     final int maxTouched = Math.min(stripeCount, cols.length);
     final var buffer = acquireCountBuffer(stripeCount, maxTouched);
     final int[] counts = buffer.counts();

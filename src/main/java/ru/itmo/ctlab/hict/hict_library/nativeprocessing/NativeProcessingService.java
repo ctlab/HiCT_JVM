@@ -194,6 +194,40 @@ public final class NativeProcessingService {
     }
   }
 
+  public long @Nullable [] tryCountStripeBlocks(final long @NotNull [] columnBins,
+                                                final int stripeCount,
+                                                final int submatrixSize,
+                                                final int denseThreshold) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return null;
+    }
+    if (!isNativeProcessingActive()) {
+      return null;
+    }
+    if (stripeCount <= 0 || submatrixSize <= 0 || denseThreshold <= 0) {
+      return null;
+    }
+    final var outputSparseDenseCounts = new long[2];
+    try {
+      final var computed = this.nativeTileProcessor.countStripeBlocks(
+        columnBins,
+        stripeCount,
+        submatrixSize,
+        denseThreshold,
+        outputSparseDenseCounts
+      );
+      if (!computed) {
+        recordProcessingFailure("Native stripe-block counter rejected the input");
+        return null;
+      }
+      return outputSparseDenseCounts;
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native stripe-block counting failed: " + err.getMessage());
+      log.warn("Native stripe-block counting failed; falling back to Java implementation", err);
+      return null;
+    }
+  }
+
   private @NotNull String resolveDisabledReason(final @NotNull NativeTileProcessor.LoadReport loadReport) {
     if (!this.requestedEnabled) {
       return "Native processing is available only when explicitly enabled; Java implementation is active";

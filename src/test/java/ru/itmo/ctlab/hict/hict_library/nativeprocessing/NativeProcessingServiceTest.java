@@ -169,6 +169,16 @@ class NativeProcessingServiceTest {
         },
         rgba
       );
+
+      final var sparseDenseCounts = new long[2];
+      assertTrue(processor.countStripeBlocks(
+        new long[]{0L, 1L, 9L, 10L, 11L, 30L},
+        4,
+        10,
+        3,
+        sparseDenseCounts
+      ));
+      assertArrayEquals(new long[]{3L, 1L}, sparseDenseCounts);
     } finally {
       if (previousPath == null) {
         System.clearProperty("hict.native.library.path");

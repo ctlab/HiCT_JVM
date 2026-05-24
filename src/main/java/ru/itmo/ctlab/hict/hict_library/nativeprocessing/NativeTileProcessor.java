@@ -33,12 +33,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
 @Slf4j
 final class NativeTileProcessor {
-  private static final @NotNull String LIBRARY_BASE_NAME = "hict_native";
+  private static final @NotNull String BASELINE_LIBRARY_BASE_NAME = "hict_native";
+  private static final @NotNull String AVX512_LIBRARY_BASE_NAME = "hict_native_avx512";
+  private static final @NotNull String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
+  private static final @NotNull String NATIVE_VARIANT_ENV = "HICT_NATIVE_VARIANT";
   private volatile @NotNull LoadReport loadReport = LoadReport.notAttempted();
 
   @NotNull LoadReport ensureLoaded() {
@@ -133,6 +139,20 @@ final class NativeTileProcessor {
     );
   }
 
+  boolean countStripeBlocks(final long @NotNull [] columnBins,
+                            final int stripeCount,
+                            final int submatrixSize,
+                            final int denseThreshold,
+                            final long @NotNull [] outputSparseDenseCounts) {
+    return nativeCountStripeBlocks(
+      columnBins,
+      stripeCount,
+      submatrixSize,
+      denseThreshold,
+      outputSparseDenseCounts
+    );
+  }
+
   private static @NotNull LoadReport tryLoad() {
     final var explicitPath = firstNonBlank(
       System.getProperty("hict.native.library.path"),
@@ -152,8 +172,7 @@ final class NativeTileProcessor {
       System.getenv("HICT_NATIVE_LIBRARY_DIR")
     );
     if (explicitDirectory != null) {
-      final var mappedName = System.mapLibraryName(LIBRARY_BASE_NAME);
-      final var report = tryLoadFromPath(Path.of(explicitDirectory).resolve(mappedName), "explicit HICT native library directory");
+      final var report = tryLoadFromDirectory(Path.of(explicitDirectory), "explicit HICT native library directory");
       if (report.state() == LoadState.LOADED) {
         return report;
       }
@@ -165,19 +184,39 @@ final class NativeTileProcessor {
       return resourceReport;
     }
 
-    try {
-      NativeLoader.loadLibrary(LIBRARY_BASE_NAME);
-      return loaded("NativeLoader", nativeVersion());
-    } catch (final Throwable err) {
-      log.debug("NativeLoader could not load {}", LIBRARY_BASE_NAME, err);
+    for (final var libraryBaseName : preferredLibraryBaseNames()) {
+      try {
+        NativeLoader.loadLibrary(libraryBaseName);
+        return loaded("NativeLoader " + libraryBaseName, nativeVersion());
+      } catch (final Throwable err) {
+        log.debug("NativeLoader could not load {}", libraryBaseName, err);
+      }
     }
 
-    try {
-      System.loadLibrary(LIBRARY_BASE_NAME);
-      return loaded("java.library.path", nativeVersion());
-    } catch (final Throwable err) {
-      return LoadReport.failed("HiCT native processing library is not available: " + err.getMessage());
+    var lastFailure = "";
+    for (final var libraryBaseName : preferredLibraryBaseNames()) {
+      try {
+        System.loadLibrary(libraryBaseName);
+        return loaded("java.library.path " + libraryBaseName, nativeVersion());
+      } catch (final Throwable err) {
+        lastFailure = err.getMessage();
+      }
     }
+    return LoadReport.failed("HiCT native processing library is not available: " + lastFailure);
+  }
+
+  private static @NotNull LoadReport tryLoadFromDirectory(final @NotNull Path directory,
+                                                          final @NotNull String sourceDescription) {
+    var lastFailure = "";
+    for (final var libraryBaseName : preferredLibraryBaseNames()) {
+      final var mappedName = System.mapLibraryName(libraryBaseName);
+      final var report = tryLoadFromPath(directory.resolve(mappedName), sourceDescription + " (" + libraryBaseName + ")");
+      if (report.state() == LoadState.LOADED) {
+        return report;
+      }
+      lastFailure = report.reason();
+    }
+    return LoadReport.failed(lastFailure.isBlank() ? sourceDescription + " did not contain a supported library" : lastFailure);
   }
 
   private static @NotNull LoadReport tryLoadFromPath(final @NotNull Path path,
@@ -194,28 +233,33 @@ final class NativeTileProcessor {
   }
 
   private static @NotNull LoadReport tryLoadFromBundledResource() {
-    final var mappedName = System.mapLibraryName(LIBRARY_BASE_NAME);
     final var platformDirectory = platformDirectory();
     if (platformDirectory == null) {
       return LoadReport.failed("Unsupported native processing platform: " + System.getProperty("os.name") + " / " + System.getProperty("os.arch"));
     }
-    final var resourcePath = "/natives/" + platformDirectory + "/" + mappedName;
-    try (InputStream stream = NativeTileProcessor.class.getResourceAsStream(resourcePath)) {
-      if (stream == null) {
-        return LoadReport.failed("Bundled native processing library not found at " + resourcePath);
+    var lastFailure = "";
+    for (final var libraryBaseName : preferredLibraryBaseNames()) {
+      final var mappedName = System.mapLibraryName(libraryBaseName);
+      final var resourcePath = "/natives/" + platformDirectory + "/" + mappedName;
+      try (InputStream stream = NativeTileProcessor.class.getResourceAsStream(resourcePath)) {
+        if (stream == null) {
+          lastFailure = "Bundled native processing library not found at " + resourcePath;
+          continue;
+        }
+        final var extractionDirectory = Files.createTempDirectory("hict-native-processing-");
+        final var extractedLibrary = extractionDirectory.resolve(mappedName);
+        Files.copy(stream, extractedLibrary, StandardCopyOption.REPLACE_EXISTING);
+        extractedLibrary.toFile().deleteOnExit();
+        extractionDirectory.toFile().deleteOnExit();
+        System.load(extractedLibrary.toAbsolutePath().normalize().toString());
+        return loaded("bundled resource " + resourcePath, nativeVersion());
+      } catch (final IOException err) {
+        lastFailure = "Failed to extract bundled native processing library " + resourcePath + ": " + err.getMessage();
+      } catch (final Throwable err) {
+        lastFailure = "Failed to load bundled native processing library " + resourcePath + ": " + err.getMessage();
       }
-      final var extractionDirectory = Files.createTempDirectory("hict-native-processing-");
-      final var extractedLibrary = extractionDirectory.resolve(mappedName);
-      Files.copy(stream, extractedLibrary);
-      extractedLibrary.toFile().deleteOnExit();
-      extractionDirectory.toFile().deleteOnExit();
-      System.load(extractedLibrary.toAbsolutePath().normalize().toString());
-      return loaded("bundled resource " + resourcePath, nativeVersion());
-    } catch (final IOException err) {
-      return LoadReport.failed("Failed to extract bundled native processing library: " + err.getMessage());
-    } catch (final Throwable err) {
-      return LoadReport.failed("Failed to load bundled native processing library: " + err.getMessage());
     }
+    return LoadReport.failed(lastFailure.isBlank() ? "Bundled native processing library is not available" : lastFailure);
   }
 
   private static @Nullable String platformDirectory() {
@@ -235,6 +279,67 @@ final class NativeTileProcessor {
       return "macos_64";
     }
     return null;
+  }
+
+  private static @NotNull List<String> preferredLibraryBaseNames() {
+    final var requestedVariant = firstNonBlank(
+      System.getProperty(NATIVE_VARIANT_PROPERTY),
+      System.getenv(NATIVE_VARIANT_ENV)
+    );
+    final var normalizedVariant = requestedVariant == null
+      ? "auto"
+      : requestedVariant.trim().toLowerCase(Locale.ROOT);
+    final var result = new ArrayList<String>(2);
+    if ("baseline".equals(normalizedVariant)) {
+      result.add(BASELINE_LIBRARY_BASE_NAME);
+      return result;
+    }
+    if ("avx512".equals(normalizedVariant)) {
+      if (supportsAvx512Core()) {
+        result.add(AVX512_LIBRARY_BASE_NAME);
+      }
+      return result;
+    }
+    if (supportsAvx512Core()) {
+      result.add(AVX512_LIBRARY_BASE_NAME);
+    }
+    result.add(BASELINE_LIBRARY_BASE_NAME);
+    return result;
+  }
+
+  private static boolean supportsAvx512Core() {
+    final var disabled = firstNonBlank(
+      System.getProperty("hict.native.disableAvx512"),
+      System.getenv("HICT_NATIVE_DISABLE_AVX512")
+    );
+    if (isTruthy(disabled)) {
+      return false;
+    }
+    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+    if (!os.contains("linux")) {
+      return false;
+    }
+    try {
+      final var cpuInfo = Files.readString(Path.of("/proc/cpuinfo")).toLowerCase(Locale.ROOT);
+      return cpuInfo.contains("avx512f")
+        && cpuInfo.contains("avx512dq")
+        && cpuInfo.contains("avx512bw")
+        && cpuInfo.contains("avx512vl");
+    } catch (final IOException err) {
+      log.debug("Could not inspect /proc/cpuinfo for AVX-512 support", err);
+      return false;
+    }
+  }
+
+  private static boolean isTruthy(final @Nullable String value) {
+    if (value == null || value.isBlank()) {
+      return false;
+    }
+    final var normalized = value.trim().toLowerCase(Locale.ROOT);
+    return normalized.equals("1")
+      || normalized.equals("true")
+      || normalized.equals("yes")
+      || normalized.equals("on");
   }
 
   private static @NotNull LoadReport loaded(final @NotNull String source,
@@ -293,6 +398,12 @@ final class NativeTileProcessor {
                                                             double minSignal,
                                                             double maxSignal,
                                                             byte[] outputRgba);
+
+  private static native boolean nativeCountStripeBlocks(long[] columnBins,
+                                                        int stripeCount,
+                                                        int submatrixSize,
+                                                        int denseThreshold,
+                                                        long[] outputSparseDenseCounts);
 
   enum LoadState {
     NOT_ATTEMPTED,

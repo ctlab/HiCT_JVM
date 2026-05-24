@@ -50,6 +50,7 @@ repositories {
 
 val vertxVersion = "4.4.1"
 val junitJupiterVersion = "5.9.1"
+val junitPlatformVersion = "1.9.1"
 val slf4jVersion = "1.7.36"
 val logbackVersion = "1.2.13"
 
@@ -82,13 +83,44 @@ val requireBundledWebUI =
   (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
     ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
     ?: false
-val includeNativeProcessing =
-  (providers.gradleProperty("includeNativeProcessing").orNull ?: System.getenv("HICT_INCLUDE_NATIVE_PROCESSING"))
-    ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
-    ?: false
 val nativeProcessingLibraryBaseName = "hict_native"
 val nativeProcessingSourceFile = layout.projectDirectory.file("src/main/native/hict_native.cpp")
 val nativeProcessingResourceRoot = layout.buildDirectory.dir("native-processing/resources")
+
+data class NativeProcessingVariant(
+  val id: String,
+  val taskSuffix: String,
+  val libraryBaseName: String,
+  val compileFlags: List<String>,
+  val description: String
+)
+
+val nativeProcessingVariants = listOf(
+  NativeProcessingVariant(
+    id = "baseline",
+    taskSuffix = "Baseline",
+    libraryBaseName = nativeProcessingLibraryBaseName,
+    compileFlags = listOf("-mavx2", "-mfma", "-msse4.2", "-mbmi", "-mbmi2"),
+    description = "baseline x86-64 AVX2/FMA/BMI2 build"
+  ),
+  NativeProcessingVariant(
+    id = "avx512",
+    taskSuffix = "Avx512",
+    libraryBaseName = "${nativeProcessingLibraryBaseName}_avx512",
+    compileFlags = listOf(
+      "-mavx2",
+      "-mfma",
+      "-msse4.2",
+      "-mbmi",
+      "-mbmi2",
+      "-mavx512f",
+      "-mavx512dq",
+      "-mavx512bw",
+      "-mavx512vl"
+    ),
+    description = "AVX-512F/DQ/BW/VL build"
+  )
+)
 
 fun nativeProcessingPlatformDirectory(): String? {
   val os = System.getProperty("os.name").lowercase()
@@ -113,6 +145,42 @@ fun nativeProcessingJniIncludeDirectory(): String? {
     os.contains("win") -> "win32"
     else -> null
   }
+}
+
+fun executableOnPath(executableName: String): Boolean {
+  val path = System.getenv("PATH") ?: return false
+  return path.split(File.pathSeparator)
+    .asSequence()
+    .map { File(it, executableName) }
+    .any { it.isFile && it.canExecute() }
+}
+
+fun nativeProcessingCompilerExecutable(): String? {
+  val override = providers.gradleProperty("nativeCxx").orNull
+    ?: System.getenv("HICT_NATIVE_CXX")
+  if (!override.isNullOrBlank()) {
+    val overrideFile = File(override)
+    if (overrideFile.isAbsolute) {
+      return override.takeIf { overrideFile.isFile && overrideFile.canExecute() }
+    }
+    return override.takeIf { executableOnPath(it) }
+  }
+  return listOf("g++", "clang++").firstOrNull(::executableOnPath)
+}
+
+fun nativeProcessingCompilerSupportsCurrentOs(): Boolean {
+  val os = System.getProperty("os.name").lowercase()
+  // MSVC/MinGW packaging needs a separate path; do not make regular JVM builds fail on Windows.
+  return !os.contains("win")
+}
+
+fun nativeProcessingOutputFile(variant: NativeProcessingVariant): File {
+  val platformDirectory = nativeProcessingPlatformDirectory() ?: "unsupported"
+  val mappedLibraryName = System.mapLibraryName(variant.libraryBaseName)
+  return nativeProcessingResourceRoot
+    .map { it.file("natives/$platformDirectory/$mappedLibraryName") }
+    .get()
+    .asFile
 }
 
 fun handleMissingWebUI(message: String, cause: Throwable? = null) {
@@ -175,6 +243,8 @@ dependencies {
   implementation("io.vertx:vertx-reactive-streams")
   testImplementation("io.vertx:vertx-junit5")
   testImplementation("org.junit.jupiter:junit-jupiter:$junitJupiterVersion")
+  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:$junitJupiterVersion")
+  testRuntimeOnly("org.junit.platform:junit-platform-launcher:$junitPlatformVersion")
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
   implementation("org.apache.commons:commons-lang3:3.12.0")
@@ -222,45 +292,62 @@ tasks.withType<Test> {
   }
 }
 
-tasks.register<Exec>("compileNativeProcessing") {
+nativeProcessingVariants.forEach { variant ->
+  tasks.register<Exec>("compileNativeProcessing${variant.taskSuffix}") {
+    group = "build"
+    description = "Build the optional HiCT native processing JNI library (${variant.description}) for the current platform."
+    val platformDirectory = nativeProcessingPlatformDirectory()
+    val jniPlatformInclude = nativeProcessingJniIncludeDirectory()
+    val outputFile = nativeProcessingOutputFile(variant)
+    val javaHome = file(System.getProperty("java.home"))
+    val javaInclude = javaHome.resolve("include")
+    val javaPlatformInclude = jniPlatformInclude?.let { javaInclude.resolve(it) }
+    val compilerExecutable = nativeProcessingCompilerExecutable()
+
+    onlyIf {
+      platformDirectory != null &&
+        jniPlatformInclude != null &&
+        compilerExecutable != null &&
+        nativeProcessingCompilerSupportsCurrentOs() &&
+        nativeProcessingSourceFile.asFile.isFile &&
+        javaInclude.isDirectory &&
+        javaPlatformInclude?.isDirectory == true
+    }
+
+    doFirst {
+      outputFile.parentFile.mkdirs()
+      logger.lifecycle("Building HiCT native processing ${variant.id} library: ${outputFile.absolutePath}")
+    }
+
+    commandLine(
+      listOfNotNull(
+        compilerExecutable,
+        "-std=c++17",
+        "-O3",
+        "-fPIC",
+        "-fvisibility=hidden",
+        "-shared",
+        "-DHICT_NATIVE_VARIANT=\"${variant.id}\"",
+        "-I${javaInclude.absolutePath}",
+        "-I${javaPlatformInclude?.absolutePath ?: javaInclude.absolutePath}",
+        "-o",
+        outputFile.absolutePath,
+        nativeProcessingSourceFile.asFile.absolutePath
+      ) + variant.compileFlags
+    )
+  }
+}
+
+tasks.register("compileNativeProcessing") {
   group = "build"
-  description = "Build the optional HiCT native processing JNI library for the current platform."
-  val platformDirectory = nativeProcessingPlatformDirectory()
-  val jniPlatformInclude = nativeProcessingJniIncludeDirectory()
-  val mappedLibraryName = System.mapLibraryName(nativeProcessingLibraryBaseName)
-  val outputFile = nativeProcessingResourceRoot
-    .map { it.file("natives/${platformDirectory ?: "unsupported"}/$mappedLibraryName") }
-    .get()
-    .asFile
-  val javaHome = file(System.getProperty("java.home"))
-  val javaInclude = javaHome.resolve("include")
-  val javaPlatformInclude = jniPlatformInclude?.let { javaInclude.resolve(it) }
+  description = "Build the optional HiCT native processing baseline JNI library for the current platform."
+  dependsOn("compileNativeProcessingBaseline")
+}
 
-  onlyIf {
-    platformDirectory != null &&
-      jniPlatformInclude != null &&
-      nativeProcessingSourceFile.asFile.isFile &&
-      javaInclude.isDirectory &&
-      javaPlatformInclude?.isDirectory == true &&
-      !System.getProperty("os.name").lowercase().contains("win")
-  }
-
-  doFirst {
-    outputFile.parentFile.mkdirs()
-  }
-
-  commandLine(
-    "g++",
-    "-std=c++17",
-    "-O3",
-    "-fPIC",
-    "-shared",
-    "-I${javaInclude.absolutePath}",
-    "-I${javaPlatformInclude?.absolutePath ?: javaInclude.absolutePath}",
-    "-o",
-    outputFile.absolutePath,
-    nativeProcessingSourceFile.asFile.absolutePath
-  )
+tasks.register("natives") {
+  group = "build"
+  description = "Build every optional HiCT native processing library supported by this machine and toolchain."
+  dependsOn(nativeProcessingVariants.map { "compileNativeProcessing${it.taskSuffix}" })
 }
 
 tasks.register("describeNativeProcessing") {
@@ -272,17 +359,18 @@ tasks.register("describeNativeProcessing") {
       println("Native processing platform is unsupported on this machine.")
       return@doLast
     }
-    val mappedLibraryName = System.mapLibraryName(nativeProcessingLibraryBaseName)
-    val outputFile = nativeProcessingResourceRoot
-      .map { it.file("natives/$platformDirectory/$mappedLibraryName") }
-      .get()
-      .asFile
+    val compilerExecutable = nativeProcessingCompilerExecutable()
     println("Native processing source: ${nativeProcessingSourceFile.asFile.absolutePath}")
-    println("Native processing output: ${outputFile.absolutePath}")
+    println("Native processing compiler: ${compilerExecutable ?: "not found"}")
+    println("Native processing compiler enabled on this OS: ${nativeProcessingCompilerSupportsCurrentOs()}")
+    nativeProcessingVariants.forEach { variant ->
+      println("Native processing ${variant.id} output: ${nativeProcessingOutputFile(variant).absolutePath}")
+    }
     println("Runtime overrides:")
     println("  HICT_NATIVE_PROCESSING=1")
-    println("  HICT_NATIVE_LIBRARY_PATH=${outputFile.absolutePath}")
-    println("  HICT_NATIVE_LIBRARY_DIR=${outputFile.parentFile.absolutePath}")
+    println("  HICT_NATIVE_VARIANT=auto|baseline|avx512")
+    println("  HICT_NATIVE_LIBRARY_PATH=${nativeProcessingOutputFile(nativeProcessingVariants.first()).absolutePath}")
+    println("  HICT_NATIVE_LIBRARY_DIR=${nativeProcessingOutputFile(nativeProcessingVariants.first()).parentFile.absolutePath}")
   }
 }
 
@@ -293,6 +381,39 @@ tasks.register<JavaExec>("runConversionCli") {
   description = "Run conversion CLI (hict-to-mcool / mcool-to-hict subcommands)"
   classpath = sourceSets["main"].runtimeClasspath
   mainClass.set("ru.itmo.ctlab.hict.hict_server.tools.HictCli")
+}
+
+nativeProcessingVariants.forEach { variant ->
+  tasks.register<JavaExec>("benchmarkNativeProcessing${variant.taskSuffix}") {
+    group = "verification"
+    description = "Benchmark Java tile processing against the ${variant.description} native backend."
+    dependsOn("natives", "compileJava")
+    onlyIf { nativeProcessingOutputFile(variant).isFile }
+    classpath = sourceSets["main"].output.classesDirs + sourceSets["main"].compileClasspath
+    mainClass.set("ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingBenchmark")
+    systemProperty("hict.native.library.dir", nativeProcessingOutputFile(variant).parentFile.absolutePath)
+    systemProperty("hict.native.variant", variant.id)
+    listOf(
+      "hict.native.benchmark.rows",
+      "hict.native.benchmark.columns",
+      "hict.native.benchmark.warmup",
+      "hict.native.benchmark.iterations"
+    ).forEach { propertyName ->
+      System.getProperty(propertyName)?.let { systemProperty(propertyName, it) }
+    }
+  }
+}
+
+tasks.register("benchmarkNativeProcessing") {
+  group = "verification"
+  description = "Benchmark Java tile processing against every native backend built on this machine."
+  dependsOn(nativeProcessingVariants.map { "benchmarkNativeProcessing${it.taskSuffix}" })
+}
+
+tasks.register("benchmark") {
+  group = "verification"
+  description = "Run HiCT performance benchmarks available on this machine."
+  dependsOn("benchmarkNativeProcessing")
 }
 
 
@@ -461,7 +582,7 @@ tasks.register("buildWebUI") {
             "(branch/working tree will not be modified by Gradle; requested ref '${requestedWebUIRef}' is ignored)"
         )
         project.exec {
-          commandLine(npmExecutable, "install")
+          commandLine(npmExecutable, "install", "--no-audit", "--no-fund")
           workingDir = localWebUIRepositoryDirectory.asFile
           standardOutput = System.out
         }
@@ -531,7 +652,7 @@ tasks.register("buildWebUI") {
 
 
       project.exec {
-        commandLine(npmExecutable, "install")
+        commandLine(npmExecutable, "install", "--no-audit", "--no-fund")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
       }
@@ -567,9 +688,7 @@ tasks.named("clean") {
 
 tasks.named<ProcessResources>("processResources") {
   dependsOn("copyWebUI")
-  if (includeNativeProcessing) {
-    dependsOn("compileNativeProcessing")
-  }
+  dependsOn("natives")
   from(nativeProcessingResourceRoot) {
     into("")
   }
@@ -617,4 +736,9 @@ tasks.named("build") {
 tasks.named("jar") {
   dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
+  dependsOn("shadowJar")
+}
+
+tasks.named<ShadowJar>("shadowJar") {
+  dependsOn("natives")
 }

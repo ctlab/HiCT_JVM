@@ -27,10 +27,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace {
 
-constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.1";
+#ifndef HICT_NATIVE_VARIANT
+#define HICT_NATIVE_VARIANT "baseline"
+#endif
+
+constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.2-" HICT_NATIVE_VARIANT;
 
 bool valid_extent(const jint rows, const jint columns, const jsize element_count) {
   if (rows < 0 || columns < 0) {
@@ -139,6 +144,51 @@ bool map_linear_gradient_rgba(const double* signal,
       output_rgba[output_offset + component] = static_cast<jbyte>(to_u8(value));
     }
   }
+  return true;
+}
+
+bool count_stripe_blocks(const jlong* column_bins,
+                         const jsize column_count,
+                         const jint stripe_count,
+                         const jint submatrix_size,
+                         const jint dense_threshold,
+                         jlong* output_sparse_dense_counts) {
+  if (column_bins == nullptr || output_sparse_dense_counts == nullptr || stripe_count <= 0 || submatrix_size <= 0 || dense_threshold <= 0) {
+    return false;
+  }
+
+  std::vector<int> counts(static_cast<std::size_t>(stripe_count), 0);
+  std::vector<int> touched;
+  touched.reserve(static_cast<std::size_t>(std::min(stripe_count, column_count)));
+
+  for (jsize i = 0; i < column_count; ++i) {
+    const auto column_bin = column_bins[i];
+    if (column_bin < 0) {
+      return false;
+    }
+    const auto col_stripe = static_cast<std::int64_t>(column_bin / submatrix_size);
+    if (col_stripe < 0 || col_stripe >= stripe_count) {
+      return false;
+    }
+    auto& count = counts[static_cast<std::size_t>(col_stripe)];
+    if (count++ == 0) {
+      touched.push_back(static_cast<int>(col_stripe));
+    }
+  }
+
+  std::sort(touched.begin(), touched.end());
+  std::int64_t sparse = 0;
+  std::int64_t dense = 0;
+  for (const auto col_stripe : touched) {
+    const auto count = counts[static_cast<std::size_t>(col_stripe)];
+    if (count >= dense_threshold) {
+      ++dense;
+    } else {
+      sparse += count;
+    }
+  }
+  output_sparse_dense_counts[0] = static_cast<jlong>(sparse);
+  output_sparse_dense_counts[1] = static_cast<jlong>(dense);
   return true;
 }
 
@@ -357,5 +407,49 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   env->ReleaseFloatArrayElements(start_rgba_array, start_rgba, JNI_ABORT);
   env->ReleaseFloatArrayElements(end_rgba_array, end_rgba, JNI_ABORT);
   env->ReleaseByteArrayElements(output_rgba_array, output_rgba, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeCountStripeBlocks(
+  JNIEnv* env,
+  jclass,
+  jlongArray column_bins_array,
+  jint stripe_count,
+  jint submatrix_size,
+  jint dense_threshold,
+  jlongArray output_sparse_dense_counts_array
+) {
+  if (column_bins_array == nullptr || output_sparse_dense_counts_array == nullptr) {
+    return JNI_FALSE;
+  }
+  if (env->GetArrayLength(output_sparse_dense_counts_array) < 2) {
+    return JNI_FALSE;
+  }
+
+  const auto column_count = env->GetArrayLength(column_bins_array);
+  auto* column_bins = env->GetLongArrayElements(column_bins_array, nullptr);
+  auto* output_sparse_dense_counts = env->GetLongArrayElements(output_sparse_dense_counts_array, nullptr);
+  if (column_bins == nullptr || output_sparse_dense_counts == nullptr) {
+    if (column_bins != nullptr) {
+      env->ReleaseLongArrayElements(column_bins_array, column_bins, JNI_ABORT);
+    }
+    if (output_sparse_dense_counts != nullptr) {
+      env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, JNI_ABORT);
+    }
+    return JNI_FALSE;
+  }
+
+  const auto ok = count_stripe_blocks(
+    column_bins,
+    column_count,
+    stripe_count,
+    submatrix_size,
+    dense_threshold,
+    output_sparse_dense_counts
+  );
+
+  env->ReleaseLongArrayElements(column_bins_array, column_bins, JNI_ABORT);
+  env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, ok ? 0 : JNI_ABORT);
   return ok ? JNI_TRUE : JNI_FALSE;
 }
