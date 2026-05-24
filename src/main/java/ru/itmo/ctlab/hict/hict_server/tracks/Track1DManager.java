@@ -88,6 +88,8 @@ public class Track1DManager {
   private static final int FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL = 2;
   private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
+  private static final String COOLER_WEIGHTS_SOURCE_FILE_PRIMARY = "__internal__/cooler_weights/PRIMARY";
+  private static final String COOLER_WEIGHTS_SOURCE_FILE_SECONDARY = "__internal__/cooler_weights/SECONDARY";
   private static final String PRECOMPUTE_CACHE_VERSION = "1";
   private static final String PRECOMPUTE_META_GROUP_PATH = "/cache_meta";
   private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
@@ -229,17 +231,24 @@ public class Track1DManager {
 
   public @NotNull TrackSummary openCoolerWeightsTrack(final String requestedName,
                                                       final String requestedColor) {
+    return openCoolerWeightsTrack(requestedName, requestedColor, "PRIMARY");
+  }
+
+  public @NotNull TrackSummary openCoolerWeightsTrack(final String requestedName,
+                                                      final String requestedColor,
+                                                      final String requestedSource) {
+    final var source = normalizeSourceName(requestedSource);
     final var trackId = "trk_" + this.trackCounter.incrementAndGet();
     final var resolvedName = (requestedName == null || requestedName.isBlank())
-      ? "Cooler weights"
+      ? ("SECONDARY".equals(source) ? "Cooler weights - Secondary" : "Cooler weights - Primary")
       : requestedName.trim();
     final var color = normalizeColor(requestedColor, colorForIndex((int) this.trackCounter.get() - 1));
-    final TrackDataSource dataSource = new CoolerWeightsTrackDataSource();
+    final TrackDataSource dataSource = new CoolerWeightsTrackDataSource(source);
     final var state = new TrackState(
       trackId,
       resolvedName,
       TrackType.COOLER_WEIGHTS,
-      COOLER_WEIGHTS_SOURCE_FILE,
+      coolerWeightsSourceFile(source),
       color,
       true,
       dataSource,
@@ -462,6 +471,13 @@ public class Track1DManager {
   public @NotNull TracksPrecomputeStatus startPrecompute(final @NotNull ChunkedFile chunkedFile,
                                                          final @Nullable String trackId,
                                                          final boolean force) {
+    return startPrecompute(chunkedFile, null, trackId, force);
+  }
+
+  public @NotNull TracksPrecomputeStatus startPrecompute(final @NotNull ChunkedFile primaryChunkedFile,
+                                                         final @Nullable ChunkedFile secondaryChunkedFile,
+                                                         final @Nullable String trackId,
+                                                         final boolean force) {
     final List<TrackState> selectedTracks;
     try {
       this.lock.readLock().lock();
@@ -479,7 +495,7 @@ public class Track1DManager {
     }
 
     for (final var state : selectedTracks) {
-      scheduleTrackPrecompute(chunkedFile, state, force);
+      scheduleTrackPrecompute(resolveChunkedFileForTrack(primaryChunkedFile, secondaryChunkedFile, state), state, force);
     }
     return getPrecomputeStatus();
   }
@@ -490,15 +506,25 @@ public class Track1DManager {
                                                  final int widthPx,
                                                  final long bpResolution,
                                                  final @NotNull QueryLengthUnit units) {
+    return queryVisibleTracks(chunkedFile, null, start, end, widthPx, bpResolution, units);
+  }
+
+  public @NotNull QueryResult queryVisibleTracks(final @NotNull ChunkedFile primaryChunkedFile,
+                                                 final @Nullable ChunkedFile secondaryChunkedFile,
+                                                 final long start,
+                                                 final long end,
+                                                 final int widthPx,
+                                                 final long bpResolution,
+                                                 final @NotNull QueryLengthUnit units) {
     final var safeWidth = Math.max(1, widthPx);
     final var segmentsBuildResult =
-      buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
+      buildSourceToAssemblySegments(primaryChunkedFile, this.linkedFastaAliasesBySource, bpResolution);
     final var totalVisiblePixels = segmentsBuildResult.totalVisiblePixels();
     if (totalVisiblePixels <= 0L) {
       return new QueryResult(0L, 1L, 0L, 1L, safeWidth, bpResolution, List.of());
     }
     final var queryPxRange = resolveQueryPxRange(
-      chunkedFile,
+      primaryChunkedFile,
       start,
       end,
       bpResolution,
@@ -507,7 +533,8 @@ public class Track1DManager {
       totalVisiblePixels
     );
     return queryVisibleTracksInternal(
-      chunkedFile,
+      primaryChunkedFile,
+      secondaryChunkedFile,
       segmentsBuildResult,
       queryPxRange.startPx(),
       queryPxRange.endPx(),
@@ -521,16 +548,25 @@ public class Track1DManager {
                                                  final long endPx,
                                                  final int widthPx,
                                                  final long bpResolution) {
+    return queryVisibleTracks(chunkedFile, null, startPx, endPx, widthPx, bpResolution);
+  }
+
+  public @NotNull QueryResult queryVisibleTracks(final @NotNull ChunkedFile primaryChunkedFile,
+                                                 final @Nullable ChunkedFile secondaryChunkedFile,
+                                                 final long startPx,
+                                                 final long endPx,
+                                                 final int widthPx,
+                                                 final long bpResolution) {
     final var safeWidth = Math.max(1, widthPx);
     final var segmentsBuildResult =
-      buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
+      buildSourceToAssemblySegments(primaryChunkedFile, this.linkedFastaAliasesBySource, bpResolution);
     final var totalVisiblePixels = segmentsBuildResult.totalVisiblePixels();
     if (totalVisiblePixels <= 0L) {
       return new QueryResult(0L, 1L, 0L, 1L, safeWidth, bpResolution, List.of());
     }
     final var queryStartPx = Math.max(0L, Math.min(Math.min(startPx, endPx), totalVisiblePixels - 1L));
     final var queryEndPx = Math.max(queryStartPx + 1L, Math.min(Math.max(startPx, endPx), totalVisiblePixels));
-    return queryVisibleTracksInternal(chunkedFile, segmentsBuildResult, queryStartPx, queryEndPx, safeWidth, bpResolution);
+    return queryVisibleTracksInternal(primaryChunkedFile, secondaryChunkedFile, segmentsBuildResult, queryStartPx, queryEndPx, safeWidth, bpResolution);
   }
 
   public @NotNull FeatureSearchResponse searchFeatures(final @NotNull ChunkedFile chunkedFile,
@@ -747,7 +783,21 @@ public class Track1DManager {
     return values;
   }
 
-  private @NotNull QueryResult queryVisibleTracksInternal(final @NotNull ChunkedFile chunkedFile,
+  private static @NotNull ChunkedFile resolveChunkedFileForTrack(final @NotNull ChunkedFile primaryChunkedFile,
+                                                                  final @Nullable ChunkedFile secondaryChunkedFile,
+                                                                  final @NotNull TrackState track) {
+    if (track.dataSource() instanceof CoolerWeightsTrackDataSource coolerWeightsTrackDataSource
+      && "SECONDARY".equals(coolerWeightsTrackDataSource.source())) {
+      if (secondaryChunkedFile == null) {
+        throw new IllegalStateException("Secondary source is not attached");
+      }
+      return secondaryChunkedFile;
+    }
+    return primaryChunkedFile;
+  }
+
+  private @NotNull QueryResult queryVisibleTracksInternal(final @NotNull ChunkedFile primaryChunkedFile,
+                                                          final @Nullable ChunkedFile secondaryChunkedFile,
                                                           final @NotNull SegmentBuildResult segmentsBuildResult,
                                                           final long queryStartPx,
                                                           final long queryEndPx,
@@ -763,9 +813,10 @@ public class Track1DManager {
         .filter(track -> track.visible)
         .forEach(track -> {
           try {
-            final var precomputeRuntime = maybeScheduleTrackPrecomputeFromQuery(chunkedFile, track);
+            final var trackChunkedFile = resolveChunkedFileForTrack(primaryChunkedFile, secondaryChunkedFile, track);
+            final var precomputeRuntime = maybeScheduleTrackPrecomputeFromQuery(trackChunkedFile, track);
             final var maybePrecomputed = getPrecomputedBinsIfReady(
-              chunkedFile,
+              trackChunkedFile,
               track,
               sourceToAssemblySegments,
               segmentsBuildResult.orderedSegments(),
@@ -783,7 +834,7 @@ public class Track1DManager {
               trackRenders.add(track.toErrorRender("Optimizing 1D track index..."));
             } else {
               trackRenders.add(track.query(
-                chunkedFile,
+                trackChunkedFile,
                 sourceToAssemblySegments,
                 segmentsBuildResult.orderedSegments(),
                 queryStartPx,
@@ -1636,6 +1687,19 @@ public class Track1DManager {
     return COLOR_PALETTE.get(Math.floorMod(index, COLOR_PALETTE.size()));
   }
 
+  private static @NotNull String normalizeSourceName(final String requestedSource) {
+    if (requestedSource != null && "SECONDARY".equalsIgnoreCase(requestedSource.trim())) {
+      return "SECONDARY";
+    }
+    return "PRIMARY";
+  }
+
+  private static @NotNull String coolerWeightsSourceFile(final @NotNull String source) {
+    return "SECONDARY".equals(source)
+      ? COOLER_WEIGHTS_SOURCE_FILE_SECONDARY
+      : COOLER_WEIGHTS_SOURCE_FILE_PRIMARY;
+  }
+
   private static @NotNull TrackDataSource createDataSource(final @NotNull TrackType trackType,
                                                            final @NotNull Path resolvedPath) {
     return switch (trackType) {
@@ -1644,7 +1708,7 @@ public class Track1DManager {
       case GFF_GTF -> InMemoryTrackDataSource.fromGffOrGtf(resolvedPath);
       case BIGWIG -> new BigWigTrackDataSource(resolvedPath);
       case BAM -> new BamTrackDataSource(resolvedPath);
-      case COOLER_WEIGHTS -> new CoolerWeightsTrackDataSource();
+      case COOLER_WEIGHTS -> new CoolerWeightsTrackDataSource("PRIMARY");
       case UNSUPPORTED -> throw new IllegalStateException("Unexpected unsupported track type");
     };
   }
@@ -3441,6 +3505,16 @@ public class Track1DManager {
   }
 
   private static final class CoolerWeightsTrackDataSource implements TrackDataSource {
+    private final @NotNull String source;
+
+    private CoolerWeightsTrackDataSource(final @NotNull String source) {
+      this.source = normalizeSourceName(source);
+    }
+
+    private @NotNull String source() {
+      return this.source;
+    }
+
     @Override
     public long featureCountHint() {
       return -1L;

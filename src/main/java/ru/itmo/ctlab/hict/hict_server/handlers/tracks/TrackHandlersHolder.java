@@ -117,8 +117,14 @@ public class TrackHandlersHolder extends HandlersHolder {
       }
       final var request = ctx.body() == null ? null : ctx.body().asJsonObject();
       final @NotNull @NonNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
-      final var chunkedFile = extractChunkedFile(map, ctx);
-      if (chunkedFile == null) {
+      final var source = request == null ? "PRIMARY" : normalizeSource(request.getString("source"));
+      final var primaryChunkedFile = extractChunkedFile(map, ctx);
+      if (primaryChunkedFile == null) {
+        return;
+      }
+      final var secondaryChunkedFile = extractSecondaryChunkedFile(map);
+      if ("SECONDARY".equals(source) && secondaryChunkedFile == null) {
+        ctx.fail(new IllegalStateException("Secondary source is not attached"));
         return;
       }
       scheduler.submit(
@@ -128,9 +134,10 @@ public class TrackHandlersHolder extends HandlersHolder {
         () -> {
           final var summary = manager.openCoolerWeightsTrack(
             request == null ? null : request.getString("name"),
-            request == null ? null : request.getString("color")
+            request == null ? null : request.getString("color"),
+            source
           );
-          manager.startPrecompute(chunkedFile, summary.getTrackId(), false);
+          manager.startPrecompute(primaryChunkedFile, secondaryChunkedFile, summary.getTrackId(), false);
           return summary;
         },
         summary -> ctx.response()
@@ -351,12 +358,14 @@ public class TrackHandlersHolder extends HandlersHolder {
       if (chunkedFile == null) {
         return;
       }
+      final var secondaryChunkedFile = extractSecondaryChunkedFile(map);
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.TRACK,
         RequestTaskScheduler.CancellationDomain.TRACK,
         () -> manager.startPrecompute(
           chunkedFile,
+          secondaryChunkedFile,
           request.getString("trackId"),
           request.getBoolean("force", false)
         ),
@@ -387,6 +396,7 @@ public class TrackHandlersHolder extends HandlersHolder {
       if (chunkedFile == null) {
         return;
       }
+      final var secondaryChunkedFile = extractSecondaryChunkedFile(map);
       final var resolvedUnits = resolveUnits(request);
       final var start = resolveStart(request, resolvedUnits);
       final var end = resolveEnd(request, resolvedUnits, start + 1L);
@@ -395,7 +405,7 @@ public class TrackHandlersHolder extends HandlersHolder {
         ctx,
         RequestTaskScheduler.RequestPriority.TRACK,
         RequestTaskScheduler.CancellationDomain.TRACK,
-        () -> manager.queryVisibleTracks(chunkedFile, start, end, widthPx, bpResolution, resolvedUnits),
+        () -> manager.queryVisibleTracks(chunkedFile, secondaryChunkedFile, start, end, widthPx, bpResolution, resolvedUnits),
         result -> ctx.response()
           .putHeader("content-type", "application/json")
           .end(Json.encode(result)),
@@ -597,5 +607,30 @@ public class TrackHandlersHolder extends HandlersHolder {
       return null;
     }
     return chunkedFileWrapper.getChunkedFile();
+  }
+
+  private ChunkedFile extractChunkedFile(final @NotNull LocalMap<String, Object> map,
+                                         final @NotNull io.vertx.ext.web.RoutingContext ctx,
+                                         final @NotNull String source) {
+    if ("SECONDARY".equals(source)) {
+      final var secondaryWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFileSecondary")));
+      if (secondaryWrapper == null) {
+        ctx.fail(new IllegalStateException("Secondary source is not attached"));
+        return null;
+      }
+      return secondaryWrapper.getChunkedFile();
+    }
+    return extractChunkedFile(map, ctx);
+  }
+
+  private ChunkedFile extractSecondaryChunkedFile(final @NotNull LocalMap<String, Object> map) {
+    final var secondaryWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFileSecondary")));
+    return secondaryWrapper == null ? null : secondaryWrapper.getChunkedFile();
+  }
+
+  private static @NotNull String normalizeSource(final String rawSource) {
+    return rawSource != null && "SECONDARY".equalsIgnoreCase(rawSource.trim())
+      ? "SECONDARY"
+      : "PRIMARY";
   }
 }

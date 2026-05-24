@@ -43,8 +43,14 @@ class Track1DManagerCoolerWeightsTest {
     try {
       final var opened = manager.openCoolerWeightsTrack(null, null);
       assertEquals("COOLER_WEIGHTS", opened.getType());
-      assertEquals("Cooler weights", opened.getName());
+      assertEquals("Cooler weights - Primary", opened.getName());
+      assertEquals("__internal__/cooler_weights/PRIMARY", opened.getSourceFile());
       assertFalse(opened.isLogScale());
+
+      final var secondary = manager.openCoolerWeightsTrack(null, null, "SECONDARY");
+      assertEquals("COOLER_WEIGHTS", secondary.getType());
+      assertEquals("Cooler weights - Secondary", secondary.getName());
+      assertEquals("__internal__/cooler_weights/SECONDARY", secondary.getSourceFile());
 
       final var updated = manager.updateTrack(
         opened.getTrackId(),
@@ -59,15 +65,15 @@ class Track1DManagerCoolerWeightsTest {
       assertTrue(updated.isLogScale());
 
       final var listed = manager.listTracks();
-      assertEquals(1, listed.size());
+      assertEquals(2, listed.size());
       assertEquals("COOLER_WEIGHTS", listed.get(0).getType());
       assertTrue(listed.get(0).isLogScale());
 
       manager.removeTrack(opened.getTrackId());
+      manager.removeTrack(secondary.getTrackId());
       assertTrue(manager.listTracks().isEmpty());
     } finally {
       manager.close();
     }
   }
 }
-
