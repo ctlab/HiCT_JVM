@@ -500,6 +500,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw new IllegalArgumentException("FASTA file " + fastaFilename + " does not exist");
           }
 
+          log.info("Linking {} FASTA file {}", normalizedSource, fastaPath);
           final var report = targetChunkedFile.getFastaProcessor().analyzeLinkCandidate(fastaPath);
           final boolean requiresConfirmation = report.hasWarnings() && !allowMismatch;
           if (!requiresConfirmation) {
@@ -518,6 +519,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
                 );
               }
             }
+            log.info("Linked {} FASTA file {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
+          } else {
+            log.info("FASTA link for {} needs confirmation: {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
           }
           return FastaLinkResponseDTO.fromReport(report, !requiresConfirmation, requiresConfirmation);
         },
@@ -548,6 +552,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (fastaPathWrapper == null) {
             throw new IllegalStateException("Link a FASTA file before exporting FASTA");
           }
+          log.info("Exporting assembly FASTA for {} from {}", source, fastaPathWrapper.getPath());
           return chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath());
         },
         fasta -> ctx.response()
@@ -595,6 +600,15 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (horizontalFastaPathWrapper == null) {
             throw new IllegalStateException("Link a FASTA file before exporting FASTA");
           }
+          log.info(
+            "Exporting selection FASTA: horizontal={} vertical={} x={}..{} y={}..{}",
+            horizontalSource,
+            verticalSource,
+            fromBpX,
+            toBpX,
+            fromBpY,
+            toBpY
+          );
           if (!explicitAxisSources) {
             return horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportSelection(
               horizontalFastaPathWrapper.getPath(),

@@ -777,7 +777,9 @@ public class Track1DManager {
             );
             if (maybePrecomputed != null) {
               trackRenders.add(maybePrecomputed);
-            } else if (precomputeRuntime != null && precomputeRuntime.isActive()) {
+            } else if (precomputeRuntime != null
+              && precomputeRuntime.isActive()
+              && track.dataSource().renderStyle() != RenderStyle.FEATURE) {
               trackRenders.add(track.toErrorRender("Optimizing 1D track index..."));
             } else {
               trackRenders.add(track.query(
@@ -906,6 +908,7 @@ public class Track1DManager {
       }
       runtime.markQueued();
     }
+    log.info("Queued 1D track precompute: track={} name={} force={}", track.trackId(), track.name(), force);
     this.precomputeJobExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime));
   }
 
@@ -916,6 +919,7 @@ public class Track1DManager {
     try {
       final var cacheContext = precomputeCacheContextForTrack(chunkedFile, track);
       final var sidecarPath = cacheContext.sidecarPath();
+      log.info("Starting 1D track precompute: track={} name={} sidecar={}", track.trackId(), track.name(), sidecarPath);
       if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
         runtime.setTotalTasks(1);
         runtime.markRunning("Validating feature index", 0);
@@ -924,12 +928,14 @@ public class Track1DManager {
         }
         runtime.markTaskDone(1);
         runtime.markFinished();
+        log.info("Finished 1D feature track index validation: track={} name={}", track.trackId(), track.name());
         return;
       }
       final var tasks = buildPrecomputeTasks(chunkedFile, track, sidecarPath, cacheContext, force);
       runtime.setTotalTasks(tasks.size());
       if (tasks.isEmpty()) {
         runtime.markFinished();
+        log.info("Finished 1D track precompute with no pending tasks: track={} name={}", track.trackId(), track.name());
         return;
       }
       final CompletionService<ComputedPrecomputeTask> completionService =
@@ -954,6 +960,7 @@ public class Track1DManager {
         writeFuture.get();
       }
       runtime.markFinished();
+      log.info("Finished 1D track precompute: track={} name={} tasks={}", track.trackId(), track.name(), tasks.size());
     } catch (final InterruptedException ex) {
       Thread.currentThread().interrupt();
       runtime.markFailed("Precompute interrupted");
@@ -1045,7 +1052,15 @@ public class Track1DManager {
       return null;
     }
     final var strategy = aggregationStrategy(track);
-    final var bins = aggregatePrecomputedSeries(series, queryStartPx, queryEndPx, widthPx, strategy);
+    final var bins = aggregatePrecomputedSeries(
+      series,
+      queryStartPx,
+      queryEndPx,
+      widthPx,
+      strategy,
+      orderedSegments,
+      bpResolution
+    );
     final var maxValue = bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0.0d);
     return new TrackRender(
       track.trackId(),
@@ -1098,7 +1113,9 @@ public class Track1DManager {
                                                              final long queryStartPx,
                                                              final long queryEndPx,
                                                              final int widthPx,
-                                                             final @NotNull PrecomputeAggregationStrategy strategy) {
+                                                             final @NotNull PrecomputeAggregationStrategy strategy,
+                                                             final @NotNull List<AssemblySegment> orderedSegments,
+                                                             final long bpResolution) {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
@@ -1132,7 +1149,15 @@ public class Track1DManager {
       if (supportSum <= 0L && value <= 0.0d) {
         continue;
       }
-      bins.add(new TrackBin(startPx, safeEndPx, value, Math.max(1L, supportSum), null, startPx, safeEndPx));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        safeEndPx,
+        value,
+        Math.max(1L, supportSum),
+        null
+      ));
     }
     return bins;
   }
@@ -2123,7 +2148,8 @@ public class Track1DManager {
       thickStartPx,
       thickEndPx,
       feature.featureType(),
-      projectedBlocks
+      projectedBlocks,
+      feature.attributes()
     ));
   }
 
@@ -2185,7 +2211,8 @@ public class Track1DManager {
       null,
       null,
       null,
-      List.of()
+      List.of(),
+      Map.of()
     ));
   }
 
@@ -2301,7 +2328,9 @@ public class Track1DManager {
   private static @NotNull List<TrackBin> aggregateFeatures(final @NotNull List<ProjectedFeature> projectedFeatures,
                                                            final long queryStartPx,
                                                            final long queryEndPx,
-                                                           final int widthPx) {
+                                                           final int widthPx,
+                                                           final @NotNull List<AssemblySegment> orderedSegments,
+                                                           final long bpResolution) {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
@@ -2326,7 +2355,15 @@ public class Track1DManager {
       final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
       final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
       final var safeEndPx = Math.max(startPx + 1L, endPx);
-      bins.add(new TrackBin(startPx, safeEndPx, maxValues[i], counts[i], null, startPx, safeEndPx));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        safeEndPx,
+        maxValues[i],
+        counts[i],
+        null
+      ));
     }
     return bins;
   }
@@ -2335,7 +2372,9 @@ public class Track1DManager {
                                                                  final long queryStartPx,
                                                                  final long queryEndPx,
                                                                  final int widthPx,
-                                                                 final @NotNull BigWigAggregationMode mode) {
+                                                                 final @NotNull BigWigAggregationMode mode,
+                                                                 final @NotNull List<AssemblySegment> orderedSegments,
+                                                                 final long bpResolution) {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
@@ -2376,7 +2415,15 @@ public class Track1DManager {
         case MEAN -> overlapSums[i] > 0.0d ? weightedSums[i] / overlapSums[i] : 0.0d;
         case SUM -> weightedSums[i] / bucketWidth;
       };
-      bins.add(new TrackBin(startPx, safeEndPx, value, counts[i], null, startPx, safeEndPx));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        safeEndPx,
+        value,
+        counts[i],
+        null
+      ));
     }
     return bins;
   }
@@ -2384,7 +2431,9 @@ public class Track1DManager {
   private static @NotNull List<TrackBin> aggregateCoverageFeatures(final @NotNull List<ProjectedFeature> projectedFeatures,
                                                                    final long queryStartPx,
                                                                    final long queryEndPx,
-                                                                   final int widthPx) {
+                                                                   final int widthPx,
+                                                                   final @NotNull List<AssemblySegment> orderedSegments,
+                                                                   final long bpResolution) {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
@@ -2416,7 +2465,15 @@ public class Track1DManager {
       final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
       final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
       final var safeEndPx = Math.max(startPx + 1L, endPx);
-      bins.add(new TrackBin(startPx, safeEndPx, coverage[i], counts[i], null, startPx, safeEndPx));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        safeEndPx,
+        coverage[i],
+        counts[i],
+        null
+      ));
     }
     return bins;
   }
@@ -2424,7 +2481,9 @@ public class Track1DManager {
   private static @NotNull List<TrackBin> aggregateReadDensityFeatures(final @NotNull List<ProjectedFeature> projectedFeatures,
                                                                       final long queryStartPx,
                                                                       final long queryEndPx,
-                                                                      final int widthPx) {
+                                                                      final int widthPx,
+                                                                      final @NotNull List<AssemblySegment> orderedSegments,
+                                                                      final long bpResolution) {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
@@ -2446,7 +2505,15 @@ public class Track1DManager {
       final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
       final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
       final var safeEndPx = Math.max(startPx + 1L, endPx);
-      bins.add(new TrackBin(startPx, safeEndPx, values[i], counts[i], null, startPx, safeEndPx));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        safeEndPx,
+        values[i],
+        counts[i],
+        null
+      ));
     }
     return bins;
   }
@@ -2522,7 +2589,9 @@ public class Track1DManager {
                                                             final double[] weightedSums,
                                                             final double[] overlapSums,
                                                             final long[] counts,
-                                                            final @NotNull BigWigAggregationMode mode) {
+                                                            final @NotNull BigWigAggregationMode mode,
+                                                            final @NotNull List<AssemblySegment> orderedSegments,
+                                                            final long bpResolution) {
     final var bins = new ArrayList<TrackBin>(counts.length);
     for (int i = 0; i < counts.length; i++) {
       if (counts[i] <= 0L) {
@@ -2537,7 +2606,15 @@ public class Track1DManager {
         case MEAN -> overlapSums[i] > 0.0d ? weightedSums[i] / overlapSums[i] : 0.0d;
         case SUM -> weightedSums[i] / bucketWidth;
       };
-      bins.add(new TrackBin(startPx, safeEndPx, value, counts[i], null, startPx, safeEndPx));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        safeEndPx,
+        value,
+        counts[i],
+        null
+      ));
     }
     return bins;
   }
@@ -2546,7 +2623,9 @@ public class Track1DManager {
                                                       final long queryEndPx,
                                                       final double bucketSpan,
                                                       final double[] values,
-                                                      final long[] counts) {
+                                                      final long[] counts,
+                                                      final @NotNull List<AssemblySegment> orderedSegments,
+                                                      final long bpResolution) {
     final var bins = new ArrayList<TrackBin>(counts.length);
     for (int i = 0; i < counts.length; i++) {
       if (counts[i] <= 0L) {
@@ -2555,9 +2634,40 @@ public class Track1DManager {
       final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
       final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
       final var safeEndPx = Math.max(startPx + 1L, endPx);
-      bins.add(new TrackBin(startPx, safeEndPx, values[i], counts[i], null, startPx, safeEndPx));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        safeEndPx,
+        values[i],
+        counts[i],
+        null
+      ));
     }
     return bins;
+  }
+
+  private static @NotNull TrackBin aggregateSignalBin(final @NotNull List<AssemblySegment> orderedSegments,
+                                                      final long bpResolution,
+                                                      final long startPx,
+                                                      final long safeEndPx,
+                                                      final double value,
+                                                      final long count,
+                                                      final @Nullable String label) {
+    final long totalVisiblePixels = orderedSegments.isEmpty()
+      ? Math.max(safeEndPx, startPx + 1L)
+      : Math.max(safeEndPx, orderedSegments.get(orderedSegments.size() - 1).visiblePxEnd());
+    final long startBp = mapVisiblePxToAssemblyBp(
+      Math.max(0L, Math.min(startPx, Math.max(0L, totalVisiblePixels - 1L))),
+      orderedSegments,
+      bpResolution
+    );
+    final long endBp = mapVisiblePxToAssemblyBp(
+      Math.max(0L, Math.min(Math.max(startPx, safeEndPx - 1L), Math.max(0L, totalVisiblePixels - 1L))),
+      orderedSegments,
+      bpResolution
+    ) + bpResolution;
+    return new TrackBin(startBp, Math.max(startBp + 1L, endBp), value, count, label, startPx, safeEndPx);
   }
 
   private static @NotNull List<TrackBin> toBins(final @NotNull List<ProjectedFeature> projectedFeatures) {
@@ -2584,7 +2694,8 @@ public class Track1DManager {
             block.endPx(),
             block.coding()
           ))
-          .toList()
+          .toList(),
+        f.attributes()
       ))
       .toList();
   }
@@ -2603,6 +2714,7 @@ public class Track1DManager {
     if (type == TrackType.BAM && dataSource instanceof BamTrackDataSource bamDataSource) {
       return bamDataSource.queryBins(
         sourceToAssemblySegments,
+        orderedSegments,
         queryStartPx,
         queryEndPx,
         widthPx,
@@ -2613,6 +2725,7 @@ public class Track1DManager {
     if (type == TrackType.BIGWIG && dataSource instanceof BigWigTrackDataSource bigWigDataSource) {
       return bigWigDataSource.queryBins(
         sourceToAssemblySegments,
+        orderedSegments,
         queryStartPx,
         queryEndPx,
         widthPx,
@@ -2634,6 +2747,7 @@ public class Track1DManager {
       if (dataSource instanceof InMemoryTrackDataSource inMemoryTrackDataSource) {
         return inMemoryTrackDataSource.queryBins(
           sourceToAssemblySegments,
+          orderedSegments,
           queryStartPx,
           queryEndPx,
           widthPx,
@@ -2646,7 +2760,14 @@ public class Track1DManager {
         queryEndPx,
         bpResolution
       );
-      return aggregateCoverageFeatures(projectedFeatures, queryStartPx, queryEndPx, widthPx);
+      return aggregateCoverageFeatures(
+        projectedFeatures,
+        queryStartPx,
+        queryEndPx,
+        widthPx,
+        orderedSegments,
+        bpResolution
+      );
     }
     final var projectedFeatures = dataSource.projectFeatures(
       sourceToAssemblySegments,
@@ -2656,7 +2777,14 @@ public class Track1DManager {
     );
     final var maxFeatureCount = Math.max(widthPx * 8, 8192);
     if (projectedFeatures.size() > maxFeatureCount) {
-      return aggregateFeatures(projectedFeatures, queryStartPx, queryEndPx, widthPx);
+      return aggregateFeatures(
+        projectedFeatures,
+        queryStartPx,
+        queryEndPx,
+        widthPx,
+        orderedSegments,
+        bpResolution
+      );
     }
     return toBins(projectedFeatures);
   }
@@ -2799,11 +2927,39 @@ public class Track1DManager {
             value = Math.max(0.0d, col5Numeric != null ? col5Numeric : 1.0d);
           }
           final var featureType = (fields.length >= 12) ? "BED12" : (hasStrand ? "BED6" : "BED");
+          final var attributes = new LinkedHashMap<String, String>();
+          attributes.put("chrom", sourceName);
+          attributes.put("chromStart", Long.toString(start));
+          attributes.put("chromEnd", Long.toString(end));
+          if (fields.length >= 4 && !fields[3].isBlank()) {
+            attributes.put("name", fields[3]);
+          }
+          if (fields.length >= 5 && !fields[4].isBlank()) {
+            attributes.put("score", fields[4]);
+          }
+          if (hasStrand) {
+            attributes.put("strand", Objects.requireNonNull(strand));
+          }
+          if (thickStart != null && thickEnd != null) {
+            attributes.put("thickStart", Long.toString(thickStart));
+            attributes.put("thickEnd", Long.toString(thickEnd));
+          }
+          if (fields.length >= 9 && !fields[8].isBlank()) {
+            attributes.put("itemRgb", fields[8]);
+          }
+          if (fields.length >= 12) {
+            attributes.put("blockCount", fields[9]);
+            attributes.put("blockSizes", fields[10]);
+            attributes.put("blockStarts", fields[11]);
+          }
+          for (int fieldIndex = 12; fieldIndex < fields.length; fieldIndex++) {
+            attributes.put("field" + (fieldIndex + 1), fields[fieldIndex]);
+          }
           if (fields.length >= 12) {
             hasBed12Rows = true;
           }
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType, List.of()));
+            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType, List.of(), attributes));
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
           }
@@ -2852,7 +3008,7 @@ public class Track1DManager {
           final var alt = fields[4];
           final var label = (id != null) ? id : (ref + ">" + alt);
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, 1.0d, label, null, null, null, "VCF", List.of()));
+            .add(new FeatureRange(start, end, 1.0d, label, null, null, null, "VCF", List.of(), Map.of()));
           total++;
         }
       } catch (final IOException e) {
@@ -2924,7 +3080,7 @@ public class Track1DManager {
             );
           } else {
             features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-              .add(new FeatureRange(start, end, value, label, strand, null, null, featureType, List.of()));
+              .add(new FeatureRange(start, end, value, label, strand, null, null, featureType, List.of(), attributes));
           }
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
@@ -2985,6 +3141,7 @@ public class Track1DManager {
     }
 
     public @NotNull List<TrackBin> queryBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                             final @NotNull List<AssemblySegment> orderedSegments,
                                              final long queryStartPx,
                                              final long queryEndPx,
                                              final int widthPx,
@@ -3035,7 +3192,9 @@ public class Track1DManager {
           weightedSums,
           overlapSums,
           counts,
-          BigWigAggregationMode.MAX
+          BigWigAggregationMode.MAX,
+          orderedSegments,
+          bpResolution
         );
       }
 
@@ -3057,7 +3216,15 @@ public class Track1DManager {
         ),
         Integer.MAX_VALUE
       );
-      return finalizeBins(queryStartPx, queryEndPx, bucketSpan, values, counts);
+      return finalizeBins(
+        queryStartPx,
+        queryEndPx,
+        bucketSpan,
+        values,
+        counts,
+        orderedSegments,
+        bpResolution
+      );
     }
 
     private @NotNull List<TrackBin> queryFeatureBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
@@ -3495,6 +3662,7 @@ public class Track1DManager {
     }
 
     public synchronized @NotNull List<TrackBin> queryBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                          final @NotNull List<AssemblySegment> orderedSegments,
                                                           final long queryStartPx,
                                                           final long queryEndPx,
                                                           final int widthPx,
@@ -3577,7 +3745,9 @@ public class Track1DManager {
         weightedSums,
         overlapSums,
         counts,
-        mode
+        mode,
+        orderedSegments,
+        bpResolution
       );
     }
 
@@ -3698,6 +3868,7 @@ public class Track1DManager {
     }
 
     public synchronized @NotNull List<TrackBin> queryBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                          final @NotNull List<AssemblySegment> orderedSegments,
                                                           final long queryStartPx,
                                                           final long queryEndPx,
                                                           final int widthPx,
@@ -3770,7 +3941,15 @@ public class Track1DManager {
           }
         }
       }
-      return finalizeBins(queryStartPx, queryEndPx, bucketSpan, values, counts);
+      return finalizeBins(
+        queryStartPx,
+        queryEndPx,
+        bucketSpan,
+        values,
+        counts,
+        orderedSegments,
+        bpResolution
+      );
     }
 
     @Override
@@ -3965,7 +4144,8 @@ public class Track1DManager {
         thickStart,
         thickEnd,
         resolvedFeatureType,
-        blocks
+        blocks,
+        Map.of()
       );
     }
 
@@ -4049,7 +4229,11 @@ public class Track1DManager {
                               Long thickStart,
                               Long thickEnd,
                               String featureType,
-                              @NotNull List<FeatureBlock> blocks) {
+                              @NotNull List<FeatureBlock> blocks,
+                              @NotNull Map<String, String> attributes) {
+    private FeatureRange {
+      attributes = Map.copyOf(attributes);
+    }
   }
 
   private record ProjectedBlock(long startBp,
@@ -4071,7 +4255,11 @@ public class Track1DManager {
                                   Long thickStartPx,
                                   Long thickEndPx,
                                   String featureType,
-                                  @NotNull List<ProjectedBlock> blocks) {
+                                  @NotNull List<ProjectedBlock> blocks,
+                                  @NotNull Map<String, String> attributes) {
+    private ProjectedFeature {
+      attributes = Map.copyOf(attributes);
+    }
   }
 
   @Getter
@@ -4304,13 +4492,14 @@ public class Track1DManager {
     private final Long thickEndPx;
     private final String featureType;
     private final List<TrackBinBlock> blocks;
+    private final Map<String, String> attributes;
 
     public TrackBin(final long startBp,
                     final long endBp,
                     final double value,
                     final long count,
                     final String label) {
-      this(startBp, endBp, value, count, label, null, null, null, null, null, null, null, null, List.of());
+      this(startBp, endBp, value, count, label, null, null, null, null, null, null, null, null, List.of(), Map.of());
     }
 
     public TrackBin(final long startBp,
@@ -4320,7 +4509,7 @@ public class Track1DManager {
                     final String label,
                     final Long startPx,
                     final Long endPx) {
-      this(startBp, endBp, value, count, label, startPx, endPx, null, null, null, null, null, null, List.of());
+      this(startBp, endBp, value, count, label, startPx, endPx, null, null, null, null, null, null, List.of(), Map.of());
     }
 
     public TrackBin(final long startBp,
@@ -4350,7 +4539,8 @@ public class Track1DManager {
         thickStartPx,
         thickEndPx,
         featureType,
-        List.of()
+        List.of(),
+        Map.of()
       );
     }
 
@@ -4368,6 +4558,40 @@ public class Track1DManager {
                     final Long thickEndPx,
                     final String featureType,
                     final List<TrackBinBlock> blocks) {
+      this(
+        startBp,
+        endBp,
+        value,
+        count,
+        label,
+        startPx,
+        endPx,
+        strand,
+        thickStartBp,
+        thickEndBp,
+        thickStartPx,
+        thickEndPx,
+        featureType,
+        blocks,
+        Map.of()
+      );
+    }
+
+    public TrackBin(final long startBp,
+                    final long endBp,
+                    final double value,
+                    final long count,
+                    final String label,
+                    final Long startPx,
+                    final Long endPx,
+                    final String strand,
+                    final Long thickStartBp,
+                    final Long thickEndBp,
+                    final Long thickStartPx,
+                    final Long thickEndPx,
+                    final String featureType,
+                    final List<TrackBinBlock> blocks,
+                    final Map<String, String> attributes) {
       this.startBp = startBp;
       this.endBp = endBp;
       this.value = value;
@@ -4382,6 +4606,7 @@ public class Track1DManager {
       this.thickEndPx = thickEndPx;
       this.featureType = featureType;
       this.blocks = blocks == null ? List.of() : blocks;
+      this.attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
     }
 
     @Getter
