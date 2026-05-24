@@ -82,6 +82,38 @@ val requireBundledWebUI =
   (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
     ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
     ?: false
+val includeNativeProcessing =
+  (providers.gradleProperty("includeNativeProcessing").orNull ?: System.getenv("HICT_INCLUDE_NATIVE_PROCESSING"))
+    ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
+    ?: false
+val nativeProcessingLibraryBaseName = "hict_native"
+val nativeProcessingSourceFile = layout.projectDirectory.file("src/main/native/hict_native.cpp")
+val nativeProcessingResourceRoot = layout.buildDirectory.dir("native-processing/resources")
+
+fun nativeProcessingPlatformDirectory(): String? {
+  val os = System.getProperty("os.name").lowercase()
+  val arch = System.getProperty("os.arch").lowercase()
+  val is64Bit = arch.contains("64") || arch == "amd64" || arch == "x86_64"
+  if (!is64Bit) {
+    return null
+  }
+  return when {
+    os.contains("linux") -> "linux_64"
+    os.contains("win") -> "windows_64"
+    os.contains("mac") || os.contains("darwin") -> "macos_64"
+    else -> null
+  }
+}
+
+fun nativeProcessingJniIncludeDirectory(): String? {
+  val os = System.getProperty("os.name").lowercase()
+  return when {
+    os.contains("linux") -> "linux"
+    os.contains("mac") || os.contains("darwin") -> "darwin"
+    os.contains("win") -> "win32"
+    else -> null
+  }
+}
 
 fun handleMissingWebUI(message: String, cause: Throwable? = null) {
   if (requireBundledWebUI) {
@@ -182,8 +214,75 @@ tasks.withType<ShadowJar> {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+  System.getProperty("hict.native.test.library")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { systemProperty("hict.native.test.library", it) }
   testLogging {
     events = setOf(PASSED, SKIPPED, FAILED)
+  }
+}
+
+tasks.register<Exec>("compileNativeProcessing") {
+  group = "build"
+  description = "Build the optional HiCT native processing JNI library for the current platform."
+  val platformDirectory = nativeProcessingPlatformDirectory()
+  val jniPlatformInclude = nativeProcessingJniIncludeDirectory()
+  val mappedLibraryName = System.mapLibraryName(nativeProcessingLibraryBaseName)
+  val outputFile = nativeProcessingResourceRoot
+    .map { it.file("natives/${platformDirectory ?: "unsupported"}/$mappedLibraryName") }
+    .get()
+    .asFile
+  val javaHome = file(System.getProperty("java.home"))
+  val javaInclude = javaHome.resolve("include")
+  val javaPlatformInclude = jniPlatformInclude?.let { javaInclude.resolve(it) }
+
+  onlyIf {
+    platformDirectory != null &&
+      jniPlatformInclude != null &&
+      nativeProcessingSourceFile.asFile.isFile &&
+      javaInclude.isDirectory &&
+      javaPlatformInclude?.isDirectory == true &&
+      !System.getProperty("os.name").lowercase().contains("win")
+  }
+
+  doFirst {
+    outputFile.parentFile.mkdirs()
+  }
+
+  commandLine(
+    "g++",
+    "-std=c++17",
+    "-O3",
+    "-fPIC",
+    "-shared",
+    "-I${javaInclude.absolutePath}",
+    "-I${javaPlatformInclude?.absolutePath ?: javaInclude.absolutePath}",
+    "-o",
+    outputFile.absolutePath,
+    nativeProcessingSourceFile.asFile.absolutePath
+  )
+}
+
+tasks.register("describeNativeProcessing") {
+  group = "help"
+  description = "Describe optional HiCT native processing library build/load locations."
+  doLast {
+    val platformDirectory = nativeProcessingPlatformDirectory()
+    if (platformDirectory == null) {
+      println("Native processing platform is unsupported on this machine.")
+      return@doLast
+    }
+    val mappedLibraryName = System.mapLibraryName(nativeProcessingLibraryBaseName)
+    val outputFile = nativeProcessingResourceRoot
+      .map { it.file("natives/$platformDirectory/$mappedLibraryName") }
+      .get()
+      .asFile
+    println("Native processing source: ${nativeProcessingSourceFile.asFile.absolutePath}")
+    println("Native processing output: ${outputFile.absolutePath}")
+    println("Runtime overrides:")
+    println("  HICT_NATIVE_PROCESSING=1")
+    println("  HICT_NATIVE_LIBRARY_PATH=${outputFile.absolutePath}")
+    println("  HICT_NATIVE_LIBRARY_DIR=${outputFile.parentFile.absolutePath}")
   }
 }
 
@@ -468,6 +567,12 @@ tasks.named("clean") {
 
 tasks.named<ProcessResources>("processResources") {
   dependsOn("copyWebUI")
+  if (includeNativeProcessing) {
+    dependsOn("compileNativeProcessing")
+  }
+  from(nativeProcessingResourceRoot) {
+    into("")
+  }
   from(bundledToolchainSourceDirectory) {
     into("toolchains")
   }

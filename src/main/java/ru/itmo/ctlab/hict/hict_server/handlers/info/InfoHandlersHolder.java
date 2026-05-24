@@ -6,6 +6,7 @@ import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
@@ -52,6 +53,37 @@ public class InfoHandlersHolder extends HandlersHolder {
         .setStatusCode(200)
         .end(Json.encode(snapshot));
     });
+
+    router.post("/native_processing/status").handler(ctx -> {
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(nativeProcessingStatusPayload(NativeProcessingService.getInstance().status())));
+    });
+
+    router.post("/native_processing/enabled").handler(ctx -> {
+      final var body = ctx.body().asJsonObject();
+      final var requested = body != null && body.getBoolean("enabled", false);
+      final var status = NativeProcessingService.getInstance().setRequestedEnabled(requested);
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(nativeProcessingStatusPayload(status)));
+    });
+  }
+
+  private @NotNull Map<String, Object> nativeProcessingStatusPayload(
+    final @NotNull NativeProcessingService.NativeProcessingStatus status
+  ) {
+    return Map.of(
+      "requested", status.requested(),
+      "enabled", status.enabled(),
+      "available", status.available(),
+      "version", status.version(),
+      "source", status.source(),
+      "reason", status.reason(),
+      "lastFailure", status.lastFailure()
+    );
   }
 
   private @NotNull String readVersion() {

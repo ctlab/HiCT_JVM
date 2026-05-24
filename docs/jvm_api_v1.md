@@ -53,6 +53,8 @@ Typically:
 | `POST` | `/render_pipeline/get` | Get custom rendering pipeline graph |
 | `POST` | `/render_pipeline/set` | Set custom rendering pipeline graph |
 | `POST` | `/render_pipeline/reset` | Reset pipeline to defaults |
+| `POST` | `/native_processing/status` | Read optional native-processing backend status |
+| `POST` | `/native_processing/enabled` | Enable or disable optional native processing for the current process |
 
 `/get_tile` supported formats:
 

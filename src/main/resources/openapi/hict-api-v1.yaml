@@ -50,6 +50,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericMap'
+  /native_processing/status:
+    post:
+      tags: [Info]
+      summary: Get optional native-processing backend status
+      operationId: getNativeProcessingStatus
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Native-processing status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeProcessingStatus'
+  /native_processing/enabled:
+    post:
+      tags: [Info]
+      summary: Enable or disable optional native-processing backend use
+      operationId: setNativeProcessingEnabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetNativeProcessingEnabledRequest'
+      responses:
+        '200':
+          description: Native-processing status after applying the requested setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeProcessingStatus'
   /api/v1:
     get:
       tags: [Info]
@@ -1206,6 +1237,22 @@ components:
         version: { type: string }
         webuiVersion: { type: string }
       required: [version, webuiVersion]
+    NativeProcessingStatus:
+      type: object
+      properties:
+        requested: { type: boolean }
+        enabled: { type: boolean }
+        available: { type: boolean }
+        version: { type: string }
+        source: { type: string }
+        reason: { type: string }
+        lastFailure: { type: string }
+      required: [requested, enabled, available, version, source, reason, lastFailure]
+    SetNativeProcessingEnabledRequest:
+      type: object
+      properties:
+        enabled: { type: boolean }
+      required: [enabled]
     FileEntry:
       type: object
       properties:
