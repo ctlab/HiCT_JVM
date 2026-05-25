@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -163,6 +164,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var compression = requestJson.getInteger("compression", 6);
                     final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
                     final var chunkSize = requestJson.getInteger("chunkSize", 8192);
+                    final var assemblyFilename = requestJson.getString("assemblyFilename", "");
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
                     if (dataDirectoryWrapper == null) {
@@ -180,6 +182,10 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var direction = ConversionDirection.fromRequestOrSource(requestJson.getString("direction"), sourcePath);
                     final var outputPath = deriveOutputPath(sourcePath, direction);
                     prepareOutputPath(outputPath, overwrite);
+                    final var assemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
+                    final var assemblyPathForOptions = assemblyPath == null
+                      ? ConversionOptions.NO_AGP
+                      : dataDirectory.relativize(assemblyPath).toString();
 
                     final var options = new ConversionOptions(
                         sourcePath,
@@ -188,7 +194,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         chunkSize,
                         compression,
                         compressionAlgorithm,
-                        ConversionOptions.NO_AGP,
+                        assemblyPathForOptions,
                         false,
                         parallelism
                     );
@@ -229,6 +235,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var compression = requestJson.getInteger("compression", 6);
                     final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
                     final var chunkSize = requestJson.getInteger("chunkSize", 8192);
+                    final var assemblyFilename = requestJson.getString("assemblyFilename", "");
+                    final var assemblyByFileJson = requestJson.getJsonObject("assemblyFilenameByFile");
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
                     if (dataDirectoryWrapper == null) {
@@ -252,6 +260,13 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var direction = ConversionDirection.fromRequestOrSource(null, sourcePath);
                         final var outputPath = deriveOutputPath(sourcePath, direction);
                         prepareOutputPath(outputPath, overwrite);
+                        final var perFileAssembly = assemblyByFileJson == null
+                          ? assemblyFilename
+                          : assemblyByFileJson.getString(filename, assemblyFilename);
+                        final var assemblyPath = resolveOptionalAssemblyPath(dataDirectory, perFileAssembly);
+                        final var assemblyPathForOptions = assemblyPath == null
+                          ? ConversionOptions.NO_AGP
+                          : dataDirectory.relativize(assemblyPath).toString();
                         final var options = new ConversionOptions(
                             sourcePath,
                             outputPath,
@@ -259,7 +274,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             chunkSize,
                             compression,
                             compressionAlgorithm,
-                            ConversionOptions.NO_AGP,
+                            assemblyPathForOptions,
                             false,
                             parallelism
                         );
@@ -442,6 +457,24 @@ public class ConversionHandlersHolder extends HandlersHolder {
         } catch (IOException e) {
             throw new RuntimeException("Failed to overwrite existing output file: " + outputPath.getFileName(), e);
         }
+    }
+
+    private static Path resolveOptionalAssemblyPath(final @NotNull Path dataDirectory, final String filename) {
+        if (filename == null || filename.isBlank()) {
+            return null;
+        }
+        final var lowerFilename = filename.toLowerCase(Locale.ROOT);
+        if (!lowerFilename.endsWith(".assembly") && !lowerFilename.endsWith(".agp")) {
+            throw new IllegalArgumentException("Assembly layout file must be .assembly or .agp: " + filename);
+        }
+        final var assemblyPath = dataDirectory.resolve(filename).normalize();
+        if (!assemblyPath.startsWith(dataDirectory)) {
+            throw new IllegalArgumentException("Invalid assembly layout filename");
+        }
+        if (!Files.isRegularFile(assemblyPath)) {
+            throw new IllegalArgumentException("Assembly layout file not found: " + filename);
+        }
+        return assemblyPath;
     }
 
     private ConversionJob createJob(final @NotNull Path sourcePath,

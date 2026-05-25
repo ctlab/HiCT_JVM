@@ -1187,6 +1187,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /dotplot/jobs:
+    post:
+      tags: [Conversion]
+      summary: Start self-alignment dotplot generation jobs
+      operationId: startDotplotJobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartDotplotJobsRequest' }
+      responses:
+        '200':
+          description: Dotplot job submission status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /dotplot/jobs/list:
+    post:
+      tags: [Conversion]
+      summary: List self-alignment dotplot jobs
+      operationId: listDotplotJobs
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Dotplot job list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
   /convert/download/{jobId}:
     get:
       tags: [Conversion]
@@ -1707,6 +1737,9 @@ components:
           enum: [deflate, lzf, zstd, none]
           default: deflate
         chunkSize: { type: integer, default: 8192 }
+        assemblyFilename:
+          type: string
+          description: Optional .assembly or .agp layout file relative to DATA_DIR. Used for .hic conversion requests.
         parallelism: { type: integer }
       required: [filename]
     StartBatchConversionRequest:
@@ -1725,7 +1758,54 @@ components:
           enum: [deflate, lzf, zstd, none]
           default: deflate
         chunkSize: { type: integer, default: 8192 }
+        assemblyFilename:
+          type: string
+          description: Optional .assembly or .agp layout file relative to DATA_DIR. Used for selected .hic conversions.
+        assemblyFilenameByFile:
+          type: object
+          additionalProperties: { type: string }
+          description: Optional per-input assembly layout override keyed by source filename.
       required: [files]
+    StartDotplotJobsRequest:
+      type: object
+      properties:
+        fastaFiles:
+          type: array
+          items: { type: string }
+          description: FASTA files relative to DATA_DIR.
+        outputDirectory:
+          type: string
+          description: Optional output directory relative to DATA_DIR. Defaults to processed output directory.
+        binSize:
+          type: integer
+          default: 1000
+          description: Base dotplot bin size in base pairs.
+        resolutions:
+          type: string
+          description: Optional comma-separated zoom resolution list.
+        minimizerK:
+          type: integer
+          default: 17
+        minimizerWindow:
+          type: integer
+          default: 5
+        minChainScore:
+          type: integer
+          default: 40
+        skipDiagonal:
+          type: boolean
+          default: false
+        dropNearDiagonalBins:
+          type: integer
+          default: 0
+        alignmentThreads:
+          type: integer
+        conversionThreads:
+          type: integer
+        overwrite:
+          type: boolean
+          default: false
+      required: [fastaFiles, binSize, minimizerK, minimizerWindow, minChainScore, skipDiagonal, dropNearDiagonalBins, alignmentThreads, conversionThreads]
     ConversionSubmitResponse:
       type: object
       properties:
