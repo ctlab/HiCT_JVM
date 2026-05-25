@@ -16,18 +16,62 @@ function Resolve-CommandPath([string[]]$Names) {
   return $null
 }
 
+function Format-NativeArgumentForLog([string]$Argument) {
+  if ($Argument -match "\s") {
+    return '"' + $Argument.Replace('"', '\"') + '"'
+  }
+  return $Argument
+}
+
+function Start-NativeProcess([string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory = $PWD.Path) {
+  $argumentText = ($Arguments | ForEach-Object { Format-NativeArgumentForLog $_ }) -join " "
+  Write-Host "> $FilePath $argumentText"
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $FilePath
+  $startInfo.WorkingDirectory = $WorkingDirectory
+  $startInfo.UseShellExecute = $false
+  foreach ($argument in $Arguments) {
+    [void]$startInfo.ArgumentList.Add($argument)
+  }
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  $process.WaitForExit()
+  return $process
+}
+
 function Invoke-Native([string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory = $PWD.Path) {
-  Write-Host "> $FilePath $($Arguments -join ' ')"
-  $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -Wait -PassThru
+  $process = Start-NativeProcess -FilePath $FilePath -Arguments $Arguments -WorkingDirectory $WorkingDirectory
   if ($process.ExitCode -ne 0) {
     throw "Command failed with exit code $($process.ExitCode): $FilePath $($Arguments -join ' ')"
   }
 }
 
 function Invoke-NativeAllowFailure([string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory = $PWD.Path) {
-  Write-Host "> $FilePath $($Arguments -join ' ')"
-  $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -Wait -PassThru
+  $process = Start-NativeProcess -FilePath $FilePath -Arguments $Arguments -WorkingDirectory $WorkingDirectory
   return $process.ExitCode
+}
+
+function Repair-Mm2PlusMingwGettimeofday([string]$SourceDir) {
+  $miscPath = Join-Path $SourceDir "src\misc.c"
+  if (-not (Test-Path $miscPath)) {
+    return
+  }
+
+  $content = Get-Content -Raw -Path $miscPath
+  if ($content -match "__MINGW32__" -or $content -match "__MINGW64__") {
+    return
+  }
+  if ($content -notmatch "struct timezone" -or $content -notmatch "int gettimeofday") {
+    return
+  }
+
+  $patched = $content -replace "(#include <windows\.h>\r?\n\r?\n)(struct timezone)", "`$1#if !defined(__MINGW32__) && !defined(__MINGW64__)`n`$2"
+  $patched = $patched -replace "(return 0;\r?\n}\r?\n)(\r?\n// taken from https://stackoverflow\.com/questions/5272470/c-get-cpu-usage-on-linux-and-windows)", "`$1#endif /* !MinGW gettimeofday */`$2"
+  if ($patched -ne $content) {
+    Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patched
+    Write-Host "[mm2plus/windows] Patched src/misc.c to use MinGW's gettimeofday/timezone definitions."
+  } else {
+    Write-Warning "Could not apply MinGW gettimeofday compatibility patch to src/misc.c; attempting build without patch."
+  }
 }
 
 $repoUrl = if ($env:MM2PLUS_REPO_URL) { $env:MM2PLUS_REPO_URL } else { "https://github.com/at-cg/mm2-plus.git" }
@@ -55,6 +99,7 @@ try {
   Invoke-Native -FilePath "git" -Arguments @("-C", $sourceDir, "fetch", "--tags", "--force", "origin")
 }
 Invoke-Native -FilePath "git" -Arguments @("-C", $sourceDir, "checkout", "--force", $Mm2PlusRef)
+Repair-Mm2PlusMingwGettimeofday -SourceDir $sourceDir
 
 function Build-Variant([string]$Variant, [string]$ExtraFlags) {
   $output = Join-Path $OutputDir "bin\mm2plus-$Variant.exe"
@@ -84,9 +129,10 @@ function Build-Variant([string]$Variant, [string]$ExtraFlags) {
     "-j$jobs",
     "base=1",
     "avx=1",
-    "CXX=`"$cxx`"",
-    "EXTRAFLAGS=`"$ExtraFlags`"",
-    "LDFLAGS=-static"
+    "CXX=$cxx",
+    "EXTRAFLAGS=$ExtraFlags",
+    "LDFLAGS=-static -static-libgcc -static-libstdc++",
+    "LIBS=-lz -fopenmp -lm -lpthread"
   )
   if ($exit -ne 0 -or -not (Test-Path (Join-Path $sourceDir "mm2plus.exe"))) {
     Write-Host "::warning::mm2-plus $Variant build failed; dotplot generation can still use minimap2 or another mm2-plus variant."
