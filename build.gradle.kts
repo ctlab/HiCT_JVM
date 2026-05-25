@@ -224,6 +224,13 @@ fun handleMissingWebUI(message: String, cause: Throwable? = null) {
   }
 }
 
+fun emitCiWarning(message: String) {
+  if (System.getenv("GITHUB_ACTIONS").equals("true", ignoreCase = true)) {
+    println("::warning::${message.replace('\n', ' ')}")
+  }
+  logger.warn(message)
+}
+
 version = readVersion()
 
 application {
@@ -335,6 +342,17 @@ nativeProcessingVariants.forEach { variant ->
     val compilerExecutable = nativeProcessingCompilerExecutable()
     val compilerFlavor = nativeProcessingCompilerFlavor(compilerExecutable)
 
+    inputs.file(nativeProcessingSourceFile)
+    inputs.property("platformDirectory", platformDirectory ?: "unsupported")
+    inputs.property("jniPlatformInclude", jniPlatformInclude ?: "unsupported")
+    inputs.property("compilerFlavor", compilerFlavor ?: "unsupported")
+    inputs.property("variantId", variant.id)
+    inputs.property("gnuCompileFlags", variant.gnuCompileFlags.joinToString(" "))
+    inputs.property("msvcCompileFlags", variant.msvcCompileFlags.joinToString(" "))
+    inputs.property("nativeProcessingOpenMpEnabled", nativeProcessingOpenMpEnabled)
+    outputs.file(outputFile)
+    isIgnoreExitValue = true
+
     onlyIf {
       platformDirectory != null &&
         jniPlatformInclude != null &&
@@ -384,6 +402,16 @@ nativeProcessingVariants.forEach { variant ->
       ) + variant.gnuCompileFlags + gnuOpenMpFlags
     }
     commandLine(command)
+
+    doLast {
+      val exitValue = executionResult.get().exitValue
+      if (exitValue != 0) {
+        outputFile.delete()
+        emitCiWarning("HiCT native processing ${variant.id} build failed with exit code $exitValue; Java fallback remains available.")
+      } else if (!outputFile.isFile) {
+        emitCiWarning("HiCT native processing ${variant.id} build completed but did not produce ${outputFile.absolutePath}; Java fallback remains available.")
+      }
+    }
   }
 }
 
@@ -397,6 +425,27 @@ tasks.register("natives") {
   group = "build"
   description = "Build every optional HiCT native processing library supported by this machine and toolchain."
   dependsOn(nativeProcessingVariants.map { "compileNativeProcessing${it.taskSuffix}" })
+}
+
+tasks.register("verifyNativeProcessingBuild") {
+  group = "verification"
+  description = "Warn when optional HiCT native processing variants were not built for the current platform."
+  dependsOn("natives")
+  doLast {
+    val platformDirectory = nativeProcessingPlatformDirectory()
+    if (platformDirectory == null) {
+      emitCiWarning("HiCT native processing is unsupported on this platform; Java fallback remains available.")
+      return@doLast
+    }
+    nativeProcessingVariants.forEach { variant ->
+      val outputFile = nativeProcessingOutputFile(variant)
+      if (!outputFile.isFile) {
+        emitCiWarning("HiCT native processing ${variant.id} library is missing at ${outputFile.absolutePath}; this package will use Java fallback for that variant.")
+      } else {
+        logger.lifecycle("HiCT native processing ${variant.id} library ready: ${outputFile.absolutePath}")
+      }
+    }
+  }
 }
 
 tasks.register("describeNativeProcessing") {
@@ -739,7 +788,7 @@ tasks.named("clean") {
 
 tasks.named<ProcessResources>("processResources") {
   dependsOn("copyWebUI")
-  dependsOn("natives")
+  dependsOn("verifyNativeProcessingBuild")
   from(nativeProcessingResourceRoot) {
     into("")
   }
@@ -791,5 +840,5 @@ tasks.named("jar") {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
-  dependsOn("natives")
+  dependsOn("verifyNativeProcessingBuild")
 }

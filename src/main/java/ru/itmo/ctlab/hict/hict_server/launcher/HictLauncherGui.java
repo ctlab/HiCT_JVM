@@ -26,6 +26,7 @@ package ru.itmo.ctlab.hict.hict_server.launcher;
 
 import ru.itmo.ctlab.hict.hict_server.info.AttributionInfo;
 import ru.itmo.ctlab.hict.hict_server.tools.HictCli;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -147,6 +148,33 @@ public final class HictLauncherGui {
     }
   }
 
+  private enum NativeProcessingMode {
+    JAVA("java", "Java fallback"),
+    BASELINE("baseline", "Native AVX2"),
+    AVX512("avx512", "Native AVX-512");
+
+    private final String wireName;
+    private final String label;
+
+    NativeProcessingMode(final String wireName, final String label) {
+      this.wireName = wireName;
+      this.label = label;
+    }
+
+    private static NativeProcessingMode fromWireName(final String value) {
+      if (value == null || value.isBlank()) {
+        return JAVA;
+      }
+      final var normalized = value.trim().toLowerCase(Locale.ROOT);
+      for (final var mode : values()) {
+        if (mode.wireName.equals(normalized)) {
+          return mode;
+        }
+      }
+      return JAVA;
+    }
+  }
+
   private static final class LauncherWindow {
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
     private static final int MAX_LOG_CHARS = 200_000;
@@ -184,8 +212,11 @@ public final class HictLauncherGui {
       new ConfigSpec("WEBUI_ROOT", "WebUI root override", "", PathKind.DIRECTORY),
       new ConfigSpec("HICT_TOOLCHAIN_DIR", "Toolchain directory", "", PathKind.DIRECTORY),
       new ConfigSpec("HICT_HICTK_BIN", "External hictk executable", "", PathKind.FILE),
+      new ConfigSpec("HICT_MINIMAP2_BIN", "External minimap2 executable", "", PathKind.FILE),
       new ConfigSpec("HICT_COOLER_BIN", "External cooler executable", "", PathKind.FILE),
       new ConfigSpec("HICT_PYTHON_BIN", "External Python executable", "", PathKind.FILE),
+      new ConfigSpec("HICT_NATIVE_LIBRARY_DIR", "Native library directory override", "", PathKind.DIRECTORY),
+      new ConfigSpec("HICT_NATIVE_LIBRARY_PATH", "Native library file override", "", PathKind.FILE),
       new ConfigSpec("HICT_JAVA_OPTS", "Extra JVM options", "", PathKind.NONE)
     );
 
@@ -219,6 +250,10 @@ public final class HictLauncherGui {
     private JRadioButton systemBrowserRadio;
     private JRadioButton tauriBrowserRadio;
     private JRadioButton electronBrowserRadio;
+    private JRadioButton javaNativeRadio;
+    private JRadioButton baselineNativeRadio;
+    private JRadioButton avx512NativeRadio;
+    private JLabel nativeProcessingStatusLabel;
     private JCheckBox openAfterStartCheckbox;
     private JSlider logLevelSlider;
     private JLabel logLevelValueLabel;
@@ -275,6 +310,7 @@ public final class HictLauncherGui {
       this.frame.setLocationRelativeTo(null);
       this.frame.setVisible(true);
       appendLauncherLog("Launcher ready. DATA_DIR=" + getFieldValue("DATA_DIR"));
+      appendLauncherLog("Native processing options: " + nativeProcessingStatusText());
       if (this.browserBundles.isEmpty()) {
         appendLauncherLog("No bundled browser payload was found; the system browser will be used.");
       } else {
@@ -556,6 +592,11 @@ public final class HictLauncherGui {
       }
 
       final var optionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), this.uiScale.gapSmall()));
+      optionPanel.add(new JLabel("Native processing:"));
+      optionPanel.add(createNativeProcessingModePanel());
+      this.nativeProcessingStatusLabel = new JLabel(nativeProcessingStatusText());
+      this.nativeProcessingStatusLabel.setForeground(new Color(90, 96, 104));
+      optionPanel.add(this.nativeProcessingStatusLabel);
       this.openAfterStartCheckbox = new JCheckBox("Open WebUI after start");
       this.openAfterStartCheckbox.setSelected(getBooleanSetting("openAfterStart", true));
       optionPanel.add(this.openAfterStartCheckbox);
@@ -590,6 +631,37 @@ public final class HictLauncherGui {
       outer.add(buttonPanel, BorderLayout.SOUTH);
       this.uiScale.applyFonts(outer);
       return outer;
+    }
+
+    private JPanel createNativeProcessingModePanel() {
+      final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapSmall(), 0));
+      final var group = new ButtonGroup();
+      this.javaNativeRadio = new JRadioButton(NativeProcessingMode.JAVA.label);
+      this.baselineNativeRadio = new JRadioButton(nativeProcessingModeLabel(NativeProcessingMode.BASELINE));
+      this.avx512NativeRadio = new JRadioButton(nativeProcessingModeLabel(NativeProcessingMode.AVX512));
+
+      this.baselineNativeRadio.setEnabled(hasNativeProcessingMode(NativeProcessingMode.BASELINE));
+      this.avx512NativeRadio.setEnabled(hasNativeProcessingMode(NativeProcessingMode.AVX512));
+      this.javaNativeRadio.setToolTipText("Use the pure Java implementation. This is the safest compatibility fallback.");
+      this.baselineNativeRadio.setToolTipText(this.baselineNativeRadio.isEnabled()
+        ? "Use the bundled or configured HiCT native AVX2 backend for the next server start."
+        : "HiCT native AVX2 library was not found in this package or configured override.");
+      this.avx512NativeRadio.setToolTipText(this.avx512NativeRadio.isEnabled()
+        ? "Use the bundled or configured HiCT native AVX-512 backend for the next server start."
+        : avx512UnavailableReason());
+
+      group.add(this.javaNativeRadio);
+      group.add(this.baselineNativeRadio);
+      group.add(this.avx512NativeRadio);
+      panel.add(this.javaNativeRadio);
+      panel.add(this.baselineNativeRadio);
+      panel.add(this.avx512NativeRadio);
+
+      selectNativeProcessingMode(resolveInitialNativeProcessingMode());
+      this.javaNativeRadio.addActionListener(ignored -> onNativeProcessingModeChanged());
+      this.baselineNativeRadio.addActionListener(ignored -> onNativeProcessingModeChanged());
+      this.avx512NativeRadio.addActionListener(ignored -> onNativeProcessingModeChanged());
+      return panel;
     }
 
     private Hashtable<Integer, JLabel> logLevelSliderLabels() {
@@ -745,6 +817,7 @@ public final class HictLauncherGui {
       applyEnvironment(env, dataDir);
 
       appendLauncherLog("Starting HiCT with DATA_DIR=" + dataDir);
+      appendLauncherLog("Native processing launch mode: " + selectedNativeProcessingMode().label);
       appendLauncherLog("Command: " + String.join(" ", command));
 
       try {
@@ -803,6 +876,20 @@ public final class HictLauncherGui {
       env.put("SERVE_WEBUI", "true");
       env.put("AUTO_OPEN_BROWSER", "false");
       env.put("HICT_LOG_LEVEL", selectedLogLevel());
+      final var nativeProcessingMode = selectedNativeProcessingMode();
+      if (nativeProcessingMode == NativeProcessingMode.JAVA) {
+        env.put("HICT_NATIVE_PROCESSING", "0");
+        env.remove("HICT_NATIVE_VARIANT");
+        env.remove("HICT_NATIVE_DISABLE_AVX512");
+      } else {
+        env.put("HICT_NATIVE_PROCESSING", "1");
+        env.put("HICT_NATIVE_VARIANT", nativeProcessingMode.wireName);
+        if (nativeProcessingMode == NativeProcessingMode.BASELINE) {
+          env.put("HICT_NATIVE_DISABLE_AVX512", "1");
+        } else {
+          env.remove("HICT_NATIVE_DISABLE_AVX512");
+        }
+      }
       env.putIfAbsent("HICT_BIND_HOST", "127.0.0.1");
       env.putIfAbsent("VXPORT", "5000");
       env.putIfAbsent("WEBUI_PORT", "8080");
@@ -1098,6 +1185,135 @@ public final class HictLauncherGui {
       saveSettings();
     }
 
+    private void onNativeProcessingModeChanged() {
+      final var mode = selectedNativeProcessingMode();
+      this.settings.setProperty("nativeProcessingMode", mode.wireName);
+      if (this.nativeProcessingStatusLabel != null) {
+        this.nativeProcessingStatusLabel.setText(nativeProcessingStatusText());
+      }
+      appendLauncherLog("Native processing mode set to " + mode.label + ". It will apply on the next HiCT server start.");
+      saveSettings();
+    }
+
+    private NativeProcessingMode selectedNativeProcessingMode() {
+      if (this.baselineNativeRadio != null && this.baselineNativeRadio.isSelected()) {
+        return NativeProcessingMode.BASELINE;
+      }
+      if (this.avx512NativeRadio != null && this.avx512NativeRadio.isSelected()) {
+        return NativeProcessingMode.AVX512;
+      }
+      return NativeProcessingMode.JAVA;
+    }
+
+    private NativeProcessingMode resolveInitialNativeProcessingMode() {
+      final var configuredMode = firstNonBlank(
+        this.settings.getProperty("nativeProcessingMode"),
+        System.getenv("HICT_LAUNCHER_NATIVE_MODE")
+      );
+      if (configuredMode != null && !configuredMode.isBlank()) {
+        final var requested = NativeProcessingMode.fromWireName(configuredMode);
+        return hasNativeProcessingMode(requested) ? requested : NativeProcessingMode.JAVA;
+      }
+      if (NativeCpuFeatures.isTruthy(firstNonBlank(
+        System.getenv("HICT_NATIVE_PROCESSING"),
+        System.getProperty("hict.native.processing")
+      ))) {
+        final var requestedVariant = firstNonBlank(
+          System.getenv("HICT_NATIVE_VARIANT"),
+          System.getProperty("hict.native.variant")
+        );
+        final var requestedMode = NativeProcessingMode.fromWireName(requestedVariant);
+        if (hasNativeProcessingMode(requestedMode)) {
+          return requestedMode;
+        }
+        if (hasNativeProcessingMode(NativeProcessingMode.AVX512)) {
+          return NativeProcessingMode.AVX512;
+        }
+        if (hasNativeProcessingMode(NativeProcessingMode.BASELINE)) {
+          return NativeProcessingMode.BASELINE;
+        }
+      }
+      return NativeProcessingMode.JAVA;
+    }
+
+    private void selectNativeProcessingMode(final NativeProcessingMode mode) {
+      final var selectableMode = hasNativeProcessingMode(mode) ? mode : NativeProcessingMode.JAVA;
+      switch (selectableMode) {
+        case BASELINE -> this.baselineNativeRadio.setSelected(true);
+        case AVX512 -> this.avx512NativeRadio.setSelected(true);
+        case JAVA -> this.javaNativeRadio.setSelected(true);
+      }
+    }
+
+    private String nativeProcessingModeLabel(final NativeProcessingMode mode) {
+      return hasNativeProcessingMode(mode) ? mode.label : mode.label + " (not available)";
+    }
+
+    private boolean hasNativeProcessingMode(final NativeProcessingMode mode) {
+      return switch (mode) {
+        case JAVA -> true;
+        case BASELINE -> hasNativeLibraryOverride("hict_native") || hasBundledNativeLibrary("hict_native");
+        case AVX512 -> NativeCpuFeatures.supportsAvx512Core()
+          && (hasNativeLibraryOverride("hict_native_avx512") || hasBundledNativeLibrary("hict_native_avx512"));
+      };
+    }
+
+    private boolean hasNativeLibraryOverride(final String libraryBaseName) {
+      final var explicitPath = firstNonBlank(
+        getFieldValue("HICT_NATIVE_LIBRARY_PATH"),
+        System.getenv("HICT_NATIVE_LIBRARY_PATH"),
+        System.getProperty("hict.native.library.path")
+      );
+      if (explicitPath != null && isExpectedNativeLibraryFile(normalizePath(explicitPath), libraryBaseName)) {
+        return true;
+      }
+      final var explicitDir = firstNonBlank(
+        getFieldValue("HICT_NATIVE_LIBRARY_DIR"),
+        System.getenv("HICT_NATIVE_LIBRARY_DIR"),
+        System.getProperty("hict.native.library.dir")
+      );
+      return explicitDir != null && Files.isRegularFile(normalizePath(explicitDir).resolve(System.mapLibraryName(libraryBaseName)));
+    }
+
+    private boolean isExpectedNativeLibraryFile(final Path path, final String libraryBaseName) {
+      if (!Files.isRegularFile(path)) {
+        return false;
+      }
+      final var fileName = path.getFileName();
+      if (fileName == null) {
+        return false;
+      }
+      final var normalizedFileName = fileName.toString().toLowerCase(Locale.ROOT);
+      final var mappedName = System.mapLibraryName(libraryBaseName).toLowerCase(Locale.ROOT);
+      final var normalizedBaseName = libraryBaseName.toLowerCase(Locale.ROOT);
+      return normalizedFileName.equals(mappedName) || normalizedFileName.contains(normalizedBaseName);
+    }
+
+    private boolean hasBundledNativeLibrary(final String libraryBaseName) {
+      final var platformDirectory = nativeProcessingPlatformDirectory();
+      if (platformDirectory == null) {
+        return false;
+      }
+      final var resourcePath = "/natives/" + platformDirectory + "/" + System.mapLibraryName(libraryBaseName);
+      return HictLauncherGui.class.getResource(resourcePath) != null;
+    }
+
+    private String nativeProcessingStatusText() {
+      final var baseline = hasNativeProcessingMode(NativeProcessingMode.BASELINE) ? "AVX2 available" : "AVX2 unavailable";
+      final var avx512 = hasNativeProcessingMode(NativeProcessingMode.AVX512) ? "AVX-512 available" : avx512UnavailableReason();
+      return selectedNativeProcessingMode().label + "; " + baseline + "; " + avx512;
+    }
+
+    private String avx512UnavailableReason() {
+      if (!NativeCpuFeatures.supportsAvx512Core()) {
+        return "AVX-512 unavailable on this CPU/JVM";
+      }
+      if (!hasNativeLibraryOverride("hict_native_avx512") && !hasBundledNativeLibrary("hict_native_avx512")) {
+        return "AVX-512 native library unavailable";
+      }
+      return "AVX-512 unavailable";
+    }
+
     private BrowserMode selectedBrowserMode() {
       if (this.tauriBrowserRadio != null && this.tauriBrowserRadio.isSelected()) {
         return BrowserMode.TAURI;
@@ -1279,6 +1495,7 @@ public final class HictLauncherGui {
       }
       this.settings.setProperty("openAfterStart", Boolean.toString(this.openAfterStartCheckbox == null || this.openAfterStartCheckbox.isSelected()));
       this.settings.setProperty("browserMode", selectedBrowserMode().wireName);
+      this.settings.setProperty("nativeProcessingMode", selectedNativeProcessingMode().wireName);
       this.settings.setProperty("logLevel", selectedLogLevel());
       final Path dataDir;
       try {
@@ -1650,6 +1867,21 @@ public final class HictLauncherGui {
         return "macos_x86_64";
       }
       return "linux_x86_64";
+    }
+
+    private static String nativeProcessingPlatformDirectory() {
+      final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+      final var is64Bit = arch.contains("64") || "amd64".equals(arch) || "x86_64".equals(arch);
+      if (!is64Bit) {
+        return null;
+      }
+      if (isWindows()) {
+        return "windows_64";
+      }
+      if (isMac()) {
+        return "macos_64";
+      }
+      return "linux_64";
     }
 
     private static boolean isWindows() {

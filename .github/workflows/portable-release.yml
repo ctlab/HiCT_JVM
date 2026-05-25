@@ -99,6 +99,12 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Cache HiCT native processing libraries
+        uses: actions/cache@v5
+        with:
+          path: build/native-processing/resources
+          key: hict-native-linux-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         run: |
@@ -137,11 +143,33 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
+          key: toolchain-v2-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
+          restore-keys: |
+            toolchain-v2-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+            toolchain-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+
+      - name: Inspect bundled toolchain cache
+        id: inspect-toolchain
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        run: |
+          manifest="toolchains-dist/linux_x86_64/manifest.json"
+          hictk_ready=false
+          minimap2_ready=false
+          if [[ -f "${manifest}" ]]; then
+            if grep -q '"hictk"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/hictk" ]]; then
+              hictk_ready=true
+            fi
+            if grep -q '"minimap2"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/minimap2" ]]; then
+              minimap2_ready=true
+            fi
+          fi
+          echo "hictk_ready=${hictk_ready}" >> "${GITHUB_OUTPUT}"
+          echo "minimap2_ready=${minimap2_ready}" >> "${GITHUB_OUTPUT}"
+          echo "hictk_ready=${hictk_ready}, minimap2_ready=${minimap2_ready}"
 
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64
@@ -151,22 +179,49 @@ jobs:
             hictk-conan-linux-x86_64-ubuntu2404-
 
       - name: Install hictk build prerequisites
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true') }}
         run: |
           sudo apt-get install -y --no-install-recommends g++ gcc make cmake ninja-build python3-venv zlib1g-dev
 
       - name: Build bundled hictk
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        id: build-hictk
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
+        continue-on-error: true
         env:
           ENABLE_MOSTLY_STATIC_RUNTIME: "1"
         run: ./scripts/toolchains/build_hictk_linux.sh
 
       - name: Build bundled minimap2
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        id: build-minimap2
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.minimap2_ready != 'true' }}
+        continue-on-error: true
         run: ./scripts/toolchains/build_minimap2_linux.sh
 
+      - name: Verify bundled toolchain payload
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') }}
+        run: |
+          manifest="toolchains-dist/linux_x86_64/manifest.json"
+          if [[ ! -f "${manifest}" ]]; then
+            echo "::warning::No Linux bundled toolchain manifest was produced; hictk/minimap2 features will require external tools."
+            exit 0
+          fi
+          if ! grep -q '"hictk"' "${manifest}"; then
+            echo "::warning::Linux bundled hictk was not built or restored; .hic conversion will require external hictk."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/hictk" ]]; then
+            echo "::warning::Linux bundled hictk is listed in the manifest but bin/hictk is missing or not executable."
+          else
+            toolchains-dist/linux_x86_64/bin/hictk --version
+          fi
+          if ! grep -q '"minimap2"' "${manifest}"; then
+            echo "::warning::Linux bundled minimap2 was not built or restored; dotplot generation will require external minimap2."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/minimap2" ]]; then
+            echo "::warning::Linux bundled minimap2 is listed in the manifest but bin/minimap2 is missing or not executable."
+          else
+            toolchains-dist/linux_x86_64/bin/minimap2 --version
+          fi
+
       - name: Save hictk Conan package cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
@@ -174,7 +229,7 @@ jobs:
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
       - name: Save bundled toolchain cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true') }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
@@ -271,6 +326,12 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Cache HiCT native processing libraries
+        uses: actions/cache@v5
+        with:
+          path: build/native-processing/resources
+          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         shell: pwsh
@@ -297,11 +358,35 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/windows_x86_64
-          key: toolchain-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1') }}
+          key: toolchain-v2-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1') }}
+          restore-keys: |
+            toolchain-v2-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+            toolchain-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+
+      - name: Inspect bundled toolchain cache
+        id: inspect-toolchain
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: pwsh
+        run: |
+          $manifest = "toolchains-dist\windows_x86_64\manifest.json"
+          $hictkReady = "false"
+          $minimap2Ready = "false"
+          if (Test-Path $manifest) {
+            $manifestText = Get-Content -Raw $manifest
+            if ($manifestText -match '"hictk"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
+              $hictkReady = "true"
+            }
+            if ($manifestText -match '"minimap2"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\minimap2.exe")) {
+              $minimap2Ready = "true"
+            }
+          }
+          "hictk_ready=$hictkReady" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "minimap2_ready=$minimap2Ready" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "hictk_ready=$hictkReady, minimap2_ready=$minimap2Ready"
 
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/windows_x86_64
@@ -311,7 +396,7 @@ jobs:
             hictk-conan-windows-x86_64-
 
       - name: Configure MSVC environment
-        if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true') || (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
+        if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
@@ -384,17 +469,46 @@ jobs:
           }
 
       - name: Build bundled hictk
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        id: build-hictk
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
+        continue-on-error: true
         shell: pwsh
         run: .\scripts\toolchains\build_hictk_windows.ps1 -MostlyStaticRuntime
 
       - name: Build bundled minimap2
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        id: build-minimap2
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.minimap2_ready != 'true' }}
+        continue-on-error: true
         shell: pwsh
         run: .\scripts\toolchains\build_minimap2_windows.ps1
 
+      - name: Verify bundled toolchain payload
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') }}
+        shell: pwsh
+        run: |
+          $manifest = "toolchains-dist\windows_x86_64\manifest.json"
+          if (-not (Test-Path $manifest)) {
+            Write-Host "::warning::No Windows bundled toolchain manifest was produced; hictk/minimap2 features will require external tools."
+            exit 0
+          }
+          $manifestText = Get-Content -Raw $manifest
+          if ($manifestText -notmatch '"hictk"') {
+            Write-Host "::warning::Windows bundled hictk was not built or restored; .hic conversion will require external hictk."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
+            Write-Host "::warning::Windows bundled hictk is listed in the manifest but bin\hictk.exe is missing."
+          } else {
+            & "toolchains-dist\windows_x86_64\bin\hictk.exe" --version
+          }
+          if ($manifestText -notmatch '"minimap2"') {
+            Write-Host "::warning::Windows bundled minimap2 was not built or restored; dotplot generation will require external minimap2."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\minimap2.exe")) {
+            Write-Host "::warning::Windows bundled minimap2 is listed in the manifest but bin\minimap2.exe is missing."
+          } else {
+            & "toolchains-dist\windows_x86_64\bin\minimap2.exe" --version
+          }
+
       - name: Save hictk Conan package cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
@@ -402,7 +516,7 @@ jobs:
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
       - name: Save bundled toolchain cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true') }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:

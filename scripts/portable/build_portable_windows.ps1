@@ -297,12 +297,14 @@ finally {
   Pop-Location
 }
 if ($hasPreparedWindowsToolchain) {
-  $bundledHictk = Join-Path $appDir "toolchains\windows_x86_64\bin\hictk.exe"
-  if (-not (Test-Path $bundledHictk)) {
-    throw "Portable package is missing bundled hictk at toolchains\windows_x86_64\bin\hictk.exe."
-  }
-  Invoke-Native -FilePath $bundledHictk -Arguments @("--version")
   $toolchainManifest = Join-Path $projectDir "toolchains-dist\windows_x86_64\manifest.json"
+  if ((Test-Path $toolchainManifest) -and ((Get-Content -Raw $toolchainManifest) -match '"hictk"')) {
+    $bundledHictk = Join-Path $appDir "toolchains\windows_x86_64\bin\hictk.exe"
+    if (-not (Test-Path $bundledHictk)) {
+      throw "Portable package is missing bundled hictk at toolchains\windows_x86_64\bin\hictk.exe."
+    }
+    Invoke-Native -FilePath $bundledHictk -Arguments @("--version")
+  }
   if ((Test-Path $toolchainManifest) -and ((Get-Content -Raw $toolchainManifest) -match '"minimap2"')) {
     $bundledMinimap2 = Join-Path $appDir "toolchains\windows_x86_64\bin\minimap2.exe"
     if (-not (Test-Path $bundledMinimap2)) {

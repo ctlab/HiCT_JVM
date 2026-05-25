@@ -110,11 +110,13 @@ fi
 if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
   chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" 2>/dev/null || true
   chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" 2>/dev/null || true
-  if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" ]]; then
-    echo "Portable package is missing executable bundled hictk at toolchains/linux_x86_64/bin/hictk." >&2
-    exit 1
+  if grep -q '"hictk"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+    if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" ]]; then
+      echo "Portable package is missing executable bundled hictk at toolchains/linux_x86_64/bin/hictk." >&2
+      exit 1
+    fi
+    "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" --version >/dev/null
   fi
-  "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" --version >/dev/null
   if grep -q '"minimap2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" ]]; then
       echo "Portable package is missing executable bundled minimap2 at toolchains/linux_x86_64/bin/minimap2." >&2
