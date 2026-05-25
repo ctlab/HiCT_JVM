@@ -110,6 +110,8 @@ fi
 if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
   chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" 2>/dev/null || true
   chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" 2>/dev/null || true
   if grep -q '"hictk"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" ]]; then
       echo "Portable package is missing executable bundled hictk at toolchains/linux_x86_64/bin/hictk." >&2
@@ -123,6 +125,19 @@ if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
       exit 1
     fi
     "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" --version >/dev/null
+  fi
+  if grep -q '"mm2plus_avx2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+    if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" ]]; then
+      echo "Portable package is missing executable bundled mm2-plus AVX2 at toolchains/linux_x86_64/bin/mm2plus-avx2." >&2
+      exit 1
+    fi
+    "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null
+  fi
+  if grep -q '"mm2plus_avx512"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+    if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" ]]; then
+      echo "Portable package is missing executable bundled mm2-plus AVX-512 at toolchains/linux_x86_64/bin/mm2plus-avx512." >&2
+      exit 1
+    fi
   fi
 fi
 

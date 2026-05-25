@@ -35,6 +35,7 @@ public final class AttributionInfo {
     "Eclipse Vert.x - HTTP API, routing and WebUI serving - https://vertx.io/",
     "HDF5 and JHDF5 - matrix storage and native HDF5 access - https://www.hdfgroup.org/solutions/hdf5/ and https://unlimited.ethz.ch/spaces/JHDF/overview",
     "hictk - optional .hic conversion path - https://github.com/paulsengroup/hictk",
+    "minimap2 and mm2-plus - optional FASTA self-alignment for dotplot generation - https://github.com/lh3/minimap2 and https://github.com/at-cg/mm2-plus",
     "HTSJDK and IGV BigWig - FASTA/sequence and genomic track support - https://github.com/samtools/htsjdk and https://github.com/igvteam/igv",
     "Apache Commons - JVM utilities - https://commons.apache.org/",
     "SLF4J, Logback and picocli - logging and command-line interface - https://www.slf4j.org/, https://logback.qos.ch/ and https://picocli.info/",
@@ -66,6 +67,7 @@ public final class AttributionInfo {
       "Core libraries: Eclipse Vert.x (Eclipse Foundation), HDF5/JHDF5 (The HDF Group and ETH Zurich/CISD), HTSJDK/IGV BigWig (Broad Institute/IGV team), Apache Commons, SLF4J/Logback and picocli.",
       "WebUI libraries: Vue, Vite, Pinia, Bootstrap, OpenLayers, PrimeVue, igv.js, jsPDF, LiteGraph and contributors.",
       "Optional .hic conversion: bundled hictk builds are redistributed under the hictk MIT License; cite Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.",
+      "Optional dotplot alignment: bundled minimap2/mm2-plus builds are redistributed with upstream license files and citations.",
       "Full third-party notices are kept in package metadata, portable licenses/, runtime/legal, and toolchains/<platform>/share when bundled."
     );
   }

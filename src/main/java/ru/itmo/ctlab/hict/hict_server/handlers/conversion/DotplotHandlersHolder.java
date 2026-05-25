@@ -72,7 +72,8 @@ public class DotplotHandlersHolder extends HandlersHolder {
             body.getBoolean("overwrite", false),
             Math.max(1, body.getInteger("sampleBp", 250)),
             Math.max(0, body.getInteger("minAlignmentLength", 50)),
-            body.getString("extraMinimap2Args", "")
+            body.getString("extraMinimap2Args", body.getString("extraAlignerArgs", "")),
+            body.getString("alignerPreference", ExternalToolchainManager.dotplotAlignerPreference())
           );
           final var ids = new ArrayList<String>();
           final var groupId = UUID.randomUUID().toString();
@@ -124,11 +125,13 @@ public class DotplotHandlersHolder extends HandlersHolder {
       if (Files.exists(hictPath) && !job.options.overwrite()) {
         throw new IllegalArgumentException("Output file already exists: " + hictPath.getFileName());
       }
-      final var toolchain = toolchainManager.requireDotplotToolchain();
+      final var toolchain = toolchainManager.requireDotplotToolchain(job.options.alignerPreference());
+      final var alignerName = toolchain.selectedDotplotAlignerName(job.options.alignerPreference());
+      final var alignerCommand = toolchain.selectedDotplotAlignerCommand(job.options.alignerPreference());
       job.toolchainSource = toolchain.source();
-      job.toolchainSummary = "minimap2 alignment with Java PAF/BG2 conversion and " + toolchain.source() + " hictk command " + toolchain.hictkCommand();
+      job.toolchainSummary = alignerName + " alignment with Java PAF/BG2 conversion and " + toolchain.source() + " hictk command " + toolchain.hictkCommand();
       job.toolchainNotices.clear();
-      job.toolchainNotices.add("Dotplot generation uses minimap2 for self-alignment and integrated Java PAF/BG2 conversion; Python and Cooler are not required.");
+      job.toolchainNotices.add("Dotplot generation uses " + alignerName + " (" + alignerCommand + ") for self-alignment and integrated Java PAF/BG2 conversion; Python and Cooler are not required.");
       job.toolchainNotices.addAll(toolchain.notices());
       job.toolchainCitations.clear();
       job.toolchainCitations.addAll(toolchain.citations());
@@ -150,7 +153,8 @@ public class DotplotHandlersHolder extends HandlersHolder {
           false,
           job.options.sampleBp(),
           job.options.minAlignmentLength(),
-          job.options.extraMinimap2Args()
+          job.options.extraAlignerArgs(),
+          job.options.alignerPreference()
         ),
         toolchain,
         job::log,
@@ -241,7 +245,8 @@ public class DotplotHandlersHolder extends HandlersHolder {
     boolean overwrite,
     int sampleBp,
     int minAlignmentLength,
-    @NotNull String extraMinimap2Args
+    @NotNull String extraAlignerArgs,
+    @NotNull String alignerPreference
   ) {
   }
 
@@ -264,11 +269,12 @@ public class DotplotHandlersHolder extends HandlersHolder {
     private volatile Process activeProcess = null;
     private final @NotNull AtomicBoolean cancelRequested = new AtomicBoolean(false);
     private final @NotNull CopyOnWriteArrayList<String> toolchainNotices = new CopyOnWriteArrayList<>(
-      List.of("Dotplot generation uses minimap2 plus integrated Java PAF/BG2 conversion and hictk load/zoomify; Python and Cooler are not required.")
+      List.of("Dotplot generation uses mm2-plus or minimap2 plus integrated Java PAF/BG2 conversion and hictk load/zoomify; Python and Cooler are not required.")
     );
     private final @NotNull CopyOnWriteArrayList<String> toolchainCitations = new CopyOnWriteArrayList<>(
       List.of(
         "minimap2: Li H. Bioinformatics. 2018;34(18):3094-3100.",
+        "mm2-plus: Chandra G, Vasimuddin M, Misra S, Jain C. bioRxiv 2024. doi:10.1101/2024.11.25.625328.",
         "hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408."
       )
     );

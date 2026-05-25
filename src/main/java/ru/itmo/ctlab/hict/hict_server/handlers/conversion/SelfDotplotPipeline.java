@@ -26,8 +26,9 @@ import java.util.zip.GZIPInputStream;
 /**
  * Packageable self-alignment dotplot pipeline.
  *
- * <p>minimap2 remains the aligner. HiCT replaces the legacy Python/Cooler post-processing with Java PAF
- * sampling, BG2 writing, hictk load/zoomify, and the existing .mcool -> .hict.hdf5 importer.</p>
+ * <p>minimap2-compatible aligners remain responsible for sequence alignment. HiCT replaces the legacy
+ * Python/Cooler post-processing with Java PAF sampling, BG2 writing, hictk load/zoomify, and the existing
+ * .mcool -> .hict.hdf5 importer.</p>
  */
 public final class SelfDotplotPipeline {
   private static final int BUFFER_SIZE = 1 << 20;
@@ -40,11 +41,12 @@ public final class SelfDotplotPipeline {
     if (toolchain.hictkCommand() == null) {
       throw new IllegalStateException("Dotplot generation requires bundled or configured hictk.");
     }
-    if (toolchain.minimap2Command() == null) {
-      throw new IllegalStateException("Dotplot generation requires bundled or configured minimap2.");
+    final var aligner = toolchain.selectedDotplotAlignerCommand(options.alignerPreference());
+    if (aligner == null) {
+      throw new IllegalStateException("Dotplot generation requires bundled or configured minimap2/mm2-plus aligner.");
     }
     final var hictk = Objects.requireNonNull(toolchain.hictkCommand());
-    final var minimap2 = Objects.requireNonNull(toolchain.minimap2Command());
+    final var alignerName = toolchain.selectedDotplotAlignerName(options.alignerPreference());
     final var prefix = options.outputPrefix();
     final var chromSizes = options.outputDirectory().resolve(prefix + ".chrom.sizes");
     final var bg2 = options.outputDirectory().resolve(prefix + "." + options.binSize() + ".bg2");
@@ -70,9 +72,9 @@ public final class SelfDotplotPipeline {
       final var layout = writeChromSizes(options, chromSizes, logger, cancellationRequested);
       emitStage(logger, "fasta", 1.0d, 0.12d, "Parsed " + layout.chromosomes().size() + " sequence(s)");
 
-      emitStage(logger, "align", 0.0d, 0.12d, "Running minimap2 self-alignment");
-      runMinimap2(buildMinimap2Command(minimap2, options), options.outputDirectory(), paf, logger, processSink, cancellationRequested);
-      emitStage(logger, "align", 1.0d, 0.45d, "minimap2 PAF written: " + paf.getFileName());
+      emitStage(logger, "align", 0.0d, 0.12d, "Running " + alignerName + " self-alignment");
+      runAligner(buildAlignerCommand(aligner, options), alignerName, options.outputDirectory(), paf, logger, processSink, cancellationRequested);
+      emitStage(logger, "align", 1.0d, 0.45d, alignerName + " PAF written: " + paf.getFileName());
 
       emitStage(logger, "paf_to_bg2", 0.0d, 0.45d, "Sampling PAF alignments into BG2 pixels");
       final var pixelCount = writeBg2FromPaf(options, layout, paf, bg2, logger, cancellationRequested);
@@ -129,10 +131,10 @@ public final class SelfDotplotPipeline {
     }
   }
 
-  private static @NotNull List<String> buildMinimap2Command(final @NotNull Path minimap2,
-                                                            final @NotNull Options options) {
+  private static @NotNull List<String> buildAlignerCommand(final @NotNull Path aligner,
+                                                           final @NotNull Options options) {
     final var command = new ArrayList<String>();
-    command.add(minimap2.toString());
+    command.add(aligner.toString());
     command.add("-t");
     command.add(Integer.toString(normalizeThreads(options.alignmentThreads())));
     command.add("-k");
@@ -147,7 +149,7 @@ public final class SelfDotplotPipeline {
     if (options.skipDiagonal()) {
       command.add("-D");
     }
-    command.addAll(parseExtraArguments(options.extraMinimap2Args()));
+    command.addAll(parseExtraArguments(options.extraAlignerArgs()));
     command.add(options.fastaPath().toString());
     command.add(options.fastaPath().toString());
     return command;
@@ -184,7 +186,7 @@ public final class SelfDotplotPipeline {
       }
     }
     if (quoted) {
-      throw new IllegalArgumentException("Unterminated quote in extra minimap2 arguments.");
+      throw new IllegalArgumentException("Unterminated quote in extra aligner arguments.");
     }
     if (!current.isEmpty()) {
       out.add(current.toString());
@@ -243,12 +245,13 @@ public final class SelfDotplotPipeline {
     return command;
   }
 
-  private static void runMinimap2(final @NotNull List<String> command,
-                                  final @NotNull Path workingDirectory,
-                                  final @NotNull Path outputPaf,
-                                  final @NotNull Consumer<String> logger,
-                                  final @NotNull Consumer<Process> processSink,
-                                  final @NotNull BooleanSupplier cancellationRequested) throws IOException, InterruptedException {
+  private static void runAligner(final @NotNull List<String> command,
+                                 final @NotNull String alignerName,
+                                 final @NotNull Path workingDirectory,
+                                 final @NotNull Path outputPaf,
+                                 final @NotNull Consumer<String> logger,
+                                 final @NotNull Consumer<Process> processSink,
+                                 final @NotNull BooleanSupplier cancellationRequested) throws IOException, InterruptedException {
     logger.accept("Executing: " + String.join(" ", command) + " > " + outputPaf);
     final var process = new ProcessBuilder(command)
       .directory(workingDirectory.toFile())
@@ -267,10 +270,10 @@ public final class SelfDotplotPipeline {
     }
     final int exit = process.waitFor();
     if (exit != 0) {
-      throw new IllegalStateException("minimap2 failed with exit code " + exit);
+      throw new IllegalStateException(alignerName + " failed with exit code " + exit);
     }
     if (!Files.isRegularFile(outputPaf) || Files.size(outputPaf) == 0L) {
-      throw new IllegalStateException("minimap2 produced an empty PAF file.");
+      throw new IllegalStateException(alignerName + " produced an empty PAF file.");
     }
   }
 
@@ -590,7 +593,8 @@ public final class SelfDotplotPipeline {
     boolean keepIntermediates,
     int sampleBp,
     int minAlignmentLength,
-    @NotNull String extraMinimap2Args
+    @NotNull String extraAlignerArgs,
+    @NotNull String alignerPreference
   ) {
     public Options {
       if (binSize <= 0) {
@@ -608,7 +612,8 @@ public final class SelfDotplotPipeline {
       if (minAlignmentLength < 0) {
         throw new IllegalArgumentException("minAlignmentLength cannot be negative");
       }
-      extraMinimap2Args = extraMinimap2Args == null ? "" : extraMinimap2Args.trim();
+      extraAlignerArgs = extraAlignerArgs == null ? "" : extraAlignerArgs.trim();
+      alignerPreference = alignerPreference == null || alignerPreference.isBlank() ? ExternalToolchainManager.dotplotAlignerPreference() : alignerPreference.trim();
     }
   }
 

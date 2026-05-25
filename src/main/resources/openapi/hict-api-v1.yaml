@@ -1187,6 +1187,30 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /convert/toolchain/dotplot-aligner:
+    post:
+      tags: [Conversion]
+      summary: Configure dotplot self-alignment engine preference
+      operationId: setDotplotAlignerPreference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                alignerPreference:
+                  type: string
+                  enum: [auto, minimap2, mm2plus, mm2plus-avx2, mm2plus-avx512]
+                  description: Runtime preference for dotplot self-alignment jobs.
+              required: [alignerPreference]
+      responses:
+        '200':
+          description: Updated toolchain status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
   /dotplot/jobs:
     post:
       tags: [Conversion]

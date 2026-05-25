@@ -80,6 +80,24 @@ public class ConversionHandlersHolder extends HandlersHolder {
             );
         });
 
+        router.post("/convert/toolchain/dotplot-aligner").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
+            }
+            scheduler.submit(
+              ctx,
+              RequestTaskScheduler.RequestPriority.UI_UX,
+              null,
+              () -> {
+                  final var body = ctx.body().asJsonObject();
+                  ExternalToolchainManager.setDotplotAlignerPreference(body.getString("alignerPreference", "auto"));
+                  return this.toolchainManager.inspect();
+              },
+              response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response))
+            );
+        });
+
         router.post("/convert/upload").handler(ctx -> {
             final var scheduler = getScheduler(ctx);
             if (scheduler == null) {

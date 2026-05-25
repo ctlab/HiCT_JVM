@@ -312,6 +312,19 @@ if ($hasPreparedWindowsToolchain) {
     }
     Invoke-Native -FilePath $bundledMinimap2 -Arguments @("--version")
   }
+  if ((Test-Path $toolchainManifest) -and ((Get-Content -Raw $toolchainManifest) -match '"mm2plus_avx2"')) {
+    $bundledMm2PlusAvx2 = Join-Path $appDir "toolchains\windows_x86_64\bin\mm2plus-avx2.exe"
+    if (-not (Test-Path $bundledMm2PlusAvx2)) {
+      throw "Portable package is missing bundled mm2-plus AVX2 at toolchains\windows_x86_64\bin\mm2plus-avx2.exe."
+    }
+    Invoke-Native -FilePath $bundledMm2PlusAvx2 -Arguments @("--version")
+  }
+  if ((Test-Path $toolchainManifest) -and ((Get-Content -Raw $toolchainManifest) -match '"mm2plus_avx512"')) {
+    $bundledMm2PlusAvx512 = Join-Path $appDir "toolchains\windows_x86_64\bin\mm2plus-avx512.exe"
+    if (-not (Test-Path $bundledMm2PlusAvx512)) {
+      throw "Portable package is missing bundled mm2-plus AVX-512 at toolchains\windows_x86_64\bin\mm2plus-avx512.exe."
+    }
+  }
 }
 
 $browserSource = Join-Path $projectDir "browsers-dist\windows_x86_64"

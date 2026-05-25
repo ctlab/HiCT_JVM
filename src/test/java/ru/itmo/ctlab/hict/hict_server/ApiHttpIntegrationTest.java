@@ -176,6 +176,10 @@ class ApiHttpIntegrationTest {
     assertTrue(toolchain.body().contains("\"hicConversionAvailable\""));
     assertTrue(toolchain.body().contains("\"summary\""));
 
+    final var dotplotAligner = post("/convert/toolchain/dotplot-aligner", "{\"alignerPreference\":\"minimap2\"}");
+    assertEquals(200, dotplotAligner.statusCode());
+    assertTrue(dotplotAligner.body().contains("\"dotplotAlignerPreference\":\"minimap2\""));
+
     final var fasta = post("/list_fasta_files", "{}");
     assertEquals(200, fasta.statusCode());
     assertTrue(fasta.body().contains("genome.fasta"));

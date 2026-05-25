@@ -23,6 +23,11 @@ on:
         required: true
         default: "v2.31"
         type: string
+      mm2plus_ref:
+        description: "mm2-plus tag to bundle as an optional accelerated dotplot aligner"
+        required: true
+        default: "v1.2"
+        type: string
       webui_ref:
         description: "HiCT_WebUI branch/tag/ref to bundle; use same-as-jvm to match the selected HiCT_JVM branch"
         required: true
@@ -75,6 +80,7 @@ jobs:
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+      MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
     steps:
@@ -135,7 +141,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh scripts/toolchains/build_minimap2_linux.sh
+        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh scripts/toolchains/build_minimap2_linux.sh scripts/toolchains/build_mm2plus_linux.sh
 
       - name: Restore bundled toolchain cache
         id: cache-hictk
@@ -148,6 +154,21 @@ jobs:
             toolchain-v2-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
             toolchain-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
 
+      - name: Restore bundled mm2-plus cache
+        id: cache-mm2plus
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx2
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx512
+            toolchains-dist/linux_x86_64/share/licenses/mm2plus
+            toolchains-dist/linux_x86_64/share/doc/mm2plus
+          key: toolchain-mm2plus-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
+          restore-keys: |
+            toolchain-mm2plus-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-
+            toolchain-mm2plus-linux-x86_64-ubuntu2404-
+
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -155,6 +176,12 @@ jobs:
           manifest="toolchains-dist/linux_x86_64/manifest.json"
           hictk_ready=false
           minimap2_ready=false
+          mm2plus_avx2_ready=false
+          mm2plus_avx512_ready=false
+          mm2plus_ref_ready=false
+          if [[ -f "toolchains-dist/linux_x86_64/share/doc/mm2plus/build-info.txt" ]] && grep -qx "ref=${MM2PLUS_REF}" "toolchains-dist/linux_x86_64/share/doc/mm2plus/build-info.txt"; then
+            mm2plus_ref_ready=true
+          fi
           if [[ -f "${manifest}" ]]; then
             if grep -q '"hictk"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/hictk" ]]; then
               hictk_ready=true
@@ -163,9 +190,17 @@ jobs:
               minimap2_ready=true
             fi
           fi
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx2"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" ]]; then
+            mm2plus_avx2_ready=true
+          fi
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx512"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" ]]; then
+            mm2plus_avx512_ready=true
+          fi
           echo "hictk_ready=${hictk_ready}" >> "${GITHUB_OUTPUT}"
           echo "minimap2_ready=${minimap2_ready}" >> "${GITHUB_OUTPUT}"
-          echo "hictk_ready=${hictk_ready}, minimap2_ready=${minimap2_ready}"
+          echo "mm2plus_avx2_ready=${mm2plus_avx2_ready}" >> "${GITHUB_OUTPUT}"
+          echo "mm2plus_avx512_ready=${mm2plus_avx512_ready}" >> "${GITHUB_OUTPUT}"
+          echo "hictk_ready=${hictk_ready}, minimap2_ready=${minimap2_ready}, mm2plus_avx2_ready=${mm2plus_avx2_ready}, mm2plus_avx512_ready=${mm2plus_avx512_ready}"
 
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
@@ -179,7 +214,7 @@ jobs:
             hictk-conan-linux-x86_64-ubuntu2404-
 
       - name: Install hictk build prerequisites
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true') }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
         run: |
           sudo apt-get install -y --no-install-recommends g++ gcc make cmake ninja-build python3-venv zlib1g-dev
 
@@ -196,6 +231,12 @@ jobs:
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.minimap2_ready != 'true' }}
         continue-on-error: true
         run: ./scripts/toolchains/build_minimap2_linux.sh
+
+      - name: Build bundled mm2-plus
+        id: build-mm2plus
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
+        continue-on-error: true
+        run: ./scripts/toolchains/build_mm2plus_linux.sh
 
       - name: Verify bundled toolchain payload
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') }}
@@ -219,6 +260,18 @@ jobs:
           else
             toolchains-dist/linux_x86_64/bin/minimap2 --version
           fi
+          if ! grep -q '"mm2plus_avx2"' "${manifest}"; then
+            echo "::warning::Linux bundled mm2-plus AVX2 was not built or restored; dotplot generation can still use minimap2."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" ]]; then
+            echo "::warning::Linux bundled mm2-plus AVX2 is listed in the manifest but bin/mm2plus-avx2 is missing or not executable."
+          else
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx2 --version
+          fi
+          if ! grep -q '"mm2plus_avx512"' "${manifest}"; then
+            echo "::warning::Linux bundled mm2-plus AVX-512 was not built or restored; auto mode will use AVX2/minimap2."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" ]]; then
+            echo "::warning::Linux bundled mm2-plus AVX-512 is listed in the manifest but bin/mm2plus-avx512 is missing or not executable."
+          fi
 
       - name: Save hictk Conan package cache
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
@@ -235,6 +288,18 @@ jobs:
         with:
           path: toolchains-dist/linux_x86_64
           key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
+
+      - name: Save bundled mm2-plus cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: |
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx2
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx512
+            toolchains-dist/linux_x86_64/share/licenses/mm2plus
+            toolchains-dist/linux_x86_64/share/doc/mm2plus
+          key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
       - name: Build bundled Tauri browser
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -301,6 +366,7 @@ jobs:
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+      MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
@@ -363,6 +429,21 @@ jobs:
             toolchain-v2-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
             toolchain-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
 
+      - name: Restore bundled mm2-plus cache
+        id: cache-mm2plus
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
+            toolchains-dist/windows_x86_64/share/licenses/mm2plus
+            toolchains-dist/windows_x86_64/share/doc/mm2plus
+          key: toolchain-mm2plus-windows-x86_64-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_windows.ps1') }}
+          restore-keys: |
+            toolchain-mm2plus-windows-x86_64-${{ env.MM2PLUS_REF }}-
+            toolchain-mm2plus-windows-x86_64-
+
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -371,6 +452,14 @@ jobs:
           $manifest = "toolchains-dist\windows_x86_64\manifest.json"
           $hictkReady = "false"
           $minimap2Ready = "false"
+          $mm2PlusAvx2Ready = "false"
+          $mm2PlusAvx512Ready = "false"
+          $mm2PlusRefReady = "false"
+          $mm2PlusBuildInfo = "toolchains-dist\windows_x86_64\share\doc\mm2plus\build-info.txt"
+          if ((Test-Path $mm2PlusBuildInfo) -and (Select-String -Path $mm2PlusBuildInfo -Pattern "^ref=$([regex]::Escape($env:MM2PLUS_REF))$" -Quiet)) {
+            $mm2PlusRefReady = "true"
+          }
+          $manifestText = ""
           if (Test-Path $manifest) {
             $manifestText = Get-Content -Raw $manifest
             if ($manifestText -match '"hictk"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
@@ -380,9 +469,17 @@ jobs:
               $minimap2Ready = "true"
             }
           }
+          if ($mm2PlusRefReady -eq "true" -and (Test-Path $manifest) -and $manifestText -match '"mm2plus_avx2"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe")) {
+            $mm2PlusAvx2Ready = "true"
+          }
+          if ($mm2PlusRefReady -eq "true" -and (Test-Path $manifest) -and $manifestText -match '"mm2plus_avx512"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe")) {
+            $mm2PlusAvx512Ready = "true"
+          }
           "hictk_ready=$hictkReady" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "minimap2_ready=$minimap2Ready" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          Write-Host "hictk_ready=$hictkReady, minimap2_ready=$minimap2Ready"
+          "mm2plus_avx2_ready=$mm2PlusAvx2Ready" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "mm2plus_avx512_ready=$mm2PlusAvx512Ready" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "hictk_ready=$hictkReady, minimap2_ready=$minimap2Ready, mm2plus_avx2_ready=$mm2PlusAvx2Ready, mm2plus_avx512_ready=$mm2PlusAvx512Ready"
 
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
@@ -482,6 +579,13 @@ jobs:
         shell: pwsh
         run: .\scripts\toolchains\build_minimap2_windows.ps1
 
+      - name: Build bundled mm2-plus
+        id: build-mm2plus
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
+        continue-on-error: true
+        shell: pwsh
+        run: .\scripts\toolchains\build_mm2plus_windows.ps1
+
       - name: Verify bundled toolchain payload
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') }}
         shell: pwsh
@@ -506,6 +610,18 @@ jobs:
           } else {
             & "toolchains-dist\windows_x86_64\bin\minimap2.exe" --version
           }
+          if ($manifestText -notmatch '"mm2plus_avx2"') {
+            Write-Host "::warning::Windows bundled mm2-plus AVX2 was not built or restored; dotplot generation can still use minimap2."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe")) {
+            Write-Host "::warning::Windows bundled mm2-plus AVX2 is listed in the manifest but bin\mm2plus-avx2.exe is missing."
+          } else {
+            & "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe" --version
+          }
+          if ($manifestText -notmatch '"mm2plus_avx512"') {
+            Write-Host "::warning::Windows bundled mm2-plus AVX-512 was not built or restored; auto mode will use AVX2/minimap2."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe")) {
+            Write-Host "::warning::Windows bundled mm2-plus AVX-512 is listed in the manifest but bin\mm2plus-avx512.exe is missing."
+          }
 
       - name: Save hictk Conan package cache
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
@@ -522,6 +638,18 @@ jobs:
         with:
           path: toolchains-dist/windows_x86_64
           key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
+
+      - name: Save bundled mm2-plus cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: |
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
+            toolchains-dist/windows_x86_64/share/licenses/mm2plus
+            toolchains-dist/windows_x86_64/share/doc/mm2plus
+          key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
       - name: Install 7-Zip for portable EXE
         if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}

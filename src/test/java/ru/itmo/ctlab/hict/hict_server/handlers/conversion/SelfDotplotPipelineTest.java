@@ -56,6 +56,7 @@ class SelfDotplotPipelineTest {
         true,
         100,
         50,
+        "",
         ""
       ),
       layout,
@@ -119,6 +120,7 @@ class SelfDotplotPipelineTest {
         true,
         25,
         10,
+        "",
         ""
       ),
       new ExternalToolchainManager.ResolvedToolchain(
@@ -126,6 +128,8 @@ class SelfDotplotPipelineTest {
         "test",
         hictk,
         minimap2,
+        null,
+        null,
         null,
         null,
         List.of(),
