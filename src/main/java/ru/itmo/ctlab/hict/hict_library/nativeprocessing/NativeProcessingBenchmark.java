@@ -58,10 +58,15 @@ public final class NativeProcessingBenchmark {
 
     final var javaOutput = new double[elementCount];
     final var nativeOutput = new double[elementCount];
+    final var diagonalMeans = buildDiagonalMeans(input, rows, columns);
+    final var javaExpectedOutput = new double[elementCount];
+    final var nativeExpectedOutput = new double[elementCount];
 
     for (int i = 0; i < warmupIterations; i++) {
       computeJava(input, rowWeights, columnWeights, rows, columns, javaOutput);
       processor.computeBaseSignalDouble(input, rowWeights, columnWeights, rows, columns, Math.log(10.0d), 1.125d, 0.75d, true, true, true, nativeOutput);
+      computeObservedOverExpectedJava(input, diagonalMeans, rows, columns, javaExpectedOutput);
+      processor.transformExpectedSignal(input, rows, columns, 0L, 0L, 2, 0L, diagonalMeans, nativeExpectedOutput);
     }
 
     long javaNanos = 0L;
@@ -86,12 +91,42 @@ public final class NativeProcessingBenchmark {
       throw new IllegalStateException("Native benchmark output differs from Java implementation, maxAbsDiff=" + maxAbsDiff);
     }
 
+    long javaExpectedNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      final long started = System.nanoTime();
+      computeObservedOverExpectedJava(input, diagonalMeans, rows, columns, javaExpectedOutput);
+      javaExpectedNanos += System.nanoTime() - started;
+    }
+
+    long nativeExpectedNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      final long started = System.nanoTime();
+      final boolean ok = processor.transformExpectedSignal(input, rows, columns, 0L, 0L, 2, 0L, diagonalMeans, nativeExpectedOutput);
+      nativeExpectedNanos += System.nanoTime() - started;
+      if (!ok) {
+        throw new IllegalStateException("Native observed/expected benchmark computation was rejected");
+      }
+    }
+
+    final double expectedMaxAbsDiff = maxAbsDiff(javaExpectedOutput, nativeExpectedOutput);
+    if (expectedMaxAbsDiff > 1.0e-12d) {
+      throw new IllegalStateException("Native observed/expected benchmark output differs from Java implementation, maxAbsDiff=" + expectedMaxAbsDiff);
+    }
+
     final double javaMillis = nanosToMillis(javaNanos) / measuredIterations;
     final double nativeMillis = nanosToMillis(nativeNanos) / measuredIterations;
-    System.out.printf(Locale.ROOT, "  Java mean:   %.3f ms%n", javaMillis);
-    System.out.printf(Locale.ROOT, "  Native mean: %.3f ms%n", nativeMillis);
-    System.out.printf(Locale.ROOT, "  Speedup:     %.3fx%n", javaMillis / Math.max(nativeMillis, 1.0e-9d));
-    System.out.printf(Locale.ROOT, "  Max abs diff: %.3g%n", maxAbsDiff);
+    final double javaExpectedMillis = nanosToMillis(javaExpectedNanos) / measuredIterations;
+    final double nativeExpectedMillis = nanosToMillis(nativeExpectedNanos) / measuredIterations;
+    System.out.println("  Base signal preparation:");
+    System.out.printf(Locale.ROOT, "    Java mean:   %.3f ms%n", javaMillis);
+    System.out.printf(Locale.ROOT, "    Native mean: %.3f ms%n", nativeMillis);
+    System.out.printf(Locale.ROOT, "    Speedup:     %.3fx%n", javaMillis / Math.max(nativeMillis, 1.0e-9d));
+    System.out.printf(Locale.ROOT, "    Max abs diff: %.3g%n", maxAbsDiff);
+    System.out.println("  Observed/expected transform:");
+    System.out.printf(Locale.ROOT, "    Java mean:   %.3f ms%n", javaExpectedMillis);
+    System.out.printf(Locale.ROOT, "    Native mean: %.3f ms%n", nativeExpectedMillis);
+    System.out.printf(Locale.ROOT, "    Speedup:     %.3fx%n", javaExpectedMillis / Math.max(nativeExpectedMillis, 1.0e-9d));
+    System.out.printf(Locale.ROOT, "    Max abs diff: %.3g%n", expectedMaxAbsDiff);
   }
 
   private static int readIntProperty(final @NotNull String propertyName,
@@ -148,6 +183,51 @@ public final class NativeProcessingBenchmark {
         output[offset] = Double.isFinite(signal) ? signal : 0.0d;
       }
     }
+  }
+
+  private static double @NotNull [] buildDiagonalMeans(final double @NotNull [] input,
+                                                       final int rows,
+                                                       final int columns) {
+    final int diagonals = Math.max(rows, columns);
+    final var sums = new double[diagonals];
+    final var counts = new long[diagonals];
+    for (int row = 0; row < rows; row++) {
+      final int rowOffset = row * columns;
+      for (int column = 0; column < columns; column++) {
+        final int diagonal = Math.abs(column - row);
+        final var signal = sanitizePositive(input[rowOffset + column]);
+        if (signal > 0.0d) {
+          sums[diagonal] += signal;
+          counts[diagonal]++;
+        }
+      }
+    }
+    final var means = new double[diagonals];
+    for (int diagonal = 0; diagonal < diagonals; diagonal++) {
+      means[diagonal] = counts[diagonal] == 0L ? 0.0d : sums[diagonal] / counts[diagonal];
+    }
+    return means;
+  }
+
+  private static void computeObservedOverExpectedJava(final double @NotNull [] input,
+                                                      final double @NotNull [] diagonalMeans,
+                                                      final int rows,
+                                                      final int columns,
+                                                      final double @NotNull [] output) {
+    for (int row = 0; row < rows; row++) {
+      final int rowOffset = row * columns;
+      for (int column = 0; column < columns; column++) {
+        final int offset = rowOffset + column;
+        final var expected = diagonalMeans[Math.abs(column - row)];
+        output[offset] = expected > 1.0e-12d && Double.isFinite(expected)
+          ? sanitizePositive(input[offset]) / expected
+          : 0.0d;
+      }
+    }
+  }
+
+  private static double sanitizePositive(final double signal) {
+    return !Double.isFinite(signal) || signal <= 0.0d ? 0.0d : signal;
   }
 
   private static double maxAbsDiff(final double @NotNull [] expected,

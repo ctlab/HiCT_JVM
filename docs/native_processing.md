@@ -11,14 +11,17 @@ The current native library offloads:
 - base signal preparation for `double` matrix tiles;
 - base signal preparation for `long` matrix tiles;
 - simple linear-gradient RGBA rasterization.
+- observed/expected and expected-only distance normalization for non-segmented
+  diagonal profiles;
 - dense/sparse stripe-block counting used by `.mcool -> .hict.hdf5`
   conversion.
 
-HDF5 I/O, assembly/scaffold mutations, expected-normalization profile
+HDF5 I/O, assembly/scaffold mutations, segmented expected-normalization profile
 construction, and full rendering-pipeline graph evaluation still use the Java
-implementation. Native conversion/HDF5 hooks should be added only when they can
-be parity-tested against the Java converters on representative `.mcool` and
-`.hict.hdf5` files; until then conversion commands stay on the proven Java path.
+implementation. Native conversion/HDF5 hooks are being added incrementally only
+where the native output can be parity-tested against the Java converters on
+representative `.mcool` and `.hict.hdf5` files; until then conversion commands
+stay on the proven Java path.
 
 Two binary variants are built on x86-64 toolchains that support them:
 
@@ -60,6 +63,30 @@ Legacy single-variant builds are still available:
 The benchmark runs one JVM per native variant so JNI symbol binding cannot mix
 baseline and AVX-512 libraries in the same process. It verifies deterministic
 tile-processing parity before reporting timing.
+
+## JHDF5 / HDF5 Native Builds
+
+The companion `jhdf5-with-plugins-configuration-snapshot` repository keeps the
+dynamic-linking HDF5/JHDF5 build layout required for compression plugins. It now
+contains repeatable Linux amd64 variant scripts:
+
+```bash
+cd ../jhdf5-with-plugins-configuration-snapshot/source/c
+curl -L -o CMake-hdf5-1.10.11.zip \
+  https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.10/hdf5-1.10.11/src/CMake-hdf5-1.10.11.zip
+JAVA_HOME=/path/to/jdk ./build_linux_amd64_variants.sh generic baseline avx512
+```
+
+The script deploys to `libs/native/jhdf5/amd64-Linux-generic`,
+`libs/native/jhdf5/amd64-Linux-baseline`, and
+`libs/native/jhdf5/amd64-Linux-avx512`. The generic build is the portable amd64
+fallback. The AVX2 and AVX-512 builds are intentionally separate binary sets:
+they must only be loaded on CPUs with the matching instruction-set support.
+The Linux scripts build and deploy the compression plugins from the HDF5 plugin
+archive first; legacy plugin copies are a fallback only when plugin targets were
+not produced by the current build.
+Windows amd64 has an analogous `build_windows_amd64_variants.ps1` entry point
+for Visual Studio x64 Native Tools shells.
 
 ## Runtime Selection
 

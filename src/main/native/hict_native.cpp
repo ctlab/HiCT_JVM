@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <vector>
 
@@ -47,6 +48,13 @@ bool valid_extent(const jint rows, const jint columns, const jsize element_count
 
 double sanitize_signal(double signal) {
   if (!std::isfinite(signal) || signal < 0.0) {
+    return 0.0;
+  }
+  return signal;
+}
+
+double sanitize_positive_signal(double signal) {
+  if (!std::isfinite(signal) || signal <= 0.0) {
     return 0.0;
   }
   return signal;
@@ -189,6 +197,48 @@ bool count_stripe_blocks(const jlong* column_bins,
   }
   output_sparse_dense_counts[0] = static_cast<jlong>(sparse);
   output_sparse_dense_counts[1] = static_cast<jlong>(dense);
+  return true;
+}
+
+bool transform_expected_signal(const double* signal,
+                               const jint rows,
+                               const jint columns,
+                               const jlong start_row_px,
+                               const jlong start_col_px,
+                               const jint display_mode_code,
+                               const jlong min_diagonal,
+                               const double* diagonal_means,
+                               const jsize diagonal_mean_count,
+                               double* output) {
+  if (signal == nullptr || diagonal_means == nullptr || output == nullptr) {
+    return false;
+  }
+  if (display_mode_code != 1 && display_mode_code != 2) {
+    return false;
+  }
+
+  for (jint row = 0; row < rows; ++row) {
+    const auto absolute_row_px = start_row_px + row;
+    const auto row_to_col_delta = start_col_px - absolute_row_px;
+    const auto row_offset = static_cast<std::int64_t>(row) * columns;
+    for (jint column = 0; column < columns; ++column) {
+      const auto delta = row_to_col_delta + column;
+      const auto diagonal = delta >= 0 ? delta : -delta;
+      const auto diagonal_index = diagonal - min_diagonal;
+      double expected = 0.0;
+      if (diagonal_index >= 0 && diagonal_index < diagonal_mean_count) {
+        expected = diagonal_means[diagonal_index];
+      }
+
+      const auto offset = row_offset + column;
+      if (display_mode_code == 1) {
+        output[offset] = expected;
+      } else {
+        const auto observed = sanitize_positive_signal(signal[offset]);
+        output[offset] = expected > 1.0e-12 && std::isfinite(expected) ? observed / expected : 0.0;
+      }
+    }
+  }
   return true;
 }
 
@@ -451,5 +501,63 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
 
   env->ReleaseLongArrayElements(column_bins_array, column_bins, JNI_ABORT);
   env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeTransformExpectedSignal(
+  JNIEnv* env,
+  jclass,
+  jdoubleArray signal_array,
+  jint rows,
+  jint columns,
+  jlong start_row_px,
+  jlong start_col_px,
+  jint display_mode_code,
+  jlong min_diagonal,
+  jdoubleArray diagonal_means_array,
+  jdoubleArray output_array
+) {
+  if (signal_array == nullptr || diagonal_means_array == nullptr || output_array == nullptr) {
+    return JNI_FALSE;
+  }
+  const auto signal_length = env->GetArrayLength(signal_array);
+  const auto output_length = env->GetArrayLength(output_array);
+  if (!valid_extent(rows, columns, signal_length) || !valid_extent(rows, columns, output_length)) {
+    return JNI_FALSE;
+  }
+
+  auto* signal = static_cast<jdouble*>(env->GetPrimitiveArrayCritical(signal_array, nullptr));
+  auto* diagonal_means = static_cast<jdouble*>(env->GetPrimitiveArrayCritical(diagonal_means_array, nullptr));
+  auto* output = static_cast<jdouble*>(env->GetPrimitiveArrayCritical(output_array, nullptr));
+  if (signal == nullptr || diagonal_means == nullptr || output == nullptr) {
+    if (signal != nullptr) {
+      env->ReleasePrimitiveArrayCritical(signal_array, signal, JNI_ABORT);
+    }
+    if (diagonal_means != nullptr) {
+      env->ReleasePrimitiveArrayCritical(diagonal_means_array, diagonal_means, JNI_ABORT);
+    }
+    if (output != nullptr) {
+      env->ReleasePrimitiveArrayCritical(output_array, output, JNI_ABORT);
+    }
+    return JNI_FALSE;
+  }
+
+  const auto ok = transform_expected_signal(
+    signal,
+    rows,
+    columns,
+    start_row_px,
+    start_col_px,
+    display_mode_code,
+    min_diagonal,
+    diagonal_means,
+    env->GetArrayLength(diagonal_means_array),
+    output
+  );
+
+  env->ReleasePrimitiveArrayCritical(signal_array, signal, JNI_ABORT);
+  env->ReleasePrimitiveArrayCritical(diagonal_means_array, diagonal_means, JNI_ABORT);
+  env->ReleasePrimitiveArrayCritical(output_array, output, ok ? 0 : JNI_ABORT);
   return ok ? JNI_TRUE : JNI_FALSE;
 }

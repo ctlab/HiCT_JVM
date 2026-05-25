@@ -153,8 +153,30 @@ final class NativeTileProcessor {
     );
   }
 
+  boolean transformExpectedSignal(final double @NotNull [] signal,
+                                  final int rows,
+                                  final int columns,
+                                  final long startRowPx,
+                                  final long startColPx,
+                                  final int displayModeCode,
+                                  final long minDiagonal,
+                                  final double @NotNull [] diagonalMeans,
+                                  final double @NotNull [] output) {
+    return nativeTransformExpectedSignal(
+      signal,
+      rows,
+      columns,
+      startRowPx,
+      startColPx,
+      displayModeCode,
+      minDiagonal,
+      diagonalMeans,
+      output
+    );
+  }
+
   private static @NotNull LoadReport tryLoad() {
-    final var explicitPath = firstNonBlank(
+    final var explicitPath = NativeCpuFeatures.firstNonBlank(
       System.getProperty("hict.native.library.path"),
       System.getenv("HICT_NATIVE_LIBRARY_PATH")
     );
@@ -167,7 +189,7 @@ final class NativeTileProcessor {
       return report;
     }
 
-    final var explicitDirectory = firstNonBlank(
+    final var explicitDirectory = NativeCpuFeatures.firstNonBlank(
       System.getProperty("hict.native.library.dir"),
       System.getenv("HICT_NATIVE_LIBRARY_DIR")
     );
@@ -282,7 +304,7 @@ final class NativeTileProcessor {
   }
 
   private static @NotNull List<String> preferredLibraryBaseNames() {
-    final var requestedVariant = firstNonBlank(
+    final var requestedVariant = NativeCpuFeatures.firstNonBlank(
       System.getProperty(NATIVE_VARIANT_PROPERTY),
       System.getenv(NATIVE_VARIANT_ENV)
     );
@@ -295,51 +317,16 @@ final class NativeTileProcessor {
       return result;
     }
     if ("avx512".equals(normalizedVariant)) {
-      if (supportsAvx512Core()) {
+      if (NativeCpuFeatures.supportsAvx512Core()) {
         result.add(AVX512_LIBRARY_BASE_NAME);
       }
       return result;
     }
-    if (supportsAvx512Core()) {
+    if (NativeCpuFeatures.supportsAvx512Core()) {
       result.add(AVX512_LIBRARY_BASE_NAME);
     }
     result.add(BASELINE_LIBRARY_BASE_NAME);
     return result;
-  }
-
-  private static boolean supportsAvx512Core() {
-    final var disabled = firstNonBlank(
-      System.getProperty("hict.native.disableAvx512"),
-      System.getenv("HICT_NATIVE_DISABLE_AVX512")
-    );
-    if (isTruthy(disabled)) {
-      return false;
-    }
-    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-    if (!os.contains("linux")) {
-      return false;
-    }
-    try {
-      final var cpuInfo = Files.readString(Path.of("/proc/cpuinfo")).toLowerCase(Locale.ROOT);
-      return cpuInfo.contains("avx512f")
-        && cpuInfo.contains("avx512dq")
-        && cpuInfo.contains("avx512bw")
-        && cpuInfo.contains("avx512vl");
-    } catch (final IOException err) {
-      log.debug("Could not inspect /proc/cpuinfo for AVX-512 support", err);
-      return false;
-    }
-  }
-
-  private static boolean isTruthy(final @Nullable String value) {
-    if (value == null || value.isBlank()) {
-      return false;
-    }
-    final var normalized = value.trim().toLowerCase(Locale.ROOT);
-    return normalized.equals("1")
-      || normalized.equals("true")
-      || normalized.equals("yes")
-      || normalized.equals("on");
   }
 
   private static @NotNull LoadReport loaded(final @NotNull String source,
@@ -351,15 +338,6 @@ final class NativeTileProcessor {
       source,
       ""
     );
-  }
-
-  private static @Nullable String firstNonBlank(final @Nullable String... values) {
-    for (final var value : values) {
-      if (value != null && !value.isBlank()) {
-        return value.trim();
-      }
-    }
-    return null;
   }
 
   private static native @Nullable String nativeVersion();
@@ -404,6 +382,16 @@ final class NativeTileProcessor {
                                                         int submatrixSize,
                                                         int denseThreshold,
                                                         long[] outputSparseDenseCounts);
+
+  private static native boolean nativeTransformExpectedSignal(double[] signal,
+                                                              int rows,
+                                                              int columns,
+                                                              long startRowPx,
+                                                              long startColPx,
+                                                              int displayModeCode,
+                                                              long minDiagonal,
+                                                              double[] diagonalMeans,
+                                                              double[] output);
 
   enum LoadState {
     NOT_ATTEMPTED,

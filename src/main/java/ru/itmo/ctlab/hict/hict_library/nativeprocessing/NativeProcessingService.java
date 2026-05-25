@@ -28,6 +28,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
+import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
+import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
@@ -224,6 +226,51 @@ public final class NativeProcessingService {
     } catch (final Throwable err) {
       recordProcessingFailure("Native stripe-block counting failed: " + err.getMessage());
       log.warn("Native stripe-block counting failed; falling back to Java implementation", err);
+      return null;
+    }
+  }
+
+  public double @Nullable [][] tryTransformExpectedSignal(final double @NotNull [][] signal,
+                                                          final long startRowPx,
+                                                          final long startColPx,
+                                                          final @NotNull SignalDisplayMode displayMode,
+                                                          final @NotNull DistanceExpectedNormalizer.DiagonalProfile profile) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure || displayMode == SignalDisplayMode.OBSERVED) {
+      return null;
+    }
+    if (!isNativeProcessingActive()) {
+      return null;
+    }
+    if (profile.segmentProfiles().length != 0) {
+      return null;
+    }
+    final var rows = signal.length;
+    final var columns = rows > 0 ? signal[0].length : 0;
+    final var elementCount = checkedElementCount(rows, columns);
+    if (elementCount < 0) {
+      return null;
+    }
+    final var output = new double[elementCount];
+    try {
+      final var computed = this.nativeTileProcessor.transformExpectedSignal(
+        flattenDoubleMatrix(signal, rows, columns),
+        rows,
+        columns,
+        startRowPx,
+        startColPx,
+        displayMode == SignalDisplayMode.EXPECTED ? 1 : 2,
+        profile.minDiagonal(),
+        profile.means(),
+        output
+      );
+      if (!computed) {
+        recordProcessingFailure("Native observed/expected transformer rejected the input");
+        return null;
+      }
+      return inflateDoubleMatrix(output, rows, columns);
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native observed/expected transform failed: " + err.getMessage());
+      log.warn("Native observed/expected transform failed; falling back to Java implementation", err);
       return null;
     }
   }

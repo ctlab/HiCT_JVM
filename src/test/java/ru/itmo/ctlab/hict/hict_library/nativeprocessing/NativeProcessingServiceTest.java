@@ -28,6 +28,8 @@ import org.junit.jupiter.api.Test;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
+import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
+import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -179,6 +181,64 @@ class NativeProcessingServiceTest {
         sparseDenseCounts
       ));
       assertArrayEquals(new long[]{3L, 1L}, sparseDenseCounts);
+
+      final double[][] expectedTransformInput = {
+        {0.0d, 2.0d, 4.0d},
+        {-1.0d, Double.NaN, 10.0d}
+      };
+      final var diagonalProfile = DistanceExpectedNormalizer.buildProfile(
+        expectedTransformInput,
+        10L,
+        12L,
+        -1
+      );
+      final var expectedFlattened = new double[6];
+      assertTrue(processor.transformExpectedSignal(
+        flatten(expectedTransformInput),
+        2,
+        3,
+        10L,
+        12L,
+        1,
+        diagonalProfile.minDiagonal(),
+        diagonalProfile.means(),
+        expectedFlattened
+      ));
+      assertMatrixEquals(
+        DistanceExpectedNormalizer.transformSignal(
+          expectedTransformInput,
+          10L,
+          12L,
+          SignalDisplayMode.EXPECTED,
+          diagonalProfile
+        ),
+        inflate(expectedFlattened, 2, 3),
+        1.0e-12
+      );
+
+      final var observedOverExpectedFlattened = new double[6];
+      assertTrue(processor.transformExpectedSignal(
+        flatten(expectedTransformInput),
+        2,
+        3,
+        10L,
+        12L,
+        2,
+        diagonalProfile.minDiagonal(),
+        diagonalProfile.means(),
+        observedOverExpectedFlattened
+      ));
+      assertMatrixEquals(
+        DistanceExpectedNormalizer.transformSignal(
+          expectedTransformInput,
+          10L,
+          12L,
+          SignalDisplayMode.OBSERVED_OVER_EXPECTED,
+          diagonalProfile
+        ),
+        inflate(observedOverExpectedFlattened, 2, 3),
+        1.0e-12
+      );
     } finally {
       if (previousPath == null) {
         System.clearProperty("hict.native.library.path");
@@ -237,6 +297,39 @@ class NativeProcessingServiceTest {
     assertEquals(expected.length, actual.length);
     for (int index = 0; index < expected.length; index++) {
       assertEquals(expected[index], Byte.toUnsignedInt(actual[index]), "byte index " + index);
+    }
+  }
+
+  private static double[] flatten(final double[][] matrix) {
+    final int rows = matrix.length;
+    final int columns = rows == 0 ? 0 : matrix[0].length;
+    final var result = new double[rows * columns];
+    var dst = 0;
+    for (final var row : matrix) {
+      System.arraycopy(row, 0, result, dst, columns);
+      dst += columns;
+    }
+    return result;
+  }
+
+  private static double[][] inflate(final double[] values,
+                                    final int rows,
+                                    final int columns) {
+    final var result = new double[rows][columns];
+    var src = 0;
+    for (int row = 0; row < rows; row++) {
+      System.arraycopy(values, src, result[row], 0, columns);
+      src += columns;
+    }
+    return result;
+  }
+
+  private static void assertMatrixEquals(final double[][] expected,
+                                         final double[][] actual,
+                                         final double delta) {
+    assertEquals(expected.length, actual.length);
+    for (int row = 0; row < expected.length; row++) {
+      assertArrayEquals(expected[row], actual[row], delta, "row " + row);
     }
   }
 }
