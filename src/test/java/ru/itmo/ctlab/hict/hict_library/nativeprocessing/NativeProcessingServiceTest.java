@@ -126,6 +126,11 @@ class NativeProcessingServiceTest {
         output,
         1.0e-12
       );
+      final var firstSessionReport = processor.sessionReport();
+      assertTrue(firstSessionReport.active());
+      assertTrue(firstSessionReport.operationCount() >= 1L);
+      assertEquals(0L, firstSessionReport.failedOperationCount());
+      assertFalse(firstSessionReport.hdf5BackendAvailable());
 
       final long[] longInput = {
         0L, 3L, 7L,
@@ -311,6 +316,10 @@ class NativeProcessingServiceTest {
         inflate(observedOverExpectedFlattened, 2, 3),
         1.0e-12
       );
+      final var finalSessionReport = processor.sessionReport();
+      assertTrue(finalSessionReport.active());
+      assertTrue(finalSessionReport.operationCount() >= firstSessionReport.operationCount() + 13L);
+      assertEquals(0L, finalSessionReport.failedOperationCount());
     } finally {
       if (previousPath == null) {
         System.clearProperty("hict.native.library.path");

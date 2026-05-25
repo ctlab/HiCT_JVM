@@ -25,7 +25,15 @@ and continues with Java.
 
 ## Stage 2: Native HDF5 Facade
 
-Status: not implemented yet.
+Status: session layer implemented; HDF5 C resource ownership not implemented
+yet.
+
+The Java runtime now owns only an opaque native processing session handle when
+native processing is enabled. All implemented native kernels receive that handle,
+and the `/native_processing/status` payload reports whether the session is
+active, native operation counters, failed native operation counters, and whether
+native HDF5 ownership is active. At this stage the HDF5 flag intentionally stays
+false: existing readers and writers still use JHDF5.
 
 Introduce a narrow Java interface for the HDF5 operations HiCT actually needs:
 

@@ -25,9 +25,11 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <new>
 #include <vector>
 
 #if defined(HICT_NATIVE_AVX512) && defined(__AVX512F__)
@@ -40,8 +42,37 @@ namespace {
 #define HICT_NATIVE_VARIANT "baseline"
 #endif
 
-constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.3-" HICT_NATIVE_VARIANT;
+constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.4-" HICT_NATIVE_VARIANT;
 constexpr std::int64_t PARALLEL_THRESHOLD = 131072;
+
+struct NativeBackendSession {
+  std::atomic<jlong> operation_count{0};
+  std::atomic<jlong> failed_operation_count{0};
+  bool hdf5_backend_available{false};
+};
+
+NativeBackendSession* session_from_handle(const jlong session_handle) {
+  if (session_handle == 0) {
+    return nullptr;
+  }
+  return reinterpret_cast<NativeBackendSession*>(session_handle);
+}
+
+jboolean native_result(const jlong session_handle, const bool ok) {
+  auto* session = session_from_handle(session_handle);
+  if (session == nullptr) {
+    return JNI_FALSE;
+  }
+  session->operation_count.fetch_add(1, std::memory_order_relaxed);
+  if (!ok) {
+    session->failed_operation_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+jboolean native_failure(const jlong session_handle) {
+  return native_result(session_handle, false);
+}
 
 bool valid_extent(const jint rows, const jint columns, const jsize element_count) {
   if (rows < 0 || columns < 0) {
@@ -605,10 +636,47 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   return env->NewStringUTF(HICT_NATIVE_VERSION);
 }
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeOpenSession(JNIEnv*, jclass) {
+  auto* session = new (std::nothrow) NativeBackendSession();
+  return reinterpret_cast<jlong>(session);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSessionOperationCount(
+  JNIEnv*,
+  jclass,
+  jlong session_handle
+) {
+  auto* session = session_from_handle(session_handle);
+  return session == nullptr ? 0 : session->operation_count.load(std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSessionFailedOperationCount(
+  JNIEnv*,
+  jclass,
+  jlong session_handle
+) {
+  auto* session = session_from_handle(session_handle);
+  return session == nullptr ? 0 : session->failed_operation_count.load(std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSessionHdf5Available(
+  JNIEnv*,
+  jclass,
+  jlong session_handle
+) {
+  auto* session = session_from_handle(session_handle);
+  return session != nullptr && session->hdf5_backend_available ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeComputeBaseSignalDouble(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jdoubleArray input_array,
   jdoubleArray row_weights_array,
   jdoubleArray column_weights_array,
@@ -622,19 +690,22 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   jboolean apply_cooler_weights,
   jdoubleArray output_array
 ) {
-  if (input_array == nullptr || output_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (input_array == nullptr || output_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto input_length = env->GetArrayLength(input_array);
   const auto output_length = env->GetArrayLength(output_array);
   if (!valid_extent(rows, columns, input_length) || !valid_extent(rows, columns, output_length)) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
   if (row_weights_array != nullptr && env->GetArrayLength(row_weights_array) < rows) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
   if (column_weights_array != nullptr && env->GetArrayLength(column_weights_array) < columns) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* input = env->GetDoubleArrayElements(input_array, nullptr);
@@ -654,7 +725,7 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output != nullptr) {
       env->ReleaseDoubleArrayElements(output_array, output, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = compute_base_signal(
@@ -680,13 +751,14 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     env->ReleaseDoubleArrayElements(column_weights_array, column_weights, JNI_ABORT);
   }
   env->ReleaseDoubleArrayElements(output_array, output, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeComputeBaseSignalLong(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jlongArray input_array,
   jdoubleArray row_weights_array,
   jdoubleArray column_weights_array,
@@ -700,19 +772,22 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   jboolean apply_cooler_weights,
   jdoubleArray output_array
 ) {
-  if (input_array == nullptr || output_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (input_array == nullptr || output_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto input_length = env->GetArrayLength(input_array);
   const auto output_length = env->GetArrayLength(output_array);
   if (!valid_extent(rows, columns, input_length) || !valid_extent(rows, columns, output_length)) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
   if (row_weights_array != nullptr && env->GetArrayLength(row_weights_array) < rows) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
   if (column_weights_array != nullptr && env->GetArrayLength(column_weights_array) < columns) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* input = env->GetLongArrayElements(input_array, nullptr);
@@ -732,7 +807,7 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output != nullptr) {
       env->ReleaseDoubleArrayElements(output_array, output, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = compute_base_signal(
@@ -758,13 +833,14 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     env->ReleaseDoubleArrayElements(column_weights_array, column_weights, JNI_ABORT);
   }
   env->ReleaseDoubleArrayElements(output_array, output, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeMapLinearGradientRgba(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jdoubleArray signal_array,
   jint rows,
   jint columns,
@@ -774,17 +850,20 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   jdouble max_signal,
   jbyteArray output_rgba_array
 ) {
-  if (signal_array == nullptr || start_rgba_array == nullptr || end_rgba_array == nullptr || output_rgba_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (signal_array == nullptr || start_rgba_array == nullptr || end_rgba_array == nullptr || output_rgba_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto signal_length = env->GetArrayLength(signal_array);
   const auto output_length = env->GetArrayLength(output_rgba_array);
   if (!valid_extent(rows, columns, signal_length)) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
   const auto element_count = static_cast<std::int64_t>(rows) * columns;
   if (output_length < element_count * 4 || env->GetArrayLength(start_rgba_array) < 4 || env->GetArrayLength(end_rgba_array) < 4) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* signal = env->GetDoubleArrayElements(signal_array, nullptr);
@@ -804,7 +883,7 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output_rgba != nullptr) {
       env->ReleaseByteArrayElements(output_rgba_array, output_rgba, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = map_linear_gradient_rgba(signal, rows, columns, start_rgba, end_rgba, min_signal, max_signal, output_rgba);
@@ -813,43 +892,51 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   env->ReleaseFloatArrayElements(start_rgba_array, start_rgba, JNI_ABORT);
   env->ReleaseFloatArrayElements(end_rgba_array, end_rgba, JNI_ABORT);
   env->ReleaseByteArrayElements(output_rgba_array, output_rgba, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeApplyPostLog(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jdoubleArray values_array,
   jdouble ln_post_log_base
 ) {
-  if (values_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (values_array == nullptr) {
+    return native_failure(session_handle);
   }
   auto* values = static_cast<jdouble*>(env->GetPrimitiveArrayCritical(values_array, nullptr));
   if (values == nullptr) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
   const auto ok = apply_post_log(values, env->GetArrayLength(values_array), ln_post_log_base);
   env->ReleasePrimitiveArrayCritical(values_array, values, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeCountStripeBlocks(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jlongArray column_bins_array,
   jint stripe_count,
   jint submatrix_size,
   jint dense_threshold,
   jlongArray output_sparse_dense_counts_array
 ) {
-  if (column_bins_array == nullptr || output_sparse_dense_counts_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
   }
+  if (column_bins_array == nullptr || output_sparse_dense_counts_array == nullptr) {
+    return native_failure(session_handle);
+  }
   if (env->GetArrayLength(output_sparse_dense_counts_array) < 2) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto column_count = env->GetArrayLength(column_bins_array);
@@ -862,7 +949,7 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output_sparse_dense_counts != nullptr) {
       env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = count_stripe_blocks(
@@ -876,13 +963,14 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
 
   env->ReleaseLongArrayElements(column_bins_array, column_bins, JNI_ABORT);
   env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeAggregatePrecomputedSeries(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jdoubleArray values_array,
   jlongArray support_array,
   jlong query_start_px,
@@ -892,14 +980,17 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   jdoubleArray output_values_array,
   jlongArray output_support_array
 ) {
-  if (values_array == nullptr || support_array == nullptr || output_values_array == nullptr || output_support_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (values_array == nullptr || support_array == nullptr || output_values_array == nullptr || output_support_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto series_length = env->GetArrayLength(values_array);
   if (env->GetArrayLength(support_array) < series_length ||
       env->GetArrayLength(output_values_array) < bucket_count ||
       env->GetArrayLength(output_support_array) < bucket_count) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* values = env->GetDoubleArrayElements(values_array, nullptr);
@@ -919,7 +1010,7 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output_support != nullptr) {
       env->ReleaseLongArrayElements(output_support_array, output_support, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = aggregate_precomputed_series(
@@ -938,13 +1029,14 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   env->ReleaseLongArrayElements(support_array, support, JNI_ABORT);
   env->ReleaseDoubleArrayElements(output_values_array, output_values, ok ? 0 : JNI_ABORT);
   env->ReleaseLongArrayElements(output_support_array, output_support, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeAggregateIntervals(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jlongArray starts_array,
   jlongArray ends_array,
   jdoubleArray values_array,
@@ -955,15 +1047,18 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   jdoubleArray output_values_array,
   jlongArray output_counts_array
 ) {
-  if (starts_array == nullptr || ends_array == nullptr || output_values_array == nullptr || output_counts_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (starts_array == nullptr || ends_array == nullptr || output_values_array == nullptr || output_counts_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto feature_count = env->GetArrayLength(starts_array);
   if (env->GetArrayLength(ends_array) < feature_count ||
       (values_array != nullptr && env->GetArrayLength(values_array) < feature_count) ||
       env->GetArrayLength(output_values_array) < bucket_count ||
       env->GetArrayLength(output_counts_array) < bucket_count) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* starts = env->GetLongArrayElements(starts_array, nullptr);
@@ -987,7 +1082,7 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output_counts != nullptr) {
       env->ReleaseLongArrayElements(output_counts_array, output_counts, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = aggregate_intervals(
@@ -1010,22 +1105,26 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   }
   env->ReleaseDoubleArrayElements(output_values_array, output_values, ok ? 0 : JNI_ABORT);
   env->ReleaseLongArrayElements(output_counts_array, output_counts, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeReverseComplementAscii(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jbyteArray input_array,
   jbyteArray output_array
 ) {
-  if (input_array == nullptr || output_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (input_array == nullptr || output_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto length = env->GetArrayLength(input_array);
   if (env->GetArrayLength(output_array) < length) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* input = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(input_array, nullptr));
@@ -1037,29 +1136,33 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output != nullptr) {
       env->ReleasePrimitiveArrayCritical(output_array, output, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
   const auto ok = reverse_complement_ascii(input, length, output);
   env->ReleasePrimitiveArrayCritical(input_array, input, JNI_ABORT);
   env->ReleasePrimitiveArrayCritical(output_array, output, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSortSparseBlockDouble(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jlongArray rows_array,
   jlongArray columns_array,
   jdoubleArray values_array,
   jint submatrix_size
 ) {
-  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto length = env->GetArrayLength(rows_array);
   if (env->GetArrayLength(columns_array) < length || env->GetArrayLength(values_array) < length) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* rows = env->GetLongArrayElements(rows_array, nullptr);
@@ -1075,31 +1178,35 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (values != nullptr) {
       env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = sort_sparse_block_row_major(rows, columns, values, length, submatrix_size);
   env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
   env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
   env->ReleaseDoubleArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSortSparseBlockLong(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jlongArray rows_array,
   jlongArray columns_array,
   jlongArray values_array,
   jint submatrix_size
 ) {
-  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto length = env->GetArrayLength(rows_array);
   if (env->GetArrayLength(columns_array) < length || env->GetArrayLength(values_array) < length) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* rows = env->GetLongArrayElements(rows_array, nullptr);
@@ -1115,20 +1222,21 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (values != nullptr) {
       env->ReleaseLongArrayElements(values_array, values, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = sort_sparse_block_row_major(rows, columns, values, length, submatrix_size);
   env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
   env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
   env->ReleaseLongArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeTransformExpectedSignal(
   JNIEnv* env,
   jclass,
+  jlong session_handle,
   jdoubleArray signal_array,
   jint rows,
   jint columns,
@@ -1139,13 +1247,16 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   jdoubleArray diagonal_means_array,
   jdoubleArray output_array
 ) {
-  if (signal_array == nullptr || diagonal_means_array == nullptr || output_array == nullptr) {
+  if (session_from_handle(session_handle) == nullptr) {
     return JNI_FALSE;
+  }
+  if (signal_array == nullptr || diagonal_means_array == nullptr || output_array == nullptr) {
+    return native_failure(session_handle);
   }
   const auto signal_length = env->GetArrayLength(signal_array);
   const auto output_length = env->GetArrayLength(output_array);
   if (!valid_extent(rows, columns, signal_length) || !valid_extent(rows, columns, output_length)) {
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   auto* signal = static_cast<jdouble*>(env->GetPrimitiveArrayCritical(signal_array, nullptr));
@@ -1161,7 +1272,7 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     if (output != nullptr) {
       env->ReleasePrimitiveArrayCritical(output_array, output, JNI_ABORT);
     }
-    return JNI_FALSE;
+    return native_failure(session_handle);
   }
 
   const auto ok = transform_expected_signal(
@@ -1180,5 +1291,5 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   env->ReleasePrimitiveArrayCritical(signal_array, signal, JNI_ABORT);
   env->ReleasePrimitiveArrayCritical(diagonal_means_array, diagonal_means, JNI_ABORT);
   env->ReleasePrimitiveArrayCritical(output_array, output, ok ? 0 : JNI_ABORT);
-  return ok ? JNI_TRUE : JNI_FALSE;
+  return native_result(session_handle, ok);
 }

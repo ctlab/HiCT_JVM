@@ -6,6 +6,13 @@ safe to omit from builds and packages.
 
 ## Current Native Scope
 
+When native processing is enabled, Java now opens a native backend session and
+keeps only the opaque session handle. The session owns native backend state,
+variant metadata, and operation counters; all JNI kernels are routed through it.
+This is the compatibility layer for the planned native HDF5 resource ownership.
+`nativeHdf5BackendAvailable=false` means the session is active but HDF5 files are
+still owned by the Java/JHDF5 backend.
+
 The current native library offloads:
 
 - base signal preparation for `double` matrix tiles;
@@ -145,10 +152,12 @@ and continues running.
 
 ## Threading Model
 
-The native processing functions are stateless. Java worker threads may call them
-concurrently. Library loading is synchronized only for the first load attempt;
-after that, tile-processing calls use a volatile fast path and do not take a
-coarse-grained loader lock.
+Native processing uses one process-local backend session per JVM. Java worker
+threads may call the session concurrently; implemented kernels do not mutate
+per-call shared data except relaxed atomic operation counters. Library loading
+and session creation are synchronized only for the first attempt. The session is
+kept alive for the process lifetime so worker threads are never racing with a
+native-state destructor while tile work is in progress.
 
 ## Correctness Contract
 

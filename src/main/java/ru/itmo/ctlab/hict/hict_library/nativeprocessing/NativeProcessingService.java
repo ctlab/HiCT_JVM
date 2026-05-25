@@ -57,7 +57,12 @@ public final class NativeProcessingService {
   }
 
   public @NotNull NativeProcessingStatus status() {
-    final var loadReport = this.nativeTileProcessor.ensureLoaded();
+    var loadReport = this.nativeTileProcessor.ensureLoaded();
+    if (this.requestedEnabled && loadReport.available() && !this.disabledAfterNativeFailure) {
+      this.nativeTileProcessor.ensureSessionOpen();
+      loadReport = this.nativeTileProcessor.ensureLoaded();
+    }
+    final var sessionReport = this.nativeTileProcessor.sessionReport();
     final var available = loadReport.available();
     final var enabled = this.requestedEnabled && available && !this.disabledAfterNativeFailure;
     final var reason = enabled
@@ -70,7 +75,11 @@ public final class NativeProcessingService {
       loadReport.version(),
       loadReport.source(),
       reason,
-      this.lastProcessingFailure
+      this.lastProcessingFailure,
+      sessionReport.active(),
+      sessionReport.operationCount(),
+      sessionReport.failedOperationCount(),
+      sessionReport.hdf5BackendAvailable()
     );
   }
 
@@ -81,6 +90,7 @@ public final class NativeProcessingService {
       this.lastProcessingFailure = "";
     } else {
       this.nativeTileProcessor.ensureLoaded();
+      this.nativeTileProcessor.ensureSessionOpen();
     }
     return status();
   }
@@ -607,6 +617,10 @@ public final class NativeProcessingService {
                                        @NotNull String version,
                                        @NotNull String source,
                                        @NotNull String reason,
-                                       @NotNull String lastFailure) {
+                                       @NotNull String lastFailure,
+                                       boolean nativeSessionActive,
+                                       long nativeOperationCount,
+                                       long nativeFailedOperationCount,
+                                       boolean nativeHdf5BackendAvailable) {
   }
 }

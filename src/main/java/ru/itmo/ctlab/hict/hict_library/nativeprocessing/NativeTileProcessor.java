@@ -46,6 +46,7 @@ final class NativeTileProcessor {
   private static final @NotNull String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
   private static final @NotNull String NATIVE_VARIANT_ENV = "HICT_NATIVE_VARIANT";
   private volatile @NotNull LoadReport loadReport = LoadReport.notAttempted();
+  private volatile long sessionHandle;
 
   @NotNull LoadReport ensureLoaded() {
     final var current = this.loadReport;
@@ -75,7 +76,12 @@ final class NativeTileProcessor {
                                   final boolean applyResolutionLinearScaling,
                                   final boolean applyCoolerWeights,
                                   final double @NotNull [] output) {
+    final var sessionHandle = sessionHandle();
+    if (sessionHandle == 0L) {
+      return false;
+    }
     return nativeComputeBaseSignalDouble(
+      sessionHandle,
       input,
       rowWeights,
       columnWeights,
@@ -103,7 +109,12 @@ final class NativeTileProcessor {
                                 final boolean applyResolutionLinearScaling,
                                 final boolean applyCoolerWeights,
                                 final double @NotNull [] output) {
+    final var sessionHandle = sessionHandle();
+    if (sessionHandle == 0L) {
+      return false;
+    }
     return nativeComputeBaseSignalLong(
+      sessionHandle,
       input,
       rowWeights,
       columnWeights,
@@ -127,7 +138,12 @@ final class NativeTileProcessor {
                                 final double minSignal,
                                 final double maxSignal,
                                 final byte @NotNull [] outputRgba) {
+    final var sessionHandle = sessionHandle();
+    if (sessionHandle == 0L) {
+      return false;
+    }
     return nativeMapLinearGradientRgba(
+      sessionHandle,
       signal,
       rows,
       columns,
@@ -141,7 +157,8 @@ final class NativeTileProcessor {
 
   boolean applyPostLog(final double @NotNull [] values,
                        final double lnPostLogBase) {
-    return nativeApplyPostLog(values, lnPostLogBase);
+    final var sessionHandle = sessionHandle();
+    return sessionHandle != 0L && nativeApplyPostLog(sessionHandle, values, lnPostLogBase);
   }
 
   boolean countStripeBlocks(final long @NotNull [] columnBins,
@@ -149,7 +166,12 @@ final class NativeTileProcessor {
                             final int submatrixSize,
                             final int denseThreshold,
                             final long @NotNull [] outputSparseDenseCounts) {
+    final var sessionHandle = sessionHandle();
+    if (sessionHandle == 0L) {
+      return false;
+    }
     return nativeCountStripeBlocks(
+      sessionHandle,
       columnBins,
       stripeCount,
       submatrixSize,
@@ -166,7 +188,12 @@ final class NativeTileProcessor {
                                      final int strategyCode,
                                      final double @NotNull [] outputValues,
                                      final long @NotNull [] outputSupport) {
+    final var sessionHandle = sessionHandle();
+    if (sessionHandle == 0L) {
+      return false;
+    }
     return nativeAggregatePrecomputedSeries(
+      sessionHandle,
       values,
       support,
       queryStartPx,
@@ -187,7 +214,12 @@ final class NativeTileProcessor {
                              final int modeCode,
                              final double @NotNull [] outputValues,
                              final long @NotNull [] outputCounts) {
+    final var sessionHandle = sessionHandle();
+    if (sessionHandle == 0L) {
+      return false;
+    }
     return nativeAggregateIntervals(
+      sessionHandle,
       starts,
       ends,
       values,
@@ -202,21 +234,24 @@ final class NativeTileProcessor {
 
   boolean reverseComplementAscii(final byte @NotNull [] input,
                                  final byte @NotNull [] output) {
-    return nativeReverseComplementAscii(input, output);
+    final var sessionHandle = sessionHandle();
+    return sessionHandle != 0L && nativeReverseComplementAscii(sessionHandle, input, output);
   }
 
   boolean sortSparseBlockDouble(final long @NotNull [] rows,
                                 final long @NotNull [] columns,
                                 final double @NotNull [] values,
                                 final int submatrixSize) {
-    return nativeSortSparseBlockDouble(rows, columns, values, submatrixSize);
+    final var sessionHandle = sessionHandle();
+    return sessionHandle != 0L && nativeSortSparseBlockDouble(sessionHandle, rows, columns, values, submatrixSize);
   }
 
   boolean sortSparseBlockLong(final long @NotNull [] rows,
                               final long @NotNull [] columns,
                               final long @NotNull [] values,
                               final int submatrixSize) {
-    return nativeSortSparseBlockLong(rows, columns, values, submatrixSize);
+    final var sessionHandle = sessionHandle();
+    return sessionHandle != 0L && nativeSortSparseBlockLong(sessionHandle, rows, columns, values, submatrixSize);
   }
 
   boolean transformExpectedSignal(final double @NotNull [] signal,
@@ -228,7 +263,12 @@ final class NativeTileProcessor {
                                   final long minDiagonal,
                                   final double @NotNull [] diagonalMeans,
                                   final double @NotNull [] output) {
+    final var sessionHandle = sessionHandle();
+    if (sessionHandle == 0L) {
+      return false;
+    }
     return nativeTransformExpectedSignal(
+      sessionHandle,
       signal,
       rows,
       columns,
@@ -239,6 +279,63 @@ final class NativeTileProcessor {
       diagonalMeans,
       output
     );
+  }
+
+  @NotNull SessionReport sessionReport() {
+    final var loadReport = ensureLoaded();
+    if (!loadReport.available()) {
+      return SessionReport.inactive();
+    }
+    final var handle = this.sessionHandle;
+    if (handle == 0L) {
+      return SessionReport.inactive();
+    }
+    try {
+      return new SessionReport(
+        true,
+        nativeSessionOperationCount(handle),
+        nativeSessionFailedOperationCount(handle),
+        nativeSessionHdf5Available(handle)
+      );
+    } catch (final Throwable err) {
+      log.warn("Failed to query HiCT native processing session", err);
+      return SessionReport.inactive();
+    }
+  }
+
+  boolean ensureSessionOpen() {
+    return sessionHandle() != 0L;
+  }
+
+  private long sessionHandle() {
+    final var loadReport = ensureLoaded();
+    if (!loadReport.available()) {
+      return 0L;
+    }
+    final var current = this.sessionHandle;
+    if (current != 0L) {
+      return current;
+    }
+    return openSessionOnce();
+  }
+
+  private synchronized long openSessionOnce() {
+    if (this.sessionHandle != 0L) {
+      return this.sessionHandle;
+    }
+    try {
+      final var handle = nativeOpenSession();
+      if (handle == 0L) {
+        this.loadReport = LoadReport.failed("HiCT native processing library could not create a backend session");
+        return 0L;
+      }
+      this.sessionHandle = handle;
+      return handle;
+    } catch (final Throwable err) {
+      this.loadReport = LoadReport.failed("HiCT native processing session initialization failed: " + err.getMessage());
+      log.warn("HiCT native processing session initialization failed", err);
+      return 0L;
+    }
   }
 
   private static @NotNull LoadReport tryLoad() {
@@ -408,7 +505,16 @@ final class NativeTileProcessor {
 
   private static native @Nullable String nativeVersion();
 
-  private static native boolean nativeComputeBaseSignalDouble(double[] input,
+  private static native long nativeOpenSession();
+
+  private static native long nativeSessionOperationCount(long sessionHandle);
+
+  private static native long nativeSessionFailedOperationCount(long sessionHandle);
+
+  private static native boolean nativeSessionHdf5Available(long sessionHandle);
+
+  private static native boolean nativeComputeBaseSignalDouble(long sessionHandle,
+                                                              double[] input,
                                                               double[] rowWeights,
                                                               double[] columnWeights,
                                                               int rows,
@@ -421,7 +527,8 @@ final class NativeTileProcessor {
                                                               boolean applyCoolerWeights,
                                                               double[] output);
 
-  private static native boolean nativeComputeBaseSignalLong(long[] input,
+  private static native boolean nativeComputeBaseSignalLong(long sessionHandle,
+                                                            long[] input,
                                                             double[] rowWeights,
                                                             double[] columnWeights,
                                                             int rows,
@@ -434,7 +541,8 @@ final class NativeTileProcessor {
                                                             boolean applyCoolerWeights,
                                                             double[] output);
 
-  private static native boolean nativeMapLinearGradientRgba(double[] signal,
+  private static native boolean nativeMapLinearGradientRgba(long sessionHandle,
+                                                            double[] signal,
                                                             int rows,
                                                             int columns,
                                                             float[] startRgba,
@@ -443,16 +551,19 @@ final class NativeTileProcessor {
                                                             double maxSignal,
                                                             byte[] outputRgba);
 
-  private static native boolean nativeApplyPostLog(double[] values,
+  private static native boolean nativeApplyPostLog(long sessionHandle,
+                                                   double[] values,
                                                    double lnPostLogBase);
 
-  private static native boolean nativeCountStripeBlocks(long[] columnBins,
+  private static native boolean nativeCountStripeBlocks(long sessionHandle,
+                                                        long[] columnBins,
                                                         int stripeCount,
                                                         int submatrixSize,
                                                         int denseThreshold,
                                                         long[] outputSparseDenseCounts);
 
-  private static native boolean nativeAggregatePrecomputedSeries(double[] values,
+  private static native boolean nativeAggregatePrecomputedSeries(long sessionHandle,
+                                                                 double[] values,
                                                                  long[] support,
                                                                  long queryStartPx,
                                                                  long queryEndPx,
@@ -461,7 +572,8 @@ final class NativeTileProcessor {
                                                                  double[] outputValues,
                                                                  long[] outputSupport);
 
-  private static native boolean nativeAggregateIntervals(long[] starts,
+  private static native boolean nativeAggregateIntervals(long sessionHandle,
+                                                         long[] starts,
                                                          long[] ends,
                                                          double[] values,
                                                          long queryStartPx,
@@ -471,20 +583,24 @@ final class NativeTileProcessor {
                                                          double[] outputValues,
                                                          long[] outputCounts);
 
-  private static native boolean nativeReverseComplementAscii(byte[] input,
+  private static native boolean nativeReverseComplementAscii(long sessionHandle,
+                                                             byte[] input,
                                                              byte[] output);
 
-  private static native boolean nativeSortSparseBlockDouble(long[] rows,
+  private static native boolean nativeSortSparseBlockDouble(long sessionHandle,
+                                                            long[] rows,
                                                             long[] columns,
                                                             double[] values,
                                                             int submatrixSize);
 
-  private static native boolean nativeSortSparseBlockLong(long[] rows,
+  private static native boolean nativeSortSparseBlockLong(long sessionHandle,
+                                                          long[] rows,
                                                           long[] columns,
                                                           long[] values,
                                                           int submatrixSize);
 
-  private static native boolean nativeTransformExpectedSignal(double[] signal,
+  private static native boolean nativeTransformExpectedSignal(long sessionHandle,
+                                                              double[] signal,
                                                               int rows,
                                                               int columns,
                                                               long startRowPx,
@@ -511,6 +627,15 @@ final class NativeTileProcessor {
 
     static @NotNull LoadReport failed(final @NotNull String reason) {
       return new LoadReport(LoadState.FAILED, false, "unknown", "", reason);
+    }
+  }
+
+  record SessionReport(boolean active,
+                       long operationCount,
+                       long failedOperationCount,
+                       boolean hdf5BackendAvailable) {
+    static @NotNull SessionReport inactive() {
+      return new SessionReport(false, 0L, 0L, false);
     }
   }
 }

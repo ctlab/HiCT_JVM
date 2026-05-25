@@ -75,14 +75,18 @@ public class InfoHandlersHolder extends HandlersHolder {
   private @NotNull Map<String, Object> nativeProcessingStatusPayload(
     final @NotNull NativeProcessingService.NativeProcessingStatus status
   ) {
-    return Map.of(
-      "requested", status.requested(),
-      "enabled", status.enabled(),
-      "available", status.available(),
-      "version", status.version(),
-      "source", status.source(),
-      "reason", status.reason(),
-      "lastFailure", status.lastFailure()
+    return Map.ofEntries(
+      Map.entry("requested", status.requested()),
+      Map.entry("enabled", status.enabled()),
+      Map.entry("available", status.available()),
+      Map.entry("version", status.version()),
+      Map.entry("source", status.source()),
+      Map.entry("reason", status.reason()),
+      Map.entry("lastFailure", status.lastFailure()),
+      Map.entry("nativeSessionActive", status.nativeSessionActive()),
+      Map.entry("nativeOperationCount", status.nativeOperationCount()),
+      Map.entry("nativeFailedOperationCount", status.nativeFailedOperationCount()),
+      Map.entry("nativeHdf5BackendAvailable", status.nativeHdf5BackendAvailable())
     );
   }
 
