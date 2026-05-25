@@ -8,17 +8,12 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
-import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
-import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.response.conversion.ConversionJobDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -41,6 +36,8 @@ public class DotplotHandlersHolder extends HandlersHolder {
   private final @NotNull Vertx vertx;
   private final @NotNull ConcurrentHashMap<String, DotplotJob> jobs = new ConcurrentHashMap<>();
   private final @NotNull ExecutorService executor = Executors.newFixedThreadPool(Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors())));
+  private final @NotNull ExternalToolchainManager toolchainManager = new ExternalToolchainManager();
+  private final @NotNull SelfDotplotPipeline dotplotPipeline = new SelfDotplotPipeline();
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
@@ -72,7 +69,10 @@ public class DotplotHandlersHolder extends HandlersHolder {
             Math.max(0, body.getInteger("dropNearDiagonalBins", 0)),
             Math.max(1, body.getInteger("alignmentThreads", Runtime.getRuntime().availableProcessors())),
             Math.max(1, body.getInteger("conversionThreads", Runtime.getRuntime().availableProcessors())),
-            body.getBoolean("overwrite", false)
+            body.getBoolean("overwrite", false),
+            Math.max(1, body.getInteger("sampleBp", 250)),
+            Math.max(0, body.getInteger("minAlignmentLength", 50)),
+            body.getString("extraMinimap2Args", "")
           );
           final var ids = new ArrayList<String>();
           final var groupId = UUID.randomUUID().toString();
@@ -116,81 +116,53 @@ public class DotplotHandlersHolder extends HandlersHolder {
     job.status = "running";
     job.startedAtMs = Instant.now().toEpochMilli();
     try {
-      job.log("Starting dotplot generation for " + job.sourcePath.getFileName());
-      final var script = resolveSelfdotScript();
-      if (!Files.isRegularFile(script)) {
-        throw new IllegalStateException(
-          "Dotplot backend is not configured: selfdot_mcool.sh was not found. " +
-            "Set HICT_SELFDOT_SCRIPT or bundle the native/minimap2 dotplot pipeline."
-        );
-      }
+      job.log("Starting integrated dotplot generation for " + job.sourcePath.getFileName());
       Files.createDirectories(job.outputDirectory);
       final var prefix = stripFastaSuffix(job.sourcePath.getFileName().toString()) + ".self.k" + job.options.minimizerK() + "w" + job.options.minimizerWindow();
-      final var mcoolPath = job.outputDirectory.resolve(prefix + ".mcool");
       final var hictPath = job.outputDirectory.resolve(prefix + ".hict.hdf5");
       job.outputPath = hictPath;
       if (Files.exists(hictPath) && !job.options.overwrite()) {
         throw new IllegalArgumentException("Output file already exists: " + hictPath.getFileName());
       }
-      job.currentStage = "align";
-      job.currentStageLabel = "Running minimap2 self-alignment";
-      job.overallProgress = 0.05d;
-      final var command = new ArrayList<String>();
-      command.add("bash");
-      command.add(script.toString());
-      command.add("--input");
-      command.add(job.sourcePath.toString());
-      command.add("--outdir");
-      command.add(job.outputDirectory.toString());
-      command.add("--prefix");
-      command.add(prefix);
-      command.add("--bin");
-      command.add(Integer.toString(job.options.binSize()));
-      if (!job.options.resolutions().isBlank()) {
-        command.add("--resolutions");
-        command.add(job.options.resolutions());
-      }
-      command.add("--k");
-      command.add(Integer.toString(job.options.minimizerK()));
-      command.add("--w");
-      command.add(Integer.toString(job.options.minimizerWindow()));
-      command.add("--min-chain-score");
-      command.add(Integer.toString(job.options.minChainScore()));
-      command.add("--drop-near-diag");
-      command.add(Integer.toString(job.options.dropNearDiagonalBins()));
-      command.add("--align-threads");
-      command.add(Integer.toString(job.options.alignmentThreads()));
-      command.add("--convert-procs");
-      command.add(Integer.toString(job.options.conversionThreads()));
-      if (job.options.skipDiagonal()) {
-        command.add("--skip-diag");
-      }
-      if (job.options.overwrite()) {
-        command.add("--force");
-      }
-      runCommand(job, command, job.outputDirectory);
-      job.overallProgress = 0.75d;
-      job.currentStage = "import_hict";
-      job.currentStageLabel = "Importing generated .mcool into HiCT";
-      new McoolToHictConverter().convert(
-        new ConversionOptions(
-          mcoolPath,
-          hictPath,
-          parseResolutions(job.options.resolutions()),
-          8192,
-          6,
-          ConversionOptions.CompressionAlgorithm.DEFLATE,
-          ConversionOptions.NO_AGP,
+      final var toolchain = toolchainManager.requireDotplotToolchain();
+      job.toolchainSource = toolchain.source();
+      job.toolchainSummary = "minimap2 alignment with Java PAF/BG2 conversion and " + toolchain.source() + " hictk command " + toolchain.hictkCommand();
+      job.toolchainNotices.clear();
+      job.toolchainNotices.add("Dotplot generation uses minimap2 for self-alignment and integrated Java PAF/BG2 conversion; Python and Cooler are not required.");
+      job.toolchainNotices.addAll(toolchain.notices());
+      job.toolchainCitations.clear();
+      job.toolchainCitations.addAll(toolchain.citations());
+      final var output = dotplotPipeline.generate(
+        new SelfDotplotPipeline.Options(
+          job.sourcePath,
+          job.outputDirectory,
+          prefix,
+          job.options.binSize(),
+          job.options.resolutions(),
+          job.options.minimizerK(),
+          job.options.minimizerWindow(),
+          job.options.minChainScore(),
+          job.options.skipDiagonal(),
+          job.options.dropNearDiagonalBins(),
+          job.options.alignmentThreads(),
+          job.options.conversionThreads(),
+          job.options.overwrite(),
           false,
-          job.options.conversionThreads()
+          job.options.sampleBp(),
+          job.options.minAlignmentLength(),
+          job.options.extraMinimap2Args()
         ),
-        job::log
+        toolchain,
+        job::log,
+        process -> job.activeProcess = process,
+        () -> job.cancelRequested.get()
       );
+      job.outputPath = output;
       job.overallProgress = 1.0d;
       job.stageProgress = 1.0d;
       job.status = "finished";
       job.currentStageLabel = "Dotplot ready";
-      job.log("Dotplot generated: " + hictPath.getFileName());
+      job.log("Dotplot generated: " + output.getFileName());
     } catch (Exception e) {
       job.status = job.cancelRequested.get() ? "cancelled" : "failed";
       job.error = e.getMessage() == null ? e.toString() : e.getMessage();
@@ -198,39 +170,6 @@ public class DotplotHandlersHolder extends HandlersHolder {
       log.warn("Dotplot job failed", e);
     } finally {
       job.finishedAtMs = Instant.now().toEpochMilli();
-    }
-  }
-
-  private static void runCommand(final @NotNull DotplotJob job,
-                                 final @NotNull List<String> command,
-                                 final @NotNull Path workingDirectory) throws IOException, InterruptedException {
-    job.log("Executing external command: " + String.join(" ", command));
-    final var process = new ProcessBuilder(command)
-      .directory(workingDirectory.toFile())
-      .redirectErrorStream(true)
-      .start();
-    job.activeProcess = process;
-    try (final var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-      String line;
-      while ((line = reader.readLine()) != null) {
-        job.log(line);
-        if (line.contains("Writing chrom sizes")) {
-          job.overallProgress = 0.10d;
-          job.currentStageLabel = "Writing contig sizes";
-        } else if (line.toLowerCase(Locale.ROOT).contains("minimap2")) {
-          job.overallProgress = Math.max(job.overallProgress, 0.20d);
-          job.currentStageLabel = "Running minimap2";
-        } else if (line.toLowerCase(Locale.ROOT).contains("cooler zoomify")) {
-          job.overallProgress = Math.max(job.overallProgress, 0.60d);
-          job.currentStageLabel = "Building resolution pyramid";
-        }
-      }
-    } finally {
-      job.activeProcess = null;
-    }
-    final var exit = process.waitFor();
-    if (exit != 0) {
-      throw new IllegalStateException("Dotplot external pipeline failed with exit code " + exit);
     }
   }
 
@@ -256,25 +195,6 @@ public class DotplotHandlersHolder extends HandlersHolder {
       return wrapper.getPath();
     }
     return requireDataDirectory().resolve("processed").normalize();
-  }
-
-  private static @NotNull Path resolveSelfdotScript() {
-    final var configured = System.getenv("HICT_SELFDOT_SCRIPT");
-    if (configured != null && !configured.isBlank()) {
-      return Path.of(configured).toAbsolutePath().normalize();
-    }
-    return Path.of("selfdot_mcool.sh").toAbsolutePath().normalize();
-  }
-
-  private static @NotNull List<Long> parseResolutions(final @NotNull String csv) {
-    if (csv.isBlank()) {
-      return List.of();
-    }
-    return java.util.Arrays.stream(csv.split(","))
-      .map(String::trim)
-      .filter(token -> !token.isBlank())
-      .map(Long::parseLong)
-      .toList();
   }
 
   private static @NotNull String stripFastaSuffix(final @NotNull String filename) {
@@ -318,7 +238,10 @@ public class DotplotHandlersHolder extends HandlersHolder {
     int dropNearDiagonalBins,
     int alignmentThreads,
     int conversionThreads,
-    boolean overwrite
+    boolean overwrite,
+    int sampleBp,
+    int minAlignmentLength,
+    @NotNull String extraMinimap2Args
   ) {
   }
 
@@ -340,6 +263,17 @@ public class DotplotHandlersHolder extends HandlersHolder {
     private volatile long finishedAtMs = 0L;
     private volatile Process activeProcess = null;
     private final @NotNull AtomicBoolean cancelRequested = new AtomicBoolean(false);
+    private final @NotNull CopyOnWriteArrayList<String> toolchainNotices = new CopyOnWriteArrayList<>(
+      List.of("Dotplot generation uses minimap2 plus integrated Java PAF/BG2 conversion and hictk load/zoomify; Python and Cooler are not required.")
+    );
+    private final @NotNull CopyOnWriteArrayList<String> toolchainCitations = new CopyOnWriteArrayList<>(
+      List.of(
+        "minimap2: Li H. Bioinformatics. 2018;34(18):3094-3100.",
+        "hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408."
+      )
+    );
+    private volatile @NotNull String toolchainSource = "hictk";
+    private volatile @NotNull String toolchainSummary = "Integrated self-alignment dotplot pipeline";
 
     private DotplotJob(final @NotNull String jobId,
                        final @NotNull Path sourcePath,
@@ -354,8 +288,39 @@ public class DotplotHandlersHolder extends HandlersHolder {
 
     private void log(final @NotNull String message) {
       logs.add(message);
+      updateProgressFromStageMessage(message);
       synchronized (System.out) {
         System.out.println("[dotplot] " + message);
+      }
+    }
+
+    private void updateProgressFromStageMessage(final @NotNull String message) {
+      if (!message.startsWith("HICT_STAGE ")) {
+        return;
+      }
+      final var detailIndex = message.indexOf(" detail=");
+      final var metadata = detailIndex >= 0 ? message.substring("HICT_STAGE ".length(), detailIndex) : message.substring("HICT_STAGE ".length());
+      if (detailIndex >= 0) {
+        currentStageLabel = message.substring(detailIndex + " detail=".length());
+      }
+      for (final var token : metadata.split("\\s+")) {
+        final var separator = token.indexOf('=');
+        if (separator <= 0 || separator + 1 >= token.length()) {
+          continue;
+        }
+        final var key = token.substring(0, separator);
+        final var value = token.substring(separator + 1);
+        try {
+          switch (key) {
+            case "stage" -> currentStage = value;
+            case "progress" -> stageProgress = Double.parseDouble(value);
+            case "overall" -> overallProgress = Double.parseDouble(value);
+            default -> {
+            }
+          }
+        } catch (NumberFormatException ignored) {
+          // Keep the previous progress value if a malformed diagnostic line reaches the UI.
+        }
       }
     }
 
@@ -382,10 +347,10 @@ public class DotplotHandlersHolder extends HandlersHolder {
         0L,
         safeSize(sourcePath),
         safeSize(outputPath),
-        "dotplot",
-        "Self-alignment dotplot pipeline",
-        List.of("Current implementation uses configured external selfdot/minimap2 pipeline when available."),
-        List.of("minimap2: Li H. Bioinformatics. 2018;34(18):3094-3100."),
+        toolchainSource,
+        toolchainSummary,
+        List.copyOf(toolchainNotices),
+        List.copyOf(toolchainCitations),
         List.copyOf(logs),
         error
       );

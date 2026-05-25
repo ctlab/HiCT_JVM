@@ -1792,6 +1792,18 @@ components:
         minChainScore:
           type: integer
           default: 40
+          description: minimap2 -m chain score cutoff.
+        sampleBp:
+          type: integer
+          default: 250
+          description: Sample each minimap2 PAF alignment path every N base pairs when rasterizing to BG2 pixels.
+        minAlignmentLength:
+          type: integer
+          default: 50
+          description: Ignore PAF alignments shorter than this many alignment bases.
+        extraMinimap2Args:
+          type: string
+          description: Optional additional minimap2 arguments split by the backend without a shell.
         skipDiagonal:
           type: boolean
           default: false

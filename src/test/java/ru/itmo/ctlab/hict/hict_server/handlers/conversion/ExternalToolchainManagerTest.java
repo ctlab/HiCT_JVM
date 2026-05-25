@@ -18,6 +18,7 @@ class ExternalToolchainManagerTest {
   void clearToolchainOverrides() {
     System.clearProperty("HICT_TOOLCHAIN_DIR");
     System.clearProperty("HICT_HICTK_BIN");
+    System.clearProperty("HICT_MINIMAP2_BIN");
     System.clearProperty("HICT_COOLER_BIN");
     System.clearProperty("HICT_PYTHON_BIN");
   }
@@ -70,7 +71,7 @@ class ExternalToolchainManagerTest {
     assertTrue(status.notices().contains("test notice"));
     assertTrue(status.citations().contains("test citation"));
     assertTrue(
-      status.limitations().stream().noneMatch(limit -> limit.toLowerCase().contains("unavailable"))
+      status.limitations().stream().noneMatch(limit -> limit.toLowerCase().contains(".hic conversion is unavailable"))
     );
   }
 
@@ -90,7 +91,7 @@ class ExternalToolchainManagerTest {
 
     assertTrue(status.hicConversionAvailable());
     assertTrue(
-      status.limitations().stream().noneMatch(limit -> limit.toLowerCase().contains("unavailable"))
+      status.limitations().stream().noneMatch(limit -> limit.toLowerCase().contains(".hic conversion is unavailable"))
     );
     assertTrue(
       status.limitations().stream().anyMatch(limit -> limit.contains("hictk-backed .hic conversion workflow"))

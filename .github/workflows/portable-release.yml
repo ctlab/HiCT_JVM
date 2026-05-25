@@ -18,6 +18,11 @@ on:
         required: true
         default: "v2.2.0"
         type: string
+      minimap2_ref:
+        description: "Official minimap2 tag to bundle for dotplot generation"
+        required: true
+        default: "v2.31"
+        type: string
       webui_ref:
         description: "HiCT_WebUI branch/tag/ref to bundle; use same-as-jvm to match the selected HiCT_JVM branch"
         required: true
@@ -69,6 +74,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
     steps:
@@ -123,15 +129,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh
+        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh scripts/toolchains/build_minimap2_linux.sh
 
-      - name: Restore bundled hictk cache
+      - name: Restore bundled toolchain cache
         id: cache-hictk
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: hictk-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: toolchain-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
 
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
@@ -147,13 +153,17 @@ jobs:
       - name: Install hictk build prerequisites
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         run: |
-          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build python3-venv
+          sudo apt-get install -y --no-install-recommends g++ gcc make cmake ninja-build python3-venv zlib1g-dev
 
       - name: Build bundled hictk
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         env:
           ENABLE_MOSTLY_STATIC_RUNTIME: "1"
         run: ./scripts/toolchains/build_hictk_linux.sh
+
+      - name: Build bundled minimap2
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        run: ./scripts/toolchains/build_minimap2_linux.sh
 
       - name: Save hictk Conan package cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
@@ -163,7 +173,7 @@ jobs:
           path: .cache/hictk-conan/linux_x86_64
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
-      - name: Save bundled hictk cache
+      - name: Save bundled toolchain cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
@@ -235,6 +245,7 @@ jobs:
     runs-on: windows-2022
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
@@ -280,13 +291,13 @@ jobs:
             tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-
             tauri-windows-x86_64-
 
-      - name: Restore bundled hictk cache
+      - name: Restore bundled toolchain cache
         id: cache-hictk
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/windows_x86_64
-          key: hictk-windows-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1') }}
+          key: toolchain-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1') }}
 
       - name: Restore hictk Conan package cache
         id: cache-hictk-conan
@@ -377,6 +388,11 @@ jobs:
         shell: pwsh
         run: .\scripts\toolchains\build_hictk_windows.ps1 -MostlyStaticRuntime
 
+      - name: Build bundled minimap2
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
+        shell: pwsh
+        run: .\scripts\toolchains\build_minimap2_windows.ps1
+
       - name: Save hictk Conan package cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -385,7 +401,7 @@ jobs:
           path: .cache/hictk-conan/windows_x86_64
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
-      - name: Save bundled hictk cache
+      - name: Save bundled toolchain cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true

@@ -302,6 +302,14 @@ if ($hasPreparedWindowsToolchain) {
     throw "Portable package is missing bundled hictk at toolchains\windows_x86_64\bin\hictk.exe."
   }
   Invoke-Native -FilePath $bundledHictk -Arguments @("--version")
+  $toolchainManifest = Join-Path $projectDir "toolchains-dist\windows_x86_64\manifest.json"
+  if ((Test-Path $toolchainManifest) -and ((Get-Content -Raw $toolchainManifest) -match '"minimap2"')) {
+    $bundledMinimap2 = Join-Path $appDir "toolchains\windows_x86_64\bin\minimap2.exe"
+    if (-not (Test-Path $bundledMinimap2)) {
+      throw "Portable package is missing bundled minimap2 at toolchains\windows_x86_64\bin\minimap2.exe."
+    }
+    Invoke-Native -FilePath $bundledMinimap2 -Arguments @("--version")
+  }
 }
 
 $browserSource = Join-Path $projectDir "browsers-dist\windows_x86_64"

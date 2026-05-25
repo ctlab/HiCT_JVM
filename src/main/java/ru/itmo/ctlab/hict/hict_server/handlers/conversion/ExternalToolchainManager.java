@@ -21,10 +21,12 @@ import java.util.Optional;
 public final class ExternalToolchainManager {
   private static final @NotNull String TOOLCHAIN_DIR_KEY = "HICT_TOOLCHAIN_DIR";
   private static final @NotNull String HICTK_BIN_KEY = "HICT_HICTK_BIN";
+  private static final @NotNull String MINIMAP2_BIN_KEY = "HICT_MINIMAP2_BIN";
   private static final @NotNull String COOLER_BIN_KEY = "HICT_COOLER_BIN";
   private static final @NotNull String PYTHON_BIN_KEY = "HICT_PYTHON_BIN";
   private static final @NotNull String BUNDLED_ROOT = "/toolchains";
   private static final @NotNull List<String> HICTK_PATH_CANDIDATES = List.of("hictk", "hictk.exe");
+  private static final @NotNull List<String> MINIMAP2_PATH_CANDIDATES = List.of("minimap2", "minimap2.exe");
   private static final @NotNull List<String> COOLER_PATH_CANDIDATES = List.of("cooler", "cooler.exe", "cooler.bat");
   private static final @NotNull List<String> PYTHON_PATH_CANDIDATES = List.of("python3", "python", "python.exe");
 
@@ -34,13 +36,13 @@ public final class ExternalToolchainManager {
 
     if (explicitToolchainDir.isPresent()) {
       final var resolved = resolveFromDirectory(platform, explicitToolchainDir.get(), "external");
-      if (resolved.hictkCommand() != null || resolved.coolerCommand() != null || resolved.pythonCommand() != null) {
+      if (resolved.hictkCommand() != null || resolved.minimap2Command() != null || resolved.coolerCommand() != null || resolved.pythonCommand() != null) {
         return ToolchainStatus.fromResolved(resolved);
       }
     }
 
     final var bundled = resolveBundled(platform);
-    if (bundled.hictkCommand() != null || bundled.coolerCommand() != null || bundled.pythonCommand() != null) {
+    if (bundled.hictkCommand() != null || bundled.minimap2Command() != null || bundled.coolerCommand() != null || bundled.pythonCommand() != null) {
       return ToolchainStatus.fromResolved(bundled);
     }
 
@@ -56,6 +58,32 @@ public final class ExternalToolchainManager {
       status.platform(),
       status.source(),
       status.hictkCommand() == null || status.hictkCommand().isBlank() ? null : Path.of(status.hictkCommand()),
+      status.minimap2Command() == null || status.minimap2Command().isBlank() ? null : Path.of(status.minimap2Command()),
+      status.coolerCommand() == null || status.coolerCommand().isBlank() ? null : Path.of(status.coolerCommand()),
+      status.pythonCommand() == null || status.pythonCommand().isBlank() ? null : Path.of(status.pythonCommand()),
+      status.notices(),
+      status.citations(),
+      status.limitations()
+    );
+  }
+
+  public @NotNull ResolvedToolchain requireDotplotToolchain() {
+    final var status = inspect();
+    if (!status.hictkAvailable() || !status.minimap2Available()) {
+      final var limitations = new ArrayList<String>();
+      if (!status.hictkAvailable()) {
+        limitations.add("hictk is unavailable");
+      }
+      if (!status.minimap2Available()) {
+        limitations.add("minimap2 is unavailable");
+      }
+      throw new IllegalStateException("Dotplot generation is unavailable because " + String.join(" and ", limitations) + ".");
+    }
+    return new ResolvedToolchain(
+      status.platform(),
+      status.source(),
+      status.hictkCommand() == null || status.hictkCommand().isBlank() ? null : Path.of(status.hictkCommand()),
+      status.minimap2Command() == null || status.minimap2Command().isBlank() ? null : Path.of(status.minimap2Command()),
       status.coolerCommand() == null || status.coolerCommand().isBlank() ? null : Path.of(status.coolerCommand()),
       status.pythonCommand() == null || status.pythonCommand().isBlank() ? null : Path.of(status.pythonCommand()),
       status.notices(),
@@ -71,6 +99,7 @@ public final class ExternalToolchainManager {
         return new ResolvedToolchain(
           platform,
           "bundled",
+          null,
           null,
           null,
           null,
@@ -91,6 +120,7 @@ public final class ExternalToolchainManager {
       return new ResolvedToolchain(
         platform,
         "bundled",
+        null,
         null,
         null,
         null,
@@ -157,6 +187,11 @@ public final class ExternalToolchainManager {
       directory.resolve(isWindows() ? "bin/hictk.exe" : "bin/hictk"),
       directory.resolve(isWindows() ? "hictk.exe" : "hictk")
     );
+    final var minimap2 = firstExisting(
+      readSetting(MINIMAP2_BIN_KEY).map(Path::of),
+      directory.resolve(isWindows() ? "bin/minimap2.exe" : "bin/minimap2"),
+      directory.resolve(isWindows() ? "minimap2.exe" : "minimap2")
+    );
     final var cooler = firstExisting(
       readSetting(COOLER_BIN_KEY).map(Path::of),
       directory.resolve(isWindows() ? "bin/cooler.bat" : "bin/cooler"),
@@ -171,11 +206,12 @@ public final class ExternalToolchainManager {
       platform,
       source,
       hictk,
+      minimap2,
       cooler,
       python,
       defaultNotices(source),
       defaultCitations(),
-      buildLimitations(hictk, cooler, python)
+      buildLimitations(hictk, minimap2, cooler, python)
     );
   }
 
@@ -188,17 +224,23 @@ public final class ExternalToolchainManager {
     final var citations = stringList(manifest.getJsonArray("citations"));
     final var limitations = stringList(manifest.getJsonArray("limitations"));
     final var hictk = resolveManifestCommand(root, commands, "hictk", readSetting(HICTK_BIN_KEY));
+    final var minimap2 = firstExisting(
+      Optional.<Path>empty(),
+      resolveManifestCommand(root, commands, "minimap2", readSetting(MINIMAP2_BIN_KEY)),
+      findOnPath(MINIMAP2_PATH_CANDIDATES)
+    );
     final var cooler = resolveManifestCommand(root, commands, "cooler", readSetting(COOLER_BIN_KEY));
     final var python = resolveManifestCommand(root, commands, "python", readSetting(PYTHON_BIN_KEY));
     return new ResolvedToolchain(
       platform,
       source,
       hictk,
+      minimap2,
       cooler,
       python,
       notices.isEmpty() ? defaultNotices(source) : notices,
       citations.isEmpty() ? defaultCitations() : citations,
-      limitations.isEmpty() ? buildLimitations(hictk, cooler, python) : limitations
+      limitations.isEmpty() ? buildLimitations(hictk, minimap2, cooler, python) : limitations
     );
   }
 
@@ -206,6 +248,10 @@ public final class ExternalToolchainManager {
     final var hictk = firstExisting(
       readSetting(HICTK_BIN_KEY).map(Path::of),
       findOnPath(HICTK_PATH_CANDIDATES)
+    );
+    final var minimap2 = firstExisting(
+      readSetting(MINIMAP2_BIN_KEY).map(Path::of),
+      findOnPath(MINIMAP2_PATH_CANDIDATES)
     );
     final var cooler = firstExisting(
       readSetting(COOLER_BIN_KEY).map(Path::of),
@@ -219,11 +265,12 @@ public final class ExternalToolchainManager {
       platform,
       "system",
       hictk,
+      minimap2,
       cooler,
       python,
       defaultNotices("system"),
       defaultCitations(),
-      buildLimitations(hictk, cooler, python)
+      buildLimitations(hictk, minimap2, cooler, python)
     );
   }
 
@@ -332,22 +379,28 @@ public final class ExternalToolchainManager {
       "HiCT orchestrates third-party conversion tools instead of reimplementing .hic ingestion from scratch.",
       "This build currently resolves hictk from the " + source + " toolchain source when available.",
       "The bundled .hic conversion workflow is executed through hictk; a separate cooler or Python runtime is not required for that path.",
+      "The bundled dotplot workflow uses minimap2 for self-alignment.",
       "Bundled third-party payloads must be redistributed together with their license files and scientific citations."
     );
   }
 
   private static @NotNull List<String> defaultCitations() {
     return List.of(
+      "minimap2: Li H. Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics. 2018;34(18):3094-3100.",
       "hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408."
     );
   }
 
   private static @NotNull List<String> buildLimitations(final @Nullable Path hictk,
+                                                        final @Nullable Path minimap2,
                                                         final @Nullable Path cooler,
                                                         final @Nullable Path python) {
     final var limitations = new ArrayList<String>();
     if (hictk == null) {
       limitations.add("No hictk executable was found. .hic conversion is unavailable in this build until hictk is bundled or installed.");
+    }
+    if (minimap2 == null) {
+      limitations.add("No minimap2 executable was found. FASTA self-dotplot generation is unavailable until minimap2 is bundled or installed.");
     }
     if (hictk != null && cooler == null && python == null) {
       limitations.add("Only the hictk-backed .hic conversion workflow is bundled in this build.");
@@ -359,6 +412,7 @@ public final class ExternalToolchainManager {
     @NotNull String platform,
     @NotNull String source,
     @Nullable Path hictkCommand,
+    @Nullable Path minimap2Command,
     @Nullable Path coolerCommand,
     @Nullable Path pythonCommand,
     @NotNull List<String> notices,
@@ -374,6 +428,8 @@ public final class ExternalToolchainManager {
     boolean hicConversionAvailable,
     boolean hictkAvailable,
     @Nullable String hictkCommand,
+    boolean minimap2Available,
+    @Nullable String minimap2Command,
     boolean coolerAvailable,
     @Nullable String coolerCommand,
     boolean pythonAvailable,
@@ -386,6 +442,7 @@ public final class ExternalToolchainManager {
     private static @NotNull ToolchainStatus fromResolved(final @NotNull ResolvedToolchain toolchain) {
       final var supportedPlatform = toolchain.platform().startsWith("linux_") || toolchain.platform().startsWith("windows_");
       final var hictkAvailable = toolchain.hictkCommand() != null;
+      final var minimap2Available = toolchain.minimap2Command() != null;
       final var coolerAvailable = toolchain.coolerCommand() != null;
       final var pythonAvailable = toolchain.pythonCommand() != null;
       final var summary = hictkAvailable
@@ -398,6 +455,8 @@ public final class ExternalToolchainManager {
         hictkAvailable,
         hictkAvailable,
         hictkAvailable ? Objects.requireNonNull(toolchain.hictkCommand()).toString() : null,
+        minimap2Available,
+        minimap2Available ? Objects.requireNonNull(toolchain.minimap2Command()).toString() : null,
         coolerAvailable,
         coolerAvailable ? Objects.requireNonNull(toolchain.coolerCommand()).toString() : null,
         pythonAvailable,
