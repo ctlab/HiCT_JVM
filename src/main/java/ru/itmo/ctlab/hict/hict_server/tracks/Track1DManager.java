@@ -47,6 +47,7 @@ import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprint;
 import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
@@ -1170,6 +1171,24 @@ public class Track1DManager {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+    final var nativeAggregation = NativeProcessingService.getInstance().tryAggregatePrecomputedSeries(
+      series.values(),
+      series.support(),
+      queryStartPx,
+      queryEndPx,
+      bucketCount,
+      nativeStrategyCode(strategy)
+    );
+    if (nativeAggregation != null) {
+      return finalizeNativeAggregationBins(
+        nativeAggregation,
+        queryStartPx,
+        queryEndPx,
+        bucketSpan,
+        orderedSegments,
+        bpResolution
+      );
+    }
     final var bins = new ArrayList<TrackBin>(bucketCount);
     for (int i = 0; i < bucketCount; i++) {
       final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
@@ -1207,6 +1226,38 @@ public class Track1DManager {
         safeEndPx,
         value,
         Math.max(1L, supportSum),
+        null
+      ));
+    }
+    return bins;
+  }
+
+  private static @NotNull List<TrackBin> finalizeNativeAggregationBins(
+    final @NotNull NativeProcessingService.NativeAggregationResult aggregation,
+    final long queryStartPx,
+    final long queryEndPx,
+    final double bucketSpan,
+    final @NotNull List<AssemblySegment> orderedSegments,
+    final long bpResolution
+  ) {
+    final var values = aggregation.values();
+    final var counts = aggregation.counts();
+    final var bins = new ArrayList<TrackBin>(counts.length);
+    for (int i = 0; i < counts.length; i++) {
+      final var value = values[i];
+      final var support = counts[i];
+      if (support <= 0L && value <= 0.0d) {
+        continue;
+      }
+      final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
+      final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
+      bins.add(aggregateSignalBin(
+        orderedSegments,
+        bpResolution,
+        startPx,
+        Math.max(startPx + 1L, endPx),
+        value,
+        Math.max(1L, support),
         null
       ));
     }
@@ -1570,6 +1621,15 @@ public class Track1DManager {
         case READ_DENSITY -> PrecomputeAggregationStrategy.SUM;
       };
       case BED, VCF, GFF_GTF, COOLER_WEIGHTS, UNSUPPORTED -> PrecomputeAggregationStrategy.MAX;
+    };
+  }
+
+  private static int nativeStrategyCode(final @NotNull PrecomputeAggregationStrategy strategy) {
+    return switch (strategy) {
+      case MAX -> 1;
+      case MEAN_ALL_PIXELS -> 2;
+      case MEAN_PRESENT_PIXELS -> 3;
+      case SUM -> 4;
     };
   }
 
@@ -2442,6 +2502,24 @@ public class Track1DManager {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+    final var nativeAggregation = tryAggregateProjectedFeaturesNative(
+      projectedFeatures,
+      queryStartPx,
+      queryEndPx,
+      bucketCount,
+      nativeIntervalModeCode(mode),
+      true
+    );
+    if (nativeAggregation != null) {
+      return finalizeNativeAggregationBins(
+        nativeAggregation,
+        queryStartPx,
+        queryEndPx,
+        bucketSpan,
+        orderedSegments,
+        bpResolution
+      );
+    }
     final double[] maxValues = new double[bucketCount];
     final double[] weightedSums = new double[bucketCount];
     final double[] overlapSums = new double[bucketCount];
@@ -2501,6 +2579,24 @@ public class Track1DManager {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+    final var nativeAggregation = tryAggregateProjectedFeaturesNative(
+      projectedFeatures,
+      queryStartPx,
+      queryEndPx,
+      bucketCount,
+      4,
+      false
+    );
+    if (nativeAggregation != null) {
+      return finalizeNativeAggregationBins(
+        nativeAggregation,
+        queryStartPx,
+        queryEndPx,
+        bucketSpan,
+        orderedSegments,
+        bpResolution
+      );
+    }
     final double[] coverage = new double[bucketCount];
     final long[] counts = new long[bucketCount];
     Arrays.fill(coverage, 0.0d);
@@ -2551,6 +2647,24 @@ public class Track1DManager {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+    final var nativeAggregation = tryAggregateProjectedFeaturesNative(
+      projectedFeatures,
+      queryStartPx,
+      queryEndPx,
+      bucketCount,
+      5,
+      false
+    );
+    if (nativeAggregation != null) {
+      return finalizeNativeAggregationBins(
+        nativeAggregation,
+        queryStartPx,
+        queryEndPx,
+        bucketSpan,
+        orderedSegments,
+        bpResolution
+      );
+    }
     final double[] values = new double[bucketCount];
     final long[] counts = new long[bucketCount];
     Arrays.fill(values, 0.0d);
@@ -2580,6 +2694,47 @@ public class Track1DManager {
       ));
     }
     return bins;
+  }
+
+  private static @Nullable NativeProcessingService.NativeAggregationResult tryAggregateProjectedFeaturesNative(
+    final @NotNull List<ProjectedFeature> projectedFeatures,
+    final long queryStartPx,
+    final long queryEndPx,
+    final int bucketCount,
+    final int modeCode,
+    final boolean includeValues
+  ) {
+    if (projectedFeatures.isEmpty() || !NativeProcessingService.getInstance().status().enabled()) {
+      return null;
+    }
+    final var starts = new long[projectedFeatures.size()];
+    final var ends = new long[projectedFeatures.size()];
+    final var values = includeValues ? new double[projectedFeatures.size()] : null;
+    for (int i = 0; i < projectedFeatures.size(); i++) {
+      final var feature = projectedFeatures.get(i);
+      starts[i] = feature.startPx();
+      ends[i] = feature.endPx();
+      if (values != null) {
+        values[i] = feature.value();
+      }
+    }
+    return NativeProcessingService.getInstance().tryAggregateIntervals(
+      starts,
+      ends,
+      values,
+      queryStartPx,
+      queryEndPx,
+      bucketCount,
+      modeCode
+    );
+  }
+
+  private static int nativeIntervalModeCode(final @NotNull BigWigAggregationMode mode) {
+    return switch (mode) {
+      case MAX -> 1;
+      case MEAN -> 2;
+      case SUM -> 3;
+    };
   }
 
   private static void accumulateBigWigValue(final long featureStart,

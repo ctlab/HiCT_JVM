@@ -30,6 +30,7 @@ import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
@@ -455,6 +456,10 @@ public class FASTAProcessor {
   }
 
   private static @NotNull String reverseComplement(final @NotNull String sequence) {
+    final var nativeResult = NativeProcessingService.getInstance().tryReverseComplementAscii(sequence);
+    if (nativeResult != null) {
+      return nativeResult;
+    }
     final var builder = new StringBuilder(sequence.length());
     for (int i = sequence.length() - 1; i >= 0; --i) {
       builder.append(complement(sequence.charAt(i)));

@@ -61,12 +61,29 @@ public final class NativeProcessingBenchmark {
     final var diagonalMeans = buildDiagonalMeans(input, rows, columns);
     final var javaExpectedOutput = new double[elementCount];
     final var nativeExpectedOutput = new double[elementCount];
+    final var javaPostLogWork = new double[elementCount];
+    final var nativePostLogWork = new double[elementCount];
+    final var seriesSupport = new long[elementCount];
+    for (int i = 0; i < seriesSupport.length; i++) {
+      seriesSupport[i] = (i % 7) == 0 ? 0L : 1L + (i % 5);
+    }
+    final int aggregateBucketCount = Math.max(1, columns);
+    final var javaAggregateValues = new double[aggregateBucketCount];
+    final var nativeAggregateValues = new double[aggregateBucketCount];
+    final var javaAggregateSupport = new long[aggregateBucketCount];
+    final var nativeAggregateSupport = new long[aggregateBucketCount];
 
     for (int i = 0; i < warmupIterations; i++) {
       computeJava(input, rowWeights, columnWeights, rows, columns, javaOutput);
       processor.computeBaseSignalDouble(input, rowWeights, columnWeights, rows, columns, Math.log(10.0d), 1.125d, 0.75d, true, true, true, nativeOutput);
       computeObservedOverExpectedJava(input, diagonalMeans, rows, columns, javaExpectedOutput);
       processor.transformExpectedSignal(input, rows, columns, 0L, 0L, 2, 0L, diagonalMeans, nativeExpectedOutput);
+      System.arraycopy(input, 0, javaPostLogWork, 0, input.length);
+      computePostLogJava(javaPostLogWork, Math.log(10.0d));
+      System.arraycopy(input, 0, nativePostLogWork, 0, input.length);
+      processor.applyPostLog(nativePostLogWork, Math.log(10.0d));
+      aggregatePrecomputedMaxJava(input, seriesSupport, 0L, input.length, aggregateBucketCount, javaAggregateValues, javaAggregateSupport);
+      processor.aggregatePrecomputedSeries(input, seriesSupport, 0L, input.length, aggregateBucketCount, 1, nativeAggregateValues, nativeAggregateSupport);
     }
 
     long javaNanos = 0L;
@@ -113,10 +130,63 @@ public final class NativeProcessingBenchmark {
       throw new IllegalStateException("Native observed/expected benchmark output differs from Java implementation, maxAbsDiff=" + expectedMaxAbsDiff);
     }
 
+    long javaPostLogNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      System.arraycopy(input, 0, javaPostLogWork, 0, input.length);
+      final long started = System.nanoTime();
+      computePostLogJava(javaPostLogWork, Math.log(10.0d));
+      javaPostLogNanos += System.nanoTime() - started;
+    }
+
+    long nativePostLogNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      System.arraycopy(input, 0, nativePostLogWork, 0, input.length);
+      final long started = System.nanoTime();
+      final boolean ok = processor.applyPostLog(nativePostLogWork, Math.log(10.0d));
+      nativePostLogNanos += System.nanoTime() - started;
+      if (!ok) {
+        throw new IllegalStateException("Native post-log benchmark computation was rejected");
+      }
+    }
+
+    final double postLogMaxAbsDiff = maxAbsDiff(javaPostLogWork, nativePostLogWork);
+    if (postLogMaxAbsDiff > 1.0e-12d) {
+      throw new IllegalStateException("Native post-log output differs from Java implementation, maxAbsDiff=" + postLogMaxAbsDiff);
+    }
+
+    long javaAggregateNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      final long started = System.nanoTime();
+      aggregatePrecomputedMaxJava(input, seriesSupport, 0L, input.length, aggregateBucketCount, javaAggregateValues, javaAggregateSupport);
+      javaAggregateNanos += System.nanoTime() - started;
+    }
+
+    long nativeAggregateNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      final long started = System.nanoTime();
+      final boolean ok = processor.aggregatePrecomputedSeries(input, seriesSupport, 0L, input.length, aggregateBucketCount, 1, nativeAggregateValues, nativeAggregateSupport);
+      nativeAggregateNanos += System.nanoTime() - started;
+      if (!ok) {
+        throw new IllegalStateException("Native precomputed-track aggregation benchmark computation was rejected");
+      }
+    }
+
+    final double aggregateMaxAbsDiff = maxAbsDiff(javaAggregateValues, nativeAggregateValues);
+    if (aggregateMaxAbsDiff > 1.0e-12d) {
+      throw new IllegalStateException("Native precomputed-track aggregation differs from Java implementation, maxAbsDiff=" + aggregateMaxAbsDiff);
+    }
+    if (!java.util.Arrays.equals(javaAggregateSupport, nativeAggregateSupport)) {
+      throw new IllegalStateException("Native precomputed-track support aggregation differs from Java implementation");
+    }
+
     final double javaMillis = nanosToMillis(javaNanos) / measuredIterations;
     final double nativeMillis = nanosToMillis(nativeNanos) / measuredIterations;
     final double javaExpectedMillis = nanosToMillis(javaExpectedNanos) / measuredIterations;
     final double nativeExpectedMillis = nanosToMillis(nativeExpectedNanos) / measuredIterations;
+    final double javaPostLogMillis = nanosToMillis(javaPostLogNanos) / measuredIterations;
+    final double nativePostLogMillis = nanosToMillis(nativePostLogNanos) / measuredIterations;
+    final double javaAggregateMillis = nanosToMillis(javaAggregateNanos) / measuredIterations;
+    final double nativeAggregateMillis = nanosToMillis(nativeAggregateNanos) / measuredIterations;
     System.out.println("  Base signal preparation:");
     System.out.printf(Locale.ROOT, "    Java mean:   %.3f ms%n", javaMillis);
     System.out.printf(Locale.ROOT, "    Native mean: %.3f ms%n", nativeMillis);
@@ -127,6 +197,16 @@ public final class NativeProcessingBenchmark {
     System.out.printf(Locale.ROOT, "    Native mean: %.3f ms%n", nativeExpectedMillis);
     System.out.printf(Locale.ROOT, "    Speedup:     %.3fx%n", javaExpectedMillis / Math.max(nativeExpectedMillis, 1.0e-9d));
     System.out.printf(Locale.ROOT, "    Max abs diff: %.3g%n", expectedMaxAbsDiff);
+    System.out.println("  Post-log transform:");
+    System.out.printf(Locale.ROOT, "    Java mean:   %.3f ms%n", javaPostLogMillis);
+    System.out.printf(Locale.ROOT, "    Native mean: %.3f ms%n", nativePostLogMillis);
+    System.out.printf(Locale.ROOT, "    Speedup:     %.3fx%n", javaPostLogMillis / Math.max(nativePostLogMillis, 1.0e-9d));
+    System.out.printf(Locale.ROOT, "    Max abs diff: %.3g%n", postLogMaxAbsDiff);
+    System.out.println("  Precomputed 1D max aggregation:");
+    System.out.printf(Locale.ROOT, "    Java mean:   %.3f ms%n", javaAggregateMillis);
+    System.out.printf(Locale.ROOT, "    Native mean: %.3f ms%n", nativeAggregateMillis);
+    System.out.printf(Locale.ROOT, "    Speedup:     %.3fx%n", javaAggregateMillis / Math.max(nativeAggregateMillis, 1.0e-9d));
+    System.out.printf(Locale.ROOT, "    Max abs diff: %.3g%n", aggregateMaxAbsDiff);
   }
 
   private static int readIntProperty(final @NotNull String propertyName,
@@ -223,6 +303,42 @@ public final class NativeProcessingBenchmark {
           ? sanitizePositive(input[offset]) / expected
           : 0.0d;
       }
+    }
+  }
+
+  private static void computePostLogJava(final double @NotNull [] values,
+                                         final double lnPostLogBase) {
+    for (int i = 0; i < values.length; i++) {
+      final var value = values[i];
+      values[i] = Double.isFinite(value) && value > 0.0d
+        ? Math.log1p(value) / lnPostLogBase
+        : 0.0d;
+    }
+  }
+
+  private static void aggregatePrecomputedMaxJava(final double @NotNull [] values,
+                                                  final long @NotNull [] support,
+                                                  final long queryStartPx,
+                                                  final long queryEndPx,
+                                                  final int bucketCount,
+                                                  final double @NotNull [] outputValues,
+                                                  final long @NotNull [] outputSupport) {
+    final var span = Math.max(1L, queryEndPx - queryStartPx);
+    final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
+    for (int i = 0; i < bucketCount; i++) {
+      final var startPx = queryStartPx + (long) Math.floor(i * bucketSpan);
+      final var endPx = Math.min(queryEndPx, queryStartPx + (long) Math.ceil((i + 1) * bucketSpan));
+      final var safeEndPx = Math.max(startPx + 1L, endPx);
+      final int from = (int) Math.max(0L, Math.min(startPx, values.length - 1L));
+      final int to = (int) Math.max(from + 1L, Math.min(safeEndPx, values.length));
+      double maxValue = 0.0d;
+      long supportSum = 0L;
+      for (int idx = from; idx < to; idx++) {
+        maxValue = Math.max(maxValue, values[idx]);
+        supportSum += support[idx];
+      }
+      outputValues[i] = maxValue;
+      outputSupport[i] = supportSum;
     }
   }
 

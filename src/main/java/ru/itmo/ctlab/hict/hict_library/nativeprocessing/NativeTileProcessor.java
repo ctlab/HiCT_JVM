@@ -139,6 +139,11 @@ final class NativeTileProcessor {
     );
   }
 
+  boolean applyPostLog(final double @NotNull [] values,
+                       final double lnPostLogBase) {
+    return nativeApplyPostLog(values, lnPostLogBase);
+  }
+
   boolean countStripeBlocks(final long @NotNull [] columnBins,
                             final int stripeCount,
                             final int submatrixSize,
@@ -151,6 +156,67 @@ final class NativeTileProcessor {
       denseThreshold,
       outputSparseDenseCounts
     );
+  }
+
+  boolean aggregatePrecomputedSeries(final double @NotNull [] values,
+                                     final long @NotNull [] support,
+                                     final long queryStartPx,
+                                     final long queryEndPx,
+                                     final int bucketCount,
+                                     final int strategyCode,
+                                     final double @NotNull [] outputValues,
+                                     final long @NotNull [] outputSupport) {
+    return nativeAggregatePrecomputedSeries(
+      values,
+      support,
+      queryStartPx,
+      queryEndPx,
+      bucketCount,
+      strategyCode,
+      outputValues,
+      outputSupport
+    );
+  }
+
+  boolean aggregateIntervals(final long @NotNull [] starts,
+                             final long @NotNull [] ends,
+                             final double @Nullable [] values,
+                             final long queryStartPx,
+                             final long queryEndPx,
+                             final int bucketCount,
+                             final int modeCode,
+                             final double @NotNull [] outputValues,
+                             final long @NotNull [] outputCounts) {
+    return nativeAggregateIntervals(
+      starts,
+      ends,
+      values,
+      queryStartPx,
+      queryEndPx,
+      bucketCount,
+      modeCode,
+      outputValues,
+      outputCounts
+    );
+  }
+
+  boolean reverseComplementAscii(final byte @NotNull [] input,
+                                 final byte @NotNull [] output) {
+    return nativeReverseComplementAscii(input, output);
+  }
+
+  boolean sortSparseBlockDouble(final long @NotNull [] rows,
+                                final long @NotNull [] columns,
+                                final double @NotNull [] values,
+                                final int submatrixSize) {
+    return nativeSortSparseBlockDouble(rows, columns, values, submatrixSize);
+  }
+
+  boolean sortSparseBlockLong(final long @NotNull [] rows,
+                              final long @NotNull [] columns,
+                              final long @NotNull [] values,
+                              final int submatrixSize) {
+    return nativeSortSparseBlockLong(rows, columns, values, submatrixSize);
   }
 
   boolean transformExpectedSignal(final double @NotNull [] signal,
@@ -377,11 +443,46 @@ final class NativeTileProcessor {
                                                             double maxSignal,
                                                             byte[] outputRgba);
 
+  private static native boolean nativeApplyPostLog(double[] values,
+                                                   double lnPostLogBase);
+
   private static native boolean nativeCountStripeBlocks(long[] columnBins,
                                                         int stripeCount,
                                                         int submatrixSize,
                                                         int denseThreshold,
                                                         long[] outputSparseDenseCounts);
+
+  private static native boolean nativeAggregatePrecomputedSeries(double[] values,
+                                                                 long[] support,
+                                                                 long queryStartPx,
+                                                                 long queryEndPx,
+                                                                 int bucketCount,
+                                                                 int strategyCode,
+                                                                 double[] outputValues,
+                                                                 long[] outputSupport);
+
+  private static native boolean nativeAggregateIntervals(long[] starts,
+                                                         long[] ends,
+                                                         double[] values,
+                                                         long queryStartPx,
+                                                         long queryEndPx,
+                                                         int bucketCount,
+                                                         int modeCode,
+                                                         double[] outputValues,
+                                                         long[] outputCounts);
+
+  private static native boolean nativeReverseComplementAscii(byte[] input,
+                                                             byte[] output);
+
+  private static native boolean nativeSortSparseBlockDouble(long[] rows,
+                                                            long[] columns,
+                                                            double[] values,
+                                                            int submatrixSize);
+
+  private static native boolean nativeSortSparseBlockLong(long[] rows,
+                                                          long[] columns,
+                                                          long[] values,
+                                                          int submatrixSize);
 
   private static native boolean nativeTransformExpectedSignal(double[] signal,
                                                               int rows,

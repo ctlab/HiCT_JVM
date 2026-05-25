@@ -33,6 +33,7 @@ import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.*;
@@ -181,6 +182,77 @@ class NativeProcessingServiceTest {
         sparseDenseCounts
       ));
       assertArrayEquals(new long[]{3L, 1L}, sparseDenseCounts);
+
+      final var postLogInput = new double[]{0.0d, 9.0d, -1.0d, Double.NaN, Double.POSITIVE_INFINITY};
+      assertTrue(processor.applyPostLog(postLogInput, Math.log(10.0d)));
+      assertArrayEquals(
+        new double[]{0.0d, 1.0d, 0.0d, 0.0d, 0.0d},
+        postLogInput,
+        1.0e-12d
+      );
+
+      final var precomputedValues = new double[]{1.0d, 2.0d, 3.0d, 4.0d, 5.0d, 6.0d, 7.0d, 8.0d};
+      final var precomputedSupport = new long[]{1L, 0L, 2L, 0L, 3L, 3L, 0L, 1L};
+      final var aggregatedValues = new double[4];
+      final var aggregatedSupport = new long[4];
+      assertTrue(processor.aggregatePrecomputedSeries(
+        precomputedValues,
+        precomputedSupport,
+        0L,
+        8L,
+        4,
+        1,
+        aggregatedValues,
+        aggregatedSupport
+      ));
+      assertArrayEquals(new double[]{2.0d, 4.0d, 6.0d, 8.0d}, aggregatedValues, 1.0e-12d);
+      assertArrayEquals(new long[]{1L, 2L, 6L, 1L}, aggregatedSupport);
+
+      final var intervalStarts = new long[]{0L, 1L, 3L, 6L};
+      final var intervalEnds = new long[]{2L, 5L, 7L, 8L};
+      final var intervalValues = new double[]{1.0d, 2.0d, 4.0d, 8.0d};
+      final var intervalOutput = new double[4];
+      final var intervalCounts = new long[4];
+      assertTrue(processor.aggregateIntervals(intervalStarts, intervalEnds, intervalValues, 0L, 8L, 4, 1, intervalOutput, intervalCounts));
+      assertArrayEquals(new double[]{2.0d, 4.0d, 4.0d, 8.0d}, intervalOutput, 1.0e-12d);
+      assertArrayEquals(new long[]{2L, 2L, 2L, 2L}, intervalCounts);
+
+      assertTrue(processor.aggregateIntervals(intervalStarts, intervalEnds, intervalValues, 0L, 8L, 4, 2, intervalOutput, intervalCounts));
+      assertArrayEquals(
+        new double[]{4.0d / 3.0d, 8.0d / 3.0d, 10.0d / 3.0d, 20.0d / 3.0d},
+        intervalOutput,
+        1.0e-12d
+      );
+      assertArrayEquals(new long[]{2L, 2L, 2L, 2L}, intervalCounts);
+
+      assertTrue(processor.aggregateIntervals(intervalStarts, intervalEnds, null, 0L, 8L, 4, 4, intervalOutput, intervalCounts));
+      assertArrayEquals(new double[]{1.5d, 1.5d, 1.5d, 1.5d}, intervalOutput, 1.0e-12d);
+      assertArrayEquals(new long[]{2L, 2L, 2L, 2L}, intervalCounts);
+
+      final var sequence = "AaTtCcGgNnRYSWKMBDHVX";
+      final var reverseComplementInput = sequence.getBytes(StandardCharsets.US_ASCII);
+      final var reverseComplementOutput = new byte[reverseComplementInput.length];
+      assertTrue(processor.reverseComplementAscii(reverseComplementInput, reverseComplementOutput));
+      assertEquals(
+        expectedReverseComplement(sequence),
+        new String(reverseComplementOutput, StandardCharsets.US_ASCII)
+      );
+
+      final var sparseRowsDouble = new long[]{2L, 0L, 1L, 0L};
+      final var sparseColumnsDouble = new long[]{0L, 2L, 1L, 1L};
+      final var sparseDoubleValues = new double[]{20.0d, 2.0d, 11.0d, 1.0d};
+      assertTrue(processor.sortSparseBlockDouble(sparseRowsDouble, sparseColumnsDouble, sparseDoubleValues, 4));
+      assertArrayEquals(new long[]{0L, 0L, 1L, 2L}, sparseRowsDouble);
+      assertArrayEquals(new long[]{1L, 2L, 1L, 0L}, sparseColumnsDouble);
+      assertArrayEquals(new double[]{1.0d, 2.0d, 11.0d, 20.0d}, sparseDoubleValues, 1.0e-12d);
+
+      final var sparseRowsLong = new long[]{2L, 0L, 1L, 0L};
+      final var sparseColumnsLong = new long[]{0L, 2L, 1L, 1L};
+      final var sparseLongValues = new long[]{20L, 2L, 11L, 1L};
+      assertTrue(processor.sortSparseBlockLong(sparseRowsLong, sparseColumnsLong, sparseLongValues, 4));
+      assertArrayEquals(new long[]{0L, 0L, 1L, 2L}, sparseRowsLong);
+      assertArrayEquals(new long[]{1L, 2L, 1L, 0L}, sparseColumnsLong);
+      assertArrayEquals(new long[]{1L, 2L, 11L, 20L}, sparseLongValues);
 
       final double[][] expectedTransformInput = {
         {0.0d, 2.0d, 4.0d},
@@ -331,5 +403,34 @@ class NativeProcessingServiceTest {
     for (int row = 0; row < expected.length; row++) {
       assertArrayEquals(expected[row], actual[row], delta, "row " + row);
     }
+  }
+
+  private static String expectedReverseComplement(final String sequence) {
+    final var result = new StringBuilder(sequence.length());
+    for (int index = sequence.length() - 1; index >= 0; index--) {
+      result.append(complement(sequence.charAt(index)));
+    }
+    return result.toString();
+  }
+
+  private static char complement(final char base) {
+    return switch (base) {
+      case 'A', 'a' -> 'T';
+      case 'T', 't' -> 'A';
+      case 'C', 'c' -> 'G';
+      case 'G', 'g' -> 'C';
+      case 'N', 'n' -> 'N';
+      case 'R', 'r' -> 'Y';
+      case 'Y', 'y' -> 'R';
+      case 'S', 's' -> 'S';
+      case 'W', 'w' -> 'W';
+      case 'K', 'k' -> 'M';
+      case 'M', 'm' -> 'K';
+      case 'B', 'b' -> 'V';
+      case 'D', 'd' -> 'H';
+      case 'H', 'h' -> 'D';
+      case 'V', 'v' -> 'B';
+      default -> 'N';
+    };
   }
 }

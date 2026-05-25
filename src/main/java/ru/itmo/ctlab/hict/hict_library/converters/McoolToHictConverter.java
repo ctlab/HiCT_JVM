@@ -868,6 +868,9 @@ public class McoolToHictConverter {
     if (n <= 1) {
       return;
     }
+    if (NativeProcessingService.getInstance().trySortSparseBlockRowMajor(rows, cols, vals, SUBMATRIX_SIZE)) {
+      return;
+    }
     final int bucketSize = SUBMATRIX_SIZE * SUBMATRIX_SIZE;
     final int[] counts = new int[bucketSize];
     final int[] keys = new int[n];
@@ -904,6 +907,9 @@ public class McoolToHictConverter {
   ) {
     final int n = rows.length;
     if (n <= 1) {
+      return;
+    }
+    if (NativeProcessingService.getInstance().trySortSparseBlockRowMajor(rows, cols, vals, SUBMATRIX_SIZE)) {
       return;
     }
     final int bucketSize = SUBMATRIX_SIZE * SUBMATRIX_SIZE;

@@ -91,7 +91,8 @@ data class NativeProcessingVariant(
   val id: String,
   val taskSuffix: String,
   val libraryBaseName: String,
-  val compileFlags: List<String>,
+  val gnuCompileFlags: List<String>,
+  val msvcCompileFlags: List<String>,
   val description: String
 )
 
@@ -100,14 +101,15 @@ val nativeProcessingVariants = listOf(
     id = "baseline",
     taskSuffix = "Baseline",
     libraryBaseName = nativeProcessingLibraryBaseName,
-    compileFlags = listOf("-mavx2", "-mfma", "-msse4.2", "-mbmi", "-mbmi2"),
+    gnuCompileFlags = listOf("-mavx2", "-mfma", "-msse4.2", "-mbmi", "-mbmi2"),
+    msvcCompileFlags = listOf("/arch:AVX2"),
     description = "baseline x86-64 AVX2/FMA/BMI2 build"
   ),
   NativeProcessingVariant(
     id = "avx512",
     taskSuffix = "Avx512",
     libraryBaseName = "${nativeProcessingLibraryBaseName}_avx512",
-    compileFlags = listOf(
+    gnuCompileFlags = listOf(
       "-mavx2",
       "-mfma",
       "-msse4.2",
@@ -116,11 +118,18 @@ val nativeProcessingVariants = listOf(
       "-mavx512f",
       "-mavx512dq",
       "-mavx512bw",
-      "-mavx512vl"
+      "-mavx512vl",
+      "-DHICT_NATIVE_AVX512=1"
     ),
+    msvcCompileFlags = listOf("/arch:AVX512", "/DHICT_NATIVE_AVX512=1"),
     description = "AVX-512F/DQ/BW/VL build"
   )
 )
+
+val nativeProcessingOpenMpEnabled =
+  (providers.gradleProperty("nativeOpenmp").orNull ?: System.getenv("HICT_NATIVE_OPENMP"))
+    ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
+    ?: false
 
 fun nativeProcessingPlatformDirectory(): String? {
   val os = System.getProperty("os.name").lowercase()
@@ -165,13 +174,34 @@ fun nativeProcessingCompilerExecutable(): String? {
     }
     return override.takeIf { executableOnPath(it) }
   }
-  return listOf("g++", "clang++").firstOrNull(::executableOnPath)
+  val os = System.getProperty("os.name").lowercase()
+  val candidates = if (os.contains("win")) {
+    listOf("cl.exe", "cl", "clang-cl.exe", "clang-cl", "g++", "clang++")
+  } else {
+    listOf("g++", "clang++")
+  }
+  return candidates.firstOrNull(::executableOnPath)
 }
 
-fun nativeProcessingCompilerSupportsCurrentOs(): Boolean {
+fun nativeProcessingCompilerFlavor(compilerExecutable: String?): String? {
+  if (compilerExecutable.isNullOrBlank()) {
+    return null
+  }
+  val executableName = File(compilerExecutable).name.lowercase().removeSuffix(".exe")
+  return when {
+    executableName == "cl" || executableName == "clang-cl" -> "msvc"
+    executableName == "g++" || executableName == "clang++" || executableName.endsWith("-g++") -> "gnu"
+    else -> null
+  }
+}
+
+fun nativeProcessingCompilerSupportsCurrentOs(compilerExecutable: String? = nativeProcessingCompilerExecutable()): Boolean {
   val os = System.getProperty("os.name").lowercase()
-  // MSVC/MinGW packaging needs a separate path; do not make regular JVM builds fail on Windows.
-  return !os.contains("win")
+  val compilerFlavor = nativeProcessingCompilerFlavor(compilerExecutable)
+  return when {
+    os.contains("win") -> compilerFlavor == "msvc"
+    else -> compilerFlavor == "gnu"
+  }
 }
 
 fun nativeProcessingOutputFile(variant: NativeProcessingVariant): File {
@@ -303,12 +333,13 @@ nativeProcessingVariants.forEach { variant ->
     val javaInclude = javaHome.resolve("include")
     val javaPlatformInclude = jniPlatformInclude?.let { javaInclude.resolve(it) }
     val compilerExecutable = nativeProcessingCompilerExecutable()
+    val compilerFlavor = nativeProcessingCompilerFlavor(compilerExecutable)
 
     onlyIf {
       platformDirectory != null &&
         jniPlatformInclude != null &&
         compilerExecutable != null &&
-        nativeProcessingCompilerSupportsCurrentOs() &&
+        nativeProcessingCompilerSupportsCurrentOs(compilerExecutable) &&
         nativeProcessingSourceFile.asFile.isFile &&
         javaInclude.isDirectory &&
         javaPlatformInclude?.isDirectory == true
@@ -319,8 +350,25 @@ nativeProcessingVariants.forEach { variant ->
       logger.lifecycle("Building HiCT native processing ${variant.id} library: ${outputFile.absolutePath}")
     }
 
-    commandLine(
-      listOfNotNull(
+    val msvcOpenMpFlags = if (nativeProcessingOpenMpEnabled) listOf("/openmp") else listOf("/wd4068")
+    val gnuOpenMpFlags = if (nativeProcessingOpenMpEnabled) listOf("-fopenmp") else emptyList()
+    val command = when (compilerFlavor) {
+      "msvc" -> listOfNotNull(
+        compilerExecutable,
+        "/nologo",
+        "/std:c++17",
+        "/O2",
+        "/EHsc",
+        "/LD",
+        "/DNOMINMAX",
+        "/DWIN32_LEAN_AND_MEAN",
+        "/DHICT_NATIVE_VARIANT=\\\"${variant.id}\\\"",
+        "/I${javaInclude.absolutePath}",
+        "/I${javaPlatformInclude?.absolutePath ?: javaInclude.absolutePath}",
+        nativeProcessingSourceFile.asFile.absolutePath,
+        "/Fe:${outputFile.absolutePath}"
+      ) + variant.msvcCompileFlags + msvcOpenMpFlags + listOf("/link", "/NOLOGO")
+      else -> listOfNotNull(
         compilerExecutable,
         "-std=c++17",
         "-O3",
@@ -333,8 +381,9 @@ nativeProcessingVariants.forEach { variant ->
         "-o",
         outputFile.absolutePath,
         nativeProcessingSourceFile.asFile.absolutePath
-      ) + variant.compileFlags
-    )
+      ) + variant.gnuCompileFlags + gnuOpenMpFlags
+    }
+    commandLine(command)
   }
 }
 
@@ -362,7 +411,9 @@ tasks.register("describeNativeProcessing") {
     val compilerExecutable = nativeProcessingCompilerExecutable()
     println("Native processing source: ${nativeProcessingSourceFile.asFile.absolutePath}")
     println("Native processing compiler: ${compilerExecutable ?: "not found"}")
-    println("Native processing compiler enabled on this OS: ${nativeProcessingCompilerSupportsCurrentOs()}")
+    println("Native processing compiler flavor: ${nativeProcessingCompilerFlavor(compilerExecutable) ?: "unsupported"}")
+    println("Native processing compiler enabled on this OS: ${nativeProcessingCompilerSupportsCurrentOs(compilerExecutable)}")
+    println("Native processing OpenMP: ${if (nativeProcessingOpenMpEnabled) "requested" else "disabled by default"}")
     nativeProcessingVariants.forEach { variant ->
       println("Native processing ${variant.id} output: ${nativeProcessingOutputFile(variant).absolutePath}")
     }

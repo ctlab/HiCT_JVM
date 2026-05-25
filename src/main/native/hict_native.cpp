@@ -30,13 +30,18 @@
 #include <cstdint>
 #include <vector>
 
+#if defined(HICT_NATIVE_AVX512) && defined(__AVX512F__)
+#include <immintrin.h>
+#endif
+
 namespace {
 
 #ifndef HICT_NATIVE_VARIANT
 #define HICT_NATIVE_VARIANT "baseline"
 #endif
 
-constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.2-" HICT_NATIVE_VARIANT;
+constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.3-" HICT_NATIVE_VARIANT;
+constexpr std::int64_t PARALLEL_THRESHOLD = 131072;
 
 bool valid_extent(const jint rows, const jint columns, const jsize element_count) {
   if (rows < 0 || columns < 0) {
@@ -98,6 +103,7 @@ bool compute_base_signal(const InputElement* input,
                          const bool apply_resolution_linear_scaling,
                          const bool apply_cooler_weights,
                          double* output) {
+#pragma omp parallel for schedule(static) if(static_cast<std::int64_t>(rows) * columns >= PARALLEL_THRESHOLD)
   for (jint row = 0; row < rows; ++row) {
     const auto row_weight = row_weights == nullptr ? 1.0 : row_weights[row];
     const auto row_offset = static_cast<std::int64_t>(row) * columns;
@@ -120,10 +126,66 @@ bool compute_base_signal(const InputElement* input,
   return true;
 }
 
+bool apply_post_log(double* values, const jsize length, const double ln_post_log_base) {
+  if (values == nullptr || !std::isfinite(ln_post_log_base) || ln_post_log_base <= 0.0) {
+    return false;
+  }
+#pragma omp parallel for schedule(static) if(length >= PARALLEL_THRESHOLD)
+  for (jsize i = 0; i < length; ++i) {
+    const auto value = values[i];
+    values[i] = std::isfinite(value) && value > 0.0 ? (std::log1p(value) / ln_post_log_base) : 0.0;
+  }
+  return true;
+}
+
 std::uint8_t to_u8(double value) {
   value = std::clamp(value, 0.0, 1.0);
   return static_cast<std::uint8_t>(std::lround(value * 255.0));
 }
+
+#if defined(HICT_NATIVE_AVX512) && defined(__AVX512F__)
+bool map_linear_gradient_rgba_avx512(const double* signal,
+                                     const std::int64_t element_count,
+                                     const float* start_rgba,
+                                     const double* delta,
+                                     const double min_signal,
+                                     const double signal_range,
+                                     jbyte* output_rgba) {
+  const auto min_v = _mm512_set1_pd(min_signal);
+  const auto inv_range_v = _mm512_set1_pd(1.0 / signal_range);
+  const auto zero_v = _mm512_setzero_pd();
+  const auto one_v = _mm512_set1_pd(1.0);
+  const auto block_count = element_count / 8;
+
+#pragma omp parallel for schedule(static) if(element_count >= PARALLEL_THRESHOLD)
+  for (std::int64_t block = 0; block < block_count; ++block) {
+    const auto offset = block * 8;
+    auto standardized_v = _mm512_mul_pd(_mm512_sub_pd(_mm512_loadu_pd(signal + offset), min_v), inv_range_v);
+    standardized_v = _mm512_min_pd(_mm512_max_pd(standardized_v, zero_v), one_v);
+
+    alignas(64) double standardized[8];
+    _mm512_store_pd(standardized, standardized_v);
+    for (int lane = 0; lane < 8; ++lane) {
+      const auto output_offset = (offset + lane) * 4;
+      const auto t = standardized[lane];
+      for (int component = 0; component < 4; ++component) {
+        const auto value = static_cast<double>(start_rgba[component]) + delta[component] * t;
+        output_rgba[output_offset + component] = static_cast<jbyte>(to_u8(value));
+      }
+    }
+  }
+
+  for (std::int64_t offset = block_count * 8; offset < element_count; ++offset) {
+    const auto standardized = std::clamp((signal[offset] - min_signal) / signal_range, 0.0, 1.0);
+    const auto output_offset = offset * 4;
+    for (int component = 0; component < 4; ++component) {
+      const auto value = static_cast<double>(start_rgba[component]) + delta[component] * standardized;
+      output_rgba[output_offset + component] = static_cast<jbyte>(to_u8(value));
+    }
+  }
+  return true;
+}
+#endif
 
 bool map_linear_gradient_rgba(const double* signal,
                               const jint rows,
@@ -144,6 +206,12 @@ bool map_linear_gradient_rgba(const double* signal,
   }
 
   const auto element_count = static_cast<std::int64_t>(rows) * columns;
+#if defined(HICT_NATIVE_AVX512) && defined(__AVX512F__)
+  if (element_count >= 8) {
+    return map_linear_gradient_rgba_avx512(signal, element_count, start_rgba, delta, min_signal, signal_range, output_rgba);
+  }
+#endif
+#pragma omp parallel for schedule(static) if(element_count >= PARALLEL_THRESHOLD)
   for (std::int64_t offset = 0; offset < element_count; ++offset) {
     const auto standardized = std::clamp((signal[offset] - min_signal) / signal_range, 0.0, 1.0);
     const auto output_offset = offset * 4;
@@ -200,6 +268,293 @@ bool count_stripe_blocks(const jlong* column_bins,
   return true;
 }
 
+bool aggregate_precomputed_series(const double* values,
+                                  const jlong* support,
+                                  const jsize series_length,
+                                  const jlong query_start_px,
+                                  const jlong query_end_px,
+                                  const jint bucket_count,
+                                  const jint strategy_code,
+                                  double* output_values,
+                                  jlong* output_support) {
+  if (values == nullptr || support == nullptr || output_values == nullptr || output_support == nullptr) {
+    return false;
+  }
+  if (series_length <= 0 || bucket_count <= 0 || query_end_px <= query_start_px) {
+    return false;
+  }
+  if (strategy_code < 1 || strategy_code > 4) {
+    return false;
+  }
+  const auto span = static_cast<double>(std::max<jlong>(1, query_end_px - query_start_px));
+  const auto bucket_span = std::max(1.0, span / static_cast<double>(bucket_count));
+
+#pragma omp parallel for schedule(static) if(bucket_count >= 1024)
+  for (jint bucket = 0; bucket < bucket_count; ++bucket) {
+    const auto start_px = query_start_px + static_cast<jlong>(std::floor(bucket * bucket_span));
+    const auto end_px = std::min<jlong>(query_end_px, query_start_px + static_cast<jlong>(std::ceil((bucket + 1) * bucket_span)));
+    const auto safe_end_px = std::max<jlong>(start_px + 1, end_px);
+    const auto from = static_cast<jsize>(std::max<jlong>(0, std::min<jlong>(start_px, series_length - 1)));
+    const auto to = static_cast<jsize>(std::max<jlong>(from + 1, std::min<jlong>(safe_end_px, series_length)));
+
+    double max_value = 0.0;
+    double sum_value = 0.0;
+    jlong support_sum = 0;
+    jlong support_count = 0;
+    for (jsize idx = from; idx < to; ++idx) {
+      const auto value = values[idx];
+      const auto current_support = support[idx];
+      max_value = std::max(max_value, value);
+      sum_value += value;
+      support_sum += current_support;
+      if (current_support > 0) {
+        ++support_count;
+      }
+    }
+
+    double result = 0.0;
+    switch (strategy_code) {
+      case 1:
+        result = max_value;
+        break;
+      case 2:
+        result = sum_value / std::max(1.0, static_cast<double>(to - from));
+        break;
+      case 3:
+        result = support_count > 0 ? (sum_value / static_cast<double>(support_count)) : 0.0;
+        break;
+      case 4:
+        result = sum_value;
+        break;
+      default:
+        result = 0.0;
+        break;
+    }
+    output_values[bucket] = std::isfinite(result) ? result : 0.0;
+    output_support[bucket] = support_sum;
+  }
+  return true;
+}
+
+bool aggregate_intervals(const jlong* starts,
+                         const jlong* ends,
+                         const double* values,
+                         const jsize feature_count,
+                         const jlong query_start_px,
+                         const jlong query_end_px,
+                         const jint bucket_count,
+                         const jint mode_code,
+                         double* output_values,
+                         jlong* output_counts) {
+  if (starts == nullptr || ends == nullptr || output_values == nullptr || output_counts == nullptr) {
+    return false;
+  }
+  if (feature_count < 0 || bucket_count <= 0 || query_end_px <= query_start_px) {
+    return false;
+  }
+  if (mode_code < 1 || mode_code > 5) {
+    return false;
+  }
+  if ((mode_code == 1 || mode_code == 2 || mode_code == 3) && values == nullptr) {
+    return false;
+  }
+
+  std::fill(output_values, output_values + bucket_count, 0.0);
+  std::fill(output_counts, output_counts + bucket_count, 0);
+
+  const auto span = static_cast<double>(std::max<jlong>(1, query_end_px - query_start_px));
+  const auto bucket_span = std::max(1.0, span / static_cast<double>(bucket_count));
+  std::vector<double> weighted_sums;
+  std::vector<double> overlap_sums;
+  if (mode_code == 2 || mode_code == 3) {
+    weighted_sums.assign(static_cast<std::size_t>(bucket_count), 0.0);
+    overlap_sums.assign(static_cast<std::size_t>(bucket_count), 0.0);
+  }
+
+  for (jsize feature = 0; feature < feature_count; ++feature) {
+    const auto feature_start = starts[feature];
+    const auto feature_end = ends[feature];
+    if (feature_end <= query_start_px || feature_start >= query_end_px || feature_end <= feature_start) {
+      continue;
+    }
+
+    if (mode_code == 5) {
+      const auto center = feature_start + ((feature_end - feature_start) >> 1);
+      auto bucket = static_cast<jint>(std::floor((center - query_start_px) / bucket_span));
+      bucket = std::max<jint>(0, std::min<jint>(bucket, bucket_count - 1));
+      output_values[bucket] += 1.0;
+      output_counts[bucket] += 1;
+      continue;
+    }
+
+    auto left = static_cast<jint>(std::floor((feature_start - query_start_px) / bucket_span));
+    auto right = static_cast<jint>(std::ceil((feature_end - query_start_px) / bucket_span)) - 1;
+    left = std::max<jint>(0, std::min<jint>(left, bucket_count - 1));
+    right = std::max<jint>(0, std::min<jint>(right, bucket_count - 1));
+    const auto feature_value = values == nullptr ? 1.0 : values[feature];
+    for (jint bucket = left; bucket <= right; ++bucket) {
+      const auto bucket_start = query_start_px + static_cast<jlong>(std::floor(bucket * bucket_span));
+      const auto bucket_end = std::min<jlong>(query_end_px, query_start_px + static_cast<jlong>(std::ceil((bucket + 1) * bucket_span)));
+      const auto overlap = std::min<jlong>(feature_end, bucket_end) - std::max<jlong>(feature_start, bucket_start);
+      if (overlap <= 0) {
+        continue;
+      }
+
+      switch (mode_code) {
+        case 1:
+          output_values[bucket] = std::max(output_values[bucket], feature_value);
+          break;
+        case 2:
+        case 3:
+          weighted_sums[static_cast<std::size_t>(bucket)] += feature_value * static_cast<double>(overlap);
+          overlap_sums[static_cast<std::size_t>(bucket)] += static_cast<double>(overlap);
+          break;
+        case 4:
+          output_values[bucket] += static_cast<double>(overlap) / std::max(1.0, static_cast<double>(bucket_end - bucket_start));
+          break;
+        default:
+          break;
+      }
+      output_counts[bucket] += 1;
+    }
+  }
+
+  if (mode_code == 2 || mode_code == 3) {
+    for (jint bucket = 0; bucket < bucket_count; ++bucket) {
+      if (output_counts[bucket] <= 0) {
+        continue;
+      }
+      const auto start_px = query_start_px + static_cast<jlong>(std::floor(bucket * bucket_span));
+      const auto end_px = std::min<jlong>(query_end_px, query_start_px + static_cast<jlong>(std::ceil((bucket + 1) * bucket_span)));
+      const auto bucket_width = std::max(1.0, static_cast<double>(std::max<jlong>(start_px + 1, end_px) - start_px));
+      if (mode_code == 2) {
+        output_values[bucket] = overlap_sums[static_cast<std::size_t>(bucket)] > 0.0
+          ? weighted_sums[static_cast<std::size_t>(bucket)] / overlap_sums[static_cast<std::size_t>(bucket)]
+          : 0.0;
+      } else {
+        output_values[bucket] = weighted_sums[static_cast<std::size_t>(bucket)] / bucket_width;
+      }
+    }
+  }
+  return true;
+}
+
+std::uint8_t complement_ascii(const std::uint8_t base) {
+  switch (base) {
+    case 'A':
+    case 'a':
+      return 'T';
+    case 'T':
+    case 't':
+      return 'A';
+    case 'C':
+    case 'c':
+      return 'G';
+    case 'G':
+    case 'g':
+      return 'C';
+    case 'N':
+    case 'n':
+      return 'N';
+    case 'R':
+    case 'r':
+      return 'Y';
+    case 'Y':
+    case 'y':
+      return 'R';
+    case 'S':
+    case 's':
+      return 'S';
+    case 'W':
+    case 'w':
+      return 'W';
+    case 'K':
+    case 'k':
+      return 'M';
+    case 'M':
+    case 'm':
+      return 'K';
+    case 'B':
+    case 'b':
+      return 'V';
+    case 'D':
+    case 'd':
+      return 'H';
+    case 'H':
+    case 'h':
+      return 'D';
+    case 'V':
+    case 'v':
+      return 'B';
+    default:
+      return 'N';
+  }
+}
+
+bool reverse_complement_ascii(const jbyte* input, const jsize length, jbyte* output) {
+  if (input == nullptr || output == nullptr || length < 0) {
+    return false;
+  }
+#pragma omp parallel for schedule(static) if(length >= PARALLEL_THRESHOLD)
+  for (jsize i = 0; i < length; ++i) {
+    const auto src = static_cast<std::uint8_t>(input[length - i - 1]);
+    output[i] = static_cast<jbyte>(complement_ascii(src));
+  }
+  return true;
+}
+
+template <typename ValueElement>
+bool sort_sparse_block_row_major(jlong* rows,
+                                 jlong* columns,
+                                 ValueElement* values,
+                                 const jsize length,
+                                 const jint submatrix_size) {
+  if (rows == nullptr || columns == nullptr || values == nullptr || length < 0 || submatrix_size <= 0) {
+    return false;
+  }
+  if (length <= 1) {
+    return true;
+  }
+  const auto bucket_count_64 = static_cast<std::int64_t>(submatrix_size) * static_cast<std::int64_t>(submatrix_size);
+  if (bucket_count_64 <= 0 || bucket_count_64 > 1'048'576) {
+    return false;
+  }
+  const auto bucket_count = static_cast<std::size_t>(bucket_count_64);
+  std::vector<int> counts(bucket_count, 0);
+  std::vector<int> keys(static_cast<std::size_t>(length));
+  for (jsize i = 0; i < length; ++i) {
+    if (rows[i] < 0 || rows[i] >= submatrix_size || columns[i] < 0 || columns[i] >= submatrix_size) {
+      return false;
+    }
+    const auto key = static_cast<int>(rows[i] * submatrix_size + columns[i]);
+    keys[static_cast<std::size_t>(i)] = key;
+    counts[static_cast<std::size_t>(key)]++;
+  }
+
+  int prefix = 0;
+  for (auto& count : counts) {
+    const auto current = count;
+    count = prefix;
+    prefix += current;
+  }
+
+  std::vector<jlong> sorted_rows(static_cast<std::size_t>(length));
+  std::vector<jlong> sorted_columns(static_cast<std::size_t>(length));
+  std::vector<ValueElement> sorted_values(static_cast<std::size_t>(length));
+  for (jsize i = 0; i < length; ++i) {
+    const auto key = keys[static_cast<std::size_t>(i)];
+    const auto position = counts[static_cast<std::size_t>(key)]++;
+    sorted_rows[static_cast<std::size_t>(position)] = rows[i];
+    sorted_columns[static_cast<std::size_t>(position)] = columns[i];
+    sorted_values[static_cast<std::size_t>(position)] = values[i];
+  }
+
+  std::copy(sorted_rows.begin(), sorted_rows.end(), rows);
+  std::copy(sorted_columns.begin(), sorted_columns.end(), columns);
+  std::copy(sorted_values.begin(), sorted_values.end(), values);
+  return true;
+}
+
 bool transform_expected_signal(const double* signal,
                                const jint rows,
                                const jint columns,
@@ -217,6 +572,7 @@ bool transform_expected_signal(const double* signal,
     return false;
   }
 
+#pragma omp parallel for schedule(static) if(static_cast<std::int64_t>(rows) * columns >= PARALLEL_THRESHOLD)
   for (jint row = 0; row < rows; ++row) {
     const auto absolute_row_px = start_row_px + row;
     const auto row_to_col_delta = start_col_px - absolute_row_px;
@@ -461,6 +817,25 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeApplyPostLog(
+  JNIEnv* env,
+  jclass,
+  jdoubleArray values_array,
+  jdouble ln_post_log_base
+) {
+  if (values_array == nullptr) {
+    return JNI_FALSE;
+  }
+  auto* values = static_cast<jdouble*>(env->GetPrimitiveArrayCritical(values_array, nullptr));
+  if (values == nullptr) {
+    return JNI_FALSE;
+  }
+  const auto ok = apply_post_log(values, env->GetArrayLength(values_array), ln_post_log_base);
+  env->ReleasePrimitiveArrayCritical(values_array, values, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeCountStripeBlocks(
   JNIEnv* env,
   jclass,
@@ -501,6 +876,252 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
 
   env->ReleaseLongArrayElements(column_bins_array, column_bins, JNI_ABORT);
   env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeAggregatePrecomputedSeries(
+  JNIEnv* env,
+  jclass,
+  jdoubleArray values_array,
+  jlongArray support_array,
+  jlong query_start_px,
+  jlong query_end_px,
+  jint bucket_count,
+  jint strategy_code,
+  jdoubleArray output_values_array,
+  jlongArray output_support_array
+) {
+  if (values_array == nullptr || support_array == nullptr || output_values_array == nullptr || output_support_array == nullptr) {
+    return JNI_FALSE;
+  }
+  const auto series_length = env->GetArrayLength(values_array);
+  if (env->GetArrayLength(support_array) < series_length ||
+      env->GetArrayLength(output_values_array) < bucket_count ||
+      env->GetArrayLength(output_support_array) < bucket_count) {
+    return JNI_FALSE;
+  }
+
+  auto* values = env->GetDoubleArrayElements(values_array, nullptr);
+  auto* support = env->GetLongArrayElements(support_array, nullptr);
+  auto* output_values = env->GetDoubleArrayElements(output_values_array, nullptr);
+  auto* output_support = env->GetLongArrayElements(output_support_array, nullptr);
+  if (values == nullptr || support == nullptr || output_values == nullptr || output_support == nullptr) {
+    if (values != nullptr) {
+      env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
+    }
+    if (support != nullptr) {
+      env->ReleaseLongArrayElements(support_array, support, JNI_ABORT);
+    }
+    if (output_values != nullptr) {
+      env->ReleaseDoubleArrayElements(output_values_array, output_values, JNI_ABORT);
+    }
+    if (output_support != nullptr) {
+      env->ReleaseLongArrayElements(output_support_array, output_support, JNI_ABORT);
+    }
+    return JNI_FALSE;
+  }
+
+  const auto ok = aggregate_precomputed_series(
+    values,
+    support,
+    series_length,
+    query_start_px,
+    query_end_px,
+    bucket_count,
+    strategy_code,
+    output_values,
+    output_support
+  );
+
+  env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
+  env->ReleaseLongArrayElements(support_array, support, JNI_ABORT);
+  env->ReleaseDoubleArrayElements(output_values_array, output_values, ok ? 0 : JNI_ABORT);
+  env->ReleaseLongArrayElements(output_support_array, output_support, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeAggregateIntervals(
+  JNIEnv* env,
+  jclass,
+  jlongArray starts_array,
+  jlongArray ends_array,
+  jdoubleArray values_array,
+  jlong query_start_px,
+  jlong query_end_px,
+  jint bucket_count,
+  jint mode_code,
+  jdoubleArray output_values_array,
+  jlongArray output_counts_array
+) {
+  if (starts_array == nullptr || ends_array == nullptr || output_values_array == nullptr || output_counts_array == nullptr) {
+    return JNI_FALSE;
+  }
+  const auto feature_count = env->GetArrayLength(starts_array);
+  if (env->GetArrayLength(ends_array) < feature_count ||
+      (values_array != nullptr && env->GetArrayLength(values_array) < feature_count) ||
+      env->GetArrayLength(output_values_array) < bucket_count ||
+      env->GetArrayLength(output_counts_array) < bucket_count) {
+    return JNI_FALSE;
+  }
+
+  auto* starts = env->GetLongArrayElements(starts_array, nullptr);
+  auto* ends = env->GetLongArrayElements(ends_array, nullptr);
+  auto* values = values_array == nullptr ? nullptr : env->GetDoubleArrayElements(values_array, nullptr);
+  auto* output_values = env->GetDoubleArrayElements(output_values_array, nullptr);
+  auto* output_counts = env->GetLongArrayElements(output_counts_array, nullptr);
+  if (starts == nullptr || ends == nullptr || output_values == nullptr || output_counts == nullptr || (values_array != nullptr && values == nullptr)) {
+    if (starts != nullptr) {
+      env->ReleaseLongArrayElements(starts_array, starts, JNI_ABORT);
+    }
+    if (ends != nullptr) {
+      env->ReleaseLongArrayElements(ends_array, ends, JNI_ABORT);
+    }
+    if (values != nullptr) {
+      env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
+    }
+    if (output_values != nullptr) {
+      env->ReleaseDoubleArrayElements(output_values_array, output_values, JNI_ABORT);
+    }
+    if (output_counts != nullptr) {
+      env->ReleaseLongArrayElements(output_counts_array, output_counts, JNI_ABORT);
+    }
+    return JNI_FALSE;
+  }
+
+  const auto ok = aggregate_intervals(
+    starts,
+    ends,
+    values,
+    feature_count,
+    query_start_px,
+    query_end_px,
+    bucket_count,
+    mode_code,
+    output_values,
+    output_counts
+  );
+
+  env->ReleaseLongArrayElements(starts_array, starts, JNI_ABORT);
+  env->ReleaseLongArrayElements(ends_array, ends, JNI_ABORT);
+  if (values != nullptr) {
+    env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
+  }
+  env->ReleaseDoubleArrayElements(output_values_array, output_values, ok ? 0 : JNI_ABORT);
+  env->ReleaseLongArrayElements(output_counts_array, output_counts, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeReverseComplementAscii(
+  JNIEnv* env,
+  jclass,
+  jbyteArray input_array,
+  jbyteArray output_array
+) {
+  if (input_array == nullptr || output_array == nullptr) {
+    return JNI_FALSE;
+  }
+  const auto length = env->GetArrayLength(input_array);
+  if (env->GetArrayLength(output_array) < length) {
+    return JNI_FALSE;
+  }
+
+  auto* input = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(input_array, nullptr));
+  auto* output = static_cast<jbyte*>(env->GetPrimitiveArrayCritical(output_array, nullptr));
+  if (input == nullptr || output == nullptr) {
+    if (input != nullptr) {
+      env->ReleasePrimitiveArrayCritical(input_array, input, JNI_ABORT);
+    }
+    if (output != nullptr) {
+      env->ReleasePrimitiveArrayCritical(output_array, output, JNI_ABORT);
+    }
+    return JNI_FALSE;
+  }
+  const auto ok = reverse_complement_ascii(input, length, output);
+  env->ReleasePrimitiveArrayCritical(input_array, input, JNI_ABORT);
+  env->ReleasePrimitiveArrayCritical(output_array, output, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSortSparseBlockDouble(
+  JNIEnv* env,
+  jclass,
+  jlongArray rows_array,
+  jlongArray columns_array,
+  jdoubleArray values_array,
+  jint submatrix_size
+) {
+  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+    return JNI_FALSE;
+  }
+  const auto length = env->GetArrayLength(rows_array);
+  if (env->GetArrayLength(columns_array) < length || env->GetArrayLength(values_array) < length) {
+    return JNI_FALSE;
+  }
+
+  auto* rows = env->GetLongArrayElements(rows_array, nullptr);
+  auto* columns = env->GetLongArrayElements(columns_array, nullptr);
+  auto* values = env->GetDoubleArrayElements(values_array, nullptr);
+  if (rows == nullptr || columns == nullptr || values == nullptr) {
+    if (rows != nullptr) {
+      env->ReleaseLongArrayElements(rows_array, rows, JNI_ABORT);
+    }
+    if (columns != nullptr) {
+      env->ReleaseLongArrayElements(columns_array, columns, JNI_ABORT);
+    }
+    if (values != nullptr) {
+      env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
+    }
+    return JNI_FALSE;
+  }
+
+  const auto ok = sort_sparse_block_row_major(rows, columns, values, length, submatrix_size);
+  env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
+  env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
+  env->ReleaseDoubleArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSortSparseBlockLong(
+  JNIEnv* env,
+  jclass,
+  jlongArray rows_array,
+  jlongArray columns_array,
+  jlongArray values_array,
+  jint submatrix_size
+) {
+  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+    return JNI_FALSE;
+  }
+  const auto length = env->GetArrayLength(rows_array);
+  if (env->GetArrayLength(columns_array) < length || env->GetArrayLength(values_array) < length) {
+    return JNI_FALSE;
+  }
+
+  auto* rows = env->GetLongArrayElements(rows_array, nullptr);
+  auto* columns = env->GetLongArrayElements(columns_array, nullptr);
+  auto* values = env->GetLongArrayElements(values_array, nullptr);
+  if (rows == nullptr || columns == nullptr || values == nullptr) {
+    if (rows != nullptr) {
+      env->ReleaseLongArrayElements(rows_array, rows, JNI_ABORT);
+    }
+    if (columns != nullptr) {
+      env->ReleaseLongArrayElements(columns_array, columns, JNI_ABORT);
+    }
+    if (values != nullptr) {
+      env->ReleaseLongArrayElements(values_array, values, JNI_ABORT);
+    }
+    return JNI_FALSE;
+  }
+
+  const auto ok = sort_sparse_block_row_major(rows, columns, values, length, submatrix_size);
+  env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
+  env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
+  env->ReleaseLongArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
   return ok ? JNI_TRUE : JNI_FALSE;
 }
 

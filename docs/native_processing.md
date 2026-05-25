@@ -10,18 +10,30 @@ The current native library offloads:
 
 - base signal preparation for `double` matrix tiles;
 - base signal preparation for `long` matrix tiles;
-- simple linear-gradient RGBA rasterization.
+- post-log tile transform after rendering-pipeline signal preparation;
+- simple linear-gradient RGBA rasterization, including a hand-written AVX-512
+  mapping loop in the AVX-512 binary;
 - observed/expected and expected-only distance normalization for non-segmented
   diagonal profiles;
 - dense/sparse stripe-block counting used by `.mcool -> .hict.hdf5`
-  conversion.
+  conversion;
+- sparse stripe-block row-major sorting used by `.mcool -> .hict.hdf5`
+  write preparation;
+- 1D precomputed-track aggregation used by BED/GFF/GTF/BigWig/cache-backed
+  track rendering;
+- projected interval aggregation used by BigWig max/mean/sum, BED-style
+  coverage, and read-density rendering;
+- ASCII FASTA reverse-complement export.
 
-HDF5 I/O, assembly/scaffold mutations, segmented expected-normalization profile
-construction, and full rendering-pipeline graph evaluation still use the Java
-implementation. Native conversion/HDF5 hooks are being added incrementally only
-where the native output can be parity-tested against the Java converters on
-representative `.mcool` and `.hict.hdf5` files; until then conversion commands
-stay on the proven Java path.
+Wholesale HDF5/JHDF5 replacement is intentionally staged. HDF5 file opening,
+dataset layout traversal, assembly/scaffold mutations, segmented
+expected-normalization profile construction, and full rendering-pipeline graph
+evaluation still use the Java implementation. Native conversion/HDF5 hooks are
+added only where the native output can be parity-tested against the Java
+converters on representative `.mcool` and `.hict.hdf5` files; until then
+conversion commands keep the proven Java I/O path and use native kernels only
+for isolated hot loops. See `docs/native_hdf5_migration.md` for the file-backend
+migration plan.
 
 Two binary variants are built on x86-64 toolchains that support them:
 
@@ -43,7 +55,22 @@ On supported local platforms:
 
 `./gradlew natives` builds every native variant supported by the current machine
 and compiler. Unsupported platforms/toolchains are skipped without failing the
-regular Java build.
+regular Java build. Linux uses `g++`/`clang++`. Windows uses MSVC-compatible
+`cl.exe`/`clang-cl` when the command is available in a Visual Studio x64 tools
+shell.
+
+OpenMP is disabled by default to avoid adding an implicit runtime dependency to
+portable packages. It can be requested for local benchmarking builds:
+
+```bash
+./gradlew natives -PnativeOpenmp=true
+```
+
+or:
+
+```bash
+HICT_NATIVE_OPENMP=1 ./gradlew natives
+```
 
 `./gradlew jar` builds the regular JAR and also produces the fat Shadow JAR with
 the available native libraries embedded under `natives/<platform>/`.
@@ -62,7 +89,8 @@ Legacy single-variant builds are still available:
 
 The benchmark runs one JVM per native variant so JNI symbol binding cannot mix
 baseline and AVX-512 libraries in the same process. It verifies deterministic
-tile-processing parity before reporting timing.
+tile-processing parity before reporting timing for the implemented native
+kernels.
 
 ## JHDF5 / HDF5 Native Builds
 
@@ -124,8 +152,10 @@ coarse-grained loader lock.
 
 ## Correctness Contract
 
-Native output must match the Java implementation for the offloaded stage. The
-optional parity test can be run after compiling the native library:
+Native output must match the Java implementation for the offloaded stage. All
+native calls are optional: a missing native library, rejected input, or native
+failure disables native processing and returns to Java for the current process.
+The optional parity test can be run after compiling the native library:
 
 ```bash
 ./gradlew test --tests '*NativeProcessingServiceTest' \

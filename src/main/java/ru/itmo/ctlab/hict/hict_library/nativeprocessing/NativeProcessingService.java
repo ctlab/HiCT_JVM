@@ -33,6 +33,7 @@ import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
 
@@ -196,6 +197,39 @@ public final class NativeProcessingService {
     }
   }
 
+  public boolean tryApplyPostLogInPlace(final double @NotNull [][] values,
+                                        final double lnPostLogBase) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return false;
+    }
+    if (!isNativeProcessingActive()) {
+      return false;
+    }
+    if (!Double.isFinite(lnPostLogBase) || lnPostLogBase <= 0.0d) {
+      return false;
+    }
+    final var rows = values.length;
+    final var columns = rows > 0 ? values[0].length : 0;
+    final var elementCount = checkedElementCount(rows, columns);
+    if (elementCount < 0) {
+      return false;
+    }
+    final var flattened = flattenDoubleMatrix(values, rows, columns);
+    try {
+      final var computed = this.nativeTileProcessor.applyPostLog(flattened, lnPostLogBase);
+      if (!computed) {
+        recordProcessingFailure("Native post-log transformer rejected the input");
+        return false;
+      }
+      copyFlatToMatrix(flattened, values, rows, columns);
+      return true;
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native post-log transform failed: " + err.getMessage());
+      log.warn("Native post-log transform failed; falling back to Java implementation", err);
+      return false;
+    }
+  }
+
   public long @Nullable [] tryCountStripeBlocks(final long @NotNull [] columnBins,
                                                 final int stripeCount,
                                                 final int submatrixSize,
@@ -227,6 +261,171 @@ public final class NativeProcessingService {
       recordProcessingFailure("Native stripe-block counting failed: " + err.getMessage());
       log.warn("Native stripe-block counting failed; falling back to Java implementation", err);
       return null;
+    }
+  }
+
+  public @Nullable NativeAggregationResult tryAggregatePrecomputedSeries(final double @NotNull [] values,
+                                                                         final long @NotNull [] support,
+                                                                         final long queryStartPx,
+                                                                         final long queryEndPx,
+                                                                         final int bucketCount,
+                                                                         final int strategyCode) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return null;
+    }
+    if (!isNativeProcessingActive()) {
+      return null;
+    }
+    if (values.length == 0 || support.length < values.length || bucketCount <= 0 || queryEndPx <= queryStartPx) {
+      return null;
+    }
+    final var outputValues = new double[bucketCount];
+    final var outputSupport = new long[bucketCount];
+    try {
+      final var computed = this.nativeTileProcessor.aggregatePrecomputedSeries(
+        values,
+        support,
+        queryStartPx,
+        queryEndPx,
+        bucketCount,
+        strategyCode,
+        outputValues,
+        outputSupport
+      );
+      if (!computed) {
+        recordProcessingFailure("Native precomputed-series aggregator rejected the input");
+        return null;
+      }
+      return new NativeAggregationResult(outputValues, outputSupport);
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native precomputed-series aggregation failed: " + err.getMessage());
+      log.warn("Native precomputed-series aggregation failed; falling back to Java implementation", err);
+      return null;
+    }
+  }
+
+  public @Nullable NativeAggregationResult tryAggregateIntervals(final long @NotNull [] starts,
+                                                                 final long @NotNull [] ends,
+                                                                 final double @Nullable [] values,
+                                                                 final long queryStartPx,
+                                                                 final long queryEndPx,
+                                                                 final int bucketCount,
+                                                                 final int modeCode) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return null;
+    }
+    if (!isNativeProcessingActive()) {
+      return null;
+    }
+    if (starts.length == 0 || ends.length < starts.length || bucketCount <= 0 || queryEndPx <= queryStartPx) {
+      return null;
+    }
+    if (values != null && values.length < starts.length) {
+      return null;
+    }
+    final var outputValues = new double[bucketCount];
+    final var outputCounts = new long[bucketCount];
+    try {
+      final var computed = this.nativeTileProcessor.aggregateIntervals(
+        starts,
+        ends,
+        values,
+        queryStartPx,
+        queryEndPx,
+        bucketCount,
+        modeCode,
+        outputValues,
+        outputCounts
+      );
+      if (!computed) {
+        recordProcessingFailure("Native interval aggregator rejected the input");
+        return null;
+      }
+      return new NativeAggregationResult(outputValues, outputCounts);
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native interval aggregation failed: " + err.getMessage());
+      log.warn("Native interval aggregation failed; falling back to Java implementation", err);
+      return null;
+    }
+  }
+
+  public @Nullable String tryReverseComplementAscii(final @NotNull String sequence) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return null;
+    }
+    if (!isNativeProcessingActive()) {
+      return null;
+    }
+    if (sequence.isEmpty()) {
+      return "";
+    }
+    final var input = sequence.getBytes(StandardCharsets.US_ASCII);
+    final var output = new byte[input.length];
+    try {
+      final var computed = this.nativeTileProcessor.reverseComplementAscii(input, output);
+      if (!computed) {
+        recordProcessingFailure("Native FASTA reverse-complement rejected the input");
+        return null;
+      }
+      return new String(output, StandardCharsets.US_ASCII);
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native FASTA reverse-complement failed: " + err.getMessage());
+      log.warn("Native FASTA reverse-complement failed; falling back to Java implementation", err);
+      return null;
+    }
+  }
+
+  public boolean trySortSparseBlockRowMajor(final long @NotNull [] rows,
+                                            final long @NotNull [] columns,
+                                            final double @NotNull [] values,
+                                            final int submatrixSize) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return false;
+    }
+    if (!isNativeProcessingActive()) {
+      return false;
+    }
+    if (!validSparseBlockInput(rows, columns, values.length, submatrixSize)) {
+      return false;
+    }
+    try {
+      final var computed = this.nativeTileProcessor.sortSparseBlockDouble(rows, columns, values, submatrixSize);
+      if (!computed) {
+        recordProcessingFailure("Native double sparse-block sorter rejected the input");
+        return false;
+      }
+      return true;
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native double sparse-block sort failed: " + err.getMessage());
+      log.warn("Native double sparse-block sort failed; falling back to Java implementation", err);
+      return false;
+    }
+  }
+
+  public boolean trySortSparseBlockRowMajor(final long @NotNull [] rows,
+                                            final long @NotNull [] columns,
+                                            final long @NotNull [] values,
+                                            final int submatrixSize) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return false;
+    }
+    if (!isNativeProcessingActive()) {
+      return false;
+    }
+    if (!validSparseBlockInput(rows, columns, values.length, submatrixSize)) {
+      return false;
+    }
+    try {
+      final var computed = this.nativeTileProcessor.sortSparseBlockLong(rows, columns, values, submatrixSize);
+      if (!computed) {
+        recordProcessingFailure("Native long sparse-block sorter rejected the input");
+        return false;
+      }
+      return true;
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native long sparse-block sort failed: " + err.getMessage());
+      log.warn("Native long sparse-block sort failed; falling back to Java implementation", err);
+      return false;
     }
   }
 
@@ -373,8 +572,33 @@ public final class NativeProcessingService {
     return result;
   }
 
+  private static boolean validSparseBlockInput(final long @NotNull [] rows,
+                                               final long @NotNull [] columns,
+                                               final int valuesLength,
+                                               final int submatrixSize) {
+    return rows.length > 1
+      && columns.length >= rows.length
+      && valuesLength >= rows.length
+      && submatrixSize > 0;
+  }
+
+  private static void copyFlatToMatrix(final double @NotNull [] values,
+                                       final double @NotNull [][] destination,
+                                       final int rows,
+                                       final int columns) {
+    var src = 0;
+    for (int row = 0; row < rows; row++) {
+      System.arraycopy(values, src, destination[row], 0, columns);
+      src += columns;
+    }
+  }
+
   private static float @NotNull [] colorComponents(final @NotNull Color color) {
     return color.getRGBComponents(null);
+  }
+
+  public record NativeAggregationResult(double @NotNull [] values,
+                                        long @NotNull [] counts) {
   }
 
   public record NativeProcessingStatus(boolean requested,

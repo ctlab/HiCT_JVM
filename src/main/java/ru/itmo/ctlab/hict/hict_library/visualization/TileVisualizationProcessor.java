@@ -204,13 +204,15 @@ public class TileVisualizationProcessor {
       );
     }
     if (post > 0) {
-      for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-        final var row = transformedSignal[rowIndex];
-        for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
-          final var value = row[colIndex];
-          row[colIndex] = Double.isFinite(value) && value > 0.0d
-            ? (Math.log1p(value) / post)
-            : 0.0d;
+      if (!NativeProcessingService.getInstance().tryApplyPostLogInPlace(transformedSignal, post)) {
+        for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+          final var row = transformedSignal[rowIndex];
+          for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
+            final var value = row[colIndex];
+            row[colIndex] = Double.isFinite(value) && value > 0.0d
+              ? (Math.log1p(value) / post)
+              : 0.0d;
+          }
         }
       }
     }
