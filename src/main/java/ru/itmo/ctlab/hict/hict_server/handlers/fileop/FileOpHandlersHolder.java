@@ -793,13 +793,15 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
   private static @NotNull SecondaryCompatibility analyzeSecondaryCompatibility(final @NotNull ChunkedFile primary,
                                                                                final @NotNull ChunkedFile secondary) {
-    final var primaryResolutions = primary.getResolutions().clone();
-    final var secondaryResolutions = secondary.getResolutions().clone();
-    final var primaryMatrixSizeBins = primary.getMatrixSizeBins().clone();
-    final var secondaryMatrixSizeBins = secondary.getMatrixSizeBins().clone();
+    final var primaryResolutions = responseResolutions(primary);
+    final var secondaryResolutions = responseResolutions(secondary);
+    final var primaryMatrixSizeBins = responseMatrixSizeBins(primary);
+    final var secondaryMatrixSizeBins = responseMatrixSizeBins(secondary);
     return new SecondaryCompatibility(
       Arrays.equals(primaryResolutions, secondaryResolutions),
       Arrays.equals(primaryMatrixSizeBins, secondaryMatrixSizeBins),
+      primaryResolutions,
+      secondaryResolutions,
       primaryMatrixSizeBins,
       secondaryMatrixSizeBins
     );
@@ -822,6 +824,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
   private record SecondaryCompatibility(boolean sameResolutions,
                                         boolean sameMatrixSizes,
+                                        long[] primaryResolutions,
+                                        long[] secondaryResolutions,
                                         long[] primaryMatrixSizeBins,
                                         long[] secondaryMatrixSizeBins) {
     private boolean exactMatch() {
@@ -857,10 +861,26 @@ public class FileOpHandlersHolder extends HandlersHolder {
         .put("exactMatch", exactMatch())
         .put("primaryMaxBins", primaryMaxBins)
         .put("secondaryMaxBins", secondaryMaxBins)
+        .put("primaryResolutions", Arrays.stream(primaryResolutions).boxed().toList())
+        .put("secondaryResolutions", Arrays.stream(secondaryResolutions).boxed().toList())
+        .put("primaryPixelResolutions", Arrays.stream(primaryResolutions).mapToDouble(value -> (double) value).boxed().toList())
+        .put("secondaryPixelResolutions", Arrays.stream(secondaryResolutions).mapToDouble(value -> (double) value).boxed().toList())
         .put("primaryBinsByResolution", Arrays.stream(primaryMatrixSizeBins).boxed().toList())
         .put("secondaryBinsByResolution", Arrays.stream(secondaryMatrixSizeBins).boxed().toList())
         .put("mismatchedResolutionOrders", mismatchedOrders);
     }
+  }
+
+  private static long @NotNull [] responseResolutions(final @NotNull ChunkedFile chunkedFile) {
+    final var resolutionsWithoutZero = Arrays.stream(chunkedFile.getResolutions()).skip(1L).toArray();
+    ArrayUtils.reverse(resolutionsWithoutZero);
+    return resolutionsWithoutZero;
+  }
+
+  private static long @NotNull [] responseMatrixSizeBins(final @NotNull ChunkedFile chunkedFile) {
+    final var matrixSizeBins = chunkedFile.getMatrixSizeBins().clone();
+    ArrayUtils.reverse(matrixSizeBins);
+    return Arrays.stream(matrixSizeBins).limit(Math.max(0, matrixSizeBins.length - 1L)).toArray();
   }
 
   private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
@@ -874,10 +894,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
   }
 
   private @NotNull OpenFileResponseDTO generateOpenFileResponse(final @NotNull ChunkedFile chunkedFile) {
-    final var resolutionsWithoutZero = Arrays.stream(chunkedFile.getResolutions()).skip(1L).toArray();
-    ArrayUtils.reverse(resolutionsWithoutZero);
-    final var matrixSizeBins = chunkedFile.getMatrixSizeBins().clone();
-    ArrayUtils.reverse(matrixSizeBins);
+    final var resolutionsWithoutZero = responseResolutions(chunkedFile);
+    final var matrixSizeBins = responseMatrixSizeBins(chunkedFile);
     final long minResolution = Arrays.stream(resolutionsWithoutZero).min().orElse(1L);
 //    Arrays.stream(chunkedFile.getMatrixSizeBins()).forEachOrdered(i -> log.debug("New resolutrion matrix size bins: " + i));
     return new OpenFileResponseDTO(
@@ -887,7 +905,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       Arrays.stream(resolutionsWithoutZero).mapToDouble(r -> (double) r / minResolution).boxed().toList(),
       chunkedFile.getDenseBlockSize(),
       AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
-      Arrays.stream(matrixSizeBins).limit(matrixSizeBins.length - 1).mapToInt(l -> (int) l).boxed().toList()
+      Arrays.stream(matrixSizeBins).mapToInt(l -> (int) l).boxed().toList()
     );
   }
 }

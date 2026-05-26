@@ -440,7 +440,10 @@ public class TileHandlersHolder extends HandlersHolder {
           }
           return Map.of("version", newStats.versionCounter().get());
         },
-        result -> ctx.response().setStatusCode(200).end(Json.encode(result))
+        result -> ctx.response()
+          .putHeader("content-type", "application/json")
+          .setStatusCode(200)
+          .end(Json.encode(result))
       );
     });
 
@@ -520,18 +523,29 @@ public class TileHandlersHolder extends HandlersHolder {
     final var renderPipelineConfig = renderPipelineWrapper != null
       ? renderPipelineWrapper.getRenderPipelineConfig()
       : RenderPipelineConfig.disabled();
+    final var requestedSourceParam = ctx.request().getParam("source");
+    final var sourceSpecificRequest = requestedSourceParam != null && !requestedSourceParam.isBlank();
+    final var requestedSource = "SECONDARY".equalsIgnoreCase(requestedSourceParam)
+      ? "SECONDARY"
+      : "PRIMARY";
+    final var requestedChunkedFile =
+      sourceSpecificRequest && "SECONDARY".equals(requestedSource) ? secondaryChunkedFile : chunkedFile;
+    if (requestedChunkedFile == null) {
+      throw new RuntimeException("Secondary source is not attached");
+    }
+    final var resolutionLookupChunkedFile = sourceSpecificRequest ? requestedChunkedFile : chunkedFile;
 
     final var requestedBpResolutionParam = ctx.request().getParam("bpResolution");
     final int level;
     if (requestedBpResolutionParam != null) {
       final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
-      final var resolutionOrder = chunkedFile.getResolutionToIndex().get(requestedBpResolution);
+      final var resolutionOrder = resolutionLookupChunkedFile.getResolutionToIndex().get(requestedBpResolution);
       if (resolutionOrder == null) {
         throw new RuntimeException("Requested bpResolution is not present in opened file: " + requestedBpResolution);
       }
       level = resolutionOrder;
     } else {
-      level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
+      level = resolutionLookupChunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
     }
 
     final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
@@ -565,8 +579,57 @@ public class TileHandlersHolder extends HandlersHolder {
       endColPx = (col + 1) * tileWidth;
     }
 
+    final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(level);
+    final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+    final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
+
+    if (sourceSpecificRequest) {
+      final var selectedMatrixWithWeights = querySourceSubmatrix(
+        requestedChunkedFile,
+        resolutionDescriptor,
+        startRowPx,
+        startColPx,
+        endRowPx,
+        endColPx
+      );
+      if (selectedMatrixWithWeights == null) {
+        return encodeTileImage(
+          new BufferedImage(Math.max(1, tileWidth), Math.max(1, tileHeight), BufferedImage.TYPE_INT_ARGB),
+          format,
+          stats,
+          chunkedFile
+        );
+      }
+      final BufferedImage sourceImage;
+      if (renderPipelineConfig.enabled()) {
+        sourceImage = renderPipelineSingleSourceTile(
+          requestedChunkedFile,
+          selectedMatrixWithWeights,
+          options,
+          renderPipelineConfig,
+          requestedSource,
+          track1DManager
+        );
+      } else {
+        final var selectedExpectedProfile = "PRIMARY".equals(requestedSource)
+          ? resolveExpectedProfile(map, resolutionDescriptor)
+          : null;
+        sourceImage = requestedChunkedFile.tileVisualizationProcessor().visualizeTile(
+          selectedMatrixWithWeights,
+          options,
+          selectedExpectedProfile
+        );
+      }
+      return encodeTileImage(
+        padTileImage(sourceImage, selectedMatrixWithWeights, startRowPx, startColPx, tileHeight, tileWidth),
+        format,
+        stats,
+        chunkedFile
+      );
+    }
+
     final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
-      ResolutionDescriptor.fromResolutionOrder(level),
+      resolutionDescriptor,
       startRowPx,
       startColPx,
       endRowPx,
@@ -575,15 +638,13 @@ public class TileHandlersHolder extends HandlersHolder {
     );
     final var secondaryMatrixWithWeights = querySecondarySubmatrix(
       secondaryChunkedFile,
-      ResolutionDescriptor.fromResolutionOrder(level),
+      resolutionDescriptor,
       startRowPx,
       startColPx,
       endRowPx,
       endColPx
     );
-    final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-    final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
-    final var expectedProfile = resolveExpectedProfile(map, ResolutionDescriptor.fromResolutionOrder(level));
+    final var expectedProfile = resolveExpectedProfile(map, resolutionDescriptor);
 
     final BufferedImage image;
     if (renderPipelineConfig.enabled()) {
@@ -609,6 +670,49 @@ public class TileHandlersHolder extends HandlersHolder {
     } else {
       image = chunkedFile.tileVisualizationProcessor().visualizeTile(matrixWithWeights, options, expectedProfile);
     }
+    return encodeTileImage(
+      padTileImage(image, matrixWithWeights, startRowPx, startColPx, tileHeight, tileWidth),
+      format,
+      stats,
+      chunkedFile
+    );
+  }
+
+  private @NotNull BufferedImage padTileImage(
+    final @NotNull BufferedImage image,
+    final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrixWithWeights,
+    final long requestedStartRowPx,
+    final long requestedStartColPx,
+    final int tileHeight,
+    final int tileWidth
+  ) {
+    final var safeTileHeight = Math.max(1, tileHeight);
+    final var safeTileWidth = Math.max(1, tileWidth);
+    final var offsetX = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, matrixWithWeights.startColIncl() - requestedStartColPx));
+    final var offsetY = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, matrixWithWeights.startRowIncl() - requestedStartRowPx));
+    if (
+      offsetX == 0 &&
+      offsetY == 0 &&
+      image.getWidth() == safeTileWidth &&
+      image.getHeight() == safeTileHeight
+    ) {
+      return image;
+    }
+    final var padded = new BufferedImage(safeTileWidth, safeTileHeight, BufferedImage.TYPE_INT_ARGB);
+    final var graphics = padded.createGraphics();
+    try {
+      graphics.setComposite(AlphaComposite.Src);
+      graphics.drawImage(image, offsetX, offsetY, null);
+    } finally {
+      graphics.dispose();
+    }
+    return padded;
+  }
+
+  private @NotNull TileResponsePayload encodeTileImage(final @NotNull BufferedImage image,
+                                                       final @NotNull TileFormat format,
+                                                       final @NotNull TileStatisticHolder stats,
+                                                       final @NotNull ChunkedFile chunkedFile) {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
     try {
@@ -700,12 +804,22 @@ public class TileHandlersHolder extends HandlersHolder {
     if (bpResolution == null || bpResolution <= 0L) {
       throw new IllegalArgumentException("Field 'bpResolution' must be a positive integer");
     }
-    final var resolutionOrder = primaryChunkedFile.getResolutionToIndex().get(bpResolution);
+    final var requestedSource = "SECONDARY".equalsIgnoreCase(request.getString("source", "PRIMARY"))
+      ? "SECONDARY"
+      : "PRIMARY";
+    final var requestedChunkedFile =
+      "SECONDARY".equals(requestedSource) ? secondaryChunkedFile : primaryChunkedFile;
+    if (requestedChunkedFile == null) {
+      throw new IllegalStateException("Secondary source is not attached");
+    }
+    final var resolutionOrder = requestedChunkedFile.getResolutionToIndex().get(bpResolution);
     if (resolutionOrder == null) {
       throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
     }
     final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
-    final var expectedProfile = resolveExpectedProfile(map, resolutionDescriptor);
+    final var expectedProfile = "PRIMARY".equals(requestedSource)
+      ? resolveExpectedProfile(map, resolutionDescriptor)
+      : null;
 
     final var units = parseUnits(request.getString("unit", request.getString("units", "PIXELS")));
     final var startRowInUnits = resolveRangeStart(request, Axis.ROW, units);
@@ -716,23 +830,15 @@ public class TileHandlersHolder extends HandlersHolder {
       throw new IllegalArgumentException("End coordinates must be greater than or equal to start coordinates");
     }
 
-    final var startRowPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, startRowInUnits);
-    final var startColPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, startColInUnits);
-    final var endRowPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, endRowInUnits);
-    final var endColPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, endColInUnits);
+    final var startRowPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startRowInUnits);
+    final var startColPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startColInUnits);
+    final var endRowPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endRowInUnits);
+    final var endColPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endColInUnits);
 
-    final var requestedSource = "SECONDARY".equalsIgnoreCase(request.getString("source", "PRIMARY"))
-      ? "SECONDARY"
-      : "PRIMARY";
-    final var requestedChunkedFile =
-      "SECONDARY".equals(requestedSource) ? secondaryChunkedFile : primaryChunkedFile;
-    if (requestedChunkedFile == null) {
-      throw new IllegalStateException("Secondary source is not attached");
-    }
     final var matrixWithWeights =
       "SECONDARY".equals(requestedSource)
-        ? querySecondarySubmatrix(
-          secondaryChunkedFile,
+        ? querySourceSubmatrix(
+          requestedChunkedFile,
           resolutionDescriptor,
           startRowPx,
           startColPx,
@@ -1694,6 +1800,170 @@ public class TileHandlersHolder extends HandlersHolder {
     return image;
   }
 
+  private @NotNull BufferedImage renderPipelineSingleSourceTile(final @NotNull ChunkedFile sourceChunkedFile,
+                                                                final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrixWithWeights,
+                                                                final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
+                                                                final @NotNull RenderPipelineConfig pipelineConfig,
+                                                                final @NotNull String sourceName,
+                                                                final Track1DManager track1DManager) {
+    final var values = matrixWithWeights.matrix();
+    final var rowCount = values.rows();
+    final var columnCount = values.cols();
+    final var image = new BufferedImage(columnCount, rowCount, BufferedImage.TYPE_INT_ARGB);
+    final var rgba = new int[Math.max(0, rowCount * columnCount)];
+    if (rowCount == 0 || columnCount == 0) {
+      return image;
+    }
+
+    final var resolutionDescriptor = matrixWithWeights.resolutionDescriptor();
+    final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final var bpResolution = sourceChunkedFile.getResolutions()[resolutionOrder];
+    final var bpResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(0);
+    final var totalVisiblePixels = sourceChunkedFile.getContigTree().getLengthInUnits(
+      QueryLengthUnit.PIXELS,
+      resolutionDescriptor
+    );
+    final var matrixSizeBins = sourceChunkedFile.getMatrixSizeBins();
+    final var totalBinsAtResolution =
+      resolutionOrder >= 0 && resolutionOrder < matrixSizeBins.length
+        ? matrixSizeBins[resolutionOrder]
+        : Long.MAX_VALUE;
+
+    final var rowPxValues = new long[rowCount];
+    final var rowBinValues = new long[rowCount];
+    final var rowBpValues = new long[rowCount];
+    for (int row = 0; row < rowCount; ++row) {
+      final var rowPx = matrixWithWeights.startRowIncl() + row;
+      rowPxValues[row] = rowPx;
+      rowBinValues[row] = sourceChunkedFile.convertUnits(
+        rowPx,
+        resolutionDescriptor,
+        QueryLengthUnit.PIXELS,
+        resolutionDescriptor,
+        QueryLengthUnit.BINS
+      );
+      rowBpValues[row] = sourceChunkedFile.convertUnits(
+        rowPx,
+        resolutionDescriptor,
+        QueryLengthUnit.PIXELS,
+        bpResolutionDescriptor,
+        QueryLengthUnit.BASE_PAIRS
+      );
+    }
+
+    final var colPxValues = new long[columnCount];
+    final var colBinValues = new long[columnCount];
+    final var colBpValues = new long[columnCount];
+    for (int col = 0; col < columnCount; ++col) {
+      final var colPx = matrixWithWeights.startColIncl() + col;
+      colPxValues[col] = colPx;
+      colBinValues[col] = sourceChunkedFile.convertUnits(
+        colPx,
+        resolutionDescriptor,
+        QueryLengthUnit.PIXELS,
+        resolutionDescriptor,
+        QueryLengthUnit.BINS
+      );
+      colBpValues[col] = sourceChunkedFile.convertUnits(
+        colPx,
+        resolutionDescriptor,
+        QueryLengthUnit.PIXELS,
+        bpResolutionDescriptor,
+        QueryLengthUnit.BASE_PAIRS
+      );
+    }
+
+    final var context = new RenderPipelineConfig.MutablePixelContext();
+    final var rowWeights = matrixWithWeights.rowWeights();
+    final var colWeights = matrixWithWeights.colWeights();
+    final var resolutionScalingCoeffs = sourceChunkedFile.getResolutionScalingCoefficient();
+    final var resolutionLinearScalingCoeffs = sourceChunkedFile.getResolutionLinearScalingCoefficient();
+    final var resolutionScalingCoeff =
+      resolutionOrder >= 0 && resolutionOrder < resolutionScalingCoeffs.length
+        ? resolutionScalingCoeffs[resolutionOrder]
+        : 1.0d;
+    final var resolutionLinearScalingCoeff =
+      resolutionOrder >= 0 && resolutionOrder < resolutionLinearScalingCoeffs.length
+        ? resolutionLinearScalingCoeffs[resolutionOrder]
+        : 1.0d;
+
+    final var rowTrackValuesByTrackId = new HashMap<String, double[]>();
+    final var colTrackValuesByTrackId = new HashMap<String, double[]>();
+    if (track1DManager != null) {
+      for (final var binding : pipelineConfig.requiredTrackBindings()) {
+        if (binding.axis() == RenderPipelineConfig.TrackAxis.ROW) {
+          if (!rowTrackValuesByTrackId.containsKey(binding.trackId())) {
+            final var sampled = track1DManager.sampleTrackValues(
+              sourceChunkedFile,
+              binding.trackId(),
+              matrixWithWeights.startRowIncl(),
+              matrixWithWeights.startRowIncl() + rowCount,
+              bpResolution,
+              QueryLengthUnit.PIXELS
+            );
+            rowTrackValuesByTrackId.put(binding.trackId(), normalizeTrackValues(sampled, rowCount));
+          }
+        } else {
+          if (!colTrackValuesByTrackId.containsKey(binding.trackId())) {
+            final var sampled = track1DManager.sampleTrackValues(
+              sourceChunkedFile,
+              binding.trackId(),
+              matrixWithWeights.startColIncl(),
+              matrixWithWeights.startColIncl() + columnCount,
+              bpResolution,
+              QueryLengthUnit.PIXELS
+            );
+            colTrackValuesByTrackId.put(binding.trackId(), normalizeTrackValues(sampled, columnCount));
+          }
+        }
+      }
+    }
+    context.rowTrackValuesByTrackId = rowTrackValuesByTrackId;
+    context.colTrackValuesByTrackId = colTrackValuesByTrackId;
+
+    final var secondarySource = "SECONDARY".equalsIgnoreCase(sourceName);
+    int pixelIndex = 0;
+    for (int row = 0; row < rowCount; ++row) {
+      final var rowWeight = rowWeights != null && row < rowWeights.length ? rowWeights[row] : 1.0d;
+      final var rowPx = rowPxValues[row];
+      final var rowBin = rowBinValues[row];
+      final var rowBp = rowBpValues[row];
+      for (int col = 0; col < columnCount; ++col) {
+        final var rawValue = values.getAsDouble(row, col);
+        final var value = Double.isFinite(rawValue) ? rawValue : 0.0d;
+        final var colPx = colPxValues[col];
+        final var colBin = colBinValues[col];
+        final var rowOutside =
+          rowPx < 0L || rowPx >= totalVisiblePixels || rowBin < 0L || rowBin >= totalBinsAtResolution;
+        final var colOutside =
+          colPx < 0L || colPx >= totalVisiblePixels || colBin < 0L || colBin >= totalBinsAtResolution;
+        if (rowOutside || colOutside) {
+          rgba[pixelIndex++] = 0x00000000;
+          continue;
+        }
+        final var colWeight = colWeights != null && col < colWeights.length ? colWeights[col] : 1.0d;
+        context.primaryValue = secondarySource ? 0.0d : value;
+        context.secondaryValue = secondarySource ? value : 0.0d;
+        context.rowWeight = rowWeight;
+        context.colWeight = colWeight;
+        context.resolutionScalingCoeff = resolutionScalingCoeff;
+        context.resolutionLinearScalingCoeff = resolutionLinearScalingCoeff;
+        context.rowPx = rowPx;
+        context.colPx = colPx;
+        context.rowBin = rowBin;
+        context.colBin = colBin;
+        context.rowBp = rowBp;
+        context.colBp = colBpValues[col];
+        context.bpResolution = bpResolution;
+        context.rowLocalIndex = row;
+        context.colLocalIndex = col;
+        rgba[pixelIndex++] = pipelineConfig.evaluateSourceArgb(sourceName, context, options);
+      }
+    }
+    image.setRGB(0, 0, columnCount, rowCount, rgba, 0, columnCount);
+    return image;
+  }
+
   private double @NotNull [] normalizeTrackValues(final double[] sampled,
                                                    final int expectedLength) {
     final var safeLength = Math.max(0, expectedLength);
@@ -1722,7 +1992,25 @@ public class TileHandlersHolder extends HandlersHolder {
     if (secondaryChunkedFile == null) {
       return null;
     }
-    final var maxVisiblePixels = secondaryChunkedFile.getContigTree().getLengthInUnits(
+    return querySourceSubmatrix(
+      secondaryChunkedFile,
+      resolutionDescriptor,
+      startRowPx,
+      startColPx,
+      endRowPx,
+      endColPx
+    );
+  }
+
+  private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights querySourceSubmatrix(
+    final @NotNull ChunkedFile sourceChunkedFile,
+    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final long startRowPx,
+    final long startColPx,
+    final long endRowPx,
+    final long endColPx
+  ) {
+    final var maxVisiblePixels = sourceChunkedFile.getContigTree().getLengthInUnits(
       QueryLengthUnit.PIXELS,
       resolutionDescriptor
     );
@@ -1737,7 +2025,7 @@ public class TileHandlersHolder extends HandlersHolder {
       return null;
     }
     try {
-      return secondaryChunkedFile.matrixQueries().getSubmatrix(
+      return sourceChunkedFile.matrixQueries().getSubmatrix(
         resolutionDescriptor,
         clampedStartRow,
         clampedStartCol,
@@ -1746,7 +2034,7 @@ public class TileHandlersHolder extends HandlersHolder {
         true
       );
     } catch (final RuntimeException ex) {
-      log.debug("Failed to query secondary submatrix for requested window", ex);
+      log.debug("Failed to query submatrix for requested source window", ex);
       return null;
     }
   }
