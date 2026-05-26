@@ -800,6 +800,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
     return new SecondaryCompatibility(
       Arrays.equals(primaryResolutions, secondaryResolutions),
       Arrays.equals(primaryMatrixSizeBins, secondaryMatrixSizeBins),
+      primaryResolutions,
+      secondaryResolutions,
       primaryMatrixSizeBins,
       secondaryMatrixSizeBins
     );
@@ -822,6 +824,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
   private record SecondaryCompatibility(boolean sameResolutions,
                                         boolean sameMatrixSizes,
+                                        long[] primaryResolutions,
+                                        long[] secondaryResolutions,
                                         long[] primaryMatrixSizeBins,
                                         long[] secondaryMatrixSizeBins) {
     private boolean exactMatch() {
@@ -857,6 +861,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
         .put("exactMatch", exactMatch())
         .put("primaryMaxBins", primaryMaxBins)
         .put("secondaryMaxBins", secondaryMaxBins)
+        .put("primaryResolutions", Arrays.stream(primaryResolutions).boxed().toList())
+        .put("secondaryResolutions", Arrays.stream(secondaryResolutions).boxed().toList())
         .put("primaryBinsByResolution", Arrays.stream(primaryMatrixSizeBins).boxed().toList())
         .put("secondaryBinsByResolution", Arrays.stream(secondaryMatrixSizeBins).boxed().toList())
         .put("mismatchedResolutionOrders", mismatchedOrders);

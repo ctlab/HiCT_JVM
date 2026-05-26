@@ -57,20 +57,72 @@ function Repair-Mm2PlusMingwGettimeofday([string]$SourceDir) {
   }
 
   $content = Get-Content -Raw -Path $miscPath
-  if ($content -match "__MINGW32__" -or $content -match "__MINGW64__") {
+  if ($content -match "hict_mingw_gettimeofday") {
     return
   }
   if ($content -notmatch "struct timezone" -or $content -notmatch "int gettimeofday") {
     return
   }
 
-  $patched = $content -replace "(#include <windows\.h>\r?\n\r?\n)(struct timezone)", "`$1#if !defined(__MINGW32__) && !defined(__MINGW64__)`n`$2"
-  $patched = $patched -replace "(return 0;\r?\n}\r?\n)(\r?\n// taken from https://stackoverflow\.com/questions/5272470/c-get-cpu-usage-on-linux-and-windows)", "`$1#endif /* !MinGW gettimeofday */`$2"
+  $patched = $content -replace "\bstruct\s+timezone\b(?=\s*\{)", "struct hict_mingw_timezone"
+  $patched = $patched -replace "int\s+gettimeofday\s*\(\s*struct\s+timeval\s*\*\s*tp\s*,\s*struct\s+timezone\s*\*\s*tzp\s*\)", "static int hict_mingw_gettimeofday(struct timeval * tp, struct hict_mingw_timezone *tzp)"
+  $patched = $patched -replace "(return 0;\r?\n}\r?\n)(\r?\n// taken from https://stackoverflow\.com/questions/5272470/c-get-cpu-usage-on-linux-and-windows)", "`$1#define gettimeofday(tp, tzp) hict_mingw_gettimeofday((tp), NULL)`n`$2"
   if ($patched -ne $content) {
     Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patched
-    Write-Host "[mm2plus/windows] Patched src/misc.c to use MinGW's gettimeofday/timezone definitions."
+    Write-Host "[mm2plus/windows] Patched src/misc.c to use a private MinGW gettimeofday shim."
   } else {
     Write-Warning "Could not apply MinGW gettimeofday compatibility patch to src/misc.c; attempting build without patch."
+  }
+}
+
+function Repair-Mm2PlusMingwSysconf([string]$SourceDir) {
+  $mapPath = Join-Path $SourceDir "src\map.c"
+  if (-not (Test-Path $mapPath)) {
+    return
+  }
+
+  $content = Get-Content -Raw -Path $mapPath
+  if (($content -match "GetSystemInfo") -and ($content -match "hict_system_info")) {
+    return
+  }
+
+  $windowsInclude = @"
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+"@
+
+  if (($content -match "#include <unistd\.h>") -and ($content -notmatch "#include <windows\.h>")) {
+    $content = $content -replace "(#include <unistd\.h>\r?\n)", "`$1$windowsInclude`n"
+  } elseif (($content -notmatch "#include <windows\.h>") -and ($content -match "#include")) {
+    $content = $content -replace "(#include[^\r\n]*\r?\n)", "`$1$windowsInclude`n"
+  }
+
+  if ($content -match "int32_t\s+max_threads\s*=\s*sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)\s*;") {
+    $new = @"
+#if defined(_WIN32)
+        SYSTEM_INFO hict_system_info;
+        GetSystemInfo(&hict_system_info);
+        int32_t max_threads = (int32_t)hict_system_info.dwNumberOfProcessors;
+#else
+        int32_t max_threads = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+"@
+    $content = [regex]::Replace(
+      $content,
+      "int32_t\s+max_threads\s*=\s*sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)\s*;",
+      $new.TrimEnd()
+    )
+    Set-Content -Encoding UTF8 -NoNewline -Path $mapPath -Value $content
+    Write-Host "[mm2plus/windows] Patched src/map.c to use GetSystemInfo instead of sysconf on Windows."
+  } else {
+    Write-Warning "Could not patch mm2-plus sysconf call in src/map.c; upstream map.c layout may have changed."
   }
 }
 
@@ -120,6 +172,7 @@ try {
 }
 Invoke-Native -FilePath "git" -Arguments @("-C", $sourceDir, "checkout", "--force", $Mm2PlusRef)
 Repair-Mm2PlusMingwGettimeofday -SourceDir $sourceDir
+Repair-Mm2PlusMingwSysconf -SourceDir $sourceDir
 Repair-Mm2PlusMakefileExtraFlags -SourceDir $sourceDir
 
 function Build-Variant([string]$Variant, [string]$ExtraFlags) {
