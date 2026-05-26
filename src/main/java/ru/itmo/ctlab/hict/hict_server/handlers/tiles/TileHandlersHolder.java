@@ -520,29 +520,16 @@ public class TileHandlersHolder extends HandlersHolder {
     final var renderPipelineConfig = renderPipelineWrapper != null
       ? renderPipelineWrapper.getRenderPipelineConfig()
       : RenderPipelineConfig.disabled();
-    final var requestedSource = ctx.request().getParam("source");
-    final var sourceOnlyMode =
-      requestedSource != null && (
-        "PRIMARY".equalsIgnoreCase(requestedSource) ||
-          "SECONDARY".equalsIgnoreCase(requestedSource)
-      );
-    final var selectedChunkedFile =
-      "SECONDARY".equalsIgnoreCase(requestedSource) ? secondaryChunkedFile : chunkedFile;
-    if (sourceOnlyMode && selectedChunkedFile == null) {
-      throw new IllegalStateException("Requested secondary source tile, but secondary source is not attached");
-    }
 
     final var requestedBpResolutionParam = ctx.request().getParam("bpResolution");
     final int level;
     if (requestedBpResolutionParam != null) {
-      final var requestedBpResolution = Math.max(1L, Long.parseLong(requestedBpResolutionParam));
-      final var resolutionOwner = sourceOnlyMode ? selectedChunkedFile : chunkedFile;
-      final var exactOrder = resolutionOwner.getResolutionToIndex().get(requestedBpResolution);
-      if (exactOrder == null) {
-        final var sourceDescription = sourceOnlyMode ? requestedSource.toLowerCase() + " source" : "opened file";
-        throw new RuntimeException("Requested bpResolution is not present in " + sourceDescription + ": " + requestedBpResolution);
+      final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
+      final var resolutionOrder = chunkedFile.getResolutionToIndex().get(requestedBpResolution);
+      if (resolutionOrder == null) {
+        throw new RuntimeException("Requested bpResolution is not present in opened file: " + requestedBpResolution);
       }
-      level = exactOrder;
+      level = resolutionOrder;
     } else {
       level = chunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
     }
@@ -578,50 +565,28 @@ public class TileHandlersHolder extends HandlersHolder {
       endColPx = (col + 1) * tileWidth;
     }
 
-    final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(level);
-    final var sourceMatrixWithWeights = selectedChunkedFile.matrixQueries().getSubmatrix(
-      resolutionDescriptor,
+    final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
+      ResolutionDescriptor.fromResolutionOrder(level),
       startRowPx,
       startColPx,
       endRowPx,
       endColPx,
       true
     );
-    final var matrixWithWeights = sourceOnlyMode
-      ? sourceMatrixWithWeights
-      : chunkedFile.matrixQueries().getSubmatrix(
-        resolutionDescriptor,
-        startRowPx,
-        startColPx,
-        endRowPx,
-        endColPx,
-        true
-      );
-    final var secondaryMatrixWithWeights = sourceOnlyMode
-      ? null
-      : querySecondarySubmatrix(
-        secondaryChunkedFile,
-        resolutionDescriptor,
-        startRowPx,
-        startColPx,
-        endRowPx,
-        endColPx
-      );
+    final var secondaryMatrixWithWeights = querySecondarySubmatrix(
+      secondaryChunkedFile,
+      ResolutionDescriptor.fromResolutionOrder(level),
+      startRowPx,
+      startColPx,
+      endRowPx,
+      endColPx
+    );
     final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
     final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
-    final var expectedProfile =
-      sourceOnlyMode && "SECONDARY".equalsIgnoreCase(requestedSource)
-        ? null
-        : resolveExpectedProfile(map, resolutionDescriptor);
+    final var expectedProfile = resolveExpectedProfile(map, ResolutionDescriptor.fromResolutionOrder(level));
 
     final BufferedImage image;
-    if (sourceOnlyMode) {
-      image = selectedChunkedFile.tileVisualizationProcessor().visualizeTile(
-        sourceMatrixWithWeights,
-        options,
-        expectedProfile
-      );
-    } else if (renderPipelineConfig.enabled()) {
+    if (renderPipelineConfig.enabled()) {
       image = renderPipelineTile(
         chunkedFile,
         secondaryChunkedFile,
@@ -731,29 +696,16 @@ public class TileHandlersHolder extends HandlersHolder {
     final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
     final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
 
-    final var requestedSource = "SECONDARY".equalsIgnoreCase(request.getString("source", "PRIMARY"))
-      ? "SECONDARY"
-      : "PRIMARY";
-    final var requestedChunkedFile =
-      "SECONDARY".equals(requestedSource) ? secondaryChunkedFile : primaryChunkedFile;
-    if (requestedChunkedFile == null) {
-      throw new IllegalStateException("Secondary source is not attached");
-    }
-
     final var bpResolution = request.getLong("bpResolution");
     if (bpResolution == null || bpResolution <= 0L) {
       throw new IllegalArgumentException("Field 'bpResolution' must be a positive integer");
     }
-    final var resolutionOrder = requestedChunkedFile.getResolutionToIndex().get(bpResolution);
+    final var resolutionOrder = primaryChunkedFile.getResolutionToIndex().get(bpResolution);
     if (resolutionOrder == null) {
-      throw new IllegalArgumentException(
-        "Requested bpResolution is not present in " + requestedSource.toLowerCase() + " source: " + bpResolution
-      );
+      throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
     }
     final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
-    final var expectedProfile = "SECONDARY".equals(requestedSource)
-      ? null
-      : resolveExpectedProfile(map, resolutionDescriptor);
+    final var expectedProfile = resolveExpectedProfile(map, resolutionDescriptor);
 
     final var units = parseUnits(request.getString("unit", request.getString("units", "PIXELS")));
     final var startRowInUnits = resolveRangeStart(request, Axis.ROW, units);
@@ -764,20 +716,28 @@ public class TileHandlersHolder extends HandlersHolder {
       throw new IllegalArgumentException("End coordinates must be greater than or equal to start coordinates");
     }
 
-    final var startRowPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startRowInUnits);
-    final var startColPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startColInUnits);
-    final var endRowPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endRowInUnits);
-    final var endColPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endColInUnits);
+    final var startRowPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, startRowInUnits);
+    final var startColPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, startColInUnits);
+    final var endRowPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, endRowInUnits);
+    final var endColPx = convertToPixels(primaryChunkedFile, resolutionDescriptor, units, endColInUnits);
 
+    final var requestedSource = "SECONDARY".equalsIgnoreCase(request.getString("source", "PRIMARY"))
+      ? "SECONDARY"
+      : "PRIMARY";
+    final var requestedChunkedFile =
+      "SECONDARY".equals(requestedSource) ? secondaryChunkedFile : primaryChunkedFile;
+    if (requestedChunkedFile == null) {
+      throw new IllegalStateException("Secondary source is not attached");
+    }
     final var matrixWithWeights =
       "SECONDARY".equals(requestedSource)
-        ? requestedChunkedFile.matrixQueries().getSubmatrix(
+        ? querySecondarySubmatrix(
+          secondaryChunkedFile,
           resolutionDescriptor,
           startRowPx,
           startColPx,
           endRowPx,
-          endColPx,
-          true
+          endColPx
         )
         : primaryChunkedFile.matrixQueries().getSubmatrix(
           resolutionDescriptor,

@@ -57,19 +57,36 @@ function Repair-Mm2PlusMingwGettimeofday([string]$SourceDir) {
   }
 
   $content = Get-Content -Raw -Path $miscPath
-  if ($content -match "hict_mingw_gettimeofday") {
-    return
-  }
   if ($content -notmatch "struct timezone" -or $content -notmatch "int gettimeofday") {
+    if ($content -match "hict_mingw_gettimeofday") {
+      $withoutMacro = [regex]::Replace(
+        $content,
+        "(?m)^\s*#define\s+gettimeofday\s*\(\s*tp\s*,\s*tzp\s*\)\s+hict_mingw_gettimeofday\s*\(\s*\(tp\)\s*,\s*NULL\s*\)\s*\r?\n?",
+        ""
+      )
+      $patchedExisting = [regex]::Replace(
+        $withoutMacro,
+        "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
+        "hict_mingw_gettimeofday(&tp, NULL)"
+      )
+      if ($patchedExisting -ne $content) {
+        Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patchedExisting
+        Write-Host "[mm2plus/windows] Normalized existing private MinGW gettimeofday shim."
+      }
+    }
     return
   }
 
   $patched = $content -replace "\bstruct\s+timezone\b(?=\s*\{)", "struct hict_mingw_timezone"
   $patched = $patched -replace "int\s+gettimeofday\s*\(\s*struct\s+timeval\s*\*\s*tp\s*,\s*struct\s+timezone\s*\*\s*tzp\s*\)", "static int hict_mingw_gettimeofday(struct timeval * tp, struct hict_mingw_timezone *tzp)"
-  $patched = $patched -replace "(return 0;\r?\n}\r?\n)(\r?\n// taken from https://stackoverflow\.com/questions/5272470/c-get-cpu-usage-on-linux-and-windows)", "`$1#define gettimeofday(tp, tzp) hict_mingw_gettimeofday((tp), NULL)`n`$2"
+  $patched = [regex]::Replace(
+    $patched,
+    "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
+    "hict_mingw_gettimeofday(&tp, NULL)"
+  )
   if ($patched -ne $content) {
     Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patched
-    Write-Host "[mm2plus/windows] Patched src/misc.c to use a private MinGW gettimeofday shim."
+    Write-Host "[mm2plus/windows] Patched src/misc.c to call a private MinGW gettimeofday shim."
   } else {
     Write-Warning "Could not apply MinGW gettimeofday compatibility patch to src/misc.c; attempting build without patch."
   }
@@ -82,11 +99,11 @@ function Repair-Mm2PlusMingwSysconf([string]$SourceDir) {
   }
 
   $content = Get-Content -Raw -Path $mapPath
-  if (($content -match "GetSystemInfo") -and ($content -match "hict_system_info")) {
+  if (($content -match "hict_mingw_online_processors") -and ($content -notmatch "sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)")) {
     return
   }
 
-  $windowsInclude = @"
+  $windowsHelper = @"
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -95,34 +112,34 @@ function Repair-Mm2PlusMingwSysconf([string]$SourceDir) {
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+static int32_t hict_mingw_online_processors(void)
+{
+    SYSTEM_INFO hict_system_info;
+    GetSystemInfo(&hict_system_info);
+    return (int32_t)(hict_system_info.dwNumberOfProcessors > 0 ? hict_system_info.dwNumberOfProcessors : 1);
+}
 #endif
 "@
 
-  if (($content -match "#include <unistd\.h>") -and ($content -notmatch "#include <windows\.h>")) {
-    $content = $content -replace "(#include <unistd\.h>\r?\n)", "`$1$windowsInclude`n"
-  } elseif (($content -notmatch "#include <windows\.h>") -and ($content -match "#include")) {
-    $content = $content -replace "(#include[^\r\n]*\r?\n)", "`$1$windowsInclude`n"
+  if ($content -notmatch "hict_mingw_online_processors") {
+    if ($content -match "#include <unistd\.h>[^\r\n]*(\r?\n)") {
+      $content = [regex]::Replace($content, "(#include <unistd\.h>[^\r\n]*\r?\n)", "`$1$windowsHelper`n", 1)
+    } elseif ($content -match "#include[^\r\n]*(\r?\n)") {
+      $content = [regex]::Replace($content, "(#include[^\r\n]*\r?\n)", "`$1$windowsHelper`n", 1)
+    }
   }
 
-  if ($content -match "int32_t\s+max_threads\s*=\s*sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)\s*;") {
-    $new = @"
-#if defined(_WIN32)
-        SYSTEM_INFO hict_system_info;
-        GetSystemInfo(&hict_system_info);
-        int32_t max_threads = (int32_t)hict_system_info.dwNumberOfProcessors;
-#else
-        int32_t max_threads = sysconf(_SC_NPROCESSORS_ONLN);
-#endif
-"@
-    $content = [regex]::Replace(
-      $content,
-      "int32_t\s+max_threads\s*=\s*sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)\s*;",
-      $new.TrimEnd()
-    )
+  if ($content -match "sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)") {
+    $content = [regex]::Replace($content, "sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)", "hict_mingw_online_processors()")
     Set-Content -Encoding UTF8 -NoNewline -Path $mapPath -Value $content
     Write-Host "[mm2plus/windows] Patched src/map.c to use GetSystemInfo instead of sysconf on Windows."
   } else {
-    Write-Warning "Could not patch mm2-plus sysconf call in src/map.c; upstream map.c layout may have changed."
+    if ($content -match "hict_mingw_online_processors") {
+      Set-Content -Encoding UTF8 -NoNewline -Path $mapPath -Value $content
+      Write-Host "[mm2plus/windows] Ensured src/map.c has the Windows processor-count helper."
+    } else {
+      Write-Warning "Could not patch mm2-plus sysconf call in src/map.c; upstream map.c layout may have changed."
+    }
   }
 }
 

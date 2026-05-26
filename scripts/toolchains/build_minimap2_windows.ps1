@@ -47,19 +47,36 @@ function Repair-Minimap2MingwGettimeofday([string]$SourceDir) {
   }
 
   $content = Get-Content -Raw -Path $miscPath
-  if ($content -match "hict_mingw_gettimeofday") {
-    return
-  }
   if ($content -notmatch "struct timezone" -or $content -notmatch "int gettimeofday") {
+    if ($content -match "hict_mingw_gettimeofday") {
+      $withoutMacro = [regex]::Replace(
+        $content,
+        "(?m)^\s*#define\s+gettimeofday\s*\(\s*tp\s*,\s*tzp\s*\)\s+hict_mingw_gettimeofday\s*\(\s*\(tp\)\s*,\s*NULL\s*\)\s*\r?\n?",
+        ""
+      )
+      $patchedExisting = [regex]::Replace(
+        $withoutMacro,
+        "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
+        "hict_mingw_gettimeofday(&tp, NULL)"
+      )
+      if ($patchedExisting -ne $content) {
+        Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patchedExisting
+        Write-Host "[minimap2/windows] Normalized existing private MinGW gettimeofday shim."
+      }
+    }
     return
   }
 
   $patched = $content -replace "\bstruct\s+timezone\b(?=\s*\{)", "struct hict_mingw_timezone"
   $patched = $patched -replace "int\s+gettimeofday\s*\(\s*struct\s+timeval\s*\*\s*tp\s*,\s*struct\s+timezone\s*\*\s*tzp\s*\)", "static int hict_mingw_gettimeofday(struct timeval * tp, struct hict_mingw_timezone *tzp)"
-  $patched = $patched -replace "(return 0;\r?\n}\r?\n)(\r?\n// taken from https://stackoverflow\.com/questions/5272470/c-get-cpu-usage-on-linux-and-windows)", "`$1#define gettimeofday(tp, tzp) hict_mingw_gettimeofday((tp), NULL)`n`$2"
+  $patched = [regex]::Replace(
+    $patched,
+    "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
+    "hict_mingw_gettimeofday(&tp, NULL)"
+  )
   if ($patched -ne $content) {
     Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patched
-    Write-Host "[minimap2/windows] Patched misc.c to use a private MinGW gettimeofday shim."
+    Write-Host "[minimap2/windows] Patched misc.c to call a private MinGW gettimeofday shim."
   } else {
     Write-Warning "Could not apply MinGW gettimeofday compatibility patch to misc.c; attempting build without patch."
   }
