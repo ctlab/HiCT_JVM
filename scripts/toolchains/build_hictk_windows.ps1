@@ -159,6 +159,7 @@ repository=$repoUrl
 ref=$HictkRef
 platform=windows_x86_64
 build_shared_libs=OFF
+cpu_flag_policy=generic official hictk Release build; no AVX-specific hictk executable is produced so the same payload remains portable across x86-64 hosts.
 msvc_static_runtime=$(if ($MostlyStaticRuntime) { 'ON' } else { 'OFF' })
 timestamp_utc=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
 "@ | Set-Content -Encoding UTF8 (Join-Path $stageDir "share\doc\hictk\build-info.txt")

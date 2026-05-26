@@ -50,6 +50,24 @@ fi
 git -C "${SOURCE_DIR}" fetch --tags --force origin "${REF}" || git -C "${SOURCE_DIR}" fetch --tags --force origin
 git -C "${SOURCE_DIR}" checkout --force "${REF}"
 
+python3 - "${SOURCE_DIR}/Makefile" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = "$(CXX) -c $(CPPFLAGS) $(INCLUDES) $< -o $@"
+new = "$(CXX) -c $(CPPFLAGS) $(EXTRAFLAGS) $(INCLUDES) $< -o $@"
+count = text.count(old)
+if count:
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    print(f"[mm2plus/linux] Patched {count} Makefile generic object rule(s) to include EXTRAFLAGS.")
+elif new in text:
+    print("[mm2plus/linux] Makefile generic object rules already include EXTRAFLAGS.")
+else:
+    print("[mm2plus/linux] Makefile generic object rule pattern was not found; upstream layout may have changed.")
+PY
+
 build_variant() {
   local variant="$1"
   local flags="$2"
@@ -95,6 +113,9 @@ fi
   echo "ref=${REF}"
   echo "platform=linux_x86_64"
   echo "compiler=$("${CXX_BIN}" --version | head -n 1)"
+  echo "avx2_extraflags=-mavx2"
+  echo "avx512_extraflags=-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2"
+  echo "cpu_flag_policy=EXTRAFLAGS are applied to generic and AVX/OpenMP objects; upstream SSE2/SSE4.1 dispatch objects intentionally retain their fixed target flags."
   echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   for variant in avx2 avx512; do
     binary="${OUTPUT_DIR}/bin/mm2plus-${variant}"

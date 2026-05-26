@@ -63,6 +63,7 @@ fi
   echo "ref=${REF}"
   echo "platform=linux_x86_64"
   echo "compiler=$(gcc --version | head -n 1)"
+  echo "cpu_flag_policy=generic official minimap2 build; upstream SSE2/SSE4.1 dispatch objects retain their fixed target flags."
   echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo
   echo "[file]"

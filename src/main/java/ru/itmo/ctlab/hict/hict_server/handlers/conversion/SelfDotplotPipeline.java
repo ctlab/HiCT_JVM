@@ -12,6 +12,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -32,6 +33,7 @@ import java.util.zip.GZIPInputStream;
  */
 public final class SelfDotplotPipeline {
   private static final int BUFFER_SIZE = 1 << 20;
+  private static final long ALIGNER_HEARTBEAT_INTERVAL_MS = 60_000L;
 
   public @NotNull Path generate(final @NotNull Options options,
                                 final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
@@ -143,6 +145,8 @@ public final class SelfDotplotPipeline {
     command.add(Integer.toString(options.minimizerWindow()));
     command.add("-m");
     command.add(Integer.toString(options.minChainScore()));
+    command.add("-v");
+    command.add("4");
     command.add("-P");
     command.add("--dual=no");
     command.add("--no-long-join");
@@ -259,10 +263,31 @@ public final class SelfDotplotPipeline {
       .redirectErrorStream(false)
       .start();
     processSink.accept(process);
+    final long startedAt = System.currentTimeMillis();
+    long lastHeartbeatAt = startedAt;
     try (final var reader = new BufferedReader(new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+      while (process.isAlive()) {
+        checkCancelled(cancellationRequested);
+        String line;
+        while (reader.ready() && (line = reader.readLine()) != null) {
+          logger.accept(line);
+        }
+        final long now = System.currentTimeMillis();
+        if (now - lastHeartbeatAt >= ALIGNER_HEARTBEAT_INTERVAL_MS) {
+          emitStage(
+            logger,
+            "align",
+            0.0d,
+            0.12d,
+            alignerName + " is still running; elapsed=" + formatDuration(now - startedAt) +
+              ", PAF size=" + humanBytes(safeSize(outputPaf))
+          );
+          lastHeartbeatAt = now;
+        }
+        Thread.sleep(1000L);
+      }
       String line;
       while ((line = reader.readLine()) != null) {
-        checkCancelled(cancellationRequested);
         logger.accept(line);
       }
     } finally {
@@ -546,6 +571,38 @@ public final class SelfDotplotPipeline {
 
   private static int normalizeHictkLoadThreads(final int threads) {
     return Math.max(2, Math.min(24, threads));
+  }
+
+  private static long safeSize(final @NotNull Path path) {
+    try {
+      return Files.exists(path) ? Files.size(path) : 0L;
+    } catch (IOException ignored) {
+      return 0L;
+    }
+  }
+
+  private static @NotNull String humanBytes(final long bytes) {
+    if (bytes < 1024L) {
+      return bytes + " B";
+    }
+    final String[] units = {"KiB", "MiB", "GiB", "TiB"};
+    double value = bytes;
+    int unit = -1;
+    do {
+      value /= 1024.0d;
+      unit++;
+    } while (value >= 1024.0d && unit + 1 < units.length);
+    return String.format(Locale.ROOT, "%.1f %s", value, units[unit]);
+  }
+
+  private static @NotNull String formatDuration(final long millis) {
+    final var duration = Duration.ofMillis(Math.max(0L, millis));
+    final long hours = duration.toHours();
+    final long minutes = duration.toMinutesPart();
+    final long seconds = duration.toSecondsPart();
+    return hours > 0L
+      ? String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
+      : String.format(Locale.ROOT, "%d:%02d", minutes, seconds);
   }
 
   private static void checkCancelled(final @NotNull BooleanSupplier cancellationRequested) {

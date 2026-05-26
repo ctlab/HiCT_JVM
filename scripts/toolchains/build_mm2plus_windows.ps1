@@ -74,6 +74,26 @@ function Repair-Mm2PlusMingwGettimeofday([string]$SourceDir) {
   }
 }
 
+function Repair-Mm2PlusMakefileExtraFlags([string]$SourceDir) {
+  $makefilePath = Join-Path $SourceDir "Makefile"
+  if (-not (Test-Path $makefilePath)) {
+    return
+  }
+
+  $content = Get-Content -Raw -Path $makefilePath
+  $old = '$(CXX) -c $(CPPFLAGS) $(INCLUDES) $< -o $@'
+  $new = '$(CXX) -c $(CPPFLAGS) $(EXTRAFLAGS) $(INCLUDES) $< -o $@'
+  $count = ([regex]::Matches($content, [regex]::Escape($old))).Count
+  if ($count -gt 0) {
+    Set-Content -Encoding UTF8 -NoNewline -Path $makefilePath -Value $content.Replace($old, $new)
+    Write-Host "[mm2plus/windows] Patched $count Makefile generic object rule(s) to include EXTRAFLAGS."
+  } elseif ($content.Contains($new)) {
+    Write-Host "[mm2plus/windows] Makefile generic object rules already include EXTRAFLAGS."
+  } else {
+    Write-Warning "Could not patch mm2-plus Makefile generic object rule; upstream Makefile layout may have changed."
+  }
+}
+
 $repoUrl = if ($env:MM2PLUS_REPO_URL) { $env:MM2PLUS_REPO_URL } else { "https://github.com/at-cg/mm2-plus.git" }
 $make = Resolve-CommandPath @("mingw32-make.exe", "mingw32-make", "make.exe", "make")
 $cxx = Resolve-CommandPath @("x86_64-w64-mingw32-g++.exe", "x86_64-w64-mingw32-g++", "g++.exe", "g++")
@@ -100,6 +120,7 @@ try {
 }
 Invoke-Native -FilePath "git" -Arguments @("-C", $sourceDir, "checkout", "--force", $Mm2PlusRef)
 Repair-Mm2PlusMingwGettimeofday -SourceDir $sourceDir
+Repair-Mm2PlusMakefileExtraFlags -SourceDir $sourceDir
 
 function Build-Variant([string]$Variant, [string]$ExtraFlags) {
   $output = Join-Path $OutputDir "bin\mm2plus-$Variant.exe"
@@ -164,6 +185,9 @@ $buildInfo = @(
   "ref=$Mm2PlusRef",
   "platform=windows_x86_64",
   "compiler=$(& $cxx --version | Select-Object -First 1)",
+  "avx2_extraflags=-mavx2",
+  "avx512_extraflags=-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2",
+  "cpu_flag_policy=EXTRAFLAGS are applied to generic and AVX/OpenMP objects; upstream SSE2/SSE4.1 dispatch objects intentionally retain their fixed target flags.",
   "timestamp_utc=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))"
 )
 foreach ($variant in @("avx2", "avx512")) {

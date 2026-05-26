@@ -115,6 +115,7 @@ ref=$Minimap2Ref
 platform=windows_x86_64
 compiler=$(& $gcc --version | Select-Object -First 1)
 linker_flags=-static
+cpu_flag_policy=generic official minimap2 build; upstream SSE2/SSE4.1 dispatch objects retain their fixed target flags.
 timestamp_utc=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
 "@ | Set-Content -Encoding UTF8 (Join-Path $OutputDir "share\doc\minimap2\build-info.txt")
 
