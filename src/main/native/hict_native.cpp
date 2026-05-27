@@ -39,7 +39,7 @@
 namespace {
 
 #ifndef HICT_NATIVE_VARIANT
-#define HICT_NATIVE_VARIANT "baseline"
+#define HICT_NATIVE_VARIANT "avx2"
 #endif
 
 constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.4-" HICT_NATIVE_VARIANT;

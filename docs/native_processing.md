@@ -44,13 +44,13 @@ migration plan.
 
 Two binary variants are built on x86-64 toolchains that support them:
 
-- `baseline`: AVX2/FMA/SSE4.2/BMI/BMI2, the common target for Intel Core
+- `avx2`: AVX2/FMA/SSE4.2/BMI/BMI2, the common target for Intel Core
   i7-1185G7, Ryzen 7900X, and Ryzen 8500G-class machines;
-- `avx512`: baseline plus AVX-512F/DQ/BW/VL.
+- `avx512`: AVX2 plus AVX-512F/DQ/BW/VL.
 
 The runtime loader uses `avx512` only when Linux CPU flags advertise all
 required AVX-512 core features. If the variant is missing, unsafe, or fails to
-load, HiCT falls back to the baseline native library and then to Java.
+load, HiCT falls back to the AVX2 native library and then to Java.
 
 ## Building
 
@@ -95,9 +95,25 @@ Legacy single-variant builds are still available:
 ```
 
 The benchmark runs one JVM per native variant so JNI symbol binding cannot mix
-baseline and AVX-512 libraries in the same process. It verifies deterministic
+AVX2 and AVX-512 libraries in the same process. It verifies deterministic
 tile-processing parity before reporting timing for the implemented native
 kernels.
+
+Reports are written to `build/reports/hict-native-benchmark/`:
+
+- `benchmark.csv` contains requests/sec and mean latency for Java, AVX2 and
+  AVX-512 variants.
+- `requests_per_second.svg` and `index.html` provide a quick visual comparison.
+
+For quick local smoke checks, reduce the data size and iteration count:
+
+```bash
+./gradlew benchmark \
+  -Dhict.native.benchmark.rows=256 \
+  -Dhict.native.benchmark.columns=256 \
+  -Dhict.native.benchmark.iterations=3 \
+  -Dhict.native.benchmark.warmup=1
+```
 
 ## JHDF5 / HDF5 Native Builds
 
@@ -109,11 +125,11 @@ contains repeatable Linux amd64 variant scripts:
 cd ../jhdf5-with-plugins-configuration-snapshot/source/c
 curl -L -o CMake-hdf5-1.10.11.zip \
   https://support.hdfgroup.org/ftp/HDF5/releases/hdf5-1.10/hdf5-1.10.11/src/CMake-hdf5-1.10.11.zip
-JAVA_HOME=/path/to/jdk ./build_linux_amd64_variants.sh generic baseline avx512
+JAVA_HOME=/path/to/jdk ./build_linux_amd64_variants.sh generic avx2 avx512
 ```
 
 The script deploys to `libs/native/jhdf5/amd64-Linux-generic`,
-`libs/native/jhdf5/amd64-Linux-baseline`, and
+`libs/native/jhdf5/amd64-Linux-avx2`, and
 `libs/native/jhdf5/amd64-Linux-avx512`. The generic build is the portable amd64
 fallback. The AVX2 and AVX-512 builds are intentionally separate binary sets:
 they must only be loaded on CPUs with the matching instruction-set support.
@@ -142,9 +158,11 @@ Optional library overrides:
 ```bash
 HICT_NATIVE_LIBRARY_PATH=/absolute/path/to/libhict_native.so
 HICT_NATIVE_LIBRARY_DIR=/directory/containing/mapped/library/name
-HICT_NATIVE_VARIANT=auto|baseline|avx512
+HICT_NATIVE_VARIANT=auto|avx2|avx512
 HICT_NATIVE_DISABLE_AVX512=1
 ```
+
+`HICT_NATIVE_VARIANT=baseline` is still accepted as a legacy alias for `avx2`.
 
 The WebUI exposes the same runtime switch under `Dev -> Use native code
 processing`. If the library is missing or fails, HiCT reports that Java is active

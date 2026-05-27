@@ -50,6 +50,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.diagnostics.RequestStatistics;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
@@ -344,6 +345,7 @@ public class MainVerticle extends AbstractVerticle {
 
   private @NotNull Router createRouter() {
     final var router = Router.router(vertx);
+    final var requestStatistics = new RequestStatistics();
     router.route().handler(CorsHandler.create()
       .allowedMethod(io.vertx.core.http.HttpMethod.GET)
       .allowedMethod(io.vertx.core.http.HttpMethod.POST)
@@ -353,6 +355,11 @@ public class MainVerticle extends AbstractVerticle {
       .allowedHeader("Access-Control-Allow-Origin")
       .allowedHeader("Access-Control-Allow-Headers")
       .allowedHeader("Content-Type"));
+    router.route().handler(ctx -> {
+      requestStatistics.recordStarted(ctx.normalizedPath());
+      ctx.addBodyEndHandler(ignored -> requestStatistics.recordFinished());
+      ctx.next();
+    });
     router.route().handler(BodyHandler.create().setUploadsDirectory("/tmp").setBodyLimit(2L * 1024 * 1024 * 1024));
 
     vertx.exceptionHandler(event -> {
@@ -370,7 +377,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
     handlersHolders.add(new DotplotHandlersHolder(vertx));
-    handlersHolders.add(new InfoHandlersHolder(vertx));
+    handlersHolders.add(new InfoHandlersHolder(vertx, requestStatistics));
     handlersHolders.add(new ApiDocsHandlersHolder());
     handlersHolders.add(new TrackHandlersHolder(vertx));
 

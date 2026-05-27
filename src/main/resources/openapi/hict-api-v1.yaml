@@ -81,6 +81,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NativeProcessingStatus'
+  /statistics:
+    post:
+      tags: [Info]
+      summary: Get server runtime and request statistics
+      operationId: getRuntimeStatistics
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Runtime statistics snapshot with native-processing status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeStatistics'
   /api/v1:
     get:
       tags: [Info]
@@ -1301,7 +1314,64 @@ components:
         source: { type: string }
         reason: { type: string }
         lastFailure: { type: string }
+        nativeSessionActive: { type: boolean }
+        nativeOperationCount: { type: integer, format: int64 }
+        nativeFailedOperationCount: { type: integer, format: int64 }
+        nativeHdf5BackendAvailable: { type: boolean }
       required: [requested, enabled, available, version, source, reason, lastFailure]
+    EndpointStatistics:
+      type: object
+      properties:
+        path: { type: string }
+        totalRequests: { type: integer, format: int64 }
+        requestsPerSecondLast10s: { type: number, format: double }
+        requestsPerSecondLast60s: { type: number, format: double }
+      required: [path, totalRequests, requestsPerSecondLast10s, requestsPerSecondLast60s]
+    RuntimeStatistics:
+      type: object
+      properties:
+        timestampMs: { type: integer, format: int64 }
+        startedMs: { type: integer, format: int64 }
+        uptimeSeconds: { type: number, format: double }
+        totalRequests: { type: integer, format: int64 }
+        inFlightRequests: { type: integer, format: int64 }
+        meanRequestsPerSecond: { type: number, format: double }
+        requestsPerSecondLast10s: { type: number, format: double }
+        requestsPerSecondLast60s: { type: number, format: double }
+        heapUsedBytes: { type: integer, format: int64 }
+        heapCommittedBytes: { type: integer, format: int64 }
+        heapMaxBytes: { type: integer, format: int64 }
+        nonHeapUsedBytes: { type: integer, format: int64 }
+        nonHeapCommittedBytes: { type: integer, format: int64 }
+        availableProcessors: { type: integer }
+        liveThreads: { type: integer }
+        daemonThreads: { type: integer }
+        peakThreads: { type: integer }
+        endpoints:
+          type: array
+          items: { $ref: '#/components/schemas/EndpointStatistics' }
+        nativeProcessing:
+          $ref: '#/components/schemas/NativeProcessingStatus'
+      required:
+        - timestampMs
+        - startedMs
+        - uptimeSeconds
+        - totalRequests
+        - inFlightRequests
+        - meanRequestsPerSecond
+        - requestsPerSecondLast10s
+        - requestsPerSecondLast60s
+        - heapUsedBytes
+        - heapCommittedBytes
+        - heapMaxBytes
+        - nonHeapUsedBytes
+        - nonHeapCommittedBytes
+        - availableProcessors
+        - liveThreads
+        - daemonThreads
+        - peakThreads
+        - endpoints
+        - nativeProcessing
     SetNativeProcessingEnabledRequest:
       type: object
       properties:

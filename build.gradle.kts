@@ -98,12 +98,12 @@ data class NativeProcessingVariant(
 
 val nativeProcessingVariants = listOf(
   NativeProcessingVariant(
-    id = "baseline",
-    taskSuffix = "Baseline",
+    id = "avx2",
+    taskSuffix = "Avx2",
     libraryBaseName = nativeProcessingLibraryBaseName,
     gnuCompileFlags = listOf("-mavx2", "-mfma", "-msse4.2", "-mbmi", "-mbmi2"),
     msvcCompileFlags = listOf("/arch:AVX2"),
-    description = "baseline x86-64 AVX2/FMA/BMI2 build"
+    description = "x86-64 AVX2/FMA/BMI2 build"
   ),
   NativeProcessingVariant(
     id = "avx512",
@@ -199,7 +199,7 @@ fun nativeProcessingCompilerSupportsCurrentOs(compilerExecutable: String? = nati
   val os = System.getProperty("os.name").lowercase()
   val compilerFlavor = nativeProcessingCompilerFlavor(compilerExecutable)
   return when {
-    os.contains("win") -> compilerFlavor == "msvc"
+    os.contains("win") -> compilerFlavor == "msvc" || compilerFlavor == "gnu"
     else -> compilerFlavor == "gnu"
   }
 }
@@ -417,8 +417,14 @@ nativeProcessingVariants.forEach { variant ->
 
 tasks.register("compileNativeProcessing") {
   group = "build"
-  description = "Build the optional HiCT native processing baseline JNI library for the current platform."
-  dependsOn("compileNativeProcessingBaseline")
+  description = "Build the optional HiCT native processing AVX2 JNI library for the current platform."
+  dependsOn("compileNativeProcessingAvx2")
+}
+
+tasks.register("compileNativeProcessingBaseline") {
+  group = "build"
+  description = "Compatibility alias for compileNativeProcessingAvx2."
+  dependsOn("compileNativeProcessingAvx2")
 }
 
 tasks.register("natives") {
@@ -468,7 +474,8 @@ tasks.register("describeNativeProcessing") {
     }
     println("Runtime overrides:")
     println("  HICT_NATIVE_PROCESSING=1")
-    println("  HICT_NATIVE_VARIANT=auto|baseline|avx512")
+    println("  HICT_NATIVE_VARIANT=auto|avx2|avx512")
+    println("  HICT_NATIVE_VARIANT=baseline is accepted as a legacy alias for avx2")
     println("  HICT_NATIVE_LIBRARY_PATH=${nativeProcessingOutputFile(nativeProcessingVariants.first()).absolutePath}")
     println("  HICT_NATIVE_LIBRARY_DIR=${nativeProcessingOutputFile(nativeProcessingVariants.first()).parentFile.absolutePath}")
   }
@@ -504,16 +511,41 @@ nativeProcessingVariants.forEach { variant ->
   }
 }
 
+tasks.register("benchmarkNativeProcessingBaseline") {
+  group = "verification"
+  description = "Compatibility alias for benchmarkNativeProcessingAvx2."
+  dependsOn("benchmarkNativeProcessingAvx2")
+}
+
 tasks.register("benchmarkNativeProcessing") {
   group = "verification"
   description = "Benchmark Java tile processing against every native backend built on this machine."
   dependsOn(nativeProcessingVariants.map { "benchmarkNativeProcessing${it.taskSuffix}" })
 }
 
+tasks.register<JavaExec>("benchmarkNativeProcessingReport") {
+  group = "verification"
+  description = "Create a Java/AVX2/AVX-512 native processing requests/sec benchmark report with SVG plots."
+  dependsOn("natives", "compileJava")
+  classpath = sourceSets["main"].output.classesDirs + sourceSets["main"].compileClasspath
+  mainClass.set("ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingBenchmarkReport")
+  systemProperty("hict.native.library.dir", nativeProcessingOutputFile(nativeProcessingVariants.first()).parentFile.absolutePath)
+  systemProperty("hict.native.benchmark.reportDir", layout.buildDirectory.dir("reports/hict-native-benchmark").get().asFile.absolutePath)
+  listOf(
+    "hict.native.benchmark.rows",
+    "hict.native.benchmark.columns",
+    "hict.native.benchmark.warmup",
+    "hict.native.benchmark.iterations",
+    "hict.native.benchmark.variants"
+  ).forEach { propertyName ->
+    System.getProperty(propertyName)?.let { systemProperty(propertyName, it) }
+  }
+}
+
 tasks.register("benchmark") {
   group = "verification"
   description = "Run HiCT performance benchmarks available on this machine."
-  dependsOn("benchmarkNativeProcessing")
+  dependsOn("benchmarkNativeProcessingReport")
 }
 
 

@@ -41,7 +41,7 @@ import java.util.Objects;
 
 @Slf4j
 final class NativeTileProcessor {
-  private static final @NotNull String BASELINE_LIBRARY_BASE_NAME = "hict_native";
+  private static final @NotNull String AVX2_LIBRARY_BASE_NAME = "hict_native";
   private static final @NotNull String AVX512_LIBRARY_BASE_NAME = "hict_native_avx512";
   private static final @NotNull String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
   private static final @NotNull String NATIVE_VARIANT_ENV = "HICT_NATIVE_VARIANT";
@@ -475,8 +475,8 @@ final class NativeTileProcessor {
       ? "auto"
       : requestedVariant.trim().toLowerCase(Locale.ROOT);
     final var result = new ArrayList<String>(2);
-    if ("baseline".equals(normalizedVariant)) {
-      result.add(BASELINE_LIBRARY_BASE_NAME);
+    if ("avx2".equals(normalizedVariant) || "baseline".equals(normalizedVariant)) {
+      result.add(AVX2_LIBRARY_BASE_NAME);
       return result;
     }
     if ("avx512".equals(normalizedVariant)) {
@@ -488,7 +488,7 @@ final class NativeTileProcessor {
     if (NativeCpuFeatures.supportsAvx512Core()) {
       result.add(AVX512_LIBRARY_BASE_NAME);
     }
-    result.add(BASELINE_LIBRARY_BASE_NAME);
+    result.add(AVX2_LIBRARY_BASE_NAME);
     return result;
   }
 

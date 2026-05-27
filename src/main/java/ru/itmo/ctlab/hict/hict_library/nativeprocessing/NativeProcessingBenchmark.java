@@ -26,6 +26,10 @@ package ru.itmo.ctlab.hict.hict_library.nativeprocessing;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Random;
 
@@ -39,11 +43,16 @@ public final class NativeProcessingBenchmark {
     final int warmupIterations = readIntProperty("hict.native.benchmark.warmup", 5);
     final int measuredIterations = readIntProperty("hict.native.benchmark.iterations", 25);
     final int elementCount = Math.multiplyExact(rows, columns);
+    final boolean javaOnly = Boolean.getBoolean("hict.native.benchmark.javaOnly");
 
     final var input = new double[elementCount];
     final var rowWeights = new double[rows];
     final var columnWeights = new double[columns];
     fillSyntheticTile(input, rowWeights, columnWeights, rows, columns);
+    if (javaOnly) {
+      runJavaOnlyBenchmark(input, rowWeights, columnWeights, rows, columns, warmupIterations, measuredIterations);
+      return;
+    }
 
     final var processor = new NativeTileProcessor();
     final var loadReport = processor.ensureLoaded();
@@ -53,6 +62,7 @@ public final class NativeProcessingBenchmark {
     System.out.println("  native: " + loadReport.state() + ", version=" + loadReport.version() + ", source=" + loadReport.source());
     if (loadReport.state() != NativeTileProcessor.LoadState.LOADED) {
       System.out.println("  native unavailable: " + loadReport.reason());
+      writeUnavailableRows(resolveVariantName(loadReport), loadReport.reason());
       return;
     }
 
@@ -207,6 +217,181 @@ public final class NativeProcessingBenchmark {
     System.out.printf(Locale.ROOT, "    Native mean: %.3f ms%n", nativeAggregateMillis);
     System.out.printf(Locale.ROOT, "    Speedup:     %.3fx%n", javaAggregateMillis / Math.max(nativeAggregateMillis, 1.0e-9d));
     System.out.printf(Locale.ROOT, "    Max abs diff: %.3g%n", aggregateMaxAbsDiff);
+    writeBenchmarkRows(
+      new BenchmarkRow("base-signal", "java", true, javaMillis, 0.0d, ""),
+      new BenchmarkRow("base-signal", resolveVariantName(loadReport), true, nativeMillis, maxAbsDiff, loadReport.version()),
+      new BenchmarkRow("observed-expected", "java", true, javaExpectedMillis, 0.0d, ""),
+      new BenchmarkRow("observed-expected", resolveVariantName(loadReport), true, nativeExpectedMillis, expectedMaxAbsDiff, loadReport.version()),
+      new BenchmarkRow("post-log", "java", true, javaPostLogMillis, 0.0d, ""),
+      new BenchmarkRow("post-log", resolveVariantName(loadReport), true, nativePostLogMillis, postLogMaxAbsDiff, loadReport.version()),
+      new BenchmarkRow("precomputed-1d-max", "java", true, javaAggregateMillis, 0.0d, ""),
+      new BenchmarkRow("precomputed-1d-max", resolveVariantName(loadReport), true, nativeAggregateMillis, aggregateMaxAbsDiff, loadReport.version())
+    );
+  }
+
+  private static void runJavaOnlyBenchmark(final double @NotNull [] input,
+                                           final double @NotNull [] rowWeights,
+                                           final double @NotNull [] columnWeights,
+                                           final int rows,
+                                           final int columns,
+                                           final int warmupIterations,
+                                           final int measuredIterations) {
+    final int elementCount = Math.multiplyExact(rows, columns);
+    final var javaOutput = new double[elementCount];
+    final var diagonalMeans = buildDiagonalMeans(input, rows, columns);
+    final var javaExpectedOutput = new double[elementCount];
+    final var javaPostLogWork = new double[elementCount];
+    final var seriesSupport = new long[elementCount];
+    for (int i = 0; i < seriesSupport.length; i++) {
+      seriesSupport[i] = (i % 7) == 0 ? 0L : 1L + (i % 5);
+    }
+    final int aggregateBucketCount = Math.max(1, columns);
+    final var javaAggregateValues = new double[aggregateBucketCount];
+    final var javaAggregateSupport = new long[aggregateBucketCount];
+
+    System.out.println("HiCT Java baseline benchmark");
+    System.out.println("  size: " + rows + " x " + columns + " (" + elementCount + " elements)");
+    System.out.println("  iterations: warmup=" + warmupIterations + ", measured=" + measuredIterations);
+
+    for (int i = 0; i < warmupIterations; i++) {
+      computeJava(input, rowWeights, columnWeights, rows, columns, javaOutput);
+      computeObservedOverExpectedJava(input, diagonalMeans, rows, columns, javaExpectedOutput);
+      System.arraycopy(input, 0, javaPostLogWork, 0, input.length);
+      computePostLogJava(javaPostLogWork, Math.log(10.0d));
+      aggregatePrecomputedMaxJava(input, seriesSupport, 0L, input.length, aggregateBucketCount, javaAggregateValues, javaAggregateSupport);
+    }
+
+    long javaNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      final long started = System.nanoTime();
+      computeJava(input, rowWeights, columnWeights, rows, columns, javaOutput);
+      javaNanos += System.nanoTime() - started;
+    }
+
+    long javaExpectedNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      final long started = System.nanoTime();
+      computeObservedOverExpectedJava(input, diagonalMeans, rows, columns, javaExpectedOutput);
+      javaExpectedNanos += System.nanoTime() - started;
+    }
+
+    long javaPostLogNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      System.arraycopy(input, 0, javaPostLogWork, 0, input.length);
+      final long started = System.nanoTime();
+      computePostLogJava(javaPostLogWork, Math.log(10.0d));
+      javaPostLogNanos += System.nanoTime() - started;
+    }
+
+    long javaAggregateNanos = 0L;
+    for (int i = 0; i < measuredIterations; i++) {
+      final long started = System.nanoTime();
+      aggregatePrecomputedMaxJava(input, seriesSupport, 0L, input.length, aggregateBucketCount, javaAggregateValues, javaAggregateSupport);
+      javaAggregateNanos += System.nanoTime() - started;
+    }
+
+    final double javaMillis = nanosToMillis(javaNanos) / measuredIterations;
+    final double javaExpectedMillis = nanosToMillis(javaExpectedNanos) / measuredIterations;
+    final double javaPostLogMillis = nanosToMillis(javaPostLogNanos) / measuredIterations;
+    final double javaAggregateMillis = nanosToMillis(javaAggregateNanos) / measuredIterations;
+    System.out.println("  Base signal preparation:");
+    System.out.printf(Locale.ROOT, "    Java mean: %.3f ms%n", javaMillis);
+    System.out.println("  Observed/expected transform:");
+    System.out.printf(Locale.ROOT, "    Java mean: %.3f ms%n", javaExpectedMillis);
+    System.out.println("  Post-log transform:");
+    System.out.printf(Locale.ROOT, "    Java mean: %.3f ms%n", javaPostLogMillis);
+    System.out.println("  Precomputed 1D max aggregation:");
+    System.out.printf(Locale.ROOT, "    Java mean: %.3f ms%n", javaAggregateMillis);
+    writeBenchmarkRows(
+      new BenchmarkRow("base-signal", "java", true, javaMillis, 0.0d, ""),
+      new BenchmarkRow("observed-expected", "java", true, javaExpectedMillis, 0.0d, ""),
+      new BenchmarkRow("post-log", "java", true, javaPostLogMillis, 0.0d, ""),
+      new BenchmarkRow("precomputed-1d-max", "java", true, javaAggregateMillis, 0.0d, "")
+    );
+  }
+
+  private static @NotNull String resolveVariantName(final NativeTileProcessor.@NotNull LoadReport loadReport) {
+    final var requestedVariant = System.getProperty("hict.native.variant", "").trim().toLowerCase(Locale.ROOT);
+    if (!requestedVariant.isBlank() && !"auto".equals(requestedVariant)) {
+      return "baseline".equals(requestedVariant) ? "avx2" : requestedVariant;
+    }
+    final var version = loadReport.version().toLowerCase(Locale.ROOT);
+    if (version.contains("avx512")) {
+      return "avx512";
+    }
+    if (version.contains("avx2")) {
+      return "avx2";
+    }
+    return "native";
+  }
+
+  private static void writeUnavailableRows(final @NotNull String variant,
+                                           final @NotNull String reason) {
+    writeBenchmarkRows(
+      new BenchmarkRow("base-signal", variant, false, Double.NaN, Double.NaN, reason),
+      new BenchmarkRow("observed-expected", variant, false, Double.NaN, Double.NaN, reason),
+      new BenchmarkRow("post-log", variant, false, Double.NaN, Double.NaN, reason),
+      new BenchmarkRow("precomputed-1d-max", variant, false, Double.NaN, Double.NaN, reason)
+    );
+  }
+
+  private static void writeBenchmarkRows(final BenchmarkRow @NotNull ... rows) {
+    final var outputCsv = System.getProperty("hict.native.benchmark.outputCsv", "").trim();
+    if (outputCsv.isBlank()) {
+      return;
+    }
+    final var path = Path.of(outputCsv);
+    try {
+      final var parent = path.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+      try (BufferedWriter writer = Files.newBufferedWriter(path)) {
+        writer.write(BenchmarkRow.csvHeader());
+        writer.newLine();
+        for (final var row : rows) {
+          writer.write(row.toCsv());
+          writer.newLine();
+        }
+      }
+    } catch (final IOException e) {
+      throw new IllegalStateException("Failed to write benchmark CSV to " + path, e);
+    }
+  }
+
+  private record BenchmarkRow(@NotNull String operation,
+                              @NotNull String variant,
+                              boolean available,
+                              double meanMillis,
+                              double maxAbsDiff,
+                              @NotNull String notes) {
+    static @NotNull String csvHeader() {
+      return "operation,variant,available,meanMillis,requestsPerSecond,maxAbsDiff,notes";
+    }
+
+    @NotNull String toCsv() {
+      final double requestsPerSecond = available && meanMillis > 0.0d
+        ? 1000.0d / meanMillis
+        : Double.NaN;
+      return String.join(
+        ",",
+        csv(operation),
+        csv(variant),
+        Boolean.toString(available),
+        number(meanMillis),
+        number(requestsPerSecond),
+        number(maxAbsDiff),
+        csv(notes)
+      );
+    }
+
+    private static @NotNull String number(final double value) {
+      return Double.isFinite(value) ? String.format(Locale.ROOT, "%.9g", value) : "";
+    }
+
+    private static @NotNull String csv(final @NotNull String value) {
+      return "\"" + value.replace("\"", "\"\"") + "\"";
+    }
   }
 
   private static int readIntProperty(final @NotNull String propertyName,

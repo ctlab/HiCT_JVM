@@ -8,6 +8,7 @@ import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.diagnostics.RequestStatistics;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.BufferedReader;
@@ -20,9 +21,16 @@ import java.util.Map;
 
 public class InfoHandlersHolder extends HandlersHolder {
   private final @NotNull Vertx vertx;
+  private final @NotNull RequestStatistics requestStatistics;
 
   public InfoHandlersHolder(final @NotNull Vertx vertx) {
+    this(vertx, new RequestStatistics());
+  }
+
+  public InfoHandlersHolder(final @NotNull Vertx vertx,
+                            final @NotNull RequestStatistics requestStatistics) {
     this.vertx = vertx;
+    this.requestStatistics = requestStatistics;
   }
 
   @Override
@@ -69,6 +77,15 @@ public class InfoHandlersHolder extends HandlersHolder {
         .putHeader("content-type", "application/json")
         .setStatusCode(200)
         .end(Json.encode(nativeProcessingStatusPayload(status)));
+    });
+
+    router.post("/statistics").handler(ctx -> {
+      final var payload = new java.util.LinkedHashMap<String, Object>(this.requestStatistics.snapshot());
+      payload.put("nativeProcessing", nativeProcessingStatusPayload(NativeProcessingService.getInstance().status()));
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(payload));
     });
   }
 

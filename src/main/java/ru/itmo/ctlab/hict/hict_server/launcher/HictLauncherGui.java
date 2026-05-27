@@ -150,7 +150,7 @@ public final class HictLauncherGui {
 
   private enum NativeProcessingMode {
     JAVA("java", "Java fallback"),
-    BASELINE("baseline", "Native AVX2"),
+    AVX2("avx2", "Native AVX2"),
     AVX512("avx512", "Native AVX-512");
 
     private final String wireName;
@@ -166,6 +166,9 @@ public final class HictLauncherGui {
         return JAVA;
       }
       final var normalized = value.trim().toLowerCase(Locale.ROOT);
+      if ("baseline".equals(normalized)) {
+        return AVX2;
+      }
       for (final var mode : values()) {
         if (mode.wireName.equals(normalized)) {
           return mode;
@@ -640,10 +643,10 @@ public final class HictLauncherGui {
       final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapSmall(), 0));
       final var group = new ButtonGroup();
       this.javaNativeRadio = new JRadioButton(NativeProcessingMode.JAVA.label);
-      this.baselineNativeRadio = new JRadioButton(nativeProcessingModeLabel(NativeProcessingMode.BASELINE));
+      this.baselineNativeRadio = new JRadioButton(nativeProcessingModeLabel(NativeProcessingMode.AVX2));
       this.avx512NativeRadio = new JRadioButton(nativeProcessingModeLabel(NativeProcessingMode.AVX512));
 
-      this.baselineNativeRadio.setEnabled(hasNativeProcessingMode(NativeProcessingMode.BASELINE));
+      this.baselineNativeRadio.setEnabled(hasNativeProcessingMode(NativeProcessingMode.AVX2));
       this.avx512NativeRadio.setEnabled(hasNativeProcessingMode(NativeProcessingMode.AVX512));
       this.javaNativeRadio.setToolTipText("Use the pure Java implementation. This is the safest compatibility fallback.");
       this.baselineNativeRadio.setToolTipText(this.baselineNativeRadio.isEnabled()
@@ -887,7 +890,7 @@ public final class HictLauncherGui {
       } else {
         env.put("HICT_NATIVE_PROCESSING", "1");
         env.put("HICT_NATIVE_VARIANT", nativeProcessingMode.wireName);
-        if (nativeProcessingMode == NativeProcessingMode.BASELINE) {
+        if (nativeProcessingMode == NativeProcessingMode.AVX2) {
           env.put("HICT_NATIVE_DISABLE_AVX512", "1");
         } else {
           env.remove("HICT_NATIVE_DISABLE_AVX512");
@@ -1200,7 +1203,7 @@ public final class HictLauncherGui {
 
     private NativeProcessingMode selectedNativeProcessingMode() {
       if (this.baselineNativeRadio != null && this.baselineNativeRadio.isSelected()) {
-        return NativeProcessingMode.BASELINE;
+        return NativeProcessingMode.AVX2;
       }
       if (this.avx512NativeRadio != null && this.avx512NativeRadio.isSelected()) {
         return NativeProcessingMode.AVX512;
@@ -1232,8 +1235,8 @@ public final class HictLauncherGui {
         if (hasNativeProcessingMode(NativeProcessingMode.AVX512)) {
           return NativeProcessingMode.AVX512;
         }
-        if (hasNativeProcessingMode(NativeProcessingMode.BASELINE)) {
-          return NativeProcessingMode.BASELINE;
+        if (hasNativeProcessingMode(NativeProcessingMode.AVX2)) {
+          return NativeProcessingMode.AVX2;
         }
       }
       return NativeProcessingMode.JAVA;
@@ -1242,7 +1245,7 @@ public final class HictLauncherGui {
     private void selectNativeProcessingMode(final NativeProcessingMode mode) {
       final var selectableMode = hasNativeProcessingMode(mode) ? mode : NativeProcessingMode.JAVA;
       switch (selectableMode) {
-        case BASELINE -> this.baselineNativeRadio.setSelected(true);
+        case AVX2 -> this.baselineNativeRadio.setSelected(true);
         case AVX512 -> this.avx512NativeRadio.setSelected(true);
         case JAVA -> this.javaNativeRadio.setSelected(true);
       }
@@ -1255,7 +1258,7 @@ public final class HictLauncherGui {
     private boolean hasNativeProcessingMode(final NativeProcessingMode mode) {
       return switch (mode) {
         case JAVA -> true;
-        case BASELINE -> hasNativeLibraryOverride("hict_native") || hasBundledNativeLibrary("hict_native");
+        case AVX2 -> hasNativeLibraryOverride("hict_native") || hasBundledNativeLibrary("hict_native");
         case AVX512 -> NativeCpuFeatures.supportsAvx512Core()
           && (hasNativeLibraryOverride("hict_native_avx512") || hasBundledNativeLibrary("hict_native_avx512"));
       };
@@ -1302,7 +1305,7 @@ public final class HictLauncherGui {
     }
 
     private String nativeProcessingStatusText() {
-      final var baseline = hasNativeProcessingMode(NativeProcessingMode.BASELINE) ? "AVX2 available" : "AVX2 unavailable";
+      final var baseline = hasNativeProcessingMode(NativeProcessingMode.AVX2) ? "AVX2 available" : "AVX2 unavailable";
       final var avx512 = hasNativeProcessingMode(NativeProcessingMode.AVX512) ? "AVX-512 available" : avx512UnavailableReason();
       return selectedNativeProcessingMode().label + "; " + baseline + "; " + avx512;
     }
