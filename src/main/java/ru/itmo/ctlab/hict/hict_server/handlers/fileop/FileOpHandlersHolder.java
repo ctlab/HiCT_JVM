@@ -834,10 +834,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
         log.warn("Skipping overlay assembly synchronization because no visible active-source contigs can be resolved in the other source");
         return;
       }
-      synchronizeTargetVisibilityFromSource(source, target);
       try (final var reader = new StringReader(targetAgp)) {
         target.importAGP(reader);
       }
+      synchronizeTargetVisibilityFromSource(source, target);
       log.info("Synchronized {} assembly layout into {} source for overlay rendering",
         ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? ASSEMBLY_SOURCE_SECONDARY : ASSEMBLY_SOURCE_PRIMARY,
         ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? ASSEMBLY_SOURCE_PRIMARY : ASSEMBLY_SOURCE_SECONDARY

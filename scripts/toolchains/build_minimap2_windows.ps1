@@ -40,6 +40,91 @@ function Invoke-Native([string]$FilePath, [string[]]$Arguments, [string]$Working
   }
 }
 
+function Resolve-MingwToolPrefix([string]$CompilerPath) {
+  $leaf = Split-Path -Leaf $CompilerPath
+  if ($leaf -match "^(.*-)gcc(?:\.exe)?$") {
+    return $Matches[1]
+  }
+  return ""
+}
+
+function Find-MingwZlib([string]$CompilerPath) {
+  $isNonWindowsPowerShell = (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue) -and (-not $IsWindows)
+  $candidates = New-Object System.Collections.Generic.List[string]
+  foreach ($envName in @("MINGW_PREFIX", "MSYSTEM_PREFIX")) {
+    $value = [Environment]::GetEnvironmentVariable($envName)
+    if ($value) {
+      [void]$candidates.Add($value)
+    }
+  }
+  foreach ($prefix in @("C:\mingw64", "C:\msys64\mingw64", "C:\msys64\ucrt64", "/usr/x86_64-w64-mingw32")) {
+    [void]$candidates.Add($prefix)
+  }
+  $compilerDir = Split-Path -Parent $CompilerPath
+  if ($compilerDir) {
+    [void]$candidates.Add((Join-Path $compilerDir "..\x86_64-w64-mingw32"))
+    [void]$candidates.Add((Join-Path $compilerDir ".."))
+  }
+
+  foreach ($candidate in $candidates) {
+    if (-not $candidate) {
+      continue
+    }
+    if ($isNonWindowsPowerShell -and ($candidate -match "^[A-Za-z]:\\")) {
+      continue
+    }
+    $include = Join-Path $candidate "include"
+    $lib = Join-Path $candidate "lib"
+    if ((Test-Path (Join-Path $include "zlib.h")) -and ((Test-Path (Join-Path $lib "libz.a")) -or (Test-Path (Join-Path $lib "libz.dll.a")))) {
+      return [pscustomobject]@{
+        RootDir = $candidate
+        IncludeDir = $include
+        LibDir = $lib
+        Source = "system"
+      }
+    }
+  }
+  return $null
+}
+
+function Ensure-MingwZlib([string]$WorkDir, [string]$MakePath, [string]$CompilerPath) {
+  $existing = Find-MingwZlib -CompilerPath $CompilerPath
+  if ($existing) {
+    Write-Host "[minimap2/windows] Using MinGW zlib from $($existing.RootDir)"
+    return $existing
+  }
+
+  $zlibRef = if ($env:ZLIB_REF) { $env:ZLIB_REF } else { "v1.3.1" }
+  $zlibRepo = if ($env:ZLIB_REPO_URL) { $env:ZLIB_REPO_URL } else { "https://github.com/madler/zlib.git" }
+  $sourceDir = Join-Path $WorkDir "zlib-src"
+  $installDir = Join-Path $WorkDir "zlib-mingw"
+  if (-not (Test-Path (Join-Path $sourceDir ".git"))) {
+    if (Test-Path $sourceDir) {
+      Remove-Item -Recurse -Force $sourceDir
+    }
+    Invoke-Native -FilePath "git" -Arguments @("clone", "--depth", "1", "--branch", $zlibRef, $zlibRepo, $sourceDir)
+  }
+  $prefix = Resolve-MingwToolPrefix -CompilerPath $CompilerPath
+  try {
+    Invoke-Native -FilePath $MakePath -Arguments @("-C", $sourceDir, "-f", "win32/Makefile.gcc", "clean")
+  } catch {
+    Write-Warning "zlib clean failed, continuing with a fresh build attempt: $($_.Exception.Message)"
+  }
+  $jobs = if ($env:NUMBER_OF_PROCESSORS) { $env:NUMBER_OF_PROCESSORS } else { "2" }
+  Invoke-Native -FilePath $MakePath -Arguments @("-C", $sourceDir, "-f", "win32/Makefile.gcc", "-j$jobs", "PREFIX=$prefix")
+  New-Item -ItemType Directory -Force -Path (Join-Path $installDir "include"), (Join-Path $installDir "lib") | Out-Null
+  Copy-Item -Force (Join-Path $sourceDir "zlib.h") (Join-Path $installDir "include\zlib.h")
+  Copy-Item -Force (Join-Path $sourceDir "zconf.h") (Join-Path $installDir "include\zconf.h")
+  Copy-Item -Force (Join-Path $sourceDir "libz.a") (Join-Path $installDir "lib\libz.a")
+  Write-Host "[minimap2/windows] Built static MinGW zlib $zlibRef into $installDir"
+  return [pscustomobject]@{
+    RootDir = $installDir
+    IncludeDir = Join-Path $installDir "include"
+    LibDir = Join-Path $installDir "lib"
+    Source = "built:$zlibRef"
+  }
+}
+
 function Repair-Minimap2MingwGettimeofday([string]$SourceDir) {
   $miscPath = Join-Path $SourceDir "misc.c"
   if (-not (Test-Path $miscPath)) {
@@ -47,6 +132,37 @@ function Repair-Minimap2MingwGettimeofday([string]$SourceDir) {
   }
 
   $content = Get-Content -Raw -Path $miscPath
+  $windowsHelper = @"
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+static int hict_mingw_gettimeofday(struct timeval *tp, void *tzp)
+{
+    (void)tzp;
+    FILETIME ft;
+    ULARGE_INTEGER uli;
+    GetSystemTimeAsFileTime(&ft);
+    uli.LowPart = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    const unsigned long long epoch = 116444736000000000ULL;
+    const unsigned long long micros = (uli.QuadPart - epoch) / 10ULL;
+    tp->tv_sec = (time_t)(micros / 1000000ULL);
+    tp->tv_usec = (long)(micros % 1000000ULL);
+    return 0;
+}
+#endif
+"@
+
+  function Replace-GettimeofdayCall([string]$Text) {
+    return [regex]::Replace(
+      $Text,
+      "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
+      "hict_mingw_gettimeofday(&tp, NULL)"
+    )
+  }
+
   if ($content -notmatch "struct timezone" -or $content -notmatch "int gettimeofday") {
     if ($content -match "hict_mingw_gettimeofday") {
       $withoutMacro = [regex]::Replace(
@@ -54,26 +170,32 @@ function Repair-Minimap2MingwGettimeofday([string]$SourceDir) {
         "(?m)^\s*#define\s+gettimeofday\s*\(\s*tp\s*,\s*tzp\s*\)\s+hict_mingw_gettimeofday\s*\(\s*\(tp\)\s*,\s*NULL\s*\)\s*\r?\n?",
         ""
       )
-      $patchedExisting = [regex]::Replace(
-        $withoutMacro,
-        "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
-        "hict_mingw_gettimeofday(&tp, NULL)"
-      )
+      $patchedExisting = Replace-GettimeofdayCall $withoutMacro
       if ($patchedExisting -ne $content) {
         Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patchedExisting
         Write-Host "[minimap2/windows] Normalized existing private MinGW gettimeofday shim."
       }
+      return
+    }
+
+    if ($content -match "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)") {
+      if ($content -match '#include\s+"mmpriv\.h"[^\r\n]*(\r?\n)') {
+        $content = [regex]::Replace($content, '(#include\s+"mmpriv\.h"[^\r\n]*\r?\n)', "`$1$windowsHelper`n", 1)
+      } elseif ($content -match "#include[^\r\n]*(\r?\n)") {
+        $content = [regex]::Replace($content, "(#include[^\r\n]*\r?\n)", "`$1$windowsHelper`n", 1)
+      } else {
+        $content = "$windowsHelper`n$content"
+      }
+      $patchedInjected = Replace-GettimeofdayCall $content
+      Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patchedInjected
+      Write-Host "[minimap2/windows] Injected a private Win32 gettimeofday shim for MinGW."
     }
     return
   }
 
   $patched = $content -replace "\bstruct\s+timezone\b(?=\s*\{)", "struct hict_mingw_timezone"
   $patched = $patched -replace "int\s+gettimeofday\s*\(\s*struct\s+timeval\s*\*\s*tp\s*,\s*struct\s+timezone\s*\*\s*tzp\s*\)", "static int hict_mingw_gettimeofday(struct timeval * tp, struct hict_mingw_timezone *tzp)"
-  $patched = [regex]::Replace(
-    $patched,
-    "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
-    "hict_mingw_gettimeofday(&tp, NULL)"
-  )
+  $patched = Replace-GettimeofdayCall $patched
   if ($patched -ne $content) {
     Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patched
     Write-Host "[minimap2/windows] Patched misc.c to call a private MinGW gettimeofday shim."
@@ -110,7 +232,15 @@ catch {
   Write-Warning "minimap2 clean failed, continuing with a fresh build attempt: $($_.Exception.Message)"
 }
 $jobs = if ($env:NUMBER_OF_PROCESSORS) { $env:NUMBER_OF_PROCESSORS } else { "2" }
-Invoke-Native -FilePath $make -Arguments @("-C", $sourceDir, "-j$jobs", "CC=$gcc", "CFLAGS=-O3 -DNDEBUG", "LIBS=-static -lm -lz -lpthread")
+$zlib = Ensure-MingwZlib -WorkDir $WorkDir -MakePath $make -CompilerPath $gcc
+Invoke-Native -FilePath $make -Arguments @(
+  "-C",
+  $sourceDir,
+  "-j$jobs",
+  "CC=$gcc",
+  "CFLAGS=-O3 -DNDEBUG -I$($zlib.IncludeDir)",
+  "LIBS=-L$($zlib.LibDir) -static -lm -lz -lpthread"
+)
 
 $builtExe = Join-Path $sourceDir "minimap2.exe"
 if (-not (Test-Path $builtExe)) {
@@ -134,6 +264,7 @@ platform=windows_x86_64
 compiler=$(& $gcc --version | Select-Object -First 1)
 linker_flags=-static
 cpu_flag_policy=generic official minimap2 build; upstream SSE2/SSE4.1 dispatch objects retain their fixed target flags.
+zlib=$($zlib.Source) $($zlib.RootDir)
 timestamp_utc=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
 "@ | Set-Content -Encoding UTF8 (Join-Path $OutputDir "share\doc\minimap2\build-info.txt")
 

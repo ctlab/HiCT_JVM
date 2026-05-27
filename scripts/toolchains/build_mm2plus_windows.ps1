@@ -50,6 +50,93 @@ function Invoke-NativeAllowFailure([string]$FilePath, [string[]]$Arguments, [str
   return $process.ExitCode
 }
 
+function Resolve-MingwToolPrefix([string]$CompilerPath) {
+  $leaf = Split-Path -Leaf $CompilerPath
+  if ($leaf -match "^(.*-)g\+\+(?:\.exe)?$") {
+    return $Matches[1]
+  }
+  if ($leaf -match "^(.*-)gcc(?:\.exe)?$") {
+    return $Matches[1]
+  }
+  return ""
+}
+
+function Find-MingwZlib([string]$CompilerPath) {
+  $isNonWindowsPowerShell = (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue) -and (-not $IsWindows)
+  $candidates = New-Object System.Collections.Generic.List[string]
+  foreach ($envName in @("MINGW_PREFIX", "MSYSTEM_PREFIX")) {
+    $value = [Environment]::GetEnvironmentVariable($envName)
+    if ($value) {
+      [void]$candidates.Add($value)
+    }
+  }
+  foreach ($prefix in @("C:\mingw64", "C:\msys64\mingw64", "C:\msys64\ucrt64", "/usr/x86_64-w64-mingw32")) {
+    [void]$candidates.Add($prefix)
+  }
+  $compilerDir = Split-Path -Parent $CompilerPath
+  if ($compilerDir) {
+    [void]$candidates.Add((Join-Path $compilerDir "..\x86_64-w64-mingw32"))
+    [void]$candidates.Add((Join-Path $compilerDir ".."))
+  }
+
+  foreach ($candidate in $candidates) {
+    if (-not $candidate) {
+      continue
+    }
+    if ($isNonWindowsPowerShell -and ($candidate -match "^[A-Za-z]:\\")) {
+      continue
+    }
+    $include = Join-Path $candidate "include"
+    $lib = Join-Path $candidate "lib"
+    if ((Test-Path (Join-Path $include "zlib.h")) -and ((Test-Path (Join-Path $lib "libz.a")) -or (Test-Path (Join-Path $lib "libz.dll.a")))) {
+      return [pscustomobject]@{
+        RootDir = $candidate
+        IncludeDir = $include
+        LibDir = $lib
+        Source = "system"
+      }
+    }
+  }
+  return $null
+}
+
+function Ensure-MingwZlib([string]$WorkDir, [string]$MakePath, [string]$CompilerPath, [string]$InstallDir) {
+  $existing = Find-MingwZlib -CompilerPath $CompilerPath
+  if ($existing) {
+    Write-Host "[mm2plus/windows] Using MinGW zlib from $($existing.RootDir)"
+    return $existing
+  }
+
+  $zlibRef = if ($env:ZLIB_REF) { $env:ZLIB_REF } else { "v1.3.1" }
+  $zlibRepo = if ($env:ZLIB_REPO_URL) { $env:ZLIB_REPO_URL } else { "https://github.com/madler/zlib.git" }
+  $sourceDir = Join-Path $WorkDir "zlib-src"
+  if (-not (Test-Path (Join-Path $sourceDir ".git"))) {
+    if (Test-Path $sourceDir) {
+      Remove-Item -Recurse -Force $sourceDir
+    }
+    Invoke-Native -FilePath "git" -Arguments @("clone", "--depth", "1", "--branch", $zlibRef, $zlibRepo, $sourceDir)
+  }
+  $prefix = Resolve-MingwToolPrefix -CompilerPath $CompilerPath
+  try {
+    Invoke-Native -FilePath $MakePath -Arguments @("-C", $sourceDir, "-f", "win32/Makefile.gcc", "clean")
+  } catch {
+    Write-Warning "zlib clean failed, continuing with a fresh build attempt: $($_.Exception.Message)"
+  }
+  $jobs = if ($env:NUMBER_OF_PROCESSORS) { $env:NUMBER_OF_PROCESSORS } else { "2" }
+  Invoke-Native -FilePath $MakePath -Arguments @("-C", $sourceDir, "-f", "win32/Makefile.gcc", "-j$jobs", "PREFIX=$prefix")
+  New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "include"), (Join-Path $InstallDir "lib") | Out-Null
+  Copy-Item -Force (Join-Path $sourceDir "zlib.h") (Join-Path $InstallDir "include\zlib.h")
+  Copy-Item -Force (Join-Path $sourceDir "zconf.h") (Join-Path $InstallDir "include\zconf.h")
+  Copy-Item -Force (Join-Path $sourceDir "libz.a") (Join-Path $InstallDir "lib\libz.a")
+  Write-Host "[mm2plus/windows] Built static MinGW zlib $zlibRef into $InstallDir"
+  return [pscustomobject]@{
+    RootDir = $InstallDir
+    IncludeDir = Join-Path $InstallDir "include"
+    LibDir = Join-Path $InstallDir "lib"
+    Source = "built:$zlibRef"
+  }
+}
+
 function Repair-Mm2PlusMingwGettimeofday([string]$SourceDir) {
   $miscPath = Join-Path $SourceDir "src\misc.c"
   if (-not (Test-Path $miscPath)) {
@@ -57,6 +144,37 @@ function Repair-Mm2PlusMingwGettimeofday([string]$SourceDir) {
   }
 
   $content = Get-Content -Raw -Path $miscPath
+  $windowsHelper = @"
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+static int hict_mingw_gettimeofday(struct timeval *tp, void *tzp)
+{
+    (void)tzp;
+    FILETIME ft;
+    ULARGE_INTEGER uli;
+    GetSystemTimeAsFileTime(&ft);
+    uli.LowPart = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    const unsigned long long epoch = 116444736000000000ULL;
+    const unsigned long long micros = (uli.QuadPart - epoch) / 10ULL;
+    tp->tv_sec = (time_t)(micros / 1000000ULL);
+    tp->tv_usec = (long)(micros % 1000000ULL);
+    return 0;
+}
+#endif
+"@
+
+  function Replace-GettimeofdayCall([string]$Text) {
+    return [regex]::Replace(
+      $Text,
+      "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
+      "hict_mingw_gettimeofday(&tp, NULL)"
+    )
+  }
+
   if ($content -notmatch "struct timezone" -or $content -notmatch "int gettimeofday") {
     if ($content -match "hict_mingw_gettimeofday") {
       $withoutMacro = [regex]::Replace(
@@ -64,26 +182,32 @@ function Repair-Mm2PlusMingwGettimeofday([string]$SourceDir) {
         "(?m)^\s*#define\s+gettimeofday\s*\(\s*tp\s*,\s*tzp\s*\)\s+hict_mingw_gettimeofday\s*\(\s*\(tp\)\s*,\s*NULL\s*\)\s*\r?\n?",
         ""
       )
-      $patchedExisting = [regex]::Replace(
-        $withoutMacro,
-        "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
-        "hict_mingw_gettimeofday(&tp, NULL)"
-      )
+      $patchedExisting = Replace-GettimeofdayCall $withoutMacro
       if ($patchedExisting -ne $content) {
         Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patchedExisting
         Write-Host "[mm2plus/windows] Normalized existing private MinGW gettimeofday shim."
       }
+      return
+    }
+
+    if ($content -match "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)") {
+      if ($content -match '#include\s+"mmpriv\.h"[^\r\n]*(\r?\n)') {
+        $content = [regex]::Replace($content, '(#include\s+"mmpriv\.h"[^\r\n]*\r?\n)', "`$1$windowsHelper`n", 1)
+      } elseif ($content -match "#include[^\r\n]*(\r?\n)") {
+        $content = [regex]::Replace($content, "(#include[^\r\n]*\r?\n)", "`$1$windowsHelper`n", 1)
+      } else {
+        $content = "$windowsHelper`n$content"
+      }
+      $patchedInjected = Replace-GettimeofdayCall $content
+      Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patchedInjected
+      Write-Host "[mm2plus/windows] Injected a private Win32 gettimeofday shim for MinGW."
     }
     return
   }
 
   $patched = $content -replace "\bstruct\s+timezone\b(?=\s*\{)", "struct hict_mingw_timezone"
   $patched = $patched -replace "int\s+gettimeofday\s*\(\s*struct\s+timeval\s*\*\s*tp\s*,\s*struct\s+timezone\s*\*\s*tzp\s*\)", "static int hict_mingw_gettimeofday(struct timeval * tp, struct hict_mingw_timezone *tzp)"
-  $patched = [regex]::Replace(
-    $patched,
-    "\bgettimeofday\s*\(\s*&tp\s*,\s*NULL\s*\)",
-    "hict_mingw_gettimeofday(&tp, NULL)"
-  )
+  $patched = Replace-GettimeofdayCall $patched
   if ($patched -ne $content) {
     Set-Content -Encoding UTF8 -NoNewline -Path $miscPath -Value $patched
     Write-Host "[mm2plus/windows] Patched src/misc.c to call a private MinGW gettimeofday shim."
@@ -112,11 +236,11 @@ function Repair-Mm2PlusMingwSysconf([string]$SourceDir) {
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-static int32_t hict_mingw_online_processors(void)
+static long hict_mingw_online_processors(void)
 {
     SYSTEM_INFO hict_system_info;
     GetSystemInfo(&hict_system_info);
-    return (int32_t)(hict_system_info.dwNumberOfProcessors > 0 ? hict_system_info.dwNumberOfProcessors : 1);
+    return (long)(hict_system_info.dwNumberOfProcessors > 0 ? hict_system_info.dwNumberOfProcessors : 1);
 }
 #endif
 "@
@@ -126,11 +250,14 @@ static int32_t hict_mingw_online_processors(void)
       $content = [regex]::Replace($content, "(#include <unistd\.h>[^\r\n]*\r?\n)", "`$1$windowsHelper`n", 1)
     } elseif ($content -match "#include[^\r\n]*(\r?\n)") {
       $content = [regex]::Replace($content, "(#include[^\r\n]*\r?\n)", "`$1$windowsHelper`n", 1)
+    } else {
+      $content = "$windowsHelper`n$content"
     }
   }
 
-  if ($content -match "sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)") {
-    $content = [regex]::Replace($content, "sysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)", "hict_mingw_online_processors()")
+  $patched = [regex]::Replace($content, "\bsysconf\s*\(\s*_SC_NPROCESSORS_ONLN\s*\)", "hict_mingw_online_processors()")
+  if ($patched -ne $content) {
+    $content = $patched
     Set-Content -Encoding UTF8 -NoNewline -Path $mapPath -Value $content
     Write-Host "[mm2plus/windows] Patched src/map.c to use GetSystemInfo instead of sysconf on Windows."
   } else {
@@ -191,6 +318,7 @@ Invoke-Native -FilePath "git" -Arguments @("-C", $sourceDir, "checkout", "--forc
 Repair-Mm2PlusMingwGettimeofday -SourceDir $sourceDir
 Repair-Mm2PlusMingwSysconf -SourceDir $sourceDir
 Repair-Mm2PlusMakefileExtraFlags -SourceDir $sourceDir
+$zlib = Ensure-MingwZlib -WorkDir $WorkDir -MakePath $make -CompilerPath $cxx -InstallDir (Join-Path $sourceDir "external\zlib")
 
 function Build-Variant([string]$Variant, [string]$ExtraFlags) {
   $output = Join-Path $OutputDir "bin\mm2plus-$Variant.exe"
@@ -221,8 +349,9 @@ function Build-Variant([string]$Variant, [string]$ExtraFlags) {
     "base=1",
     "avx=1",
     "CXX=$cxx",
+    "ZLIB_DIR=$($zlib.RootDir)",
     "EXTRAFLAGS=$ExtraFlags",
-    "LDFLAGS=-static -static-libgcc -static-libstdc++",
+    "LDFLAGS=-static -static-libgcc -static-libstdc++ -L$($zlib.LibDir)",
     "LIBS=-lz -fopenmp -lm -lpthread"
   )
   if ($exit -ne 0 -or -not (Test-Path (Join-Path $sourceDir "mm2plus.exe"))) {
@@ -258,6 +387,7 @@ $buildInfo = @(
   "avx2_extraflags=-mavx2",
   "avx512_extraflags=-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2",
   "cpu_flag_policy=EXTRAFLAGS are applied to generic and AVX/OpenMP objects; upstream SSE2/SSE4.1 dispatch objects intentionally retain their fixed target flags.",
+  "zlib=$($zlib.Source) $($zlib.RootDir)",
   "timestamp_utc=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))"
 )
 foreach ($variant in @("avx2", "avx512")) {
