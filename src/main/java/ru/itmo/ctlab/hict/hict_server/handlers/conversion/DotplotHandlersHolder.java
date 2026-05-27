@@ -59,9 +59,13 @@ public class DotplotHandlersHolder extends HandlersHolder {
           }
           final var dataDirectory = requireDataDirectory();
           final var outputDirectory = resolveOutputDirectory(body.getString("outputDirectory"));
+          final var referenceMapPath = resolveOptionalReferenceMap(dataDirectory, body.getString("referenceMapFilename"));
+          final var assemblyAgpPath = resolveOptionalAgp(dataDirectory, body.getString("assemblyAgpFilename"));
           final var options = new DotplotOptions(
             Math.max(1, body.getInteger("binSize", 1000)),
             body.getString("resolutions", ""),
+            referenceMapPath,
+            assemblyAgpPath,
             Math.max(1, body.getInteger("minimizerK", 17)),
             Math.max(1, body.getInteger("minimizerWindow", 5)),
             Math.max(0, body.getInteger("minChainScore", 40)),
@@ -132,6 +136,12 @@ public class DotplotHandlersHolder extends HandlersHolder {
       job.toolchainSummary = alignerName + " alignment with Java PAF/BG2 conversion and " + toolchain.source() + " hictk command " + toolchain.hictkCommand();
       job.toolchainNotices.clear();
       job.toolchainNotices.add("Dotplot generation uses " + alignerName + " (" + alignerCommand + ") for self-alignment and integrated Java PAF/BG2 conversion; Python and Cooler are not required.");
+      if (job.options.referenceMapPath() != null) {
+        job.toolchainNotices.add("Dotplot zoom resolutions will mirror " + job.options.referenceMapPath().getFileName() + ", with intermediate finer resolutions added from the selected base bin size when needed.");
+      }
+      if (job.options.assemblyAgpPath() != null) {
+        job.toolchainNotices.add("Dotplot FASTA will be transformed with AGP " + job.options.assemblyAgpPath().getFileName() + " before self-alignment.");
+      }
       job.toolchainNotices.addAll(toolchain.notices());
       job.toolchainCitations.clear();
       job.toolchainCitations.addAll(toolchain.citations());
@@ -142,6 +152,8 @@ public class DotplotHandlersHolder extends HandlersHolder {
           prefix,
           job.options.binSize(),
           job.options.resolutions(),
+          job.options.referenceMapPath(),
+          job.options.assemblyAgpPath(),
           job.options.minimizerK(),
           job.options.minimizerWindow(),
           job.options.minChainScore(),
@@ -201,6 +213,36 @@ public class DotplotHandlersHolder extends HandlersHolder {
     return requireDataDirectory().resolve("processed").normalize();
   }
 
+  private @org.jetbrains.annotations.Nullable Path resolveOptionalReferenceMap(final @NotNull Path dataDirectory,
+                                                                               final String requested) {
+    if (requested == null || requested.isBlank()) {
+      return null;
+    }
+    if (!requested.endsWith(".hict.hdf5")) {
+      throw new IllegalArgumentException("Reference map must be a .hict.hdf5 file: " + requested);
+    }
+    final var path = dataDirectory.resolve(requested).normalize();
+    if (!path.startsWith(dataDirectory) || !Files.isRegularFile(path)) {
+      throw new IllegalArgumentException("Reference .hict.hdf5 file not found: " + requested);
+    }
+    return path;
+  }
+
+  private @org.jetbrains.annotations.Nullable Path resolveOptionalAgp(final @NotNull Path dataDirectory,
+                                                                      final String requested) {
+    if (requested == null || requested.isBlank()) {
+      return null;
+    }
+    if (!requested.toLowerCase(Locale.ROOT).endsWith(".agp")) {
+      throw new IllegalArgumentException("Dotplot FASTA transformation currently accepts .agp files only: " + requested);
+    }
+    final var path = dataDirectory.resolve(requested).normalize();
+    if (!path.startsWith(dataDirectory) || !Files.isRegularFile(path)) {
+      throw new IllegalArgumentException("AGP file not found: " + requested);
+    }
+    return path;
+  }
+
   private static @NotNull String stripFastaSuffix(final @NotNull String filename) {
     var name = filename;
     if (name.toLowerCase(Locale.ROOT).endsWith(".gz")) {
@@ -235,6 +277,8 @@ public class DotplotHandlersHolder extends HandlersHolder {
   private record DotplotOptions(
     int binSize,
     @NotNull String resolutions,
+    Path referenceMapPath,
+    Path assemblyAgpPath,
     int minimizerK,
     int minimizerWindow,
     int minChainScore,

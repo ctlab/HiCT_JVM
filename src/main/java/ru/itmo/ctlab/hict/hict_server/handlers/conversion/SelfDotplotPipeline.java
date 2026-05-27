@@ -1,21 +1,28 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.BufferedOutputStream;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,11 +78,12 @@ public final class SelfDotplotPipeline {
     final var paf = tmp.resolve(prefix + ".paf");
     try {
       emitStage(logger, "fasta", 0.0d, 0.02d, "Reading FASTA and writing chrom sizes");
-      final var layout = writeChromSizes(options, chromSizes, logger, cancellationRequested);
+      final var alignmentFasta = prepareAlignmentFasta(options, tmp, logger, cancellationRequested);
+      final var layout = writeChromSizes(options, alignmentFasta, chromSizes, logger, cancellationRequested);
       emitStage(logger, "fasta", 1.0d, 0.12d, "Parsed " + layout.chromosomes().size() + " sequence(s)");
 
       emitStage(logger, "align", 0.0d, 0.12d, "Running " + alignerName + " self-alignment");
-      runAligner(buildAlignerCommand(aligner, options), alignerName, options.outputDirectory(), paf, logger, processSink, cancellationRequested);
+      runAligner(buildAlignerCommand(aligner, options, alignmentFasta), alignerName, options.outputDirectory(), paf, logger, processSink, cancellationRequested);
       emitStage(logger, "align", 1.0d, 0.45d, alignerName + " PAF written: " + paf.getFileName());
 
       emitStage(logger, "paf_to_bg2", 0.0d, 0.45d, "Sampling PAF alignments into BG2 pixels");
@@ -93,7 +101,7 @@ public final class SelfDotplotPipeline {
 
       emitStage(logger, "zoomify", 0.0d, 0.70d, "Building multi-resolution .mcool with hictk");
       runCommand(
-        buildZoomifyCommand(hictk, cool, mcool, resolveZoomResolutions(options, layout), options),
+        buildZoomifyCommand(hictk, cool, mcool, resolveZoomResolutions(options, layout, logger), options),
         options.outputDirectory(),
         logger,
         processSink,
@@ -134,7 +142,8 @@ public final class SelfDotplotPipeline {
   }
 
   private static @NotNull List<String> buildAlignerCommand(final @NotNull Path aligner,
-                                                           final @NotNull Options options) {
+                                                           final @NotNull Options options,
+                                                           final @NotNull Path alignmentFasta) {
     final var command = new ArrayList<String>();
     command.add(aligner.toString());
     command.add("-t");
@@ -154,8 +163,8 @@ public final class SelfDotplotPipeline {
       command.add("-D");
     }
     command.addAll(parseExtraArguments(options.extraAlignerArgs()));
-    command.add(options.fastaPath().toString());
-    command.add(options.fastaPath().toString());
+    command.add(alignmentFasta.toString());
+    command.add(alignmentFasta.toString());
     return command;
   }
 
@@ -328,7 +337,345 @@ public final class SelfDotplotPipeline {
     }
   }
 
+  private static @NotNull Path prepareAlignmentFasta(final @NotNull Options options,
+                                                     final @NotNull Path tmp,
+                                                     final @NotNull Consumer<String> logger,
+                                                     final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    if (options.assemblyAgpPath() == null) {
+      return options.fastaPath();
+    }
+    final var transformedFasta = tmp.resolve(options.outputPrefix() + ".agp-applied.fasta");
+    logger.accept("Applying AGP before dotplot self-alignment: " + options.assemblyAgpPath().getFileName());
+    applyAgpToFasta(options.fastaPath(), options.assemblyAgpPath(), transformedFasta, logger, cancellationRequested);
+    return transformedFasta;
+  }
+
+  static @NotNull Path applyAgpToFasta(final @NotNull Path fasta,
+                                       final @NotNull Path agp,
+                                       final @NotNull Path outputFasta,
+                                       final @NotNull Consumer<String> logger,
+                                       final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    Files.createDirectories(outputFasta.getParent());
+    final var sequenceStore = Files.createTempFile(outputFasta.getParent(), "hict-agp-fasta-sequences.", ".bin");
+    try {
+      final var sequenceIndex = indexFastaSequences(fasta, sequenceStore, cancellationRequested);
+      final var agpObjects = parseAgpSegments(agp);
+      if (agpObjects.isEmpty()) {
+        throw new IllegalArgumentException("AGP file has no contig/component rows: " + agp.getFileName());
+      }
+      writeAgpTransformedFasta(sequenceStore, sequenceIndex, agpObjects, outputFasta, logger, cancellationRequested);
+      return outputFasta;
+    } finally {
+      Files.deleteIfExists(sequenceStore);
+    }
+  }
+
+  private static @NotNull Map<String, FastaSequenceIndex> indexFastaSequences(final @NotNull Path fasta,
+                                                                              final @NotNull Path sequenceStore,
+                                                                              final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    final var index = new java.util.LinkedHashMap<String, FastaSequenceIndex>();
+    try (
+      final var reader = fastaReader(fasta);
+      final var writer = new BufferedOutputStream(Files.newOutputStream(sequenceStore), BUFFER_SIZE)
+    ) {
+      String name = null;
+      long offset = 0L;
+      long length = 0L;
+      long position = 0L;
+      String line;
+      while ((line = reader.readLine()) != null) {
+        checkCancelled(cancellationRequested);
+        if (line.startsWith(">")) {
+          if (name != null) {
+            index.put(name, new FastaSequenceIndex(name, offset, length));
+          }
+          name = parseFastaName(line);
+          if (index.containsKey(name)) {
+            throw new IllegalArgumentException("Duplicate FASTA sequence name: " + name);
+          }
+          offset = position;
+          length = 0L;
+        } else {
+          final var sequence = line.trim();
+          if (!sequence.isEmpty()) {
+            final var bytes = sequence.getBytes(StandardCharsets.US_ASCII);
+            writer.write(bytes);
+            position += bytes.length;
+            length += bytes.length;
+          }
+        }
+      }
+      if (name != null) {
+        index.put(name, new FastaSequenceIndex(name, offset, length));
+      }
+    }
+    if (index.isEmpty()) {
+      throw new IllegalArgumentException("No FASTA records found in " + fasta.getFileName());
+    }
+    return Map.copyOf(index);
+  }
+
+  private static @NotNull Map<String, List<AgpSegment>> parseAgpSegments(final @NotNull Path agp) throws IOException {
+    final var objects = new java.util.LinkedHashMap<String, List<AgpSegment>>();
+    try (final var reader = Files.newBufferedReader(agp, StandardCharsets.UTF_8)) {
+      String line;
+      int lineNumber = 0;
+      while ((line = reader.readLine()) != null) {
+        lineNumber++;
+        final var trimmed = line.trim();
+        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+          continue;
+        }
+        final var fields = trimmed.split("\\s+");
+        if (fields.length < 5) {
+          throw new IllegalArgumentException("Malformed AGP row " + lineNumber + ": expected at least 5 columns");
+        }
+        final var objectName = fields[0];
+        final var objectStart = parsePositiveAgpLong(fields[1], lineNumber, "object_beg");
+        final var objectEnd = parsePositiveAgpLong(fields[2], lineNumber, "object_end");
+        final var partNumber = (int) parsePositiveAgpLong(fields[3], lineNumber, "part_number");
+        final var componentType = fields[4];
+        if ("N".equalsIgnoreCase(componentType) || "U".equalsIgnoreCase(componentType)) {
+          if (fields.length < 6) {
+            throw new IllegalArgumentException("Malformed AGP gap row " + lineNumber + ": expected gap length");
+          }
+          final var gapLength = parsePositiveAgpLong(fields[5], lineNumber, "gap_length");
+          objects.computeIfAbsent(objectName, ignored -> new ArrayList<>())
+            .add(AgpSegment.gap(objectName, objectStart, objectEnd, partNumber, gapLength));
+        } else {
+          if (fields.length < 9) {
+            throw new IllegalArgumentException("Malformed AGP component row " + lineNumber + ": expected 9 columns");
+          }
+          final var componentName = fields[5];
+          final var componentStart = parsePositiveAgpLong(fields[6], lineNumber, "component_beg");
+          final var componentEnd = parsePositiveAgpLong(fields[7], lineNumber, "component_end");
+          final var orientation = fields[8];
+          final var reverse = "-".equals(orientation);
+          objects.computeIfAbsent(objectName, ignored -> new ArrayList<>())
+            .add(AgpSegment.component(objectName, objectStart, objectEnd, partNumber, componentName, componentStart - 1L, componentEnd, reverse));
+        }
+      }
+    }
+    objects.values().forEach(segments -> segments.sort(
+      Comparator.comparingLong(AgpSegment::objectStart).thenComparingInt(AgpSegment::partNumber)
+    ));
+    return objects;
+  }
+
+  private static long parsePositiveAgpLong(final @NotNull String value,
+                                           final int lineNumber,
+                                           final @NotNull String fieldName) {
+    try {
+      final var parsed = Long.parseLong(value);
+      if (parsed < 1L) {
+        throw new IllegalArgumentException("AGP row " + lineNumber + " has non-positive " + fieldName + ": " + value);
+      }
+      return parsed;
+    } catch (final NumberFormatException ex) {
+      throw new IllegalArgumentException("AGP row " + lineNumber + " has invalid " + fieldName + ": " + value, ex);
+    }
+  }
+
+  private static void writeAgpTransformedFasta(final @NotNull Path sequenceStore,
+                                               final @NotNull Map<String, FastaSequenceIndex> sequenceIndex,
+                                               final @NotNull Map<String, List<AgpSegment>> agpObjects,
+                                               final @NotNull Path outputFasta,
+                                               final @NotNull Consumer<String> logger,
+                                               final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    final var coveredRanges = new HashMap<String, List<long[]>>();
+    long outputLength = 0L;
+    long repeatedRanges = 0L;
+    try (
+      final var reader = new RandomAccessFile(sequenceStore.toFile(), "r");
+      final var writer = new BufferedOutputStream(Files.newOutputStream(outputFasta), BUFFER_SIZE)
+    ) {
+      final var lineColumn = new int[]{0};
+      for (final var entry : agpObjects.entrySet()) {
+        checkCancelled(cancellationRequested);
+        writeAscii(writer, ">" + entry.getKey() + "\n");
+        lineColumn[0] = 0;
+        for (final var segment : entry.getValue()) {
+          if (segment.gap()) {
+            outputLength += appendRepeatedBase(writer, 'N', segment.gapLength(), lineColumn);
+            continue;
+          }
+          final var sequence = sequenceIndex.get(segment.componentName());
+          if (sequence == null) {
+            throw new IllegalArgumentException("AGP references FASTA sequence absent from input: " + segment.componentName());
+          }
+          if (segment.componentStart() < 0L || segment.componentEndExclusive() > sequence.length() || segment.componentStart() >= segment.componentEndExclusive()) {
+            throw new IllegalArgumentException(
+              "AGP component " + segment.componentName() + " has invalid range " +
+                (segment.componentStart() + 1L) + "-" + segment.componentEndExclusive() +
+                " for FASTA length " + sequence.length()
+            );
+          }
+          if (isRepeatedRange(coveredRanges.computeIfAbsent(segment.componentName(), ignored -> new ArrayList<>()), segment.componentStart(), segment.componentEndExclusive())) {
+            repeatedRanges++;
+          }
+          coveredRanges.get(segment.componentName()).add(new long[]{segment.componentStart(), segment.componentEndExclusive()});
+          outputLength += appendSequenceSegment(reader, sequence, segment.componentStart(), segment.componentEndExclusive(), segment.reverse(), writer, lineColumn);
+        }
+        if (lineColumn[0] != 0) {
+          writer.write('\n');
+        }
+      }
+    }
+
+    long inputLength = 0L;
+    long coveredLength = 0L;
+    long uncoveredSequences = 0L;
+    for (final var sequence : sequenceIndex.values()) {
+      inputLength += sequence.length();
+      final var covered = mergedCoveredLength(coveredRanges.getOrDefault(sequence.name(), List.of()));
+      coveredLength += covered;
+      if (covered < sequence.length()) {
+        uncoveredSequences++;
+      }
+    }
+    if (uncoveredSequences > 0L) {
+      logger.accept("AGP warning: " + uncoveredSequences + " FASTA sequence(s) are not fully covered by the AGP; dotplot will use only AGP-defined assembled sequence.");
+    }
+    if (repeatedRanges > 0L) {
+      logger.accept("AGP warning: " + repeatedRanges + " repeated component range(s) were detected; repeated sequence is preserved in the scaffolded dotplot FASTA.");
+    }
+    if (outputLength != inputLength) {
+      logger.accept("AGP warning: scaffolded FASTA length differs from original FASTA length: original=" + inputLength + " bp, scaffolded=" + outputLength + " bp, covered=" + coveredLength + " bp.");
+    }
+    logger.accept("AGP-applied FASTA written: " + outputFasta.getFileName() + " length=" + outputLength + " bp, scaffolds=" + agpObjects.size());
+  }
+
+  private static boolean isRepeatedRange(final @NotNull List<long[]> ranges,
+                                         final long startInclusive,
+                                         final long endExclusive) {
+    for (final var range : ranges) {
+      if (startInclusive < range[1] && endExclusive > range[0]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static long mergedCoveredLength(final @NotNull List<long[]> ranges) {
+    if (ranges.isEmpty()) {
+      return 0L;
+    }
+    final var sorted = new ArrayList<>(ranges);
+    sorted.sort(Comparator.comparingLong(range -> range[0]));
+    long covered = 0L;
+    long currentStart = sorted.getFirst()[0];
+    long currentEnd = sorted.getFirst()[1];
+    for (int i = 1; i < sorted.size(); i++) {
+      final var range = sorted.get(i);
+      if (range[0] <= currentEnd) {
+        currentEnd = Math.max(currentEnd, range[1]);
+      } else {
+        covered += currentEnd - currentStart;
+        currentStart = range[0];
+        currentEnd = range[1];
+      }
+    }
+    return covered + currentEnd - currentStart;
+  }
+
+  private static long appendSequenceSegment(final @NotNull RandomAccessFile reader,
+                                            final @NotNull FastaSequenceIndex sequence,
+                                            final long startInclusive,
+                                            final long endExclusive,
+                                            final boolean reverse,
+                                            final @NotNull OutputStream writer,
+                                            final int @NotNull [] lineColumn) throws IOException {
+    final var buffer = new byte[BUFFER_SIZE];
+    long emitted = 0L;
+    if (reverse) {
+      long cursor = sequence.offset() + endExclusive;
+      long remaining = endExclusive - startInclusive;
+      while (remaining > 0L) {
+        final int chunk = (int) Math.min(buffer.length, remaining);
+        cursor -= chunk;
+        reader.seek(cursor);
+        reader.readFully(buffer, 0, chunk);
+        for (int i = chunk - 1; i >= 0; i--) {
+          appendBase(writer, complement(buffer[i]), lineColumn);
+        }
+        remaining -= chunk;
+        emitted += chunk;
+      }
+    } else {
+      reader.seek(sequence.offset() + startInclusive);
+      long remaining = endExclusive - startInclusive;
+      while (remaining > 0L) {
+        final int chunk = (int) Math.min(buffer.length, remaining);
+        reader.readFully(buffer, 0, chunk);
+        for (int i = 0; i < chunk; i++) {
+          appendBase(writer, buffer[i], lineColumn);
+        }
+        remaining -= chunk;
+        emitted += chunk;
+      }
+    }
+    return emitted;
+  }
+
+  private static long appendRepeatedBase(final @NotNull OutputStream writer,
+                                         final char base,
+                                         final long count,
+                                         final int @NotNull [] lineColumn) throws IOException {
+    for (long i = 0L; i < count; i++) {
+      appendBase(writer, (byte) base, lineColumn);
+    }
+    return count;
+  }
+
+  private static void appendBase(final @NotNull OutputStream writer,
+                                 final byte base,
+                                 final int @NotNull [] lineColumn) throws IOException {
+    writer.write(base);
+    lineColumn[0]++;
+    if (lineColumn[0] >= 80) {
+      writer.write('\n');
+      lineColumn[0] = 0;
+    }
+  }
+
+  private static byte complement(final byte base) {
+    return switch (base) {
+      case 'A' -> (byte) 'T';
+      case 'a' -> (byte) 't';
+      case 'C' -> (byte) 'G';
+      case 'c' -> (byte) 'g';
+      case 'G' -> (byte) 'C';
+      case 'g' -> (byte) 'c';
+      case 'T', 'U' -> (byte) 'A';
+      case 't', 'u' -> (byte) 'a';
+      case 'M' -> (byte) 'K';
+      case 'm' -> (byte) 'k';
+      case 'K' -> (byte) 'M';
+      case 'k' -> (byte) 'm';
+      case 'R' -> (byte) 'Y';
+      case 'r' -> (byte) 'y';
+      case 'Y' -> (byte) 'R';
+      case 'y' -> (byte) 'r';
+      case 'S', 's', 'W', 'w', 'N', 'n' -> base;
+      case 'B' -> (byte) 'V';
+      case 'b' -> (byte) 'v';
+      case 'V' -> (byte) 'B';
+      case 'v' -> (byte) 'b';
+      case 'D' -> (byte) 'H';
+      case 'd' -> (byte) 'h';
+      case 'H' -> (byte) 'D';
+      case 'h' -> (byte) 'd';
+      default -> base;
+    };
+  }
+
+  private static void writeAscii(final @NotNull OutputStream writer,
+                                 final @NotNull String value) throws IOException {
+    writer.write(value.getBytes(StandardCharsets.US_ASCII));
+  }
+
   private static @NotNull GeneratedLayout writeChromSizes(final @NotNull Options options,
+                                                          final @NotNull Path fastaPath,
                                                           final @NotNull Path chromSizes,
                                                           final @NotNull Consumer<String> logger,
                                                           final @NotNull BooleanSupplier cancellationRequested) throws IOException {
@@ -336,7 +683,7 @@ public final class SelfDotplotPipeline {
     final var byName = new HashMap<String, Chromosome>();
     long totalBins = 0L;
     try (
-      final var reader = fastaReader(options.fastaPath());
+      final var reader = fastaReader(fastaPath);
       final var writer = Files.newBufferedWriter(chromSizes, StandardCharsets.UTF_8)
     ) {
       String name = null;
@@ -359,7 +706,7 @@ public final class SelfDotplotPipeline {
       }
     }
     if (chromosomes.isEmpty()) {
-      throw new IllegalArgumentException("No FASTA records found in " + options.fastaPath().getFileName());
+      throw new IllegalArgumentException("No FASTA records found in " + fastaPath.getFileName());
     }
     return new GeneratedLayout(List.copyOf(chromosomes), Map.copyOf(byName));
   }
@@ -510,8 +857,12 @@ public final class SelfDotplotPipeline {
   }
 
   private static @NotNull List<Long> resolveZoomResolutions(final @NotNull Options options,
-                                                            final @NotNull GeneratedLayout layout) {
+                                                            final @NotNull GeneratedLayout layout,
+                                                            final @NotNull Consumer<String> logger) {
     if (!options.resolutions().isBlank()) {
+      if (options.referenceMapPath() != null) {
+        logger.accept("Reference map resolutions are ignored because explicit dotplot zoom resolutions were provided.");
+      }
       return java.util.Arrays.stream(options.resolutions().split(","))
         .map(String::trim)
         .filter(token -> !token.isBlank())
@@ -520,6 +871,9 @@ public final class SelfDotplotPipeline {
         .distinct()
         .sorted()
         .toList();
+    }
+    if (options.referenceMapPath() != null) {
+      return resolveReferenceZoomResolutions(options, logger);
     }
     final var out = new ArrayList<Long>();
     final long genomeLength = layout.chromosomes().stream().mapToLong(Chromosome::length).sum();
@@ -532,6 +886,45 @@ public final class SelfDotplotPipeline {
       }
     }
     return out;
+  }
+
+  private static @NotNull List<Long> resolveReferenceZoomResolutions(final @NotNull Options options,
+                                                                     final @NotNull Consumer<String> logger) {
+    final var referencePath = Objects.requireNonNull(options.referenceMapPath());
+    try (final var reference = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(referencePath, 1, 2))) {
+      final var referenceResolutions = Arrays.stream(reference.getResolutions())
+        .filter(resolution -> resolution > 0L)
+        .distinct()
+        .sorted()
+        .toArray();
+      if (referenceResolutions.length == 0) {
+        throw new IllegalArgumentException("Reference map has no usable bp resolutions: " + referencePath);
+      }
+
+      final var out = new LinkedHashSet<Long>();
+      final long baseResolution = options.binSize();
+      final long referenceFinestResolution = referenceResolutions[0];
+      long resolution = baseResolution;
+      while (resolution < referenceFinestResolution) {
+        resolution = nextNiceResolution(resolution);
+        if (resolution < referenceFinestResolution) {
+          out.add(resolution);
+        }
+        if (out.size() > 64) {
+          throw new IllegalArgumentException("Too many intermediate dotplot resolutions before reference finest resolution " + referenceFinestResolution);
+        }
+      }
+      for (final long referenceResolution : referenceResolutions) {
+        if (referenceResolution > baseResolution) {
+          out.add(referenceResolution);
+        }
+      }
+      logger.accept(
+        "Dotplot zoom resolutions mirror reference map " + referencePath.getFileName() +
+          " from base " + baseResolution + " bp/bin: " + out
+      );
+      return List.copyOf(out);
+    }
   }
 
   private static long nextNiceResolution(final long current) {
@@ -639,6 +1032,8 @@ public final class SelfDotplotPipeline {
     @NotNull String outputPrefix,
     int binSize,
     @NotNull String resolutions,
+    @Nullable Path referenceMapPath,
+    @Nullable Path assemblyAgpPath,
     int minimizerK,
     int minimizerWindow,
     int minChainScore,
@@ -671,6 +1066,39 @@ public final class SelfDotplotPipeline {
       }
       extraAlignerArgs = extraAlignerArgs == null ? "" : extraAlignerArgs.trim();
       alignerPreference = alignerPreference == null || alignerPreference.isBlank() ? ExternalToolchainManager.dotplotAlignerPreference() : alignerPreference.trim();
+    }
+  }
+
+  private record FastaSequenceIndex(@NotNull String name, long offset, long length) {
+  }
+
+  private record AgpSegment(@NotNull String objectName,
+                            long objectStart,
+                            long objectEnd,
+                            int partNumber,
+                            boolean gap,
+                            @Nullable String componentName,
+                            long componentStart,
+                            long componentEndExclusive,
+                            boolean reverse,
+                            long gapLength) {
+    private static @NotNull AgpSegment component(final @NotNull String objectName,
+                                                 final long objectStart,
+                                                 final long objectEnd,
+                                                 final int partNumber,
+                                                 final @NotNull String componentName,
+                                                 final long componentStart,
+                                                 final long componentEndExclusive,
+                                                 final boolean reverse) {
+      return new AgpSegment(objectName, objectStart, objectEnd, partNumber, false, componentName, componentStart, componentEndExclusive, reverse, 0L);
+    }
+
+    private static @NotNull AgpSegment gap(final @NotNull String objectName,
+                                           final long objectStart,
+                                           final long objectEnd,
+                                           final int partNumber,
+                                           final long gapLength) {
+      return new AgpSegment(objectName, objectStart, objectEnd, partNumber, true, null, 0L, 0L, false, gapLength);
     }
   }
 

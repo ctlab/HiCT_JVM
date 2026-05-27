@@ -45,6 +45,8 @@ class SelfDotplotPipelineTest {
         "self",
         100,
         "",
+        null,
+        null,
         17,
         5,
         40,
@@ -109,6 +111,8 @@ class SelfDotplotPipelineTest {
         "tiny.self",
         25,
         "50,100",
+        null,
+        null,
         17,
         5,
         40,
@@ -145,5 +149,40 @@ class SelfDotplotPipelineTest {
 
     assertTrue(Files.isRegularFile(output));
     assertTrue(Files.size(output) > 0L);
+  }
+
+  @Test
+  void agpTransformReordersReverseComplementsAndAddsGapsBeforeDotplot() throws Exception {
+    final var fasta = tempDir.resolve("raw.fa");
+    Files.writeString(
+      fasta,
+      """
+        >ctgA
+        ACGTAC
+        >ctgB
+        TTGGCC
+        """
+    );
+    final var agp = tempDir.resolve("layout.agp");
+    Files.writeString(
+      agp,
+      """
+        scf1\t1\t3\t1\tW\tctgA\t1\t3\t+
+        scf1\t4\t5\t2\tN\t2\tscaffold\tyes\tpaired-ends
+        scf1\t6\t9\t3\tW\tctgB\t2\t5\t-
+        """
+    );
+    final var output = tempDir.resolve("scaffolded.fa");
+
+    SelfDotplotPipeline.applyAgpToFasta(fasta, agp, output, ignored -> {
+    }, () -> false);
+
+    assertEquals(
+      """
+        >scf1
+        ACGNNGCCA
+        """,
+      Files.readString(output)
+    );
   }
 }

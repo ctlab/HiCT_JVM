@@ -686,10 +686,26 @@ public class TileHandlersHolder extends HandlersHolder {
     final int tileHeight,
     final int tileWidth
   ) {
+    final var offsetX = (int) Math.max(
+      Integer.MIN_VALUE,
+      Math.min(Integer.MAX_VALUE, matrixWithWeights.startColIncl() - requestedStartColPx)
+    );
+    final var offsetY = (int) Math.max(
+      Integer.MIN_VALUE,
+      Math.min(Integer.MAX_VALUE, matrixWithWeights.startRowIncl() - requestedStartRowPx)
+    );
+    return padTileImageAtOffset(image, offsetX, offsetY, tileHeight, tileWidth);
+  }
+
+  static @NotNull BufferedImage padTileImageAtOffset(
+    final @NotNull BufferedImage image,
+    final int offsetX,
+    final int offsetY,
+    final int tileHeight,
+    final int tileWidth
+  ) {
     final var safeTileHeight = Math.max(1, tileHeight);
     final var safeTileWidth = Math.max(1, tileWidth);
-    final var offsetX = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, matrixWithWeights.startColIncl() - requestedStartColPx));
-    final var offsetY = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, matrixWithWeights.startRowIncl() - requestedStartRowPx));
     if (
       offsetX == 0 &&
       offsetY == 0 &&
