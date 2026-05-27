@@ -75,7 +75,7 @@ env:
 
 jobs:
   linux-portable:
-    name: Linux portable .run and AppImage
+    name: Linux portable .run
     runs-on: ubuntu-24.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
@@ -141,7 +141,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/build_appimage_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh scripts/toolchains/build_minimap2_linux.sh scripts/toolchains/build_mm2plus_linux.sh
+        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh scripts/toolchains/build_minimap2_linux.sh scripts/toolchains/build_mm2plus_linux.sh
 
       - name: Restore bundled toolchain cache
         id: cache-hictk
@@ -317,11 +317,6 @@ jobs:
       - name: Build Linux portable package
         run: ./scripts/portable/build_portable_linux.sh
 
-      - name: Build Linux AppImage
-        env:
-          HICT_SKIP_PORTABLE: "1"
-        run: ./scripts/portable/build_appimage_linux.sh
-
       - name: Upload Linux package artifact
         uses: actions/upload-artifact@v6
         with:
@@ -330,8 +325,6 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.tar.gz
             build/distributions/HiCT-*-linux-x86_64.sha256
-            build/distributions/HiCT-*-x86_64.AppImage
-            build/distributions/HiCT-*-x86_64.AppImage.sha256
 
       - name: Upload Linux runfile artifact
         uses: actions/upload-artifact@v6
@@ -341,14 +334,6 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.sha256
 
-      - name: Upload Linux AppImage artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: hict-linux-appimage
-          path: |
-            build/distributions/HiCT-*-x86_64.AppImage
-            build/distributions/HiCT-*-x86_64.AppImage.sha256
-
       - name: Attach Linux package to release
         if: ${{ github.event_name == 'release' }}
         uses: softprops/action-gh-release@v2
@@ -357,8 +342,6 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.tar.gz
             build/distributions/HiCT-*-linux-x86_64.sha256
-            build/distributions/HiCT-*-x86_64.AppImage
-            build/distributions/HiCT-*-x86_64.AppImage.sha256
 
   windows-portable:
     name: Windows portable ZIP and EXE
