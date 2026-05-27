@@ -148,11 +148,22 @@ if [[ -d "${PROJECT_DIR}/browsers-dist/linux_x86_64" ]] &&
   while IFS= read -r BROWSER_MANIFEST; do
     BROWSER_ROOT="$(dirname "${BROWSER_MANIFEST}")"
     BROWSER_COMMAND="$(grep -E '"command"[[:space:]]*:' "${BROWSER_MANIFEST}" | head -n 1 | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-    if [[ -z "${BROWSER_COMMAND}" || ! -f "${BROWSER_ROOT}/${BROWSER_COMMAND}" ]]; then
-      echo "${BROWSER_MANIFEST} must contain a valid relative command path." >&2
+    BROWSER_COMMAND_TARGET="${BROWSER_ROOT}/${BROWSER_COMMAND}"
+    if [[ -n "${BROWSER_COMMAND}" && "${BROWSER_COMMAND}" != /* && ! -f "${BROWSER_COMMAND_TARGET}" ]]; then
+      BROWSER_COMMAND_BASENAME="${BROWSER_COMMAND##*/}"
+      if [[ -n "${BROWSER_COMMAND_BASENAME}" && -f "${BROWSER_ROOT}/${BROWSER_COMMAND_BASENAME}" ]]; then
+        BROWSER_COMMAND="${BROWSER_COMMAND_BASENAME}"
+        BROWSER_COMMAND_TARGET="${BROWSER_ROOT}/${BROWSER_COMMAND}"
+        sed -i -E 's#("command"[[:space:]]*:[[:space:]]*")[^"]+(")#\1'"${BROWSER_COMMAND}"'\2#' "${BROWSER_MANIFEST}"
+      fi
+    fi
+    if [[ -z "${BROWSER_COMMAND}" || "${BROWSER_COMMAND}" = /* || ! -f "${BROWSER_COMMAND_TARGET}" ]]; then
+      echo "${BROWSER_MANIFEST} must contain a valid relative command path; command='${BROWSER_COMMAND}' resolved='${BROWSER_COMMAND_TARGET}'." >&2
+      echo "Available files near manifest:" >&2
+      find "${BROWSER_ROOT}" -maxdepth 2 -type f -printf '  %P\n' 2>/dev/null | sort | head -n 80 >&2 || true
       exit 1
     fi
-    chmod 0755 "${BROWSER_ROOT}/${BROWSER_COMMAND}" 2>/dev/null || true
+    chmod 0755 "${BROWSER_COMMAND_TARGET}" 2>/dev/null || true
   done < <(find "${APP_DIR}/browsers/linux_x86_64" -name manifest.json -type f | sort)
 fi
 
