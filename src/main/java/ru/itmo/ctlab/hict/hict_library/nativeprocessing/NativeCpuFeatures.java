@@ -24,12 +24,12 @@
 
 package ru.itmo.ctlab.hict.hict_library.nativeprocessing;
 
-import com.sun.management.HotSpotDiagnosticMXBean;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.lang.management.PlatformManagedObject;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
@@ -77,17 +77,24 @@ public final class NativeCpuFeatures {
 
   private static boolean supportsAvx512FromHotSpot() {
     try {
-      final var bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
+      final var beanType = Class
+        .forName("com.sun.management.HotSpotDiagnosticMXBean")
+        .asSubclass(PlatformManagedObject.class);
+      final var bean = ManagementFactory.getPlatformMXBean(beanType);
       if (bean == null) {
         return false;
       }
-      final var option = bean.getVMOption("UseAVX");
-      if (option == null || option.getValue() == null) {
+      final var option = beanType.getMethod("getVMOption", String.class).invoke(bean, "UseAVX");
+      if (option == null) {
         return false;
       }
-      return Integer.parseInt(option.getValue()) >= 3;
+      final var value = option.getClass().getMethod("getValue").invoke(option);
+      return value != null && Integer.parseInt(value.toString()) >= 3;
+    } catch (final ClassNotFoundException | NoClassDefFoundError err) {
+      log.debug("HotSpot diagnostic MXBean is unavailable; skipping HotSpot UseAVX AVX-512 detection.");
+      return false;
     } catch (final Throwable err) {
-      log.debug("Could not query HotSpot UseAVX for AVX-512 support", err);
+      log.debug("Could not query HotSpot UseAVX for AVX-512 support: {}", err.toString());
       return false;
     }
   }

@@ -3,7 +3,7 @@ param(
   [switch]$CreateSelfExtractingExe,
   [ValidateSet("custom", "7zip-sfx")]
   [string]$WindowsExeMode = $(if ($env:HICT_WINDOWS_EXE_MODE) { $env:HICT_WINDOWS_EXE_MODE } else { "custom" }),
-  [string]$RuntimeModules = $(if ($env:HICT_RUNTIME_MODULES) { $env:HICT_RUNTIME_MODULES } else { "java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.unsupported,jdk.zipfs" }),
+  [string]$RuntimeModules = $(if ($env:HICT_RUNTIME_MODULES) { $env:HICT_RUNTIME_MODULES } else { "java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs" }),
   [string]$DistRoot = $(if ($env:HICT_PORTABLE_DIST_DIR) { $env:HICT_PORTABLE_DIST_DIR } else { (Join-Path $PSScriptRoot "..\..\build\portable") }),
   [string]$SevenZipRoot = $(if ($env:SEVENZIP_ROOT) { $env:SEVENZIP_ROOT } else { "C:\Program Files\7-Zip" }),
   [string]$SevenZipSdkUrl = $(if ($env:SEVENZIP_SDK_URL) { $env:SEVENZIP_SDK_URL } else { "https://www.7-zip.org/a/lzma2601.7z" })
@@ -374,7 +374,8 @@ This package is assembled from:
     trademark, and update requirements before redistribution.
   - Optional single-file Windows EXE packaging when -CreateSelfExtractingExe is
     used. The default EXE mode is a small HiCT launcher that embeds an official
-    7-Zip runtime extractor and reuses a content-addressed per-user cache.
+    7-Zip runtime extractor and reuses a content-addressed cache next to the
+    EXE.
     Legacy official 7-Zip/LZMA SDK SFX packaging can be selected explicitly.
     Keep the 7-Zip notice with redistributed artifacts.
 
@@ -415,6 +416,12 @@ for %%I in ("%SCRIPT_DIR%..") do set "APP_HOME=%%~fI"
 if not defined DATA_DIR (
   set "DATA_DIR=%APP_HOME%"
 )
+if not defined PROCESSED_DIR (
+  set "PROCESSED_DIR=%DATA_DIR%\processed"
+)
+if not defined HICT_TEMP_DIR (
+  set "HICT_TEMP_DIR=%DATA_DIR%\tmp"
+)
 set "HICT_APP_HOME=%APP_HOME%"
 set "HICT_JAR_PATH=%APP_HOME%\lib\hict.jar"
 if not defined WEBUI_ROOT (
@@ -433,6 +440,8 @@ if not defined HICT_BIND_HOST (
 call :WarnWebView2IfNeeded
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>nul
+if not exist "%PROCESSED_DIR%" mkdir "%PROCESSED_DIR%" >nul 2>nul
+if not exist "%HICT_TEMP_DIR%" mkdir "%HICT_TEMP_DIR%" >nul 2>nul
 pushd "%DATA_DIR%" >nul 2>nul
 if errorlevel 1 (
   echo Failed to enter DATA_DIR "%DATA_DIR%".
@@ -442,9 +451,9 @@ if errorlevel 1 (
 set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
 if "%~1"=="" (
   if not defined HICT_LAUNCHER_MODE set "HICT_LAUNCHER_MODE=gui"
-  "%JAVA_EXE%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
+  "%JAVA_EXE%" "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
 ) else (
-  "%JAVA_EXE%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
+  "%JAVA_EXE%" "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
 )
 set "HICT_EXIT_CODE=%ERRORLEVEL%"
 popd >nul 2>nul
@@ -561,8 +570,8 @@ Java runtime notices:
 Windows single-file note:
   The ZIP is the transparent portable artifact. If the release also contains a
   .exe, that EXE is a portable launcher around the same app, not an MSI
-  installer. The default custom EXE reuses a content-addressed per-user cache;
-  the legacy 7-Zip SFX mode can be selected at build time.
+installer. The default custom EXE reuses a content-addressed cache next to the EXE;
+the legacy 7-Zip SFX mode can be selected at build time.
 "@ | Set-Content -Encoding UTF8 (Join-Path $appDir "README_PORTABLE.txt")
 
 $zipPath = Join-Path $artifactDir "$appName-$version-$platform-portable.zip"

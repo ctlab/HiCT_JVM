@@ -807,15 +807,18 @@ public final class HictLauncherGui {
       saveSettings();
 
       final Path dataDir;
+      final Path tempDir;
       try {
         dataDir = normalizePath(getFieldValue("DATA_DIR"));
+        tempDir = dataDir.resolve("tmp").normalize().toAbsolutePath().normalize();
         Files.createDirectories(dataDir);
+        Files.createDirectories(tempDir);
       } catch (final Exception ex) {
         showError("Cannot prepare DATA_DIR", ex);
         return;
       }
 
-      final var command = buildServerCommand();
+      final var command = buildServerCommand(tempDir);
       final var processBuilder = new ProcessBuilder(command);
       processBuilder.redirectErrorStream(true);
       processBuilder.directory(dataDir.toFile());
@@ -851,11 +854,12 @@ public final class HictLauncherGui {
       this.logCardsPanel.repaint();
     }
 
-    private List<String> buildServerCommand() {
+    private List<String> buildServerCommand(final Path tempDir) {
       final var command = new ArrayList<String>();
       command.add(resolveJavaExecutable());
       command.add("-DAUTO_OPEN_BROWSER=false");
       command.add("-DSERVE_WEBUI=true");
+      command.add("-Djava.io.tmpdir=" + tempDir);
       command.addAll(splitCommandLine(getFieldValue("HICT_JAVA_OPTS")));
       command.add("-DHICT_LOG_LEVEL=" + selectedLogLevel());
 
@@ -882,6 +886,10 @@ public final class HictLauncherGui {
       env.put("SERVE_WEBUI", "true");
       env.put("AUTO_OPEN_BROWSER", "false");
       env.put("HICT_LOG_LEVEL", selectedLogLevel());
+      final var tempDir = dataDir.resolve("tmp").normalize().toAbsolutePath().normalize();
+      env.put("HICT_TEMP_DIR", tempDir.toString());
+      env.putIfAbsent("TMP", tempDir.toString());
+      env.putIfAbsent("TEMP", tempDir.toString());
       final var nativeProcessingMode = selectedNativeProcessingMode();
       if (nativeProcessingMode == NativeProcessingMode.JAVA) {
         env.put("HICT_NATIVE_PROCESSING", "0");

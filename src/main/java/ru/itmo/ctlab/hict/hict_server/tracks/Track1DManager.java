@@ -59,8 +59,11 @@ import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -174,17 +177,44 @@ public class Track1DManager {
   }
 
   public @NotNull List<String> listTrackFiles() {
-    try (final var stream = Files.walk(this.dataDirectory)) {
-      return stream
-        .filter(Files::isRegularFile)
-        .map(this.dataDirectory::relativize)
-        .map(Path::toString)
-        .filter(this::isSupportedTrackPath)
-        .sorted()
-        .toList();
+    final var files = new ArrayList<Path>();
+    try {
+      Files.walkFileTree(this.dataDirectory, new SimpleFileVisitor<>() {
+        @Override
+        public @NotNull FileVisitResult preVisitDirectory(final @NotNull Path dir,
+                                                          final @NotNull BasicFileAttributes attrs) {
+          if (!dir.equals(dataDirectory) && (Files.isSymbolicLink(dir) || attrs.isOther())) {
+            log.debug("Skipping non-standard directory while listing track files: {}", dir);
+            return FileVisitResult.SKIP_SUBTREE;
+          }
+          return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public @NotNull FileVisitResult visitFile(final @NotNull Path file,
+                                                  final @NotNull BasicFileAttributes attrs) {
+          if (attrs.isRegularFile()) {
+            files.add(file);
+          }
+          return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public @NotNull FileVisitResult visitFileFailed(final @NotNull Path file,
+                                                        final @NotNull IOException exc) {
+          log.warn("Skipping inaccessible filesystem path while listing track files: {} ({})", file, exc.toString());
+          return FileVisitResult.CONTINUE;
+        }
+      });
     } catch (final IOException e) {
-      throw new RuntimeException("Failed to list track files", e);
+      throw new RuntimeException("Failed to list track files under " + this.dataDirectory, e);
     }
+    return files.stream()
+      .map(this.dataDirectory::relativize)
+      .map(Path::toString)
+      .filter(this::isSupportedTrackPath)
+      .sorted()
+      .toList();
   }
 
   public @NotNull TrackSummary openTrack(final @NotNull String relativeFilename,

@@ -8,8 +8,10 @@
  * File layout:
  *   launcher.exe || 7zr.exe || payload.7z || manifest.json || u64(manifestSize) || magic
  *
- * The launcher extracts the payload into a per-user, content-addressed cache
- * directory and skips extraction on subsequent launches when the marker matches.
+ * The launcher extracts the payload into a stable content-addressed cache next
+ * to the EXE and skips extraction on subsequent launches when the marker
+ * matches. This keeps portable distributions self-contained and avoids AppData
+ * junctions/ACLs on restricted Windows profiles.
  */
 
 #ifndef UNICODE
@@ -197,20 +199,18 @@ void removeTreeIfExists(const std::wstring &path) {
   SHFileOperationW(&operation);
 }
 
-std::wstring getWritableCacheRoot() {
-  wchar_t localAppData[MAX_PATH]{};
-  if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE, nullptr, SHGFP_TYPE_CURRENT, localAppData))) {
-    return joinPath(localAppData, L"HiCT\\p");
-  }
+std::wstring getWritableCacheRoot(const std::wstring &selfPath) {
+  return joinPath(dirnameOf(selfPath), L"HiCT.portable\\payloads");
+}
 
-  DWORD needed = GetTempPathW(0, nullptr);
-  if (needed == 0) {
-    return L".";
+bool environmentVariableIsDefined(const wchar_t *name) {
+  return GetEnvironmentVariableW(name, nullptr, 0) > 0;
+}
+
+void setEnvironmentVariableIfAbsent(const wchar_t *name, const std::wstring &value) {
+  if (!environmentVariableIsDefined(name)) {
+    SetEnvironmentVariableW(name, value.c_str());
   }
-  std::wstring temp(needed, L'\0');
-  GetTempPathW(needed, temp.data());
-  temp.resize(std::wcslen(temp.c_str()));
-  return joinPath(temp, L"HiCT\\p");
 }
 
 std::string shortPayloadCacheKey(const Manifest &manifest) {
@@ -533,7 +533,8 @@ void printUsage() {
       << L"Usage:\n"
       << L"  HiCT-<version>-windows-x86_64.exe [HiCT CLI args...]\n"
       << L"  HiCT-<version>-windows-x86_64.exe --hict-extract-only <directory>\n\n"
-      << L"DATA_DIR defaults to the directory containing this EXE unless explicitly set.\n";
+      << L"DATA_DIR defaults to the directory containing this EXE unless explicitly set.\n"
+      << L"Payload cache, processed data, and temporary files default to local subdirectories there.\n";
 }
 
 int extractPayload(const std::wstring &selfPath,
@@ -592,7 +593,7 @@ int run() {
     LocalFree(argv);
   }
 
-  const auto cacheRoot = joinPath(getWritableCacheRoot(), utf8ToWide(shortPayloadCacheKey(manifest)));
+  const auto cacheRoot = joinPath(getWritableCacheRoot(selfPath), utf8ToWide(shortPayloadCacheKey(manifest)));
   const int extractExit = extractPayload(selfPath, manifest, cacheRoot, true);
   if (extractExit != 0) {
     pauseOnFailureIfNeeded(extractExit);
@@ -608,9 +609,19 @@ int run() {
   }
 
   const auto dataDir = getDataDirectory(selfPath);
+  const auto processedDir = joinPath(dataDir, L"processed");
+  const auto tempDir = joinPath(dataDir, L"tmp");
   createDirectories(dataDir);
+  createDirectories(processedDir);
+  createDirectories(tempDir);
+  SetEnvironmentVariableW(L"DATA_DIR", dataDir.c_str());
+  SetEnvironmentVariableW(L"HICT_PORTABLE_DATA_DIR", dataDir.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_EXE_PATH", selfPath.c_str());
   SetEnvironmentVariableW(L"HICT_PORTABLE_CACHE_DIR", cacheRoot.c_str());
+  SetEnvironmentVariableW(L"HICT_TEMP_DIR", tempDir.c_str());
+  setEnvironmentVariableIfAbsent(L"PROCESSED_DIR", processedDir);
+  setEnvironmentVariableIfAbsent(L"TMP", tempDir);
+  setEnvironmentVariableIfAbsent(L"TEMP", tempDir);
 
   const auto args = buildForwardedArguments();
   std::wstring command = L"cmd.exe /d /c call " + quoteArg(hictCmd);

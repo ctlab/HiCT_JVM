@@ -374,7 +374,7 @@ These packages include the HiCT JVM fat JAR, the built HiCT WebUI resources, an 
 
 The Windows ZIP is the most transparent portable artifact.
 The default Windows EXE mode is a small custom `asInvoker` launcher built with the static MSVC runtime.
-It embeds an official standalone 7-Zip/LZMA extractor plus the portable app payload, extracts into `%LOCALAPPDATA%\HiCT\portable\...`, and skips extraction on later launches when the content-addressed cache marker matches.
+It embeds an official standalone 7-Zip/LZMA extractor plus the portable app payload, extracts into a stable `HiCT.portable\payloads\...` cache next to the EXE, and skips extraction on later launches when the content-addressed cache marker matches.
 The legacy official 7-Zip/LZMA SDK SFX mode (`7zSD.sfx`, `7zS.sfx`, `7zS2con.sfx`, or `7zS2.sfx`) remains available from the release workflow/manual build switch.
 No-argument double-click launches open the graphical HiCT launcher; server output is shown inside the launcher log panel.
 Avoiding Windows trust prompts for newly downloaded single-file EXE artifacts still requires Authenticode signing with a trusted code-signing certificate; launcher implementation alone is not a reliable substitute.

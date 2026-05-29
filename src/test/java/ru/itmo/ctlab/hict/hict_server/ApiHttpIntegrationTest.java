@@ -45,13 +45,17 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -187,6 +191,36 @@ class ApiHttpIntegrationTest {
     final var agp = post("/list_agp_files", "{}");
     assertEquals(200, agp.statusCode());
     assertTrue(agp.body().contains("example.agp"));
+  }
+
+  @Test
+  void fileListingSkipsUnreadableDirectories() throws Exception {
+    assumeTrue(
+      FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+      "POSIX permissions are required to model an inaccessible directory locally"
+    );
+    Files.createDirectories(tempDataDir.resolve("visible"));
+    Files.writeString(tempDataDir.resolve("visible/ok.hict.hdf5"), "x", StandardCharsets.UTF_8);
+    final var blocked = tempDataDir.resolve("Application Data");
+    Files.createDirectories(blocked);
+    Files.setPosixFilePermissions(blocked, Set.of());
+    try {
+      startServerWithInfoAndFileHandlers();
+
+      final var detailed = post("/list_files_detailed", "{}");
+      assertEquals(200, detailed.statusCode());
+      assertTrue(detailed.body().contains("ok.hict.hdf5"));
+
+      final var files = post("/list_files", "{}");
+      assertEquals(200, files.statusCode());
+      assertTrue(files.body().contains("ok.hict.hdf5"));
+    } finally {
+      Files.setPosixFilePermissions(blocked, Set.of(
+        PosixFilePermission.OWNER_READ,
+        PosixFilePermission.OWNER_WRITE,
+        PosixFilePermission.OWNER_EXECUTE
+      ));
+    }
   }
 
   private void startServerWithInfoAndFileHandlers() throws Exception {

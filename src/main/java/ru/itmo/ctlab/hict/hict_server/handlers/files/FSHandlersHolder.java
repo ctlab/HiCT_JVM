@@ -40,8 +40,13 @@ import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -76,11 +81,10 @@ public class FSHandlersHolder extends HandlersHolder {
           }
           final var dataDirectory = dataDirectoryWrapper.getPath();
 
-          try (final var fileStream = Files.walk(dataDirectory)) {
-            return fileStream.filter(Files::isRegularFile).map(dataDirectory::relativize).map(Object::toString).collect(Collectors.toList());
-          } catch (final IOException e) {
-            throw new RuntimeException(e);
-          }
+          return listRegularFiles(dataDirectory).stream()
+            .map(dataDirectory::relativize)
+            .map(Object::toString)
+            .collect(Collectors.toList());
         },
         files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
       );
@@ -101,15 +105,10 @@ public class FSHandlersHolder extends HandlersHolder {
             throw new RuntimeException("Data directory is not present in local map");
           }
           final var dataDirectory = dataDirectoryWrapper.getPath();
-          try (final var fileStream = Files.walk(dataDirectory)) {
-            return fileStream
-              .filter(Files::isRegularFile)
-              .map(path -> toDetailedFileEntry(dataDirectory, path))
-              .sorted(java.util.Comparator.comparing(FileEntry::path))
-              .toList();
-          } catch (final IOException e) {
-            throw new RuntimeException(e);
-          }
+          return listRegularFiles(dataDirectory).stream()
+            .map(path -> toDetailedFileEntry(dataDirectory, path))
+            .sorted(Comparator.comparing(FileEntry::path))
+            .toList();
         },
         files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
       );
@@ -131,11 +130,11 @@ public class FSHandlersHolder extends HandlersHolder {
           }
           final var dataDirectory = dataDirectoryWrapper.getPath();
 
-          try (final var fileStream = Files.walk(dataDirectory)) {
-            return fileStream.filter(Files::isRegularFile).map(dataDirectory::relativize).map(Object::toString).filter(p -> p.toLowerCase().endsWith(".agp")).collect(Collectors.toList());
-          } catch (final IOException e) {
-            throw new RuntimeException(e);
-          }
+          return listRegularFiles(dataDirectory).stream()
+            .map(dataDirectory::relativize)
+            .map(Object::toString)
+            .filter(p -> p.toLowerCase().endsWith(".agp"))
+            .collect(Collectors.toList());
         },
         files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
       );
@@ -157,16 +156,11 @@ public class FSHandlersHolder extends HandlersHolder {
           }
           final var dataDirectory = dataDirectoryWrapper.getPath();
 
-          try (final var fileStream = Files.walk(dataDirectory)) {
-            return fileStream
-              .filter(Files::isRegularFile)
-              .map(dataDirectory::relativize)
-              .map(Object::toString)
-              .filter(FSHandlersHolder::isFastaFilename)
-              .collect(Collectors.toList());
-          } catch (final IOException e) {
-            throw new RuntimeException(e);
-          }
+          return listRegularFiles(dataDirectory).stream()
+            .map(dataDirectory::relativize)
+            .map(Object::toString)
+            .filter(FSHandlersHolder::isFastaFilename)
+            .collect(Collectors.toList());
         },
         files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
       );
@@ -246,16 +240,11 @@ public class FSHandlersHolder extends HandlersHolder {
         }
         final var dataDirectory = dataDirectoryWrapper.getPath();
 
-        try (final var fileStream = Files.walk(dataDirectory)) {
-          return fileStream
-            .filter(Files::isRegularFile)
-            .map(dataDirectory::relativize)
-            .map(Object::toString)
-            .filter(FSHandlersHolder::isConvertibleMatrixFilename)
-            .collect(Collectors.toList());
-        } catch (final IOException e) {
-          throw new RuntimeException(e);
-        }
+        return listRegularFiles(dataDirectory).stream()
+          .map(dataDirectory::relativize)
+          .map(Object::toString)
+          .filter(FSHandlersHolder::isConvertibleMatrixFilename)
+          .collect(Collectors.toList());
       },
       files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
     );
@@ -279,6 +268,52 @@ public class FSHandlersHolder extends HandlersHolder {
   private static boolean isConvertibleMatrixFilename(final @NotNull String path) {
     final var lowered = path.toLowerCase();
     return CONVERTIBLE_MATRIX_SUFFIXES.stream().anyMatch(lowered::endsWith);
+  }
+
+  private static @NotNull List<Path> listRegularFiles(final @NotNull Path dataDirectory) {
+    final var files = new ArrayList<Path>();
+    try {
+      Files.walkFileTree(dataDirectory, new SimpleFileVisitor<>() {
+        @Override
+        public @NotNull FileVisitResult preVisitDirectory(final @NotNull Path dir,
+                                                          final @NotNull BasicFileAttributes attrs) {
+          if (!dir.equals(dataDirectory) && (Files.isSymbolicLink(dir) || attrs.isOther())) {
+            log.debug("Skipping non-standard directory while listing files: {}", dir);
+            return FileVisitResult.SKIP_SUBTREE;
+          }
+          return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public @NotNull FileVisitResult visitFile(final @NotNull Path file,
+                                                  final @NotNull BasicFileAttributes attrs) {
+          if (attrs.isRegularFile()) {
+            files.add(file);
+          }
+          return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public @NotNull FileVisitResult visitFileFailed(final @NotNull Path file,
+                                                        final @NotNull IOException exc) {
+          log.warn("Skipping inaccessible filesystem path while listing files: {} ({})", file, exc.toString());
+          return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public @NotNull FileVisitResult postVisitDirectory(final @NotNull Path dir,
+                                                           final IOException exc) {
+          if (exc != null) {
+            log.warn("Skipping unreadable directory while listing files: {} ({})", dir, exc.toString());
+          }
+          return FileVisitResult.CONTINUE;
+        }
+      });
+    } catch (final IOException e) {
+      throw new RuntimeException("Failed to list files under " + dataDirectory, e);
+    }
+    files.sort(Comparator.comparing(path -> dataDirectory.relativize(path).toString()));
+    return files;
   }
 
   private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
