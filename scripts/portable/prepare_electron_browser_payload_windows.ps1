@@ -86,6 +86,17 @@ Write-Host "[electron-browser] Writing payload to: $OutputDir"
 
 Push-Location $resolvedWebUiDir
 try {
+  Remove-Item Env:ELECTRON_SKIP_BINARY_DOWNLOAD -ErrorAction SilentlyContinue
+  Remove-Item Env:ELECTRON_OVERRIDE_DIST_PATH -ErrorAction SilentlyContinue
+  Remove-Item Env:npm_config_electron_skip_binary_download -ErrorAction SilentlyContinue
+  Remove-Item Env:npm_config_ELECTRON_SKIP_BINARY_DOWNLOAD -ErrorAction SilentlyContinue
+  Remove-Item Env:force_no_cache -ErrorAction SilentlyContinue
+  if (-not $env:HICT_ELECTRON_CACHE_DIR) {
+    $env:HICT_ELECTRON_CACHE_DIR = Join-Path $projectDir "build\electron-cache"
+  }
+  $env:electron_config_cache = Join-Path $env:HICT_ELECTRON_CACHE_DIR $Platform
+  New-Item -ItemType Directory -Force -Path $env:electron_config_cache | Out-Null
+
   if ($SkipNpmInstall) {
     Write-Host "[electron-browser] Reusing existing HiCT_WebUI node_modules."
   } else {

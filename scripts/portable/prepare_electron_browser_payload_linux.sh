@@ -90,6 +90,14 @@ echo "[electron-browser] Writing payload to: ${OUTPUT_DIR}"
 
 (
   cd "${WEBUI_DIR}"
+  unset ELECTRON_SKIP_BINARY_DOWNLOAD
+  unset ELECTRON_OVERRIDE_DIST_PATH
+  unset npm_config_electron_skip_binary_download
+  unset npm_config_ELECTRON_SKIP_BINARY_DOWNLOAD
+  unset force_no_cache
+  export HICT_ELECTRON_CACHE_DIR="${HICT_ELECTRON_CACHE_DIR:-${PROJECT_DIR}/build/electron-cache}"
+  export electron_config_cache="${HICT_ELECTRON_CACHE_DIR}/${PLATFORM}"
+  mkdir -p "${electron_config_cache}"
   if [[ "${HICT_SKIP_NPM_INSTALL:-0}" == "1" ]]; then
     echo "[electron-browser] Reusing existing HiCT_WebUI node_modules."
   else
