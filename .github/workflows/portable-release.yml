@@ -2,7 +2,9 @@ name: Portable Packages
 
 on:
   release:
-    types: [created]
+    types: [published]
+  push:
+    branches: ["master"]
   workflow_dispatch:
     inputs:
       bundle_hictk:
@@ -65,9 +67,27 @@ on:
         options:
           - "true"
           - "false"
+      publish_target:
+        description: "Manual publish target after building artifacts"
+        required: true
+        default: "artifacts-only"
+        type: choice
+        options:
+          - "artifacts-only"
+          - "latest-master"
+          - "release-tag"
+      release_tag:
+        description: "Existing release tag to attach assets to when publish_target=release-tag"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: portable-release-${{ github.event_name == 'push' && github.ref || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag || github.run_id }}
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -112,13 +132,13 @@ jobs:
           key: hict-native-linux-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
 
       - name: Set up Rust
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
 
       - name: Restore Tauri cargo cache
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         uses: actions/cache@v5
         with:
           path: |
@@ -136,7 +156,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends curl file gzip tar xz-utils
 
       - name: Install Linux Tauri build prerequisites
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         run: |
           sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
@@ -302,7 +322,7 @@ jobs:
           key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
       - name: Build bundled Tauri browser
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         env:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
           CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/tauri-target/linux_x86_64
@@ -317,6 +337,13 @@ jobs:
       - name: Build Linux portable package
         run: ./scripts/portable/build_portable_linux.sh
 
+      - name: Upload JVM fat JAR artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-jvm-fat-jar
+          path: build/libs/*-fat.jar
+          if-no-files-found: error
+
       - name: Upload Linux package artifact
         uses: actions/upload-artifact@v6
         with:
@@ -325,6 +352,7 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.tar.gz
             build/distributions/HiCT-*-linux-x86_64.sha256
+          if-no-files-found: error
 
       - name: Upload Linux runfile artifact
         uses: actions/upload-artifact@v6
@@ -333,15 +361,7 @@ jobs:
           path: |
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.sha256
-
-      - name: Attach Linux package to release
-        if: ${{ github.event_name == 'release' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            build/distributions/HiCT-*-linux-x86_64.run
-            build/distributions/HiCT-*-linux-x86_64.tar.gz
-            build/distributions/HiCT-*-linux-x86_64.sha256
+          if-no-files-found: error
 
   windows-portable:
     name: Windows portable ZIP and EXE
@@ -382,14 +402,14 @@ jobs:
           key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
 
       - name: Set up Rust
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         shell: pwsh
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
 
       - name: Restore Tauri cargo cache
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         uses: actions/cache@v5
         with:
           path: |
@@ -476,7 +496,7 @@ jobs:
             hictk-conan-windows-x86_64-
 
       - name: Configure MSVC environment
-        if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
+        if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
@@ -635,12 +655,12 @@ jobs:
           key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
       - name: Install 7-Zip for portable EXE
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
         run: choco install 7zip.install -y --no-progress
 
       - name: Build bundled Tauri browser
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         shell: pwsh
         env:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..
@@ -655,7 +675,7 @@ jobs:
         run: .\scripts\portable\prepare_electron_browser_payload_windows.ps1
 
       - name: Build Windows portable package and EXE
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe -WindowsExeMode $env:HICT_WINDOWS_EXE_MODE
 
@@ -683,19 +703,186 @@ jobs:
             build/distributions/HiCT-*-windows-x86_64.sha256
 
       - name: Upload Windows EXE artifact
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         uses: actions/upload-artifact@v6
         with:
           name: hict-windows-exe
           path: |
             build/distributions/HiCT-*-windows-x86_64.exe
             build/distributions/HiCT-*-windows-x86_64.sha256
+          if-no-files-found: error
 
-      - name: Attach Windows package to release
+  publish-release-assets:
+    name: Publish release assets
+    needs:
+      - linux-portable
+      - windows-portable
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only') }}
+    runs-on: ubuntu-24.04
+    env:
+      HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+      MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: downloaded-artifacts
+
+      - name: Collect assets and provenance
+        shell: bash
+        env:
+          PUBLISH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target || '' }}
+          SELECTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
+        run: |
+          set -euo pipefail
+
+          version="$(tr -d '[:space:]' < version.txt)"
+          release_tag="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            release_tag="latest-master"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if [[ "${PUBLISH_TARGET}" == "latest-master" ]]; then
+              release_tag="latest-master"
+            elif [[ "${PUBLISH_TARGET}" == "release-tag" ]]; then
+              release_tag="${SELECTED_RELEASE_TAG}"
+              if [[ -z "${release_tag}" ]]; then
+                echo "release_tag is required when publish_target=release-tag." >&2
+                exit 1
+              fi
+            fi
+          fi
+
+          rm -rf release-dist
+          mkdir -p release-dist
+          while IFS= read -r -d '' file; do
+            cp -f "${file}" "release-dist/$(basename "${file}")"
+          done < <(
+            find downloaded-artifacts -type f \( \
+              -name '*.jar' -o \
+              -name '*.run' -o \
+              -name '*.exe' -o \
+              -name '*.zip' -o \
+              -name '*.tar.gz' -o \
+              -name '*.sha256' \
+            \) -print0
+          )
+
+          compgen -G "release-dist/*-fat.jar" >/dev/null || { echo "No fat JAR was collected." >&2; exit 1; }
+          compgen -G "release-dist/HiCT-*-linux-x86_64.run" >/dev/null || { echo "No Linux .run artifact was collected." >&2; exit 1; }
+          compgen -G "release-dist/HiCT-*-windows-x86_64.exe" >/dev/null || { echo "No Windows .exe artifact was collected." >&2; exit 1; }
+
+          provenance_file="release-dist/HiCT-${version}-build-origin.txt"
+          {
+            echo "HiCT release build provenance"
+            echo "============================="
+            echo
+            echo "version: ${version}"
+            echo "release_tag: ${release_tag}"
+            echo "trigger: ${GITHUB_EVENT_NAME}"
+            echo "repository: https://github.com/${GITHUB_REPOSITORY}"
+            echo "source_ref: ${GITHUB_REF}"
+            echo "source_sha: ${GITHUB_SHA}"
+            echo "workflow: ${GITHUB_WORKFLOW}"
+            echo "run_id: ${GITHUB_RUN_ID}"
+            echo "run_attempt: ${GITHUB_RUN_ATTEMPT}"
+            echo "run_url: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "bundled_refs:"
+            echo "  hictk: ${HICTK_REF}"
+            echo "  minimap2: ${MINIMAP2_REF}"
+            echo "  mm2_plus: ${MM2PLUS_REF}"
+            echo "  hict_webui: ${HICT_WEBUI_REF}"
+            echo
+            echo "asset_sha256:"
+            (
+              cd release-dist
+              find . -maxdepth 1 -type f \
+                ! -name "HiCT-${version}-build-origin.txt" \
+                ! -name "HiCT-${version}-release-assets.sha256" \
+                -printf '%P\0' |
+                sort -z |
+                xargs -0 sha256sum
+            ) | sed 's/^/  /'
+          } > "${provenance_file}"
+
+          checksum_file="HiCT-${version}-release-assets.sha256"
+          (
+            cd release-dist
+            rm -f "${checksum_file}"
+            sha256sum * | sort -k2 > "${checksum_file}"
+          )
+
+          cat > release-body.md <<EOF
+          Automated HiCT portable build from \`${GITHUB_SHA}\`.
+
+          Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
+          Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Included primary assets:
+          - JVM fat JAR
+          - Linux single-file \`.run\`
+          - Windows single-file \`.exe\`
+
+          See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.
+          EOF
+
+      - name: Move latest-master tag
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest-master "${GITHUB_SHA}"
+          git push --force origin refs/tags/latest-master
+
+      - name: Clear previous latest-master assets
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view latest-master >/dev/null 2>&1; then
+            gh release view latest-master --json assets -q '.assets[].name' |
+              while IFS= read -r asset; do
+                [[ -n "${asset}" ]] && gh release delete-asset latest-master "${asset}" -y
+              done
+          fi
+
+      - name: Publish latest master release
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-master
+          target_commitish: ${{ github.sha }}
+          name: Latest master portable build
+          body_path: release-body.md
+          prerelease: true
+          files: release-dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
+
+      - name: Attach assets to release event
         if: ${{ github.event_name == 'release' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/distributions/HiCT-*-windows-x86_64-portable.zip
-            build/distributions/HiCT-*-windows-x86_64.exe
-            build/distributions/HiCT-*-windows-x86_64.sha256
+          files: release-dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
+
+      - name: Attach assets to selected release tag
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: release-dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
