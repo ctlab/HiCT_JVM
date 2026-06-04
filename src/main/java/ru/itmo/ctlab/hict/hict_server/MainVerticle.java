@@ -50,16 +50,19 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.diagnostics.RequestStatistics;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.names.NameMappingHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.DotplotHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.ApiDocsHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tracks.TrackHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.info.AttributionInfo;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.awt.*;
@@ -67,11 +70,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Slf4j(topic = "MainVerticle")
 public class MainVerticle extends AbstractVerticle {
   private RequestTaskScheduler requestTaskScheduler;
+  private String bindHost = "0.0.0.0";
 
   static {
     HDF5LibraryInitializer.initializeHDF5Library();
@@ -90,9 +95,10 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     final Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
-    root.setLevel(Level.INFO);
+    final var rootLogLevel = resolveRootLogLevel();
+    root.setLevel(rootLogLevel);
 
-    log.info("Logging initialized");
+    log.info("Logging initialized at {} level", rootLogLevel);
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
         .setConfig(new JsonObject().put("keys",
@@ -101,6 +107,7 @@ public class MainVerticle extends AbstractVerticle {
               .add("PROCESSED_DIR")
               .add("TILE_SIZE")
               .add("VXPORT")
+              .add("HICT_BIND_HOST")
               .add("MIN_DS_POOL")
               .add("MAX_DS_POOL")
               .add("HICT_WORKERS_TOTAL_MAX")
@@ -139,14 +146,15 @@ public class MainVerticle extends AbstractVerticle {
       final var server = vertx.createHttpServer(serverOptions);
       final var router = createRouter();
 
-      log.info("Starting server on port {}", port);
-      server.requestHandler(router).listen(port, ar -> {
+      log.info("Starting server on {}:{}", this.bindHost, port);
+      server.requestHandler(router).listen(port, this.bindHost, ar -> {
         if (ar.succeeded()) {
-          log.info("Server started on port {}", ar.result().actualPort());
+          log.info("Server started on {}:{}", this.bindHost, ar.result().actualPort());
+          AttributionInfo.startupBannerLines().forEach(log::info);
           deployWebUiVerticle();
           startPromise.complete();
         } else {
-          log.error("Failed to start server on port {}", port, ar.cause());
+          log.error("Failed to start server on {}:{}", this.bindHost, port, ar.cause());
           startPromise.fail(ar.cause());
         }
       });
@@ -160,6 +168,26 @@ public class MainVerticle extends AbstractVerticle {
       this.requestTaskScheduler = null;
     }
     stopPromise.complete();
+  }
+
+  private static @NotNull Level resolveRootLogLevel() {
+    final var value = firstNonBlank(
+      System.getProperty("HICT_LOG_LEVEL"),
+      System.getenv("HICT_LOG_LEVEL")
+    );
+    if (value == null) {
+      return Level.INFO;
+    }
+    return Level.toLevel(value.trim().toUpperCase(Locale.ROOT), Level.INFO);
+  }
+
+  private static String firstNonBlank(final String... values) {
+    for (final var value : values) {
+      if (value != null && !value.isBlank()) {
+        return value;
+      }
+    }
+    return null;
   }
 
   private static int getIntegerSetting(final @NotNull JsonObject config,
@@ -187,6 +215,20 @@ public class MainVerticle extends AbstractVerticle {
     return defaultValue;
   }
 
+  private static @NotNull String getStringSetting(final @NotNull JsonObject config,
+                                                  final @NotNull String key,
+                                                  final @NotNull String defaultValue) {
+    final Object raw = config.getValue(key);
+    if (raw instanceof String value && !value.isBlank()) {
+      return value.trim();
+    }
+    final String systemPropertyValue = System.getProperty(key);
+    if (systemPropertyValue != null && !systemPropertyValue.isBlank()) {
+      return systemPropertyValue.trim();
+    }
+    return defaultValue;
+  }
+
   private int configureServerState(final @NotNull JsonObject config) {
     final var dataDirectoryString = config.getString("DATA_DIR", ".");
     final var dataDirectory = Path.of(dataDirectoryString).normalize().toAbsolutePath().normalize();
@@ -199,6 +241,8 @@ public class MainVerticle extends AbstractVerticle {
     final var minDSPool = getIntegerSetting(config, "MIN_DS_POOL", 4);
     final var maxDSPool = getIntegerSetting(config, "MAX_DS_POOL", 16);
     final var port = getIntegerSetting(config, "VXPORT", 5000);
+    final var bindHost = getStringSetting(config, "HICT_BIND_HOST", "0.0.0.0");
+    this.bindHost = bindHost;
     final int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
     final int totalWorkersDefault = Math.max(10, cores * 2);
     final int totalWorkers = getIntegerSetting(config, "HICT_WORKERS_TOTAL_MAX", totalWorkersDefault);
@@ -250,6 +294,7 @@ public class MainVerticle extends AbstractVerticle {
     map.put("processedDirectory", new ShareableWrappers.PathWrapper(processedDirectory));
     map.put("tileSize", tileSize);
     map.put("VXPORT", port);
+    map.put("HICT_BIND_HOST", bindHost);
     map.put("MIN_DS_POOL", minDSPool);
     map.put("MAX_DS_POOL", maxDSPool);
     this.requestTaskScheduler = new RequestTaskScheduler(
@@ -300,6 +345,7 @@ public class MainVerticle extends AbstractVerticle {
 
   private @NotNull Router createRouter() {
     final var router = Router.router(vertx);
+    final var requestStatistics = new RequestStatistics();
     router.route().handler(CorsHandler.create()
       .allowedMethod(io.vertx.core.http.HttpMethod.GET)
       .allowedMethod(io.vertx.core.http.HttpMethod.POST)
@@ -309,6 +355,11 @@ public class MainVerticle extends AbstractVerticle {
       .allowedHeader("Access-Control-Allow-Origin")
       .allowedHeader("Access-Control-Allow-Headers")
       .allowedHeader("Content-Type"));
+    router.route().handler(ctx -> {
+      requestStatistics.recordStarted(ctx.normalizedPath());
+      ctx.addBodyEndHandler(ignored -> requestStatistics.recordFinished());
+      ctx.next();
+    });
     router.route().handler(BodyHandler.create().setUploadsDirectory("/tmp").setBodyLimit(2L * 1024 * 1024 * 1024));
 
     vertx.exceptionHandler(event -> {
@@ -325,7 +376,8 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
-    handlersHolders.add(new InfoHandlersHolder(vertx));
+    handlersHolders.add(new DotplotHandlersHolder(vertx));
+    handlersHolders.add(new InfoHandlersHolder(vertx, requestStatistics));
     handlersHolders.add(new ApiDocsHandlersHolder());
     handlersHolders.add(new TrackHandlersHolder(vertx));
 

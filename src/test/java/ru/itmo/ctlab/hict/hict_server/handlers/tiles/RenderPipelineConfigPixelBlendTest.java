@@ -125,4 +125,45 @@ class RenderPipelineConfigPixelBlendTest {
     final double evaluatedSignal = config.evaluate(true, ctx);
     assertEquals(5.0d, evaluatedSignal, 1e-12);
   }
+
+  @Test
+  void sourceSpecificRenderingKeepsPrimaryAndSecondaryColorBranchesSeparate() {
+    final var blend = new JsonObject()
+      .put("type", "pixel_blend")
+      .put("topOpacity", 1.0d)
+      .put("bottomOpacity", 1.0d)
+      .put(
+        "top",
+        new JsonObject()
+          .put("type", "colormap")
+          .put("input", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+          .put("startColor", "#00000000")
+          .put("endColor", "#00ff00ff")
+          .put("minSignal", 0.0d)
+          .put("maxSignal", 1.0d)
+      )
+      .put(
+        "bottom",
+        new JsonObject()
+          .put("type", "colormap")
+          .put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+          .put("startColor", "#00000000")
+          .put("endColor", "#ff0000ff")
+          .put("minSignal", 0.0d)
+          .put("maxSignal", 1.0d)
+      );
+
+    final var config = RenderPipelineConfig.fromJson(
+      new JsonObject()
+        .put("enabled", true)
+        .put("upperExpression", blend)
+        .put("lowerExpression", blend.copy())
+    );
+
+    final var ctx = new RenderPipelineConfig.MutablePixelContext();
+    ctx.primaryValue = 1.0d;
+    ctx.secondaryValue = 1.0d;
+    assertEquals(0xffff0000, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
+    assertEquals(0xff00ff00, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
+  }
 }

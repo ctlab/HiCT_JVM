@@ -4,7 +4,6 @@ image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release
 
 == Launching pre-built version
 
-
 == For users of `.jar` distribution
 
 This section is intended for bioinformatics users who download a ready-to-run fat JAR from GitHub Releases.
@@ -138,6 +137,7 @@ The fat JAR is runnable and exposes a CLI with subcommands:
 
 * `start-server` -- API + WebUI (default when no args are given)
 * `start-api-server` -- API only (no WebUI)
+* `launcher` -- small graphical launcher for portable desktop use
 * `convert` -- conversion tools
 ** `convert mcool-to-hict`
 ** `convert hict-to-mcool`
@@ -155,9 +155,13 @@ Environment variables supported by the server startup:
 * `DATA_DIR` -- directory that is scanned recursively for `.hict.hdf5`, `.agp`, `fasta`, `.cool`, and `.mcool` files.
 * `VXPORT` -- API gateway port, default `5000`.
 * `WEBUI_PORT` -- WebUI port, default `8080`.
+* `HICT_BIND_HOST` -- interface address for API and WebUI servers, default `0.0.0.0`; portable launchers default it to `127.0.0.1`.
 * `SERVE_WEBUI` -- `true`/`false`, default `true`.
 * `TILE_SIZE` -- default visualization tile size, default `256`.
 * `MIN_DS_POOL` / `MAX_DS_POOL` -- min/max pool sizes used when opening chunked datasets.
+* `HICT_LAUNCHER_MODE=gui` -- open the graphical launcher when the fat JAR is started without CLI arguments. Portable packages set this automatically for no-argument double-click launches.
+* `HICT_APP_HOME` / `HICT_JAR_PATH` -- portable launcher internals used to locate the extracted app and fat JAR.
+* `HICT_BROWSER_DIR` -- optional bundled browser payload root; it may contain one `manifest.json` or child directories with `manifest.json` files.
 
 === Launch examples (fat JAR)
 
@@ -165,6 +169,10 @@ Environment variables supported by the server startup:
 
 ```bash
 DATA_DIR=/home/${USER}/hict/data java -jar hict.jar
+
+# Graphical launcher
+HICT_LAUNCHER_MODE=gui java -jar hict.jar
+java -jar hict.jar launcher
 
 # API only
 DATA_DIR=/home/${USER}/hict/data java -jar hict.jar start-api-server
@@ -351,22 +359,26 @@ Web API endpoints:
 
 Conversion jobs are asynchronous, include streaming logs/error details, enforce upload size limit and have temporary file cleanup TTL.
 
-
 == Portable runtime distributions
 
-HiCT release builds can produce self-contained desktop/CLI packages for users who do not have a recent Java installation.
-These packages include the HiCT JVM fat JAR, the built HiCT WebUI resources, and a Java runtime image created with `jlink`.
+HiCT release builds produce self-contained desktop/CLI packages for users who do not have a recent Java installation.
+These packages include the HiCT JVM fat JAR, the built HiCT WebUI resources, an extracted WebUI directory used as `WEBUI_ROOT`, and a Java runtime image created with `jlink`.
 
 === Release artifacts
 
-* `HiCT-<version>-linux-x86_64.run` -- single-file Linux launcher. Double-clicking or running it starts HiCT with the bundled Java runtime.
+* `HiCT-<version>-linux-x86_64.run` -- single-file Linux launcher with a transparent `tar.xz` payload. Double-clicking or running it starts HiCT with the bundled Java runtime.
 * `HiCT-<version>-linux-x86_64.tar.gz` -- extracted Linux app directory for environments that prefer auditable archives over `.run` launchers.
+* `HiCT-<version>-x86_64.AppImage` -- Linux AppImage built from the same portable app directory.
 * `HiCT-<version>-windows-x86_64-portable.zip` -- portable Windows app directory with bundled Java runtime and `HiCT.cmd`.
-* `HiCT-<version>-windows-x86_64-installer.exe` -- optional Windows installer produced by the official JDK `jpackage` tool.
+* `HiCT-<version>-windows-x86_64.exe` -- optional single-file Windows launcher, not an MSI installer.
 
-The Windows portable artifact is intentionally a ZIP, not a custom self-extracting executable.
-A true one-file portable Windows EXE requires an opaque self-extractor or custom packer, which is exactly the packaging style that often creates antivirus and redistribution-review problems.
-The `.exe` artifact is therefore a standard `jpackage` installer; the ZIP is the portable Windows distribution.
+The Windows ZIP is the most transparent portable artifact.
+The default Windows EXE mode is a small custom `asInvoker` launcher built with the static MSVC runtime.
+It embeds an official standalone 7-Zip/LZMA extractor plus the portable app payload, extracts into a stable `HiCT.portable\payloads\...` cache next to the EXE, and skips extraction on later launches when the content-addressed cache marker matches.
+The legacy official 7-Zip/LZMA SDK SFX mode (`7zSD.sfx`, `7zS.sfx`, `7zS2con.sfx`, or `7zS2.sfx`) remains available from the release workflow/manual build switch.
+No-argument double-click launches open the graphical HiCT launcher; server output is shown inside the launcher log panel.
+Avoiding Windows trust prompts for newly downloaded single-file EXE artifacts still requires Authenticode signing with a trusted code-signing certificate; launcher implementation alone is not a reliable substitute.
+Use the ZIP artifact when local policy forbids unsigned launchers.
 
 === Portable startup behavior
 
@@ -380,6 +392,8 @@ chmod +x HiCT-<version>-linux-x86_64.run
 ./HiCT-<version>-linux-x86_64.run convert --help
 ----
 
+The `.run` wrapper checks for the standard Linux tools it needs before extracting (`awk`, `tail`, `tar`, `xz`, `mkdir`, `touch`, and `cat`) and prints distribution-specific install hints when any are missing.
+
 Windows portable ZIP:
 
 [source,powershell]
@@ -390,14 +404,20 @@ Windows portable ZIP:
 .\HiCT.cmd convert --help
 ----
 
-When no CLI arguments are provided, HiCT starts API + WebUI and opens `http://localhost:8080/` in the default browser when desktop browsing is available.
-All normal HiCT CLI subcommands remain available.
+When no CLI arguments are provided, HiCT opens the graphical launcher.
+The launcher can start and stop the managed JVM server process, show API/WebUI status, edit the common environment-based settings, and open `http://localhost:8080/` in either the system browser or an optional bundled browser payload.
+All normal HiCT CLI subcommands remain available from the ZIP.
+Portable launchers enter `DATA_DIR` before Java starts, so file dialogs and relative paths begin from the portable data location rather than the shell or system directory that launched HiCT.
+They also bind API and WebUI servers to `127.0.0.1` by default, which keeps the packaged Java process local-only and reduces firewall prompts on Windows. Set `HICT_BIND_HOST=0.0.0.0` explicitly if remote machines must connect to the HiCT server.
 
 Portable `DATA_DIR` defaults:
 
 * Linux `.run`: directory containing the `.run` file.
+* Linux `.AppImage`: directory containing the AppImage.
 * Linux extracted `.tar.gz`: extracted app directory.
 * Windows portable ZIP: extracted app directory.
+* Windows custom EXE: directory containing the EXE.
+* Windows legacy 7-Zip SFX EXE: directory containing the EXE when the launcher can infer it from the parent process; otherwise the temporary extracted app directory used by the official 7-Zip/LZMA SDK SFX module.
 * Explicit `DATA_DIR` always wins.
 
 === Building portable packages locally
@@ -408,7 +428,11 @@ Linux:
 ----
 cd HiCT_JVM
 ./scripts/portable/build_portable_linux.sh
+HICT_SKIP_PORTABLE=1 ./scripts/portable/build_appimage_linux.sh
 ----
+
+The Linux `.run` uses an appended `tar.xz` payload for smaller single-file releases; the companion `.tar.gz` stays available for environments that prefer direct archive extraction.
+AppImage builds use xz-compressed SquashFS by default; set `APPIMAGE_COMPRESSION=gzip` only when startup speed is more important than artifact size.
 
 Windows:
 
@@ -416,11 +440,83 @@ Windows:
 ----
 cd HiCT_JVM
 .\scripts\portable\build_portable_windows.ps1
-.\scripts\portable\build_portable_windows.ps1 -CreateInstaller
+.\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe
+.\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe -WindowsExeMode 7zip-sfx
 ----
 
 If `toolchains-dist/<platform>/` exists before packaging, Gradle embeds that platform's `hictk` payload into the fat JAR.
 Use `scripts/toolchains/build_hictk_linux.sh` or `scripts/toolchains/build_hictk_windows.ps1` first when release artifacts must include `.hic` conversion support without requiring external tools.
+When bundled hictk is enabled, HiCT release artifacts redistribute the platform-specific `hictk` executable built from the official hictk source release selected by `HICTK_REF`/workflow input.
+Portable ZIP, `.run`, AppImage, and Windows EXE packages additionally extract the platform payload under `toolchains/` and launch HiCT with `HICT_TOOLCHAIN_DIR` pointing there, so `.hic` conversion does not depend on extracting an executable from the JAR into the system temporary directory at runtime.
+
+=== Bundled browser payloads
+
+Portable packages can include a browser only when a vetted payload is prepared under `browsers-dist/<platform>/` before packaging.
+The packaging scripts copy that payload into `browsers/<platform>/`, set `HICT_BROWSER_DIR`, and let the launcher expose "Use bundled browser when available".
+The lightweight Java launcher remains the default process controller.
+When multiple payloads are present, HiCT tries the smaller Tauri WebView browser first, then Electron/Chromium, then the user's system browser.
+
+Build the default Tauri payload from a HiCT_WebUI checkout:
+
+[source,bash]
+----
+cd HiCT_JVM
+./scripts/portable/prepare_tauri_browser_payload_linux.sh
+----
+
+Windows:
+
+[source,powershell]
+----
+cd HiCT_JVM
+.\scripts\portable\prepare_tauri_browser_payload_windows.ps1
+----
+
+The Tauri payload does not bundle Chromium.
+It uses the operating system WebView runtime: WebKitGTK on Linux and Microsoft Edge WebView2 on Windows.
+Portable launchers warn before startup when a Tauri payload is present but the expected Linux WebKitGTK libraries or Windows WebView2 runtime are not detected, including distribution-specific install commands.
+This keeps the default `.run`, AppImage, and Windows EXE substantially smaller than Chromium-bundled releases while still providing a built-in WebUI path on machines with the standard WebView runtime.
+
+Build the optional Electron/Chromium payload from a HiCT_WebUI checkout only when a fully bundled Chromium fallback is needed:
+
+[source,bash]
+----
+cd HiCT_JVM
+./scripts/portable/prepare_electron_browser_payload_linux.sh
+----
+
+Windows:
+
+[source,powershell]
+----
+cd HiCT_JVM
+.\scripts\portable\prepare_electron_browser_payload_windows.ps1
+----
+
+The payload builder keeps only the `en-US` Chromium locale by default to control release size.
+Set `HICT_ELECTRON_KEEP_LOCALES=en-US,fr,de` before running the payload builder if additional locales must be redistributed.
+Set `HICT_SKIP_NPM_INSTALL=1` only for local rebuilds where the HiCT_WebUI `node_modules` tree is already known to match `package-lock.json`.
+
+Minimal manifest:
+
+[source,json]
+----
+{
+  "name": "HiCT Tauri WebView",
+  "engine": "tauri-system-webview",
+  "priority": 10,
+  "command": "bin/hict-tauri-browser",
+  "arguments": []
+}
+----
+
+Generic browser binaries are intentionally not downloaded by the HiCT packaging scripts.
+The Tauri payload builder uses the Rust/Tauri dependencies declared by HiCT_WebUI, stores Cargo dependency metadata in the payload, and relies on the user's OS WebView runtime license terms.
+The Electron payload builder uses the Electron package already declared by HiCT_WebUI, preserves `electron/LICENSE` and `electron/LICENSES.chromium.html`, flips Electron security fuses when supported by the installed Electron version, and writes a payload manifest with size and SHA-256 tree digest.
+For Firefox-family payloads, distribute only compliant unaltered official binaries or properly rebranded builds and preserve Mozilla license/trademark/update requirements.
+For Chromium-family payloads, preserve the complete third-party license and credits set for the exact binary being redistributed.
+If no vetted payload is present, the launcher uses the user's system browser.
+Electron/Chromium is intentionally optional because it materially increases portable artifact size; leave `bundle_electron_browser=false` in the manual workflow unless a Chromium fallback must be bundled.
 
 === Redistribution and license notes
 
@@ -429,9 +525,14 @@ The portable package scripts keep the following license and attribution material
 * `licenses/HiCT_JVM_LICENSE`
 * `licenses/HiCT_WebUI_LICENSE`, when the WebUI checkout is available
 * `licenses/PORTABLE_DISTRIBUTION_NOTICE.txt`
+* `licenses/SevenZip_NOTICE.txt` in Windows packages
+* `licenses/LZMA_SDK_NOTICE.txt` in Windows EXE payloads when the official LZMA SDK supplied the extractor or SFX module
 * the complete `runtime/legal/` directory generated by `jlink`
 * bundled `hictk` license/citation files inside the fat JAR resources when `toolchains-dist` was prepared before packaging
+* bundled browser license, notice, trademark, and credits files when `browsers-dist` was prepared before packaging
 
+Bundled hictk is redistributed under the upstream hictk MIT license and is invoked by HiCT for `.hic` conversion.
+Keep the bundled hictk license and citation files with release artifacts, and cite hictk when using this conversion path.
 The embedded Java runtime is produced from the JDK used by the release runner.
 The GitHub Actions workflow uses Eclipse Temurin through `actions/setup-java`; Temurin/OpenJDK runtime legal notices are preserved in `runtime/legal/`.
 Do not strip that directory from redistributed artifacts.
@@ -440,5 +541,8 @@ Do not strip that directory from redistributed artifacts.
 
 `.github/workflows/portable-release.yml` builds Linux and Windows packages on matching runners.
 On release creation it attaches the portable artifacts and SHA-256 checksum files to the GitHub Release.
-The workflow can also be run manually with toggles for bundled `hictk` and the optional Windows `jpackage` installer.
-
+The workflow can also be run manually and exposes toggles for bundled `hictk`, the default bundled Tauri browser, the optional bundled Electron browser, the `hictk` release tag, the HiCT_WebUI ref, the optional Windows EXE, and the Windows EXE mode (`custom` by default, `7zip-sfx` for legacy official SFX packaging).
+`bundle_tauri_browser` defaults to `true`; `bundle_electron_browser` defaults to `false`.
+The WebUI ref input defaults to `same-as-jvm`, so a manual run from a HiCT_JVM branch such as `jvm-hic-converter` first tries to bundle the same-named HiCT_WebUI ref and falls back to `master` if that ref is absent.
+For workflow downloads it publishes aggregate Linux and Windows packages plus separate single-file runnable artifacts for Linux `.run`, Linux AppImage, and Windows `.exe`.
+Prepared `toolchains-dist/<platform>` hictk payloads and the underlying Conan package homes are restored and saved explicitly by OS, hictk tag, and toolchain script hash to avoid rebuilding hictk dependencies on every release.

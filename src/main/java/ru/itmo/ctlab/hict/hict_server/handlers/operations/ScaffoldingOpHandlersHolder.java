@@ -40,9 +40,13 @@ import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding.*;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoWithVersionDTO;
+import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -68,10 +72,13 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
-          final var chunkedFile = extractChunkedFile(map);
+          final var chunkedFiles = extractAssemblyChunkedFiles(map);
+          final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          chunkedFile.scaffoldingOperations().reverseSelectionRangeBp(request.startBP(), request.endBP());
+          for (final var file : chunkedFiles.operationOrder()) {
+            file.scaffoldingOperations().reverseSelectionRangeBp(request.startBP(), request.endBP());
+          }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
@@ -95,10 +102,13 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
-          final var chunkedFile = extractChunkedFile(map);
+          final var chunkedFiles = extractAssemblyChunkedFiles(map);
+          final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          chunkedFile.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
+          for (final var file : chunkedFiles.operationOrder()) {
+            file.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
+          }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
@@ -122,10 +132,14 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
-          final var chunkedFile = extractChunkedFile(map);
+          final var chunkedFiles = extractAssemblyChunkedFiles(map);
+          final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          chunkedFile.scaffoldingOperations().splitContigAtBin(request.splitPx(), ResolutionDescriptor.fromBpResolution(request.bpResolution(), chunkedFile), QueryLengthUnit.PIXELS);
+          final var splitPositionBp = resolveSplitPositionBp(chunkedFiles, request.splitPx(), request.bpResolution());
+          for (final var file : chunkedFiles.operationOrder()) {
+            file.scaffoldingOperations().splitContigAtBin(splitPositionBp, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+          }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
@@ -149,10 +163,13 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
-          final var chunkedFile = extractChunkedFile(map);
+          final var chunkedFiles = extractAssemblyChunkedFiles(map);
+          final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          chunkedFile.scaffoldingOperations().scaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
+          for (final var file : chunkedFiles.operationOrder()) {
+            file.scaffoldingOperations().scaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
+          }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
@@ -176,10 +193,13 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
-          final var chunkedFile = extractChunkedFile(map);
+          final var chunkedFiles = extractAssemblyChunkedFiles(map);
+          final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          chunkedFile.scaffoldingOperations().unscaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+          for (final var file : chunkedFiles.operationOrder()) {
+            file.scaffoldingOperations().unscaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+          }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
@@ -203,10 +223,13 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
-          final var chunkedFile = extractChunkedFile(map);
+          final var chunkedFiles = extractAssemblyChunkedFiles(map);
+          final var chunkedFile = chunkedFiles.activeChunkedFile();
           log.debug("Got ChunkedFile from map");
 
-          chunkedFile.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+          for (final var file : chunkedFiles.operationOrder()) {
+            file.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+          }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
@@ -215,12 +238,52 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
     });
   }
 
-  private ChunkedFile extractChunkedFile(final @NotNull LocalMap<String, Object> map) {
-    final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-    if (chunkedFileWrapper == null) {
-      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+  private AssemblyChunkedFiles extractAssemblyChunkedFiles(final @NotNull LocalMap<String, Object> map) {
+    final var activeSource = String.valueOf(map.getOrDefault("assemblyInfoSource", "PRIMARY"));
+    final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
+    final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFileSecondary");
+
+    final ChunkedFile activeChunkedFile;
+    final var operationOrder = new ArrayList<ChunkedFile>();
+    if ("SECONDARY".equalsIgnoreCase(activeSource)) {
+      if (secondaryWrapper == null) {
+        throw new IllegalStateException("Secondary source is not attached");
+      }
+      activeChunkedFile = secondaryWrapper.getChunkedFile();
+      if (primaryWrapper != null) {
+        operationOrder.add(primaryWrapper.getChunkedFile());
+      }
+      operationOrder.add(activeChunkedFile);
+    } else {
+      if (primaryWrapper == null) {
+        throw new IllegalStateException("Open a Hi-C file before using scaffolding operations");
+      }
+      activeChunkedFile = primaryWrapper.getChunkedFile();
+      if (secondaryWrapper != null) {
+        operationOrder.add(secondaryWrapper.getChunkedFile());
+      }
+      operationOrder.add(activeChunkedFile);
     }
-    return chunkedFileWrapper.getChunkedFile();
+    return new AssemblyChunkedFiles(activeChunkedFile, List.copyOf(operationOrder));
+  }
+
+  private long resolveSplitPositionBp(final @NotNull AssemblyChunkedFiles chunkedFiles,
+                                      final long splitPx,
+                                      final long bpResolution) {
+    for (final var file : chunkedFiles.operationOrder()) {
+      for (final var resolution : file.getResolutions()) {
+        if (resolution == bpResolution) {
+          return file.convertUnits(
+            splitPx,
+            ResolutionDescriptor.fromBpResolution(bpResolution, file),
+            QueryLengthUnit.PIXELS,
+            ResolutionDescriptor.fromResolutionOrder(0),
+            QueryLengthUnit.BASE_PAIRS
+          );
+        }
+      }
+    }
+    return Math.max(0L, splitPx * bpResolution);
   }
 
   private long incrementVersionAndResetTileStats(final @NotNull LocalMap<String, Object> map,
@@ -230,7 +293,8 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
     if (stats == null) {
       throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
     }
-    final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, chunkedFile.getResolutions().length);
+    FileOpHandlersHolder.synchronizeOverlayAssemblyForSharedState(map);
+    final var newStats = TileStatisticHolder.resetRangesWithIncrementedVersion(stats, maxOpenSourceResolutionCount(map, chunkedFile));
     map.put("TileStatisticHolder", newStats);
     TileHandlersHolder.clearExpectedProfileCache(map);
     scheduler.bumpAssemblyGeneration();
@@ -241,6 +305,20 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
     return newStats.versionCounter().get();
   }
 
+  private int maxOpenSourceResolutionCount(final @NotNull LocalMap<String, Object> map,
+                                           final @NotNull ChunkedFile fallbackChunkedFile) {
+    var resolutionCount = fallbackChunkedFile.getResolutions().length;
+    final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
+    if (primaryWrapper != null) {
+      resolutionCount = Math.max(resolutionCount, primaryWrapper.getChunkedFile().getResolutions().length);
+    }
+    final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFileSecondary");
+    if (secondaryWrapper != null) {
+      resolutionCount = Math.max(resolutionCount, secondaryWrapper.getChunkedFile().getResolutions().length);
+    }
+    return resolutionCount;
+  }
+
   private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
@@ -249,5 +327,9 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
       return null;
     }
     return wrapper.getRequestTaskScheduler();
+  }
+
+  private record AssemblyChunkedFiles(@NotNull ChunkedFile activeChunkedFile,
+                                      @NotNull List<ChunkedFile> operationOrder) {
   }
 }

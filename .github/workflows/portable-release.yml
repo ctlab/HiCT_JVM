@@ -2,7 +2,9 @@ name: Portable Packages
 
 on:
   release:
-    types: [created]
+    types: [published]
+  push:
+    branches: ["master"]
   workflow_dispatch:
     inputs:
       bundle_hictk:
@@ -13,131 +15,874 @@ on:
         options:
           - "true"
           - "false"
-      create_windows_installer:
-        description: "Create official jpackage Windows installer EXE in addition to portable ZIP"
+      hictk_ref:
+        description: "Official hictk tag to bundle"
+        required: true
+        default: "v2.2.0"
+        type: string
+      minimap2_ref:
+        description: "Official minimap2 tag to bundle for dotplot generation"
+        required: true
+        default: "v2.31"
+        type: string
+      mm2plus_ref:
+        description: "mm2-plus tag to bundle as an optional accelerated dotplot aligner"
+        required: true
+        default: "v1.2"
+        type: string
+      webui_ref:
+        description: "HiCT_WebUI branch/tag/ref to bundle; use same-as-jvm to match the selected HiCT_JVM branch"
+        required: true
+        default: "same-as-jvm"
+        type: string
+      create_windows_exe:
+        description: "Create portable single-file Windows EXE in addition to portable ZIP"
         required: true
         default: "true"
         type: choice
         options:
           - "true"
           - "false"
+      windows_exe_mode:
+        description: "Windows EXE packaging mode: custom cached launcher by default, or legacy official 7-Zip SFX"
+        required: true
+        default: "custom"
+        type: choice
+        options:
+          - "custom"
+          - "7zip-sfx"
+      bundle_tauri_browser:
+        description: "Build and bundle the HiCT Tauri WebView browser payload"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      bundle_electron_browser:
+        description: "Build and bundle the HiCT Electron browser payload"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      publish_target:
+        description: "Manual publish target after building artifacts"
+        required: true
+        default: "artifacts-only"
+        type: choice
+        options:
+          - "artifacts-only"
+          - "latest-master"
+          - "release-tag"
+      release_tag:
+        description: "Existing release tag to attach assets to when publish_target=release-tag"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: portable-release-${{ github.event_name == 'push' && github.ref || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
 jobs:
   linux-portable:
     name: Linux portable .run
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    env:
+      HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+      MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Verify Node.js tooling
+        run: |
+          node --version
+          npm --version
 
       - name: Set up Temurin JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
 
-      - name: Install hictk build prerequisites
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+      - name: Cache HiCT native processing libraries
+        uses: actions/cache@v5
+        with:
+          path: build/native-processing/resources
+          key: hict-native-linux-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+
+      - name: Set up Rust
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Restore Tauri cargo cache
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/tauri-target/linux_x86_64
+          key: tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_linux.sh') }}
+          restore-keys: |
+            tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-linux-x86_64-
+
+      - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build python3-venv file
+          sudo apt-get install -y --no-install-recommends curl file gzip tar xz-utils
+
+      - name: Install Linux Tauri build prerequisites
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        run: |
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/toolchains/build_hictk_linux.sh
+        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh scripts/toolchains/build_minimap2_linux.sh scripts/toolchains/build_mm2plus_linux.sh
+
+      - name: Restore bundled toolchain cache
+        id: cache-hictk
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: toolchains-dist/linux_x86_64
+          key: toolchain-v2-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
+          restore-keys: |
+            toolchain-v2-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+            toolchain-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+
+      - name: Restore bundled mm2-plus cache
+        id: cache-mm2plus
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx2
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx512
+            toolchains-dist/linux_x86_64/share/licenses/mm2plus
+            toolchains-dist/linux_x86_64/share/doc/mm2plus
+          key: toolchain-mm2plus-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
+          restore-keys: |
+            toolchain-mm2plus-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-
+            toolchain-mm2plus-linux-x86_64-ubuntu2404-
+
+      - name: Inspect bundled toolchain cache
+        id: inspect-toolchain
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        run: |
+          manifest="toolchains-dist/linux_x86_64/manifest.json"
+          hictk_ready=false
+          minimap2_ready=false
+          mm2plus_avx2_ready=false
+          mm2plus_avx512_ready=false
+          mm2plus_ref_ready=false
+          if [[ -f "toolchains-dist/linux_x86_64/share/doc/mm2plus/build-info.txt" ]] && grep -qx "ref=${MM2PLUS_REF}" "toolchains-dist/linux_x86_64/share/doc/mm2plus/build-info.txt"; then
+            mm2plus_ref_ready=true
+          fi
+          if [[ -f "${manifest}" ]]; then
+            if grep -q '"hictk"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/hictk" ]]; then
+              hictk_ready=true
+            fi
+            if grep -q '"minimap2"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/minimap2" ]]; then
+              minimap2_ready=true
+            fi
+          fi
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx2"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" ]]; then
+            mm2plus_avx2_ready=true
+          fi
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx512"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" ]]; then
+            mm2plus_avx512_ready=true
+          fi
+          echo "hictk_ready=${hictk_ready}" >> "${GITHUB_OUTPUT}"
+          echo "minimap2_ready=${minimap2_ready}" >> "${GITHUB_OUTPUT}"
+          echo "mm2plus_avx2_ready=${mm2plus_avx2_ready}" >> "${GITHUB_OUTPUT}"
+          echo "mm2plus_avx512_ready=${mm2plus_avx512_ready}" >> "${GITHUB_OUTPUT}"
+          echo "hictk_ready=${hictk_ready}, minimap2_ready=${minimap2_ready}, mm2plus_avx2_ready=${mm2plus_avx2_ready}, mm2plus_avx512_ready=${mm2plus_avx512_ready}"
+
+      - name: Restore hictk Conan package cache
+        id: cache-hictk-conan
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/hictk-conan/linux_x86_64
+          key: hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          restore-keys: |
+            hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-
+            hictk-conan-linux-x86_64-ubuntu2404-
+
+      - name: Install hictk build prerequisites
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
+        run: |
+          sudo apt-get install -y --no-install-recommends g++ gcc make cmake ninja-build python3-venv zlib1g-dev
 
       - name: Build bundled hictk
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        id: build-hictk
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
+        continue-on-error: true
         env:
           ENABLE_MOSTLY_STATIC_RUNTIME: "1"
         run: ./scripts/toolchains/build_hictk_linux.sh
 
+      - name: Build bundled minimap2
+        id: build-minimap2
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.minimap2_ready != 'true' }}
+        continue-on-error: true
+        run: ./scripts/toolchains/build_minimap2_linux.sh
+
+      - name: Build bundled mm2-plus
+        id: build-mm2plus
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
+        continue-on-error: true
+        run: ./scripts/toolchains/build_mm2plus_linux.sh
+
+      - name: Verify bundled toolchain payload
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') }}
+        run: |
+          manifest="toolchains-dist/linux_x86_64/manifest.json"
+          if [[ ! -f "${manifest}" ]]; then
+            echo "::warning::No Linux bundled toolchain manifest was produced; hictk/minimap2 features will require external tools."
+            exit 0
+          fi
+          if ! grep -q '"hictk"' "${manifest}"; then
+            echo "::warning::Linux bundled hictk was not built or restored; .hic conversion will require external hictk."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/hictk" ]]; then
+            echo "::warning::Linux bundled hictk is listed in the manifest but bin/hictk is missing or not executable."
+          else
+            toolchains-dist/linux_x86_64/bin/hictk --version
+          fi
+          if ! grep -q '"minimap2"' "${manifest}"; then
+            echo "::warning::Linux bundled minimap2 was not built or restored; dotplot generation will require external minimap2."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/minimap2" ]]; then
+            echo "::warning::Linux bundled minimap2 is listed in the manifest but bin/minimap2 is missing or not executable."
+          else
+            toolchains-dist/linux_x86_64/bin/minimap2 --version
+          fi
+          if ! grep -q '"mm2plus_avx2"' "${manifest}"; then
+            echo "::warning::Linux bundled mm2-plus AVX2 was not built or restored; dotplot generation can still use minimap2."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" ]]; then
+            echo "::warning::Linux bundled mm2-plus AVX2 is listed in the manifest but bin/mm2plus-avx2 is missing or not executable."
+          else
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx2 --version
+          fi
+          if ! grep -q '"mm2plus_avx512"' "${manifest}"; then
+            echo "::warning::Linux bundled mm2-plus AVX-512 was not built or restored; auto mode will use AVX2/minimap2."
+          elif [[ ! -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" ]]; then
+            echo "::warning::Linux bundled mm2-plus AVX-512 is listed in the manifest but bin/mm2plus-avx512 is missing or not executable."
+          fi
+
+      - name: Save hictk Conan package cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: .cache/hictk-conan/linux_x86_64
+          key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
+
+      - name: Save bundled toolchain cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true') }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: toolchains-dist/linux_x86_64
+          key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
+
+      - name: Save bundled mm2-plus cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: |
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx2
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx512
+            toolchains-dist/linux_x86_64/share/licenses/mm2plus
+            toolchains-dist/linux_x86_64/share/doc/mm2plus
+          key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
+
+      - name: Build bundled Tauri browser
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
+          CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/tauri-target/linux_x86_64
+        run: ./scripts/portable/prepare_tauri_browser_payload_linux.sh
+
+      - name: Build bundled Electron browser
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true' }}
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
+        run: ./scripts/portable/prepare_electron_browser_payload_linux.sh
+
       - name: Build Linux portable package
         run: ./scripts/portable/build_portable_linux.sh
 
+      - name: Upload JVM fat JAR artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-jvm-fat-jar
+          path: build/libs/*-fat.jar
+          if-no-files-found: error
+
       - name: Upload Linux package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hict-linux-portable
           path: |
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.tar.gz
             build/distributions/HiCT-*-linux-x86_64.sha256
+          if-no-files-found: error
 
-      - name: Attach Linux package to release
-        if: ${{ github.event_name == 'release' }}
-        uses: softprops/action-gh-release@v2
+      - name: Upload Linux runfile artifact
+        uses: actions/upload-artifact@v6
         with:
-          files: |
+          name: hict-linux-runfile
+          path: |
             build/distributions/HiCT-*-linux-x86_64.run
-            build/distributions/HiCT-*-linux-x86_64.tar.gz
             build/distributions/HiCT-*-linux-x86_64.sha256
+          if-no-files-found: error
 
   windows-portable:
-    name: Windows portable package
-    runs-on: windows-latest
+    name: Windows portable ZIP and EXE
+    runs-on: windows-2022
+    env:
+      HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+      MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
+      HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Verify Node.js tooling
+        shell: pwsh
+        run: |
+          node --version
+          npm.cmd --version
 
       - name: Set up Temurin JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-          cache: gradle
+
+      - name: Cache HiCT native processing libraries
+        uses: actions/cache@v5
+        with:
+          path: build/native-processing/resources
+          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+
+      - name: Set up Rust
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Restore Tauri cargo cache
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/tauri-target/windows_x86_64
+          key: tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_windows.ps1') }}
+          restore-keys: |
+            tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-windows-x86_64-
+
+      - name: Restore bundled toolchain cache
+        id: cache-hictk
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: toolchains-dist/windows_x86_64
+          key: toolchain-v2-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1') }}
+          restore-keys: |
+            toolchain-v2-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+            toolchain-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+
+      - name: Restore bundled mm2-plus cache
+        id: cache-mm2plus
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
+            toolchains-dist/windows_x86_64/share/licenses/mm2plus
+            toolchains-dist/windows_x86_64/share/doc/mm2plus
+          key: toolchain-mm2plus-windows-x86_64-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_windows.ps1') }}
+          restore-keys: |
+            toolchain-mm2plus-windows-x86_64-${{ env.MM2PLUS_REF }}-
+            toolchain-mm2plus-windows-x86_64-
+
+      - name: Inspect bundled toolchain cache
+        id: inspect-toolchain
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: pwsh
+        run: |
+          $manifest = "toolchains-dist\windows_x86_64\manifest.json"
+          $hictkReady = "false"
+          $minimap2Ready = "false"
+          $mm2PlusAvx2Ready = "false"
+          $mm2PlusAvx512Ready = "false"
+          $mm2PlusRefReady = "false"
+          $mm2PlusBuildInfo = "toolchains-dist\windows_x86_64\share\doc\mm2plus\build-info.txt"
+          if ((Test-Path $mm2PlusBuildInfo) -and (Select-String -Path $mm2PlusBuildInfo -Pattern "^ref=$([regex]::Escape($env:MM2PLUS_REF))$" -Quiet)) {
+            $mm2PlusRefReady = "true"
+          }
+          $manifestText = ""
+          if (Test-Path $manifest) {
+            $manifestText = Get-Content -Raw $manifest
+            if ($manifestText -match '"hictk"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
+              $hictkReady = "true"
+            }
+            if ($manifestText -match '"minimap2"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\minimap2.exe")) {
+              $minimap2Ready = "true"
+            }
+          }
+          if ($mm2PlusRefReady -eq "true" -and (Test-Path $manifest) -and $manifestText -match '"mm2plus_avx2"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe")) {
+            $mm2PlusAvx2Ready = "true"
+          }
+          if ($mm2PlusRefReady -eq "true" -and (Test-Path $manifest) -and $manifestText -match '"mm2plus_avx512"' -and (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe")) {
+            $mm2PlusAvx512Ready = "true"
+          }
+          "hictk_ready=$hictkReady" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "minimap2_ready=$minimap2Ready" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "mm2plus_avx2_ready=$mm2PlusAvx2Ready" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "mm2plus_avx512_ready=$mm2PlusAvx512Ready" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "hictk_ready=$hictkReady, minimap2_ready=$minimap2Ready, mm2plus_avx2_ready=$mm2PlusAvx2Ready, mm2plus_avx512_ready=$mm2PlusAvx512Ready"
+
+      - name: Restore hictk Conan package cache
+        id: cache-hictk-conan
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/hictk-conan/windows_x86_64
+          key: hictk-conan-windows-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1') }}
+          restore-keys: |
+            hictk-conan-windows-x86_64-${{ env.HICTK_REF }}-
+            hictk-conan-windows-x86_64-
 
       - name: Configure MSVC environment
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
-        uses: ilammy/msvc-dev-cmd@v1
+        if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found. Visual Studio Build Tools are required for hictk/custom EXE builds."
+          }
+
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) {
+            throw "No Visual Studio installation with MSVC x64 tools was found."
+          }
+
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) {
+            throw "vcvars64.bat was not found at $vcvars."
+          }
+
+          $env:VSCMD_SKIP_SENDTELEMETRY = "1"
+          $envDump = cmd.exe /s /c "`"$vcvars`" >nul && set"
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcvars64.bat failed with exit code $LASTEXITCODE."
+          }
+
+          $namesToExport = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+          @(
+            "Path",
+            "INCLUDE",
+            "LIB",
+            "LIBPATH",
+            "EXTERNAL_INCLUDE",
+            "CommandPromptType",
+            "DevEnvDir",
+            "ExtensionSdkDir",
+            "FrameworkDir",
+            "FrameworkDir64",
+            "FrameworkVersion",
+            "FrameworkVersion64",
+            "IFCPATH",
+            "NETFXSDKDir",
+            "Platform",
+            "UCRTVersion",
+            "UniversalCRTSdkDir",
+            "VCIDEInstallDir",
+            "VCINSTALLDIR",
+            "VCPKG_ROOT",
+            "VCToolsInstallDir",
+            "VCToolsRedistDir",
+            "VCToolsVersion",
+            "VisualStudioVersion",
+            "VSINSTALLDIR",
+            "WindowsLibPath",
+            "WindowsSdkBinPath",
+            "WindowsSdkDir",
+            "WindowsSDKLibVersion",
+            "WindowsSdkVerBinPath",
+            "WindowsSDKVersion"
+          ) | ForEach-Object { [void]$namesToExport.Add($_) }
+
+          foreach ($line in $envDump) {
+            $separator = $line.IndexOf("=")
+            if ($separator -le 0) {
+              continue
+            }
+            $name = $line.Substring(0, $separator)
+            if (-not $namesToExport.Contains($name)) {
+              continue
+            }
+            $value = $line.Substring($separator + 1)
+            "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
 
       - name: Build bundled hictk
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        id: build-hictk
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
+        continue-on-error: true
         shell: pwsh
         run: .\scripts\toolchains\build_hictk_windows.ps1 -MostlyStaticRuntime
 
-      - name: Install WiX for jpackage EXE
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_installer == 'true') }}
+      - name: Build bundled minimap2
+        id: build-minimap2
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.minimap2_ready != 'true' }}
+        continue-on-error: true
         shell: pwsh
-        run: choco install wixtoolset -y --no-progress
+        run: .\scripts\toolchains\build_minimap2_windows.ps1
 
-      - name: Build Windows portable package and installer
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_installer == 'true') }}
+      - name: Build bundled mm2-plus
+        id: build-mm2plus
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
+        continue-on-error: true
         shell: pwsh
-        run: .\scripts\portable\build_portable_windows.ps1 -CreateInstaller
+        run: .\scripts\toolchains\build_mm2plus_windows.ps1
+
+      - name: Verify bundled toolchain payload
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') }}
+        shell: pwsh
+        run: |
+          $manifest = "toolchains-dist\windows_x86_64\manifest.json"
+          if (-not (Test-Path $manifest)) {
+            Write-Host "::warning::No Windows bundled toolchain manifest was produced; hictk/minimap2 features will require external tools."
+            exit 0
+          }
+          $manifestText = Get-Content -Raw $manifest
+          if ($manifestText -notmatch '"hictk"') {
+            Write-Host "::warning::Windows bundled hictk was not built or restored; .hic conversion will require external hictk."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
+            Write-Host "::warning::Windows bundled hictk is listed in the manifest but bin\hictk.exe is missing."
+          } else {
+            & "toolchains-dist\windows_x86_64\bin\hictk.exe" --version
+          }
+          if ($manifestText -notmatch '"minimap2"') {
+            Write-Host "::warning::Windows bundled minimap2 was not built or restored; dotplot generation will require external minimap2."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\minimap2.exe")) {
+            Write-Host "::warning::Windows bundled minimap2 is listed in the manifest but bin\minimap2.exe is missing."
+          } else {
+            & "toolchains-dist\windows_x86_64\bin\minimap2.exe" --version
+          }
+          if ($manifestText -notmatch '"mm2plus_avx2"') {
+            Write-Host "::warning::Windows bundled mm2-plus AVX2 was not built or restored; dotplot generation can still use minimap2."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe")) {
+            Write-Host "::warning::Windows bundled mm2-plus AVX2 is listed in the manifest but bin\mm2plus-avx2.exe is missing."
+          } else {
+            & "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe" --version
+          }
+          if ($manifestText -notmatch '"mm2plus_avx512"') {
+            Write-Host "::warning::Windows bundled mm2-plus AVX-512 was not built or restored; auto mode will use AVX2/minimap2."
+          } elseif (-not (Test-Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe")) {
+            Write-Host "::warning::Windows bundled mm2-plus AVX-512 is listed in the manifest but bin\mm2plus-avx512.exe is missing."
+          }
+
+      - name: Save hictk Conan package cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: .cache/hictk-conan/windows_x86_64
+          key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
+
+      - name: Save bundled toolchain cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true') }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: toolchains-dist/windows_x86_64
+          key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
+
+      - name: Save bundled mm2-plus cache
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: |
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
+            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
+            toolchains-dist/windows_x86_64/share/licenses/mm2plus
+            toolchains-dist/windows_x86_64/share/doc/mm2plus
+          key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
+
+      - name: Install 7-Zip for portable EXE
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
+        shell: pwsh
+        run: choco install 7zip.install -y --no-progress
+
+      - name: Build bundled Tauri browser
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        shell: pwsh
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..
+          CARGO_TARGET_DIR: ${{ github.workspace }}\.cache\tauri-target\windows_x86_64
+        run: .\scripts\portable\prepare_tauri_browser_payload_windows.ps1
+
+      - name: Build bundled Electron browser
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true' }}
+        shell: pwsh
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..
+        run: .\scripts\portable\prepare_electron_browser_payload_windows.ps1
+
+      - name: Build Windows portable package and EXE
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
+        shell: pwsh
+        run: .\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe -WindowsExeMode $env:HICT_WINDOWS_EXE_MODE
 
       - name: Build Windows portable package
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_installer != 'true' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_exe != 'true' }}
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1
 
+      - name: Stop Gradle daemons
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if (Test-Path ".\gradlew.bat") {
+            .\gradlew.bat --stop
+          }
+        continue-on-error: true
+
       - name: Upload Windows package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hict-windows-portable
           path: |
             build/distributions/HiCT-*-windows-x86_64-portable.zip
-            build/distributions/HiCT-*-windows-x86_64-installer.exe
+            build/distributions/HiCT-*-windows-x86_64.exe
             build/distributions/HiCT-*-windows-x86_64.sha256
 
-      - name: Attach Windows package to release
+      - name: Upload Windows EXE artifact
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-windows-exe
+          path: |
+            build/distributions/HiCT-*-windows-x86_64.exe
+            build/distributions/HiCT-*-windows-x86_64.sha256
+          if-no-files-found: error
+
+  publish-release-assets:
+    name: Publish release assets
+    needs:
+      - linux-portable
+      - windows-portable
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only') }}
+    runs-on: ubuntu-24.04
+    env:
+      HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+      MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: downloaded-artifacts
+
+      - name: Collect assets and provenance
+        shell: bash
+        env:
+          PUBLISH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target || '' }}
+          SELECTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
+        run: |
+          set -euo pipefail
+
+          version="$(tr -d '[:space:]' < version.txt)"
+          release_tag="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            release_tag="latest-master"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if [[ "${PUBLISH_TARGET}" == "latest-master" ]]; then
+              release_tag="latest-master"
+            elif [[ "${PUBLISH_TARGET}" == "release-tag" ]]; then
+              release_tag="${SELECTED_RELEASE_TAG}"
+              if [[ -z "${release_tag}" ]]; then
+                echo "release_tag is required when publish_target=release-tag." >&2
+                exit 1
+              fi
+            fi
+          fi
+
+          rm -rf release-dist
+          mkdir -p release-dist
+          while IFS= read -r -d '' file; do
+            cp -f "${file}" "release-dist/$(basename "${file}")"
+          done < <(
+            find downloaded-artifacts -type f \( \
+              -name '*.jar' -o \
+              -name '*.run' -o \
+              -name '*.exe' -o \
+              -name '*.zip' -o \
+              -name '*.tar.gz' -o \
+              -name '*.sha256' \
+            \) -print0
+          )
+
+          compgen -G "release-dist/*-fat.jar" >/dev/null || { echo "No fat JAR was collected." >&2; exit 1; }
+          compgen -G "release-dist/HiCT-*-linux-x86_64.run" >/dev/null || { echo "No Linux .run artifact was collected." >&2; exit 1; }
+          compgen -G "release-dist/HiCT-*-windows-x86_64.exe" >/dev/null || { echo "No Windows .exe artifact was collected." >&2; exit 1; }
+
+          provenance_file="release-dist/HiCT-${version}-build-origin.txt"
+          {
+            echo "HiCT release build provenance"
+            echo "============================="
+            echo
+            echo "version: ${version}"
+            echo "release_tag: ${release_tag}"
+            echo "trigger: ${GITHUB_EVENT_NAME}"
+            echo "repository: https://github.com/${GITHUB_REPOSITORY}"
+            echo "source_ref: ${GITHUB_REF}"
+            echo "source_sha: ${GITHUB_SHA}"
+            echo "workflow: ${GITHUB_WORKFLOW}"
+            echo "run_id: ${GITHUB_RUN_ID}"
+            echo "run_attempt: ${GITHUB_RUN_ATTEMPT}"
+            echo "run_url: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "bundled_refs:"
+            echo "  hictk: ${HICTK_REF}"
+            echo "  minimap2: ${MINIMAP2_REF}"
+            echo "  mm2_plus: ${MM2PLUS_REF}"
+            echo "  hict_webui: ${HICT_WEBUI_REF}"
+            echo
+            echo "asset_sha256:"
+            (
+              cd release-dist
+              find . -maxdepth 1 -type f \
+                ! -name "HiCT-${version}-build-origin.txt" \
+                ! -name "HiCT-${version}-release-assets.sha256" \
+                -printf '%P\0' |
+                sort -z |
+                xargs -0 sha256sum
+            ) | sed 's/^/  /'
+          } > "${provenance_file}"
+
+          checksum_file="HiCT-${version}-release-assets.sha256"
+          (
+            cd release-dist
+            rm -f "${checksum_file}"
+            sha256sum * | sort -k2 > "${checksum_file}"
+          )
+
+          cat > release-body.md <<EOF
+          Automated HiCT portable build from \`${GITHUB_SHA}\`.
+
+          Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
+          Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Included primary assets:
+          - JVM fat JAR
+          - Linux single-file \`.run\`
+          - Windows single-file \`.exe\`
+
+          See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.
+          EOF
+
+      - name: Move latest-master tag
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest-master "${GITHUB_SHA}"
+          git push --force origin refs/tags/latest-master
+
+      - name: Clear previous latest-master assets
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view latest-master >/dev/null 2>&1; then
+            gh release view latest-master --json assets -q '.assets[].name' |
+              while IFS= read -r asset; do
+                [[ -n "${asset}" ]] && gh release delete-asset latest-master "${asset}" -y
+              done
+          fi
+
+      - name: Publish latest master release
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-master
+          target_commitish: ${{ github.sha }}
+          name: Latest master portable build
+          body_path: release-body.md
+          prerelease: true
+          files: release-dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
+
+      - name: Attach assets to release event
         if: ${{ github.event_name == 'release' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/distributions/HiCT-*-windows-x86_64-portable.zip
-            build/distributions/HiCT-*-windows-x86_64-installer.exe
-            build/distributions/HiCT-*-windows-x86_64.sha256
+          files: release-dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
+
+      - name: Attach assets to selected release tag
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: release-dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: true

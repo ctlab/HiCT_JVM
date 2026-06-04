@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
@@ -47,6 +48,8 @@ public final class RenderPipelineConfig {
   private final @NotNull JsonObject lowerExpressionJson;
   private final @NotNull CompiledRootExpression upperExpression;
   private final @NotNull CompiledRootExpression lowerExpression;
+  private final @NotNull CompiledRootExpression primarySourceExpression;
+  private final @NotNull CompiledRootExpression secondarySourceExpression;
   private final @NotNull Set<TrackBinding> requiredTrackBindings;
 
   private RenderPipelineConfig(final boolean enabled,
@@ -60,6 +63,14 @@ public final class RenderPipelineConfig {
     final var required = new HashSet<TrackBinding>();
     this.upperExpression = compileRootExpression(this.upperExpressionJson, required);
     this.lowerExpression = compileRootExpression(this.lowerExpressionJson, required);
+    this.primarySourceExpression = compileRootExpression(
+      findSourceColorExpression(this.upperExpressionJson, this.lowerExpressionJson, "PRIMARY"),
+      required
+    );
+    this.secondarySourceExpression = compileRootExpression(
+      findSourceColorExpression(this.upperExpressionJson, this.lowerExpressionJson, "SECONDARY"),
+      required
+    );
     this.requiredTrackBindings = Collections.unmodifiableSet(required);
   }
 
@@ -135,9 +146,84 @@ public final class RenderPipelineConfig {
     return root.evalArgb(context, options);
   }
 
+  public int evaluateSourceArgb(final @NotNull String sourceName,
+                                final @NotNull MutablePixelContext context,
+                                final @NotNull SimpleVisualizationOptions options) {
+    final var root = "SECONDARY".equals(sourceName.trim().toUpperCase(Locale.ROOT))
+      ? this.secondarySourceExpression
+      : this.primarySourceExpression;
+    return root.evalArgb(context, options);
+  }
+
   private @NotNull CompiledRootExpression selectRootExpression(final boolean upperTriangle) {
     final var useUpper = this.swapUpperLower ? !upperTriangle : upperTriangle;
     return useUpper ? this.upperExpression : this.lowerExpression;
+  }
+
+  private static @NotNull JsonObject findSourceColorExpression(final @NotNull JsonObject upper,
+                                                               final @NotNull JsonObject lower,
+                                                               final @NotNull String sourceName) {
+    final var upperCandidate = findSourceColorExpressionRecursive(upper, sourceName);
+    if (upperCandidate != null) {
+      return upperCandidate;
+    }
+    final var lowerCandidate = findSourceColorExpressionRecursive(lower, sourceName);
+    if (lowerCandidate != null) {
+      return lowerCandidate;
+    }
+    return colormapNode(defaultSourceNode(sourceName), "rgba(255,255,255,0.0)", "rgba(0,96,0,1.0)", 0.0d, 1.0d);
+  }
+
+  private static JsonObject findSourceColorExpressionRecursive(final @NotNull JsonObject node,
+                                                               final @NotNull String sourceName) {
+    final var nodeType = node.getString("type", "source").trim().toUpperCase(Locale.ROOT);
+    if (!"PIXEL_BLEND".equals(nodeType) && isColorNode(nodeType) && referencesSource(node, sourceName)) {
+      return node.copy();
+    }
+    for (final var key : node.fieldNames()) {
+      final var value = node.getValue(key);
+      if (value instanceof JsonObject childObject) {
+        final var found = findSourceColorExpressionRecursive(childObject, sourceName);
+        if (found != null) {
+          return found;
+        }
+      } else if (value instanceof JsonArray childArray) {
+        for (int i = 0; i < childArray.size(); i++) {
+          final var child = childArray.getValue(i);
+          if (child instanceof JsonObject childObject) {
+            final var found = findSourceColorExpressionRecursive(childObject, sourceName);
+            if (found != null) {
+              return found;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  private static boolean referencesSource(final @NotNull JsonObject node,
+                                          final @NotNull String sourceName) {
+    final var nodeType = node.getString("type", "").trim().toUpperCase(Locale.ROOT);
+    if ("SOURCE".equals(nodeType)) {
+      return sourceName.equals(node.getString("source", "PRIMARY").trim().toUpperCase(Locale.ROOT));
+    }
+    for (final var key : node.fieldNames()) {
+      final var value = node.getValue(key);
+      if (value instanceof JsonObject childObject) {
+        if (referencesSource(childObject, sourceName)) {
+          return true;
+        }
+      } else if (value instanceof JsonArray childArray) {
+        for (int i = 0; i < childArray.size(); i++) {
+          final var child = childArray.getValue(i);
+          if (child instanceof JsonObject childObject && referencesSource(childObject, sourceName)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   private static @NotNull JsonObject defaultSourceNode(final @NotNull String source) {

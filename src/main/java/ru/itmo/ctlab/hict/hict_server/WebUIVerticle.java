@@ -63,7 +63,11 @@ public class WebUIVerticle extends AbstractVerticle {
     log.info("Logging for WebUI initialized");
 
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
-      .setConfig(new JsonObject().put("keys", new JsonArray().add("SERVE_WEBUI").add("WEBUI_PORT").add("AUTO_OPEN_BROWSER")));
+      .setConfig(new JsonObject().put("keys", new JsonArray()
+        .add("SERVE_WEBUI")
+        .add("WEBUI_PORT")
+        .add("AUTO_OPEN_BROWSER")
+        .add("HICT_BIND_HOST")));
     final ConfigRetrieverOptions myOptions = new ConfigRetrieverOptions().addStore(jsonEnvConfig);
     final ConfigRetriever configRetriever = ConfigRetriever.create(vertx, myOptions);
     configRetriever.getConfig(event -> {
@@ -76,12 +80,14 @@ public class WebUIVerticle extends AbstractVerticle {
         final var serveWebUI = resolveServeWebUI(event.result());
         final var webuiPort = resolveWebuiPort(event.result());
         final var autoOpenBrowser = resolveAutoOpenBrowser(event.result());
+        final var bindHost = resolveBindHost(event.result());
 
         log.info("Writing WebUI configuration to local shared state");
         final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("webui_server");
         map.put("WEBUI_PORT", webuiPort);
         map.put("SERVE_WEBUI", serveWebUI);
         map.put("AUTO_OPEN_BROWSER", autoOpenBrowser);
+        map.put("HICT_BIND_HOST", bindHost);
 
         if (!serveWebUI) {
           log.info("Not serving WebUI because SERVE_WEBUI=false");
@@ -104,20 +110,27 @@ public class WebUIVerticle extends AbstractVerticle {
           .allowedHeader("Access-Control-Allow-Headers")
           .allowedHeader("Content-Type"));
 
+        webuiRouter.route("/*").handler(ctx -> {
+          ctx.response()
+            .putHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            .putHeader("Pragma", "no-cache")
+            .putHeader("Expires", "0");
+          ctx.next();
+        });
         final var webuiStaticHandler = createWebuiStaticHandler();
         webuiRouter.route("/").handler(ctx -> ctx.reroute("/index.html"));
         webuiRouter.route("/*").handler(webuiStaticHandler);
 
-        log.info("Starting WebUI server on port {}", webuiPort);
-        webuiServer.requestHandler(webuiRouter).listen(webuiPort, "0.0.0.0", ar -> {
+        log.info("Starting WebUI server on {}:{}", bindHost, webuiPort);
+        webuiServer.requestHandler(webuiRouter).listen(webuiPort, bindHost, ar -> {
           if (ar.succeeded()) {
-            log.info("WebUI Server started on 0.0.0.0:{}", webuiServer.actualPort());
+            log.info("WebUI Server started on {}:{}", bindHost, webuiServer.actualPort());
             if (autoOpenBrowser) {
               tryOpenBrowser(webuiServer.actualPort());
             }
             startPromise.complete();
           } else {
-            log.error("Failed to start WebUI server on port {}", webuiPort, ar.cause());
+            log.error("Failed to start WebUI server on {}:{}", bindHost, webuiPort, ar.cause());
             startPromise.fail(ar.cause());
           }
         });
@@ -160,6 +173,14 @@ public class WebUIVerticle extends AbstractVerticle {
     return config.getBoolean("AUTO_OPEN_BROWSER", false);
   }
 
+  private @NotNull String resolveBindHost(final @NotNull JsonObject config) {
+    final var systemOverride = System.getProperty("HICT_BIND_HOST");
+    if (systemOverride != null && !systemOverride.isBlank()) {
+      return systemOverride.trim();
+    }
+    return config.getString("HICT_BIND_HOST", "0.0.0.0");
+  }
+
   private void tryOpenBrowser(final int port) {
     try {
       if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
@@ -178,7 +199,7 @@ public class WebUIVerticle extends AbstractVerticle {
       final var explicitRootPath = Path.of(explicitRoot).toAbsolutePath().normalize();
       if (Files.isDirectory(explicitRootPath)) {
         log.info("Serving WebUI from WEBUI_ROOT={}", explicitRootPath);
-        return StaticHandler.create(FileSystemAccess.ROOT, explicitRootPath.toString());
+        return disableStaticCaching(StaticHandler.create(FileSystemAccess.ROOT, explicitRootPath.toString()));
       }
       log.warn("WEBUI_ROOT is set but does not exist: {}", explicitRootPath);
     }
@@ -186,16 +207,20 @@ public class WebUIVerticle extends AbstractVerticle {
     final var localDist = Path.of("../HiCT_WebUI/dist").toAbsolutePath().normalize();
     if (Files.isDirectory(localDist)) {
       log.info("Serving WebUI from local checkout: {}", localDist);
-      return StaticHandler.create(FileSystemAccess.ROOT, localDist.toString());
+      return disableStaticCaching(StaticHandler.create(FileSystemAccess.ROOT, localDist.toString()));
     }
 
     final var builtCloneDist = Path.of("build/webui/HiCT_WebUI/dist").toAbsolutePath().normalize();
     if (Files.isDirectory(builtCloneDist)) {
       log.info("Serving WebUI from gradle clone output: {}", builtCloneDist);
-      return StaticHandler.create(FileSystemAccess.ROOT, builtCloneDist.toString());
+      return disableStaticCaching(StaticHandler.create(FileSystemAccess.ROOT, builtCloneDist.toString()));
     }
 
     log.info("Serving WebUI from classpath resources: webui");
-    return StaticHandler.create("webui");
+    return disableStaticCaching(StaticHandler.create("webui"));
+  }
+
+  private @NotNull StaticHandler disableStaticCaching(final @NotNull StaticHandler handler) {
+    return handler.setCachingEnabled(false).setMaxAgeSeconds(0);
   }
 }

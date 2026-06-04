@@ -26,6 +26,7 @@ package ru.itmo.ctlab.hict.hict_library.visualization;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 
 import java.util.Arrays;
 
@@ -122,6 +123,16 @@ public final class DistanceExpectedNormalizer {
       profile != null && profile.matchesResolutionWindow(startRowPx, startColPx, rowCount, columnCount)
         ? profile
         : DiagonalStats.fromSignal(signal, startRowPx, startColPx).toProfile(-1);
+    final var nativeResult = NativeProcessingService.getInstance().tryTransformExpectedSignal(
+      signal,
+      startRowPx,
+      startColPx,
+      displayMode,
+      diagonalMeans
+    );
+    if (nativeResult != null) {
+      return nativeResult;
+    }
     final var result = new double[rowCount][columnCount];
     for (int row = 0; row < rowCount; row++) {
       for (int col = 0; col < columnCount; col++) {

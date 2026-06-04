@@ -50,6 +50,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericMap'
+  /native_processing/status:
+    post:
+      tags: [Info]
+      summary: Get optional native-processing backend status
+      operationId: getNativeProcessingStatus
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Native-processing status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeProcessingStatus'
+  /native_processing/enabled:
+    post:
+      tags: [Info]
+      summary: Enable or disable optional native-processing backend use
+      operationId: setNativeProcessingEnabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetNativeProcessingEnabledRequest'
+      responses:
+        '200':
+          description: Native-processing status after applying the requested setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeProcessingStatus'
+  /statistics:
+    post:
+      tags: [Info]
+      summary: Get server runtime and request statistics
+      operationId: getRuntimeStatistics
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Runtime statistics snapshot with native-processing status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeStatistics'
   /api/v1:
     get:
       tags: [Info]
@@ -1156,6 +1200,60 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /convert/toolchain/dotplot-aligner:
+    post:
+      tags: [Conversion]
+      summary: Configure dotplot self-alignment engine preference
+      operationId: setDotplotAlignerPreference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                alignerPreference:
+                  type: string
+                  enum: [auto, minimap2, mm2plus, mm2plus-avx2, mm2plus-avx512]
+                  description: Runtime preference for dotplot self-alignment jobs.
+              required: [alignerPreference]
+      responses:
+        '200':
+          description: Updated toolchain status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /dotplot/jobs:
+    post:
+      tags: [Conversion]
+      summary: Start self-alignment dotplot generation jobs
+      operationId: startDotplotJobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartDotplotJobsRequest' }
+      responses:
+        '200':
+          description: Dotplot job submission status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /dotplot/jobs/list:
+    post:
+      tags: [Conversion]
+      summary: List self-alignment dotplot jobs
+      operationId: listDotplotJobs
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Dotplot job list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
   /convert/download/{jobId}:
     get:
       tags: [Conversion]
@@ -1206,6 +1304,79 @@ components:
         version: { type: string }
         webuiVersion: { type: string }
       required: [version, webuiVersion]
+    NativeProcessingStatus:
+      type: object
+      properties:
+        requested: { type: boolean }
+        enabled: { type: boolean }
+        available: { type: boolean }
+        version: { type: string }
+        source: { type: string }
+        reason: { type: string }
+        lastFailure: { type: string }
+        nativeSessionActive: { type: boolean }
+        nativeOperationCount: { type: integer, format: int64 }
+        nativeFailedOperationCount: { type: integer, format: int64 }
+        nativeHdf5BackendAvailable: { type: boolean }
+      required: [requested, enabled, available, version, source, reason, lastFailure]
+    EndpointStatistics:
+      type: object
+      properties:
+        path: { type: string }
+        totalRequests: { type: integer, format: int64 }
+        requestsPerSecondLast10s: { type: number, format: double }
+        requestsPerSecondLast60s: { type: number, format: double }
+      required: [path, totalRequests, requestsPerSecondLast10s, requestsPerSecondLast60s]
+    RuntimeStatistics:
+      type: object
+      properties:
+        timestampMs: { type: integer, format: int64 }
+        startedMs: { type: integer, format: int64 }
+        uptimeSeconds: { type: number, format: double }
+        totalRequests: { type: integer, format: int64 }
+        inFlightRequests: { type: integer, format: int64 }
+        meanRequestsPerSecond: { type: number, format: double }
+        requestsPerSecondLast10s: { type: number, format: double }
+        requestsPerSecondLast60s: { type: number, format: double }
+        heapUsedBytes: { type: integer, format: int64 }
+        heapCommittedBytes: { type: integer, format: int64 }
+        heapMaxBytes: { type: integer, format: int64 }
+        nonHeapUsedBytes: { type: integer, format: int64 }
+        nonHeapCommittedBytes: { type: integer, format: int64 }
+        availableProcessors: { type: integer }
+        liveThreads: { type: integer }
+        daemonThreads: { type: integer }
+        peakThreads: { type: integer }
+        endpoints:
+          type: array
+          items: { $ref: '#/components/schemas/EndpointStatistics' }
+        nativeProcessing:
+          $ref: '#/components/schemas/NativeProcessingStatus'
+      required:
+        - timestampMs
+        - startedMs
+        - uptimeSeconds
+        - totalRequests
+        - inFlightRequests
+        - meanRequestsPerSecond
+        - requestsPerSecondLast10s
+        - requestsPerSecondLast60s
+        - heapUsedBytes
+        - heapCommittedBytes
+        - heapMaxBytes
+        - nonHeapUsedBytes
+        - nonHeapCommittedBytes
+        - availableProcessors
+        - liveThreads
+        - daemonThreads
+        - peakThreads
+        - endpoints
+        - nativeProcessing
+    SetNativeProcessingEnabledRequest:
+      type: object
+      properties:
+        enabled: { type: boolean }
+      required: [enabled]
     FileEntry:
       type: object
       properties:
@@ -1660,6 +1831,9 @@ components:
           enum: [deflate, lzf, zstd, none]
           default: deflate
         chunkSize: { type: integer, default: 8192 }
+        assemblyFilename:
+          type: string
+          description: Optional .assembly or .agp layout file relative to DATA_DIR. Used for .hic conversion requests.
         parallelism: { type: integer }
       required: [filename]
     StartBatchConversionRequest:
@@ -1678,7 +1852,66 @@ components:
           enum: [deflate, lzf, zstd, none]
           default: deflate
         chunkSize: { type: integer, default: 8192 }
+        assemblyFilename:
+          type: string
+          description: Optional .assembly or .agp layout file relative to DATA_DIR. Used for selected .hic conversions.
+        assemblyFilenameByFile:
+          type: object
+          additionalProperties: { type: string }
+          description: Optional per-input assembly layout override keyed by source filename.
       required: [files]
+    StartDotplotJobsRequest:
+      type: object
+      properties:
+        fastaFiles:
+          type: array
+          items: { type: string }
+          description: FASTA files relative to DATA_DIR.
+        outputDirectory:
+          type: string
+          description: Optional output directory relative to DATA_DIR. Defaults to processed output directory.
+        binSize:
+          type: integer
+          default: 1000
+          description: Base dotplot bin size in base pairs.
+        resolutions:
+          type: string
+          description: Optional comma-separated zoom resolution list.
+        minimizerK:
+          type: integer
+          default: 17
+        minimizerWindow:
+          type: integer
+          default: 5
+        minChainScore:
+          type: integer
+          default: 40
+          description: minimap2 -m chain score cutoff.
+        sampleBp:
+          type: integer
+          default: 250
+          description: Sample each minimap2 PAF alignment path every N base pairs when rasterizing to BG2 pixels.
+        minAlignmentLength:
+          type: integer
+          default: 50
+          description: Ignore PAF alignments shorter than this many alignment bases.
+        extraMinimap2Args:
+          type: string
+          description: Optional additional minimap2 arguments split by the backend without a shell.
+        skipDiagonal:
+          type: boolean
+          default: false
+        dropNearDiagonalBins:
+          type: integer
+          default: 0
+        alignmentThreads:
+          type: integer
+        conversionThreads:
+          type: integer
+        overwrite:
+          type: boolean
+          default: false
+      required: [fastaFiles, binSize, minimizerK, minimizerWindow, minChainScore, skipDiagonal, dropNearDiagonalBins, alignmentThreads, conversionThreads]
     ConversionSubmitResponse:
       type: object
       properties:

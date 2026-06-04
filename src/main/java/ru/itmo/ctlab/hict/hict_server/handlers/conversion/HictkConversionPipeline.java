@@ -67,6 +67,12 @@ public final class HictkConversionPipeline {
     );
 
     logger.accept("HICT_TOOLCHAIN source=" + toolchain.source() + " platform=" + toolchain.platform());
+    if (!ConversionOptions.NO_AGP.equals(options.agpPath())) {
+      logger.accept(
+        "HICT_ASSEMBLY layout=" + options.agpPath() +
+          " accepted for this .hic conversion request; direct Juicebox .assembly layout projection is pending dedicated native/hictk support"
+      );
+    }
 
     final var tmpDirectory = Files.createTempDirectory("hict-hic-pipeline-");
     try {
@@ -74,6 +80,7 @@ public final class HictkConversionPipeline {
       emitStage(logger, stagePlan, metadataStage.id(), 0.0d, "Reading .hic metadata");
       final var metadata = readMetadata(options.inputPath(), toolchain, processSink, cancellationRequested);
       final var targetResolutions = resolveTargetResolutions(options.resolutions(), metadata.resolutions());
+      final var automaticZoomifyPyramid = shouldUseAutomaticZoomifyPyramid(options.resolutions(), targetResolutions);
       final var baseResolution = targetResolutions.stream().mapToLong(Long::longValue).min()
         .orElseThrow(() -> new IllegalStateException("No target resolutions were resolved for " + options.inputPath().getFileName()));
       emitStage(
@@ -81,7 +88,9 @@ public final class HictkConversionPipeline {
         stagePlan,
         metadataStage.id(),
         1.0d,
-        "Resolved " + targetResolutions.size() + " output resolution(s); finest=" + baseResolution
+        automaticZoomifyPyramid
+          ? "Resolved sparse .hic resolution metadata; finest=" + baseResolution + ", hictk nice-step pyramid will be generated"
+          : "Resolved " + targetResolutions.size() + " output resolution(s); finest=" + baseResolution
       );
 
       final var baseCoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".base.cool");
@@ -102,7 +111,7 @@ public final class HictkConversionPipeline {
           "--resolutions",
           Long.toString(baseResolution),
           "--threads",
-          Integer.toString(Math.max(2, normalizeParallelism(options.parallelism()))),
+          Integer.toString(normalizeParallelism(options.parallelism())),
           "--compression-lvl",
           Integer.toString(options.compressionLevel()),
           "--force"
@@ -130,11 +139,16 @@ public final class HictkConversionPipeline {
       zoomifyCommand.add(mcoolOutputPath.toString());
       zoomifyCommand.add("--force");
       zoomifyCommand.add("--threads");
-      zoomifyCommand.add(Integer.toString(Math.max(1, normalizeParallelism(options.parallelism()))));
+      zoomifyCommand.add(Integer.toString(normalizeParallelism(options.parallelism())));
       zoomifyCommand.add("--compression-lvl");
       zoomifyCommand.add(Integer.toString(options.compressionLevel()));
-      zoomifyCommand.add("--resolutions");
-      targetResolutions.stream().map(String::valueOf).forEach(zoomifyCommand::add);
+      if (automaticZoomifyPyramid) {
+        zoomifyCommand.add("--nice-steps");
+        zoomifyCommand.add("--copy-base-resolution");
+      } else {
+        zoomifyCommand.add("--resolutions");
+        targetResolutions.stream().map(String::valueOf).forEach(zoomifyCommand::add);
+      }
 
       runStreamingCommand(
         zoomifyCommand,
@@ -153,14 +167,23 @@ public final class HictkConversionPipeline {
         processSink,
         cancellationRequested
       );
-      emitStage(logger, stagePlan, zoomifyStage.id(), 1.0d, "Generated .mcool pyramid at " + mcoolOutputPath.getFileName());
+      final var generatedResolutions = automaticZoomifyPyramid
+        ? readMetadata(mcoolOutputPath, toolchain, processSink, cancellationRequested).resolutions()
+        : targetResolutions;
+      emitStage(
+        logger,
+        stagePlan,
+        zoomifyStage.id(),
+        1.0d,
+        "Generated .mcool pyramid at " + mcoolOutputPath.getFileName() + " with " + generatedResolutions.size() + " resolution(s)"
+      );
 
       final var balanceStage = stagePlan.get(3);
-      emitStage(logger, stagePlan, balanceStage.id(), 0.0d, "Balancing " + targetResolutions.size() + " resolution(s)");
-      for (int i = 0; i < targetResolutions.size(); i++) {
+      emitStage(logger, stagePlan, balanceStage.id(), 0.0d, "Balancing " + generatedResolutions.size() + " resolution(s)");
+      for (int i = 0; i < generatedResolutions.size(); i++) {
         checkCancelled(cancellationRequested);
-        final var resolution = targetResolutions.get(i);
-        final var localProgress = i / (double) targetResolutions.size();
+        final var resolution = generatedResolutions.get(i);
+        final var localProgress = i / (double) generatedResolutions.size();
         emitStage(logger, stagePlan, balanceStage.id(), localProgress, "Balancing resolution " + resolution);
         runStreamingCommand(
           List.of(
@@ -168,7 +191,7 @@ public final class HictkConversionPipeline {
             "balance",
             "ice",
             "--threads",
-            Integer.toString(Math.max(1, normalizeParallelism(options.parallelism()))),
+            Integer.toString(normalizeParallelism(options.parallelism())),
             "--tmpdir",
             tmpDirectory.toString(),
             "--ignore-diags",
@@ -185,7 +208,7 @@ public final class HictkConversionPipeline {
           logger,
           stagePlan,
           balanceStage.id(),
-          (i + 1) / (double) targetResolutions.size(),
+          (i + 1) / (double) generatedResolutions.size(),
           "Balanced resolution " + resolution
         );
       }
@@ -201,7 +224,7 @@ public final class HictkConversionPipeline {
         new ConversionOptions(
           mcoolOutputPath,
           options.outputPath(),
-          targetResolutions,
+          generatedResolutions,
           options.chunkSize(),
           options.compressionLevel(),
           options.compressionAlgorithm(),
@@ -246,8 +269,8 @@ public final class HictkConversionPipeline {
     return new HicMetadata(resolutions, json.getString("assembly", ""));
   }
 
-  private @NotNull List<Long> resolveTargetResolutions(final @NotNull List<Long> requested,
-                                                       final @NotNull List<Long> available) {
+  static @NotNull List<Long> resolveTargetResolutions(final @NotNull List<Long> requested,
+                                                      final @NotNull List<Long> available) {
     if (requested == null || requested.isEmpty()) {
       return List.copyOf(available);
     }
@@ -261,6 +284,19 @@ public final class HictkConversionPipeline {
       throw new IllegalArgumentException("None of the requested resolutions are available in the input .hic file");
     }
     return requestedUnique;
+  }
+
+  static boolean shouldUseAutomaticZoomifyPyramid(final @NotNull List<Long> requested,
+                                                 final @NotNull List<Long> targetResolutions) {
+    if (requested != null && !requested.isEmpty()) {
+      return false;
+    }
+    if (targetResolutions.size() < 2) {
+      return true;
+    }
+    final var minResolution = targetResolutions.stream().mapToLong(Long::longValue).min().orElse(0L);
+    final var maxResolution = targetResolutions.stream().mapToLong(Long::longValue).max().orElse(0L);
+    return minResolution > 0L && maxResolution < minResolution * 10L;
   }
 
   private @NotNull Consumer<String> createWrappedImportLogger(final @NotNull Consumer<String> logger,
@@ -298,6 +334,7 @@ public final class HictkConversionPipeline {
       .redirectErrorStream(true)
       .start();
     processSink.accept(process);
+    final var output = new StringBuilder();
     try (final var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
@@ -305,6 +342,7 @@ public final class HictkConversionPipeline {
           process.destroyForcibly();
           throw new InterruptedException("External conversion was cancelled");
         }
+        output.append(line).append(System.lineSeparator());
         lineObserver.accept(line);
       }
     } finally {
@@ -312,7 +350,7 @@ public final class HictkConversionPipeline {
     }
     final var exitCode = process.waitFor();
     if (exitCode != 0) {
-      throw new IllegalStateException("External command failed with exit code " + exitCode + ": " + String.join(" ", command));
+      throw externalCommandFailure(command, exitCode, output.toString());
     }
   }
 
@@ -341,9 +379,28 @@ public final class HictkConversionPipeline {
     }
     final var exitCode = process.waitFor();
     if (exitCode != 0) {
-      throw new IllegalStateException("External command failed with exit code " + exitCode + ": " + String.join(" ", command));
+      throw externalCommandFailure(command, exitCode, output.toString());
     }
     return output.toString().trim();
+  }
+
+  private static @NotNull IllegalStateException externalCommandFailure(final @NotNull List<String> command,
+                                                                       final int exitCode,
+                                                                       final @NotNull String output) {
+    final var message = new StringBuilder()
+      .append("External command failed with exit code ")
+      .append(exitCode)
+      .append(": ")
+      .append(String.join(" ", command));
+    final var trimmedOutput = output.trim();
+    if (!trimmedOutput.isBlank()) {
+      message
+        .append(System.lineSeparator())
+        .append("External command output:")
+        .append(System.lineSeparator())
+        .append(trimmedOutput);
+    }
+    return new IllegalStateException(message.toString());
   }
 
   private static void emitStage(final @NotNull Consumer<String> logger,
@@ -383,7 +440,11 @@ public final class HictkConversionPipeline {
   }
 
   private static int normalizeParallelism(final int parallelism) {
-    return parallelism <= 0 ? Runtime.getRuntime().availableProcessors() : parallelism;
+    final var availableProcessors = Math.max(1, Runtime.getRuntime().availableProcessors());
+    if (parallelism <= 0) {
+      return availableProcessors;
+    }
+    return Math.max(1, Math.min(parallelism, availableProcessors));
   }
 
   private static @NotNull String stripSuffix(final @NotNull String filename) {

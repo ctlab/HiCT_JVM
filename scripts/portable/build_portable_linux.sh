@@ -9,7 +9,8 @@ APP_NAME="HiCT"
 VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
 APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
-RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.unsupported,jdk.zipfs}"
+RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
+RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
 
 usage() {
   cat <<'EOF'
@@ -24,8 +25,9 @@ Environment overrides:
   HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
   HICT_RUNTIME_MODULES=<modules>     Override jlink modules.
   HICT_PORTABLE_DIST_DIR=<dir>       Override staging directory.
+  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload, default 2.
 
-The .run file is a transparent shell script with a tar.gz payload appended. It
+The .run file is a transparent shell script with a tar.xz payload appended. It
 extracts to the user's cache and sets DATA_DIR to the directory containing the
 .run file unless DATA_DIR was explicitly provided.
 EOF
@@ -45,8 +47,11 @@ require_cmd() {
 
 require_cmd bash
 require_cmd tar
+require_cmd gzip
+require_cmd xz
 require_cmd sha256sum
 require_cmd awk
+require_cmd grep
 require_cmd tail
 
 JLINK="${JAVA_HOME:-}/bin/jlink"
@@ -57,14 +62,31 @@ if [[ -z "${JLINK}" || ! -x "${JLINK}" ]]; then
   echo "Missing jlink. Use a full JDK, not a JRE." >&2
   exit 1
 fi
+JAR_TOOL="${JAVA_HOME:-}/bin/jar"
+if [[ ! -x "${JAR_TOOL}" ]]; then
+  JAR_TOOL="$(command -v jar || true)"
+fi
+if [[ -z "${JAR_TOOL}" || ! -x "${JAR_TOOL}" ]]; then
+  echo "Missing jar. Use a full JDK, not a JRE." >&2
+  exit 1
+fi
 
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
-  (cd "${PROJECT_DIR}" && ./gradlew shadowJar)
+  (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true shadowJar)
 fi
 
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
 if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
   echo "Fat JAR was not found under ${PROJECT_DIR}/build/libs" >&2
+  exit 1
+fi
+if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
+  echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
+  exit 1
+fi
+if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]] &&
+   ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'toolchains/linux_x86_64/manifest.json'; then
+  echo "toolchains-dist/linux_x86_64 exists, but the fat JAR does not contain the bundled Linux hictk manifest." >&2
   exit 1
 fi
 
@@ -81,6 +103,70 @@ if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"
 fi
 
+(
+  cd "${APP_DIR}"
+  "${JAR_TOOL}" xf "${APP_DIR}/lib/hict.jar" webui toolchains
+)
+if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
+  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" 2>/dev/null || true
+  if grep -q '"hictk"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+    if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" ]]; then
+      echo "Portable package is missing executable bundled hictk at toolchains/linux_x86_64/bin/hictk." >&2
+      exit 1
+    fi
+    "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" --version >/dev/null
+  fi
+  if grep -q '"minimap2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+    if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" ]]; then
+      echo "Portable package is missing executable bundled minimap2 at toolchains/linux_x86_64/bin/minimap2." >&2
+      exit 1
+    fi
+    "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" --version >/dev/null
+  fi
+  if grep -q '"mm2plus_avx2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+    if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" ]]; then
+      echo "Portable package is missing executable bundled mm2-plus AVX2 at toolchains/linux_x86_64/bin/mm2plus-avx2." >&2
+      exit 1
+    fi
+    "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null
+  fi
+  if grep -q '"mm2plus_avx512"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+    if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" ]]; then
+      echo "Portable package is missing executable bundled mm2-plus AVX-512 at toolchains/linux_x86_64/bin/mm2plus-avx512." >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [[ -d "${PROJECT_DIR}/browsers-dist/linux_x86_64" ]] &&
+   find "${PROJECT_DIR}/browsers-dist/linux_x86_64" -name manifest.json -type f | grep -q .; then
+  mkdir -p "${APP_DIR}/browsers"
+  cp -a "${PROJECT_DIR}/browsers-dist/linux_x86_64" "${APP_DIR}/browsers/"
+  while IFS= read -r BROWSER_MANIFEST; do
+    BROWSER_ROOT="$(dirname "${BROWSER_MANIFEST}")"
+    BROWSER_COMMAND="$(grep -E '"command"[[:space:]]*:' "${BROWSER_MANIFEST}" | head -n 1 | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+    BROWSER_COMMAND_TARGET="${BROWSER_ROOT}/${BROWSER_COMMAND}"
+    if [[ -n "${BROWSER_COMMAND}" && "${BROWSER_COMMAND}" != /* && ! -f "${BROWSER_COMMAND_TARGET}" ]]; then
+      BROWSER_COMMAND_BASENAME="${BROWSER_COMMAND##*/}"
+      if [[ -n "${BROWSER_COMMAND_BASENAME}" && -f "${BROWSER_ROOT}/${BROWSER_COMMAND_BASENAME}" ]]; then
+        BROWSER_COMMAND="${BROWSER_COMMAND_BASENAME}"
+        BROWSER_COMMAND_TARGET="${BROWSER_ROOT}/${BROWSER_COMMAND}"
+        sed -i -E 's#("command"[[:space:]]*:[[:space:]]*")[^"]+(")#\1'"${BROWSER_COMMAND}"'\2#' "${BROWSER_MANIFEST}"
+      fi
+    fi
+    if [[ -z "${BROWSER_COMMAND}" || "${BROWSER_COMMAND}" = /* || ! -f "${BROWSER_COMMAND_TARGET}" ]]; then
+      echo "${BROWSER_MANIFEST} must contain a valid relative command path; command='${BROWSER_COMMAND}' resolved='${BROWSER_COMMAND_TARGET}'." >&2
+      echo "Available files near manifest:" >&2
+      find "${BROWSER_ROOT}" -maxdepth 2 -type f -printf '  %P\n' 2>/dev/null | sort | head -n 80 >&2 || true
+      exit 1
+    fi
+    chmod 0755 "${BROWSER_COMMAND_TARGET}" 2>/dev/null || true
+  done < <(find "${APP_DIR}/browsers/linux_x86_64" -name manifest.json -type f | sort)
+fi
+
 cat > "${APP_DIR}/licenses/PORTABLE_DISTRIBUTION_NOTICE.txt" <<'EOF'
 HiCT portable distribution notice
 =================================
@@ -95,12 +181,18 @@ This package is assembled from:
     packages. For Eclipse Temurin/OpenJDK runtimes this includes GPLv2 with
     Classpath Exception notices and third-party runtime notices.
   - Optional bundled hictk resources inside hict.jar when toolchains-dist was
-    prepared before packaging. hictk is redistributed under its MIT license and
-    should be cited when .hic conversion is used.
+    prepared before packaging. Portable packages also extract the platform
+    hictk payload under toolchains/ and set HICT_TOOLCHAIN_DIR at launch time.
+    hictk is redistributed under its MIT license and should be cited when .hic
+    conversion is used.
+  - Optional bundled browser resources under browsers/ when browsers-dist was
+    prepared before packaging. HiCT does not download browser binaries during
+    packaging; browser payloads must be curated with their upstream license,
+    trademark, and update requirements before redistribution.
 
-The Linux .run artifact is a transparent shell wrapper with an appended tar.gz
-payload. It is used to keep the release inspectable and avoid opaque native
-self-extracting packers.
+The Linux .run artifact is a transparent shell wrapper with an appended tar.xz
+payload. It is used to keep the release inspectable, reduce bundled-browser
+release size, and avoid opaque native self-extracting packers.
 EOF
 
 "${JLINK}" \
@@ -131,8 +223,54 @@ if [[ -z "${DATA_DIR:-}" ]]; then
     export DATA_DIR="${APP_HOME}"
   fi
 fi
+export HICT_APP_HOME="${APP_HOME}"
+export HICT_JAR_PATH="${APP_HOME}/lib/hict.jar"
+if [[ -z "${WEBUI_ROOT:-}" && -d "${APP_HOME}/webui" ]]; then
+  export WEBUI_ROOT="${APP_HOME}/webui"
+fi
+if [[ -z "${HICT_TOOLCHAIN_DIR:-}" && -f "${APP_HOME}/toolchains/linux_x86_64/manifest.json" ]]; then
+  export HICT_TOOLCHAIN_DIR="${APP_HOME}/toolchains/linux_x86_64"
+fi
+if [[ -z "${HICT_BROWSER_DIR:-}" && -d "${APP_HOME}/browsers/linux_x86_64" ]]; then
+  export HICT_BROWSER_DIR="${APP_HOME}/browsers/linux_x86_64"
+fi
+
+warn_missing_tauri_webview_dependencies() {
+  local browser_root="${HICT_BROWSER_DIR:-${APP_HOME}/browsers/linux_x86_64}"
+  if [[ ! -d "${browser_root}" ]] || ! grep -R -q '"engine"[[:space:]]*:[[:space:]]*"tauri-system-webview"' "${browser_root}" 2>/dev/null; then
+    return 0
+  fi
+  if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -Eq 'libwebkit2gtk-4\.1\.so|libwebkitgtk-6\.0\.so'; then
+    return 0
+  fi
+  if find /usr/lib /usr/lib64 /lib /lib64 \( -name 'libwebkit2gtk-4.1.so*' -o -name 'libwebkitgtk-6.0.so*' \) 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  cat >&2 <<'EOW'
+WARNING: HiCT includes the small Tauri WebView browser, but Linux WebKitGTK
+runtime libraries were not detected. The launcher will try Tauri first and then
+fall back to Electron or the system browser if available.
+
+Install WebKitGTK for your distribution if the bundled Tauri browser does not
+open:
+
+  Debian/Ubuntu: sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0
+  Fedora/RHEL:   sudo dnf install webkit2gtk4.1 gtk3
+  Arch Linux:    sudo pacman -S webkit2gtk-4.1 gtk3
+  openSUSE:      sudo zypper install libwebkit2gtk-4_1-0 gtk3
+
+EOW
+}
+warn_missing_tauri_webview_dependencies
+
+export HICT_BIND_HOST="${HICT_BIND_HOST:-127.0.0.1}"
+if [[ "$#" -eq 0 ]]; then
+  export HICT_LAUNCHER_MODE="${HICT_LAUNCHER_MODE:-gui}"
+fi
 
 mkdir -p "${DATA_DIR}"
+cd "${DATA_DIR}"
+export DATA_DIR="$(pwd -P)"
 
 JAVA_OPTS=()
 if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
@@ -150,20 +288,36 @@ HiCT portable Linux package
 
 Run:
   ./bin/hict
+  ./bin/hict launcher
   ./bin/hict --help
   ./bin/hict start-server
   ./bin/hict convert --help
 
 The package includes:
   - HiCT_JVM fat JAR, including the built HiCT_WebUI resources
+  - extracted HiCT_WebUI assets used as WEBUI_ROOT for robust portable serving
+  - extracted bundled hictk payload under toolchains/ when release packaging
+    was built with .hic conversion support
+  - optional bundled browser payload under browsers/ when browsers-dist was
+    prepared before packaging
   - a jlink runtime built from the JDK used by the release runner
   - HiCT license files
   - the runtime/legal directory generated by jlink
+
+With no arguments, ./bin/hict opens the graphical launcher. Explicit CLI
+subcommands keep the traditional command-line behavior.
 
 DATA_DIR defaults:
   - extracted app directory when running ./bin/hict directly
   - directory containing the .run file when running the .run wrapper
   - explicit DATA_DIR always wins
+
+The launcher enters DATA_DIR before Java starts, so file dialogs and relative
+paths begin from the portable data location.
+
+HICT_BIND_HOST defaults to 127.0.0.1 in this portable launcher. Set
+HICT_BIND_HOST=0.0.0.0 explicitly if remote machines must connect to this HiCT
+server.
 
 Java runtime notices:
   The embedded runtime keeps its jlink-generated legal/ directory intact. For
@@ -174,11 +328,16 @@ EOF
 TAR_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.tar.gz"
 RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.run"
 SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.sha256"
-PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.gz"
+PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.xz"
 
-tar -C "${DIST_ROOT}" -czf "${TAR_PATH}" "${APP_NAME}-${VERSION}-${PLATFORM}"
-cp "${TAR_PATH}" "${PAYLOAD_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(sha256sum "${PAYLOAD_PATH}" | awk '{print $1}')"
+BUNDLED_TAURI_BROWSER="0"
+if [[ -d "${APP_DIR}/browsers/linux_x86_64" ]] &&
+   grep -R -q '"engine"[[:space:]]*:[[:space:]]*"tauri-system-webview"' "${APP_DIR}/browsers/linux_x86_64" 2>/dev/null; then
+  BUNDLED_TAURI_BROWSER="1"
+fi
 
 cat > "${RUN_PATH}" <<EOF
 #!/usr/bin/env bash
@@ -188,6 +347,7 @@ APP_NAME="${APP_NAME}"
 APP_VERSION="${VERSION}"
 APP_PLATFORM="${PLATFORM}"
 PAYLOAD_SHA256="${PAYLOAD_SHA}"
+BUNDLED_TAURI_BROWSER="${BUNDLED_TAURI_BROWSER}"
 
 SELF_PATH="\$(readlink -f "\$0" 2>/dev/null || realpath "\$0" 2>/dev/null || printf '%s\n' "\$0")"
 SELF_DIR="\$(cd "\$(dirname "\${SELF_PATH}")" && pwd)"
@@ -206,10 +366,67 @@ explicitly to use a different data directory.
 EOU
 }
 
+require_runtime_cmd() {
+  if command -v "\$1" >/dev/null 2>&1; then
+    return 0
+  fi
+  cat >&2 <<EOM
+HiCT portable launcher cannot start because required command '\$1' is not available.
+
+Install the standard archive/shell utilities for your Linux distribution, then
+run this file again. Common commands:
+
+  Debian/Ubuntu: sudo apt-get install coreutils gawk tar xz-utils
+  Fedora/RHEL:   sudo dnf install coreutils gawk tar xz
+  Arch Linux:    sudo pacman -S coreutils gawk tar xz
+  openSUSE:      sudo zypper install coreutils gawk tar xz
+
+If this machine is locked down, use the .tar.gz portable artifact instead and
+extract it on a machine that has these standard tools.
+EOM
+  exit 127
+}
+
 if [[ "\${1:-}" == "--hict-run-help" ]]; then
   usage
   exit 0
 fi
+
+require_runtime_cmd awk
+require_runtime_cmd tail
+require_runtime_cmd tar
+require_runtime_cmd xz
+require_runtime_cmd mkdir
+require_runtime_cmd touch
+require_runtime_cmd cat
+
+warn_missing_tauri_webview_dependencies() {
+  if [[ "\${BUNDLED_TAURI_BROWSER}" != "1" ]]; then
+    return 0
+  fi
+  if command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -Eq 'libwebkit2gtk-4\.1\.so|libwebkitgtk-6\.0\.so'; then
+    return 0
+  fi
+  if find /usr/lib /usr/lib64 /lib /lib64 \( -name 'libwebkit2gtk-4.1.so*' -o -name 'libwebkitgtk-6.0.so*' \) 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  cat >&2 <<'EOW'
+WARNING: This HiCT package includes the small Tauri WebView browser, but Linux
+WebKitGTK runtime libraries were not detected before launch. HiCT can still run:
+the launcher will try Tauri first and then fall back to Electron or the system
+browser if available.
+
+Install WebKitGTK for your distribution if the bundled Tauri browser does not
+open:
+
+  Debian/Ubuntu: sudo apt-get install libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 libgtk-3-0
+  Fedora/RHEL:   sudo dnf install webkit2gtk4.1 gtk3
+  Arch Linux:    sudo pacman -S webkit2gtk-4.1 gtk3
+  openSUSE:      sudo zypper install libwebkit2gtk-4_1-0 gtk3
+
+EOW
+}
+warn_missing_tauri_webview_dependencies
 
 payload_line="\$(awk "/^\${MARKER}\$/ { print NR + 1; exit 0; }" "\${SELF_PATH}")"
 if [[ -z "\${payload_line}" ]]; then
@@ -223,7 +440,7 @@ if [[ "\${1:-}" == "--hict-extract-only" ]]; then
     exit 1
   fi
   mkdir -p "\$2"
-  tail -n +"\${payload_line}" "\${SELF_PATH}" | tar -xzf - -C "\$2"
+  tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\$2"
   echo "Extracted HiCT to \$2/${APP_NAME}-${VERSION}-${PLATFORM}"
   exit 0
 fi
@@ -245,7 +462,7 @@ marker_file="\${extract_root}/.payload.sha256"
 if [[ ! -x "\${app_home}/bin/hict" || ! -f "\${marker_file}" || "\$(cat "\${marker_file}" 2>/dev/null || true)" != "\${PAYLOAD_SHA256}" ]]; then
   rm -rf "\${extract_root}"
   mkdir -p "\${extract_root}"
-  tail -n +"\${payload_line}" "\${SELF_PATH}" | tar -xzf - -C "\${extract_root}"
+  tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\${extract_root}"
   printf '%s\n' "\${PAYLOAD_SHA256}" > "\${marker_file}"
 fi
 

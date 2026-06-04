@@ -30,6 +30,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
+import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
 import java.awt.image.*;
@@ -114,6 +116,19 @@ public class TileVisualizationProcessor {
     final var resolutionLinearScalingCoeff = resolutionLinearScalingCoeffs[rawTile.resolutionDescriptor().getResolutionOrderInArray()];
     final var pre = visualizationOptions.getLnPreLogBase();
 
+    final var nativeBaseSignal = NativeProcessingService.getInstance().tryPrepareBaseSignalMatrix(
+      rawTile,
+      pre,
+      resolutionScalingCoeff,
+      resolutionLinearScalingCoeff,
+      visualizationOptions.isResolutionScaling(),
+      visualizationOptions.isResolutionLinearScaling(),
+      visualizationOptions.isApplyCoolerWeights()
+    );
+    if (nativeBaseSignal != null) {
+      return nativeBaseSignal;
+    }
+
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
       final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
       final var resultRow = baseSignal[rowIndex];
@@ -189,13 +204,15 @@ public class TileVisualizationProcessor {
       );
     }
     if (post > 0) {
-      for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-        final var row = transformedSignal[rowIndex];
-        for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
-          final var value = row[colIndex];
-          row[colIndex] = Double.isFinite(value) && value > 0.0d
-            ? (Math.log1p(value) / post)
-            : 0.0d;
+      if (!NativeProcessingService.getInstance().tryApplyPostLogInPlace(transformedSignal, post)) {
+        for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+          final var row = transformedSignal[rowIndex];
+          for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
+            final var value = row[colIndex];
+            row[colIndex] = Double.isFinite(value) && value > 0.0d
+              ? (Math.log1p(value) / post)
+              : 0.0d;
+          }
         }
       }
     }
@@ -253,6 +270,15 @@ public class TileVisualizationProcessor {
     final var columnCount = input.cols();
     final var normalized = processTile(rawTile, options, expectedProfile);
     final var colormap = options.getColormap();
+    if (colormap instanceof SimpleLinearGradient gradient) {
+      final var nativeRgbaValues = NativeProcessingService.getInstance().tryMapLinearGradientRgba(
+        normalized.values(),
+        gradient
+      );
+      if (nativeRgbaValues != null) {
+        return createRgbaImage(nativeRgbaValues, columnCount, rowCount);
+      }
+    }
     final var boxedARGBValues = Arrays.stream(normalized.values())
       .flatMap(arrayRow ->
         Arrays.stream(arrayRow)
@@ -272,13 +298,17 @@ public class TileVisualizationProcessor {
       rgbValues[i] = boxedARGBValues[i];
     }
 
+    return createRgbaImage(rgbValues, columnCount, rowCount);
+  }
+
+  private static @NotNull BufferedImage createRgbaImage(final byte @NotNull [] rgbValues,
+                                                        final int columnCount,
+                                                        final int rowCount) {
     final DataBuffer buffer = new DataBufferByte(rgbValues, rgbValues.length);
 
     final WritableRaster raster = Raster.createInterleavedRaster(buffer, columnCount, rowCount, 4 * columnCount, 4, new int[]{0, 1, 2, 3}, null);
     final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), true, false, Transparency.TRANSLUCENT, DataBuffer.TYPE_BYTE);
     //final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, true, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-    final BufferedImage image = new BufferedImage(cm, raster, true, null);
-
-    return image;
+    return new BufferedImage(cm, raster, true, null);
   }
 }

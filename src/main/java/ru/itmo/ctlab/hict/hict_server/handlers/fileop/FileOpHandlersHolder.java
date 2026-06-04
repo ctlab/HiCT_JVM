@@ -35,8 +35,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
+import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
@@ -48,10 +53,15 @@ import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Objects;
 
 @RequiredArgsConstructor
@@ -272,16 +282,18 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
           map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
-          TileHandlersHolder.clearExpectedProfileCache(map);
           map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+          synchronizeOverlayAssembly(map, String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)));
+          final var synchronizedCompatibility = refreshSecondaryCompatibility(map);
+          TileHandlersHolder.clearExpectedProfileCache(map);
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
           }
           return secondaryStatusJson(map)
             .put("requiresConfirmation", false)
-            .put("compatibility", compatibility.toJson())
-            .put("warnings", compatibility.warningsAsJsonArray());
+            .put("compatibility", synchronizedCompatibility != null ? synchronizedCompatibility.toJson() : compatibility.toJson())
+            .put("warnings", synchronizedCompatibility != null ? synchronizedCompatibility.warningsAsJsonArray() : compatibility.warningsAsJsonArray());
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -353,9 +365,17 @@ public class FileOpHandlersHolder extends HandlersHolder {
             sourceChunkedFile = primaryWrapper.getChunkedFile();
           }
           map.put(ASSEMBLY_SOURCE_KEY, normalizedSource);
+          synchronizeOverlayAssembly(map, normalizedSource);
+          final var synchronizedCompatibility = refreshSecondaryCompatibility(map);
+          TileHandlersHolder.clearExpectedProfileCache(map);
+          final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+          if (schedulerWrapper != null) {
+            schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
+          }
           return new io.vertx.core.json.JsonObject()
             .put("assemblySource", normalizedSource)
-            .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(sourceChunkedFile)));
+            .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(sourceChunkedFile)))
+            .put("compatibility", synchronizedCompatibility != null ? synchronizedCompatibility.toJson() : null);
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -500,6 +520,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw new IllegalArgumentException("FASTA file " + fastaFilename + " does not exist");
           }
 
+          log.info("Linking {} FASTA file {}", normalizedSource, fastaPath);
           final var report = targetChunkedFile.getFastaProcessor().analyzeLinkCandidate(fastaPath);
           final boolean requiresConfirmation = report.hasWarnings() && !allowMismatch;
           if (!requiresConfirmation) {
@@ -518,6 +539,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
                 );
               }
             }
+            log.info("Linked {} FASTA file {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
+          } else {
+            log.info("FASTA link for {} needs confirmation: {} warnings={}", normalizedSource, fastaPath, report.warnings().size());
           }
           return FastaLinkResponseDTO.fromReport(report, !requiresConfirmation, requiresConfirmation);
         },
@@ -548,6 +572,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (fastaPathWrapper == null) {
             throw new IllegalStateException("Link a FASTA file before exporting FASTA");
           }
+          log.info("Exporting assembly FASTA for {} from {}", source, fastaPathWrapper.getPath());
           return chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath());
         },
         fasta -> ctx.response()
@@ -595,6 +620,15 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (horizontalFastaPathWrapper == null) {
             throw new IllegalStateException("Link a FASTA file before exporting FASTA");
           }
+          log.info(
+            "Exporting selection FASTA: horizontal={} vertical={} x={}..{} y={}..{}",
+            horizontalSource,
+            verticalSource,
+            fromBpX,
+            toBpX,
+            fromBpY,
+            toBpY
+          );
           if (!explicitAxisSources) {
             return horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportSelection(
               horizontalFastaPathWrapper.getPath(),
@@ -721,6 +755,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
           } catch (IOException | NoSuchFieldException e) {
             throw new RuntimeException(e);
           }
+          final var activeAssemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
+          if (requestedSource.equalsIgnoreCase(activeAssemblySource)) {
+            synchronizeOverlayAssembly(map, requestedSource);
+            refreshSecondaryCompatibility(map);
+          }
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
@@ -765,6 +804,235 @@ public class FileOpHandlersHolder extends HandlersHolder {
     return wrapper;
   }
 
+  public static @NotNull ChunkedFile resolveActiveAssemblyChunkedFile(final @NotNull LocalMap<String, Object> map) {
+    final var activeAssemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
+    return resolveChunkedFileWrapperBySource(map, activeAssemblySource).getChunkedFile();
+  }
+
+  public static void synchronizeOverlayAssemblyForSharedState(final @NotNull LocalMap<String, Object> map) {
+    final var activeAssemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
+    synchronizeOverlayAssembly(map, activeAssemblySource);
+    refreshSecondaryCompatibility(map);
+  }
+
+  private static void synchronizeOverlayAssembly(final @NotNull LocalMap<String, Object> map,
+                                                 final @NotNull String assemblySource) {
+    final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+    final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+    if (primaryWrapper == null || secondaryWrapper == null) {
+      return;
+    }
+
+    final var primary = primaryWrapper.getChunkedFile();
+    final var secondary = secondaryWrapper.getChunkedFile();
+    final var source = ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? secondary : primary;
+    final var target = ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? primary : secondary;
+
+    try {
+      final var targetAgp = buildTargetAgpForOverlay(source, target);
+      if (targetAgp.isBlank()) {
+        log.warn("Skipping overlay assembly synchronization because no visible active-source contigs can be resolved in the other source");
+        return;
+      }
+      try (final var reader = new StringReader(targetAgp)) {
+        target.importAGP(reader);
+      }
+      synchronizeTargetVisibilityFromSource(source, target);
+      log.info("Synchronized {} assembly layout into {} source for overlay rendering",
+        ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? ASSEMBLY_SOURCE_SECONDARY : ASSEMBLY_SOURCE_PRIMARY,
+        ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? ASSEMBLY_SOURCE_PRIMARY : ASSEMBLY_SOURCE_SECONDARY
+      );
+    } catch (final Exception ex) {
+      log.warn("Failed to synchronize {} assembly layout for overlay rendering; sources will keep their own layout",
+        assemblySource,
+        ex
+      );
+    }
+  }
+
+  private static @NotNull String buildTargetAgpForOverlay(final @NotNull ChunkedFile source,
+                                                          final @NotNull ChunkedFile target) {
+    final var recordsByScaffold = new LinkedHashMap<String, List<AGPProcessor.ContigAGPRecord>>();
+    int skippedVisibleRecords = 0;
+
+    for (final var record : source.getAgpProcessor().getAGPRecords(1000L)) {
+      if (!(record instanceof AGPProcessor.ContigAGPRecord sourceRecord)) {
+        continue;
+      }
+      final var sourceDescriptor = resolveContigDescriptor(source, sourceRecord.getContigName());
+      if (sourceDescriptor == null) {
+        ++skippedVisibleRecords;
+        log.warn("Skipping overlay AGP record for unresolved active-source contig {}", sourceRecord.getContigName());
+        continue;
+      }
+      final var targetDescriptor = resolveEquivalentContigDescriptor(source, target, sourceDescriptor);
+      if (targetDescriptor == null) {
+        if (isContigShownAtAnyMatrixResolution(sourceDescriptor)) {
+          ++skippedVisibleRecords;
+          log.warn("Skipping visible active-source contig {} while synchronizing overlay assembly; it is absent in the other source",
+            source.getContigDisplayName(sourceDescriptor.getContigId()));
+        }
+        continue;
+      }
+
+      final var componentLength = sourceRecord.getIntraContigEndBpIncl() - sourceRecord.getIntraContigStartBpIncl() + 1L;
+      if (componentLength != targetDescriptor.getLengthBp()) {
+        ++skippedVisibleRecords;
+        log.warn(
+          "Skipping active-source contig {} while synchronizing overlay assembly; source component length {} bp differs from target contig length {} bp",
+          source.getContigDisplayName(sourceDescriptor.getContigId()),
+          componentLength,
+          targetDescriptor.getLengthBp()
+        );
+        continue;
+      }
+
+      recordsByScaffold.computeIfAbsent(sourceRecord.getScaffoldName(), ignored -> new ArrayList<>()).add(
+        new AGPProcessor.ContigAGPRecord(
+          sourceRecord.getScaffoldName(),
+          0L,
+          0L,
+          0,
+          target.getContigDisplayName(targetDescriptor.getContigId()),
+          1L,
+          targetDescriptor.getLengthBp(),
+          sourceRecord.getContigOrientation()
+        )
+      );
+    }
+
+    final var synchronizedAgp = new StringBuilder();
+    recordsByScaffold.forEach((scaffoldName, contigRecords) -> {
+      long positionBp = 1L;
+      int partNumber = 1;
+      for (final var record : contigRecords) {
+        final var componentLength = record.getIntraContigEndBpIncl() - record.getIntraContigStartBpIncl() + 1L;
+        synchronizedAgp.append(new AGPProcessor.ContigAGPRecord(
+          scaffoldName,
+          positionBp,
+          positionBp + componentLength - 1L,
+          partNumber,
+          record.getContigName(),
+          record.getIntraContigStartBpIncl(),
+          record.getIntraContigEndBpIncl(),
+          record.getContigOrientation()
+        )).append(System.lineSeparator());
+        positionBp += componentLength;
+        ++partNumber;
+      }
+    });
+
+    if (skippedVisibleRecords > 0) {
+      log.warn("Overlay assembly synchronization skipped {} visible active-source contig record(s); common contigs remain synchronized", skippedVisibleRecords);
+    }
+    return synchronizedAgp.toString();
+  }
+
+  private static @Nullable ContigDescriptor resolveContigDescriptor(final @NotNull ChunkedFile source,
+                                                                    final @NotNull String contigName) {
+    try {
+      return source.resolveContigDescriptorByName(contigName);
+    } catch (final IllegalArgumentException ignored) {
+      return null;
+    }
+  }
+
+  private static @Nullable ContigDescriptor resolveEquivalentContigDescriptor(final @NotNull ChunkedFile source,
+                                                                             final @NotNull ChunkedFile target,
+                                                                             final @NotNull ContigDescriptor sourceDescriptor) {
+    final var candidateNames = List.of(
+      source.getContigDisplayName(sourceDescriptor.getContigId()),
+      source.getContigOriginalName(sourceDescriptor.getContigId()),
+      sourceDescriptor.getContigName(),
+      sourceDescriptor.getContigNameInSourceFASTA()
+    );
+    for (final var candidateName : candidateNames) {
+      try {
+        return target.resolveContigDescriptorByName(candidateName);
+      } catch (final IllegalArgumentException ignored) {
+        // Try the next stable name alias.
+      }
+    }
+    return null;
+  }
+
+  private static boolean isContigShownAtAnyMatrixResolution(final @NotNull ContigDescriptor descriptor) {
+    final var presenceAtResolution = descriptor.getPresenceAtResolution();
+    for (int order = 1; order < presenceAtResolution.size(); order++) {
+      if (presenceAtResolution.get(order) == ContigHideType.SHOWN) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static void synchronizeTargetVisibilityFromSource(final @NotNull ChunkedFile source,
+                                                            final @NotNull ChunkedFile target) {
+    final var sourceResolutions = source.getResolutions();
+    final var targetResolutions = target.getResolutions();
+    if (sourceResolutions.length <= 1 || targetResolutions.length <= 1) {
+      return;
+    }
+
+    final var sourceDescriptorsByName = new HashMap<String, ContigDescriptor>();
+    source.getContigTree().getContigDescriptors().forEach((contigId, descriptor) -> {
+      sourceDescriptorsByName.put(source.getContigDisplayName(contigId), descriptor);
+      sourceDescriptorsByName.put(source.getContigOriginalName(contigId), descriptor);
+      sourceDescriptorsByName.put(descriptor.getContigName(), descriptor);
+      sourceDescriptorsByName.put(descriptor.getContigNameInSourceFASTA(), descriptor);
+    });
+
+    target.getContigTree().getContigDescriptors().forEach((contigId, targetDescriptor) -> {
+      var sourceDescriptor = sourceDescriptorsByName.get(target.getContigDisplayName(contigId));
+      if (sourceDescriptor == null) {
+        sourceDescriptor = sourceDescriptorsByName.get(target.getContigOriginalName(contigId));
+      }
+      if (sourceDescriptor == null) {
+        sourceDescriptor = sourceDescriptorsByName.get(targetDescriptor.getContigName());
+      }
+      if (sourceDescriptor == null) {
+        sourceDescriptor = sourceDescriptorsByName.get(targetDescriptor.getContigNameInSourceFASTA());
+      }
+      if (sourceDescriptor == null) {
+        for (int targetOrder = 1; targetOrder < targetResolutions.length && targetOrder < targetDescriptor.getPresenceAtResolution().size(); targetOrder++) {
+          targetDescriptor.getPresenceAtResolution().set(targetOrder, ContigHideType.HIDDEN);
+        }
+        return;
+      }
+
+      for (int targetOrder = 1; targetOrder < targetResolutions.length; targetOrder++) {
+        final var sourceOrder = nearestResolutionOrder(sourceResolutions, targetResolutions[targetOrder]);
+        if (
+          sourceOrder <= 0 ||
+            sourceOrder >= sourceDescriptor.getPresenceAtResolution().size() ||
+            targetOrder >= targetDescriptor.getPresenceAtResolution().size()
+        ) {
+          continue;
+        }
+        targetDescriptor.getPresenceAtResolution().set(
+          targetOrder,
+          sourceDescriptor.getPresenceAtResolution().get(sourceOrder)
+        );
+      }
+    });
+  }
+
+  private static int nearestResolutionOrder(final long @NotNull [] resolutions, final long targetResolution) {
+    int bestOrder = resolutions.length > 1 ? 1 : 0;
+    double bestDelta = Double.POSITIVE_INFINITY;
+    for (int order = 1; order < resolutions.length; order++) {
+      if (resolutions[order] <= 0L || targetResolution <= 0L) {
+        continue;
+      }
+      final var delta = Math.abs(Math.log((double) resolutions[order] / (double) targetResolution));
+      if (delta < bestDelta || (delta == bestDelta && resolutions[order] < resolutions[bestOrder])) {
+        bestOrder = order;
+        bestDelta = delta;
+      }
+    }
+    return bestOrder;
+  }
+
   private static ShareableWrappers.PathWrapper resolveFastaPathWrapperBySource(final @NotNull LocalMap<String, Object> map,
                                                                                final @NotNull String source) {
     if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(source)) {
@@ -779,16 +1047,30 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
   private static @NotNull SecondaryCompatibility analyzeSecondaryCompatibility(final @NotNull ChunkedFile primary,
                                                                                final @NotNull ChunkedFile secondary) {
-    final var primaryResolutions = primary.getResolutions().clone();
-    final var secondaryResolutions = secondary.getResolutions().clone();
-    final var primaryMatrixSizeBins = primary.getMatrixSizeBins().clone();
-    final var secondaryMatrixSizeBins = secondary.getMatrixSizeBins().clone();
+    final var primaryResolutions = responseResolutions(primary);
+    final var secondaryResolutions = responseResolutions(secondary);
+    final var primaryMatrixSizeBins = responseMatrixSizeBins(primary);
+    final var secondaryMatrixSizeBins = responseMatrixSizeBins(secondary);
     return new SecondaryCompatibility(
       Arrays.equals(primaryResolutions, secondaryResolutions),
       Arrays.equals(primaryMatrixSizeBins, secondaryMatrixSizeBins),
+      primaryResolutions,
+      secondaryResolutions,
       primaryMatrixSizeBins,
       secondaryMatrixSizeBins
     );
+  }
+
+  private static @Nullable SecondaryCompatibility refreshSecondaryCompatibility(final @NotNull LocalMap<String, Object> map) {
+    final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+    final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+    if (primaryWrapper == null || secondaryWrapper == null) {
+      map.remove(SECONDARY_COMPATIBILITY_KEY);
+      return null;
+    }
+    final var compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryWrapper.getChunkedFile());
+    map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
+    return compatibility;
   }
 
   private io.vertx.core.json.JsonObject secondaryStatusJson(final @NotNull LocalMap<String, Object> map) {
@@ -808,6 +1090,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
   private record SecondaryCompatibility(boolean sameResolutions,
                                         boolean sameMatrixSizes,
+                                        long[] primaryResolutions,
+                                        long[] secondaryResolutions,
                                         long[] primaryMatrixSizeBins,
                                         long[] secondaryMatrixSizeBins) {
     private boolean exactMatch() {
@@ -843,10 +1127,33 @@ public class FileOpHandlersHolder extends HandlersHolder {
         .put("exactMatch", exactMatch())
         .put("primaryMaxBins", primaryMaxBins)
         .put("secondaryMaxBins", secondaryMaxBins)
+        .put("primaryResolutions", Arrays.stream(primaryResolutions).boxed().toList())
+        .put("secondaryResolutions", Arrays.stream(secondaryResolutions).boxed().toList())
+        .put("primaryPixelResolutions", Arrays.stream(primaryResolutions).mapToDouble(value -> (double) value).boxed().toList())
+        .put("secondaryPixelResolutions", Arrays.stream(secondaryResolutions).mapToDouble(value -> (double) value).boxed().toList())
         .put("primaryBinsByResolution", Arrays.stream(primaryMatrixSizeBins).boxed().toList())
         .put("secondaryBinsByResolution", Arrays.stream(secondaryMatrixSizeBins).boxed().toList())
         .put("mismatchedResolutionOrders", mismatchedOrders);
     }
+  }
+
+  private static long @NotNull [] responseResolutions(final @NotNull ChunkedFile chunkedFile) {
+    final var resolutionsWithoutZero = Arrays.stream(chunkedFile.getResolutions()).skip(1L).toArray();
+    ArrayUtils.reverse(resolutionsWithoutZero);
+    return resolutionsWithoutZero;
+  }
+
+  private static long @NotNull [] responseMatrixSizeBins(final @NotNull ChunkedFile chunkedFile) {
+    final var resolutions = chunkedFile.getResolutions();
+    final var visibleMatrixSizeBins = new long[Math.max(0, resolutions.length - 1)];
+    for (int order = 1; order < resolutions.length; order++) {
+      visibleMatrixSizeBins[order - 1] = chunkedFile.getContigTree().getLengthInUnits(
+        QueryLengthUnit.PIXELS,
+        ResolutionDescriptor.fromResolutionOrder(order)
+      );
+    }
+    ArrayUtils.reverse(visibleMatrixSizeBins);
+    return visibleMatrixSizeBins;
   }
 
   private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
@@ -860,10 +1167,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
   }
 
   private @NotNull OpenFileResponseDTO generateOpenFileResponse(final @NotNull ChunkedFile chunkedFile) {
-    final var resolutionsWithoutZero = Arrays.stream(chunkedFile.getResolutions()).skip(1L).toArray();
-    ArrayUtils.reverse(resolutionsWithoutZero);
-    final var matrixSizeBins = chunkedFile.getMatrixSizeBins().clone();
-    ArrayUtils.reverse(matrixSizeBins);
+    final var resolutionsWithoutZero = responseResolutions(chunkedFile);
+    final var matrixSizeBins = responseMatrixSizeBins(chunkedFile);
     final long minResolution = Arrays.stream(resolutionsWithoutZero).min().orElse(1L);
 //    Arrays.stream(chunkedFile.getMatrixSizeBins()).forEachOrdered(i -> log.debug("New resolutrion matrix size bins: " + i));
     return new OpenFileResponseDTO(
@@ -873,7 +1178,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       Arrays.stream(resolutionsWithoutZero).mapToDouble(r -> (double) r / minResolution).boxed().toList(),
       chunkedFile.getDenseBlockSize(),
       AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
-      Arrays.stream(matrixSizeBins).limit(matrixSizeBins.length - 1).mapToInt(l -> (int) l).boxed().toList()
+      Arrays.stream(matrixSizeBins).mapToInt(l -> (int) l).boxed().toList()
     );
   }
 }

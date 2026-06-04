@@ -6,7 +6,9 @@ import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.diagnostics.RequestStatistics;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.BufferedReader;
@@ -19,9 +21,16 @@ import java.util.Map;
 
 public class InfoHandlersHolder extends HandlersHolder {
   private final @NotNull Vertx vertx;
+  private final @NotNull RequestStatistics requestStatistics;
 
   public InfoHandlersHolder(final @NotNull Vertx vertx) {
+    this(vertx, new RequestStatistics());
+  }
+
+  public InfoHandlersHolder(final @NotNull Vertx vertx,
+                            final @NotNull RequestStatistics requestStatistics) {
     this.vertx = vertx;
+    this.requestStatistics = requestStatistics;
   }
 
   @Override
@@ -52,6 +61,50 @@ public class InfoHandlersHolder extends HandlersHolder {
         .setStatusCode(200)
         .end(Json.encode(snapshot));
     });
+
+    router.post("/native_processing/status").handler(ctx -> {
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(nativeProcessingStatusPayload(NativeProcessingService.getInstance().status())));
+    });
+
+    router.post("/native_processing/enabled").handler(ctx -> {
+      final var body = ctx.body().asJsonObject();
+      final var requested = body != null && body.getBoolean("enabled", false);
+      final var status = NativeProcessingService.getInstance().setRequestedEnabled(requested);
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(nativeProcessingStatusPayload(status)));
+    });
+
+    router.post("/statistics").handler(ctx -> {
+      final var payload = new java.util.LinkedHashMap<String, Object>(this.requestStatistics.snapshot());
+      payload.put("nativeProcessing", nativeProcessingStatusPayload(NativeProcessingService.getInstance().status()));
+      ctx.response()
+        .putHeader("content-type", "application/json")
+        .setStatusCode(200)
+        .end(Json.encode(payload));
+    });
+  }
+
+  private @NotNull Map<String, Object> nativeProcessingStatusPayload(
+    final @NotNull NativeProcessingService.NativeProcessingStatus status
+  ) {
+    return Map.ofEntries(
+      Map.entry("requested", status.requested()),
+      Map.entry("enabled", status.enabled()),
+      Map.entry("available", status.available()),
+      Map.entry("version", status.version()),
+      Map.entry("source", status.source()),
+      Map.entry("reason", status.reason()),
+      Map.entry("lastFailure", status.lastFailure()),
+      Map.entry("nativeSessionActive", status.nativeSessionActive()),
+      Map.entry("nativeOperationCount", status.nativeOperationCount()),
+      Map.entry("nativeFailedOperationCount", status.nativeFailedOperationCount()),
+      Map.entry("nativeHdf5BackendAvailable", status.nativeHdf5BackendAvailable())
+    );
   }
 
   private @NotNull String readVersion() {

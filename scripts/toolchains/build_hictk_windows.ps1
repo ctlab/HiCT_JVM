@@ -2,12 +2,16 @@ param(
   [string]$HictkRef = $(if ($env:HICTK_REF) { $env:HICTK_REF } else { "latest" }),
   [string]$OutputDir = $(if ($env:OUTPUT_DIR) { $env:OUTPUT_DIR } else { (Join-Path $PSScriptRoot "..\..\toolchains-dist\windows_x86_64") }),
   [string]$WorkDir = $(if ($env:WORK_DIR) { $env:WORK_DIR } else { (Join-Path $env:TEMP "hictk-build-windows-x86_64") }),
+  [string]$ConanHome = $(if ($env:HICTK_CONAN_HOME) { $env:HICTK_CONAN_HOME } elseif ($env:CONAN_HOME) { $env:CONAN_HOME } else { (Join-Path $env:TEMP "hictk-conan-windows-x86_64") }),
   [switch]$RunTests,
   [switch]$MostlyStaticRuntime
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+  $PSNativeCommandUseErrorActionPreference = $true
+}
 
 function Require-Command {
   param([Parameter(Mandatory = $true)][string]$Name)
@@ -16,8 +20,22 @@ function Require-Command {
   }
 }
 
+function Invoke-Native {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$Arguments = @()
+  )
+  & $FilePath @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "Native command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
+  }
+}
+
 function Resolve-LatestRef {
-  $refs = git ls-remote --refs --tags https://github.com/paulsengroup/hictk.git "v*"
+  $refs = & git ls-remote --refs --tags https://github.com/paulsengroup/hictk.git "v*"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to query official hictk tags."
+  }
   if (-not $refs) {
     throw "Failed to resolve official hictk tags."
   }
@@ -39,6 +57,7 @@ if ($HictkRef -eq "latest") {
 }
 
 Write-Host "[hictk/windows] Building $HictkRef into $OutputDir"
+Write-Host "[hictk/windows] Using Conan home $ConanHome"
 
 $repoUrl = "https://github.com/paulsengroup/hictk.git"
 $sourceDir = Join-Path $WorkDir "src"
@@ -51,30 +70,46 @@ if (Test-Path $WorkDir) {
 }
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
-python -m venv $venvDir
+New-Item -ItemType Directory -Force -Path $ConanHome | Out-Null
+Invoke-Native -FilePath "python" -Arguments @("-m", "venv", $venvDir)
 
 $pythonExe = Join-Path $venvDir "Scripts\python.exe"
 $pipExe = $pythonExe
 $conanExe = Join-Path $venvDir "Scripts\conan.exe"
 $ninjaExe = Join-Path $venvDir "Scripts\ninja.exe"
 
-& $pipExe -m pip install --upgrade pip setuptools wheel
-& $pipExe -m pip install "conan>=2" "cmake>=3.25" ninja
+Invoke-Native -FilePath $pipExe -Arguments @("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel")
+Invoke-Native -FilePath $pipExe -Arguments @("-m", "pip", "install", "conan>=2", "cmake>=3.25", "ninja")
 
-git clone --depth 1 --branch $HictkRef $repoUrl $sourceDir
+Invoke-Native -FilePath "git" -Arguments @("clone", "--depth", "1", "--branch", $HictkRef, $repoUrl, $sourceDir)
 
 $env:PATH = "$(Join-Path $venvDir 'Scripts');$env:PATH"
-$env:CONAN_HOME = Join-Path $WorkDir "conan-home"
-conan profile detect --force | Out-Null
+$env:CONAN_HOME = $ConanHome
+Invoke-Native -FilePath $conanExe -Arguments @("profile", "detect", "--force")
 
 Push-Location $sourceDir
 try {
-  conan install --build=missing `
-    -pr default `
-    -s build_type=Release `
-    -s compiler.cppstd=17 `
-    --output-folder="$buildDir" `
-    .
+  $conanInstallArgs = @(
+    "install",
+    "--build=missing",
+    "-pr:h", "default",
+    "-pr:b", "default",
+    "-s:h", "build_type=Release",
+    "-s:b", "build_type=Release",
+    "-s:h", "compiler.cppstd=17",
+    "-s:b", "compiler.cppstd=17",
+    "--output-folder=$buildDir",
+    "."
+  )
+
+  if ($MostlyStaticRuntime) {
+    $conanInstallArgs += @(
+      "-s:h", "compiler.runtime=static",
+      "-s:h", "compiler.runtime_type=Release"
+    )
+  }
+
+  Invoke-Native -FilePath $conanExe -Arguments $conanInstallArgs
 
   $cmakeArgs = @(
     "-DCMAKE_BUILD_TYPE=Release",
@@ -93,22 +128,27 @@ try {
     "-B", $buildDir
   )
 
+  $conanToolchainFile = Join-Path $buildDir "conan_toolchain.cmake"
+  if (Test-Path $conanToolchainFile) {
+    $cmakeArgs += "-DCMAKE_TOOLCHAIN_FILE=$conanToolchainFile"
+  }
+
   if ($MostlyStaticRuntime) {
     $cmakeArgs += "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
   }
 
-  & cmake @cmakeArgs
-  & cmake --build $buildDir --config Release
+  Invoke-Native -FilePath "cmake" -Arguments $cmakeArgs
+  Invoke-Native -FilePath "cmake" -Arguments @("--build", $buildDir, "--config", "Release")
 
   if ($RunTests) {
-    & ctest --test-dir $buildDir --output-on-failure -C Release
+    Invoke-Native -FilePath "ctest" -Arguments @("--test-dir", $buildDir, "--output-on-failure", "-C", "Release")
   }
 
   if (Test-Path $stageDir) {
     Remove-Item -Recurse -Force $stageDir
   }
 
-  & cmake --install $buildDir --config Release --prefix $stageDir --component Runtime
+  Invoke-Native -FilePath "cmake" -Arguments @("--install", $buildDir, "--config", "Release", "--prefix", $stageDir, "--component", "Runtime")
 
   New-Item -ItemType Directory -Force -Path (Join-Path $stageDir "share\doc\hictk") | Out-Null
   Copy-Item -Force (Join-Path $sourceDir "CITATION.cff") (Join-Path $stageDir "share\doc\hictk\CITATION.cff")
@@ -119,6 +159,7 @@ repository=$repoUrl
 ref=$HictkRef
 platform=windows_x86_64
 build_shared_libs=OFF
+cpu_flag_policy=generic official hictk Release build; no AVX-specific hictk executable is produced so the same payload remains portable across x86-64 hosts.
 msvc_static_runtime=$(if ($MostlyStaticRuntime) { 'ON' } else { 'OFF' })
 timestamp_utc=$([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
 "@ | Set-Content -Encoding UTF8 (Join-Path $stageDir "share\doc\hictk\build-info.txt")

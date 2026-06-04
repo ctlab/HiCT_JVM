@@ -12,7 +12,9 @@ import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 import ru.itmo.ctlab.hict.hict_server.MainVerticle;
+import ru.itmo.ctlab.hict.hict_server.launcher.HictLauncherGui;
 
+import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +30,7 @@ import java.util.regex.Pattern;
   subcommands = {
     HictCli.StartServer.class,
     HictCli.StartApiServer.class,
+    HictCli.LauncherGui.class,
     HictCli.Convert.class
   }
 )
@@ -45,6 +48,13 @@ public class HictCli implements Runnable {
       .setCaseInsensitiveEnumValuesAllowed(true);
 
     if (args.length == 0) {
+      if (shouldUseLauncherGui()) {
+        final int exitCode = commandLine.execute("launcher");
+        if (exitCode != 0) {
+          System.exit(exitCode);
+        }
+        return;
+      }
       if (System.getProperty("AUTO_OPEN_BROWSER") == null) {
         System.setProperty("AUTO_OPEN_BROWSER", "true");
       }
@@ -64,6 +74,30 @@ public class HictCli implements Runnable {
       return;
     }
     System.exit(exitCode);
+  }
+
+  private static boolean shouldUseLauncherGui() {
+    final var mode = firstNonBlank(
+      System.getProperty("HICT_LAUNCHER_MODE"),
+      System.getenv("HICT_LAUNCHER_MODE")
+    );
+    if (!"gui".equalsIgnoreCase(mode)) {
+      return false;
+    }
+    if (GraphicsEnvironment.isHeadless()) {
+      System.err.println("HICT_LAUNCHER_MODE=gui was requested, but this Java runtime is headless; starting the server instead.");
+      return false;
+    }
+    return true;
+  }
+
+  private static String firstNonBlank(final String... values) {
+    for (final var value : values) {
+      if (value != null && !value.isBlank()) {
+        return value.trim();
+      }
+    }
+    return null;
   }
 
   @Command(
@@ -93,6 +127,22 @@ public class HictCli implements Runnable {
     public Integer call() {
       System.setProperty("SERVE_WEBUI", "false");
       Launcher.main(new String[]{"run", MainVerticle.class.getName()});
+      return 0;
+    }
+  }
+
+  @Command(
+    name = "launcher",
+    mixinStandardHelpOptions = true,
+    description = "Open the portable graphical launcher."
+  )
+  static class LauncherGui implements Callable<Integer> {
+    @Override
+    public Integer call() throws Exception {
+      if (GraphicsEnvironment.isHeadless()) {
+        throw new IllegalStateException("Cannot open the graphical launcher in a headless environment.");
+      }
+      HictLauncherGui.launchAndBlock();
       return 0;
     }
   }

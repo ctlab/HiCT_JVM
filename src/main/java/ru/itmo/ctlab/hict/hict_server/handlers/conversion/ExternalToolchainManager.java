@@ -5,6 +5,7 @@ import io.vertx.core.json.JsonObject;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,47 +22,83 @@ import java.util.Optional;
 public final class ExternalToolchainManager {
   private static final @NotNull String TOOLCHAIN_DIR_KEY = "HICT_TOOLCHAIN_DIR";
   private static final @NotNull String HICTK_BIN_KEY = "HICT_HICTK_BIN";
+  private static final @NotNull String MINIMAP2_BIN_KEY = "HICT_MINIMAP2_BIN";
+  private static final @NotNull String MM2PLUS_AVX2_BIN_KEY = "HICT_MM2PLUS_AVX2_BIN";
+  private static final @NotNull String MM2PLUS_AVX512_BIN_KEY = "HICT_MM2PLUS_AVX512_BIN";
+  private static final @NotNull String DOTPLOT_ALIGNER_KEY = "HICT_DOTPLOT_ALIGNER";
   private static final @NotNull String COOLER_BIN_KEY = "HICT_COOLER_BIN";
   private static final @NotNull String PYTHON_BIN_KEY = "HICT_PYTHON_BIN";
   private static final @NotNull String BUNDLED_ROOT = "/toolchains";
   private static final @NotNull List<String> HICTK_PATH_CANDIDATES = List.of("hictk", "hictk.exe");
+  private static final @NotNull List<String> MINIMAP2_PATH_CANDIDATES = List.of("minimap2", "minimap2.exe");
+  private static final @NotNull List<String> MM2PLUS_AVX2_PATH_CANDIDATES = List.of("mm2plus-avx2", "mm2plus-avx2.exe", "mm2plus", "mm2plus.exe");
+  private static final @NotNull List<String> MM2PLUS_AVX512_PATH_CANDIDATES = List.of("mm2plus-avx512", "mm2plus-avx512.exe");
   private static final @NotNull List<String> COOLER_PATH_CANDIDATES = List.of("cooler", "cooler.exe", "cooler.bat");
   private static final @NotNull List<String> PYTHON_PATH_CANDIDATES = List.of("python3", "python", "python.exe");
+  private static volatile @Nullable String dotplotAlignerPreferenceOverride = null;
 
   public @NotNull ToolchainStatus inspect() {
+    return ToolchainStatus.fromResolved(resolveAnyToolchain(), dotplotAlignerPreference());
+  }
+
+  public static @NotNull String dotplotAlignerPreference() {
+    final var override = dotplotAlignerPreferenceOverride;
+    if (override != null && !override.isBlank()) {
+      return override;
+    }
+    return normalizeDotplotAlignerPreference(readSetting(DOTPLOT_ALIGNER_KEY).orElse("auto"));
+  }
+
+  public static void setDotplotAlignerPreference(final @Nullable String value) {
+    dotplotAlignerPreferenceOverride = normalizeDotplotAlignerPreference(value == null ? "auto" : value);
+  }
+
+  private @NotNull ResolvedToolchain resolveAnyToolchain() {
     final var platform = detectPlatform();
     final var explicitToolchainDir = readSetting(TOOLCHAIN_DIR_KEY).map(Path::of).map(Path::toAbsolutePath).map(Path::normalize);
 
     if (explicitToolchainDir.isPresent()) {
       final var resolved = resolveFromDirectory(platform, explicitToolchainDir.get(), "external");
-      if (resolved.hictkCommand() != null || resolved.coolerCommand() != null || resolved.pythonCommand() != null) {
-        return ToolchainStatus.fromResolved(resolved);
+      if (resolved.hasAnyCommand()) {
+        return resolved;
       }
     }
 
     final var bundled = resolveBundled(platform);
-    if (bundled.hictkCommand() != null || bundled.coolerCommand() != null || bundled.pythonCommand() != null) {
-      return ToolchainStatus.fromResolved(bundled);
+    if (bundled.hasAnyCommand()) {
+      return bundled;
     }
 
-    return ToolchainStatus.fromResolved(resolveFromSystemPath(platform));
+    return resolveFromSystemPath(platform);
   }
 
   public @NotNull ResolvedToolchain requireHictkToolchain() {
-    final var status = inspect();
-    if (!status.hicConversionAvailable()) {
-      throw new IllegalStateException(status.summary());
+    final var toolchain = resolveAnyToolchain();
+    if (toolchain.hictkCommand() == null) {
+      throw new IllegalStateException(ToolchainStatus.fromResolved(toolchain, dotplotAlignerPreference()).summary());
     }
-    return new ResolvedToolchain(
-      status.platform(),
-      status.source(),
-      status.hictkCommand() == null || status.hictkCommand().isBlank() ? null : Path.of(status.hictkCommand()),
-      status.coolerCommand() == null || status.coolerCommand().isBlank() ? null : Path.of(status.coolerCommand()),
-      status.pythonCommand() == null || status.pythonCommand().isBlank() ? null : Path.of(status.pythonCommand()),
-      status.notices(),
-      status.citations(),
-      status.limitations()
-    );
+    return toolchain;
+  }
+
+  public @NotNull ResolvedToolchain requireDotplotToolchain() {
+    return requireDotplotToolchain(dotplotAlignerPreference());
+  }
+
+  public @NotNull ResolvedToolchain requireDotplotToolchain(final @Nullable String requestedPreference) {
+    final var preference = normalizeDotplotAlignerPreference(requestedPreference == null ? dotplotAlignerPreference() : requestedPreference);
+    final var toolchain = resolveAnyToolchain();
+    final var selectedAligner = toolchain.selectedDotplotAlignerCommand(preference);
+    if (toolchain.hictkCommand() == null || selectedAligner == null) {
+      final var limitations = new ArrayList<String>();
+      if (toolchain.hictkCommand() == null) {
+        limitations.add("hictk is unavailable");
+      }
+      if (selectedAligner == null) {
+        limitations.add("no dotplot aligner matches preference '" + preference + "'");
+      }
+      throw new IllegalStateException("Dotplot generation is unavailable because " + String.join(" and ", limitations) + ".");
+    }
+    return toolchain;
   }
 
   private @NotNull ResolvedToolchain resolveBundled(final @NotNull String platform) {
@@ -71,6 +108,9 @@ public final class ExternalToolchainManager {
         return new ResolvedToolchain(
           platform,
           "bundled",
+          null,
+          null,
+          null,
           null,
           null,
           null,
@@ -91,6 +131,9 @@ public final class ExternalToolchainManager {
       return new ResolvedToolchain(
         platform,
         "bundled",
+        null,
+        null,
+        null,
         null,
         null,
         null,
@@ -119,7 +162,10 @@ public final class ExternalToolchainManager {
       }
       final var target = extractionRoot.resolve(relative).normalize();
       Files.createDirectories(target.getParent());
-      if (Files.exists(target)) {
+      if (Files.isRegularFile(target) && Files.size(target) > 0L) {
+        if (target.startsWith(extractionRoot.resolve("bin")) && !isWindows()) {
+          target.toFile().setExecutable(true, true);
+        }
         continue;
       }
       final var resourcePath = BUNDLED_ROOT + "/" + platform + "/" + relative;
@@ -154,6 +200,23 @@ public final class ExternalToolchainManager {
       directory.resolve(isWindows() ? "bin/hictk.exe" : "bin/hictk"),
       directory.resolve(isWindows() ? "hictk.exe" : "hictk")
     );
+    final var minimap2 = firstExisting(
+      readSetting(MINIMAP2_BIN_KEY).map(Path::of),
+      directory.resolve(isWindows() ? "bin/minimap2.exe" : "bin/minimap2"),
+      directory.resolve(isWindows() ? "minimap2.exe" : "minimap2")
+    );
+    final var mm2PlusAvx2 = firstExisting(
+      readSetting(MM2PLUS_AVX2_BIN_KEY).map(Path::of),
+      directory.resolve(isWindows() ? "bin/mm2plus-avx2.exe" : "bin/mm2plus-avx2"),
+      directory.resolve(isWindows() ? "mm2plus-avx2.exe" : "mm2plus-avx2"),
+      directory.resolve(isWindows() ? "bin/mm2plus.exe" : "bin/mm2plus"),
+      directory.resolve(isWindows() ? "mm2plus.exe" : "mm2plus")
+    );
+    final var mm2PlusAvx512 = firstExisting(
+      readSetting(MM2PLUS_AVX512_BIN_KEY).map(Path::of),
+      directory.resolve(isWindows() ? "bin/mm2plus-avx512.exe" : "bin/mm2plus-avx512"),
+      directory.resolve(isWindows() ? "mm2plus-avx512.exe" : "mm2plus-avx512")
+    );
     final var cooler = firstExisting(
       readSetting(COOLER_BIN_KEY).map(Path::of),
       directory.resolve(isWindows() ? "bin/cooler.bat" : "bin/cooler"),
@@ -168,11 +231,14 @@ public final class ExternalToolchainManager {
       platform,
       source,
       hictk,
+      minimap2,
+      mm2PlusAvx2,
+      mm2PlusAvx512,
       cooler,
       python,
       defaultNotices(source),
       defaultCitations(),
-      buildLimitations(hictk, cooler, python)
+      buildLimitations(hictk, minimap2, mm2PlusAvx2, mm2PlusAvx512, cooler, python)
     );
   }
 
@@ -185,17 +251,35 @@ public final class ExternalToolchainManager {
     final var citations = stringList(manifest.getJsonArray("citations"));
     final var limitations = stringList(manifest.getJsonArray("limitations"));
     final var hictk = resolveManifestCommand(root, commands, "hictk", readSetting(HICTK_BIN_KEY));
+    final var minimap2 = firstExisting(
+      Optional.<Path>empty(),
+      resolveManifestCommand(root, commands, "minimap2", readSetting(MINIMAP2_BIN_KEY)),
+      findOnPath(MINIMAP2_PATH_CANDIDATES)
+    );
+    final var mm2PlusAvx2 = firstExisting(
+      Optional.<Path>empty(),
+      resolveManifestCommand(root, commands, "mm2plus_avx2", readSetting(MM2PLUS_AVX2_BIN_KEY)),
+      findOnPath(MM2PLUS_AVX2_PATH_CANDIDATES)
+    );
+    final var mm2PlusAvx512 = firstExisting(
+      Optional.<Path>empty(),
+      resolveManifestCommand(root, commands, "mm2plus_avx512", readSetting(MM2PLUS_AVX512_BIN_KEY)),
+      findOnPath(MM2PLUS_AVX512_PATH_CANDIDATES)
+    );
     final var cooler = resolveManifestCommand(root, commands, "cooler", readSetting(COOLER_BIN_KEY));
     final var python = resolveManifestCommand(root, commands, "python", readSetting(PYTHON_BIN_KEY));
     return new ResolvedToolchain(
       platform,
       source,
       hictk,
+      minimap2,
+      mm2PlusAvx2,
+      mm2PlusAvx512,
       cooler,
       python,
       notices.isEmpty() ? defaultNotices(source) : notices,
       citations.isEmpty() ? defaultCitations() : citations,
-      limitations.isEmpty() ? buildLimitations(hictk, cooler, python) : limitations
+      limitations.isEmpty() ? buildLimitations(hictk, minimap2, mm2PlusAvx2, mm2PlusAvx512, cooler, python) : limitations
     );
   }
 
@@ -203,6 +287,18 @@ public final class ExternalToolchainManager {
     final var hictk = firstExisting(
       readSetting(HICTK_BIN_KEY).map(Path::of),
       findOnPath(HICTK_PATH_CANDIDATES)
+    );
+    final var minimap2 = firstExisting(
+      readSetting(MINIMAP2_BIN_KEY).map(Path::of),
+      findOnPath(MINIMAP2_PATH_CANDIDATES)
+    );
+    final var mm2PlusAvx2 = firstExisting(
+      readSetting(MM2PLUS_AVX2_BIN_KEY).map(Path::of),
+      findOnPath(MM2PLUS_AVX2_PATH_CANDIDATES)
+    );
+    final var mm2PlusAvx512 = firstExisting(
+      readSetting(MM2PLUS_AVX512_BIN_KEY).map(Path::of),
+      findOnPath(MM2PLUS_AVX512_PATH_CANDIDATES)
     );
     final var cooler = firstExisting(
       readSetting(COOLER_BIN_KEY).map(Path::of),
@@ -216,11 +312,14 @@ public final class ExternalToolchainManager {
       platform,
       "system",
       hictk,
+      minimap2,
+      mm2PlusAvx2,
+      mm2PlusAvx512,
       cooler,
       python,
       defaultNotices("system"),
       defaultCitations(),
-      buildLimitations(hictk, cooler, python)
+      buildLimitations(hictk, minimap2, mm2PlusAvx2, mm2PlusAvx512, cooler, python)
     );
   }
 
@@ -237,7 +336,7 @@ public final class ExternalToolchainManager {
       return null;
     }
     final var resolved = root.resolve(relative).normalize();
-    return Files.exists(resolved) ? resolved : null;
+    return isUsableCommand(resolved) ? resolved : null;
   }
 
   private static @NotNull Optional<String> readSetting(final @NotNull String key) {
@@ -261,7 +360,7 @@ public final class ExternalToolchainManager {
       final var dir = Path.of(rawDir);
       for (final var candidate : candidates) {
         final var maybe = dir.resolve(candidate);
-        if (Files.isRegularFile(maybe) && Files.isExecutable(maybe)) {
+        if (isUsableCommand(maybe)) {
           return maybe.toAbsolutePath().normalize();
         }
       }
@@ -274,7 +373,7 @@ public final class ExternalToolchainManager {
                                               final @Nullable Path... candidates) {
     if (explicit != null && explicit.isPresent()) {
       final var normalized = explicit.get().toAbsolutePath().normalize();
-      if (Files.exists(normalized)) {
+      if (isUsableCommand(normalized)) {
         return normalized;
       }
     }
@@ -282,7 +381,7 @@ public final class ExternalToolchainManager {
       return null;
     }
     for (final var candidate : candidates) {
-      if (candidate != null && Files.exists(candidate)) {
+      if (candidate != null && isUsableCommand(candidate)) {
         return candidate.toAbsolutePath().normalize();
       }
     }
@@ -306,6 +405,10 @@ public final class ExternalToolchainManager {
     return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
   }
 
+  private static boolean isUsableCommand(final @NotNull Path path) {
+    return Files.isRegularFile(path) && (isWindows() || Files.isExecutable(path));
+  }
+
   private static @NotNull List<String> stringList(final @Nullable JsonArray array) {
     if (array == null || array.isEmpty()) {
       return List.of();
@@ -325,22 +428,34 @@ public final class ExternalToolchainManager {
       "HiCT orchestrates third-party conversion tools instead of reimplementing .hic ingestion from scratch.",
       "This build currently resolves hictk from the " + source + " toolchain source when available.",
       "The bundled .hic conversion workflow is executed through hictk; a separate cooler or Python runtime is not required for that path.",
+      "The bundled dotplot workflow can use mm2-plus or minimap2 for self-alignment, then HiCT performs Java/native post-processing.",
       "Bundled third-party payloads must be redistributed together with their license files and scientific citations."
     );
   }
 
   private static @NotNull List<String> defaultCitations() {
     return List.of(
+      "minimap2: Li H. Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics. 2018;34(18):3094-3100.",
+      "mm2-plus: Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra and Chirag Jain. Accelerating whole-genome alignment in the age of complete genome assemblies. bioRxiv 2024. doi:10.1101/2024.11.25.625328.",
       "hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408."
     );
   }
 
   private static @NotNull List<String> buildLimitations(final @Nullable Path hictk,
+                                                        final @Nullable Path minimap2,
+                                                        final @Nullable Path mm2PlusAvx2,
+                                                        final @Nullable Path mm2PlusAvx512,
                                                         final @Nullable Path cooler,
                                                         final @Nullable Path python) {
     final var limitations = new ArrayList<String>();
     if (hictk == null) {
       limitations.add("No hictk executable was found. .hic conversion is unavailable in this build until hictk is bundled or installed.");
+    }
+    if (minimap2 == null && mm2PlusAvx2 == null && mm2PlusAvx512 == null) {
+      limitations.add("No minimap2 or mm2-plus executable was found. FASTA self-dotplot generation is unavailable until an aligner is bundled or installed.");
+    }
+    if (mm2PlusAvx512 != null && !NativeCpuFeatures.supportsAvx512Core()) {
+      limitations.add("An mm2-plus AVX-512 executable is present, but this CPU/JVM does not advertise AVX-512F/DQ/BW/VL; auto mode will not execute it.");
     }
     if (hictk != null && cooler == null && python == null) {
       limitations.add("Only the hictk-backed .hic conversion workflow is bundled in this build.");
@@ -348,16 +463,77 @@ public final class ExternalToolchainManager {
     return List.copyOf(limitations);
   }
 
+  private static @NotNull String normalizeDotplotAlignerPreference(final @NotNull String raw) {
+    final var normalized = raw.trim().toLowerCase(Locale.ROOT).replace('_', '-');
+    return switch (normalized) {
+      case "", "default", "auto" -> "auto";
+      case "minimap2" -> "minimap2";
+      case "mm2plus", "mm2-plus" -> "mm2plus";
+      case "mm2plus-avx2", "mm2-plus-avx2", "avx2" -> "mm2plus-avx2";
+      case "mm2plus-avx512", "mm2-plus-avx512", "avx512", "avx-512" -> "mm2plus-avx512";
+      default -> "auto";
+    };
+  }
+
   public record ResolvedToolchain(
     @NotNull String platform,
     @NotNull String source,
     @Nullable Path hictkCommand,
+    @Nullable Path minimap2Command,
+    @Nullable Path mm2PlusAvx2Command,
+    @Nullable Path mm2PlusAvx512Command,
     @Nullable Path coolerCommand,
     @Nullable Path pythonCommand,
     @NotNull List<String> notices,
     @NotNull List<String> citations,
     @NotNull List<String> limitations
   ) {
+    public boolean hasAnyCommand() {
+      return hictkCommand != null
+        || minimap2Command != null
+        || mm2PlusAvx2Command != null
+        || mm2PlusAvx512Command != null
+        || coolerCommand != null
+        || pythonCommand != null;
+    }
+
+    public @Nullable Path selectedDotplotAlignerCommand(final @Nullable String requestedPreference) {
+      final var preference = normalizeDotplotAlignerPreference(requestedPreference == null ? dotplotAlignerPreference() : requestedPreference);
+      return switch (preference) {
+        case "minimap2" -> minimap2Command;
+        case "mm2plus-avx2" -> mm2PlusAvx2Command;
+        case "mm2plus-avx512" -> NativeCpuFeatures.supportsAvx512Core() ? mm2PlusAvx512Command : null;
+        case "mm2plus" -> selectBestMm2Plus();
+        default -> {
+          final var mm2Plus = selectBestMm2Plus();
+          yield mm2Plus == null ? minimap2Command : mm2Plus;
+        }
+      };
+    }
+
+    public @NotNull String selectedDotplotAlignerName(final @Nullable String requestedPreference) {
+      final var selected = selectedDotplotAlignerCommand(requestedPreference);
+      if (selected == null) {
+        return "none";
+      }
+      if (Objects.equals(selected, mm2PlusAvx512Command)) {
+        return "mm2-plus AVX-512";
+      }
+      if (Objects.equals(selected, mm2PlusAvx2Command)) {
+        return "mm2-plus AVX2";
+      }
+      if (Objects.equals(selected, minimap2Command)) {
+        return "minimap2";
+      }
+      return selected.getFileName().toString();
+    }
+
+    private @Nullable Path selectBestMm2Plus() {
+      if (NativeCpuFeatures.supportsAvx512Core() && mm2PlusAvx512Command != null) {
+        return mm2PlusAvx512Command;
+      }
+      return mm2PlusAvx2Command;
+    }
   }
 
   public record ToolchainStatus(
@@ -367,6 +543,15 @@ public final class ExternalToolchainManager {
     boolean hicConversionAvailable,
     boolean hictkAvailable,
     @Nullable String hictkCommand,
+    boolean minimap2Available,
+    @Nullable String minimap2Command,
+    boolean mm2PlusAvx2Available,
+    @Nullable String mm2PlusAvx2Command,
+    boolean mm2PlusAvx512Available,
+    @Nullable String mm2PlusAvx512Command,
+    @NotNull String dotplotAlignerPreference,
+    @NotNull String selectedDotplotAligner,
+    @Nullable String selectedDotplotAlignerCommand,
     boolean coolerAvailable,
     @Nullable String coolerCommand,
     boolean pythonAvailable,
@@ -376,9 +561,14 @@ public final class ExternalToolchainManager {
     @NotNull List<String> citations,
     @NotNull List<String> limitations
   ) {
-    private static @NotNull ToolchainStatus fromResolved(final @NotNull ResolvedToolchain toolchain) {
+    private static @NotNull ToolchainStatus fromResolved(final @NotNull ResolvedToolchain toolchain,
+                                                         final @NotNull String dotplotAlignerPreference) {
       final var supportedPlatform = toolchain.platform().startsWith("linux_") || toolchain.platform().startsWith("windows_");
       final var hictkAvailable = toolchain.hictkCommand() != null;
+      final var minimap2Available = toolchain.minimap2Command() != null;
+      final var mm2PlusAvx2Available = toolchain.mm2PlusAvx2Command() != null;
+      final var mm2PlusAvx512Available = toolchain.mm2PlusAvx512Command() != null;
+      final var selectedDotplotAlignerCommand = toolchain.selectedDotplotAlignerCommand(dotplotAlignerPreference);
       final var coolerAvailable = toolchain.coolerCommand() != null;
       final var pythonAvailable = toolchain.pythonCommand() != null;
       final var summary = hictkAvailable
@@ -391,6 +581,15 @@ public final class ExternalToolchainManager {
         hictkAvailable,
         hictkAvailable,
         hictkAvailable ? Objects.requireNonNull(toolchain.hictkCommand()).toString() : null,
+        minimap2Available,
+        minimap2Available ? Objects.requireNonNull(toolchain.minimap2Command()).toString() : null,
+        mm2PlusAvx2Available,
+        mm2PlusAvx2Available ? Objects.requireNonNull(toolchain.mm2PlusAvx2Command()).toString() : null,
+        mm2PlusAvx512Available,
+        mm2PlusAvx512Available ? Objects.requireNonNull(toolchain.mm2PlusAvx512Command()).toString() : null,
+        dotplotAlignerPreference,
+        toolchain.selectedDotplotAlignerName(dotplotAlignerPreference),
+        selectedDotplotAlignerCommand == null ? null : selectedDotplotAlignerCommand.toString(),
         coolerAvailable,
         coolerAvailable ? Objects.requireNonNull(toolchain.coolerCommand()).toString() : null,
         pythonAvailable,
