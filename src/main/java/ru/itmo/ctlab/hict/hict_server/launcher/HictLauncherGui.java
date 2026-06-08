@@ -91,6 +91,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -185,6 +186,11 @@ public final class HictLauncherGui {
     private static final Pattern JSON_STRING_FIELD_PATTERN = Pattern.compile("\"%s\"\\s*:\\s*\"([^\"]*)\"");
     private static final double REFERENCE_SCREEN_DIAGONAL = Math.hypot(1920, 1080);
     private static final String[] LOG_LEVELS = {"ERROR", "WARN", "INFO", "DEBUG", "TRACE"};
+    private static final String SETTINGS_APP_VERSION_KEY = "launcherSettings.appVersion";
+    private static final Set<String> VERSION_SCOPED_SETTING_KEYS = Set.of(
+      "WEBUI_ROOT",
+      "HICT_TOOLCHAIN_DIR"
+    );
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
       new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY),
@@ -230,6 +236,7 @@ public final class HictLauncherGui {
     private final CountDownLatch closed;
     private final Path appHome;
     private final Path jarPath;
+    private final String launcherVersion;
     private final Path browserPayloadRoot;
     private final List<BrowserBundle> browserBundles;
     private final List<Process> browserProcesses;
@@ -268,11 +275,13 @@ public final class HictLauncherGui {
     private Timer statusTimer;
     private volatile Process serverProcess;
     private volatile boolean closing;
+    private String settingsMigrationNotice = "";
 
     LauncherWindow(final CountDownLatch closed) {
       this.closed = closed;
       this.appHome = detectAppHome();
       this.jarPath = detectJarPath(this.appHome);
+      this.launcherVersion = detectLauncherVersion(this.appHome);
       this.browserPayloadRoot = detectBrowserPayloadRoot(this.appHome);
       this.browserBundles = detectBrowserBundles(this.browserPayloadRoot);
       this.browserProcesses = new CopyOnWriteArrayList<>();
@@ -321,6 +330,15 @@ public final class HictLauncherGui {
       final var portableNotice = firstNonBlank(System.getenv("HICT_PORTABLE_NOTICE"));
       if (portableNotice != null) {
         appendLauncherLog("Portable runtime notice: " + portableNotice);
+      }
+      if (!this.settingsMigrationNotice.isBlank()) {
+        appendLauncherLog(this.settingsMigrationNotice);
+        JOptionPane.showMessageDialog(
+          this.frame,
+          this.settingsMigrationNotice,
+          "HiCT Launcher",
+          JOptionPane.INFORMATION_MESSAGE
+        );
       }
       appendLauncherLog("Native processing options: " + nativeProcessingStatusText());
       if (this.browserBundles.isEmpty()) {
@@ -1615,12 +1633,7 @@ public final class HictLauncherGui {
       return switch (spec.key()) {
         case "DATA_DIR" -> defaultDataDir().toString();
         case "PROCESSED_DIR" -> defaultDataDir().resolve("processed").toString();
-        case "WEBUI_ROOT" -> Files.isRegularFile(this.appHome.resolve("webui").resolve("index.html"))
-          ? this.appHome.resolve("webui").toString()
-          : spec.defaultValue();
-        case "HICT_TOOLCHAIN_DIR" -> Files.isRegularFile(this.appHome.resolve("toolchains").resolve(platformId()).resolve("manifest.json"))
-          ? this.appHome.resolve("toolchains").resolve(platformId()).toString()
-          : spec.defaultValue();
+        case "WEBUI_ROOT", "HICT_TOOLCHAIN_DIR" -> managedDefaultValue(spec.key());
         default -> spec.defaultValue();
       };
     }
@@ -1639,10 +1652,12 @@ public final class HictLauncherGui {
     private void loadSettings() {
       final var configPath = settingsPath(defaultDataDir());
       if (!Files.isRegularFile(configPath)) {
+        this.settings.setProperty(SETTINGS_APP_VERSION_KEY, this.launcherVersion);
         return;
       }
       try (var in = Files.newInputStream(configPath)) {
         this.settings.load(in);
+        migrateSettingsForCurrentVersion(configPath);
       } catch (final IOException ex) {
         appendLogEarly("Could not load launcher settings from " + configPath + ": " + ex.getMessage());
       }
@@ -1650,8 +1665,14 @@ public final class HictLauncherGui {
 
     private void saveSettings() {
       for (final var spec : CONFIG_SPECS) {
-        this.settings.setProperty(spec.key(), getFieldValue(spec.key()));
+        final var value = getFieldValue(spec.key());
+        if (isManagedVersionScopedSetting(spec.key()) && value.equals(managedDefaultValue(spec.key()))) {
+          this.settings.remove(spec.key());
+        } else {
+          this.settings.setProperty(spec.key(), value);
+        }
       }
+      this.settings.setProperty(SETTINGS_APP_VERSION_KEY, this.launcherVersion);
       this.settings.setProperty("openAfterStart", Boolean.toString(this.openAfterStartCheckbox == null || this.openAfterStartCheckbox.isSelected()));
       this.settings.setProperty("browserMode", selectedBrowserMode().wireName);
       this.settings.setProperty("nativeProcessingMode", selectedNativeProcessingMode().wireName);
@@ -1665,11 +1686,95 @@ public final class HictLauncherGui {
         return;
       }
       final var configPath = settingsPath(dataDir);
+      if (settingsFileMatches(configPath)) {
+        return;
+      }
       try (var out = Files.newOutputStream(configPath)) {
         this.settings.store(out, "HiCT portable launcher settings");
       } catch (final IOException ex) {
         appendLauncherLog("Could not save launcher settings to " + configPath + ": " + ex.getMessage());
       }
+    }
+
+    private void migrateSettingsForCurrentVersion(final Path configPath) {
+      final var storedVersion = this.settings.getProperty(SETTINGS_APP_VERSION_KEY, "");
+      if (storedVersion.equals(this.launcherVersion)) {
+        return;
+      }
+
+      final var resetKeys = new ArrayList<String>();
+      for (final var key : VERSION_SCOPED_SETTING_KEYS) {
+        if (this.settings.remove(key) != null) {
+          resetKeys.add(key);
+        }
+      }
+      this.settings.setProperty(SETTINGS_APP_VERSION_KEY, this.launcherVersion);
+      if (!resetKeys.isEmpty()) {
+        this.settingsMigrationNotice = "Launcher settings were updated for HiCT "
+          + this.launcherVersion
+          + ". Version-specific bundled paths were reset for this package: "
+          + String.join(", ", resetKeys)
+          + ". Data directory, ports, browser mode, native mode, and other user settings were kept.";
+        persistSettingsMigration(configPath);
+      } else if (storedVersion.isBlank()) {
+        this.settingsMigrationNotice = "Launcher settings were marked for HiCT "
+          + this.launcherVersion
+          + ". Existing user settings were kept.";
+        persistSettingsMigration(configPath);
+      } else {
+        persistSettingsMigration(configPath);
+      }
+    }
+
+    private void persistSettingsMigration(final Path configPath) {
+      try (var out = Files.newOutputStream(configPath)) {
+        this.settings.store(out, "HiCT portable launcher settings");
+      } catch (final IOException ex) {
+        appendLogEarly("Could not persist launcher settings migration to " + configPath + ": " + ex.getMessage());
+      }
+    }
+
+    private boolean settingsFileMatches(final Path configPath) {
+      if (!Files.isRegularFile(configPath)) {
+        return false;
+      }
+      final var existing = new Properties();
+      try (var in = Files.newInputStream(configPath)) {
+        existing.load(in);
+      } catch (final IOException ex) {
+        return false;
+      }
+      return propertiesEqual(existing, this.settings);
+    }
+
+    private static boolean propertiesEqual(final Properties left, final Properties right) {
+      final var leftNames = left.stringPropertyNames();
+      final var rightNames = right.stringPropertyNames();
+      if (!leftNames.equals(rightNames)) {
+        return false;
+      }
+      for (final var name : leftNames) {
+        if (!Objects.equals(left.getProperty(name), right.getProperty(name))) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    private boolean isManagedVersionScopedSetting(final String key) {
+      return VERSION_SCOPED_SETTING_KEYS.contains(key);
+    }
+
+    private String managedDefaultValue(final String key) {
+      return switch (key) {
+        case "WEBUI_ROOT" -> Files.isRegularFile(this.appHome.resolve("webui").resolve("index.html"))
+          ? this.appHome.resolve("webui").toString()
+          : "";
+        case "HICT_TOOLCHAIN_DIR" -> Files.isRegularFile(this.appHome.resolve("toolchains").resolve(platformId()).resolve("manifest.json"))
+          ? this.appHome.resolve("toolchains").resolve(platformId()).toString()
+          : "";
+        default -> "";
+      };
     }
 
     private boolean getBooleanSetting(final String key, final boolean fallback) {
@@ -1736,6 +1841,33 @@ public final class HictLauncherGui {
       } catch (final Exception ignored) {
         // Swing's cross-platform look and feel remains usable.
       }
+    }
+
+    private static String detectLauncherVersion(final Path appHome) {
+      try (var stream = HictLauncherGui.class.getResourceAsStream("/version.txt")) {
+        if (stream != null) {
+          final var version = new String(stream.readAllBytes(), StandardCharsets.UTF_8).trim();
+          if (!version.isBlank()) {
+            return version;
+          }
+        }
+      } catch (final IOException ignored) {
+        // Fall through to filesystem/version fallback.
+      }
+      if (appHome != null) {
+        final var versionPath = appHome.resolve("version.txt");
+        if (Files.isRegularFile(versionPath)) {
+          try {
+            final var version = Files.readString(versionPath, StandardCharsets.UTF_8).trim();
+            if (!version.isBlank()) {
+              return version;
+            }
+          } catch (final IOException ignored) {
+            // Fall through to explicit unknown marker.
+          }
+        }
+      }
+      return "unknown";
     }
 
     private static Path detectAppHome() {
