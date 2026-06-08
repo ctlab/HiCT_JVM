@@ -337,6 +337,13 @@ if ($browserManifests.Count -gt 0) {
   $browserTarget = Join-Path $browserTargetRoot "windows_x86_64"
   New-Item -ItemType Directory -Force -Path $browserTargetRoot | Out-Null
   Copy-Item -Recurse -Force $browserSource $browserTargetRoot
+  $rootBrowserManifest = Join-Path $browserTarget "manifest.json"
+  $childBrowserManifests = @(Get-ChildItem -Path $browserTarget -Recurse -Filter "manifest.json" -File |
+    Where-Object { $_.FullName -ne $rootBrowserManifest })
+  if ((Test-Path $rootBrowserManifest) -and $childBrowserManifests.Count -gt 0) {
+    Remove-Item -Force $rootBrowserManifest
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $browserTarget "app")
+  }
   foreach ($browserManifestPath in Get-ChildItem -Path $browserTarget -Recurse -Filter "manifest.json" -File) {
     $browserManifest = Get-Content -Raw $browserManifestPath.FullName | ConvertFrom-Json
     if (-not $browserManifest.command) {
@@ -438,6 +445,8 @@ if not defined HICT_BIND_HOST (
 )
 
 call :WarnWebView2IfNeeded
+call :SelectRuntimeTempDir
+if errorlevel 1 exit /b 1
 
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>nul
 if not exist "%PROCESSED_DIR%" mkdir "%PROCESSED_DIR%" >nul 2>nul
@@ -458,6 +467,49 @@ if "%~1"=="" (
 set "HICT_EXIT_CODE=%ERRORLEVEL%"
 popd >nul 2>nul
 exit /b %HICT_EXIT_CODE%
+
+:SelectRuntimeTempDir
+set "HICT_LOCAL_TEMP_DIR=%DATA_DIR%\tmp"
+if defined HICT_TEMP_DIR (
+  call :CanUseRuntimeTempDir "%HICT_TEMP_DIR%"
+  if not errorlevel 1 exit /b 0
+  echo WARNING: Runtime temp candidate is not usable, trying fallback: "%HICT_TEMP_DIR%"
+)
+call :CanUseRuntimeTempDir "%HICT_LOCAL_TEMP_DIR%"
+if not errorlevel 1 (
+  set "HICT_TEMP_DIR=%HICT_LOCAL_TEMP_DIR%"
+  exit /b 0
+)
+echo WARNING: Runtime temp candidate is not usable, trying fallback: "%HICT_LOCAL_TEMP_DIR%"
+if defined TEMP (
+  call :CanUseRuntimeTempDir "%TEMP%\HiCT\runtime"
+  if not errorlevel 1 (
+    set "HICT_TEMP_DIR=%TEMP%\HiCT\runtime"
+    set "HICT_PORTABLE_NOTICE=DATA_DIR\tmp could not be used as the runtime temp directory; using %TEMP%\HiCT\runtime."
+    exit /b 0
+  )
+)
+call :CanUseRuntimeTempDir "%APP_HOME%\tmp"
+if not errorlevel 1 (
+  set "HICT_TEMP_DIR=%APP_HOME%\tmp"
+  set "HICT_PORTABLE_NOTICE=DATA_DIR\tmp could not be used as the runtime temp directory; using %APP_HOME%\tmp."
+  exit /b 0
+)
+echo No usable runtime temp directory is available. Check DATA_DIR\tmp, HICT_TEMP_DIR, and %%TEMP%%.
+exit /b 1
+
+:CanUseRuntimeTempDir
+set "HICT_PROBE_DIR=%~1"
+if "%HICT_PROBE_DIR%"=="" exit /b 1
+if not exist "%HICT_PROBE_DIR%" mkdir "%HICT_PROBE_DIR%" >nul 2>nul
+if not exist "%HICT_PROBE_DIR%" exit /b 1
+set "HICT_PROBE=%HICT_PROBE_DIR%\.hict-exec-test-%RANDOM%-%RANDOM%.cmd"
+> "%HICT_PROBE%" echo @echo off
+>> "%HICT_PROBE%" echo exit /b 0
+cmd.exe /d /c "%HICT_PROBE%" >nul 2>nul
+set "HICT_PROBE_STATUS=%ERRORLEVEL%"
+del /f /q "%HICT_PROBE%" >nul 2>nul
+exit /b %HICT_PROBE_STATUS%
 
 :WarnWebView2IfNeeded
 if not exist "%APP_HOME%\browsers\windows_x86_64" exit /b 0
