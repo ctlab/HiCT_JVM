@@ -145,6 +145,11 @@ if [[ -d "${PROJECT_DIR}/browsers-dist/linux_x86_64" ]] &&
    find "${PROJECT_DIR}/browsers-dist/linux_x86_64" -name manifest.json -type f | grep -q .; then
   mkdir -p "${APP_DIR}/browsers"
   cp -a "${PROJECT_DIR}/browsers-dist/linux_x86_64" "${APP_DIR}/browsers/"
+  if [[ -f "${APP_DIR}/browsers/linux_x86_64/manifest.json" ]] &&
+     find "${APP_DIR}/browsers/linux_x86_64" -mindepth 2 -name manifest.json -type f | grep -q .; then
+    rm -f "${APP_DIR}/browsers/linux_x86_64/manifest.json"
+    rm -rf "${APP_DIR}/browsers/linux_x86_64/app"
+  fi
   while IFS= read -r BROWSER_MANIFEST; do
     BROWSER_ROOT="$(dirname "${BROWSER_MANIFEST}")"
     BROWSER_COMMAND="$(grep -E '"command"[[:space:]]*:' "${BROWSER_MANIFEST}" | head -n 1 | sed -E 's/.*"command"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
@@ -235,6 +240,42 @@ if [[ -z "${HICT_BROWSER_DIR:-}" && -d "${APP_HOME}/browsers/linux_x86_64" ]]; t
   export HICT_BROWSER_DIR="${APP_HOME}/browsers/linux_x86_64"
 fi
 
+can_execute_from_directory() {
+  local directory="$1"
+  mkdir -p "${directory}" 2>/dev/null || return 1
+  local probe="${directory}/.hict-exec-test-$$.sh"
+  printf '#!/bin/sh\nexit 0\n' > "${probe}" 2>/dev/null || return 1
+  chmod 0700 "${probe}" 2>/dev/null || {
+    rm -f "${probe}" 2>/dev/null || true
+    return 1
+  }
+  "${probe}" >/dev/null 2>&1
+  local status=$?
+  rm -f "${probe}" 2>/dev/null || true
+  return "${status}"
+}
+
+select_runtime_temp_dir() {
+  local local_temp="${DATA_DIR}/tmp"
+  local fallback_temp="${TMPDIR:-/tmp}/hict-${USER:-user}/runtime"
+  local candidates=()
+  [[ -n "${HICT_TEMP_DIR:-}" ]] && candidates+=("${HICT_TEMP_DIR}")
+  [[ -n "${HICT_EXEC_TEMP_DIR:-}" ]] && candidates+=("${HICT_EXEC_TEMP_DIR}")
+  candidates+=("${local_temp}" "${fallback_temp}" "${APP_HOME}/tmp")
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    [[ -z "${candidate}" ]] && continue
+    if can_execute_from_directory "${candidate}"; then
+      printf '%s\n' "$(cd "${candidate}" && pwd -P)"
+      return 0
+    fi
+    echo "WARNING: Runtime temp candidate is not executable, trying fallback: ${candidate}" >&2
+  done
+  echo "No executable runtime temp directory is available. Check DATA_DIR/tmp, HICT_TEMP_DIR, and /tmp." >&2
+  return 1
+}
+
 warn_missing_tauri_webview_dependencies() {
   local browser_root="${HICT_BROWSER_DIR:-${APP_HOME}/browsers/linux_x86_64}"
   if [[ ! -d "${browser_root}" ]] || ! grep -R -q '"engine"[[:space:]]*:[[:space:]]*"tauri-system-webview"' "${browser_root}" 2>/dev/null; then
@@ -271,6 +312,12 @@ fi
 mkdir -p "${DATA_DIR}"
 cd "${DATA_DIR}"
 export DATA_DIR="$(pwd -P)"
+export HICT_TEMP_DIR="$(select_runtime_temp_dir)"
+if [[ "${HICT_TEMP_DIR}" != "${DATA_DIR}/tmp" ]]; then
+  echo "WARNING: Using fallback runtime temp directory because DATA_DIR/tmp is not executable or not usable: ${HICT_TEMP_DIR}" >&2
+fi
+export TMP="${TMP:-${HICT_TEMP_DIR}}"
+export TEMP="${TEMP:-${HICT_TEMP_DIR}}"
 
 JAVA_OPTS=()
 if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
@@ -278,7 +325,7 @@ if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
   JAVA_OPTS=(${HICT_JAVA_OPTS})
 fi
 
-exec "${APP_HOME}/runtime/bin/java" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
 EOF
 chmod +x "${APP_DIR}/bin/hict"
 
@@ -428,6 +475,21 @@ EOW
 }
 warn_missing_tauri_webview_dependencies
 
+can_execute_from_directory() {
+  local directory="\$1"
+  mkdir -p "\${directory}" 2>/dev/null || return 1
+  local probe="\${directory}/.hict-exec-test-\$\$.sh"
+  printf '#!/bin/sh\nexit 0\n' > "\${probe}" 2>/dev/null || return 1
+  chmod 0700 "\${probe}" 2>/dev/null || {
+    rm -f "\${probe}" 2>/dev/null || true
+    return 1
+  }
+  "\${probe}" >/dev/null 2>&1
+  local status=\$?
+  rm -f "\${probe}" 2>/dev/null || true
+  return "\${status}"
+}
+
 payload_line="\$(awk "/^\${MARKER}\$/ { print NR + 1; exit 0; }" "\${SELF_PATH}")"
 if [[ -z "\${payload_line}" ]]; then
   echo "Cannot find embedded HiCT payload." >&2
@@ -446,14 +508,23 @@ if [[ "\${1:-}" == "--hict-extract-only" ]]; then
 fi
 
 home_dir="\${HOME:-/tmp}"
+local_cache_root="\${SELF_DIR}/HiCT.portable/payloads"
 preferred_cache_root="\${XDG_CACHE_HOME:-\${home_dir}/.cache}/hict/portable"
-cache_probe="\${preferred_cache_root}/.hict-write-test-\$\$"
-if mkdir -p "\${preferred_cache_root}" 2>/dev/null && touch "\${cache_probe}" 2>/dev/null; then
-  rm -f "\${cache_probe}"
-  cache_root="\${preferred_cache_root}"
-else
-  cache_root="\${TMPDIR:-/tmp}/hict-\${USER:-user}/portable"
-  mkdir -p "\${cache_root}"
+fallback_cache_root="\${TMPDIR:-/tmp}/hict-\${USER:-user}/portable"
+cache_root=""
+for candidate_cache_root in "\${local_cache_root}" "\${fallback_cache_root}" "\${preferred_cache_root}"; do
+  if can_execute_from_directory "\${candidate_cache_root}"; then
+    cache_root="\${candidate_cache_root}"
+    break
+  fi
+  echo "WARNING: HiCT payload cache candidate is not executable, trying fallback: \${candidate_cache_root}" >&2
+done
+if [[ -z "\${cache_root}" ]]; then
+  echo "No executable HiCT payload cache directory is available. Check the .run directory, XDG cache, and /tmp." >&2
+  exit 1
+fi
+if [[ "\${cache_root}" != "\${local_cache_root}" ]]; then
+  export HICT_PORTABLE_NOTICE="The directory containing the .run file could not be used as an executable payload cache; using \${cache_root}."
 fi
 extract_root="\${cache_root}/${APP_NAME}-${VERSION}-${PLATFORM}-\${PAYLOAD_SHA256}"
 app_home="\${extract_root}/${APP_NAME}-${VERSION}-${PLATFORM}"

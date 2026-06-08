@@ -62,7 +62,7 @@ on:
       bundle_electron_browser:
         description: "Build and bundle the HiCT Electron browser payload"
         required: true
-        default: "false"
+        default: "true"
         type: choice
         options:
           - "true"
@@ -329,7 +329,7 @@ jobs:
         run: ./scripts/portable/prepare_tauri_browser_payload_linux.sh
 
       - name: Build bundled Electron browser
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true' }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
         env:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
         run: ./scripts/portable/prepare_electron_browser_payload_linux.sh
@@ -668,7 +668,7 @@ jobs:
         run: .\scripts\portable\prepare_tauri_browser_payload_windows.ps1
 
       - name: Build bundled Electron browser
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true' }}
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
         shell: pwsh
         env:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..

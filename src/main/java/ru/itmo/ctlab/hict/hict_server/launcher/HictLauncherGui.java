@@ -316,6 +316,10 @@ public final class HictLauncherGui {
       this.frame.setLocationRelativeTo(null);
       this.frame.setVisible(true);
       appendLauncherLog("Launcher ready. DATA_DIR=" + getFieldValue("DATA_DIR"));
+      final var portableNotice = firstNonBlank(System.getenv("HICT_PORTABLE_NOTICE"));
+      if (portableNotice != null) {
+        appendLauncherLog("Portable runtime notice: " + portableNotice);
+      }
       appendLauncherLog("Native processing options: " + nativeProcessingStatusText());
       if (this.browserBundles.isEmpty()) {
         appendLauncherLog("No bundled browser payload was found; the system browser will be used.");
@@ -810,8 +814,8 @@ public final class HictLauncherGui {
       final Path tempDir;
       try {
         dataDir = normalizePath(getFieldValue("DATA_DIR"));
-        tempDir = dataDir.resolve("tmp").normalize().toAbsolutePath().normalize();
         Files.createDirectories(dataDir);
+        tempDir = selectExecutableRuntimeTempDir(dataDir);
         Files.createDirectories(tempDir);
       } catch (final Exception ex) {
         showError("Cannot prepare DATA_DIR", ex);
@@ -823,9 +827,10 @@ public final class HictLauncherGui {
       processBuilder.redirectErrorStream(true);
       processBuilder.directory(dataDir.toFile());
       final var env = processBuilder.environment();
-      applyEnvironment(env, dataDir);
+      applyEnvironment(env, dataDir, tempDir);
 
       appendLauncherLog("Starting HiCT with DATA_DIR=" + dataDir);
+      appendLauncherLog("Runtime temp directory: " + tempDir);
       appendLauncherLog("Native processing launch mode: " + selectedNativeProcessingMode().label);
       appendLauncherLog("Command: " + String.join(" ", command));
 
@@ -875,7 +880,97 @@ public final class HictLauncherGui {
       return command;
     }
 
-    private void applyEnvironment(final Map<String, String> env, final Path dataDir) {
+    private Path selectExecutableRuntimeTempDir(final Path dataDir) throws IOException {
+      final var candidates = new ArrayList<Path>();
+      addTempCandidate(candidates, firstNonBlank(System.getenv("HICT_TEMP_DIR"), System.getenv("HICT_EXEC_TEMP_DIR")));
+      addTempCandidate(candidates, dataDir.resolve("tmp").toString());
+      addTempCandidate(
+        candidates,
+        Path.of(System.getProperty("java.io.tmpdir", "."))
+          .resolve("hict-runtime-" + Integer.toHexString(Objects.hash(this.appHome.toString())))
+          .toString()
+      );
+      addTempCandidate(candidates, this.appHome.resolve("tmp").toString());
+
+      IOException lastError = null;
+      final var localDataTemp = dataDir.resolve("tmp").toAbsolutePath().normalize();
+      for (final var candidate : candidates) {
+        try {
+          final var normalizedCandidate = candidate.toAbsolutePath().normalize();
+          Files.createDirectories(normalizedCandidate);
+          if (canExecuteFromDirectory(normalizedCandidate)) {
+            if (!normalizedCandidate.equals(localDataTemp)) {
+              appendLauncherLog("Using fallback runtime temp directory because DATA_DIR/tmp is not executable or not usable: " + normalizedCandidate);
+            }
+            return normalizedCandidate;
+          }
+          appendLauncherLog("Runtime temp candidate is not executable, trying fallback: " + normalizedCandidate);
+        } catch (final IOException ex) {
+          lastError = ex;
+          appendLauncherLog("Runtime temp candidate is not usable, trying fallback: " + candidate + " (" + ex.getMessage() + ")");
+        }
+      }
+
+      final var error = new IOException("No executable runtime temp directory is available. Check DATA_DIR/tmp, HICT_TEMP_DIR, and the system temp directory.");
+      if (lastError != null) {
+        error.addSuppressed(lastError);
+      }
+      throw error;
+    }
+
+    private static void addTempCandidate(final List<Path> candidates, final String rawPath) {
+      if (rawPath == null || rawPath.isBlank()) {
+        return;
+      }
+      final var candidate = normalizePath(rawPath);
+      if (candidates.stream().noneMatch(existing -> existing.equals(candidate))) {
+        candidates.add(candidate);
+      }
+    }
+
+    private static boolean canExecuteFromDirectory(final Path directory) {
+      Path probe = null;
+      try {
+        if (isWindows()) {
+          probe = Files.createTempFile(directory, "hict-exec-test-", ".cmd");
+          Files.writeString(probe, "@echo off\r\nexit /b 0\r\n", StandardCharsets.UTF_8);
+          return runProbe(new ProcessBuilder("cmd.exe", "/d", "/c", probe.toString()));
+        }
+        probe = Files.createTempFile(directory, "hict-exec-test-", ".sh");
+        Files.writeString(probe, "#!/bin/sh\nexit 0\n", StandardCharsets.UTF_8);
+        probe.toFile().setExecutable(true, true);
+        return runProbe(new ProcessBuilder(probe.toString()));
+      } catch (final IOException ex) {
+        return false;
+      } finally {
+        if (probe != null) {
+          try {
+            Files.deleteIfExists(probe);
+          } catch (final IOException ignored) {
+            // Best-effort cleanup only.
+          }
+        }
+      }
+    }
+
+    private static boolean runProbe(final ProcessBuilder processBuilder) throws IOException {
+      processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+      processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
+      final var process = processBuilder.start();
+      try {
+        if (!process.waitFor(5, TimeUnit.SECONDS)) {
+          process.destroyForcibly();
+          return false;
+        }
+        return process.exitValue() == 0;
+      } catch (final InterruptedException ex) {
+        Thread.currentThread().interrupt();
+        process.destroyForcibly();
+        return false;
+      }
+    }
+
+    private void applyEnvironment(final Map<String, String> env, final Path dataDir, final Path tempDir) {
       putIfNotBlank(env, "DATA_DIR", dataDir.toString());
       for (final var spec : CONFIG_SPECS) {
         if ("DATA_DIR".equals(spec.key()) || "HICT_JAVA_OPTS".equals(spec.key())) {
@@ -886,7 +981,6 @@ public final class HictLauncherGui {
       env.put("SERVE_WEBUI", "true");
       env.put("AUTO_OPEN_BROWSER", "false");
       env.put("HICT_LOG_LEVEL", selectedLogLevel());
-      final var tempDir = dataDir.resolve("tmp").normalize().toAbsolutePath().normalize();
       env.put("HICT_TEMP_DIR", tempDir.toString());
       env.putIfAbsent("TMP", tempDir.toString());
       env.putIfAbsent("TEMP", tempDir.toString());
@@ -1228,10 +1322,14 @@ public final class HictLauncherGui {
         final var requested = NativeProcessingMode.fromWireName(configuredMode);
         return hasNativeProcessingMode(requested) ? requested : NativeProcessingMode.JAVA;
       }
-      if (NativeCpuFeatures.isTruthy(firstNonBlank(
+      final var nativeProcessingOverride = firstNonBlank(
         System.getenv("HICT_NATIVE_PROCESSING"),
         System.getProperty("hict.native.processing")
-      ))) {
+      );
+      if (nativeProcessingOverride != null && !NativeCpuFeatures.isTruthy(nativeProcessingOverride)) {
+        return NativeProcessingMode.JAVA;
+      }
+      if (nativeProcessingOverride == null || NativeCpuFeatures.isTruthy(nativeProcessingOverride)) {
         final var requestedVariant = firstNonBlank(
           System.getenv("HICT_NATIVE_VARIANT"),
           System.getProperty("hict.native.variant")

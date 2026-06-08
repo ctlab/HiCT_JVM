@@ -8,10 +8,9 @@
  * File layout:
  *   launcher.exe || 7zr.exe || payload.7z || manifest.json || u64(manifestSize) || magic
  *
- * The launcher extracts the payload into a stable content-addressed cache next
- * to the EXE and skips extraction on subsequent launches when the marker
- * matches. This keeps portable distributions self-contained and avoids AppData
- * junctions/ACLs on restricted Windows profiles.
+ * The launcher first tries a stable content-addressed cache next to the EXE,
+ * then falls back to the OS temp directory when local extraction is blocked.
+ * Subsequent launches skip extraction when the marker matches.
  */
 
 #ifndef UNICODE
@@ -201,6 +200,24 @@ void removeTreeIfExists(const std::wstring &path) {
 
 std::wstring getWritableCacheRoot(const std::wstring &selfPath) {
   return joinPath(dirnameOf(selfPath), L"HiCT.portable\\payloads");
+}
+
+std::wstring getTempDirectory() {
+  const DWORD required = GetTempPathW(0, nullptr);
+  if (required == 0) {
+    return L".";
+  }
+  std::wstring buffer(required + 1, L'\0');
+  const DWORD copied = GetTempPathW(static_cast<DWORD>(buffer.size()), buffer.data());
+  if (copied == 0) {
+    return L".";
+  }
+  buffer.resize(std::wcslen(buffer.c_str()));
+  return buffer;
+}
+
+std::wstring getFallbackCacheRoot() {
+  return joinPath(getTempDirectory(), L"HiCT.portable\\payloads");
 }
 
 bool environmentVariableIsDefined(const wchar_t *name) {
@@ -482,6 +499,75 @@ int runProcess(const std::wstring &commandLine, const std::wstring &workingDirec
   return static_cast<int>(exitCode);
 }
 
+int extractPayload(const std::wstring &selfPath,
+                   const Manifest &manifest,
+                   const std::wstring &targetRoot,
+                   bool launchAfterExtract);
+
+int tryExtractPayload(const std::wstring &selfPath,
+                      const Manifest &manifest,
+                      const std::wstring &targetRoot,
+                      bool launchAfterExtract) {
+  try {
+    return extractPayload(selfPath, manifest, targetRoot, launchAfterExtract);
+  } catch (const std::exception &e) {
+    std::cerr << "Failed to prepare HiCT payload cache: " << e.what() << "\n";
+    return 1;
+  }
+}
+
+std::wstring getEnvironmentVariableValue(const wchar_t *name) {
+  const DWORD size = GetEnvironmentVariableW(name, nullptr, 0);
+  if (size == 0) {
+    return L"";
+  }
+  std::wstring value(size, L'\0');
+  GetEnvironmentVariableW(name, value.data(), size);
+  value.resize(std::wcslen(value.c_str()));
+  return value;
+}
+
+bool canUseRuntimeTempDir(const std::wstring &directory) {
+  if (directory.empty()) {
+    return false;
+  }
+  try {
+    createDirectories(directory);
+    const auto probePath = joinPath(directory, L".hict-exec-test-" + std::to_wstring(GetCurrentProcessId()) + L".cmd");
+    writeSmallTextFile(probePath, "@echo off\r\nexit /b 0\r\n");
+    const int status = runProcess(L"cmd.exe /d /c " + quoteArg(probePath), directory);
+    DeleteFileW(probePath.c_str());
+    return status == 0;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::wstring selectRuntimeTempDir(const std::wstring &dataDir, const std::wstring &appHome) {
+  const auto localTempDir = joinPath(dataDir, L"tmp");
+  const auto configuredTempDir = getEnvironmentVariableValue(L"HICT_TEMP_DIR");
+  const std::vector<std::wstring> candidates{
+      configuredTempDir,
+      localTempDir,
+      joinPath(getTempDirectory(), L"HiCT\\runtime"),
+      joinPath(appHome, L"tmp")};
+
+  for (const auto &candidate : candidates) {
+    if (candidate.empty()) {
+      continue;
+    }
+    if (canUseRuntimeTempDir(candidate)) {
+      if (candidate != localTempDir) {
+        const auto notice = L"DATA_DIR\\tmp could not be used as the runtime temp directory; using " + candidate + L".";
+        SetEnvironmentVariableW(L"HICT_PORTABLE_NOTICE", notice.c_str());
+      }
+      return candidate;
+    }
+    std::wcerr << L"WARNING: Runtime temp candidate is not usable, trying fallback: " << candidate << L"\n";
+  }
+  throw std::runtime_error("No usable runtime temp directory is available.");
+}
+
 std::wstring getDataDirectory(const std::wstring &selfPath) {
   DWORD existingSize = GetEnvironmentVariableW(L"DATA_DIR", nullptr, 0);
   if (existingSize > 0) {
@@ -593,8 +679,17 @@ int run() {
     LocalFree(argv);
   }
 
-  const auto cacheRoot = joinPath(getWritableCacheRoot(selfPath), utf8ToWide(shortPayloadCacheKey(manifest)));
-  const int extractExit = extractPayload(selfPath, manifest, cacheRoot, true);
+  const auto cacheKey = utf8ToWide(shortPayloadCacheKey(manifest));
+  auto cacheRoot = joinPath(getWritableCacheRoot(selfPath), cacheKey);
+  int extractExit = tryExtractPayload(selfPath, manifest, cacheRoot, true);
+  if (extractExit != 0) {
+    const auto fallbackCacheRoot = joinPath(getFallbackCacheRoot(), cacheKey);
+    std::wcerr << L"WARNING: Local HiCT payload cache is not usable, trying fallback: " << fallbackCacheRoot << L"\n";
+    const auto notice = L"The directory containing the EXE could not be used as the payload cache; using " + fallbackCacheRoot + L".";
+    SetEnvironmentVariableW(L"HICT_PORTABLE_NOTICE", notice.c_str());
+    cacheRoot = fallbackCacheRoot;
+    extractExit = tryExtractPayload(selfPath, manifest, cacheRoot, true);
+  }
   if (extractExit != 0) {
     pauseOnFailureIfNeeded(extractExit);
     return extractExit;
@@ -610,8 +705,8 @@ int run() {
 
   const auto dataDir = getDataDirectory(selfPath);
   const auto processedDir = joinPath(dataDir, L"processed");
-  const auto tempDir = joinPath(dataDir, L"tmp");
   createDirectories(dataDir);
+  const auto tempDir = selectRuntimeTempDir(dataDir, appHome);
   createDirectories(processedDir);
   createDirectories(tempDir);
   SetEnvironmentVariableW(L"DATA_DIR", dataDir.c_str());

@@ -148,7 +148,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             parallelism
                         );
 
-                        final var job = createJob(sourcePath, outputPath, direction, parallelism, true, true);
+                        final var job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true);
                         submitJob(job, options, ensureGroup("upload", 1));
                         return new ConversionSubmitResponseDTO("submitted", job.jobId);
                     } catch (IOException e) {
@@ -218,7 +218,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     );
                     final ConversionJob job;
                     try {
-                        job = createJob(sourcePath, outputPath, direction, parallelism, false, false);
+                        job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false);
                     } catch (IOException e) {
                         throw new RuntimeException("Failed to create conversion job", e);
                     }
@@ -298,7 +298,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         );
                         final ConversionJob job;
                         try {
-                            job = createJob(sourcePath, outputPath, direction, parallelism, false, false);
+                            job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false);
                         } catch (IOException e) {
                             throw new RuntimeException("Failed to create conversion job for " + filename, e);
                         }
@@ -497,12 +497,13 @@ public class ConversionHandlersHolder extends HandlersHolder {
 
     private ConversionJob createJob(final @NotNull Path sourcePath,
                                     final @NotNull Path outputPath,
+                                    final Path dataDirectory,
                                     final @NotNull ConversionDirection direction,
                                     final int parallelism,
                                     final boolean deleteSourceOnCleanup,
                                     final boolean deleteOutputOnCleanup) throws IOException {
         final var jobId = UUID.randomUUID().toString();
-        final var job = new ConversionJob(jobId, sourcePath, outputPath, direction, parallelism, deleteSourceOnCleanup, deleteOutputOnCleanup);
+        final var job = new ConversionJob(jobId, sourcePath, outputPath, dataDirectory, direction, parallelism, deleteSourceOnCleanup, deleteOutputOnCleanup);
         job.inputSizeBytes = Files.exists(sourcePath) ? Files.size(sourcePath) : 0L;
         jobs.put(jobId, job);
         return job;
@@ -623,6 +624,20 @@ public class ConversionHandlersHolder extends HandlersHolder {
         }
     }
 
+    static @NotNull String toClientFilename(final @NotNull Path path, final Path dataDirectory) {
+        if (dataDirectory == null) {
+            final var fileName = path.getFileName();
+            return fileName == null ? path.toString() : fileName.toString();
+        }
+        final var normalizedDataDirectory = dataDirectory.normalize().toAbsolutePath();
+        final var normalizedPath = path.normalize().toAbsolutePath();
+        if (normalizedPath.startsWith(normalizedDataDirectory)) {
+            return normalizedDataDirectory.relativize(normalizedPath).toString();
+        }
+        final var fileName = normalizedPath.getFileName();
+        return fileName == null ? normalizedPath.toString() : fileName.toString();
+    }
+
     private static @NotNull String humanizeStageName(final @NotNull String stageName) {
         return switch (stageName) {
             case "metadata" -> "Metadata";
@@ -724,6 +739,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
         private final long createdAtMs = Instant.now().toEpochMilli();
         private final Path sourcePath;
         private final Path outputPath;
+        private final Path dataDirectory;
         private final ConversionDirection direction;
         private final int parallelism;
         private final boolean deleteSourceOnCleanup;
@@ -754,10 +770,11 @@ public class ConversionHandlersHolder extends HandlersHolder {
         private final CopyOnWriteArrayList<String> toolchainCitations = new CopyOnWriteArrayList<>();
         private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
 
-        private ConversionJob(String jobId, Path sourcePath, Path outputPath, ConversionDirection direction, int parallelism, boolean deleteSourceOnCleanup, boolean deleteOutputOnCleanup) {
+        private ConversionJob(String jobId, Path sourcePath, Path outputPath, Path dataDirectory, ConversionDirection direction, int parallelism, boolean deleteSourceOnCleanup, boolean deleteOutputOnCleanup) {
             this.jobId = jobId;
             this.sourcePath = sourcePath;
             this.outputPath = outputPath;
+            this.dataDirectory = dataDirectory;
             this.direction = direction;
             this.parallelism = parallelism;
             this.deleteSourceOnCleanup = deleteSourceOnCleanup;
@@ -788,8 +805,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
             return new ConversionJobDTO(
                     jobId,
                     status,
-                    sourcePath.getFileName().toString(),
-                    outputPath.getFileName().toString(),
+                    toClientFilename(sourcePath, dataDirectory),
+                    toClientFilename(outputPath, dataDirectory),
                     direction.wireName(),
                     currentStage == null ? "" : currentStage,
                     currentStageLabel == null ? "" : currentStageLabel,
