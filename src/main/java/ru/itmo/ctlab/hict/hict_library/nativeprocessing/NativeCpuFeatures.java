@@ -39,6 +39,27 @@ public final class NativeCpuFeatures {
   private NativeCpuFeatures() {
   }
 
+  public static boolean supportsSse2Core() {
+    final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+    return arch.equals("amd64") || arch.equals("x86_64") || arch.equals("x64");
+  }
+
+  public static boolean supportsAvx2Core() {
+    if (isTruthy(firstNonBlank(
+      System.getProperty("hict.native.disableAvx2"),
+      System.getenv("HICT_NATIVE_DISABLE_AVX2")
+    ))) {
+      return false;
+    }
+    if (isTruthy(firstNonBlank(
+      System.getProperty("hict.native.forceAvx2"),
+      System.getenv("HICT_NATIVE_FORCE_AVX2")
+    ))) {
+      return true;
+    }
+    return supportsAvx2FromProcCpuInfo() || supportsAvx2FromHotSpot();
+  }
+
   public static boolean supportsAvx512Core() {
     if (isTruthy(firstNonBlank(
       System.getProperty("hict.native.disableAvx512"),
@@ -52,7 +73,7 @@ public final class NativeCpuFeatures {
     ))) {
       return true;
     }
-    return supportsAvx512FromHotSpot() || supportsAvx512FromProcCpuInfo();
+    return supportsAvx2Core() && (supportsAvx512FromHotSpot() || supportsAvx512FromProcCpuInfo());
   }
 
   public static boolean isTruthy(final @Nullable String value) {
@@ -76,43 +97,72 @@ public final class NativeCpuFeatures {
   }
 
   private static boolean supportsAvx512FromHotSpot() {
+    final var useAvx = hotSpotUseAvxLevel();
+    return useAvx != null && useAvx >= 3;
+  }
+
+  private static boolean supportsAvx2FromHotSpot() {
+    final var useAvx = hotSpotUseAvxLevel();
+    return useAvx != null && useAvx >= 2;
+  }
+
+  private static @Nullable Integer hotSpotUseAvxLevel() {
     try {
       final var beanType = Class
         .forName("com.sun.management.HotSpotDiagnosticMXBean")
         .asSubclass(PlatformManagedObject.class);
       final var bean = ManagementFactory.getPlatformMXBean(beanType);
       if (bean == null) {
-        return false;
+        return null;
       }
       final var option = beanType.getMethod("getVMOption", String.class).invoke(bean, "UseAVX");
       if (option == null) {
-        return false;
+        return null;
       }
       final var value = option.getClass().getMethod("getValue").invoke(option);
-      return value != null && Integer.parseInt(value.toString()) >= 3;
+      return value == null ? null : Integer.parseInt(value.toString());
     } catch (final ClassNotFoundException | NoClassDefFoundError err) {
-      log.debug("HotSpot diagnostic MXBean is unavailable; skipping HotSpot UseAVX AVX-512 detection.");
-      return false;
+      log.debug("HotSpot diagnostic MXBean is unavailable; skipping HotSpot UseAVX feature detection.");
+      return null;
     } catch (final Throwable err) {
-      log.debug("Could not query HotSpot UseAVX for AVX-512 support: {}", err.toString());
-      return false;
+      log.debug("Could not query HotSpot UseAVX support: {}", err.toString());
+      return null;
     }
   }
 
-  private static boolean supportsAvx512FromProcCpuInfo() {
-    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-    if (!os.contains("linux")) {
+  private static boolean supportsAvx2FromProcCpuInfo() {
+    final var cpuInfo = linuxCpuInfo();
+    if (cpuInfo == null) {
       return false;
     }
-    try {
-      final var cpuInfo = Files.readString(Path.of("/proc/cpuinfo")).toLowerCase(Locale.ROOT);
-      return cpuInfo.contains("avx512f")
-        && cpuInfo.contains("avx512dq")
-        && cpuInfo.contains("avx512bw")
-        && cpuInfo.contains("avx512vl");
-    } catch (final IOException err) {
-      log.debug("Could not inspect /proc/cpuinfo for AVX-512 support", err);
+    return cpuInfo.contains("avx2")
+      && cpuInfo.contains("fma")
+      && cpuInfo.contains("sse4_2")
+      && (cpuInfo.contains("bmi1") || cpuInfo.contains(" bmi "))
+      && cpuInfo.contains("bmi2");
+  }
+
+  private static boolean supportsAvx512FromProcCpuInfo() {
+    final var cpuInfo = linuxCpuInfo();
+    if (cpuInfo == null) {
       return false;
+    }
+    return cpuInfo.contains("avx512f")
+      && cpuInfo.contains("avx512dq")
+      && cpuInfo.contains("avx512bw")
+      && cpuInfo.contains("avx512vl");
+  }
+
+  private static @Nullable String linuxCpuInfo() {
+    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+    if (!os.contains("linux")) {
+      return null;
+    }
+    try {
+      return Files.readString(Path.of("/proc/cpuinfo")).toLowerCase(Locale.ROOT);
+    } catch (final IOException err) {
+      log.debug("Could not inspect /proc/cpuinfo for CPU feature support", err);
+      return null;
     }
   }
 }

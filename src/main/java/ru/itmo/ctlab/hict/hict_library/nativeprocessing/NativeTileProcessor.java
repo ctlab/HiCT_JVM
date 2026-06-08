@@ -41,6 +41,7 @@ import java.util.Objects;
 
 @Slf4j
 final class NativeTileProcessor {
+  private static final @NotNull String SSE2_LIBRARY_BASE_NAME = "hict_native_sse2";
   private static final @NotNull String AVX2_LIBRARY_BASE_NAME = "hict_native";
   private static final @NotNull String AVX512_LIBRARY_BASE_NAME = "hict_native_avx512";
   private static final @NotNull String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
@@ -474,9 +475,17 @@ final class NativeTileProcessor {
     final var normalizedVariant = requestedVariant == null
       ? "auto"
       : requestedVariant.trim().toLowerCase(Locale.ROOT);
-    final var result = new ArrayList<String>(2);
-    if ("avx2".equals(normalizedVariant) || "baseline".equals(normalizedVariant)) {
-      result.add(AVX2_LIBRARY_BASE_NAME);
+    final var result = new ArrayList<String>(3);
+    if ("sse2".equals(normalizedVariant) || "baseline".equals(normalizedVariant)) {
+      if (NativeCpuFeatures.supportsSse2Core()) {
+        result.add(SSE2_LIBRARY_BASE_NAME);
+      }
+      return result;
+    }
+    if ("avx2".equals(normalizedVariant)) {
+      if (NativeCpuFeatures.supportsAvx2Core()) {
+        result.add(AVX2_LIBRARY_BASE_NAME);
+      }
       return result;
     }
     if ("avx512".equals(normalizedVariant)) {
@@ -488,7 +497,12 @@ final class NativeTileProcessor {
     if (NativeCpuFeatures.supportsAvx512Core()) {
       result.add(AVX512_LIBRARY_BASE_NAME);
     }
-    result.add(AVX2_LIBRARY_BASE_NAME);
+    if (NativeCpuFeatures.supportsAvx2Core()) {
+      result.add(AVX2_LIBRARY_BASE_NAME);
+    }
+    if (NativeCpuFeatures.supportsSse2Core()) {
+      result.add(SSE2_LIBRARY_BASE_NAME);
+    }
     return result;
   }
 
