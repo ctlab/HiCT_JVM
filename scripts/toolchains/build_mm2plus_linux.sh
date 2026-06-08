@@ -212,6 +212,11 @@ manifest = {
 (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 PY
 
+if [[ "${HICT_REQUIRE_MM2PLUS_VARIANTS:-0}" == "1" && "${variant_failures}" -gt 0 ]]; then
+  echo "[mm2plus/linux] HICT_REQUIRE_MM2PLUS_VARIANTS=1 and ${variant_failures} mm2-plus variant(s) failed." >&2
+  exit 1
+fi
+
 if [[ "${variant_failures}" -ge 2 ]]; then
   echo "[mm2plus/linux] No mm2-plus variant was built." >&2
   exit 1

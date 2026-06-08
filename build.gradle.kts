@@ -98,6 +98,14 @@ data class NativeProcessingVariant(
 
 val nativeProcessingVariants = listOf(
   NativeProcessingVariant(
+    id = "sse2",
+    taskSuffix = "Sse2",
+    libraryBaseName = "${nativeProcessingLibraryBaseName}_sse2",
+    gnuCompileFlags = listOf("-msse2"),
+    msvcCompileFlags = emptyList(),
+    description = "x86-64 SSE2 baseline build"
+  ),
+  NativeProcessingVariant(
     id = "avx2",
     taskSuffix = "Avx2",
     libraryBaseName = nativeProcessingLibraryBaseName,
@@ -128,6 +136,10 @@ val nativeProcessingVariants = listOf(
 
 val nativeProcessingOpenMpEnabled =
   (providers.gradleProperty("nativeOpenmp").orNull ?: System.getenv("HICT_NATIVE_OPENMP"))
+    ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
+    ?: false
+val requireNativeProcessingVariants =
+  (providers.gradleProperty("requireNativeProcessingVariants").orNull ?: System.getenv("HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS"))
     ?.let { it.equals("true", ignoreCase = true) || it == "1" || it.equals("yes", ignoreCase = true) }
     ?: false
 
@@ -417,14 +429,14 @@ nativeProcessingVariants.forEach { variant ->
 
 tasks.register("compileNativeProcessing") {
   group = "build"
-  description = "Build the optional HiCT native processing AVX2 JNI library for the current platform."
-  dependsOn("compileNativeProcessingAvx2")
+  description = "Build the optional HiCT native processing SSE2 baseline JNI library for the current platform."
+  dependsOn("compileNativeProcessingSse2")
 }
 
 tasks.register("compileNativeProcessingBaseline") {
   group = "build"
-  description = "Compatibility alias for compileNativeProcessingAvx2."
-  dependsOn("compileNativeProcessingAvx2")
+  description = "Compatibility alias for compileNativeProcessingSse2."
+  dependsOn("compileNativeProcessingSse2")
 }
 
 tasks.register("natives") {
@@ -440,16 +452,28 @@ tasks.register("verifyNativeProcessingBuild") {
   doLast {
     val platformDirectory = nativeProcessingPlatformDirectory()
     if (platformDirectory == null) {
-      emitCiWarning("HiCT native processing is unsupported on this platform; Java fallback remains available.")
+      val message = "HiCT native processing is unsupported on this platform; Java fallback remains available."
+      if (requireNativeProcessingVariants) {
+        throw GradleException(message)
+      }
+      emitCiWarning(message)
       return@doLast
     }
+    val missingVariants = mutableListOf<String>()
     nativeProcessingVariants.forEach { variant ->
       val outputFile = nativeProcessingOutputFile(variant)
       if (!outputFile.isFile) {
-        emitCiWarning("HiCT native processing ${variant.id} library is missing at ${outputFile.absolutePath}; this package will use Java fallback for that variant.")
+        val message = "HiCT native processing ${variant.id} library is missing at ${outputFile.absolutePath}; this package will use Java fallback for that variant."
+        missingVariants += "${variant.id} (${outputFile.absolutePath})"
+        emitCiWarning(message)
       } else {
         logger.lifecycle("HiCT native processing ${variant.id} library ready: ${outputFile.absolutePath}")
       }
+    }
+    if (requireNativeProcessingVariants && missingVariants.isNotEmpty()) {
+      throw GradleException(
+        "Required HiCT native processing variant(s) were not built: ${missingVariants.joinToString()}"
+      )
     }
   }
 }
@@ -474,8 +498,8 @@ tasks.register("describeNativeProcessing") {
     }
     println("Runtime overrides:")
     println("  HICT_NATIVE_PROCESSING=1")
-    println("  HICT_NATIVE_VARIANT=auto|avx2|avx512")
-    println("  HICT_NATIVE_VARIANT=baseline is accepted as a legacy alias for avx2")
+    println("  HICT_NATIVE_VARIANT=auto|sse2|avx2|avx512")
+    println("  HICT_NATIVE_VARIANT=baseline is accepted as a legacy alias for sse2")
     println("  HICT_NATIVE_LIBRARY_PATH=${nativeProcessingOutputFile(nativeProcessingVariants.first()).absolutePath}")
     println("  HICT_NATIVE_LIBRARY_DIR=${nativeProcessingOutputFile(nativeProcessingVariants.first()).parentFile.absolutePath}")
   }
@@ -525,7 +549,7 @@ tasks.register("benchmarkNativeProcessing") {
 
 tasks.register<JavaExec>("benchmarkNativeProcessingReport") {
   group = "verification"
-  description = "Create a Java/AVX2/AVX-512 native processing requests/sec benchmark report with SVG plots."
+  description = "Create a Java/SSE2/AVX2/AVX-512 native processing requests/sec benchmark report with SVG plots."
   dependsOn("natives", "compileJava")
   classpath = sourceSets["main"].output.classesDirs + sourceSets["main"].compileClasspath
   mainClass.set("ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingBenchmarkReport")

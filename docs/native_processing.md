@@ -42,15 +42,16 @@ conversion commands keep the proven Java I/O path and use native kernels only
 for isolated hot loops. See `docs/native_hdf5_migration.md` for the file-backend
 migration plan.
 
-Two binary variants are built on x86-64 toolchains that support them:
+Three binary variants are built on x86-64 toolchains that support them:
 
+- `sse2`: portable x86-64 baseline native build;
 - `avx2`: AVX2/FMA/SSE4.2/BMI/BMI2, the common target for Intel Core
   i7-1185G7, Ryzen 7900X, and Ryzen 8500G-class machines;
 - `avx512`: AVX2 plus AVX-512F/DQ/BW/VL.
 
-The runtime loader uses `avx512` only when Linux CPU flags advertise all
-required AVX-512 core features. If the variant is missing, unsafe, or fails to
-load, HiCT falls back to the AVX2 native library and then to Java.
+The runtime loader uses `avx512` and `avx2` only when the CPU/JVM advertises the
+required instruction-set support. If the fastest variant is missing, unsafe, or
+fails to load, HiCT falls back through AVX2, SSE2, and then Java.
 
 ## Building
 
@@ -79,6 +80,12 @@ or:
 HICT_NATIVE_OPENMP=1 ./gradlew natives
 ```
 
+Release packaging can require every configured native variant to be present:
+
+```bash
+HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS=1 ./gradlew shadowJar
+```
+
 `./gradlew jar` builds the regular JAR and also produces the fat Shadow JAR with
 the available native libraries embedded under `natives/<platform>/`.
 
@@ -101,8 +108,8 @@ kernels.
 
 Reports are written to `build/reports/hict-native-benchmark/`:
 
-- `benchmark.csv` contains requests/sec and mean latency for Java, AVX2 and
-  AVX-512 variants.
+- `benchmark.csv` contains requests/sec and mean latency for Java, SSE2, AVX2
+  and AVX-512 variants.
 - `requests_per_second.svg` and `index.html` provide a quick visual comparison.
 
 For quick local smoke checks, reduce the data size and iteration count:
@@ -158,11 +165,11 @@ Optional library overrides:
 ```bash
 HICT_NATIVE_LIBRARY_PATH=/absolute/path/to/libhict_native.so
 HICT_NATIVE_LIBRARY_DIR=/directory/containing/mapped/library/name
-HICT_NATIVE_VARIANT=auto|avx2|avx512
+HICT_NATIVE_VARIANT=auto|sse2|avx2|avx512
 HICT_NATIVE_DISABLE_AVX512=1
 ```
 
-`HICT_NATIVE_VARIANT=baseline` is still accepted as a legacy alias for `avx2`.
+`HICT_NATIVE_VARIANT=baseline` is accepted as a legacy alias for `sse2`.
 
 The WebUI exposes the same runtime switch under `Dev -> Use native code
 processing`. If the library is missing or fails, HiCT reports that Java is active
@@ -186,5 +193,5 @@ The optional parity test can be run after compiling the native library:
 
 ```bash
 ./gradlew test --tests '*NativeProcessingServiceTest' \
-  -Dhict.native.test.library="$PWD/build/native-processing/resources/natives/linux_64/libhict_native.so"
+  -Dhict.native.test.library="$PWD/build/native-processing/resources/natives/linux_64/libhict_native_sse2.so"
 ```

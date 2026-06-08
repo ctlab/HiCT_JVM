@@ -478,6 +478,10 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 (Join-Path $OutputDir "manifest.json")
 
+if (($env:HICT_REQUIRE_MM2PLUS_VARIANTS -eq "1") -and ((-not $builtAvx2) -or (-not $builtAvx512))) {
+  throw "HICT_REQUIRE_MM2PLUS_VARIANTS=1 but one or more mm2-plus variants failed to build. builtAvx2=$builtAvx2 builtAvx512=$builtAvx512"
+}
+
 if (-not $builtAvx2 -and -not $builtAvx512) {
   throw "No mm2-plus variant was built."
 }

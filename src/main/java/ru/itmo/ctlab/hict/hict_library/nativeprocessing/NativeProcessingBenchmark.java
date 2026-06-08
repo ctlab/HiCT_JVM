@@ -313,7 +313,7 @@ public final class NativeProcessingBenchmark {
   private static @NotNull String resolveVariantName(final NativeTileProcessor.@NotNull LoadReport loadReport) {
     final var requestedVariant = System.getProperty("hict.native.variant", "").trim().toLowerCase(Locale.ROOT);
     if (!requestedVariant.isBlank() && !"auto".equals(requestedVariant)) {
-      return "baseline".equals(requestedVariant) ? "avx2" : requestedVariant;
+      return "baseline".equals(requestedVariant) ? "sse2" : requestedVariant;
     }
     final var version = loadReport.version().toLowerCase(Locale.ROOT);
     if (version.contains("avx512")) {
@@ -321,6 +321,9 @@ public final class NativeProcessingBenchmark {
     }
     if (version.contains("avx2")) {
       return "avx2";
+    }
+    if (version.contains("sse2")) {
+      return "sse2";
     }
     return "native";
   }
