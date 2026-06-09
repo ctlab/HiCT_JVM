@@ -7,7 +7,15 @@ OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_DIR}/toolchains-dist/linux_x86_64}"
 WORK_DIR="${WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}"
 REF="${MM2PLUS_REF:-v1.2}"
 REPO_URL="${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
-CXX_BIN="${CXX:-g++}"
+ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"
+ENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  CXX_BIN="${CXX:-clang++}"
+  CC_BIN="${CC:-clang}"
+else
+  CXX_BIN="${CXX:-g++}"
+  CC_BIN="${CC:-gcc}"
+fi
 
 usage() {
   cat <<USAGE
@@ -36,6 +44,16 @@ for cmd in git make "${CXX_BIN}" python3; do
     exit 1
   }
 done
+if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
+  command -v pkg-config >/dev/null 2>&1 || {
+    echo "Required command not found: pkg-config" >&2
+    exit 1
+  }
+  command -v readelf >/dev/null 2>&1 || {
+    echo "Required command not found: readelf" >&2
+    exit 1
+  }
+fi
 
 echo "[mm2plus/linux] Building ${REF} into ${OUTPUT_DIR}"
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/share/licenses/mm2plus" "${OUTPUT_DIR}/share/doc/mm2plus"
@@ -68,6 +86,15 @@ else:
     print("[mm2plus/linux] Makefile generic object rule pattern was not found; upstream layout may have changed.")
 PY
 
+MIMALLOC_LINK_FLAGS=""
+if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
+  MIMALLOC_LINK_FLAGS="$(pkg-config --static --libs mimalloc)"
+fi
+STATIC_LDFLAGS=""
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  STATIC_LDFLAGS="-static -fuse-ld=lld"
+fi
+
 build_variant() {
   local variant="$1"
   local flags="$2"
@@ -83,11 +110,15 @@ build_variant() {
 
   make -C "${SOURCE_DIR}" clean >/dev/null 2>&1 || true
   echo "[mm2plus/linux] Compiling ${variant} with EXTRAFLAGS=${flags}"
-  if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CXX="${CXX_BIN}" EXTRAFLAGS="${flags}" \
-      LDFLAGS="-static-libstdc++ -static-libgcc" \
-      LIBS="-Wl,-Bstatic -lz -lgomp -lstdc++ -lgcc -Wl,-Bdynamic -lm -lpthread -ldl"; then
+  if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CC="${CC_BIN}" CXX="${CXX_BIN}" EXTRAFLAGS="${flags} $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo --target=x86_64-linux-musl)" \
+      LDFLAGS="${STATIC_LDFLAGS} -static-libstdc++ -static-libgcc" \
+      LIBS="-Wl,-Bstatic -lz -lgomp -lstdc++ -lgcc -Wl,-Bdynamic -lm -lpthread -ldl ${MIMALLOC_LINK_FLAGS}"; then
     install -m 0755 "${SOURCE_DIR}/mm2plus" "${output}"
     "${output}" --help >/dev/null || true
+    if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${output}" | grep -q 'NEEDED'; then
+      echo "mm2-plus ${variant} is still dynamically linked; static musl packaging failed." >&2
+      return 1
+    fi
     return 0
   fi
   echo "::warning::mm2-plus ${variant} build failed; dotplot generation can still use minimap2 or another mm2-plus variant." >&2
@@ -117,6 +148,8 @@ fi
   echo "avx2_extraflags=-mavx2"
   echo "avx512_extraflags=-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2"
   echo "cpu_flag_policy=EXTRAFLAGS are applied to generic and AVX/OpenMP objects; upstream SSE2/SSE4.1 dispatch objects intentionally retain their fixed target flags."
+  echo "static_runtime=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo musl || echo host_glibc)"
+  echo "mimalloc_linking=$([[ "${ENABLE_MIMALLOC}" == "1" ]] && echo static || echo disabled)"
   echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   for variant in avx2 avx512; do
     binary="${OUTPUT_DIR}/bin/mm2plus-${variant}"
@@ -178,6 +211,7 @@ if (root / "bin/minimap2").is_file():
         "minimap2 is redistributed under its MIT license. Keep the bundled license and citation files with released artifacts.",
     ])
     citations.append("minimap2: Li H. Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics. 2018;34(18):3094-3100.")
+    limitations.append("This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.")
 
 mm2plus_variants = {
     "mm2plus_avx2": "bin/mm2plus-avx2",
@@ -199,6 +233,7 @@ if available_mm2plus:
         "mm2-plus is redistributed with its upstream license file. Keep the bundled license and citation files with released artifacts.",
     ])
     citations.append("mm2-plus: Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra and Chirag Jain. Accelerating whole-genome alignment in the age of complete genome assemblies. bioRxiv 2024. doi:10.1101/2024.11.25.625328.")
+    limitations.append("This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.")
 else:
     limitations.append("No mm2-plus executable was built; HiCT self-dotplot generation will fall back to minimap2 when available.")
 

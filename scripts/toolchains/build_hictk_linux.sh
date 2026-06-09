@@ -54,6 +54,7 @@ require_cmd g++
 require_cmd cmake
 require_cmd ninja
 require_cmd ldd
+require_cmd readelf
 require_cmd file
 if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
   require_cmd pkg-config
@@ -111,25 +112,56 @@ export CMAKE_BUILD_PARALLEL_LEVEL="${BUILD_JOBS}"
 
 conan profile detect --force >/dev/null
 
-if [[ "${COMPILER}" == "clang" ]]; then
-  export CC=clang
-  export CXX=clang++
-elif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   export CC=clang
   export CXX=clang++
   export CFLAGS="${CFLAGS:-} --target=x86_64-linux-musl"
   export CXXFLAGS="${CXXFLAGS:-} --target=x86_64-linux-musl"
+elif [[ "${COMPILER}" == "clang" ]]; then
+  export CC=clang
+  export CXX=clang++
 else
   export CC=gcc
   export CXX=g++
 fi
 
+MIMALLOC_LINK_FLAGS=""
+if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
+  MIMALLOC_LINK_FLAGS="$(pkg-config --static --libs mimalloc)"
+fi
+
+CONAN_HOST_PROFILE="${WORK_DIR}/conan-host.profile"
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  CLANG_MAJOR_VERSION="$(clang --version | sed -nE 's/^.*version ([0-9]+).*/\1/p' | head -n 1)"
+  if [[ -z "${CLANG_MAJOR_VERSION}" ]]; then
+    CLANG_MAJOR_VERSION="18"
+  fi
+  cat > "${WORK_DIR}/conan-musl.profile" <<EOF
+[settings]
+os=Linux
+arch=x86_64
+build_type=Release
+compiler=clang
+compiler.version=${CLANG_MAJOR_VERSION}
+compiler.libcxx=libstdc++11
+compiler.cppstd=17
+os.libc=musl
+
+[conf]
+tools.build:compiler_executables={"c":"clang","cpp":"clang++"}
+tools.cmake.cmaketoolchain:generator=Ninja
+EOF
+  CONAN_HOST_PROFILE="${WORK_DIR}/conan-musl.profile"
+fi
+
 cd "${SOURCE_DIR}"
 
 conan install --build=missing \
-  -pr default \
+  -pr:h "${CONAN_HOST_PROFILE}" \
+  -pr:b default \
   -s build_type=Release \
   -s compiler.cppstd=17 \
+  -o "*:shared=False" \
   --output-folder="${BUILD_DIR}" \
   .
 
@@ -138,30 +170,39 @@ if [[ "${ENABLE_MOSTLY_STATIC_RUNTIME}" == "1" && ( "${COMPILER}" == "gcc" || "$
   linker_flags="-static-libstdc++ -static-libgcc"
 fi
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  linker_flags="${linker_flags} -static -fuse-ld=lld"
+  linker_flags="${linker_flags} -static -fuse-ld=lld ${MIMALLOC_LINK_FLAGS}"
 fi
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
   linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive"
 fi
 
-cmake \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="${BUILD_DIR}" \
-  -DHICTK_ENABLE_TESTING=$([[ "${RUN_TESTS}" == "1" ]] && echo ON || echo OFF) \
-  -DHICTK_ENABLE_FUZZY_TESTING=OFF \
-  -DHICTK_BUILD_BENCHMARKS=OFF \
-  -DHICTK_BUILD_EXAMPLES=OFF \
-  -DHICTK_BUILD_TOOLS=ON \
-  -DHICTK_DOWNLOAD_TEST_DATASET=OFF \
-  -DHICTK_WITH_ARROW=OFF \
-  -DHICTK_WITH_EIGEN=OFF \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DCMAKE_C_COMPILER="${CC}" \
-  -DCMAKE_CXX_COMPILER="${CXX}" \
-  -DCMAKE_EXE_LINKER_FLAGS="${linker_flags}" \
-  -G Ninja \
-  -S "${SOURCE_DIR}" \
+cmake_args=(
+  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_PREFIX_PATH="${BUILD_DIR}"
+  -DHICTK_ENABLE_TESTING=$([[ "${RUN_TESTS}" == "1" ]] && echo ON || echo OFF)
+  -DHICTK_ENABLE_FUZZY_TESTING=OFF
+  -DHICTK_BUILD_BENCHMARKS=OFF
+  -DHICTK_BUILD_EXAMPLES=OFF
+  -DHICTK_BUILD_TOOLS=ON
+  -DHICTK_DOWNLOAD_TEST_DATASET=OFF
+  -DHICTK_WITH_ARROW=OFF
+  -DHICTK_WITH_EIGEN=OFF
+  -DBUILD_SHARED_LIBS=OFF
+  -DCMAKE_C_COMPILER="${CC}"
+  -DCMAKE_CXX_COMPILER="${CXX}"
+  -DCMAKE_EXE_LINKER_FLAGS="${linker_flags}"
+  -G Ninja
+  -S "${SOURCE_DIR}"
   -B "${BUILD_DIR}"
+)
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  cmake_args+=(
+    -DCMAKE_C_COMPILER_TARGET=x86_64-linux-musl
+    -DCMAKE_CXX_COMPILER_TARGET=x86_64-linux-musl
+    -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
+  )
+fi
+cmake "${cmake_args[@]}"
 
 cmake --build "${BUILD_DIR}"
 
@@ -173,6 +214,11 @@ rm -rf "${STAGE_DIR}"
 cmake --install "${BUILD_DIR}" --prefix "${STAGE_DIR}" --component Runtime
 if [[ -x "${STAGE_DIR}/bin/hictk" ]]; then
   "${STAGE_DIR}/bin/hictk" --help >/dev/null
+fi
+
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${STAGE_DIR}/bin/hictk" | grep -q 'NEEDED'; then
+  echo "hictk is still dynamically linked; static musl packaging failed." >&2
+  exit 1
 fi
 
 mkdir -p "${STAGE_DIR}/share/doc/hictk"
@@ -220,7 +266,7 @@ cat > "${STAGE_DIR}/manifest.json" <<EOF
     "hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408."
   ],
   "limitations": [
-    "Upstream hictk builds embed their own third-party dependencies, but Linux libc/libstdc++ ABI compatibility still depends on the target system.",
+    "This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.",
     "This payload was compiled on Linux and should only be bundled into Linux fat-JAR releases."
   ]
 }

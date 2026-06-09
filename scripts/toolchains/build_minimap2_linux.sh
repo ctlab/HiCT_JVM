@@ -47,6 +47,10 @@ if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
     echo "Required command not found: clang" >&2
     exit 1
   }
+  command -v readelf >/dev/null 2>&1 || {
+    echo "Required command not found: readelf" >&2
+    exit 1
+  }
 fi
 
 echo "[minimap2/linux] Building ${REF} into ${OUTPUT_DIR}"
@@ -63,11 +67,13 @@ git -C "${SOURCE_DIR}" checkout --force "${REF}"
 
 make -C "${SOURCE_DIR}" clean >/dev/null 2>&1 || true
 linker_flags="${LDFLAGS:--static-libgcc}"
+MIMALLOC_LINK_FLAGS=""
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  linker_flags="${linker_flags} -static -fuse-ld=lld"
+  linker_flags="-static -fuse-ld=lld"
 fi
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
-  linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive"
+  MIMALLOC_LINK_FLAGS="$(pkg-config --static --libs mimalloc)"
+  linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive ${MIMALLOC_LINK_FLAGS}"
 fi
 
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
@@ -80,6 +86,10 @@ make -C "${SOURCE_DIR}" -j"$(nproc)" CC="${CC:-gcc}" CFLAGS="${CFLAGS:--O3 -DNDE
 install -m 0755 "${SOURCE_DIR}/minimap2" "${OUTPUT_DIR}/bin/minimap2"
 if [[ -x "${OUTPUT_DIR}/bin/minimap2" ]]; then
   "${OUTPUT_DIR}/bin/minimap2" --help >/dev/null
+fi
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${OUTPUT_DIR}/bin/minimap2" | grep -q 'NEEDED'; then
+  echo "minimap2 is still dynamically linked; static musl packaging failed." >&2
+  exit 1
 fi
 if [[ -f "${SOURCE_DIR}/LICENSE.txt" ]]; then
   install -m 0644 "${SOURCE_DIR}/LICENSE.txt" "${OUTPUT_DIR}/share/licenses/minimap2/LICENSE.txt"
@@ -149,6 +159,7 @@ if (root / "bin/minimap2").is_file():
         "minimap2 is redistributed under its MIT license. Keep the bundled license and citation files with released artifacts.",
     ])
     citations.append("minimap2: Li H. Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics. 2018;34(18):3094-3100.")
+    limitations.append("This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.")
 
 manifest = {
     "id": f"hict-toolchain-linux-x86_64-hictk-minimap2-{ref}",

@@ -172,9 +172,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v3-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
+          key: toolchain-v4-linux-x86_64-ubuntu2404-static-musl-mimalloc-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
           restore-keys: |
-            toolchain-v3-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+            toolchain-v4-linux-x86_64-ubuntu2404-static-musl-mimalloc-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
 
       - name: Restore bundled mm2-plus cache
         id: cache-mm2plus
@@ -186,9 +186,9 @@ jobs:
             toolchains-dist/linux_x86_64/bin/mm2plus-avx512
             toolchains-dist/linux_x86_64/share/licenses/mm2plus
             toolchains-dist/linux_x86_64/share/doc/mm2plus
-          key: toolchain-mm2plus-v2-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
+          key: toolchain-mm2plus-v3-linux-x86_64-ubuntu2404-static-musl-mimalloc-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
           restore-keys: |
-            toolchain-mm2plus-v2-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-
+            toolchain-mm2plus-v3-linux-x86_64-ubuntu2404-static-musl-mimalloc-${{ env.MM2PLUS_REF }}-
 
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
@@ -229,15 +229,15 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64
-          key: hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: hictk-conan-linux-x86_64-ubuntu2404-static-musl-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
           restore-keys: |
-            hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-
-            hictk-conan-linux-x86_64-ubuntu2404-
+            hictk-conan-linux-x86_64-ubuntu2404-static-musl-${{ env.HICTK_REF }}-
+            hictk-conan-linux-x86_64-ubuntu2404-static-musl-
 
       - name: Install hictk build prerequisites
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
         run: |
-          sudo apt-get install -y --no-install-recommends clang lld g++ gcc make cmake ninja-build python3-venv zlib1g-dev musl-tools libmimalloc-dev pkg-config
+          sudo apt-get install -y --no-install-recommends binutils clang lld g++ gcc make cmake ninja-build python3-venv zlib1g-dev musl-tools libmimalloc-dev pkg-config
 
       - name: Build bundled hictk
         id: build-hictk
