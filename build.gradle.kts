@@ -382,6 +382,7 @@ nativeProcessingVariants.forEach { variant ->
 
     val msvcOpenMpFlags = if (nativeProcessingOpenMpEnabled) listOf("/openmp") else listOf("/wd4068")
     val gnuOpenMpFlags = if (nativeProcessingOpenMpEnabled) listOf("-fopenmp") else emptyList()
+    val gnuVariantFlags = if (platformDirectory == "macos_64") emptyList() else variant.gnuCompileFlags
     val command = when (compilerFlavor) {
       "msvc" -> listOfNotNull(
         compilerExecutable,
@@ -411,7 +412,7 @@ nativeProcessingVariants.forEach { variant ->
         "-o",
         outputFile.absolutePath,
         nativeProcessingSourceFile.asFile.absolutePath
-      ) + variant.gnuCompileFlags + gnuOpenMpFlags
+      ) + gnuVariantFlags + gnuOpenMpFlags
     }
     commandLine(command)
 

@@ -116,7 +116,7 @@ fi
   --compress=zip-6 \
   --output "${APP_DIR}/runtime"
 
-cat > "${LAUNCHER_SOURCE}.tmp" <<'EOF'
+cat > "${LAUNCHER_SOURCE}.tmp.cpp" <<'EOF'
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -247,8 +247,8 @@ int main(int argc, char* argv[]) {
 }
 EOF
 
-clang++ -std=c++17 -O2 -arch arm64 -mmacosx-version-min=12.0 "${LAUNCHER_SOURCE}.tmp" -o "${LAUNCHER_BINARY}"
-rm -f "${LAUNCHER_SOURCE}.tmp"
+clang++ -std=c++17 -O2 -arch arm64 -mmacosx-version-min=12.0 "${LAUNCHER_SOURCE}.tmp.cpp" -o "${LAUNCHER_BINARY}"
+rm -f "${LAUNCHER_SOURCE}.tmp.cpp"
 codesign -s - --force --timestamp=none "${LAUNCHER_BINARY}"
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
