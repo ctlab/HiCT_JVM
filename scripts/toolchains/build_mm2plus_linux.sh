@@ -101,8 +101,8 @@ build_variant() {
   make -C "${SOURCE_DIR}" clean >/dev/null 2>&1 || true
   echo "[mm2plus/linux] Compiling ${variant} with EXTRAFLAGS=${flags}"
   if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CC="${CC_BIN}" CXX="${CXX_BIN}" EXTRAFLAGS="${flags}" \
-      LDFLAGS="" \
-      LIBS="-lz -lm -lpthread -ldl"; then
+      LDFLAGS="-fopenmp" \
+      LIBS="-fopenmp -lz -lm -lpthread -ldl"; then
     install -m 0755 "${SOURCE_DIR}/mm2plus" "${output}"
     "${output}" --help >/dev/null || true
     return 0
