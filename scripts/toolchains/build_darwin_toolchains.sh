@@ -257,6 +257,49 @@ updated = updated.replace("-D_GLIBCXX_PARALLEL", "")
 if updated != text:
     path.write_text(updated, encoding="utf-8")
 PY
+mkdir -p "${WORK_DIR}/compat"
+cat > "${WORK_DIR}/compat/omp.h" <<'EOF'
+#ifndef HICT_DARWIN_MM2PLUS_OMP_H
+#define HICT_DARWIN_MM2PLUS_OMP_H
+
+typedef int omp_lock_t;
+typedef int omp_nest_lock_t;
+
+static inline int omp_get_thread_num(void) { return 0; }
+static inline int omp_get_num_threads(void) { return 1; }
+static inline int omp_get_max_threads(void) { return 1; }
+static inline int omp_get_num_procs(void) { return 1; }
+static inline int omp_in_parallel(void) { return 0; }
+static inline int omp_get_dynamic(void) { return 0; }
+static inline int omp_get_nested(void) { return 0; }
+static inline int omp_get_thread_limit(void) { return 1; }
+static inline int omp_get_level(void) { return 0; }
+static inline int omp_get_ancestor_thread_num(int) { return 0; }
+static inline int omp_get_team_size(int) { return 1; }
+static inline int omp_get_active_level(void) { return 0; }
+static inline int omp_in_final(void) { return 1; }
+static inline void omp_set_num_threads(int) {}
+static inline void omp_set_dynamic(int) {}
+static inline void omp_set_nested(int) {}
+static inline void omp_set_schedule(int, int) {}
+static inline void omp_get_schedule(int *, int *) {}
+static inline void omp_set_max_active_levels(int) {}
+static inline int omp_get_max_active_levels(void) { return 1; }
+static inline void omp_init_lock(omp_lock_t *) {}
+static inline void omp_destroy_lock(omp_lock_t *) {}
+static inline void omp_set_lock(omp_lock_t *) {}
+static inline void omp_unset_lock(omp_lock_t *) {}
+static inline int omp_test_lock(omp_lock_t *) { return 1; }
+static inline void omp_init_nest_lock(omp_nest_lock_t *) {}
+static inline void omp_destroy_nest_lock(omp_nest_lock_t *) {}
+static inline void omp_set_nest_lock(omp_nest_lock_t *) {}
+static inline void omp_unset_nest_lock(omp_nest_lock_t *) {}
+static inline int omp_test_nest_lock(omp_nest_lock_t *) { return 1; }
+static inline double omp_get_wtime(void) { return 0.0; }
+static inline double omp_get_wtick(void) { return 1.0; }
+
+#endif
+EOF
 cat > "${SOURCE_MM2PLUS}/src/parallel_sort.cpp" <<'EOF'
 #include <algorithm>
 #include "mmpriv.h"
@@ -274,7 +317,7 @@ EOF
       arm_neon=1 \
       CXX="${CXX}" \
       CC="${CC}" \
-      EXTRAFLAGS="-arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; then
+      EXTRAFLAGS="-I${WORK_DIR}/compat -arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; then
     if [[ -x "${SOURCE_MM2PLUS}/mm2plus" ]]; then
       built=1
     fi
