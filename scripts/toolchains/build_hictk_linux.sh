@@ -215,6 +215,7 @@ conan install --build=missing \
   -pr:b default \
   -s build_type=Release \
   -s compiler.cppstd=17 \
+  $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo "-o &:with_telemetry_deps=False") \
   -o "*:shared=False" \
   --output-folder="${BUILD_DIR}" \
   .
@@ -240,6 +241,7 @@ cmake_args=(
   -DHICTK_BUILD_BENCHMARKS=OFF
   -DHICTK_BUILD_EXAMPLES=OFF
   -DHICTK_BUILD_TOOLS=ON
+  -DHICTK_ENABLE_TELEMETRY=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo OFF || echo ON)
   -DHICTK_DOWNLOAD_TEST_DATASET=OFF
   -DHICTK_WITH_ARROW=OFF
   -DHICTK_WITH_EIGEN=OFF

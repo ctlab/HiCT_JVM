@@ -235,7 +235,7 @@ build_mm2plus() {
   git -C "${SOURCE_MM2PLUS}" fetch --tags --force origin "${MM2PLUS_REF}" || git -C "${SOURCE_MM2PLUS}" fetch --tags --force origin
   git -C "${SOURCE_MM2PLUS}" checkout --force "${MM2PLUS_REF}"
 
-  python3 - "${SOURCE_MM2PLUS}/Makefile" <<'PY'
+python3 - "${SOURCE_MM2PLUS}/Makefile" <<'PY'
 import pathlib
 import sys
 path = pathlib.Path(sys.argv[1])
@@ -244,6 +244,17 @@ old = "$(CXX) -c $(CPPFLAGS) $(INCLUDES) $< -o $@"
 new = "$(CXX) -c $(CPPFLAGS) $(EXTRAFLAGS) $(INCLUDES) $< -o $@"
 if old in text and new not in text:
     path.write_text(text.replace(old, new), encoding="utf-8")
+PY
+python3 - "${SOURCE_MM2PLUS}/Makefile" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+updated = text.replace("-fopenmp", "")
+updated = updated.replace("-lgomp", "")
+if updated != text:
+    path.write_text(updated, encoding="utf-8")
 PY
 
   local built=0
