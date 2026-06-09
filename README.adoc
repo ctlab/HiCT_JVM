@@ -2,7 +2,12 @@
 
 image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release.yml/badge.svg[link="https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release.yml"] image:https://img.shields.io/badge/vert.x-4.4.1-purple.svg[link="https://vertx.io"]
 
-== Launching pre-built version
+= Launching pre-built version (Easiest way to try HICT yourself) 
+
+⚠️ The main way to launch HiCT is to **use pre-built** .exe file (for Windows) or .run file (for Linux). 
+These are available for download in the **Releases section**: https://github.com/ctlab/HiCT_JVM/releases/tag/latest-master. Download files that either have .exe or .run extension, and simply run them with double-click (on Linux use `chmod +x` to allow execution). This way, you won't need to install any additional dependencies or external tools, as other distributions. 
+
+= Advanced ways to start
 
 == For users of `.jar` distribution
 
