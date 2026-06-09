@@ -816,7 +816,8 @@ jobs:
     needs:
       - linux-portable
       - windows-portable
-    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only') }}
+      - macos-portable
+    if: ${{ always() && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
     runs-on: ubuntu-24.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
