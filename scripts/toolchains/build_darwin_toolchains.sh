@@ -183,7 +183,11 @@ build_minimap2() {
   git -C "${SOURCE_MINIMAP2}" checkout --force "${MINIMAP2_REF}"
 
   make -C "${SOURCE_MINIMAP2}" clean >/dev/null 2>&1 || true
-  make -C "${SOURCE_MINIMAP2}" -j"${BUILD_JOBS}" CC="${CC}" CFLAGS="-O3 -DNDEBUG -arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"
+  make -C "${SOURCE_MINIMAP2}" -j"${BUILD_JOBS}" \
+    CC="${CC}" \
+    aarch64=1 \
+    arm_neon=1 \
+    CFLAGS="-O3 -DNDEBUG -arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"
 
   rm -rf "${stage_dir}"
   mkdir -p "${stage_dir}/bin" "${stage_dir}/share/licenses/minimap2" "${stage_dir}/share/doc/minimap2"
@@ -244,7 +248,12 @@ PY
 
   local built=0
   make -C "${SOURCE_MM2PLUS}" clean >/dev/null 2>&1 || true
-  if make -C "${SOURCE_MM2PLUS}" -j"${BUILD_JOBS}" base=1 avx=0 CXX="${CXX}" EXTRAFLAGS="-arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; then
+  if make -C "${SOURCE_MM2PLUS}" -j"${BUILD_JOBS}" \
+      base=1 avx=0 \
+      aarch64=1 \
+      arm_neon=1 \
+      CXX="${CXX}" \
+      EXTRAFLAGS="-arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; then
     if [[ -x "${SOURCE_MM2PLUS}/mm2plus" ]]; then
       built=1
     fi
