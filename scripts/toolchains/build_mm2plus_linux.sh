@@ -7,15 +7,10 @@ OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_DIR}/toolchains-dist/linux_x86_64}"
 WORK_DIR="${WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}"
 REF="${MM2PLUS_REF:-v1.2}"
 REPO_URL="${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
-ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"
-ENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"
-if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  CXX_BIN="${CXX:-g++}"
-  CC_BIN="${CC:-x86_64-linux-musl-gcc}"
-else
-  CXX_BIN="${CXX:-g++}"
-  CC_BIN="${CC:-gcc}"
-fi
+CXX_BIN="${CXX:-g++}"
+CC_BIN="${CC:-gcc}"
+ENABLE_STATIC_MUSL="0"
+ENABLE_MIMALLOC="0"
 
 usage() {
   cat <<USAGE
@@ -27,6 +22,7 @@ Environment:
   OUTPUT_DIR=$OUTPUT_DIR
   WORK_DIR=$WORK_DIR
   CXX=$CXX_BIN
+  CC=$CC_BIN
 
 The script augments an existing hictk/minimap2 toolchain payload when present,
 then rewrites manifest.json to expose hictk, minimap2 and mm2-plus variants.
@@ -38,18 +34,12 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
-for cmd in git make "${CXX_BIN}" python3; do
+for cmd in git make "${CXX_BIN}" "${CC_BIN}" python3; do
   command -v "${cmd}" >/dev/null 2>&1 || {
     echo "Required command not found: ${cmd}" >&2
     exit 1
   }
 done
-if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
-  command -v readelf >/dev/null 2>&1 || {
-    echo "Required command not found: readelf" >&2
-    exit 1
-  }
-fi
 
 echo "[mm2plus/linux] Building ${REF} into ${OUTPUT_DIR}"
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/share/licenses/mm2plus" "${OUTPUT_DIR}/share/doc/mm2plus"
@@ -95,82 +85,6 @@ if updated != text:
 PY
 fi
 
-if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  cat > "${WORK_DIR}/musl-g++" <<'EOF'
-#!/usr/bin/env bash
-exec g++ -isystem /usr/include/x86_64-linux-musl -B/usr/lib/x86_64-linux-musl -L/usr/lib/x86_64-linux-musl "$@"
-EOF
-  chmod +x "${WORK_DIR}/musl-g++"
-  CXX_BIN="${WORK_DIR}/musl-g++"
-  cat > "${SOURCE_DIR}/src/parallel_sort.cpp" <<'EOF'
-#include <algorithm>
-#include "mmpriv.h"
-
-void parallel_sort(mm128_t* z, size_t n_u, int32_t) {
-    std::stable_sort(z, z + n_u, [](const mm128_t &a, const mm128_t &b) { return a.x < b.x; });
-}
-EOF
-  mkdir -p "${WORK_DIR}/compat"
-  cat > "${WORK_DIR}/compat/omp.h" <<'EOF'
-#ifndef HICT_MM2PLUS_OMP_H
-#define HICT_MM2PLUS_OMP_H
-
-typedef int omp_lock_t;
-typedef int omp_nest_lock_t;
-
-static inline int omp_get_thread_num(void) { return 0; }
-static inline int omp_get_num_threads(void) { return 1; }
-static inline int omp_get_max_threads(void) { return 1; }
-static inline int omp_get_num_procs(void) { return 1; }
-static inline int omp_in_parallel(void) { return 0; }
-static inline int omp_get_dynamic(void) { return 0; }
-static inline int omp_get_nested(void) { return 0; }
-static inline int omp_get_thread_limit(void) { return 1; }
-static inline int omp_get_level(void) { return 0; }
-static inline int omp_get_ancestor_thread_num(int) { return 0; }
-static inline int omp_get_team_size(int) { return 1; }
-static inline int omp_get_active_level(void) { return 0; }
-static inline int omp_in_final(void) { return 1; }
-static inline void omp_set_num_threads(int) {}
-static inline void omp_set_dynamic(int) {}
-static inline void omp_set_nested(int) {}
-static inline void omp_set_schedule(int, int) {}
-static inline void omp_get_schedule(int *, int *) {}
-static inline void omp_set_max_active_levels(int) {}
-static inline int omp_get_max_active_levels(void) { return 1; }
-static inline void omp_init_lock(omp_lock_t *) {}
-static inline void omp_destroy_lock(omp_lock_t *) {}
-static inline void omp_set_lock(omp_lock_t *) {}
-static inline void omp_unset_lock(omp_lock_t *) {}
-static inline int omp_test_lock(omp_lock_t *) { return 1; }
-static inline void omp_init_nest_lock(omp_nest_lock_t *) {}
-static inline void omp_destroy_nest_lock(omp_nest_lock_t *) {}
-static inline void omp_set_nest_lock(omp_nest_lock_t *) {}
-static inline void omp_unset_nest_lock(omp_nest_lock_t *) {}
-static inline int omp_test_nest_lock(omp_nest_lock_t *) { return 1; }
-static inline double omp_get_wtime(void) { return 0.0; }
-static inline double omp_get_wtick(void) { return 1.0; }
-
-static inline int omp_get_thread_num(void) { return 0; }
-
-#endif
-EOF
-fi
-
-MIMALLOC_LINK_FLAGS=""
-if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
-  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="$(nproc)" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
-  MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
-fi
-STATIC_LDFLAGS=""
-if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  STATIC_LDFLAGS="-static -fuse-ld=lld"
-fi
-
-if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  make -C "${SOURCE_DIR}" -j"$(nproc)" deps CC="${CC_BIN}" CXX="${CXX_BIN}" >/dev/null
-fi
-
 build_variant() {
   local variant="$1"
   local flags="$2"
@@ -186,15 +100,11 @@ build_variant() {
 
   make -C "${SOURCE_DIR}" clean >/dev/null 2>&1 || true
   echo "[mm2plus/linux] Compiling ${variant} with EXTRAFLAGS=${flags}"
-  if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CC="${CC_BIN}" CXX="${CXX_BIN}" EXTRAFLAGS="${flags} $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo -I${WORK_DIR}/compat)" \
-      LDFLAGS="${STATIC_LDFLAGS} -static-libstdc++ -static-libgcc" \
-      LIBS="-Wl,-Bstatic -lz ${MIMALLOC_LINK_FLAGS} -lm -lpthread -ldl"; then
+  if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CC="${CC_BIN}" CXX="${CXX_BIN}" EXTRAFLAGS="${flags}" \
+      LDFLAGS="" \
+      LIBS="-lz -lm -lpthread -ldl"; then
     install -m 0755 "${SOURCE_DIR}/mm2plus" "${output}"
     "${output}" --help >/dev/null || true
-    if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${output}" | grep -q 'NEEDED'; then
-      echo "mm2-plus ${variant} is still dynamically linked; static musl packaging failed." >&2
-      return 1
-    fi
     return 0
   fi
   echo "::warning::mm2-plus ${variant} build failed; dotplot generation can still use minimap2 or another mm2-plus variant." >&2
@@ -224,8 +134,8 @@ fi
   echo "avx2_extraflags=-mavx2"
   echo "avx512_extraflags=-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2"
   echo "cpu_flag_policy=EXTRAFLAGS are applied to generic and AVX/OpenMP objects; upstream SSE2/SSE4.1 dispatch objects intentionally retain their fixed target flags."
-  echo "static_runtime=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo musl || echo host_glibc)"
-  echo "mimalloc_linking=$([[ "${ENABLE_MIMALLOC}" == "1" ]] && echo static || echo disabled)"
+  echo "static_runtime=host_glibc"
+  echo "mimalloc_linking=disabled"
   echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   for variant in avx2 avx512; do
     binary="${OUTPUT_DIR}/bin/mm2plus-${variant}"
@@ -309,7 +219,7 @@ if available_mm2plus:
         "mm2-plus is redistributed with its upstream license file. Keep the bundled license and citation files with released artifacts.",
     ])
     citations.append("mm2-plus: Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra and Chirag Jain. Accelerating whole-genome alignment in the age of complete genome assemblies. bioRxiv 2024. doi:10.1101/2024.11.25.625328.")
-    limitations.append("This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.")
+    limitations.append("This payload was compiled as a dynamically linked Linux x86_64 binary and depends on the host glibc/libstdc++ runtime.")
 else:
     limitations.append("No mm2-plus executable was built; HiCT self-dotplot generation will fall back to minimap2 when available.")
 
