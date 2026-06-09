@@ -57,7 +57,8 @@ require_cmd ldd
 require_cmd readelf
 require_cmd file
 if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
-  require_cmd pkg-config
+  require_cmd clang
+  require_cmd clang++
 fi
 
 if [[ "${COMPILER}" == "clang" ]]; then
@@ -98,8 +99,7 @@ rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}" "${CONAN_HOME_DIR}"
 
 python3 -m venv "${VENV_DIR}"
-"${VENV_DIR}/bin/python" -m pip install --upgrade pip setuptools wheel
-"${VENV_DIR}/bin/python" -m pip install 'conan>=2' 'cmake>=3.25' ninja
+"${VENV_DIR}/bin/python" -m pip install --disable-pip-version-check --no-input 'conan>=2' 'cmake>=3.25' ninja
 
 "${VENV_DIR}/bin/git" --version >/dev/null 2>&1 || true
 
@@ -127,7 +127,8 @@ fi
 
 MIMALLOC_LINK_FLAGS=""
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
-  MIMALLOC_LINK_FLAGS="$(pkg-config --static --libs mimalloc)"
+  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="${BUILD_JOBS}" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
+  MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
 fi
 
 CONAN_HOST_PROFILE="${WORK_DIR}/conan-host.profile"
@@ -145,7 +146,6 @@ compiler=clang
 compiler.version=${CLANG_MAJOR_VERSION}
 compiler.libcxx=libstdc++11
 compiler.cppstd=17
-os.libc=musl
 
 [conf]
 tools.build:compiler_executables={"c":"clang","cpp":"clang++"}

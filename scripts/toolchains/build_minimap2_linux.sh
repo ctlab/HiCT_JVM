@@ -39,10 +39,6 @@ for cmd in git make gcc python3; do
   }
 done
 if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
-  command -v pkg-config >/dev/null 2>&1 || {
-    echo "Required command not found: pkg-config" >&2
-    exit 1
-  }
   command -v clang >/dev/null 2>&1 || {
     echo "Required command not found: clang" >&2
     exit 1
@@ -72,8 +68,9 @@ if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   linker_flags="-static -fuse-ld=lld"
 fi
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
-  MIMALLOC_LINK_FLAGS="$(pkg-config --static --libs mimalloc)"
-  linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive ${MIMALLOC_LINK_FLAGS}"
+  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="$(nproc)" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
+  MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
+  linker_flags="${linker_flags} -Wl,--whole-archive ${MIMALLOC_LINK_FLAGS} -Wl,--no-whole-archive"
 fi
 
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then

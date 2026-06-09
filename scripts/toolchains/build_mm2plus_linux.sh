@@ -45,10 +45,6 @@ for cmd in git make "${CXX_BIN}" python3; do
   }
 done
 if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
-  command -v pkg-config >/dev/null 2>&1 || {
-    echo "Required command not found: pkg-config" >&2
-    exit 1
-  }
   command -v readelf >/dev/null 2>&1 || {
     echo "Required command not found: readelf" >&2
     exit 1
@@ -88,7 +84,8 @@ PY
 
 MIMALLOC_LINK_FLAGS=""
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
-  MIMALLOC_LINK_FLAGS="$(pkg-config --static --libs mimalloc)"
+  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="$(nproc)" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
+  MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
 fi
 STATIC_LDFLAGS=""
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
@@ -112,7 +109,7 @@ build_variant() {
   echo "[mm2plus/linux] Compiling ${variant} with EXTRAFLAGS=${flags}"
   if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CC="${CC_BIN}" CXX="${CXX_BIN}" EXTRAFLAGS="${flags} $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo --target=x86_64-linux-musl)" \
       LDFLAGS="${STATIC_LDFLAGS} -static-libstdc++ -static-libgcc" \
-      LIBS="-Wl,-Bstatic -lz -lgomp -lstdc++ -lgcc -Wl,-Bdynamic -lm -lpthread -ldl ${MIMALLOC_LINK_FLAGS}"; then
+      LIBS="-Wl,-Bstatic -lz -lgomp -lstdc++ -lgcc ${MIMALLOC_LINK_FLAGS} -Wl,-Bdynamic -lm -lpthread -ldl"; then
     install -m 0755 "${SOURCE_DIR}/mm2plus" "${output}"
     "${output}" --help >/dev/null || true
     if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${output}" | grep -q 'NEEDED'; then
