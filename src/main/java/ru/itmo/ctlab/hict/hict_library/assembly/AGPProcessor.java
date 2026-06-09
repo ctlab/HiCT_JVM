@@ -41,6 +41,9 @@ import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -54,13 +57,20 @@ public class AGPProcessor {
 
 
   public List<AGPFileRecord> parseRecords(final @NotNull @NonNull Reader reader) throws IOException, NoSuchFieldException {
+    return parseRecordsFromReader(reader);
+  }
+
+  public static @NotNull List<@NotNull AGPFileRecord> parseRecordsFromReader(final @NotNull @NonNull Reader reader) throws IOException, NoSuchFieldException {
     final var csvFormat = CSVFormat.TDF.builder().setRecordSeparator(String.format("%n")).build();
     //final var recordRows = csvFormat.parse(reader);
     final List<List<String>> recordRows = new ArrayList<>();
     try (final var br = new BufferedReader(reader)) {
-      br.lines().sequential().map(line -> line.trim().split("\t")).filter(e -> e.length > 0).forEachOrdered(sp -> {
-        recordRows.add(Arrays.stream(sp).toList());
-      });
+      br.lines().sequential()
+        .map(String::trim)
+        .filter(line -> !line.isBlank() && !line.startsWith("#"))
+        .map(line -> line.split("\t", -1))
+        .filter(e -> e.length > 0)
+        .forEachOrdered(sp -> recordRows.add(Arrays.stream(sp).toList()));
     }
 //    final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.getRecords().size());
     final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.size());
@@ -176,6 +186,20 @@ public class AGPProcessor {
       parsedRecords.add(agpFileRecord);
     }
     return parsedRecords.stream().sequential().toList();
+  }
+
+  public static void writeRecordsAsAgp(final @NotNull List<@NotNull AGPFileRecord> records,
+                                       final @NotNull Path outputPath) throws IOException {
+    final var parent = outputPath.getParent();
+    if (parent != null) {
+      Files.createDirectories(parent);
+    }
+    try (final var writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
+      for (final var record : records) {
+        writer.write(record.toString());
+        writer.newLine();
+      }
+    }
   }
 
   public void initializeContigTreeFromAGP(final @NotNull List<@NotNull AGPFileRecord> agpFileRecords) {
