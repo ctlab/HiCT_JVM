@@ -96,7 +96,7 @@ env:
 jobs:
   linux-portable:
     name: Linux portable .run
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
@@ -170,9 +170,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v3-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
+          key: toolchain-v3-linux-x86_64-ubuntu2204-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
           restore-keys: |
-            toolchain-v3-linux-x86_64-ubuntu2404-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+            toolchain-v3-linux-x86_64-ubuntu2204-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
 
       - name: Restore bundled mm2-plus cache
         id: cache-mm2plus
@@ -184,9 +184,9 @@ jobs:
             toolchains-dist/linux_x86_64/bin/mm2plus-avx512
             toolchains-dist/linux_x86_64/share/licenses/mm2plus
             toolchains-dist/linux_x86_64/share/doc/mm2plus
-          key: toolchain-mm2plus-v2-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
+          key: toolchain-mm2plus-v2-linux-x86_64-ubuntu2204-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
           restore-keys: |
-            toolchain-mm2plus-v2-linux-x86_64-ubuntu2404-${{ env.MM2PLUS_REF }}-
+            toolchain-mm2plus-v2-linux-x86_64-ubuntu2204-${{ env.MM2PLUS_REF }}-
 
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
@@ -227,10 +227,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64
-          key: hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: hictk-conan-linux-x86_64-ubuntu2204-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
           restore-keys: |
-            hictk-conan-linux-x86_64-ubuntu2404-${{ env.HICTK_REF }}-
-            hictk-conan-linux-x86_64-ubuntu2404-
+            hictk-conan-linux-x86_64-ubuntu2204-${{ env.HICTK_REF }}-
+            hictk-conan-linux-x86_64-ubuntu2204-
 
       - name: Install hictk build prerequisites
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
@@ -716,7 +716,7 @@ jobs:
       - linux-portable
       - windows-portable
     if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
