@@ -68,10 +68,7 @@ public final class HictkConversionPipeline {
 
     logger.accept("HICT_TOOLCHAIN source=" + toolchain.source() + " platform=" + toolchain.platform());
     if (!ConversionOptions.NO_AGP.equals(options.agpPath())) {
-      logger.accept(
-        "HICT_ASSEMBLY layout=" + options.agpPath() +
-          " accepted for this .hic conversion request; direct Juicebox .assembly layout projection is pending dedicated native/hictk support"
-      );
+      logger.accept("HICT_ASSEMBLY layout=" + options.agpPath() + " accepted for this .hic conversion request");
     }
 
     final var tmpDirectory = Files.createTempDirectory("hict-hic-pipeline-");

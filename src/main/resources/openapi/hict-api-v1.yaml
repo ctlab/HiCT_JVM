@@ -1090,6 +1090,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ConversionSubmitResponse' }
+  /convert/assembly-to-agp:
+    post:
+      tags: [Conversion]
+      summary: Convert a Juicebox .assembly or AGP layout file into normalized AGP text
+      operationId: convertAssemblyToAgp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                filename:
+                  type: string
+                  description: Layout filename relative to DATA_DIR.
+                outputFilename:
+                  type: string
+                  description: Optional output filename relative to DATA_DIR.
+                overwrite:
+                  type: boolean
+                  default: false
+              required: [filename]
+      responses:
+        '200':
+          description: Conversion result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
   /convert/jobs:
     post:
       tags: [Conversion]

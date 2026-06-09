@@ -9,6 +9,8 @@ import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import ch.systemsx.cisd.hdf5.IHDF5Writer;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
+import ru.itmo.ctlab.hict.hict_library.assembly.AssemblyLayoutConverter;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
@@ -33,6 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.nio.file.Path;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockColsDatasetPath;
@@ -98,6 +101,11 @@ public class McoolToHictConverter {
           );
           progressTracker.markStep("Wrote resolution " + resolution);
         }
+
+        if (!options.agpPath().isBlank()) {
+          applyAssemblyLayoutToOutput(dst, options, intStorageFeatures, synchronizedLogConsumer);
+          synchronizedLogConsumer.accept("Applied assembly layout to generated .hict from " + resolveLayoutPath(options).getFileName());
+        }
       }
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -134,6 +142,67 @@ public class McoolToHictConverter {
         yield HDF5FloatStorageFeatures.FLOAT_CHUNKED;
       }
     };
+  }
+
+  private static void applyAssemblyLayoutToOutput(
+    final @NotNull IHDF5Writer dst,
+    final @NotNull ConversionOptions options,
+    final @NotNull HDF5IntStorageFeatures intStorageFeatures,
+    final @NotNull Consumer<String> logConsumer
+  ) throws IOException {
+    final var layoutPath = resolveLayoutPath(options);
+    if (!Files.isRegularFile(layoutPath)) {
+      throw new IllegalArgumentException("Assembly layout file not found: " + layoutPath);
+    }
+
+    final List<AGPProcessor.AGPFileRecord> agpRecords;
+    try {
+      agpRecords = AssemblyLayoutConverter.loadAgpRecords(layoutPath);
+    } catch (NoSuchFieldException e) {
+      throw new IOException("Failed to parse assembly layout " + layoutPath.getFileName(), e);
+    }
+    final var contigRecords = agpRecords.stream()
+      .filter(AGPProcessor.ContigAGPRecord.class::isInstance)
+      .map(AGPProcessor.ContigAGPRecord.class::cast)
+      .toList();
+    if (contigRecords.isEmpty()) {
+      throw new IllegalArgumentException("Assembly layout does not contain any contig records: " + layoutPath.getFileName());
+    }
+
+    final String[] contigNames = new String[contigRecords.size()];
+    final long[] contigDirections = new long[contigRecords.size()];
+    final long[] orderedContigIds = new long[contigRecords.size()];
+    final long[] contigScaffoldIds = new long[contigRecords.size()];
+    final long[] contigLengthBp = new long[contigRecords.size()];
+    final var scaffoldIds = new java.util.LinkedHashMap<String, Long>();
+
+    for (int i = 0; i < contigRecords.size(); i++) {
+      final var record = contigRecords.get(i);
+      contigNames[i] = record.getContigName();
+      contigDirections[i] = switch (record.getContigOrientation()) {
+        case PLUS, UNKNOWN, IRRELEVANT -> 0L;
+        case MINUS -> 1L;
+      };
+      orderedContigIds[i] = i;
+      contigLengthBp[i] = record.getIntraContigEndBpIncl() - record.getIntraContigStartBpIncl() + 1L;
+      contigScaffoldIds[i] = scaffoldIds.computeIfAbsent(record.getScaffoldName(), ignored -> (long) scaffoldIds.size());
+    }
+
+    dst.string().writeArray(getContigNameDatasetPath(), contigNames);
+    dst.int64().writeArray(getContigDirectionDatasetPath(), contigDirections, intStorageFeatures);
+    dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
+    dst.int64().writeArray("/contig_info/contig_scaffold_id", contigScaffoldIds, intStorageFeatures);
+    dst.int64().writeArray(getContigLengthBpDatasetPath(), contigLengthBp, intStorageFeatures);
+
+    logConsumer.accept("Rewrote contig metadata from assembly layout: contigs=" + contigRecords.size() + ", scaffolds=" + scaffoldIds.size());
+  }
+
+  private static @NotNull Path resolveLayoutPath(final @NotNull ConversionOptions options) {
+    final var layoutPath = Path.of(options.agpPath());
+    if (layoutPath.isAbsolute()) {
+      return layoutPath.normalize();
+    }
+    return options.inputPath().resolveSibling(layoutPath).normalize();
   }
 
   private static void writeResolutionDirect(

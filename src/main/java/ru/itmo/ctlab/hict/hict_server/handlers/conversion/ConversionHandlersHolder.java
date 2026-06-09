@@ -8,6 +8,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.assembly.AssemblyLayoutConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
@@ -134,8 +135,16 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var agpPathRaw = req.getParam("agpPath") == null ? ConversionOptions.NO_AGP : req.getParam("agpPath");
                         final var parallelism = parseInteger(req.getParam("parallelism"), Runtime.getRuntime().availableProcessors());
 
+                        final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+                        if (dataDirectoryWrapper == null) {
+                            throw new IllegalStateException("Data directory is not present in local map");
+                        }
+                        final var dataDirectory = dataDirectoryWrapper.getPath();
+
                         final var useAgp = direction == ConversionDirection.HICT_TO_MCOOL && applyAgpRaw;
-                        final var agpPath = useAgp ? agpPathRaw : ConversionOptions.NO_AGP;
+                        final var agpPath = useAgp
+                          ? resolveOptionalAssemblyPath(dataDirectory, agpPathRaw).toString()
+                          : ConversionOptions.NO_AGP;
                         final var options = new ConversionOptions(
                             sourcePath,
                             outputPath,
@@ -157,6 +166,62 @@ public class ConversionHandlersHolder extends HandlersHolder {
                 },
                 response -> ctx.response().end(Json.encode(response)),
                 () -> ctx.response().end(Json.encode(Map.of("status", "cancelled")))
+            );
+        });
+
+        router.post("/convert/assembly-to-agp").handler(ctx -> {
+            final var scheduler = getScheduler(ctx);
+            if (scheduler == null) {
+                return;
+            }
+            scheduler.submit(
+              ctx,
+              RequestTaskScheduler.RequestPriority.UI_UX,
+              null,
+              () -> {
+                cleanupOldJobs();
+                final var requestJson = ctx.body().asJsonObject();
+                final var filename = requestJson.getString("filename");
+                if (filename == null || filename.isBlank()) {
+                  throw new IllegalArgumentException("filename is required");
+                }
+                final var overwrite = requestJson.getBoolean("overwrite", false);
+
+                final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
+                if (dataDirectoryWrapper == null) {
+                  throw new IllegalStateException("Data directory is not present in local map");
+                }
+                final var dataDirectory = dataDirectoryWrapper.getPath();
+                final var sourcePath = dataDirectory.resolve(filename).normalize();
+                if (!sourcePath.startsWith(dataDirectory)) {
+                  throw new IllegalArgumentException("Invalid filename");
+                }
+                if (!Files.isRegularFile(sourcePath)) {
+                  throw new IllegalArgumentException("Source file not found: " + filename);
+                }
+
+                final var outputFilename = requestJson.getString("outputFilename", "");
+                final var outputPath = outputFilename == null || outputFilename.isBlank()
+                  ? deriveAgpOutputPath(sourcePath)
+                  : dataDirectory.resolve(outputFilename).normalize();
+                if (!outputPath.startsWith(dataDirectory)) {
+                  throw new IllegalArgumentException("Invalid output filename");
+                }
+                if (!overwrite && Files.exists(outputPath)) {
+                  throw new IllegalArgumentException("Output file already exists: " + dataDirectory.relativize(outputPath));
+                }
+                if (overwrite) {
+                  Files.deleteIfExists(outputPath);
+                }
+
+                AssemblyLayoutConverter.convertToAgp(sourcePath, outputPath);
+                return Map.of(
+                  "status", "converted",
+                  "inputFilename", filename,
+                  "outputFilename", dataDirectory.relativize(outputPath).toString()
+                );
+              },
+              response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response))
             );
         });
 
@@ -203,7 +268,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var assemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
                     final var assemblyPathForOptions = assemblyPath == null
                       ? ConversionOptions.NO_AGP
-                      : dataDirectory.relativize(assemblyPath).toString();
+                      : assemblyPath.toString();
 
                     final var options = new ConversionOptions(
                         sourcePath,
@@ -284,7 +349,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var assemblyPath = resolveOptionalAssemblyPath(dataDirectory, perFileAssembly);
                         final var assemblyPathForOptions = assemblyPath == null
                           ? ConversionOptions.NO_AGP
-                          : dataDirectory.relativize(assemblyPath).toString();
+                          : assemblyPath.toString();
                         final var options = new ConversionOptions(
                             sourcePath,
                             outputPath,
@@ -461,6 +526,18 @@ public class ConversionHandlersHolder extends HandlersHolder {
     private static Path deriveOutputPath(final @NotNull Path sourcePath,
                                          final @NotNull ConversionDirection direction) {
         return direction.deriveOutputPath(sourcePath);
+    }
+
+    private static Path deriveAgpOutputPath(final @NotNull Path sourcePath) {
+        final var filename = sourcePath.getFileName().toString();
+        final var lowerFilename = filename.toLowerCase(Locale.ROOT);
+        if (lowerFilename.endsWith(".assembly")) {
+            return sourcePath.resolveSibling(filename.substring(0, filename.length() - ".assembly".length()) + ".agp");
+        }
+        if (lowerFilename.endsWith(".agp")) {
+            return sourcePath.resolveSibling(filename);
+        }
+        return sourcePath.resolveSibling(filename + ".agp");
     }
 
     private static void prepareOutputPath(final @NotNull Path outputPath, final boolean overwrite) {
