@@ -72,9 +72,9 @@ cmake_args=(
 if [[ -n "${MACOS_DEPLOYMENT_TARGET}" ]]; then
   cmake_args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}")
 fi
-cmake "${cmake_args[@]}"
-cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS}"
-cmake --install "${BUILD_DIR}"
+cmake "${cmake_args[@]}" >&2
+cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS}" >&2
+cmake --install "${BUILD_DIR}" >&2
 
 mkdir -p "${OUTPUT_DIR}/share/doc/mimalloc"
 MIMALLOC_ARCHIVE="$(find "${BUILD_DIR}" -type f \( -name 'libmimalloc.a' -o -name 'libmimalloc-secure.a' -o -name 'libmimalloc-static.a' \) | sort | tail -n 1)"

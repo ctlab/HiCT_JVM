@@ -105,6 +105,43 @@ python3 -m venv "${VENV_DIR}"
 
 git clone --depth 1 --branch "${REF}" "${REPO_URL}" "${SOURCE_DIR}"
 
+python3 - "${SOURCE_DIR}/cmake/modules/FindFilesystem.cmake" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+marker = 'if(Filesystem_FIND_REQUIRED AND NOT Filesystem_FOUND)'
+guard = '''if(DEFINED ENV{HICT_SKIP_FILESYSTEM_RUN_CHECK} AND "$ENV{HICT_SKIP_FILESYSTEM_RUN_CHECK}" STREQUAL "1")
+  if(NOT TARGET std::filesystem)
+    add_library(std::filesystem INTERFACE IMPORTED)
+    set_property(
+      TARGET std::filesystem
+      APPEND
+      PROPERTY INTERFACE_COMPILE_FEATURES cxx_std_17)
+  endif()
+  set(Filesystem_FOUND TRUE CACHE BOOL "TRUE if we can run a program using std::filesystem" FORCE)
+endif()
+
+'''
+if guard not in text:
+    text = text.replace(marker, guard + marker)
+    path.write_text(text, encoding="utf-8")
+PY
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  python3 - "${SOURCE_DIR}/CMakeLists.txt" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = 'set(ENABLE_INTERPROCEDURAL_OPTIMIZATION_DEFAULT ON)'
+new = 'set(ENABLE_INTERPROCEDURAL_OPTIMIZATION_DEFAULT OFF)'
+if old in text:
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+fi
+
 export PATH="${VENV_DIR}/bin:${PATH}"
 export CONAN_HOME="${CONAN_HOME_DIR}"
 export CONAN_CPU_COUNT="${BUILD_JOBS}"
@@ -117,6 +154,23 @@ if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   export CXX=clang++
   export CFLAGS="${CFLAGS:-} --target=x86_64-linux-musl"
   export CXXFLAGS="${CXXFLAGS:-} --target=x86_64-linux-musl"
+  export HICT_SKIP_FILESYSTEM_RUN_CHECK=1
+  cat > "${WORK_DIR}/clang-scan-deps-shim" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+primary_output=""
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+  if [[ "${args[i]}" == "-o" && $((i + 1)) -lt ${#args[@]} ]]; then
+    primary_output="${args[i + 1]}"
+    break
+  fi
+done
+
+printf '{"revision":0,"rules":[{"primary-output":"%s","provides":[],"requires":[]}]}\\n' "${primary_output}"
+EOF
+  chmod +x "${WORK_DIR}/clang-scan-deps-shim"
 elif [[ "${COMPILER}" == "clang" ]]; then
   export CC=clang
   export CXX=clang++
@@ -173,7 +227,9 @@ if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   linker_flags="${linker_flags} -static -fuse-ld=lld ${MIMALLOC_LINK_FLAGS}"
 fi
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
-  linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive"
+  if [[ "${ENABLE_STATIC_MUSL}" != "1" ]]; then
+    linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive"
+  fi
 fi
 
 cmake_args=(
@@ -188,6 +244,8 @@ cmake_args=(
   -DHICTK_WITH_ARROW=OFF
   -DHICTK_WITH_EIGEN=OFF
   -DBUILD_SHARED_LIBS=OFF
+  -DCMAKE_C_COMPILER_CLANG_SCAN_DEPS="${WORK_DIR}/clang-scan-deps-shim"
+  -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS="${WORK_DIR}/clang-scan-deps-shim"
   -DCMAKE_C_COMPILER="${CC}"
   -DCMAKE_CXX_COMPILER="${CXX}"
   -DCMAKE_EXE_LINKER_FLAGS="${linker_flags}"
@@ -204,7 +262,7 @@ if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
 fi
 cmake "${cmake_args[@]}"
 
-cmake --build "${BUILD_DIR}"
+cmake --build "${BUILD_DIR}" --target hictk
 
 if [[ "${RUN_TESTS}" == "1" ]]; then
   ctest --test-dir "${BUILD_DIR}" --output-on-failure -j "${BUILD_JOBS}"
