@@ -373,29 +373,71 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: |
           set -uo pipefail
+
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-linux-x86_64.run' | sort | tail -n 1)"
           portable_bin="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+
+          failed=0
+
           check_binary() {
             local label="$1"
             local path="$2"
+            local warning_only="${3:-false}"
+
             if [[ -z "${path}" || ! -e "${path}" ]]; then
-              echo "::warning::Linux validation: ${label} is missing."
-              return 0
+              if [[ "${warning_only}" == "true" ]]; then
+                echo "::warning::Linux validation: ${label} is missing."
+                return 0
+              fi
+
+              echo "::error::Linux validation: ${label} is missing."
+              return 1
             fi
+
             if [[ "${path}" != *.run ]] && [[ ! -x "${path}" ]]; then
-              echo "::warning::Linux validation: ${label} is not executable at ${path}."
-              return 0
+              if [[ "${warning_only}" == "true" ]]; then
+                echo "::warning::Linux validation: ${label} is not executable at ${path}."
+                return 0
+              fi
+
+              echo "::error::Linux validation: ${label} is not executable at ${path}."
+              return 1
             fi
-            if ! "${path}" --help >/dev/null; then
-              echo "::warning::Linux validation: ${label} failed its --help smoke test."
+
+            echo "Testing ${label}: ${path}"
+
+            "${path}" --help >/dev/null 2>&1
+            local exit_code=$?
+
+            if [[ "${exit_code}" != "0" ]]; then
+              if [[ "${warning_only}" == "true" ]]; then
+                echo "::warning::Linux validation: ${label} failed its --help smoke test with exit code ${exit_code}."
+                return 0
+              fi
+
+              echo "::error::Linux validation: ${label} failed its --help smoke test with exit code ${exit_code}."
+              return 1
             fi
+
+            echo "Linux validation: ${label} passed."
+            return 0
           }
-          check_binary "portable runfile" "${runfile}"
-          check_binary "portable hict binary" "${portable_bin}"
-          check_binary "hictk" "toolchains-dist/linux_x86_64/bin/hictk"
-          check_binary "minimap2" "toolchains-dist/linux_x86_64/bin/minimap2"
-          check_binary "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2"
-          check_binary "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512"
+
+          check_binary "portable runfile" "${runfile}" || failed=1
+          check_binary "portable hict binary" "${portable_bin}" || failed=1
+          check_binary "hictk" "toolchains-dist/linux_x86_64/bin/hictk" || failed=1
+          check_binary "minimap2" "toolchains-dist/linux_x86_64/bin/minimap2" || failed=1
+          check_binary "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" || failed=1
+
+          # AVX-512 may fail on runners without AVX-512 CPU support.
+          # Keep the artifact check visible, but do not fail the workflow.
+          check_binary "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" true || true
+
+          if [[ "${failed}" != "0" ]]; then
+            exit 1
+          fi
+
+          exit 0
 
   windows-portable:
     name: Windows portable ZIP and EXE
@@ -749,26 +791,81 @@ jobs:
           function Test-BinarySmoke {
             param(
               [string]$Label,
-              [string]$Path
+              [string]$Path,
+              [switch]$WarningOnly
             )
+
             if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
-              Write-Host "::warning::Windows validation: $Label is missing."
-              return
+              if ($WarningOnly) {
+                Write-Host "::warning::Windows validation: $Label is missing."
+                return $true
+              }
+
+              Write-Host "::error::Windows validation: $Label is missing."
+              return $false
             }
+
+            Write-Host "Testing $Label: $Path"
+
+            $exitCode = 0
+
             try {
-              & $Path --help | Out-Null
+              & $Path --help *> $null
+              $exitCode = $LASTEXITCODE
             } catch {
-              Write-Host "::warning::Windows validation: $Label failed its --help smoke test."
+              $exitCode = $LASTEXITCODE
+              if ($null -eq $exitCode) {
+                $exitCode = 1
+              }
+            } finally {
+              # Critical: GitHub's pwsh wrapper exits with $LASTEXITCODE if it is non-zero.
+              $global:LASTEXITCODE = 0
             }
+
+            if ($exitCode -ne 0) {
+              if ($WarningOnly) {
+                Write-Host "::warning::Windows validation: $Label failed its --help smoke test with exit code $exitCode."
+                return $true
+              }
+
+              Write-Host "::error::Windows validation: $Label failed its --help smoke test with exit code $exitCode."
+              return $false
+            }
+
+            Write-Host "Windows validation: $Label passed."
+            return $true
           }
+
+          $failed = $false
+
           $exe = Get-ChildItem -Path "build\distributions" -Filter "HiCT-*-windows-x86_64.exe" |
             Sort-Object LastWriteTime |
             Select-Object -Last 1
-          Test-BinarySmoke -Label "portable exe" -Path ($exe.FullName)
-          Test-BinarySmoke -Label "hictk" -Path "toolchains-dist\windows_x86_64\bin\hictk.exe"
-          Test-BinarySmoke -Label "minimap2" -Path "toolchains-dist\windows_x86_64\bin\minimap2.exe"
-          Test-BinarySmoke -Label "mm2-plus AVX2" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe"
-          Test-BinarySmoke -Label "mm2-plus AVX-512" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe"
+
+          if (-not (Test-BinarySmoke -Label "portable exe" -Path $(if ($exe) { $exe.FullName } else { "" }))) {
+            $failed = $true
+          }
+          if (-not (Test-BinarySmoke -Label "hictk" -Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
+            $failed = $true
+          }
+          if (-not (Test-BinarySmoke -Label "minimap2" -Path "toolchains-dist\windows_x86_64\bin\minimap2.exe")) {
+            $failed = $true
+          }
+          if (-not (Test-BinarySmoke -Label "mm2-plus AVX2" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe")) {
+            $failed = $true
+          }
+
+          # AVX-512 binary may fail on GitHub-hosted runners without AVX-512 CPU support.
+          # This should warn, but must not fail the release workflow.
+          [void](Test-BinarySmoke -Label "mm2-plus AVX-512" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe" -WarningOnly)
+
+          $global:LASTEXITCODE = 0
+
+          if ($failed) {
+            exit 1
+          }
+
+          exit 0
 
   macos-portable:
     name: macOS portable .run
@@ -874,48 +971,87 @@ jobs:
       - name: Validate macOS artifacts after upload
         run: |
           set -uo pipefail
+
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-arm64.run' | sort | tail -n 1)"
           portable_shell="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
           portable_bin="$(find build/portable -path '*/bin/hict-darwin-arm64' -type f | sort | tail -n 1)"
           toolchain_manifest="$(find build/portable -path '*/toolchains/darwin_arm64/manifest.json' -type f | sort | tail -n 1)"
+
           toolchain_dir=""
           if [[ -n "${toolchain_manifest}" ]]; then
             toolchain_dir="$(dirname "${toolchain_manifest}")"
           fi
-          if [[ -z "${runfile}" || ! -f "${runfile}" ]]; then
-            echo "Missing macOS .run artifact after upload." >&2
-            exit 1
-          fi
-          if [[ -z "${portable_shell}" || ! -x "${portable_shell}" ]]; then
-            echo "Missing macOS portable shell launcher after upload." >&2
-            exit 1
-          fi
-          if [[ -z "${portable_bin}" || ! -x "${portable_bin}" ]]; then
-            echo "Missing macOS signed launcher after upload." >&2
-            exit 1
-          fi
-          if [[ -z "${toolchain_dir}" || ! -d "${toolchain_dir}" ]]; then
-            echo "Missing bundled Darwin toolchain directory after upload." >&2
-            exit 1
-          fi
+
+          failed=0
+
           check_binary() {
             local label="$1"
             local path="$2"
+            local warning_only="${3:-false}"
+
+            if [[ -z "${path}" || ! -e "${path}" ]]; then
+              if [[ "${warning_only}" == "true" ]]; then
+                echo "::warning::macOS validation: ${label} is missing at ${path}."
+                return 0
+              fi
+
+              echo "::error::macOS validation: ${label} is missing at ${path}."
+              return 1
+            fi
+
             if [[ ! -x "${path}" ]]; then
-              echo "::warning::macOS validation: ${label} is missing or not executable at ${path}."
-              return 0
+              if [[ "${warning_only}" == "true" ]]; then
+                echo "::warning::macOS validation: ${label} is not executable at ${path}."
+                return 0
+              fi
+
+              echo "::error::macOS validation: ${label} is not executable at ${path}."
+              return 1
             fi
-            if ! "${path}" --help >/dev/null; then
-              echo "::warning::macOS validation: ${label} failed its --help smoke test."
+
+            echo "Testing ${label}: ${path}"
+
+            "${path}" --help >/dev/null 2>&1
+            local exit_code=$?
+
+            if [[ "${exit_code}" != "0" ]]; then
+              if [[ "${warning_only}" == "true" ]]; then
+                echo "::warning::macOS validation: ${label} failed its --help smoke test with exit code ${exit_code}."
+                return 0
+              fi
+
+              echo "::error::macOS validation: ${label} failed its --help smoke test with exit code ${exit_code}."
+              return 1
             fi
+
+            echo "macOS validation: ${label} passed."
+            return 0
           }
-          check_binary "portable runfile" "${runfile}"
-          check_binary "portable shell launcher" "${portable_shell}"
-          check_binary "signed launcher" "${portable_bin}"
-          check_binary "hictk" "${toolchain_dir}/bin/hictk"
-          check_binary "minimap2" "${toolchain_dir}/bin/minimap2"
-          check_binary "mm2-plus AVX2" "${toolchain_dir}/bin/mm2plus-avx2"
-          check_binary "mm2-plus AVX-512" "${toolchain_dir}/bin/mm2plus-avx512"
+
+          if [[ -z "${toolchain_dir}" || ! -d "${toolchain_dir}" ]]; then
+            echo "::error::macOS validation: missing bundled Darwin toolchain directory after upload."
+            failed=1
+          fi
+
+          check_binary "portable runfile" "${runfile}" || failed=1
+          check_binary "portable shell launcher" "${portable_shell}" || failed=1
+          check_binary "signed launcher" "${portable_bin}" || failed=1
+
+          if [[ "${failed}" == "0" ]]; then
+            check_binary "hictk" "${toolchain_dir}/bin/hictk" || failed=1
+            check_binary "minimap2" "${toolchain_dir}/bin/minimap2" || failed=1
+
+            # These names are SIMD-specific and may not be runnable on the current macOS runner.
+            # Keep the visibility, but do not fail the whole workflow because of them.
+            check_binary "mm2-plus AVX2" "${toolchain_dir}/bin/mm2plus-avx2" true || true
+            check_binary "mm2-plus AVX-512" "${toolchain_dir}/bin/mm2plus-avx512" true || true
+          fi
+
+          if [[ "${failed}" != "0" ]]; then
+            exit 1
+          fi
+
+          exit 0
 
   publish-release-assets:
     name: Publish release assets
