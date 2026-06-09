@@ -10,6 +10,8 @@ REPO_URL="${HICTK_REPO_URL:-https://github.com/paulsengroup/hictk.git}"
 REF="${HICTK_REF:-latest}"
 RUN_TESTS="${RUN_TESTS:-0}"
 ENABLE_MOSTLY_STATIC_RUNTIME="${ENABLE_MOSTLY_STATIC_RUNTIME:-0}"
+ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"
+ENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"
 COMPILER="${COMPILER:-gcc}"
 BUILD_JOBS="${BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
@@ -25,6 +27,8 @@ Environment overrides:
   COMPILER=gcc|clang                   Default: gcc
   RUN_TESTS=1                          Run ctest after building.
   ENABLE_MOSTLY_STATIC_RUNTIME=1       Add -static-libstdc++ -static-libgcc on GCC builds.
+  HICT_STATIC_MUSL=1                   Prefer musl compiler wrappers and full static linking.
+  HICT_STATIC_MIMALLOC=1               Link mimalloc statically into the final executable.
   BUILD_JOBS=8                         Parallelism for Conan/CMake builds.
 
 Example:
@@ -51,8 +55,15 @@ require_cmd cmake
 require_cmd ninja
 require_cmd ldd
 require_cmd file
+if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
+  require_cmd pkg-config
+fi
 
 if [[ "${COMPILER}" == "clang" ]]; then
+  require_cmd clang
+  require_cmd clang++
+fi
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   require_cmd clang
   require_cmd clang++
 fi
@@ -103,6 +114,11 @@ conan profile detect --force >/dev/null
 if [[ "${COMPILER}" == "clang" ]]; then
   export CC=clang
   export CXX=clang++
+elif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  export CC=clang
+  export CXX=clang++
+  export CFLAGS="${CFLAGS:-} --target=x86_64-linux-musl"
+  export CXXFLAGS="${CXXFLAGS:-} --target=x86_64-linux-musl"
 else
   export CC=gcc
   export CXX=g++
@@ -118,8 +134,14 @@ conan install --build=missing \
   .
 
 linker_flags=""
-if [[ "${ENABLE_MOSTLY_STATIC_RUNTIME}" == "1" && "${COMPILER}" == "gcc" ]]; then
+if [[ "${ENABLE_MOSTLY_STATIC_RUNTIME}" == "1" && ( "${COMPILER}" == "gcc" || "${ENABLE_STATIC_MUSL}" == "1" ) ]]; then
   linker_flags="-static-libstdc++ -static-libgcc"
+fi
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  linker_flags="${linker_flags} -static -fuse-ld=lld"
+fi
+if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
+  linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive"
 fi
 
 cmake \
@@ -149,6 +171,9 @@ fi
 
 rm -rf "${STAGE_DIR}"
 cmake --install "${BUILD_DIR}" --prefix "${STAGE_DIR}" --component Runtime
+if [[ -x "${STAGE_DIR}/bin/hictk" ]]; then
+  "${STAGE_DIR}/bin/hictk" --help >/dev/null
+fi
 
 mkdir -p "${STAGE_DIR}/share/doc/hictk"
 cp "${SOURCE_DIR}/CITATION.cff" "${STAGE_DIR}/share/doc/hictk/CITATION.cff"
@@ -162,6 +187,8 @@ cp "${SOURCE_DIR}/CITATION.cff" "${STAGE_DIR}/share/doc/hictk/CITATION.cff"
   echo "build_shared_libs=OFF"
   echo "cpu_flag_policy=generic official hictk Release build; no AVX-specific hictk executable is produced so the same payload remains portable across x86-64 hosts."
   echo "hictk_dependencies_linking=static_or_embedded_per_upstream"
+  echo "static_runtime=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo musl || echo host_glibc)"
+  echo "mimalloc_linking=$([[ "${ENABLE_MIMALLOC}" == "1" ]] && echo static || echo disabled)"
   echo "runtime_linker_flags=${linker_flags:-<default>}"
   echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo

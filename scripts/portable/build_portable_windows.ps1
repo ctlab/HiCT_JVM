@@ -735,4 +735,7 @@ Write-Host "Built $zipPath"
 if ($CreateSelfExtractingExe) {
   Write-Host "Built optional portable $WindowsExeMode EXE in $artifactDir"
 }
+if ($CreateSelfExtractingExe -and (Test-Path $exePath)) {
+  Invoke-Native -FilePath $exePath -Arguments @("--help")
+}
 Write-Host "Wrote $shaPath"

@@ -30,6 +30,7 @@ Environment overrides:
 The .run file is a transparent shell script with a tar.xz payload appended. It
 extracts to the user's cache and sets DATA_DIR to the directory containing the
 .run file unless DATA_DIR was explicitly provided.
+The .run wrapper also accepts --help to print launcher usage without starting HiCT.
 EOF
 }
 
@@ -170,6 +171,10 @@ if [[ -d "${PROJECT_DIR}/browsers-dist/linux_x86_64" ]] &&
     fi
     chmod 0755 "${BROWSER_COMMAND_TARGET}" 2>/dev/null || true
   done < <(find "${APP_DIR}/browsers/linux_x86_64" -name manifest.json -type f | sort)
+fi
+
+if [[ -x "${APP_DIR}/bin/hict" ]]; then
+  "${APP_DIR}/bin/hict" --help >/dev/null
 fi
 
 cat > "${APP_DIR}/licenses/PORTABLE_DISTRIBUTION_NOTICE.txt" <<'EOF'
@@ -406,6 +411,7 @@ HiCT portable launcher
 
 Usage:
   ./HiCT-<version>-linux-x86_64.run [HiCT CLI args...]
+  ./HiCT-<version>-linux-x86_64.run --help
   ./HiCT-<version>-linux-x86_64.run --hict-extract-only <directory>
 
 DATA_DIR defaults to the directory containing this .run file. Set DATA_DIR
@@ -434,7 +440,7 @@ EOM
   exit 127
 }
 
-if [[ "\${1:-}" == "--hict-run-help" ]]; then
+if [[ "\${1:-}" == "--hict-run-help" || "\${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
@@ -544,6 +550,9 @@ __HICT_PAYLOAD_BELOW__
 EOF
 cat "${PAYLOAD_PATH}" >> "${RUN_PATH}"
 chmod +x "${RUN_PATH}"
+if [[ -x "${RUN_PATH}" ]]; then
+  "${RUN_PATH}" --help >/dev/null
+fi
 
 (
   cd "${ARTIFACT_DIR}"

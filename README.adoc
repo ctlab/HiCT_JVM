@@ -9,7 +9,7 @@ image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release
 This section is intended for bioinformatics users who download a ready-to-run fat JAR from GitHub Releases.
 You need to install Java 21+ (this project is built for Java 21 bytecode).
 Download the latest fat JAR from the https://github.com/ctlab/HiCT_JVM/releases[Releases page] (Assets section).
-**NOTE:** prebuilt native bundles are currently provided for *Windows* (tested on 10/11) and *Linux with glibc* (common Debian/Ubuntu-like distributions). Alpine/musl is not supported by these bundled binaries. Current prebuilt artifacts are AMD64-only. On Windows you might need to install https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170[Microsoft Visual C++ Redistributable].
+**NOTE:** prebuilt native bundles are currently provided for *Windows* (tested on 10/11), *Linux x86_64 static-musl* binaries, and *macOS arm64* (Apple Silicon). The Linux and macOS portable artifacts are built to run without the host libc/stdlib dependencies that previously blocked Ubuntu 18.04/22.04 and Alpine users. On Windows you might need to install https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170[Microsoft Visual C++ Redistributable].
 
 === Quick start
 
@@ -277,7 +277,7 @@ If startup completes and API/WebUI are healthy, these warnings can be non-fatal.
 When native loading actually fails:
 
 1. Confirm architecture match (AMD64 JVM + AMD64 native bundle).
-2. Confirm OS compatibility (Linux glibc; not Alpine/musl).
+2. Confirm OS compatibility (Linux x86_64 static-musl or macOS arm64 as appropriate).
 3. On Linux, ensure native/plugin paths are discoverable, for example:
 +
 ```bash

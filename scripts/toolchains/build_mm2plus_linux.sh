@@ -87,6 +87,7 @@ build_variant() {
       LDFLAGS="-static-libstdc++ -static-libgcc" \
       LIBS="-Wl,-Bstatic -lz -lgomp -lstdc++ -lgcc -Wl,-Bdynamic -lm -lpthread -ldl"; then
     install -m 0755 "${SOURCE_DIR}/mm2plus" "${output}"
+    "${output}" --help >/dev/null || true
     return 0
   fi
   echo "::warning::mm2-plus ${variant} build failed; dotplot generation can still use minimap2 or another mm2-plus variant." >&2

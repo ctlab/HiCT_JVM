@@ -104,6 +104,8 @@ jobs:
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
+      HICT_STATIC_MUSL: "1"
+      HICT_STATIC_MIMALLOC: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -235,7 +237,7 @@ jobs:
       - name: Install hictk build prerequisites
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
         run: |
-          sudo apt-get install -y --no-install-recommends g++ gcc make cmake ninja-build python3-venv zlib1g-dev
+          sudo apt-get install -y --no-install-recommends clang lld g++ gcc make cmake ninja-build python3-venv zlib1g-dev musl-tools libmimalloc-dev pkg-config
 
       - name: Build bundled hictk
         id: build-hictk
@@ -364,6 +366,26 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64.run
             build/distributions/HiCT-*-linux-x86_64.sha256
           if-no-files-found: error
+
+      - name: Validate Linux artifacts after upload
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        run: |
+          set -euo pipefail
+          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-linux-x86_64.run' | sort | tail -n 1)"
+          portable_bin="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+          if [[ -z "${runfile}" || ! -f "${runfile}" ]]; then
+            echo "Missing Linux .run artifact after upload." >&2
+            exit 1
+          fi
+          if [[ -z "${portable_bin}" || ! -x "${portable_bin}" ]]; then
+            echo "Missing Linux portable hict binary after upload." >&2
+            exit 1
+          fi
+          "${runfile}" --help >/dev/null
+          "${portable_bin}" --help >/dev/null
+          toolchains-dist/linux_x86_64/bin/hictk --help >/dev/null
+          toolchains-dist/linux_x86_64/bin/minimap2 --help >/dev/null
+          toolchains-dist/linux_x86_64/bin/mm2plus-avx2 --help >/dev/null
 
   windows-portable:
     name: Windows portable ZIP and EXE
@@ -710,6 +732,85 @@ jobs:
             build/distributions/HiCT-*-windows-x86_64.sha256
           if-no-files-found: error
 
+      - name: Validate Windows artifacts after upload
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "build\distributions" -Filter "HiCT-*-windows-x86_64.exe" |
+            Sort-Object LastWriteTime |
+            Select-Object -Last 1
+          if (-not $exe) {
+            throw "Missing Windows .exe artifact after upload."
+          }
+          & $exe.FullName --help
+          & "toolchains-dist\windows_x86_64\bin\hictk.exe" --help
+          & "toolchains-dist\windows_x86_64\bin\minimap2.exe" --help
+          & "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe" --help
+
+  macos-portable:
+    name: macOS portable .run
+    runs-on: macos-14
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Verify Node.js tooling
+        run: |
+          node --version
+          npm --version
+
+      - name: Set up Temurin JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Grant execute permissions
+        run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh
+
+      - name: Build macOS portable package
+        run: ./scripts/portable/build_portable_darwin_arm64.sh
+
+      - name: Upload macOS package artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-darwin-portable
+          path: |
+            build/distributions/HiCT-*-darwin-arm64.run
+            build/distributions/HiCT-*-darwin-arm64.tar.gz
+            build/distributions/HiCT-*-darwin-arm64.sha256
+          if-no-files-found: error
+
+      - name: Validate macOS artifacts after upload
+        run: |
+          set -euo pipefail
+          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-arm64.run' | sort | tail -n 1)"
+          portable_shell="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+          portable_bin="$(find build/portable -path '*/bin/hict-darwin-arm64' -type f | sort | tail -n 1)"
+          if [[ -z "${runfile}" || ! -f "${runfile}" ]]; then
+            echo "Missing macOS .run artifact after upload." >&2
+            exit 1
+          fi
+          if [[ -z "${portable_shell}" || ! -x "${portable_shell}" ]]; then
+            echo "Missing macOS portable shell launcher after upload." >&2
+            exit 1
+          fi
+          if [[ -z "${portable_bin}" || ! -x "${portable_bin}" ]]; then
+            echo "Missing macOS signed launcher after upload." >&2
+            exit 1
+          fi
+          "${runfile}" --help >/dev/null
+          "${portable_shell}" --help >/dev/null
+          "${portable_bin}" --help >/dev/null
+
   publish-release-assets:
     name: Publish release assets
     needs:
@@ -817,19 +918,34 @@ jobs:
             sha256sum * | sort -k2 > "${checksum_file}"
           )
 
-          cat > release-body.md <<EOF
-          Automated HiCT portable build from \`${GITHUB_SHA}\`.
+          release_base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}"
+          linux_run="HiCT-${version}-linux-x86_64.run"
+          windows_exe="HiCT-${version}-windows-x86_64.exe"
+          darwin_run="HiCT-${version}-darwin-arm64.run"
+          release_body_lines=(
+            "Automated HiCT portable build from \`${GITHUB_SHA}\`."
+            ""
+            "Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            ""
+            "**⚠️ For quick testing, download the exact artifact for your OS:**"
+          )
 
-          Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
-          Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          if [[ -f "release-dist/${windows_exe}" ]]; then
+            release_body_lines+=("- Windows: [\`${windows_exe}\`](${release_base_url}/${windows_exe})")
+          fi
+          if [[ -f "release-dist/${linux_run}" ]]; then
+            release_body_lines+=("- Linux: [\`${linux_run}\`](${release_base_url}/${linux_run})")
+            release_body_lines+=("  After download, run \`chmod +x ${linux_run}\` and then \`bash ${linux_run}\`.")
+          fi
+          if [[ -f "release-dist/${darwin_run}" ]]; then
+            release_body_lines+=("- macOS: [\`${darwin_run}\`](${release_base_url}/${darwin_run})")
+            release_body_lines+=("  If Gatekeeper blocks the file after download, run \`xattr -d com.apple.quarantine ./HiCT-*.run\`.")
+          fi
 
-          Included primary assets:
-          - JVM fat JAR
-          - Linux single-file \`.run\`
-          - Windows single-file \`.exe\`
-
-          See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.
-          EOF
+          release_body_lines+=("")
+          release_body_lines+=("See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.")
+          printf '%s\n' "${release_body_lines[@]}" > release-body.md
 
       - name: Move latest-master tag
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}

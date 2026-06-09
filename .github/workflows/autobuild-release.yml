@@ -1,4 +1,4 @@
-name: Gradle Build
+name: Autobuild Release
 
 on:
   push:
@@ -32,7 +32,7 @@ jobs:
           cache: gradle
 
       - name: Build
-        run: ./gradlew clean build
+        run: ./gradlew -PrequireBundledWebUI=true clean build
 
       - name: Upload fat JAR artifact
         uses: actions/upload-artifact@v6
