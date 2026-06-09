@@ -253,9 +253,18 @@ path = pathlib.Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
 updated = text.replace("-fopenmp", "")
 updated = updated.replace("-lgomp", "")
+updated = updated.replace("-D_GLIBCXX_PARALLEL", "")
 if updated != text:
     path.write_text(updated, encoding="utf-8")
 PY
+cat > "${SOURCE_MM2PLUS}/src/parallel_sort.cpp" <<'EOF'
+#include <algorithm>
+#include "mmpriv.h"
+
+void parallel_sort(mm128_t* z, size_t n_u, int32_t) {
+    std::stable_sort(z, z + n_u, [](const mm128_t &a, const mm128_t &b) { return a.x < b.x; });
+}
+EOF
 
   local built=0
   make -C "${SOURCE_MM2PLUS}" clean >/dev/null 2>&1 || true
@@ -264,6 +273,7 @@ PY
       aarch64=1 \
       arm_neon=1 \
       CXX="${CXX}" \
+      CC="${CC}" \
       EXTRAFLAGS="-arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; then
     if [[ -x "${SOURCE_MM2PLUS}/mm2plus" ]]; then
       built=1
