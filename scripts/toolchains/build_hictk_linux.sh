@@ -140,6 +140,46 @@ new = 'set(ENABLE_INTERPROCEDURAL_OPTIMIZATION_DEFAULT OFF)'
 if old in text:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 PY
+  python3 - "${SOURCE_DIR}/src/hictk/build_metadata/CMakeLists.txt" "${SOURCE_DIR}/src/hictk/build_metadata/dependency_metadata.cpp" <<'PY'
+from pathlib import Path
+import sys
+
+cmake_path = Path(sys.argv[1])
+cpp_path = Path(sys.argv[2])
+
+cmake_text = cmake_path.read_text(encoding="utf-8")
+old_block = """  nlohmann_json
+  phmap
+  opentelemetry-cpp
+  readerwriterqueue
+  span-lite
+  spdlog
+  tomlplusplus
+  zstd
+)
+"""
+new_block = """  nlohmann_json
+  phmap
+  readerwriterqueue
+  span-lite
+  spdlog
+  tomlplusplus
+  zstd
+)
+
+if(HICTK_ENABLE_TELEMETRY)
+  list(APPEND HICTK_DEPENDENCIES opentelemetry-cpp)
+endif()
+"""
+if old_block in cmake_text and new_block not in cmake_text:
+    cmake_path.write_text(cmake_text.replace(old_block, new_block, 1), encoding="utf-8")
+
+cpp_text = cpp_path.read_text(encoding="utf-8")
+old = '    deps.emplace("opentelemetry-cpp", HICTK_OPENTELEMETRY_CPP_VERSION);\n'
+new = '#ifdef HICTK_ENABLE_TELEMETRY\n    deps.emplace("opentelemetry-cpp", HICTK_OPENTELEMETRY_CPP_VERSION);\n#endif\n'
+if old in cpp_text and new not in cpp_text:
+    cpp_path.write_text(cpp_text.replace(old, new, 1), encoding="utf-8")
+PY
 fi
 
 export PATH="${VENV_DIR}/bin:${PATH}"

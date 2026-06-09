@@ -10,8 +10,8 @@ REPO_URL="${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
 ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"
 ENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  CXX_BIN="${CXX:-clang++}"
-  CC_BIN="${CC:-clang}"
+  CXX_BIN="${CXX:-g++}"
+  CC_BIN="${CC:-x86_64-linux-musl-gcc}"
 else
   CXX_BIN="${CXX:-g++}"
   CC_BIN="${CC:-gcc}"
@@ -81,6 +81,81 @@ elif new in text:
 else:
     print("[mm2plus/linux] Makefile generic object rule pattern was not found; upstream layout may have changed.")
 PY
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  python3 - "${SOURCE_DIR}/Makefile" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+updated = text.replace("-fopenmp", "")
+updated = updated.replace("-lgomp", "")
+if updated != text:
+    path.write_text(updated, encoding="utf-8")
+PY
+fi
+
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  cat > "${WORK_DIR}/musl-g++" <<'EOF'
+#!/usr/bin/env bash
+exec g++ -isystem /usr/include/x86_64-linux-musl -B/usr/lib/x86_64-linux-musl -L/usr/lib/x86_64-linux-musl "$@"
+EOF
+  chmod +x "${WORK_DIR}/musl-g++"
+  CXX_BIN="${WORK_DIR}/musl-g++"
+  cat > "${SOURCE_DIR}/src/parallel_sort.cpp" <<'EOF'
+#include <algorithm>
+#include "mmpriv.h"
+
+void parallel_sort(mm128_t* z, size_t n_u, int32_t) {
+    std::stable_sort(z, z + n_u, [](const mm128_t &a, const mm128_t &b) { return a.x < b.x; });
+}
+EOF
+  mkdir -p "${WORK_DIR}/compat"
+  cat > "${WORK_DIR}/compat/omp.h" <<'EOF'
+#ifndef HICT_MM2PLUS_OMP_H
+#define HICT_MM2PLUS_OMP_H
+
+typedef int omp_lock_t;
+typedef int omp_nest_lock_t;
+
+static inline int omp_get_thread_num(void) { return 0; }
+static inline int omp_get_num_threads(void) { return 1; }
+static inline int omp_get_max_threads(void) { return 1; }
+static inline int omp_get_num_procs(void) { return 1; }
+static inline int omp_in_parallel(void) { return 0; }
+static inline int omp_get_dynamic(void) { return 0; }
+static inline int omp_get_nested(void) { return 0; }
+static inline int omp_get_thread_limit(void) { return 1; }
+static inline int omp_get_level(void) { return 0; }
+static inline int omp_get_ancestor_thread_num(int) { return 0; }
+static inline int omp_get_team_size(int) { return 1; }
+static inline int omp_get_active_level(void) { return 0; }
+static inline int omp_in_final(void) { return 1; }
+static inline void omp_set_num_threads(int) {}
+static inline void omp_set_dynamic(int) {}
+static inline void omp_set_nested(int) {}
+static inline void omp_set_schedule(int, int) {}
+static inline void omp_get_schedule(int *, int *) {}
+static inline void omp_set_max_active_levels(int) {}
+static inline int omp_get_max_active_levels(void) { return 1; }
+static inline void omp_init_lock(omp_lock_t *) {}
+static inline void omp_destroy_lock(omp_lock_t *) {}
+static inline void omp_set_lock(omp_lock_t *) {}
+static inline void omp_unset_lock(omp_lock_t *) {}
+static inline int omp_test_lock(omp_lock_t *) { return 1; }
+static inline void omp_init_nest_lock(omp_nest_lock_t *) {}
+static inline void omp_destroy_nest_lock(omp_nest_lock_t *) {}
+static inline void omp_set_nest_lock(omp_nest_lock_t *) {}
+static inline void omp_unset_nest_lock(omp_nest_lock_t *) {}
+static inline int omp_test_nest_lock(omp_nest_lock_t *) { return 1; }
+static inline double omp_get_wtime(void) { return 0.0; }
+static inline double omp_get_wtick(void) { return 1.0; }
+
+static inline int omp_get_thread_num(void) { return 0; }
+
+#endif
+EOF
+fi
 
 MIMALLOC_LINK_FLAGS=""
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
@@ -90,6 +165,10 @@ fi
 STATIC_LDFLAGS=""
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   STATIC_LDFLAGS="-static -fuse-ld=lld"
+fi
+
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  make -C "${SOURCE_DIR}" -j"$(nproc)" deps CC="${CC_BIN}" CXX="${CXX_BIN}" >/dev/null
 fi
 
 build_variant() {
@@ -107,9 +186,9 @@ build_variant() {
 
   make -C "${SOURCE_DIR}" clean >/dev/null 2>&1 || true
   echo "[mm2plus/linux] Compiling ${variant} with EXTRAFLAGS=${flags}"
-  if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CC="${CC_BIN}" CXX="${CXX_BIN}" EXTRAFLAGS="${flags} $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo --target=x86_64-linux-musl)" \
+  if make -C "${SOURCE_DIR}" -j"$(nproc)" base=1 avx=1 CC="${CC_BIN}" CXX="${CXX_BIN}" EXTRAFLAGS="${flags} $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo -I${WORK_DIR}/compat)" \
       LDFLAGS="${STATIC_LDFLAGS} -static-libstdc++ -static-libgcc" \
-      LIBS="-Wl,-Bstatic -lz -lgomp -lstdc++ -lgcc ${MIMALLOC_LINK_FLAGS} -Wl,-Bdynamic -lm -lpthread -ldl"; then
+      LIBS="-Wl,-Bstatic -lz ${MIMALLOC_LINK_FLAGS} -lm -lpthread -ldl"; then
     install -m 0755 "${SOURCE_DIR}/mm2plus" "${output}"
     "${output}" --help >/dev/null || true
     if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${output}" | grep -q 'NEEDED'; then

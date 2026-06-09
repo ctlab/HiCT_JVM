@@ -78,7 +78,9 @@ if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   export CFLAGS="${CFLAGS:--O3 -DNDEBUG} --target=x86_64-linux-musl"
 fi
 
-make -C "${SOURCE_DIR}" -j"$(nproc)" CC="${CC:-gcc}" CFLAGS="${CFLAGS:--O3 -DNDEBUG}" LDFLAGS="${linker_flags}"
+make -C "${SOURCE_DIR}" -j"$(nproc)" CC="${CC:-gcc}" CFLAGS="${CFLAGS:--O3 -DNDEBUG}" \
+  LDFLAGS="${linker_flags}" \
+  LIBS="${linker_flags} -Wl,-Bstatic -lz -lm -lpthread"
 
 install -m 0755 "${SOURCE_DIR}/minimap2" "${OUTPUT_DIR}/bin/minimap2"
 if [[ -x "${OUTPUT_DIR}/bin/minimap2" ]]; then
