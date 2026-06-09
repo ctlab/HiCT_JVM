@@ -79,6 +79,8 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true shadowJar)
 fi
 
+"${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
+
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
 if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
   echo "Fat JAR was not found under ${PROJECT_DIR}/build/libs" >&2
@@ -94,6 +96,7 @@ mkdir -p \
   "${APP_DIR}/bin" \
   "${APP_DIR}/lib" \
   "${APP_DIR}/licenses" \
+  "${APP_DIR}/toolchains" \
   "${APP_DIR}/share/doc" \
   "${ARTIFACT_DIR}"
 
@@ -107,6 +110,21 @@ fi
   cd "${APP_DIR}"
   "${JAR_TOOL}" xf "${APP_DIR}/lib/hict.jar" webui
 )
+
+if [[ -d "${PROJECT_DIR}/toolchains-dist/darwin_arm64" ]]; then
+  cp -a "${PROJECT_DIR}/toolchains-dist/darwin_arm64" "${APP_DIR}/toolchains/"
+fi
+if [[ -f "${APP_DIR}/toolchains/darwin_arm64/manifest.json" ]]; then
+  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/hictk" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/minimap2" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx2" 2>/dev/null || true
+  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx512" 2>/dev/null || true
+  "${APP_DIR}/toolchains/darwin_arm64/bin/hictk" --help >/dev/null
+  "${APP_DIR}/toolchains/darwin_arm64/bin/minimap2" --help >/dev/null
+  "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx2" --help >/dev/null
+  "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx512" --help >/dev/null
+fi
 
 "${JLINK}" \
   --add-modules "${RUNTIME_MODULES}" \

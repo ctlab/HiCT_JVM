@@ -751,6 +751,13 @@ jobs:
     name: macOS portable .run
     runs-on: macos-14
     continue-on-error: true
+    env:
+      HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+      MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+      MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
+      HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -773,8 +780,36 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Restore HiCT native processing libraries
+        id: cache-native-processing
+        uses: actions/cache/restore@v5
+        with:
+          path: build/native-processing/resources
+          key: hict-native-macos-arm64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          restore-keys: |
+            hict-native-macos-arm64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh
+        run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/toolchains/build_darwin_toolchains.sh
+
+      - name: Restore Darwin toolchain cache
+        id: cache-darwin-toolchains
+        uses: actions/cache/restore@v5
+        with:
+          path: toolchains-dist/darwin_arm64
+          key: toolchain-v1-darwin-arm64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          restore-keys: |
+            toolchain-v1-darwin-arm64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+
+      - name: Restore Darwin Conan cache
+        id: cache-darwin-conan
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/hictk-conan/darwin_arm64
+          key: hictk-conan-darwin-arm64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          restore-keys: |
+            hictk-conan-darwin-arm64-${{ env.HICTK_REF }}-
+            hictk-conan-darwin-arm64-
 
       - name: Build macOS portable package
         run: ./scripts/portable/build_portable_darwin_arm64.sh
@@ -789,12 +824,41 @@ jobs:
             build/distributions/HiCT-*-darwin-arm64.sha256
           if-no-files-found: error
 
+      - name: Save Darwin toolchain cache
+        if: ${{ steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: toolchains-dist/darwin_arm64
+          key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
+
+      - name: Save Darwin Conan cache
+        if: ${{ steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: .cache/hictk-conan/darwin_arm64
+          key: ${{ steps.cache-darwin-conan.outputs.cache-primary-key }}
+
+      - name: Save HiCT native processing cache
+        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: build/native-processing/resources
+          key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
+
       - name: Validate macOS artifacts after upload
         run: |
           set -euo pipefail
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-arm64.run' | sort | tail -n 1)"
           portable_shell="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
           portable_bin="$(find build/portable -path '*/bin/hict-darwin-arm64' -type f | sort | tail -n 1)"
+          toolchain_manifest="$(find build/portable -path '*/toolchains/darwin_arm64/manifest.json' -type f | sort | tail -n 1)"
+          toolchain_dir=""
+          if [[ -n "${toolchain_manifest}" ]]; then
+            toolchain_dir="$(dirname "${toolchain_manifest}")"
+          fi
           if [[ -z "${runfile}" || ! -f "${runfile}" ]]; then
             echo "Missing macOS .run artifact after upload." >&2
             exit 1
@@ -810,6 +874,14 @@ jobs:
           "${runfile}" --help >/dev/null
           "${portable_shell}" --help >/dev/null
           "${portable_bin}" --help >/dev/null
+          if [[ -z "${toolchain_dir}" || ! -d "${toolchain_dir}" ]]; then
+            echo "Missing bundled Darwin toolchain directory after upload." >&2
+            exit 1
+          fi
+          "${toolchain_dir}/bin/hictk" --help >/dev/null
+          "${toolchain_dir}/bin/minimap2" --help >/dev/null
+          "${toolchain_dir}/bin/mm2plus-avx2" --help >/dev/null
+          "${toolchain_dir}/bin/mm2plus-avx512" --help >/dev/null
 
   publish-release-assets:
     name: Publish release assets
