@@ -35,6 +35,7 @@ import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -196,12 +197,18 @@ public class Initializers {
       .skip(1L)
       .allMatch(bundle -> bundle != null && bundle.size() == contigCount);
     if (!resolutionMetadataAligned) {
+      final int sampledResolutionContigCount = contigDescriptorDataBundles.stream()
+        .skip(1L)
+        .filter(Objects::nonNull)
+        .mapToInt(List::size)
+        .findFirst()
+        .orElse(0);
       log.warn(
         "Contig metadata mismatch detected while opening {}: top-level contig count={}, resolution-level contig count={}. " +
           "Synthesizing contig descriptors from top-level assembly metadata so the file can still be opened.",
         chunkedFile.getHdfFilePath().getFileName(),
         contigCount,
-        contigDescriptorDataBundles.get(1).size()
+        sampledResolutionContigCount
       );
     }
 
@@ -278,6 +285,14 @@ public class Initializers {
     for (final var row : contigATUMapping) {
       final var contigId = row[0];
       final var atuId = row[1];
+      if (contigId < 0 || contigId >= contigIdToATUs.size()) {
+        log.warn("Skipping ATU row with out-of-range contig id {} for resolution {}", contigId, resolution);
+        continue;
+      }
+      if (atuId < 0 || atuId >= basisATUs.size()) {
+        log.warn("Skipping ATU row with out-of-range ATU id {} for resolution {}", atuId, resolution);
+        continue;
+      }
       contigIdToATUs.get((int) contigId).add(basisATUs.get((int) atuId));
     }
 

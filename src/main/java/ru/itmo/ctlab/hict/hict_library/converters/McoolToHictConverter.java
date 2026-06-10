@@ -103,7 +103,7 @@ public class McoolToHictConverter {
         }
 
         if (!options.agpPath().isBlank()) {
-          applyAssemblyLayoutToOutput(dst, selectedResolutions, options, intStorageFeatures, synchronizedLogConsumer);
+          applyAssemblyLayoutToOutput(srcAgain, dst, selectedResolutions, options, requestedWorkers, intStorageFeatures, synchronizedLogConsumer);
           synchronizedLogConsumer.accept("Applied assembly layout to generated .hict from " + resolveLayoutPath(options).getFileName());
         }
       }
@@ -145,9 +145,11 @@ public class McoolToHictConverter {
   }
 
   private static void applyAssemblyLayoutToOutput(
+    final @NotNull IHDF5Reader src,
     final @NotNull IHDF5Writer dst,
     final @NotNull List<Long> selectedResolutions,
     final @NotNull ConversionOptions options,
+    final int parallelism,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull Consumer<String> logConsumer
   ) throws IOException {
@@ -189,6 +191,32 @@ public class McoolToHictConverter {
       contigScaffoldIds[i] = scaffoldIds.computeIfAbsent(record.getScaffoldName(), ignored -> (long) scaffoldIds.size());
     }
 
+    final long totalAssemblyLengthBp = Arrays.stream(contigLengthBp).sum();
+    if (totalAssemblyLengthBp <= 0L) {
+      throw new IllegalArgumentException("Assembly layout contains no sequence: " + layoutPath.getFileName());
+    }
+
+    final Map<Long, long[]> contigStartBinsByResolution = new HashMap<>();
+    final Map<Long, long[]> contigLengthBinsByResolution = new HashMap<>();
+    final Map<Long, List<StripeDescriptor>> stripesByResolution = new HashMap<>();
+
+    for (final var resolution : selectedResolutions) {
+      final long totalBins = datasetLength(src, "/resolutions/" + resolution + "/bins/end");
+      if (totalBins <= 0L) {
+        throw new IllegalStateException("Resolution " + resolution + " does not contain any bins");
+      }
+      final long[] lengthBins = apportionAssemblyBins(contigLengthBp, totalBins, totalAssemblyLengthBp);
+      final long[] startBins = new long[contigRecords.size()];
+      long prefix = 0L;
+      for (int i = 0; i < contigRecords.size(); i++) {
+        startBins[i] = prefix;
+        prefix += lengthBins[i];
+      }
+      contigStartBinsByResolution.put(resolution, startBins);
+      contigLengthBinsByResolution.put(resolution, lengthBins);
+      stripesByResolution.put(resolution, buildStripeDescriptorsOnly(src, resolution, resolveNameLengthPath(src, resolution)));
+    }
+
     dst.string().writeArray(getContigNameDatasetPath(), contigNames);
     dst.int64().writeArray(getContigDirectionDatasetPath(), contigDirections, intStorageFeatures);
     dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
@@ -204,20 +232,90 @@ public class McoolToHictConverter {
         dst.object().createGroup(resolutionRoot + "/atl");
       }
 
-      final long[] contigLengthBins = new long[contigRecords.size()];
+      final long[] contigLengthBins = contigLengthBinsByResolution.get(resolution);
       final byte[] hideTypes = new byte[contigRecords.size()];
       for (int i = 0; i < contigRecords.size(); i++) {
-        contigLengthBins[i] = Math.max(1L, (contigLengthBp[i] + resolution - 1L) / resolution);
         hideTypes[i] = (byte) ((contigLengthBins[i] > 1L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
       }
 
       dst.int64().writeArray(getContigLengthBinsDatasetPath(resolution), contigLengthBins, intStorageFeatures);
       dst.int8().writeArray(getContigHideTypeDatasetPath(resolution), hideTypes);
-      dst.int64().writeMatrix(getContigsATLDatasetPath(resolution), new long[0][2]);
-      dst.int64().writeMatrix(getBasisATUDatasetPath(resolution), new long[0][4]);
+
+      final AtomicReferenceArray<List<ATUDescriptor>> atusByContig = new AtomicReferenceArray<>(contigRecords.size());
+      runParallelFor(parallelism, contigRecords.size(), contigId -> {
+        final var atus = contigLengthBins[contigId] > 0L
+          ? generateAtusForContig(
+            contigId,
+            resolution,
+            contigStartBinsByResolution,
+            contigLengthBinsByResolution,
+            stripesByResolution
+          )
+          : List.<ATUDescriptor>of();
+        atusByContig.set(contigId, atus);
+      });
+
+      long totalAtuCount = 0L;
+      for (int i = 0; i < contigRecords.size(); i++) {
+        totalAtuCount += Objects.requireNonNull(atusByContig.get(i)).size();
+      }
+
+      final long[][] basisAtu = new long[(int) totalAtuCount][4];
+      final long[][] contigsAtl = new long[(int) totalAtuCount][2];
+
+      int atuCursor = 0;
+      for (int contigId = 0; contigId < contigRecords.size(); contigId++) {
+        final var atus = Objects.requireNonNull(atusByContig.get(contigId));
+        for (int i = 0; i < atus.size(); i++) {
+          final var atu = atus.get(i);
+          contigsAtl[atuCursor][0] = contigId;
+          contigsAtl[atuCursor][1] = atuCursor;
+          basisAtu[atuCursor][0] = atu.getStripeDescriptor().stripeId();
+          basisAtu[atuCursor][1] = atu.getStartIndexInStripeIncl();
+          basisAtu[atuCursor][2] = atu.getEndIndexInStripeExcl();
+          basisAtu[atuCursor][3] = atu.getDirection().ordinal();
+          atuCursor++;
+        }
+      }
+
+      dst.int64().writeMatrix(getContigsATLDatasetPath(resolution), contigsAtl);
+      dst.int64().writeMatrix(getBasisATUDatasetPath(resolution), basisAtu);
     }
 
     logConsumer.accept("Rewrote contig metadata from assembly layout: contigs=" + contigRecords.size() + ", scaffolds=" + scaffoldIds.size());
+  }
+
+  private static long[] apportionAssemblyBins(
+    final long[] contigLengthBp,
+    final long totalBins,
+    final long totalAssemblyLengthBp
+  ) {
+    final int contigCount = contigLengthBp.length;
+    final long[] assignedBins = new long[contigCount];
+    final double[] remainders = new double[contigCount];
+    long assignedTotal = 0L;
+
+    for (int i = 0; i < contigCount; i++) {
+      final double ideal = ((double) contigLengthBp[i] * (double) totalBins) / (double) totalAssemblyLengthBp;
+      final long floor = (long) Math.floor(ideal);
+      assignedBins[i] = floor;
+      remainders[i] = ideal - floor;
+      assignedTotal += floor;
+    }
+
+    long remaining = totalBins - assignedTotal;
+    if (remaining > 0L) {
+      final Integer[] order = new Integer[contigCount];
+      for (int i = 0; i < contigCount; i++) {
+        order[i] = i;
+      }
+      Arrays.sort(order, Comparator.<Integer>comparingDouble(i -> remainders[i]).reversed().thenComparingInt(i -> i));
+      for (int i = 0; i < remaining && i < order.length; i++) {
+        assignedBins[order[i]]++;
+      }
+    }
+
+    return assignedBins;
   }
 
   private static @NotNull Path resolveLayoutPath(final @NotNull ConversionOptions options) {
