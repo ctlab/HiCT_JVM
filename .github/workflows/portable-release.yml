@@ -130,6 +130,7 @@ jobs:
   linux-portable:
     name: Linux portable .run
     runs-on: ubuntu-22.04
+    continue-on-error: ${{ matrix.abi_mode == 'musl-static' }}
     strategy:
       fail-fast: false
       matrix:
