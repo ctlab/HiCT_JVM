@@ -805,7 +805,7 @@ jobs:
               return $false
             }
 
-            Write-Host "Testing $Label: $Path"
+            Write-Host ("Testing {0}: {1}" -f $Label, $Path)
 
             $exitCode = 0
 
