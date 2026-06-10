@@ -103,7 +103,7 @@ public class McoolToHictConverter {
         }
 
         if (!options.agpPath().isBlank()) {
-          applyAssemblyLayoutToOutput(dst, options, intStorageFeatures, synchronizedLogConsumer);
+          applyAssemblyLayoutToOutput(dst, selectedResolutions, options, intStorageFeatures, synchronizedLogConsumer);
           synchronizedLogConsumer.accept("Applied assembly layout to generated .hict from " + resolveLayoutPath(options).getFileName());
         }
       }
@@ -146,6 +146,7 @@ public class McoolToHictConverter {
 
   private static void applyAssemblyLayoutToOutput(
     final @NotNull IHDF5Writer dst,
+    final @NotNull List<Long> selectedResolutions,
     final @NotNull ConversionOptions options,
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull Consumer<String> logConsumer
@@ -193,6 +194,28 @@ public class McoolToHictConverter {
     dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
     dst.int64().writeArray("/contig_info/contig_scaffold_id", contigScaffoldIds, intStorageFeatures);
     dst.int64().writeArray(getContigLengthBpDatasetPath(), contigLengthBp, intStorageFeatures);
+
+    for (final var resolution : selectedResolutions) {
+      final var resolutionRoot = "/resolutions/" + resolution;
+      if (!dst.object().isGroup(resolutionRoot + "/contigs")) {
+        dst.object().createGroup(resolutionRoot + "/contigs");
+      }
+      if (!dst.object().isGroup(resolutionRoot + "/atl")) {
+        dst.object().createGroup(resolutionRoot + "/atl");
+      }
+
+      final long[] contigLengthBins = new long[contigRecords.size()];
+      final byte[] hideTypes = new byte[contigRecords.size()];
+      for (int i = 0; i < contigRecords.size(); i++) {
+        contigLengthBins[i] = Math.max(1L, (contigLengthBp[i] + resolution - 1L) / resolution);
+        hideTypes[i] = (byte) ((contigLengthBins[i] > 1L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
+      }
+
+      dst.int64().writeArray(getContigLengthBinsDatasetPath(resolution), contigLengthBins, intStorageFeatures);
+      dst.int8().writeArray(getContigHideTypeDatasetPath(resolution), hideTypes);
+      dst.int64().writeMatrix(getContigsATLDatasetPath(resolution), new long[0][2]);
+      dst.int64().writeMatrix(getBasisATUDatasetPath(resolution), new long[0][4]);
+    }
 
     logConsumer.accept("Rewrote contig metadata from assembly layout: contigs=" + contigRecords.size() + ", scaffolds=" + scaffoldIds.size());
   }

@@ -789,6 +789,22 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /apply_juicebox_assembly:
+    post:
+      tags: [Files]
+      summary: Apply Juicebox assembly to opened assembly
+      operationId: applyJuiceboxAssembly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoadAgpRequest' }
+      responses:
+        '200':
+          description: Updated assembly info
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
 
   /names/contig:
     post:
@@ -1705,11 +1721,19 @@ components:
     LoadAgpRequest:
       type: object
       properties:
-        agpFilename: { type: string }
+        agpFilename:
+          type: string
+          description: Optional AGP filename relative to DATA_DIR.
+        assemblyFilename:
+          type: string
+          description: Optional Juicebox .assembly filename relative to DATA_DIR; converted to AGP on demand and saved beside the source file.
+        fastaFilename:
+          type: string
+          description: Optional contig-level FASTA relative to DATA_DIR used for exact Juicebox assembly application; without it the backend falls back to best-effort matching.
         source:
           type: string
           enum: [PRIMARY, SECONDARY]
-      required: [agpFilename]
+      required: []
 
     RenameContigRequest:
       type: object

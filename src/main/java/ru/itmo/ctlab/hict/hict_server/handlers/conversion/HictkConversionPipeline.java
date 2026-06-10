@@ -225,7 +225,7 @@ public final class HictkConversionPipeline {
           options.chunkSize(),
           options.compressionLevel(),
           options.compressionAlgorithm(),
-          ConversionOptions.NO_AGP,
+          options.agpPath(),
           false,
           options.parallelism()
         ),

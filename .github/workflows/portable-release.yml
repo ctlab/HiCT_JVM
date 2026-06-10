@@ -749,26 +749,81 @@ jobs:
           function Test-BinarySmoke {
             param(
               [string]$Label,
-              [string]$Path
+              [string]$Path,
+              [switch]$WarningOnly
             )
+
             if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
-              Write-Host "::warning::Windows validation: $Label is missing."
-              return
+              if ($WarningOnly) {
+                Write-Host "::warning::Windows validation: $Label is missing."
+                return $true
+              }
+
+              Write-Host "::error::Windows validation: $Label is missing."
+              return $false
             }
+
+            Write-Host "Testing $Label: $Path"
+
+            $exitCode = 0
+
             try {
-              & $Path --help | Out-Null
+              & $Path --help *> $null
+              $exitCode = $LASTEXITCODE
             } catch {
-              Write-Host "::warning::Windows validation: $Label failed its --help smoke test."
+              $exitCode = $LASTEXITCODE
+              if ($null -eq $exitCode) {
+                $exitCode = 1
+              }
+            } finally {
+              # Critical: GitHub's pwsh wrapper exits with $LASTEXITCODE if it is non-zero.
+              $global:LASTEXITCODE = 0
             }
+
+            if ($exitCode -ne 0) {
+              if ($WarningOnly) {
+                Write-Host "::warning::Windows validation: $Label failed its --help smoke test with exit code $exitCode."
+                return $true
+              }
+
+              Write-Host "::error::Windows validation: $Label failed its --help smoke test with exit code $exitCode."
+              return $false
+            }
+
+            Write-Host "Windows validation: $Label passed."
+            return $true
           }
+
+          $failed = $false
+
           $exe = Get-ChildItem -Path "build\distributions" -Filter "HiCT-*-windows-x86_64.exe" |
             Sort-Object LastWriteTime |
             Select-Object -Last 1
-          Test-BinarySmoke -Label "portable exe" -Path ($exe.FullName)
-          Test-BinarySmoke -Label "hictk" -Path "toolchains-dist\windows_x86_64\bin\hictk.exe"
-          Test-BinarySmoke -Label "minimap2" -Path "toolchains-dist\windows_x86_64\bin\minimap2.exe"
-          Test-BinarySmoke -Label "mm2-plus AVX2" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe"
-          Test-BinarySmoke -Label "mm2-plus AVX-512" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe"
+
+          if (-not (Test-BinarySmoke -Label "portable exe" -Path $(if ($exe) { $exe.FullName } else { "" }))) {
+            $failed = $true
+          }
+          if (-not (Test-BinarySmoke -Label "hictk" -Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
+            $failed = $true
+          }
+          if (-not (Test-BinarySmoke -Label "minimap2" -Path "toolchains-dist\windows_x86_64\bin\minimap2.exe")) {
+            $failed = $true
+          }
+          if (-not (Test-BinarySmoke -Label "mm2-plus AVX2" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe")) {
+            $failed = $true
+          }
+
+          # AVX-512 binary may fail on GitHub-hosted runners without AVX-512 CPU support.
+          # This should warn, but must not fail the release workflow.
+          [void](Test-BinarySmoke -Label "mm2-plus AVX-512" -Path "toolchains-dist\windows_x86_64\bin\mm2plus-avx512.exe" -WarningOnly)
+
+          $global:LASTEXITCODE = 0
+
+          if ($failed) {
+            exit 1
+          }
+
+          exit 0
 
   macos-portable:
     name: macOS portable .run

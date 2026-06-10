@@ -151,8 +151,6 @@ public class Initializers {
     final List<ContigDirection> contigDirections;
     final String[] contigNames;
     final long[] contigLengthBp;
-
-    final int contigCount;
     try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
 //      try (final ExecutorService executorService = Executors.newFixedThreadPool(8)) {
 //        for (int i = 0; i < resolutions.length; ++i) {
@@ -180,8 +178,6 @@ public class Initializers {
       }
       reportProgress("Reading resolution metadata", 1.0);
 
-      contigCount = contigDescriptorDataBundles.get(1).size();
-
       try (final var contigDirectionDataset = reader.object().openDataSet(getContigDirectionDatasetPath())) {
         contigDirections = Arrays.stream(reader.int64().readArray(contigDirectionDataset.getDataSetPath())).mapToInt(i -> (int) i).mapToObj(dir -> ContigDirection.values()[dir]).toList();
       }
@@ -193,25 +189,61 @@ public class Initializers {
       try (final var contigLengthBpDataset = reader.object().openDataSet(getContigLengthBpDatasetPath())) {
         contigLengthBp = reader.int64().readArray(contigLengthBpDataset.getDataSetPath());
       }
-
-
     }
 
+    final int contigCount = contigNames.length;
+    final boolean resolutionMetadataAligned = contigDescriptorDataBundles.stream()
+      .skip(1L)
+      .allMatch(bundle -> bundle != null && bundle.size() == contigCount);
+    if (!resolutionMetadataAligned) {
+      log.warn(
+        "Contig metadata mismatch detected while opening {}: top-level contig count={}, resolution-level contig count={}. " +
+          "Synthesizing contig descriptors from top-level assembly metadata so the file can still be opened.",
+        chunkedFile.getHdfFilePath().getFileName(),
+        contigCount,
+        contigDescriptorDataBundles.get(1).size()
+      );
+    }
 
     reportProgress("Building contig descriptors", 0.0);
     final List<ContigTree.ContigTuple> result = new ArrayList<>(contigCount);
     for (int contigId = 0; contigId < contigCount; contigId++) {
       final int cid = contigId;
-      final var contigDescriptor = new ContigDescriptor(
-        cid,
-        contigNames[cid],
-        contigLengthBp[cid],
-        contigDescriptorDataBundles.stream().skip(1L).mapToLong(bundlesAtResolution -> bundlesAtResolution.get(cid).lengthBins()).boxed().toList(),
-        contigDescriptorDataBundles.stream().skip(1L).map(bundlesAtResolution -> bundlesAtResolution.get(cid).hideType()).toList(),
-        contigDescriptorDataBundles.stream().skip(1L).map(bundlesAtResolution -> bundlesAtResolution.get(cid).atus()).toList(),
-        contigNames[cid], 0
-      );
-      result.add(new ContigTree.ContigTuple(contigDescriptor, contigDirections.get(contigDescriptor.getContigId())));
+      final ContigDescriptor contigDescriptor;
+      if (resolutionMetadataAligned) {
+        contigDescriptor = new ContigDescriptor(
+          cid,
+          contigNames[cid],
+          contigLengthBp[cid],
+          contigDescriptorDataBundles.stream().skip(1L).mapToLong(bundlesAtResolution -> bundlesAtResolution.get(cid).lengthBins()).boxed().toList(),
+          contigDescriptorDataBundles.stream().skip(1L).map(bundlesAtResolution -> bundlesAtResolution.get(cid).hideType()).toList(),
+          contigDescriptorDataBundles.stream().skip(1L).map(bundlesAtResolution -> bundlesAtResolution.get(cid).atus()).toList(),
+          contigNames[cid], 0
+        );
+      } else {
+        final List<Long> syntheticLengthBins = new ArrayList<>(Math.max(0, resolutions.length - 1));
+        final List<ContigHideType> syntheticPresence = new ArrayList<>(Math.max(0, resolutions.length - 1));
+        final List<List<ATUDescriptor>> syntheticAtus = new ArrayList<>(Math.max(0, resolutions.length - 1));
+        for (int resolutionIdx = 1; resolutionIdx < resolutions.length; resolutionIdx++) {
+          final long resolution = resolutions[resolutionIdx];
+          final long bins = Math.max(1L, (contigLengthBp[cid] + resolution - 1L) / resolution);
+          syntheticLengthBins.add(bins);
+          syntheticPresence.add(bins > 1L ? ContigHideType.SHOWN : ContigHideType.HIDDEN);
+          syntheticAtus.add(List.of());
+        }
+        contigDescriptor = new ContigDescriptor(
+          cid,
+          contigNames[cid],
+          contigLengthBp[cid],
+          syntheticLengthBins,
+          syntheticPresence,
+          syntheticAtus,
+          contigNames[cid],
+          0
+        );
+      }
+      final var contigDirection = contigId < contigDirections.size() ? contigDirections.get(contigDescriptor.getContigId()) : ContigDirection.FORWARD;
+      result.add(new ContigTree.ContigTuple(contigDescriptor, contigDirection));
       if ((contigId & 1023) == 0) {
         reportProgress("Building contig descriptors", (double) contigId / Math.max(1, contigCount));
       }
@@ -276,6 +308,10 @@ public class Initializers {
 
     for (final var orderLong : contigOrder) {
       final var order = (int) orderLong;
+      if (order < 0 || order >= contigs.size()) {
+        log.warn("Skipping contig order {} while initializing contig tree because the descriptor list has size {}", order, contigs.size());
+        continue;
+      }
       contigTree.appendContig(contigs.get(order).descriptor(), contigs.get(order).direction());
     }
   }
