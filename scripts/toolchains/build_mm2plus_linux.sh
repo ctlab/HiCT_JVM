@@ -11,6 +11,7 @@ CXX_BIN="${CXX:-g++}"
 CC_BIN="${CC:-gcc}"
 ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"
 ENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"
+SKIP_AVX512="${HICT_SKIP_MM2PLUS_AVX512:-0}"
 BUILD_JOBS="${BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)}"
 
 usage() {
@@ -26,6 +27,7 @@ Environment:
   CC=$CC_BIN
   HICT_STATIC_MUSL=1
   HICT_STATIC_MIMALLOC=1
+  HICT_SKIP_MM2PLUS_AVX512=1
   BUILD_JOBS=$BUILD_JOBS
 
 The script augments an existing hictk/minimap2 toolchain payload when present,
@@ -154,6 +156,10 @@ void parallel_sort(mm128_t* z, size_t n_u, int32_t) {
 EOF
 fi
 
+if [[ "${SKIP_AVX512}" == "1" ]]; then
+  echo "[mm2plus/linux] Skipping mm2-plus AVX-512 variant: disabled via HICT_SKIP_MM2PLUS_AVX512."
+fi
+
 cpu_has_flag() {
   local flag="$1"
   [[ -r /proc/cpuinfo ]] && grep -m1 -qw -- "${flag}" /proc/cpuinfo
@@ -212,7 +218,9 @@ if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   MM2PLUS_TARGET_FLAGS="--target=x86_64-alpine-linux-musl -I${WORK_DIR}/compat ${HICT_MUSL_PREFIX:+-I${HICT_MUSL_PREFIX}/include}"
 fi
 build_variant "avx2" "${MM2PLUS_TARGET_FLAGS} -mavx2" || variant_failures=$((variant_failures + 1))
-build_variant "avx512" "${MM2PLUS_TARGET_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2" || variant_failures=$((variant_failures + 1))
+if [[ "${SKIP_AVX512}" != "1" ]]; then
+  build_variant "avx512" "${MM2PLUS_TARGET_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2" || variant_failures=$((variant_failures + 1))
+fi
 
 if [[ -f "${SOURCE_DIR}/LICENSE.txt" ]]; then
   install -m 0644 "${SOURCE_DIR}/LICENSE.txt" "${OUTPUT_DIR}/share/licenses/mm2plus/LICENSE.txt"
@@ -228,7 +236,11 @@ fi
   echo "platform=linux_x86_64"
   echo "compiler=$("${CXX_BIN}" --version | head -n 1)"
   echo "avx2_extraflags=-mavx2"
-  echo "avx512_extraflags=-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2"
+  if [[ "${SKIP_AVX512}" == "1" ]]; then
+    echo "avx512_extraflags=SKIPPED_BY_POLICY"
+  else
+    echo "avx512_extraflags=-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2"
+  fi
   echo "cpu_flag_policy=EXTRAFLAGS are applied to generic and AVX objects; OpenMP is disabled for static musl builds and replaced with a serial compatibility path."
   echo "static_runtime=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo musl || echo host_glibc)"
   echo "mimalloc_linking=$([[ "${ENABLE_MIMALLOC}" == "1" ]] && echo static || echo disabled)"

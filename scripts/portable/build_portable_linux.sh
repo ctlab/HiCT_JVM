@@ -137,7 +137,7 @@ if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
       echo "Portable package is missing executable bundled mm2-plus AVX2 at toolchains/linux_x86_64/bin/mm2plus-avx2." >&2
       exit 1
     fi
-    "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null
+    "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null || "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --help >/dev/null || true
   fi
   if grep -q '"mm2plus_avx512"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" ]]; then

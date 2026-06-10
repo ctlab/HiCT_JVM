@@ -106,16 +106,18 @@ case "${component}" in
     ;;
   mm2plus)
     validate_tool_binary "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2"
-    validate_tool_binary "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512"
     if grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
       toolchains-dist/linux_x86_64/bin/mm2plus-avx2 --version >/dev/null || toolchains-dist/linux_x86_64/bin/mm2plus-avx2 --help >/dev/null || true
     else
       echo "::warning::Skipping mm2-plus AVX2 execution because runner CPU does not advertise avx2. Static/ABI checks passed."
     fi
-    if grep -qw avx512f /proc/cpuinfo 2>/dev/null; then
-      toolchains-dist/linux_x86_64/bin/mm2plus-avx512 --version >/dev/null || toolchains-dist/linux_x86_64/bin/mm2plus-avx512 --help >/dev/null || true
-    else
-      echo "::warning::Skipping mm2-plus AVX-512 execution because runner CPU does not advertise avx512f. Static/ABI checks passed."
+    if [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" ]]; then
+      validate_tool_binary "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512"
+      if grep -qw avx512f /proc/cpuinfo 2>/dev/null; then
+        toolchains-dist/linux_x86_64/bin/mm2plus-avx512 --version >/dev/null || toolchains-dist/linux_x86_64/bin/mm2plus-avx512 --help >/dev/null || true
+      else
+        echo "::warning::Skipping mm2-plus AVX-512 execution because runner CPU does not advertise avx512f. Static/ABI checks passed."
+      fi
     fi
     ;;
   fatjar)

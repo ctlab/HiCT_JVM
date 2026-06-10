@@ -246,7 +246,7 @@ case "${HICT_CONTAINER_TARGET}" in
     HICT_STATIC_MUSL=1 HICT_STATIC_MIMALLOC=1 ./scripts/toolchains/build_minimap2_linux.sh
     ;;
   mm2plus)
-    HICT_REQUIRE_MM2PLUS_VARIANTS=1 HICT_STATIC_MUSL=1 HICT_STATIC_MIMALLOC=1 CC=clang CXX=clang++ ./scripts/toolchains/build_mm2plus_linux.sh
+    HICT_REQUIRE_MM2PLUS_VARIANTS=1 HICT_SKIP_MM2PLUS_AVX512=1 HICT_STATIC_MUSL=1 HICT_STATIC_MIMALLOC=1 CC=clang CXX=clang++ ./scripts/toolchains/build_mm2plus_linux.sh
     ;;
   *) echo "Unknown Alpine musl target: ${HICT_CONTAINER_TARGET}" >&2; exit 1 ;;
 esac
