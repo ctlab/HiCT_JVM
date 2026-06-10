@@ -15,6 +15,14 @@ on:
         options:
           - "true"
           - "false"
+      linux_abi_mode:
+        description: "Linux native/toolchain ABI mode: glibc 2.17 manylinux or static musl+mimalloc"
+        required: true
+        default: "glibc217"
+        type: choice
+        options:
+          - "glibc217"
+          - "musl-static"
       hictk_ref:
         description: "Official hictk tag to bundle"
         required: true
@@ -102,14 +110,15 @@ jobs:
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
-      HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
+      HICT_LINUX_ABI_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode || 'glibc217' }}
+      HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode || 'glibc217') }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
-      # Linux release target: manylinux2014 / CentOS 7 ABI floor.
-      # Native payloads are built inside quay.io/pypa/manylinux2014_x86_64.
-      # Do not combine this mode with musl-static flags unless you intentionally
-      # want a separate musl artifact.
-      HICT_STATIC_MUSL: "1"
-      HICT_STATIC_MIMALLOC: "1"
+      # Linux native/toolchain build mode. Both modes run inside Docker, not on
+      # the Ubuntu host. glibc217 targets manylinux2014 / glibc 2.17;
+      # musl-static builds standalone toolchain executables with musl+mimalloc
+      # where supported, while the Java runtime/JNI payloads remain glibc-based.
+      HICT_STATIC_MUSL: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode == 'musl-static' && '1' || '0' }}
+      HICT_STATIC_MIMALLOC: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode == 'musl-static' && '1' || '0' }}
       HICT_GLIBC_MAX: "2.17"
     steps:
       - name: Checkout
@@ -132,12 +141,6 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
-
-      - name: Cache HiCT native processing libraries
-        uses: actions/cache@v5
-        with:
-          path: build/native-processing/resources
-          key: hict-native-linux-x86_64-manylinux2014-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
 
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -190,7 +193,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v5-linux-x86_64-manylinux2014-glibc217-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
+          key: toolchain-v6-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
 
       - name: Restore bundled mm2-plus cache
         id: cache-mm2plus
@@ -202,7 +205,7 @@ jobs:
             toolchains-dist/linux_x86_64/bin/mm2plus-avx512
             toolchains-dist/linux_x86_64/share/licenses/mm2plus
             toolchains-dist/linux_x86_64/share/doc/mm2plus
-          key: toolchain-mm2plus-v5-linux-x86_64-manylinux2014-glibc217-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
+          key: toolchain-mm2plus-v6-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
 
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
@@ -223,7 +226,7 @@ jobs:
             [[ "$(printf '%s\n%s\n' "$b" "$a" | sort -V | tail -n 1)" == "$a" && "$a" != "$b" ]]
           }
 
-          validate_glibc_floor() {
+          validate_toolchain_abi() {
             local label="$1"
             local path="$2"
             local max_allowed="${HICT_GLIBC_MAX:-2.17}"
@@ -234,6 +237,18 @@ jobs:
             fi
 
             file -b "${path}" | grep -q 'ELF.*x86-64' || return 0
+
+            if [[ "${HICT_STATIC_MUSL:-0}" == "1" ]]; then
+              if readelf -d "${path}" 2>/dev/null | grep -q 'NEEDED'; then
+                echo "::warning::Cached ${label} is dynamically linked, but linux_abi_mode=musl-static requires a fully static toolchain payload; forcing rebuild."
+                return 1
+              fi
+              if objdump -T "${path}" 2>/dev/null | grep -q 'GLIBC_'; then
+                echo "::warning::Cached ${label} references GLIBC symbols, but linux_abi_mode=musl-static requires no host glibc dependency; forcing rebuild."
+                return 1
+              fi
+              return 0
+            fi
 
             local bad=0
             while read -r sym; do
@@ -257,18 +272,18 @@ jobs:
           fi
 
           if [[ -f "${manifest}" ]]; then
-            if grep -q '"hictk"' "${manifest}" && validate_glibc_floor "hictk" "toolchains-dist/linux_x86_64/bin/hictk"; then
+            if grep -q '"hictk"' "${manifest}" && validate_toolchain_abi "hictk" "toolchains-dist/linux_x86_64/bin/hictk"; then
               hictk_ready=true
             fi
-            if grep -q '"minimap2"' "${manifest}" && validate_glibc_floor "minimap2" "toolchains-dist/linux_x86_64/bin/minimap2"; then
+            if grep -q '"minimap2"' "${manifest}" && validate_toolchain_abi "minimap2" "toolchains-dist/linux_x86_64/bin/minimap2"; then
               minimap2_ready=true
             fi
           fi
 
-          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx2"' "${manifest}" && validate_glibc_floor "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2"; then
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx2"' "${manifest}" && validate_toolchain_abi "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2"; then
             mm2plus_avx2_ready=true
           fi
-          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx512"' "${manifest}" && validate_glibc_floor "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512"; then
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx512"' "${manifest}" && validate_toolchain_abi "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512"; then
             mm2plus_avx512_ready=true
           fi
 
@@ -284,10 +299,19 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64
-          key: hictk-conan-linux-x86_64-manylinux2014-glibc217-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: hictk-conan-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
           restore-keys: |
-            hictk-conan-linux-x86_64-manylinux2014-glibc217-${{ env.HICTK_REF }}-
-            hictk-conan-linux-x86_64-manylinux2014-glibc217-
+            hictk-conan-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-
+            hictk-conan-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
+
+      - name: Restore HiCT native processing cache
+        id: cache-native-processing
+        uses: actions/cache/restore@v5
+        with:
+          path: build/native-processing/resources
+          key: hict-native-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          restore-keys: |
+            hict-native-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
 
       - name: Build Linux native payload and fat JAR in manylinux2014
         env:
@@ -311,11 +335,12 @@ jobs:
             -e MINIMAP2_REF="${MINIMAP2_REF}" \
             -e MM2PLUS_REF="${MM2PLUS_REF}" \
             -e HICT_WEBUI_REF="${HICT_WEBUI_REF}" \
+            -e HICT_LINUX_ABI_MODE="${HICT_LINUX_ABI_MODE}" \
             -e HICTK_CONAN_HOME="${HICTK_CONAN_HOME}" \
             -e HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS="1" \
             -e HICT_REQUIRE_MM2PLUS_VARIANTS="1" \
-            -e HICT_STATIC_MUSL="0" \
-            -e HICT_STATIC_MIMALLOC="0" \
+            -e HICT_STATIC_MUSL="${HICT_STATIC_MUSL}" \
+            -e HICT_STATIC_MIMALLOC="${HICT_STATIC_MIMALLOC}" \
             -e BUNDLE_HICTK="${BUNDLE_HICTK}" \
             -e HICTK_READY="${HICTK_READY:-false}" \
             -e MINIMAP2_READY="${MINIMAP2_READY:-false}" \
@@ -360,6 +385,29 @@ jobs:
             set -u
           }
           enable_devtoolset
+
+          setup_static_musl_mode() {
+            if [[ "${HICT_STATIC_MUSL:-0}" != "1" ]]; then
+              return 0
+            fi
+
+            echo "Configuring static musl+mimalloc toolchain mode inside manylinux2014."
+            yum install -y musl-libc musl-libc-devel musl-libc-static || {
+              echo "::error::linux_abi_mode=musl-static requires musl-libc, musl-libc-devel, and musl-libc-static inside manylinux2014. The EPEL mirror may be unavailable or the package names changed." >&2
+              exit 1
+            }
+
+            if [[ -d /opt/clang/bin ]]; then
+              export PATH="/opt/clang/bin:${PATH}"
+            fi
+            command -v clang >/dev/null 2>&1 || { echo "::error::linux_abi_mode=musl-static requires clang inside the manylinux container." >&2; exit 1; }
+            command -v clang++ >/dev/null 2>&1 || { echo "::error::linux_abi_mode=musl-static requires clang++ inside the manylinux container." >&2; exit 1; }
+            if ! command -v ld.lld >/dev/null 2>&1 && command -v lld >/dev/null 2>&1; then
+              ln -sfn "$(command -v lld)" /usr/local/bin/ld.lld
+            fi
+            command -v ld.lld >/dev/null 2>&1 || command -v lld >/dev/null 2>&1 || { echo "::error::linux_abi_mode=musl-static requires lld/ld.lld inside the manylinux container." >&2; exit 1; }
+          }
+          setup_static_musl_mode
 
           find_manylinux_python() {
             local candidate=""
@@ -424,27 +472,111 @@ jobs:
             scripts/toolchains/build_minimap2_linux.sh \
             scripts/toolchains/build_mm2plus_linux.sh
 
-          # build_hictk_linux.sh creates a custom Conan host profile only for
-          # the static-musl path. In the manylinux/glibc path it must use the
-          # Conan profile detected by `conan profile detect --force`; otherwise
-          # it points to /tmp/.../conan-host.profile, which does not exist.
+          build_musl_zlib_if_needed() {
+            if [[ "${HICT_STATIC_MUSL:-0}" != "1" ]]; then
+              return 0
+            fi
+
+            export HICT_MUSL_PREFIX="${HICT_MUSL_PREFIX:-/tmp/hict-musl-prefix}"
+            if [[ -f "${HICT_MUSL_PREFIX}/lib/libz.a" && -f "${HICT_MUSL_PREFIX}/include/zlib.h" ]]; then
+              return 0
+            fi
+
+            echo "Building static zlib for musl into ${HICT_MUSL_PREFIX}"
+            rm -rf /tmp/hict-zlib-src /tmp/hict-zlib.tar.gz
+            curl -fsSL https://zlib.net/zlib-1.3.1.tar.gz -o /tmp/hict-zlib.tar.gz || \
+              curl -fsSL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz -o /tmp/hict-zlib.tar.gz
+            mkdir -p /tmp/hict-zlib-src
+            tar -xzf /tmp/hict-zlib.tar.gz -C /tmp/hict-zlib-src --strip-components=1
+            (
+              cd /tmp/hict-zlib-src
+              CC=clang CFLAGS="--target=x86_64-linux-musl -O3 -fPIC" ./configure --static --prefix="${HICT_MUSL_PREFIX}"
+              make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+              make install
+            )
+          }
+          build_musl_zlib_if_needed
+
+          # Make the helper scripts mode-aware without modifying the repository.
           python3 - <<'PY'
           from pathlib import Path
-          path = Path("scripts/toolchains/build_hictk_linux.sh")
-          text = path.read_text(encoding="utf-8")
-          old = 'CONAN_HOST_PROFILE="${WORK_DIR}/conan-host.profile"\nif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then'
-          new = 'CONAN_HOST_PROFILE="${HICTK_CONAN_HOST_PROFILE:-default}"\nif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then'
-          if old in text:
-              path.write_text(text.replace(old, new, 1), encoding="utf-8")
-          elif new in text:
-              pass
-          else:
-              raise SystemExit("Unable to patch build_hictk_linux.sh Conan host profile selection")
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old in text:
+                  p.write_text(text.replace(old, new, 1), encoding="utf-8")
+              elif new in text:
+                  return
+              else:
+                  raise SystemExit(f"Unable to patch {path}: {label}")
+
+          replace_once(
+              "scripts/toolchains/build_hictk_linux.sh",
+              'CONAN_HOST_PROFILE="${WORK_DIR}/conan-host.profile"\nif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then',
+              'CONAN_HOST_PROFILE="${HICTK_CONAN_HOST_PROFILE:-default}"\nif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then',
+              "Conan host profile default for glibc while keeping musl profile generation",
+          )
+
+          replace_once(
+              "scripts/toolchains/build_mimalloc_static.sh",
+              '  -DMI_BUILD_OBJECT=OFF\n)',
+              '  -DMI_BUILD_OBJECT=OFF\n)\nif [[ "${HICT_STATIC_MUSL:-0}" == "1" ]]; then\n  cmake_args+=(\n    -DCMAKE_C_COMPILER=clang\n    -DCMAKE_C_FLAGS="${CFLAGS:-} --target=x86_64-linux-musl"\n    -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY\n  )\nfi',
+              "musl target flags for static mimalloc",
+          )
+
+          replace_once(
+              "scripts/toolchains/build_minimap2_linux.sh",
+              '  linker_flags="-static -fuse-ld=lld"\nfi',
+              '  linker_flags="-static -fuse-ld=lld ${HICT_MUSL_PREFIX:+-L${HICT_MUSL_PREFIX}/lib}"\nfi',
+              "musl zlib search path for minimap2",
+          )
+
+          replace_once(
+              "scripts/toolchains/build_mm2plus_linux.sh",
+              'ENABLE_STATIC_MUSL="0"\nENABLE_MIMALLOC="0"',
+              'ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"\nENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"',
+              "environment-controlled static musl flags for mm2-plus",
+          )
+
+          replace_once(
+              "scripts/toolchains/build_mm2plus_linux.sh",
+              'build_variant "avx2" "-mavx2" || variant_failures=$((variant_failures + 1))\nbuild_variant "avx512" "-mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2" || variant_failures=$((variant_failures + 1))',
+              'MM2PLUS_TARGET_FLAGS=""\nif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then\n  MM2PLUS_TARGET_FLAGS="--target=x86_64-linux-musl ${HICT_MUSL_PREFIX:+-I${HICT_MUSL_PREFIX}/include}"\nfi\nbuild_variant "avx2" "${MM2PLUS_TARGET_FLAGS} -mavx2" || variant_failures=$((variant_failures + 1))\nbuild_variant "avx512" "${MM2PLUS_TARGET_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2" || variant_failures=$((variant_failures + 1))',
+              "musl compile flags for mm2-plus variants",
+          )
+
+          old_lflags = '      LDFLAGS="-fopenmp" ' + '\\' + '\n' + '      LIBS="-fopenmp -lz -lm -lpthread -ldl"; then'
+          new_lflags = '      LDFLAGS="$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo "-static -fuse-ld=lld ${HICT_MUSL_PREFIX:+-L${HICT_MUSL_PREFIX}/lib}" || echo "-fopenmp")" ' + '\\' + '\n' + '      LIBS="$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo "-static -fuse-ld=lld ${HICT_MUSL_PREFIX:+-L${HICT_MUSL_PREFIX}/lib} -Wl,-Bstatic -lz -lm -lpthread" || echo "-fopenmp -lz -lm -lpthread -ldl")"; then'
+          replace_once(
+              "scripts/toolchains/build_mm2plus_linux.sh",
+              old_lflags,
+              new_lflags,
+              "musl static linker flags for mm2-plus variants",
+          )
+
+          replace_once(
+              "scripts/toolchains/build_mm2plus_linux.sh",
+              '  echo "static_runtime=host_glibc"\n  echo "mimalloc_linking=disabled"',
+              '  echo "static_runtime=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo musl || echo host_glibc)"\n  echo "mimalloc_linking=$([[ "${ENABLE_MIMALLOC}" == "1" ]] && echo static || echo disabled)"',
+              "mode-aware mm2-plus build-info metadata",
+          )
+
+          replace_once(
+              "scripts/toolchains/build_mm2plus_linux.sh",
+              '    limitations.append("This payload was compiled as a dynamically linked Linux x86_64 binary and depends on the host glibc/libstdc++ runtime.")',
+              '    limitations.append("This payload may be dynamically linked against the manylinux glibc 2.17 runtime or statically linked with musl, depending on the linux_abi_mode used for this release.")',
+              "mode-aware mm2-plus manifest limitation text",
+          )
           PY
 
           if [[ "${BUNDLE_HICTK}" == "true" ]]; then
             if [[ "${HICTK_READY:-false}" != "true" ]]; then
-              ENABLE_MOSTLY_STATIC_RUNTIME=1 ./scripts/toolchains/build_hictk_linux.sh
+              if [[ "${HICT_STATIC_MUSL:-0}" == "1" ]]; then
+                HICT_STATIC_MUSL=1 HICT_STATIC_MIMALLOC=1 ENABLE_MOSTLY_STATIC_RUNTIME=1 ./scripts/toolchains/build_hictk_linux.sh
+              else
+                HICT_STATIC_MUSL=0 HICT_STATIC_MIMALLOC=0 ENABLE_MOSTLY_STATIC_RUNTIME=1 ./scripts/toolchains/build_hictk_linux.sh
+              fi
             fi
             if [[ "${MINIMAP2_READY:-false}" != "true" ]]; then
               preclone_plain_git_repo "${MINIMAP2_WORK_DIR:-/tmp/minimap2-build-linux-x86_64}" "${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
@@ -453,8 +585,10 @@ jobs:
             if [[ "${MM2PLUS_AVX2_READY:-false}" != "true" || "${MM2PLUS_AVX512_READY:-false}" != "true" ]]; then
               preclone_plain_git_repo "${MM2PLUS_WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}" "${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
               HICT_REQUIRE_MM2PLUS_VARIANTS=1 \
-              HICT_STATIC_MUSL=0 \
-              HICT_STATIC_MIMALLOC=0 \
+              HICT_STATIC_MUSL="${HICT_STATIC_MUSL}" \
+              HICT_STATIC_MIMALLOC="${HICT_STATIC_MIMALLOC}" \
+              CC="$([[ "${HICT_STATIC_MUSL}" == "1" ]] && echo clang || echo gcc)" \
+              CXX="$([[ "${HICT_STATIC_MUSL}" == "1" ]] && echo clang++ || echo g++)" \
                 ./scripts/toolchains/build_mm2plus_linux.sh
             fi
           else
@@ -469,6 +603,14 @@ jobs:
           ./gradlew --stop || true
           chown -R "${HOST_UID}:${HOST_GID}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
           MANYLINUX_BUILD
+
+      - name: Save HiCT native processing cache
+        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: build/native-processing/resources
+          key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
 
       - name: Verify bundled toolchain payload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
