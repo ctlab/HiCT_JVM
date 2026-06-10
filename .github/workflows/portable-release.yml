@@ -345,27 +345,80 @@ jobs:
                 gcc gcc-c++ git gzip libtool make openssl-devel patch pkgconfig \
                 tar unzip which xz xz-devel zip zlib-devel
 
-              if [[ -f /opt/rh/devtoolset-10/enable ]]; then
-                source /opt/rh/devtoolset-10/enable
-              elif [[ -f /opt/rh/devtoolset-9/enable ]]; then
-                source /opt/rh/devtoolset-9/enable
-              elif [[ -f /opt/rh/devtoolset-8/enable ]]; then
-                source /opt/rh/devtoolset-8/enable
+              enable_devtoolset() {
+                local enable_script=""
+                for candidate in \
+                  /opt/rh/devtoolset-10/enable \
+                  /opt/rh/devtoolset-9/enable \
+                  /opt/rh/devtoolset-8/enable; do
+                  if [[ -f "${candidate}" ]]; then
+                    enable_script="${candidate}"
+                    break
+                  fi
+                done
+
+                if [[ -z "${enable_script}" ]]; then
+                  echo "No devtoolset enable script found; using the default compiler toolchain."
+                  return 0
+                fi
+
+                echo "Sourcing ${enable_script}"
+                # SCL/devtoolset enable scripts reference variables such as
+                # MANPATH before defining them. This is fine in normal shell
+                # usage, but fails under `set -u`, so disable nounset only
+                # while sourcing the vendor script.
+                set +u
+                source "${enable_script}"
+                set -u
+              }
+              enable_devtoolset
+
+              find_manylinux_python() {
+                local candidate=""
+                for candidate in                   /opt/python/cp311-cp311/bin/python3                   /opt/python/cp311-cp311/bin/python                   /opt/python/cp310-cp310/bin/python3                   /opt/python/cp310-cp310/bin/python                   /opt/python/cp312-cp312/bin/python3                   /opt/python/cp312-cp312/bin/python                   /opt/python/cp39-cp39/bin/python3                   /opt/python/cp39-cp39/bin/python                   /opt/python/cp38-cp38/bin/python3                   /opt/python/cp38-cp38/bin/python                   /opt/python/cp313-cp313/bin/python3                   /opt/python/cp313-cp313/bin/python; do
+                  if [[ -e "${candidate}" ]]; then
+                    printf '%s\n' "${candidate}"
+                    return 0
+                  fi
+                done
+
+                find /opt/python -maxdepth 4 \( -name python3 -o -name python \) -print 2>/dev/null | sort -V | tail -n 1
+              }
+
+              PYBIN="$(find_manylinux_python || true)"
+              if [[ -z "${PYBIN}" || ! -e "${PYBIN}" ]]; then
+                echo "Unable to find a manylinux Python under /opt/python." >&2
+                echo "Available /opt/python entries:" >&2
+                find /opt/python -maxdepth 3 -print 2>/dev/null | sort >&2 || true
+                exit 1
               fi
+              ln -sfn "${PYBIN}" /usr/local/bin/python3
 
-              PYBIN="$(find /opt/python -maxdepth 3 -type f -path "*/bin/python" | sort | tail -n 1)"
-              ln -sf "${PYBIN}" /usr/local/bin/python3
-              ln -sf "$(dirname "${PYBIN}")/pip" /usr/local/bin/pip3
-
-              export PATH="${JAVA_HOME}/bin:/usr/local/bin:${PATH}"
+              export PATH="${JAVA_HOME}/bin:/usr/local/bin:$(dirname "${PYBIN}"):${PATH}"
 
               python3 --version
               java -version
               gcc --version | head -n 1
               g++ --version | head -n 1
 
+              python3 -m ensurepip --upgrade >/dev/null 2>&1 || true
               python3 -m pip install --upgrade pip
               python3 -m pip install "cmake>=3.25" ninja "conan>=2"
+
+              # CentOS 7 ships Git 1.8, which does not understand
+              # `git clone --filter=blob:none`. Pre-clone these repos without
+              # partial-clone filters so the existing build scripts reuse them.
+              preclone_plain_git_repo() {
+                local work_dir="$1"
+                local repo_url="$2"
+                mkdir -p "${work_dir}"
+                if [[ ! -d "${work_dir}/src/.git" ]]; then
+                  rm -rf "${work_dir}/src"
+                  git clone "${repo_url}" "${work_dir}/src"
+                fi
+              }
+              preclone_plain_git_repo "${MINIMAP2_WORK_DIR:-/tmp/minimap2-build-linux-x86_64}" "${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
+              preclone_plain_git_repo "${MM2PLUS_WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}" "${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
 
               chmod +x gradlew \
                 scripts/toolchains/build_hictk_linux.sh \
