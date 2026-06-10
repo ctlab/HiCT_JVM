@@ -84,6 +84,9 @@ path = pathlib.Path(sys.argv[1]); text = path.read_text(encoding="utf-8")
 old = "$(CXX) -c $(CPPFLAGS) $(INCLUDES) $< -o $@"; new = "$(CXX) -c $(CPPFLAGS) $(EXTRAFLAGS) $(INCLUDES) $< -o $@"
 if old in text and new not in text: text = text.replace(old, new)
 text = text.replace("-fopenmp", "").replace("-lgomp", "").replace("-D_GLIBCXX_PARALLEL", "")
+text = text.replace(" -Wl,-Bstatic -lz -Wl,-Bdynamic ", " -lz ")
+text = text.replace("-Wl,-Bstatic", "").replace("-Wl,-Bdynamic", "")
+text = text.replace(" -Wl,-Bstatic  -lz -Wl,-Bdynamic ", " -lz ")
 path.write_text(text, encoding="utf-8")
 PY
   mkdir -p "${WORK_DIR}/compat"
