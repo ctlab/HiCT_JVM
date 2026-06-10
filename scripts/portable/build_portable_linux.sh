@@ -12,6 +12,7 @@ if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then
   ABI_SUFFIX="-musl"
 fi
 APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
+PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
@@ -394,7 +395,6 @@ if [[ -d "${APP_DIR}/browsers/linux_x86_64" ]] &&
    grep -R -q '"engine"[[:space:]]*:[[:space:]]*"tauri-system-webview"' "${APP_DIR}/browsers/linux_x86_64" 2>/dev/null; then
   BUNDLED_TAURI_BROWSER="1"
 fi
-PACKAGE_NAME="${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
 
 cat > "${RUN_PATH}" <<EOF
 #!/usr/bin/env bash
@@ -403,7 +403,7 @@ set -euo pipefail
 APP_NAME="${APP_NAME}"
 APP_VERSION="${VERSION}"
 APP_PLATFORM="${PLATFORM}"
-APP_PACKAGE_NAME="${PACKAGE_NAME}"
+APP_PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 PAYLOAD_SHA256="${PAYLOAD_SHA}"
 BUNDLED_TAURI_BROWSER="${BUNDLED_TAURI_BROWSER}"
 

@@ -103,9 +103,16 @@ OSX_RESOURCE_PLATFORM="osx_arm64"
 if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
   OSX_RESOURCE_PLATFORM="osx_64"
 fi
-if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx "resources/libs/${OSX_RESOURCE_PLATFORM}/libhdf5.dylib"; then
-  echo "Fat JAR does not contain resources/libs/${OSX_RESOURCE_PLATFORM}/libhdf5.dylib; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
-  exit 1
+if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
+  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5.dylib'; then
+    echo "Fat JAR does not contain a supported x86_64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
+    exit 1
+  fi
+else
+  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx "resources/libs/(${OSX_RESOURCE_PLATFORM}|darwin_${DARWIN_ARCH})/libhdf5.dylib"; then
+    echo "Fat JAR does not contain a supported arm64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
+    exit 1
+  fi
 fi
 
 rm -rf "${APP_DIR}"
@@ -132,13 +139,12 @@ if [[ -d "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}" ]]; then
   cp -a "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}" "${APP_DIR}/toolchains/"
 fi
 if [[ -f "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/manifest.json" ]]; then
-  for tool in hictk minimap2 mm2plus mm2plus-avx2 mm2plus-avx512; do
+  for tool in hictk minimap2 mm2plus mm2plus-avx2; do
     chmod 0755 "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/${tool}" 2>/dev/null || true
   done
   "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/hictk" --help >/dev/null
   "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/minimap2" --help >/dev/null
   "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/mm2plus-avx2" --help >/dev/null || true
-  "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/mm2plus-avx512" --help >/dev/null || true
 fi
 
 "${JLINK}" \

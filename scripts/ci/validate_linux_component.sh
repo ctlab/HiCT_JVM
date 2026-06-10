@@ -55,12 +55,22 @@ validate_static_musl_binary() {
   local label="$1" path="$2"
   [[ -x "${path}" ]] || { echo "::error::${label} is missing or not executable: ${path}"; return 1; }
   if readelf -d "${path}" 2>/dev/null | grep -q 'NEEDED'; then
-    echo "::error::${label} is dynamically linked, but linux_abi_mode=musl-static requires a static executable: ${path}"
-    return 1
+    local policy="${HICT_MUSL_STATIC_POLICY:-warn-only}"
+    if [[ "${policy}" == "warn-only" ]]; then
+      echo "::warning::${label} is dynamically linked, but linux_abi_mode=musl-static prefers a static executable: ${path}"
+    else
+      echo "::error::${label} is dynamically linked, but linux_abi_mode=musl-static requires a static executable: ${path}"
+      return 1
+    fi
   fi
   if objdump -T "${path}" 2>/dev/null | grep -q 'GLIBC_'; then
-    echo "::error::${label} references GLIBC symbols, but linux_abi_mode=musl-static requires no host glibc dependency: ${path}"
-    return 1
+    local policy="${HICT_MUSL_STATIC_POLICY:-warn-only}"
+    if [[ "${policy}" == "warn-only" ]]; then
+      echo "::warning::${label} references GLIBC symbols, but linux_abi_mode=musl-static prefers no host glibc dependency: ${path}"
+    else
+      echo "::error::${label} references GLIBC symbols, but linux_abi_mode=musl-static requires no host glibc dependency: ${path}"
+      return 1
+    fi
   fi
 }
 

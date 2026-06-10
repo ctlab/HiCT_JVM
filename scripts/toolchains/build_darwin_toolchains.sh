@@ -117,10 +117,10 @@ build_mm2plus() {
     make -C "${SOURCE_MM2PLUS}" clean >/dev/null 2>&1 || true
     if make -C "${SOURCE_MM2PLUS}" -j"${BUILD_JOBS}" base=1 avx=0 aarch64=1 arm_neon=1 CXX="${CXX}" CC="${CC}" EXTRAFLAGS="-I${WORK_DIR}/compat -arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; then install -m 0755 "${SOURCE_MM2PLUS}/mm2plus" "${stage_dir}/bin/mm2plus"; adhoc_sign_if_macho "${stage_dir}/bin/mm2plus"; fi
     if [[ ! -x "${stage_dir}/bin/mm2plus" ]]; then printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'exec "${SCRIPT_DIR}/minimap2" "$@"' > "${stage_dir}/bin/mm2plus"; chmod +x "${stage_dir}/bin/mm2plus"; fi
-    for variant in avx2 avx512; do printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'exec "${SCRIPT_DIR}/mm2plus" "$@"' > "${stage_dir}/bin/mm2plus-${variant}"; chmod +x "${stage_dir}/bin/mm2plus-${variant}"; done
+    for variant in avx2; do printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'exec "${SCRIPT_DIR}/mm2plus" "$@"' > "${stage_dir}/bin/mm2plus-${variant}"; chmod +x "${stage_dir}/bin/mm2plus-${variant}"; done
   else
-    for variant in avx2 avx512; do
-      local flags="-I${WORK_DIR}/compat -arch x86_64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; [[ "${variant}" == "avx2" ]] && flags="${flags} -mavx2"; [[ "${variant}" == "avx512" ]] && flags="${flags} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx2"
+    for variant in avx2; do
+      local flags="-I${WORK_DIR}/compat -arch x86_64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET} -mavx2"
       make -C "${SOURCE_MM2PLUS}" clean >/dev/null 2>&1 || true
       if make -C "${SOURCE_MM2PLUS}" -j"${BUILD_JOBS}" base=1 avx=1 CXX="${CXX}" CC="${CC}" EXTRAFLAGS="${flags}"; then install -m 0755 "${SOURCE_MM2PLUS}/mm2plus" "${stage_dir}/bin/mm2plus-${variant}"; adhoc_sign_if_macho "${stage_dir}/bin/mm2plus-${variant}"; else echo "::warning::mm2-plus ${variant} build failed on ${PLATFORM_DIR}; creating minimap2 fallback wrapper."; printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'exec "${SCRIPT_DIR}/minimap2" "$@"' > "${stage_dir}/bin/mm2plus-${variant}"; chmod +x "${stage_dir}/bin/mm2plus-${variant}"; fi
     done
@@ -136,8 +136,8 @@ build_hictk; build_minimap2; build_mm2plus
 cat > "${OUTPUT_DIR}/manifest.json" <<EOF
 {
   "id": "hict-toolchain-${PLATFORM_DIR}-hictk-minimap2-mm2plus-${HICTK_REF}-${MINIMAP2_REF}-${MM2PLUS_REF}",
-  "commands": { "hictk": "bin/hictk", "minimap2": "bin/minimap2", "mm2plus_avx2": "bin/mm2plus-avx2", "mm2plus_avx512": "bin/mm2plus-avx512" },
-  "files": ["bin/hictk", "bin/minimap2", "bin/mm2plus", "bin/mm2plus-avx2", "bin/mm2plus-avx512", "share/licenses/hictk/LICENSE", "share/doc/hictk/CITATION.cff", "share/doc/hictk/build-info.txt", "share/licenses/minimap2/LICENSE.txt", "share/licenses/minimap2/LICENSE", "share/doc/minimap2/build-info.txt", "share/licenses/mm2plus/LICENSE.txt", "share/licenses/mm2plus/LICENSE", "share/doc/mm2plus/README.md", "share/doc/mm2plus/build-info.txt"],
+  "commands": { "hictk": "bin/hictk", "minimap2": "bin/minimap2", "mm2plus_avx2": "bin/mm2plus-avx2", "mm2plus": "bin/mm2plus" },
+  "files": ["bin/hictk", "bin/minimap2", "bin/mm2plus", "bin/mm2plus-avx2", "share/licenses/hictk/LICENSE", "share/doc/hictk/CITATION.cff", "share/doc/hictk/build-info.txt", "share/licenses/minimap2/LICENSE.txt", "share/licenses/minimap2/LICENSE", "share/doc/minimap2/build-info.txt", "share/licenses/mm2plus/LICENSE.txt", "share/licenses/mm2plus/LICENSE", "share/doc/mm2plus/README.md", "share/doc/mm2plus/build-info.txt"],
   "notices": ["This HiCT build bundles an official hictk source build produced from ${HICTK_REF}.", "This HiCT build bundles an official minimap2 source build produced from ${MINIMAP2_REF}.", "This HiCT build bundles mm2-plus for ${PLATFORM_DIR}; when a native build is unavailable, the bundled mm2-plus entrypoints fall back to minimap2-compatible behavior to keep the package runnable.", "HiCT performs .hic conversion by invoking the bundled hictk executable; no Python runtime is required for this path."],
   "citations": ["hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408.", "minimap2: Li H. Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics. 2018;34(18):3094-3100."],
   "limitations": ["This payload was compiled on ${PLATFORM_DIR} and should only be bundled into matching macOS portable releases.", "The mm2-plus macOS payload uses native builds when upstream source support allows it, otherwise it falls back to compatibility wrappers over minimap2."]
