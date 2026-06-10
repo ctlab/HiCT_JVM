@@ -108,8 +108,8 @@ jobs:
       # Native payloads are built inside quay.io/pypa/manylinux2014_x86_64.
       # Do not combine this mode with musl-static flags unless you intentionally
       # want a separate musl artifact.
-      HICT_STATIC_MUSL: "1"
-      HICT_STATIC_MIMALLOC: "1"
+      HICT_STATIC_MUSL: "0"
+      HICT_STATIC_MIMALLOC: "0"
       HICT_GLIBC_MAX: "2.17"
     steps:
       - name: Checkout
@@ -300,7 +300,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          docker run --rm \
+          docker run --rm -it \
             -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
             -v "${JAVA_HOME}:${JAVA_HOME}:ro" \
             -w "${GITHUB_WORKSPACE}" \
@@ -696,8 +696,17 @@ jobs:
           check_binary "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" || failed=1
 
           # AVX-512 may fail on runners without AVX-512 CPU support.
-          # Keep the artifact check visible, but do not fail the workflow.
-          check_binary "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" true || true
+          # Keep the artifact presence visible, but do not fail the workflow or
+          # execute AVX-512 code on non-AVX-512 runners.
+          if [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" ]]; then
+            if grep -qw avx512f /proc/cpuinfo 2>/dev/null; then
+              check_binary "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" true || true
+            else
+              echo "::warning::Linux validation: skipping mm2-plus AVX-512 --help smoke test because this runner CPU does not advertise avx512f. Artifact presence was verified without execution."
+            fi
+          else
+            check_binary "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" true || true
+          fi
 
           if [[ "${failed}" != "0" ]]; then
             exit 1
