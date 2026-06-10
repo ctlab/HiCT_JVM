@@ -180,7 +180,7 @@ jobs:
         env:
           HICT_REQUIRE_BUNDLED_WEBUI: "1"
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           ./gradlew -PrequireBundledWebUI=true copyWebUI -x verifyNativeProcessingBuild -x natives --no-daemon
           test -f src/main/resources/webui/index.html
 
@@ -221,7 +221,7 @@ jobs:
         id: inspect-toolchain
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: |
-          set -exo pipefail
+          set -euxo pipefail
 
           manifest="toolchains-dist/linux_x86_64/manifest.json"
           hictk_ready=false
@@ -311,7 +311,7 @@ jobs:
           MM2PLUS_AVX512_READY: ${{ steps.inspect-toolchain.outputs.mm2plus_avx512_ready }}
           GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
         run: |
-          set -exo pipefail
+          set -euxo pipefail
 
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
@@ -338,7 +338,7 @@ jobs:
             -e HOST_GID="$(id -g)" \
             quay.io/pypa/manylinux2014_x86_64:latest \
             bash -lc '
-              set -euo pipefail
+              set -exo pipefail
 
               yum install -y \
                 autoconf automake binutils bzip2-devel curl diffutils file findutils \
