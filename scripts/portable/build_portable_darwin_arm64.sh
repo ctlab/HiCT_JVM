@@ -4,7 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DIST_ROOT="${HICT_PORTABLE_DIST_DIR:-${PROJECT_DIR}/build/portable}"
-PLATFORM="darwin-arm64"
+DARWIN_ARCH="${HICT_DARWIN_ARCH:-arm64}"
+case "${DARWIN_ARCH}" in
+  arm64) ;;
+  x86_64|amd64) DARWIN_ARCH="x86_64" ;;
+  *) echo "Unsupported HICT_DARWIN_ARCH=${DARWIN_ARCH}; expected arm64 or x86_64." >&2; exit 1 ;;
+esac
+TOOLCHAIN_PLATFORM="${HICT_DARWIN_PLATFORM_DIR:-darwin_${DARWIN_ARCH}}"
+PLATFORM="${HICT_DARWIN_ARTIFACT_PLATFORM:-darwin-${DARWIN_ARCH}}"
+MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-12.0}"
 APP_NAME="HiCT"
 VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
 APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
@@ -12,16 +20,17 @@ ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
 LAUNCHER_SOURCE="${SCRIPT_DIR}/macos_launcher/HiCTDarwinLauncher.cpp"
-LAUNCHER_BINARY="${APP_DIR}/bin/hict-darwin-arm64"
+LAUNCHER_BASENAME="hict-darwin-${DARWIN_ARCH}"
+LAUNCHER_BINARY="${APP_DIR}/bin/${LAUNCHER_BASENAME}"
 
 usage() {
   cat <<'EOF'
-Build a self-contained macOS arm64 HiCT portable package with an embedded Java runtime.
+Build a self-contained macOS HiCT portable package with an embedded Java runtime.
 
 Outputs:
-  build/distributions/HiCT-<version>-darwin-arm64.run
-  build/distributions/HiCT-<version>-darwin-arm64.tar.gz
-  build/distributions/HiCT-<version>-darwin-arm64.sha256
+  build/distributions/HiCT-<version>-${PLATFORM}.run
+  build/distributions/HiCT-<version>-${PLATFORM}.tar.gz
+  build/distributions/HiCT-<version>-${PLATFORM}.sha256
 
 Environment overrides:
   HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
@@ -79,7 +88,7 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true shadowJar)
 fi
 
-"${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
+HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
 
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
 if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
@@ -111,19 +120,17 @@ fi
   "${JAR_TOOL}" xf "${APP_DIR}/lib/hict.jar" webui
 )
 
-if [[ -d "${PROJECT_DIR}/toolchains-dist/darwin_arm64" ]]; then
-  cp -a "${PROJECT_DIR}/toolchains-dist/darwin_arm64" "${APP_DIR}/toolchains/"
+if [[ -d "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}" ]]; then
+  cp -a "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}" "${APP_DIR}/toolchains/"
 fi
-if [[ -f "${APP_DIR}/toolchains/darwin_arm64/manifest.json" ]]; then
-  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/hictk" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/minimap2" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx2" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx512" 2>/dev/null || true
-  "${APP_DIR}/toolchains/darwin_arm64/bin/hictk" --help >/dev/null
-  "${APP_DIR}/toolchains/darwin_arm64/bin/minimap2" --help >/dev/null
-  "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx2" --help >/dev/null
-  "${APP_DIR}/toolchains/darwin_arm64/bin/mm2plus-avx512" --help >/dev/null
+if [[ -f "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/manifest.json" ]]; then
+  for tool in hictk minimap2 mm2plus mm2plus-avx2 mm2plus-avx512; do
+    chmod 0755 "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/${tool}" 2>/dev/null || true
+  done
+  "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/hictk" --help >/dev/null
+  "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/minimap2" --help >/dev/null
+  "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/mm2plus-avx2" --help >/dev/null || true
+  "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}/bin/mm2plus-avx512" --help >/dev/null || true
 fi
 
 "${JLINK}" \
@@ -265,9 +272,25 @@ int main(int argc, char* argv[]) {
 }
 EOF
 
-clang++ -std=c++17 -O2 -arch arm64 -mmacosx-version-min=12.0 "${LAUNCHER_SOURCE}.tmp.cpp" -o "${LAUNCHER_BINARY}"
+clang++ -std=c++17 -O2 -arch "${DARWIN_ARCH}" -mmacosx-version-min="${MACOS_DEPLOYMENT_TARGET}" "${LAUNCHER_SOURCE}.tmp.cpp" -o "${LAUNCHER_BINARY}"
 rm -f "${LAUNCHER_SOURCE}.tmp.cpp"
 codesign -s - --force --timestamp=none "${LAUNCHER_BINARY}"
+
+adhoc_sign_macho_tree() {
+  local root="$1"
+  [[ -d "${root}" ]] || return 0
+  while IFS= read -r -d '' f; do
+    if file "${f}" | grep -q 'Mach-O'; then
+      codesign -s - --force --timestamp=none "${f}" >/dev/null 2>&1 || {
+        echo "Failed to ad-hoc sign ${f}" >&2
+        return 1
+      }
+    fi
+  done < <(find "${root}" -type f -print0)
+}
+
+adhoc_sign_macho_tree "${APP_DIR}/runtime"
+adhoc_sign_macho_tree "${APP_DIR}/toolchains"
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
 #!/usr/bin/env bash
@@ -281,8 +304,16 @@ while [[ -L "${SCRIPT_PATH}" ]]; do
 done
 
 APP_HOME="$(cd -P "$(dirname "${SCRIPT_PATH}")/.." && pwd)"
-exec "${APP_HOME}/bin/hict-darwin-arm64" "$@"
+exec "${APP_HOME}/bin/__HICT_DARWIN_LAUNCHER__" "$@"
 EOF
+python3 - "${APP_DIR}/bin/hict" "${LAUNCHER_BASENAME}" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+launcher = sys.argv[2]
+text = path.read_text(encoding="utf-8")
+path.write_text(text.replace("__HICT_DARWIN_LAUNCHER__", launcher), encoding="utf-8")
+PY
 chmod +x "${APP_DIR}/bin/hict"
 
 cat > "${APP_DIR}/README_PORTABLE.txt" <<EOF
@@ -299,7 +330,7 @@ Run:
 The package includes:
   - HiCT_JVM fat JAR, including the built HiCT_WebUI resources
   - extracted HiCT_WebUI assets used as WEBUI_ROOT for robust portable serving
-  - a signed native Apple Silicon launcher at bin/hict-darwin-arm64
+  - a signed native ${DARWIN_ARCH} launcher at bin/${LAUNCHER_BASENAME}
   - a jlink runtime built from the JDK used by the release runner
   - HiCT license files
   - the runtime/legal directory generated by jlink
@@ -347,9 +378,9 @@ usage() {
 HiCT portable launcher
 
 Usage:
-  ./HiCT-<version>-darwin-arm64.run [HiCT CLI args...]
-  ./HiCT-<version>-darwin-arm64.run --help
-  ./HiCT-<version>-darwin-arm64.run --hict-extract-only <directory>
+  ./HiCT-<version>-${PLATFORM}.run [HiCT CLI args...]
+  ./HiCT-<version>-${PLATFORM}.run --help
+  ./HiCT-<version>-${PLATFORM}.run --hict-extract-only <directory>
 
 DATA_DIR defaults to the directory containing this .run file. Set DATA_DIR
 explicitly to use a different data directory.
@@ -441,7 +472,7 @@ if [[ "\${cache_root}" != "\${local_cache_root}" ]]; then
 fi
 extract_root="\${cache_root}/${APP_NAME}-${VERSION}-${PLATFORM}-\${PAYLOAD_SHA256}"
 app_home="\${extract_root}/${APP_NAME}-${VERSION}-${PLATFORM}"
-if [[ ! -x "\${app_home}/bin/hict-darwin-arm64" ]]; then
+if [[ ! -x "\${app_home}/bin/${LAUNCHER_BASENAME}" ]]; then
   rm -rf "\${extract_root}"
   extract_to "\${extract_root}"
 fi
@@ -458,7 +489,7 @@ if [[ "$#" -eq 0 ]]; then
   export HICT_LAUNCHER_MODE="\${HICT_LAUNCHER_MODE:-gui}"
 fi
 
-exec "\${app_home}/bin/hict-darwin-arm64" "$@"
+exec "\${app_home}/bin/${LAUNCHER_BASENAME}" "$@"
 EOF
 chmod +x "${RUN_PATH}"
 

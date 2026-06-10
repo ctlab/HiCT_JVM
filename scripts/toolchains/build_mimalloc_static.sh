@@ -69,6 +69,13 @@ cmake_args=(
   -DMI_BUILD_TOOLS=OFF
   -DMI_BUILD_OBJECT=OFF
 )
+if [[ "${HICT_STATIC_MUSL:-0}" == "1" ]]; then
+  cmake_args+=(
+    -DCMAKE_C_COMPILER=clang
+    -DCMAKE_C_FLAGS="${CFLAGS:-} --target=x86_64-alpine-linux-musl"
+    -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
+  )
+fi
 if [[ -n "${MACOS_DEPLOYMENT_TARGET}" ]]; then
   cmake_args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}")
 fi

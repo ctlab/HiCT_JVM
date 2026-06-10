@@ -29,6 +29,7 @@ Environment overrides:
   ENABLE_MOSTLY_STATIC_RUNTIME=1       Add -static-libstdc++ -static-libgcc on GCC builds.
   HICT_STATIC_MUSL=1                   Prefer musl compiler wrappers and full static linking.
   HICT_STATIC_MIMALLOC=1               Link mimalloc statically into the final executable.
+  HICTK_CONAN_BUILD_POLICY=missing      Conan build policy: missing, *, m4/*, or comma-separated list.
   BUILD_JOBS=8                         Parallelism for Conan/CMake builds.
 
 Example:
@@ -192,8 +193,8 @@ conan profile detect --force >/dev/null
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   export CC=clang
   export CXX=clang++
-  export CFLAGS="${CFLAGS:-} --target=x86_64-linux-musl"
-  export CXXFLAGS="${CXXFLAGS:-} --target=x86_64-linux-musl"
+  export CFLAGS="${CFLAGS:-} --target=x86_64-alpine-linux-musl"
+  export CXXFLAGS="${CXXFLAGS:-} --target=x86_64-alpine-linux-musl"
   export HICT_SKIP_FILESYSTEM_RUN_CHECK=1
   cat > "${WORK_DIR}/clang-scan-deps-shim" <<'EOF'
 #!/usr/bin/env bash
@@ -250,7 +251,20 @@ fi
 
 cd "${SOURCE_DIR}"
 
-conan install --build=missing \
+CONAN_BUILD_POLICY="${HICTK_CONAN_BUILD_POLICY:-missing}"
+conan_build_args=()
+IFS=',' read -r -a conan_build_policies <<< "${CONAN_BUILD_POLICY}"
+for conan_build_policy in "${conan_build_policies[@]}"; do
+  conan_build_policy="$(echo "${conan_build_policy}" | xargs)"
+  [[ -z "${conan_build_policy}" ]] && continue
+  conan_build_args+=(--build="${conan_build_policy}")
+done
+if [[ "${#conan_build_args[@]}" -eq 0 ]]; then
+  conan_build_args+=(--build=missing)
+fi
+
+conan install \
+  "${conan_build_args[@]}" \
   -pr:h "${CONAN_HOST_PROFILE}" \
   -pr:b default \
   -s build_type=Release \
@@ -298,8 +312,8 @@ cmake_args=(
 )
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   cmake_args+=(
-    -DCMAKE_C_COMPILER_TARGET=x86_64-linux-musl
-    -DCMAKE_CXX_COMPILER_TARGET=x86_64-linux-musl
+    -DCMAKE_C_COMPILER_TARGET=x86_64-alpine-linux-musl
+    -DCMAKE_CXX_COMPILER_TARGET=x86_64-alpine-linux-musl
     -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
   )
 fi
@@ -367,7 +381,7 @@ cat > "${STAGE_DIR}/manifest.json" <<EOF
     "hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408."
   ],
   "limitations": [
-    "This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.",
+    "$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo "This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime." || echo "This payload was compiled against the manylinux2014 glibc 2.17 runtime floor." )",
     "This payload was compiled on Linux and should only be bundled into Linux fat-JAR releases."
   ]
 }

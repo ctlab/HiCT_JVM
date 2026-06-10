@@ -55,7 +55,7 @@ mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/share/licenses/minimap
 SOURCE_DIR="${WORK_DIR}/src"
 if [[ ! -d "${SOURCE_DIR}/.git" ]]; then
   rm -rf "${SOURCE_DIR}"
-  git clone --filter=blob:none "${REPO_URL}" "${SOURCE_DIR}"
+  git clone --filter=blob:none "${REPO_URL}" "${SOURCE_DIR}" || git clone "${REPO_URL}" "${SOURCE_DIR}"
 fi
 
 git -C "${SOURCE_DIR}" fetch --tags --force origin "${REF}" || git -C "${SOURCE_DIR}" fetch --tags --force origin
@@ -65,20 +65,20 @@ make -C "${SOURCE_DIR}" clean >/dev/null 2>&1 || true
 linker_flags="${LDFLAGS:--static-libgcc}"
 MIMALLOC_LINK_FLAGS=""
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
-  linker_flags="-static -fuse-ld=lld"
+  linker_flags="-static -fuse-ld=lld ${HICT_MUSL_PREFIX:+-L${HICT_MUSL_PREFIX}/lib}"
 fi
 if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
-  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="$(nproc)" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
+  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
   MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
   linker_flags="${linker_flags} -Wl,--whole-archive ${MIMALLOC_LINK_FLAGS} -Wl,--no-whole-archive"
 fi
 
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   export CC="${CC:-clang}"
-  export CFLAGS="${CFLAGS:--O3 -DNDEBUG} --target=x86_64-linux-musl"
+  export CFLAGS="${CFLAGS:--O3 -DNDEBUG} --target=x86_64-alpine-linux-musl"
 fi
 
-make -C "${SOURCE_DIR}" -j"$(nproc)" CC="${CC:-gcc}" CFLAGS="${CFLAGS:--O3 -DNDEBUG}" \
+make -C "${SOURCE_DIR}" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)" CC="${CC:-gcc}" CFLAGS="${CFLAGS:--O3 -DNDEBUG}" \
   LDFLAGS="${linker_flags}" \
   LIBS="${linker_flags} -Wl,-Bstatic -lz -lm -lpthread"
 
