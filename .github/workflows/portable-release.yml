@@ -104,8 +104,13 @@ jobs:
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/linux_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
+      # Linux release target: manylinux2014 / CentOS 7 ABI floor.
+      # Native payloads are built inside quay.io/pypa/manylinux2014_x86_64.
+      # Do not combine this mode with musl-static flags unless you intentionally
+      # want a separate musl artifact.
       HICT_STATIC_MUSL: "1"
       HICT_STATIC_MIMALLOC: "1"
+      HICT_GLIBC_MAX: "2.17"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -132,7 +137,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-linux-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          key: hict-native-linux-x86_64-manylinux2014-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
 
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -153,18 +158,44 @@ jobs:
             tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-
             tauri-linux-x86_64-
 
-      - name: Install Linux packaging prerequisites
+      - name: Install Linux packaging and browser prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends curl file gzip tar xz-utils
-
-      - name: Install Linux Tauri build prerequisites
-        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
-        run: |
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y --no-install-recommends \
+            binutils build-essential curl file gzip tar xz-utils zip unzip \
+            pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
 
       - name: Grant execute permissions
-        run: chmod +x gradlew scripts/portable/build_portable_linux.sh scripts/portable/prepare_tauri_browser_payload_linux.sh scripts/portable/prepare_electron_browser_payload_linux.sh scripts/toolchains/build_hictk_linux.sh scripts/toolchains/build_minimap2_linux.sh scripts/toolchains/build_mm2plus_linux.sh
+        run: |
+          chmod +x gradlew \
+            scripts/portable/build_portable_linux.sh \
+            scripts/portable/prepare_tauri_browser_payload_linux.sh \
+            scripts/portable/prepare_electron_browser_payload_linux.sh \
+            scripts/toolchains/build_hictk_linux.sh \
+            scripts/toolchains/build_minimap2_linux.sh \
+            scripts/toolchains/build_mm2plus_linux.sh
+
+      - name: Prepare WebUI resources on Ubuntu
+        env:
+          HICT_REQUIRE_BUNDLED_WEBUI: "1"
+        run: |
+          set -euo pipefail
+          ./gradlew -PrequireBundledWebUI=true copyWebUI -x verifyNativeProcessingBuild -x natives --no-daemon
+          test -f src/main/resources/webui/index.html
+
+      - name: Build bundled Tauri browser on Ubuntu
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
+          CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/tauri-target/linux_x86_64
+        run: ./scripts/portable/prepare_tauri_browser_payload_linux.sh
+
+      - name: Build bundled Electron browser on Ubuntu
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
+        run: ./scripts/portable/prepare_electron_browser_payload_linux.sh
 
       - name: Restore bundled toolchain cache
         id: cache-hictk
@@ -172,9 +203,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v4-linux-x86_64-ubuntu2204-static-musl-mimalloc-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
-          restore-keys: |
-            toolchain-v4-linux-x86_64-ubuntu2204-static-musl-mimalloc-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+          key: toolchain-v5-linux-x86_64-manylinux2014-glibc217-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh') }}
 
       - name: Restore bundled mm2-plus cache
         id: cache-mm2plus
@@ -186,37 +215,76 @@ jobs:
             toolchains-dist/linux_x86_64/bin/mm2plus-avx512
             toolchains-dist/linux_x86_64/share/licenses/mm2plus
             toolchains-dist/linux_x86_64/share/doc/mm2plus
-          key: toolchain-mm2plus-v4-linux-x86_64-ubuntu2204-dynamic-glibc-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
-          restore-keys: |
-            toolchain-mm2plus-v4-linux-x86_64-ubuntu2204-dynamic-glibc-${{ env.MM2PLUS_REF }}-
+          key: toolchain-mm2plus-v5-linux-x86_64-manylinux2014-glibc217-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_linux.sh') }}
 
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: |
+          set -euo pipefail
+
           manifest="toolchains-dist/linux_x86_64/manifest.json"
           hictk_ready=false
           minimap2_ready=false
           mm2plus_avx2_ready=false
           mm2plus_avx512_ready=false
           mm2plus_ref_ready=false
+
+          version_gt() {
+            local a="$1"
+            local b="$2"
+            [[ "$(printf '%s\n%s\n' "$b" "$a" | sort -V | tail -n 1)" == "$a" && "$a" != "$b" ]]
+          }
+
+          validate_glibc_floor() {
+            local label="$1"
+            local path="$2"
+            local max_allowed="${HICT_GLIBC_MAX:-2.17}"
+
+            if [[ ! -x "${path}" ]]; then
+              echo "::warning::Cached ${label} is missing or not executable: ${path}"
+              return 1
+            fi
+
+            file -b "${path}" | grep -q 'ELF.*x86-64' || return 0
+
+            local bad=0
+            while read -r sym; do
+              [[ -z "${sym:-}" ]] && continue
+              local ver="${sym#GLIBC_}"
+              if version_gt "${ver}" "${max_allowed}"; then
+                echo "::warning::Cached ${label} requires ${sym}, above GLIBC_${max_allowed}; forcing rebuild."
+                bad=1
+              fi
+            done < <(
+              objdump -T "${path}" 2>/dev/null |
+                awk '/\*UND\*/ && match($0, /\(GLIBC_[^)]+\)/) { print substr($0, RSTART + 1, RLENGTH - 2) }' |
+                sort -Vu
+            )
+
+            [[ "${bad}" == "0" ]]
+          }
+
           if [[ -f "toolchains-dist/linux_x86_64/share/doc/mm2plus/build-info.txt" ]] && grep -qx "ref=${MM2PLUS_REF}" "toolchains-dist/linux_x86_64/share/doc/mm2plus/build-info.txt"; then
             mm2plus_ref_ready=true
           fi
+
           if [[ -f "${manifest}" ]]; then
-            if grep -q '"hictk"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/hictk" ]]; then
+            if grep -q '"hictk"' "${manifest}" && validate_glibc_floor "hictk" "toolchains-dist/linux_x86_64/bin/hictk"; then
               hictk_ready=true
             fi
-            if grep -q '"minimap2"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/minimap2" ]]; then
+            if grep -q '"minimap2"' "${manifest}" && validate_glibc_floor "minimap2" "toolchains-dist/linux_x86_64/bin/minimap2"; then
               minimap2_ready=true
             fi
           fi
-          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx2"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" ]]; then
+
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx2"' "${manifest}" && validate_glibc_floor "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2"; then
             mm2plus_avx2_ready=true
           fi
-          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx512"' "${manifest}" && [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx512" ]]; then
+          if [[ "${mm2plus_ref_ready}" == "true" ]] && [[ -f "${manifest}" ]] && grep -q '"mm2plus_avx512"' "${manifest}" && validate_glibc_floor "mm2-plus AVX-512" "toolchains-dist/linux_x86_64/bin/mm2plus-avx512"; then
             mm2plus_avx512_ready=true
           fi
+
           echo "hictk_ready=${hictk_ready}" >> "${GITHUB_OUTPUT}"
           echo "minimap2_ready=${minimap2_ready}" >> "${GITHUB_OUTPUT}"
           echo "mm2plus_avx2_ready=${mm2plus_avx2_ready}" >> "${GITHUB_OUTPUT}"
@@ -229,36 +297,106 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64
-          key: hictk-conan-linux-x86_64-ubuntu2204-static-musl-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: hictk-conan-linux-x86_64-manylinux2014-glibc217-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
           restore-keys: |
-            hictk-conan-linux-x86_64-ubuntu2204-static-musl-${{ env.HICTK_REF }}-
-            hictk-conan-linux-x86_64-ubuntu2204-static-musl-
+            hictk-conan-linux-x86_64-manylinux2014-glibc217-${{ env.HICTK_REF }}-
+            hictk-conan-linux-x86_64-manylinux2014-glibc217-
 
-      - name: Install hictk build prerequisites
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
+      - name: Build Linux native payload and fat JAR in manylinux2014
+        env:
+          BUNDLE_HICTK: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+          HICTK_READY: ${{ steps.inspect-toolchain.outputs.hictk_ready }}
+          MINIMAP2_READY: ${{ steps.inspect-toolchain.outputs.minimap2_ready }}
+          MM2PLUS_AVX2_READY: ${{ steps.inspect-toolchain.outputs.mm2plus_avx2_ready }}
+          MM2PLUS_AVX512_READY: ${{ steps.inspect-toolchain.outputs.mm2plus_avx512_ready }}
+          GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
         run: |
-          sudo apt-get install -y --no-install-recommends binutils clang lld g++ gcc make cmake ninja-build python3-venv zlib1g-dev musl-tools libmimalloc-dev pkg-config
+          set -euo pipefail
 
-      - name: Build bundled hictk
-        id: build-hictk
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
-        env:
-          ENABLE_MOSTLY_STATIC_RUNTIME: "1"
-        run: ./scripts/toolchains/build_hictk_linux.sh
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
+            -v "${JAVA_HOME}:${JAVA_HOME}:ro" \
+            -w "${GITHUB_WORKSPACE}" \
+            -e JAVA_HOME="${JAVA_HOME}" \
+            -e GRADLE_USER_HOME="${GRADLE_USER_HOME}" \
+            -e GRADLE_OPTS="${GRADLE_OPTS}" \
+            -e HICTK_REF="${HICTK_REF}" \
+            -e MINIMAP2_REF="${MINIMAP2_REF}" \
+            -e MM2PLUS_REF="${MM2PLUS_REF}" \
+            -e HICT_WEBUI_REF="${HICT_WEBUI_REF}" \
+            -e HICTK_CONAN_HOME="${HICTK_CONAN_HOME}" \
+            -e HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS="1" \
+            -e HICT_REQUIRE_MM2PLUS_VARIANTS="1" \
+            -e HICT_STATIC_MUSL="0" \
+            -e HICT_STATIC_MIMALLOC="0" \
+            -e BUNDLE_HICTK="${BUNDLE_HICTK}" \
+            -e HICTK_READY="${HICTK_READY:-false}" \
+            -e MINIMAP2_READY="${MINIMAP2_READY:-false}" \
+            -e MM2PLUS_AVX2_READY="${MM2PLUS_AVX2_READY:-false}" \
+            -e MM2PLUS_AVX512_READY="${MM2PLUS_AVX512_READY:-false}" \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            quay.io/pypa/manylinux2014_x86_64:latest \
+            bash -lc '
+              set -euo pipefail
 
-      - name: Build bundled minimap2
-        id: build-minimap2
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.minimap2_ready != 'true' }}
-        run: ./scripts/toolchains/build_minimap2_linux.sh
+              yum install -y \
+                autoconf automake binutils bzip2-devel curl diffutils file findutils \
+                gcc gcc-c++ git gzip libtool make openssl-devel patch pkgconfig \
+                tar unzip which xz xz-devel zip zlib-devel
 
-      - name: Build bundled mm2-plus
-        id: build-mm2plus
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
-        env:
-          HICT_REQUIRE_MM2PLUS_VARIANTS: "1"
-          HICT_STATIC_MUSL: "0"
-          HICT_STATIC_MIMALLOC: "0"
-        run: ./scripts/toolchains/build_mm2plus_linux.sh
+              if [[ -f /opt/rh/devtoolset-10/enable ]]; then
+                source /opt/rh/devtoolset-10/enable
+              elif [[ -f /opt/rh/devtoolset-9/enable ]]; then
+                source /opt/rh/devtoolset-9/enable
+              elif [[ -f /opt/rh/devtoolset-8/enable ]]; then
+                source /opt/rh/devtoolset-8/enable
+              fi
+
+              PYBIN="$(find /opt/python -maxdepth 3 -type f -path "*/bin/python" | sort | tail -n 1)"
+              ln -sf "${PYBIN}" /usr/local/bin/python3
+              ln -sf "$(dirname "${PYBIN}")/pip" /usr/local/bin/pip3
+
+              export PATH="${JAVA_HOME}/bin:/usr/local/bin:${PATH}"
+
+              python3 --version
+              java -version
+              gcc --version | head -n 1
+              g++ --version | head -n 1
+
+              python3 -m pip install --upgrade pip
+              python3 -m pip install "cmake>=3.25" ninja "conan>=2"
+
+              chmod +x gradlew \
+                scripts/toolchains/build_hictk_linux.sh \
+                scripts/toolchains/build_minimap2_linux.sh \
+                scripts/toolchains/build_mm2plus_linux.sh
+
+              if [[ "${BUNDLE_HICTK}" == "true" ]]; then
+                if [[ "${HICTK_READY:-false}" != "true" ]]; then
+                  ENABLE_MOSTLY_STATIC_RUNTIME=1 ./scripts/toolchains/build_hictk_linux.sh
+                fi
+                if [[ "${MINIMAP2_READY:-false}" != "true" ]]; then
+                  ./scripts/toolchains/build_minimap2_linux.sh
+                fi
+                if [[ "${MM2PLUS_AVX2_READY:-false}" != "true" || "${MM2PLUS_AVX512_READY:-false}" != "true" ]]; then
+                  HICT_REQUIRE_MM2PLUS_VARIANTS=1 \
+                  HICT_STATIC_MUSL=0 \
+                  HICT_STATIC_MIMALLOC=0 \
+                    ./scripts/toolchains/build_mm2plus_linux.sh
+                fi
+              else
+                rm -rf toolchains-dist/linux_x86_64
+              fi
+
+              # WebUI has already been prepared on Ubuntu, where Node.js 24 works.
+              # Exclude WebUI tasks here so manylinux only compiles Linux-native code
+              # and assembles the fat JAR with the already prepared resources.
+              ./gradlew -PrequireBundledWebUI=true shadowJar -x buildWebUI -x copyWebUI --no-daemon
+
+              ./gradlew --stop || true
+              chown -R "${HOST_UID}:${HOST_GID}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
+            '
 
       - name: Verify bundled toolchain payload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -327,21 +465,76 @@ jobs:
             toolchains-dist/linux_x86_64/share/doc/mm2plus
           key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
-      - name: Build bundled Tauri browser
-        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+      - name: Build Linux portable package on Ubuntu
         env:
-          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
-          CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/tauri-target/linux_x86_64
-        run: ./scripts/portable/prepare_tauri_browser_payload_linux.sh
-
-      - name: Build bundled Electron browser
-        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
-        env:
-          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
-        run: ./scripts/portable/prepare_electron_browser_payload_linux.sh
-
-      - name: Build Linux portable package
+          HICT_SKIP_GRADLE: "1"
         run: ./scripts/portable/build_portable_linux.sh
+
+      - name: Check Linux GLIBC floor
+        run: |
+          set -euo pipefail
+
+          max_allowed="${HICT_GLIBC_MAX:-2.17}"
+          root="$(find build/portable -mindepth 1 -maxdepth 1 -type d -name 'HiCT-*-linux-x86_64' | sort | tail -n 1)"
+          jar_file="$(find "${root}" -path '*/lib/hict.jar' -type f | sort | tail -n 1)"
+
+          if [[ -z "${root}" || ! -d "${root}" ]]; then
+            echo "::error::Portable Linux root was not found under build/portable."
+            exit 1
+          fi
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+
+          if [[ -n "${jar_file}" && -f "${jar_file}" ]]; then
+            (cd "${tmp}" && jar xf "${jar_file}")
+          fi
+
+          version_gt() {
+            local a="$1"
+            local b="$2"
+            [[ "$(printf '%s\n%s\n' "$b" "$a" | sort -V | tail -n 1)" == "$a" && "$a" != "$b" ]]
+          }
+
+          scan_tree() {
+            local tree="$1"
+            find "${tree}" -type f -print0 |
+            while IFS= read -r -d '' f; do
+              case "${f}" in
+                */FreeBSD/*|*/SunOS/*|*/Linux/arm/*|*/Linux/armv6/*|*/Linux/armv7/*|*/Linux/aarch64/*|*/Linux/ppc/*|*/Linux/ppc64/*|*/Linux/ppc64le/*|*/Linux/s390x/*|*/Linux/riscv64/*)
+                  continue
+                  ;;
+              esac
+
+              file -b "${f}" | grep -q 'ELF.*x86-64' || continue
+
+              objdump -T "${f}" 2>/dev/null |
+                awk -v f="${f}" '
+                  /\*UND\*/ && match($0, /\(GLIBC_[^)]+\)/) {
+                    v = substr($0, RSTART + 1, RLENGTH - 2)
+                    print v, f
+                  }
+                '
+            done
+          }
+
+          bad=0
+          while read -r sym file; do
+            [[ -z "${sym:-}" ]] && continue
+            ver="${sym#GLIBC_}"
+            if version_gt "${ver}" "${max_allowed}"; then
+              echo "::error::${file} requires ${sym}, above GLIBC_${max_allowed}"
+              bad=1
+            fi
+          done < <((scan_tree "${root}"; scan_tree "${tmp}") | sort -Vu)
+
+          if [[ "${bad}" != "0" ]]; then
+            echo "One or more Linux x86_64 ELF files exceed the portable GLIBC_${max_allowed} floor." >&2
+            echo "If the offender is under lib/native/jhdf5, lib/natives, or lib/libs/natives," >&2
+            echo "it is coming from the bundled JHDF5/HDF5 native payload and must be replaced" >&2
+            echo "with a manylinux2014-built native payload or removed from the fat JAR." >&2
+            exit 1
+          fi
 
       - name: Upload JVM fat JAR artifact
         uses: actions/upload-artifact@v6
