@@ -377,12 +377,14 @@ jobs:
           [[ -n "${root}" && -d "${root}" ]] || { echo "::error::Portable Linux root was not found under build/portable."; exit 1; }
           jar_file="$(find "${root}" -path '*/lib/hict.jar' -type f | sort | tail -n 1)"
           if [[ -z "${jar_file}" || ! -f "${jar_file}" ]]; then
-            jar_file="$(find build/libs -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
+            jar_file="$(find build/libs -maxdepth 1 -type f \( -name '*-fat.jar' -o -name '*.jar' \) ! -name '*-sources.jar' ! -name '*-javadoc.jar' | sort | tail -n 1)"
           fi
           tmp="$(mktemp -d)"
           trap 'rm -rf "${tmp}"' EXIT
           if [[ -n "${jar_file}" && -f "${jar_file}" ]]; then
-            (cd "${tmp}" && jar xf "${jar_file}")
+            jar_copy="${tmp}/input.jar"
+            cp -f "${jar_file}" "${jar_copy}"
+            (cd "${tmp}" && jar xf "${jar_copy}")
           else
             echo "::error::Neither portable lib/hict.jar nor build/libs/*-fat.jar was found for the GLIBC scan."; exit 1
           fi
