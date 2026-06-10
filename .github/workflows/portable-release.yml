@@ -300,7 +300,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          docker run --rm -it \
+          docker run --rm -i \
             -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
             -v "${JAVA_HOME}:${JAVA_HOME}:ro" \
             -w "${GITHUB_WORKSPACE}" \
