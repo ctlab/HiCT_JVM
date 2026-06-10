@@ -98,6 +98,11 @@ on:
         required: false
         default: ""
         type: string
+      jhdf5_release_tag:
+        description: "JHDF5 release tag to download for the bundled native jar; use latest to consume the newest published JHDF5 release"
+        required: true
+        default: "latest"
+        type: string
 
 permissions:
   contents: write
@@ -109,6 +114,8 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
+  HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1.jar"
 
 jobs:
   linux-portable:
@@ -128,9 +135,21 @@ jobs:
       HICT_STATIC_MIMALLOC: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode == 'musl-static' && '1' || '0' }}
       HICT_GLIBC_MAX: "2.17"
       HICTK_CONAN_BUILD_POLICY: "*"
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Download published JHDF5 jar
+        run: |
+          set -euo pipefail
+          mkdir -p src/main/resources/libs
+          if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
+          else
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
+          fi
+          curl -fL --retry 5 -o "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}" "${jar_url}"
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -446,9 +465,22 @@ jobs:
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Download published JHDF5 jar
+        shell: pwsh
+        run: |
+          $jarDir = "src\main\resources\libs"
+          New-Item -ItemType Directory -Force -Path $jarDir | Out-Null
+          if ($env:HICT_JHDF5_RELEASE_TAG -eq "latest") {
+            $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/latest/download/$env:HICT_JHDF5_JAR_NAME"
+          } else {
+            $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/$env:HICT_JHDF5_RELEASE_TAG/$env:HICT_JHDF5_JAR_NAME"
+          }
+          Invoke-WebRequest -Uri $jarUrl -OutFile (Join-Path $jarDir $env:HICT_JHDF5_JAR_NAME)
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -877,9 +909,21 @@ jobs:
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Download published JHDF5 jar
+        run: |
+          set -euo pipefail
+          mkdir -p src/main/resources/libs
+          if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
+          else
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
+          fi
+          curl -fL --retry 5 -o "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}" "${jar_url}"
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
@@ -983,9 +1027,21 @@ jobs:
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Download published JHDF5 jar
+        run: |
+          set -euo pipefail
+          mkdir -p src/main/resources/libs
+          if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
+          else
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
+          fi
+          curl -fL --retry 5 -o "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}" "${jar_url}"
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:

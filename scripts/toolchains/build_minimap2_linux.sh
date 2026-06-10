@@ -80,7 +80,7 @@ fi
 
 make -C "${SOURCE_DIR}" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)" CC="${CC:-gcc}" CFLAGS="${CFLAGS:--O3 -DNDEBUG}" \
   LDFLAGS="${linker_flags}" \
-  LIBS="${linker_flags} -Wl,-Bstatic -lz -lm -lpthread"
+  LIBS="-lz -lm -lpthread"
 
 install -m 0755 "${SOURCE_DIR}/minimap2" "${OUTPUT_DIR}/bin/minimap2"
 if [[ -x "${OUTPUT_DIR}/bin/minimap2" ]]; then

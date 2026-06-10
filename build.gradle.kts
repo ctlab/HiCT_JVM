@@ -851,11 +851,21 @@ tasks.named<ProcessResources>("processResources") {
   }
   from("src/main/resources/natives/osx_64") {
     into("resources/libs/osx_64")
-    include("**/*.dylib", "**/*.jnilib", "**/*.so")
+    include("**/*.dylib", "**/*.jnilib")
+  }
+  from("src/main/resources/natives/osx_64") {
+    into("resources/libs/osx_64")
+    include("**/*.so")
+    rename { it.replace(".so", ".dylib") }
   }
   from("src/main/resources/natives/osx_arm64") {
     into("resources/libs/osx_arm64")
-    include("**/*.dylib", "**/*.jnilib", "**/*.so")
+    include("**/*.dylib", "**/*.jnilib")
+  }
+  from("src/main/resources/natives/osx_arm64") {
+    into("resources/libs/osx_arm64")
+    include("**/*.so")
+    rename { it.replace(".so", ".dylib") }
   }
   from(bundledToolchainSourceDirectory) {
     into("toolchains")

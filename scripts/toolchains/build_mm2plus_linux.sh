@@ -169,7 +169,9 @@ can_execute_variant_here() {
 }
 
 build_variant() {
-  local variant="$1" flags="$2" output="${OUTPUT_DIR}/bin/mm2plus-${variant}"
+  local variant="$1"
+  local flags="$2"
+  local output="${OUTPUT_DIR}/bin/mm2plus-${variant}"
   if [[ -x "${output}" && "${HICT_REBUILD_MM2PLUS:-0}" != "1" ]] && grep -qx "ref=${REF}" "${BUILD_INFO}" 2>/dev/null; then
     echo "[mm2plus/linux] Reusing existing ${output}"
     return 0
