@@ -46,7 +46,7 @@ public final class NativeProcessingBenchmarkReport {
     "post-log",
     "precomputed-1d-max"
   );
-  private static final @NotNull List<String> DEFAULT_VARIANTS = List.of("java", "sse2", "avx2", "avx512");
+  private static final @NotNull List<String> DEFAULT_VARIANTS = List.of("java", "generic", "avx2", "avx512");
 
   private NativeProcessingBenchmarkReport() {
   }
@@ -57,7 +57,7 @@ public final class NativeProcessingBenchmarkReport {
 
     final var rows = new ArrayList<BenchmarkRow>();
     final var warnings = new ArrayList<String>();
-    final var variants = parseVariants(System.getProperty("hict.native.benchmark.variants", "sse2,avx2,avx512"));
+    final var variants = parseVariants(System.getProperty("hict.native.benchmark.variants", "generic,avx2,avx512"));
 
     rows.addAll(runChildBenchmark(reportDir, "java", true, warnings));
     for (final var variant : variants) {
@@ -89,10 +89,10 @@ public final class NativeProcessingBenchmarkReport {
     for (final var rawVariant : variantsProperty.split(",")) {
       final var variant = rawVariant.trim().toLowerCase(Locale.ROOT);
       if (!variant.isBlank() && !"java".equals(variant)) {
-        variants.add("baseline".equals(variant) ? "sse2" : variant);
+        variants.add("baseline".equals(variant) || "sse2".equals(variant) || "x86_64-v3".equals(variant) ? "generic" : variant);
       }
     }
-    return variants.isEmpty() ? List.of("sse2", "avx2", "avx512") : variants;
+    return variants.isEmpty() ? List.of("generic", "avx2", "avx512") : variants;
   }
 
   private static @NotNull List<BenchmarkRow> runChildBenchmark(final @NotNull Path reportDir,
@@ -248,7 +248,7 @@ public final class NativeProcessingBenchmarkReport {
     final int barWidth = Math.max(12, Math.min(42, (groupWidth - 48) / Math.max(1, variants.size())));
     final var colors = Map.of(
       "java", "#5b677a",
-      "sse2", "#2563eb",
+      "generic", "#2563eb",
       "avx2", "#0f7a3b",
       "avx512", "#c2272d"
     );

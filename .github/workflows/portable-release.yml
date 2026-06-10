@@ -130,18 +130,31 @@ jobs:
   linux-portable:
     name: Linux portable .run
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi_mode: glibc217
+            static_musl: "0"
+            static_mimalloc: "0"
+            artifact_suffix: ""
+          - abi_mode: musl-static
+            static_musl: "1"
+            static_mimalloc: "1"
+            artifact_suffix: "-musl"
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
-      HICT_LINUX_ABI_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode || 'glibc217' }}
+      HICT_LINUX_ABI_MODE: ${{ matrix.abi_mode }}
       HICT_LINUX_JHDF5_NATIVE_POLICY: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_jhdf5_native_policy || 'warn-only' }}
-      HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode || 'glibc217') }}
+      HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, matrix.abi_mode) }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_REQUIRE_MM2PLUS_VARIANTS: "1"
-      HICT_STATIC_MUSL: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode == 'musl-static' && '1' || '0' }}
-      HICT_STATIC_MIMALLOC: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_abi_mode == 'musl-static' && '1' || '0' }}
+      HICT_STATIC_MUSL: ${{ matrix.static_musl }}
+      HICT_STATIC_MIMALLOC: ${{ matrix.static_mimalloc }}
+      HICT_PORTABLE_ARTIFACT_SUFFIX: ${{ matrix.artifact_suffix }}
       HICT_GLIBC_MAX: "2.17"
       HICTK_CONAN_BUILD_POLICY: "*"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
@@ -371,6 +384,14 @@ jobs:
       - name: Check Linux GLIBC floor
         run: |
           set -euo pipefail
+          abi_mode="${HICT_LINUX_ABI_MODE:-glibc217}"
+          if [[ "${abi_mode}" == "musl-static" ]]; then
+            scripts/ci/validate_linux_component.sh hict-native
+            scripts/ci/validate_linux_component.sh hictk
+            scripts/ci/validate_linux_component.sh minimap2
+            scripts/ci/validate_linux_component.sh mm2plus
+            exit 0
+          fi
           max_allowed="${HICT_GLIBC_MAX:-2.17}"
           jhdf5_policy="${HICT_LINUX_JHDF5_NATIVE_POLICY:-warn-only}"
           root="$(find build/portable -mindepth 1 -maxdepth 1 -type d -name 'HiCT-*-linux-x86_64' | sort | tail -n 1)"
@@ -432,20 +453,20 @@ jobs:
       - name: Upload Linux package artifact
         uses: actions/upload-artifact@v6
         with:
-          name: hict-linux-portable
+          name: hict-linux-portable${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-linux-x86_64.run
-            build/distributions/HiCT-*-linux-x86_64.tar.gz
-            build/distributions/HiCT-*-linux-x86_64.sha256
+            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.run
+            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.tar.gz
+            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.sha256
           if-no-files-found: error
 
       - name: Upload Linux runfile artifact
         uses: actions/upload-artifact@v6
         with:
-          name: hict-linux-runfile
+          name: hict-linux-runfile${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-linux-x86_64.run
-            build/distributions/HiCT-*-linux-x86_64.sha256
+            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.run
+            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.sha256
           if-no-files-found: error
 
       - name: Validate Linux artifacts after upload

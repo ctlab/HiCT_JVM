@@ -151,7 +151,7 @@ public final class HictLauncherGui {
 
   private enum NativeProcessingMode {
     JAVA("java", "Java fallback"),
-    SSE2("sse2", "Native SSE2"),
+    SSE2("generic", "Native Generic"),
     AVX2("avx2", "Native AVX2"),
     AVX512("avx512", "Native AVX-512");
 
@@ -168,7 +168,7 @@ public final class HictLauncherGui {
         return JAVA;
       }
       final var normalized = value.trim().toLowerCase(Locale.ROOT);
-      if ("baseline".equals(normalized)) {
+      if ("baseline".equals(normalized) || "sse2".equals(normalized) || "generic".equals(normalized) || "x86_64-v3".equals(normalized)) {
         return SSE2;
       }
       for (final var mode : values()) {
@@ -676,7 +676,7 @@ public final class HictLauncherGui {
       this.avx512NativeRadio.setEnabled(hasNativeProcessingMode(NativeProcessingMode.AVX512));
       this.javaNativeRadio.setToolTipText("Use the pure Java implementation. This is the safest compatibility fallback.");
       this.sse2NativeRadio.setToolTipText(this.sse2NativeRadio.isEnabled()
-        ? "Use the bundled or configured HiCT native SSE2 baseline backend for the next server start."
+        ? "Use the bundled or configured HiCT native generic backend for the next server start."
         : sse2UnavailableReason());
       this.avx2NativeRadio.setToolTipText(this.avx2NativeRadio.isEnabled()
         ? "Use the bundled or configured HiCT native AVX2 backend for the next server start."
@@ -1450,12 +1450,26 @@ public final class HictLauncherGui {
       if (platformDirectory == null) {
         return false;
       }
-      final var resourcePath = "/natives/" + platformDirectory + "/" + System.mapLibraryName(libraryBaseName);
-      return HictLauncherGui.class.getResource(resourcePath) != null;
+      final var mappedName = System.mapLibraryName(libraryBaseName);
+      final var resourcePath = "/natives/" + platformDirectory + "/" + nativeProcessingVariantDirectory(libraryBaseName) + "/native/" + mappedName;
+      if (HictLauncherGui.class.getResource(resourcePath) != null) {
+        return true;
+      }
+      final var legacyResourcePath = "/natives/" + platformDirectory + "/" + mappedName;
+      return HictLauncherGui.class.getResource(legacyResourcePath) != null;
+    }
+
+    private String nativeProcessingVariantDirectory(final String libraryBaseName) {
+      return switch (libraryBaseName) {
+        case "hict_native_avx512" -> "avx512";
+        case "hict_native" -> "avx2";
+        case "hict_native_sse2" -> "generic";
+        default -> "generic";
+      };
     }
 
     private String nativeProcessingStatusText() {
-      final var sse2 = hasNativeProcessingMode(NativeProcessingMode.SSE2) ? "SSE2 available" : sse2UnavailableReason();
+      final var sse2 = hasNativeProcessingMode(NativeProcessingMode.SSE2) ? "Generic available" : sse2UnavailableReason();
       final var avx2 = hasNativeProcessingMode(NativeProcessingMode.AVX2) ? "AVX2 available" : avx2UnavailableReason();
       final var avx512 = hasNativeProcessingMode(NativeProcessingMode.AVX512) ? "AVX-512 available" : avx512UnavailableReason();
       return selectedNativeProcessingMode().label + "; " + sse2 + "; " + avx2 + "; " + avx512;
@@ -1463,12 +1477,12 @@ public final class HictLauncherGui {
 
     private String sse2UnavailableReason() {
       if (!NativeCpuFeatures.supportsSse2Core()) {
-        return "SSE2 unavailable on this CPU/JVM";
+        return "Generic backend unavailable on this CPU/JVM";
       }
       if (!hasNativeLibraryOverride("hict_native_sse2") && !hasBundledNativeLibrary("hict_native_sse2")) {
-        return "SSE2 native library unavailable";
+        return "Generic native library unavailable";
       }
-      return "SSE2 unavailable";
+      return "Generic backend unavailable";
     }
 
     private String avx2UnavailableReason() {

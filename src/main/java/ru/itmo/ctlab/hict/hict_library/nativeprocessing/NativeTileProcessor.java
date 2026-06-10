@@ -426,11 +426,23 @@ final class NativeTileProcessor {
     var lastFailure = "";
     for (final var libraryBaseName : preferredLibraryBaseNames()) {
       final var mappedName = System.mapLibraryName(libraryBaseName);
-      final var resourcePath = "/natives/" + platformDirectory + "/" + mappedName;
+      final var resourcePath = "/natives/" + platformDirectory + "/" + variantDirectory(libraryBaseName) + "/native/" + mappedName;
       try (InputStream stream = NativeTileProcessor.class.getResourceAsStream(resourcePath)) {
         if (stream == null) {
-          lastFailure = "Bundled native processing library not found at " + resourcePath;
-          continue;
+          final var legacyResourcePath = "/natives/" + platformDirectory + "/" + mappedName;
+          try (InputStream legacyStream = NativeTileProcessor.class.getResourceAsStream(legacyResourcePath)) {
+            if (legacyStream == null) {
+              lastFailure = "Bundled native processing library not found at " + resourcePath;
+              continue;
+            }
+            final var extractionDirectory = Files.createTempDirectory("hict-native-processing-");
+            final var extractedLibrary = extractionDirectory.resolve(mappedName);
+            Files.copy(legacyStream, extractedLibrary, StandardCopyOption.REPLACE_EXISTING);
+            extractedLibrary.toFile().deleteOnExit();
+            extractionDirectory.toFile().deleteOnExit();
+            System.load(extractedLibrary.toAbsolutePath().normalize().toString());
+            return loaded("bundled resource " + legacyResourcePath, nativeVersion());
+          }
         }
         final var extractionDirectory = Files.createTempDirectory("hict-native-processing-");
         final var extractedLibrary = extractionDirectory.resolve(mappedName);
@@ -476,7 +488,7 @@ final class NativeTileProcessor {
       ? "auto"
       : requestedVariant.trim().toLowerCase(Locale.ROOT);
     final var result = new ArrayList<String>(3);
-    if ("sse2".equals(normalizedVariant) || "baseline".equals(normalizedVariant)) {
+    if ("sse2".equals(normalizedVariant) || "baseline".equals(normalizedVariant) || "generic".equals(normalizedVariant) || "x86_64-v3".equals(normalizedVariant)) {
       if (NativeCpuFeatures.supportsSse2Core()) {
         result.add(SSE2_LIBRARY_BASE_NAME);
       }
@@ -504,6 +516,15 @@ final class NativeTileProcessor {
       result.add(SSE2_LIBRARY_BASE_NAME);
     }
     return result;
+  }
+
+  private static @NotNull String variantDirectory(final @NotNull String libraryBaseName) {
+    return switch (libraryBaseName) {
+      case AVX512_LIBRARY_BASE_NAME -> "avx512";
+      case AVX2_LIBRARY_BASE_NAME -> "avx2";
+      case SSE2_LIBRARY_BASE_NAME -> "generic";
+      default -> "generic";
+    };
   }
 
   private static @NotNull LoadReport loaded(final @NotNull String source,

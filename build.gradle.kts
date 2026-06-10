@@ -219,10 +219,16 @@ fun nativeProcessingCompilerSupportsCurrentOs(compilerExecutable: String? = nati
 fun nativeProcessingOutputFile(variant: NativeProcessingVariant): File {
   val platformDirectory = nativeProcessingPlatformDirectory() ?: "unsupported"
   val mappedLibraryName = System.mapLibraryName(variant.libraryBaseName)
+  val variantDirectory = nativeProcessingResourceVariantDirectory(variant.id)
   return nativeProcessingResourceRoot
-    .map { it.file("natives/$platformDirectory/$mappedLibraryName") }
+    .map { it.file("natives/$platformDirectory/$variantDirectory/native/$mappedLibraryName") }
     .get()
     .asFile
+}
+
+fun nativeProcessingResourceVariantDirectory(variantId: String): String = when (variantId.lowercase()) {
+  "sse2", "generic", "x86_64-v3" -> "generic"
+  else -> variantId.lowercase()
 }
 
 fun handleMissingWebUI(message: String, cause: Throwable? = null) {
@@ -499,8 +505,8 @@ tasks.register("describeNativeProcessing") {
     }
     println("Runtime overrides:")
     println("  HICT_NATIVE_PROCESSING=1")
-    println("  HICT_NATIVE_VARIANT=auto|sse2|avx2|avx512")
-    println("  HICT_NATIVE_VARIANT=baseline is accepted as a legacy alias for sse2")
+    println("  HICT_NATIVE_VARIANT=auto|generic|avx2|avx512")
+    println("  HICT_NATIVE_VARIANT=baseline, sse2 and x86_64-v3 are accepted as aliases for generic")
     println("  HICT_NATIVE_LIBRARY_PATH=${nativeProcessingOutputFile(nativeProcessingVariants.first()).absolutePath}")
     println("  HICT_NATIVE_LIBRARY_DIR=${nativeProcessingOutputFile(nativeProcessingVariants.first()).parentFile.absolutePath}")
   }

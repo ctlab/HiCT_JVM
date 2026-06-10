@@ -83,7 +83,7 @@ case "${component}" in
   hict-native)
     root="build/native-processing/resources/natives/linux_64"
     [[ -d "${root}" ]] || { echo "::error::HiCT native processing output directory is missing: ${root}"; exit 1; }
-    compgen -G "${root}/*.so" >/dev/null || { echo "::error::No HiCT native processing .so files found in ${root}"; exit 1; }
+    find "${root}" -path '*/native/*.so' -type f | grep -q . || { echo "::error::No HiCT native processing .so files found in ${root}"; exit 1; }
     scan_glibc_floor "${root}"
     ;;
   hictk)

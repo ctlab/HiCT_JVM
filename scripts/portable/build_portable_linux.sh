@@ -7,7 +7,11 @@ DIST_ROOT="${HICT_PORTABLE_DIST_DIR:-${PROJECT_DIR}/build/portable}"
 PLATFORM="linux-x86_64"
 APP_NAME="HiCT"
 VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
-APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
+ABI_SUFFIX=""
+if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then
+  ABI_SUFFIX="-musl"
+fi
+APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
@@ -17,9 +21,9 @@ usage() {
 Build a self-contained Linux HiCT portable package with an embedded Java runtime.
 
 Outputs:
-  build/distributions/HiCT-<version>-linux-x86_64.run
-  build/distributions/HiCT-<version>-linux-x86_64.tar.gz
-  build/distributions/HiCT-<version>-linux-x86_64.sha256
+  build/distributions/HiCT-<version>[-musl]-linux-x86_64.run
+  build/distributions/HiCT-<version>[-musl]-linux-x86_64.tar.gz
+  build/distributions/HiCT-<version>[-musl]-linux-x86_64.sha256
 
 Environment overrides:
   HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
@@ -377,19 +381,20 @@ Java runtime notices:
   notices and third-party notices shipped with the runtime.
 EOF
 
-TAR_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.tar.gz"
-RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.run"
-SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.sha256"
-PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.xz"
+TAR_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.tar.gz"
+RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.run"
+SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.sha256"
+PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.payload.tar.xz"
 
-tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
-tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | gzip -9 > "${TAR_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(sha256sum "${PAYLOAD_PATH}" | awk '{print $1}')"
 BUNDLED_TAURI_BROWSER="0"
 if [[ -d "${APP_DIR}/browsers/linux_x86_64" ]] &&
    grep -R -q '"engine"[[:space:]]*:[[:space:]]*"tauri-system-webview"' "${APP_DIR}/browsers/linux_x86_64" 2>/dev/null; then
   BUNDLED_TAURI_BROWSER="1"
 fi
+PACKAGE_NAME="${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
 
 cat > "${RUN_PATH}" <<EOF
 #!/usr/bin/env bash
@@ -398,6 +403,7 @@ set -euo pipefail
 APP_NAME="${APP_NAME}"
 APP_VERSION="${VERSION}"
 APP_PLATFORM="${PLATFORM}"
+APP_PACKAGE_NAME="${PACKAGE_NAME}"
 PAYLOAD_SHA256="${PAYLOAD_SHA}"
 BUNDLED_TAURI_BROWSER="${BUNDLED_TAURI_BROWSER}"
 
@@ -509,7 +515,7 @@ if [[ "\${1:-}" == "--hict-extract-only" ]]; then
   fi
   mkdir -p "\$2"
   tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\$2"
-  echo "Extracted HiCT to \$2/${APP_NAME}-${VERSION}-${PLATFORM}"
+  echo "Extracted HiCT to \$2/\${APP_PACKAGE_NAME}"
   exit 0
 fi
 
@@ -532,8 +538,8 @@ fi
 if [[ "\${cache_root}" != "\${local_cache_root}" ]]; then
   export HICT_PORTABLE_NOTICE="The directory containing the .run file could not be used as an executable payload cache; using \${cache_root}."
 fi
-extract_root="\${cache_root}/${APP_NAME}-${VERSION}-${PLATFORM}-\${PAYLOAD_SHA256}"
-app_home="\${extract_root}/${APP_NAME}-${VERSION}-${PLATFORM}"
+extract_root="\${cache_root}/\${APP_PACKAGE_NAME}-\${PAYLOAD_SHA256}"
+app_home="\${extract_root}/\${APP_PACKAGE_NAME}"
 marker_file="\${extract_root}/.payload.sha256"
 
 if [[ ! -x "\${app_home}/bin/hict" || ! -f "\${marker_file}" || "\$(cat "\${marker_file}" 2>/dev/null || true)" != "\${PAYLOAD_SHA256}" ]]; then

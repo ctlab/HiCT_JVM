@@ -32,11 +32,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.scijava.nativelib.JniExtractor;
 import org.scijava.nativelib.NativeLibraryUtil;
 import org.scijava.nativelib.NativeLoader;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -99,8 +102,18 @@ public class HDF5LibraryInitializer {
       return;
     }
 
-    NativeLibraryUtil.loadNativeLibrary(jniExtractor, "hdf5", "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/");
-    log.info("Loaded HDF5");
+    try {
+      if (!loadBundledNativeLibrary("hdf5")) {
+        log.warn("Failed to load HDF5 with custom JNI Extractor, will try fallback method.");
+        NativeLoader.loadLibrary("hdf5");
+        log.warn("Fallback method succeeded but the library path won't be added to the H5 plugins search registry.");
+      }
+      log.info("Loaded HDF5");
+    } catch (final IOException err) {
+      log.warn("Failed to load HDF5 due to IOException", err);
+    } catch (final UnsatisfiedLinkError unsatisfiedLinkError) {
+      log.error("Failed to load HDF5 due to unsatisfied link error", unsatisfiedLinkError);
+    }
 //    NativeLibraryUtil.loadNativeLibrary(jniExtractor, "jhdf5", "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/");
 //    log.info("Loaded JHDF5");
 
@@ -150,7 +163,7 @@ public class HDF5LibraryInitializer {
       final var name = e.getValue();
       log.info("Loading " + name + " library");
       try {
-        if (!NativeLibraryUtil.loadNativeLibrary(jniExtractor, lib, "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/")) {
+        if (!loadBundledNativeLibrary(lib)) {
           log.warn("Failed to load library " + lib + " with custom JNI Extractor, will try fallback method.");
           NativeLoader.loadLibrary(lib);
           log.warn("Fallback method succeeded but the library path won't be added to the H5 plugins search registry.");
@@ -227,6 +240,52 @@ public class HDF5LibraryInitializer {
     }
 
     hdf5LibraryInitialized.set(true);
+  }
+
+  private static boolean loadBundledNativeLibrary(final String libraryBaseName) throws IOException {
+    final var platformDirectory = platformDirectory();
+    if (platformDirectory == null) {
+      return false;
+    }
+    for (final var variantDirectory : bundledVariantDirectories()) {
+      if (NativeLibraryUtil.loadNativeLibrary(
+        jniExtractor,
+        libraryBaseName,
+        "resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
+        "/resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
+        "resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
+        "/resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
+        "resources/libs/natives/" + platformDirectory + "/",
+        "/resources/libs/natives/" + platformDirectory + "/",
+        "resources/libs/" + platformDirectory + "/",
+        "/resources/libs/" + platformDirectory + "/"
+      )) {
+        return true;
+      }
+    }
+    return NativeLibraryUtil.loadNativeLibrary(
+      jniExtractor,
+      libraryBaseName,
+      "resources/",
+      "resources/libs/",
+      "resources/libs/natives/",
+      "/resources/",
+      "/resources/libs/",
+      "/resources/libs/natives/"
+    );
+  }
+
+  private static @NotNull List<String> bundledVariantDirectories() {
+    final var variants = new ArrayList<String>(4);
+    if (NativeCpuFeatures.supportsAvx512Core()) {
+      variants.add("avx512");
+    }
+    if (NativeCpuFeatures.supportsAvx2Core()) {
+      variants.add("avx2");
+    }
+    variants.add("generic");
+    variants.add("sse2");
+    return variants;
   }
 
   @RequiredArgsConstructor
