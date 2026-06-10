@@ -406,8 +406,9 @@ jobs:
           python3 -m pip install "cmake>=3.25" ninja "conan>=2"
 
           # CentOS 7 ships Git 1.8, which does not understand
-          # `git clone --filter=blob:none`. Pre-clone these repos without
-          # partial-clone filters so the existing build scripts reuse them.
+          # `git clone --filter=blob:none`. Pre-clone only the repos that are
+          # actually going to be rebuilt, without partial-clone filters, so the
+          # existing build scripts reuse them instead of issuing filtered clones.
           preclone_plain_git_repo() {
             local work_dir="$1"
             local repo_url="$2"
@@ -417,22 +418,40 @@ jobs:
               git clone "${repo_url}" "${work_dir}/src"
             fi
           }
-          preclone_plain_git_repo "${MINIMAP2_WORK_DIR:-/tmp/minimap2-build-linux-x86_64}" "${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
-          preclone_plain_git_repo "${MM2PLUS_WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}" "${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
 
           chmod +x gradlew \
             scripts/toolchains/build_hictk_linux.sh \
             scripts/toolchains/build_minimap2_linux.sh \
             scripts/toolchains/build_mm2plus_linux.sh
 
+          # build_hictk_linux.sh creates a custom Conan host profile only for
+          # the static-musl path. In the manylinux/glibc path it must use the
+          # Conan profile detected by `conan profile detect --force`; otherwise
+          # it points to /tmp/.../conan-host.profile, which does not exist.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/toolchains/build_hictk_linux.sh")
+          text = path.read_text(encoding="utf-8")
+          old = 'CONAN_HOST_PROFILE="${WORK_DIR}/conan-host.profile"\nif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then'
+          new = 'CONAN_HOST_PROFILE="${HICTK_CONAN_HOST_PROFILE:-default}"\nif [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then'
+          if old in text:
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          elif new in text:
+              pass
+          else:
+              raise SystemExit("Unable to patch build_hictk_linux.sh Conan host profile selection")
+          PY
+
           if [[ "${BUNDLE_HICTK}" == "true" ]]; then
             if [[ "${HICTK_READY:-false}" != "true" ]]; then
               ENABLE_MOSTLY_STATIC_RUNTIME=1 ./scripts/toolchains/build_hictk_linux.sh
             fi
             if [[ "${MINIMAP2_READY:-false}" != "true" ]]; then
+              preclone_plain_git_repo "${MINIMAP2_WORK_DIR:-/tmp/minimap2-build-linux-x86_64}" "${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
               ./scripts/toolchains/build_minimap2_linux.sh
             fi
             if [[ "${MM2PLUS_AVX2_READY:-false}" != "true" || "${MM2PLUS_AVX512_READY:-false}" != "true" ]]; then
+              preclone_plain_git_repo "${MM2PLUS_WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}" "${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
               HICT_REQUIRE_MM2PLUS_VARIANTS=1 \
               HICT_STATIC_MUSL=0 \
               HICT_STATIC_MIMALLOC=0 \
@@ -488,7 +507,11 @@ jobs:
           fi
           toolchains-dist/linux_x86_64/bin/hictk --version
           toolchains-dist/linux_x86_64/bin/minimap2 --version
-          toolchains-dist/linux_x86_64/bin/mm2plus-avx2 --version
+          if grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
+            toolchains-dist/linux_x86_64/bin/mm2plus-avx2 --version
+          else
+            echo "::warning::Linux verification: skipping mm2-plus AVX2 --version because this runner CPU does not advertise avx2. Artifact presence was verified without execution."
+          fi
 
       - name: Save hictk Conan package cache
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
@@ -693,7 +716,15 @@ jobs:
           check_binary "portable hict binary" "${portable_bin}" || failed=1
           check_binary "hictk" "toolchains-dist/linux_x86_64/bin/hictk" || failed=1
           check_binary "minimap2" "toolchains-dist/linux_x86_64/bin/minimap2" || failed=1
-          check_binary "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" || failed=1
+          if [[ -x "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" ]]; then
+            if grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
+              check_binary "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" || failed=1
+            else
+              echo "::warning::Linux validation: skipping mm2-plus AVX2 --help smoke test because this runner CPU does not advertise avx2. Artifact presence was verified without execution."
+            fi
+          else
+            check_binary "mm2-plus AVX2" "toolchains-dist/linux_x86_64/bin/mm2plus-avx2" || failed=1
+          fi
 
           # AVX-512 may fail on runners without AVX-512 CPU support.
           # Keep the artifact presence visible, but do not fail the workflow or
