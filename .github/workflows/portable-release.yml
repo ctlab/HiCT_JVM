@@ -184,19 +184,6 @@ jobs:
           ./gradlew -PrequireBundledWebUI=true copyWebUI -x verifyNativeProcessingBuild -x natives --no-daemon
           test -f src/main/resources/webui/index.html
 
-      - name: Build bundled Tauri browser on Ubuntu
-        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
-        env:
-          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
-          CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/tauri-target/linux_x86_64
-        run: ./scripts/portable/prepare_tauri_browser_payload_linux.sh
-
-      - name: Build bundled Electron browser on Ubuntu
-        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
-        env:
-          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
-        run: ./scripts/portable/prepare_electron_browser_payload_linux.sh
-
       - name: Restore bundled toolchain cache
         id: cache-hictk
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -337,119 +324,132 @@ jobs:
             -e HOST_UID="$(id -u)" \
             -e HOST_GID="$(id -g)" \
             quay.io/pypa/manylinux2014_x86_64:latest \
-            bash -lc '
-              set -exo pipefail
+            bash -s <<'MANYLINUX_BUILD'
+          set -euxo pipefail
 
-              yum install -y \
-                autoconf automake binutils bzip2-devel curl diffutils file findutils \
-                gcc gcc-c++ git gzip libtool make openssl-devel patch pkgconfig \
-                tar unzip which xz xz-devel zip zlib-devel
+          yum install -y \
+            autoconf automake binutils bzip2-devel curl diffutils file findutils \
+            gcc gcc-c++ git gzip libtool make openssl-devel patch pkgconfig \
+            tar unzip which xz xz-devel zip zlib-devel
 
-              enable_devtoolset() {
-                local enable_script=""
-                for candidate in \
-                  /opt/rh/devtoolset-10/enable \
-                  /opt/rh/devtoolset-9/enable \
-                  /opt/rh/devtoolset-8/enable; do
-                  if [[ -f "${candidate}" ]]; then
-                    enable_script="${candidate}"
-                    break
-                  fi
-                done
-
-                if [[ -z "${enable_script}" ]]; then
-                  echo "No devtoolset enable script found; using the default compiler toolchain."
-                  return 0
-                fi
-
-                echo "Sourcing ${enable_script}"
-                # SCL/devtoolset enable scripts reference variables such as
-                # MANPATH before defining them. This is fine in normal shell
-                # usage, but fails under `set -u`, so disable nounset only
-                # while sourcing the vendor script.
-                set +u
-                source "${enable_script}"
-                set -u
-              }
-              enable_devtoolset
-
-              find_manylinux_python() {
-                local candidate=""
-                for candidate in                   /opt/python/cp311-cp311/bin/python3                   /opt/python/cp311-cp311/bin/python                   /opt/python/cp310-cp310/bin/python3                   /opt/python/cp310-cp310/bin/python                   /opt/python/cp312-cp312/bin/python3                   /opt/python/cp312-cp312/bin/python                   /opt/python/cp39-cp39/bin/python3                   /opt/python/cp39-cp39/bin/python                   /opt/python/cp38-cp38/bin/python3                   /opt/python/cp38-cp38/bin/python                   /opt/python/cp313-cp313/bin/python3                   /opt/python/cp313-cp313/bin/python; do
-                  if [[ -e "${candidate}" ]]; then
-                    printf '%s\n' "${candidate}"
-                    return 0
-                  fi
-                done
-
-                find /opt/python -maxdepth 4 \( -name python3 -o -name python \) -print 2>/dev/null | sort -V | tail -n 1
-              }
-
-              PYBIN="$(find_manylinux_python || true)"
-              if [[ -z "${PYBIN}" || ! -e "${PYBIN}" ]]; then
-                echo "Unable to find a manylinux Python under /opt/python." >&2
-                echo "Available /opt/python entries:" >&2
-                find /opt/python -maxdepth 3 -print 2>/dev/null | sort >&2 || true
-                exit 1
+          enable_devtoolset() {
+            local enable_script=""
+            local candidate=""
+            for candidate in \
+              /opt/rh/devtoolset-10/enable \
+              /opt/rh/devtoolset-9/enable \
+              /opt/rh/devtoolset-8/enable; do
+              if [[ -f "${candidate}" ]]; then
+                enable_script="${candidate}"
+                break
               fi
-              ln -sfn "${PYBIN}" /usr/local/bin/python3
+            done
 
-              export PATH="${JAVA_HOME}/bin:/usr/local/bin:$(dirname "${PYBIN}"):${PATH}"
+            if [[ -z "${enable_script}" ]]; then
+              echo "No devtoolset enable script found; using the default compiler toolchain."
+              return 0
+            fi
 
-              python3 --version
-              java -version
-              gcc --version | head -n 1
-              g++ --version | head -n 1
+            echo "Sourcing ${enable_script}"
+            # SCL/devtoolset enable scripts reference variables such as
+            # MANPATH before defining them. This is fine in normal shell
+            # usage, but fails under `set -u`, so disable nounset only
+            # while sourcing the vendor script.
+            set +u
+            source "${enable_script}"
+            set -u
+          }
+          enable_devtoolset
 
-              python3 -m ensurepip --upgrade >/dev/null 2>&1 || true
-              python3 -m pip install --upgrade pip
-              python3 -m pip install "cmake>=3.25" ninja "conan>=2"
-
-              # CentOS 7 ships Git 1.8, which does not understand
-              # `git clone --filter=blob:none`. Pre-clone these repos without
-              # partial-clone filters so the existing build scripts reuse them.
-              preclone_plain_git_repo() {
-                local work_dir="$1"
-                local repo_url="$2"
-                mkdir -p "${work_dir}"
-                if [[ ! -d "${work_dir}/src/.git" ]]; then
-                  rm -rf "${work_dir}/src"
-                  git clone "${repo_url}" "${work_dir}/src"
-                fi
-              }
-              preclone_plain_git_repo "${MINIMAP2_WORK_DIR:-/tmp/minimap2-build-linux-x86_64}" "${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
-              preclone_plain_git_repo "${MM2PLUS_WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}" "${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
-
-              chmod +x gradlew \
-                scripts/toolchains/build_hictk_linux.sh \
-                scripts/toolchains/build_minimap2_linux.sh \
-                scripts/toolchains/build_mm2plus_linux.sh
-
-              if [[ "${BUNDLE_HICTK}" == "true" ]]; then
-                if [[ "${HICTK_READY:-false}" != "true" ]]; then
-                  ENABLE_MOSTLY_STATIC_RUNTIME=1 ./scripts/toolchains/build_hictk_linux.sh
-                fi
-                if [[ "${MINIMAP2_READY:-false}" != "true" ]]; then
-                  ./scripts/toolchains/build_minimap2_linux.sh
-                fi
-                if [[ "${MM2PLUS_AVX2_READY:-false}" != "true" || "${MM2PLUS_AVX512_READY:-false}" != "true" ]]; then
-                  HICT_REQUIRE_MM2PLUS_VARIANTS=1 \
-                  HICT_STATIC_MUSL=0 \
-                  HICT_STATIC_MIMALLOC=0 \
-                    ./scripts/toolchains/build_mm2plus_linux.sh
-                fi
-              else
-                rm -rf toolchains-dist/linux_x86_64
+          find_manylinux_python() {
+            local candidate=""
+            for candidate in \
+              /opt/python/cp311-cp311/bin/python3 \
+              /opt/python/cp311-cp311/bin/python \
+              /opt/python/cp310-cp310/bin/python3 \
+              /opt/python/cp310-cp310/bin/python \
+              /opt/python/cp312-cp312/bin/python3 \
+              /opt/python/cp312-cp312/bin/python \
+              /opt/python/cp39-cp39/bin/python3 \
+              /opt/python/cp39-cp39/bin/python \
+              /opt/python/cp38-cp38/bin/python3 \
+              /opt/python/cp38-cp38/bin/python \
+              /opt/python/cp313-cp313/bin/python3 \
+              /opt/python/cp313-cp313/bin/python; do
+              if [[ -e "${candidate}" ]]; then
+                printf '%s\n' "${candidate}"
+                return 0
               fi
+            done
 
-              # WebUI has already been prepared on Ubuntu, where Node.js 24 works.
-              # Exclude WebUI tasks here so manylinux only compiles Linux-native code
-              # and assembles the fat JAR with the already prepared resources.
-              ./gradlew -PrequireBundledWebUI=true shadowJar -x buildWebUI -x copyWebUI --no-daemon
+            find /opt/python -maxdepth 4 \( -name python3 -o -name python \) -print 2>/dev/null | sort -V | tail -n 1
+          }
 
-              ./gradlew --stop || true
-              chown -R "${HOST_UID}:${HOST_GID}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
-            '
+          PYBIN="$(find_manylinux_python || true)"
+          if [[ -z "${PYBIN}" || ! -e "${PYBIN}" ]]; then
+            echo "Unable to find a manylinux Python under /opt/python." >&2
+            echo "Available /opt/python entries:" >&2
+            find /opt/python -maxdepth 3 -print 2>/dev/null | sort >&2 || true
+            exit 1
+          fi
+          ln -sfn "${PYBIN}" /usr/local/bin/python3
+
+          export PATH="${JAVA_HOME}/bin:/usr/local/bin:$(dirname "${PYBIN}"):${PATH}"
+
+          python3 --version
+          java -version
+          gcc --version | head -n 1
+          g++ --version | head -n 1
+
+          python3 -m ensurepip --upgrade >/dev/null 2>&1 || true
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "cmake>=3.25" ninja "conan>=2"
+
+          # CentOS 7 ships Git 1.8, which does not understand
+          # `git clone --filter=blob:none`. Pre-clone these repos without
+          # partial-clone filters so the existing build scripts reuse them.
+          preclone_plain_git_repo() {
+            local work_dir="$1"
+            local repo_url="$2"
+            mkdir -p "${work_dir}"
+            if [[ ! -d "${work_dir}/src/.git" ]]; then
+              rm -rf "${work_dir}/src"
+              git clone "${repo_url}" "${work_dir}/src"
+            fi
+          }
+          preclone_plain_git_repo "${MINIMAP2_WORK_DIR:-/tmp/minimap2-build-linux-x86_64}" "${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
+          preclone_plain_git_repo "${MM2PLUS_WORK_DIR:-/tmp/mm2plus-build-linux-x86_64}" "${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
+
+          chmod +x gradlew \
+            scripts/toolchains/build_hictk_linux.sh \
+            scripts/toolchains/build_minimap2_linux.sh \
+            scripts/toolchains/build_mm2plus_linux.sh
+
+          if [[ "${BUNDLE_HICTK}" == "true" ]]; then
+            if [[ "${HICTK_READY:-false}" != "true" ]]; then
+              ENABLE_MOSTLY_STATIC_RUNTIME=1 ./scripts/toolchains/build_hictk_linux.sh
+            fi
+            if [[ "${MINIMAP2_READY:-false}" != "true" ]]; then
+              ./scripts/toolchains/build_minimap2_linux.sh
+            fi
+            if [[ "${MM2PLUS_AVX2_READY:-false}" != "true" || "${MM2PLUS_AVX512_READY:-false}" != "true" ]]; then
+              HICT_REQUIRE_MM2PLUS_VARIANTS=1 \
+              HICT_STATIC_MUSL=0 \
+              HICT_STATIC_MIMALLOC=0 \
+                ./scripts/toolchains/build_mm2plus_linux.sh
+            fi
+          else
+            rm -rf toolchains-dist/linux_x86_64
+          fi
+
+          # WebUI has already been prepared on Ubuntu, where Node.js 24 works.
+          # Exclude WebUI tasks here so manylinux only compiles Linux-native code
+          # and assembles the fat JAR with the already prepared resources.
+          ./gradlew -PrequireBundledWebUI=true shadowJar -x buildWebUI -x copyWebUI --no-daemon
+
+          ./gradlew --stop || true
+          chown -R "${HOST_UID}:${HOST_GID}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
+          MANYLINUX_BUILD
 
       - name: Verify bundled toolchain payload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -518,6 +518,19 @@ jobs:
             toolchains-dist/linux_x86_64/share/doc/mm2plus
           key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
+      - name: Build bundled Tauri browser on Ubuntu
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
+          CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/tauri-target/linux_x86_64
+        run: ./scripts/portable/prepare_tauri_browser_payload_linux.sh
+
+      - name: Build bundled Electron browser on Ubuntu
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_electron_browser == 'true') }}
+        env:
+          HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}/..
+        run: ./scripts/portable/prepare_electron_browser_payload_linux.sh
+
       - name: Build Linux portable package on Ubuntu
         env:
           HICT_SKIP_GRADLE: "1"
@@ -554,6 +567,13 @@ jobs:
             find "${tree}" -type f -print0 |
             while IFS= read -r -d '' f; do
               case "${f}" in
+                */browsers/*)
+                  # Browser payloads are intentionally built on Ubuntu 22.04
+                  # because Tauri/WebKitGTK cannot be built inside manylinux2014.
+                  # They are optional launcher payloads; the core portable ABI
+                  # floor is enforced for runtime/toolchains/JNI natives below.
+                  continue
+                  ;;
                 */FreeBSD/*|*/SunOS/*|*/Linux/arm/*|*/Linux/armv6/*|*/Linux/armv7/*|*/Linux/aarch64/*|*/Linux/ppc/*|*/Linux/ppc64/*|*/Linux/ppc64le/*|*/Linux/s390x/*|*/Linux/riscv64/*)
                   continue
                   ;;
