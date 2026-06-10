@@ -103,6 +103,14 @@ on:
         required: true
         default: "latest"
         type: string
+      jhdf5_source_mode:
+        description: "JHDF5 jar source for HiCT builds: use the checked-in jar or download the published jar"
+        required: true
+        default: "local"
+        type: choice
+        options:
+          - "local"
+          - "download"
 
 permissions:
   contents: write
@@ -116,6 +124,7 @@ env:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
   HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
   HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1.jar"
+  HICT_JHDF5_LOCAL_JAR: "src/main/resources/libs/sis-jhdf5-19.04.1.jar"
 
 jobs:
   linux-portable:
@@ -136,20 +145,34 @@ jobs:
       HICT_GLIBC_MAX: "2.17"
       HICTK_CONAN_BUILD_POLICY: "*"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
+          tmp_jar="$(mktemp)"
+          jar_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
           fi
-          curl -fL --retry 5 -o "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}" "${jar_url}"
+          if curl -fL --retry 5 -o "${tmp_jar}" "${jar_url}"; then
+            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
+            jar_downloaded=true
+          fi
+          if [[ "${jar_downloaded}" != "true" ]]; then
+            echo "::warning::Failed to download ${jar_url}; falling back to ${HICT_JHDF5_LOCAL_JAR}."
+            if [[ ! -f "${HICT_JHDF5_LOCAL_JAR}" ]]; then
+              echo "::error::Neither the published JHDF5 jar nor ${HICT_JHDF5_LOCAL_JAR} is available." >&2
+              exit 1
+            fi
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -466,21 +489,36 @@ jobs:
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
         shell: pwsh
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
         run: |
           $jarDir = "src\main\resources\libs"
           New-Item -ItemType Directory -Force -Path $jarDir | Out-Null
+          $tmpJar = Join-Path $env:RUNNER_TEMP "jhdf5.jar"
+          $jarDownloaded = $false
           if ($env:HICT_JHDF5_RELEASE_TAG -eq "latest") {
             $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/latest/download/$env:HICT_JHDF5_JAR_NAME"
           } else {
             $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/$env:HICT_JHDF5_RELEASE_TAG/$env:HICT_JHDF5_JAR_NAME"
           }
-          Invoke-WebRequest -Uri $jarUrl -OutFile (Join-Path $jarDir $env:HICT_JHDF5_JAR_NAME)
+          try {
+            Invoke-WebRequest -Uri $jarUrl -OutFile $tmpJar
+            Move-Item -Force $tmpJar (Join-Path $jarDir $env:HICT_JHDF5_JAR_NAME)
+            $jarDownloaded = $true
+          } catch {
+            Write-Host "::warning::Failed to download $jarUrl; falling back to $env:HICT_JHDF5_LOCAL_JAR."
+          }
+          if (-not $jarDownloaded) {
+            if (-not (Test-Path $env:HICT_JHDF5_LOCAL_JAR)) {
+              throw "Neither the published JHDF5 jar nor $env:HICT_JHDF5_LOCAL_JAR is available."
+            }
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -910,20 +948,34 @@ jobs:
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
+          tmp_jar="$(mktemp)"
+          jar_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
           fi
-          curl -fL --retry 5 -o "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}" "${jar_url}"
+          if curl -fL --retry 5 -o "${tmp_jar}" "${jar_url}"; then
+            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
+            jar_downloaded=true
+          fi
+          if [[ "${jar_downloaded}" != "true" ]]; then
+            echo "::warning::Failed to download ${jar_url}; falling back to ${HICT_JHDF5_LOCAL_JAR}."
+            if [[ ! -f "${HICT_JHDF5_LOCAL_JAR}" ]]; then
+              echo "::error::Neither the published JHDF5 jar nor ${HICT_JHDF5_LOCAL_JAR} is available." >&2
+              exit 1
+            fi
+          fi
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
@@ -1028,20 +1080,34 @@ jobs:
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
+          tmp_jar="$(mktemp)"
+          jar_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
           fi
-          curl -fL --retry 5 -o "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}" "${jar_url}"
+          if curl -fL --retry 5 -o "${tmp_jar}" "${jar_url}"; then
+            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
+            jar_downloaded=true
+          fi
+          if [[ "${jar_downloaded}" != "true" ]]; then
+            echo "::warning::Failed to download ${jar_url}; falling back to ${HICT_JHDF5_LOCAL_JAR}."
+            if [[ ! -f "${HICT_JHDF5_LOCAL_JAR}" ]]; then
+              echo "::error::Neither the published JHDF5 jar nor ${HICT_JHDF5_LOCAL_JAR} is available." >&2
+              exit 1
+            fi
+          fi
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
