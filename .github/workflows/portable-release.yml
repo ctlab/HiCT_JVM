@@ -108,8 +108,8 @@ jobs:
       # Native payloads are built inside quay.io/pypa/manylinux2014_x86_64.
       # Do not combine this mode with musl-static flags unless you intentionally
       # want a separate musl artifact.
-      HICT_STATIC_MUSL: "0"
-      HICT_STATIC_MIMALLOC: "0"
+      HICT_STATIC_MUSL: "1"
+      HICT_STATIC_MIMALLOC: "1"
       HICT_GLIBC_MAX: "2.17"
     steps:
       - name: Checkout
