@@ -221,7 +221,7 @@ jobs:
         id: inspect-toolchain
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: |
-          set -euo pipefail
+          set -exo pipefail
 
           manifest="toolchains-dist/linux_x86_64/manifest.json"
           hictk_ready=false
@@ -311,7 +311,7 @@ jobs:
           MM2PLUS_AVX512_READY: ${{ steps.inspect-toolchain.outputs.mm2plus_avx512_ready }}
           GRADLE_USER_HOME: ${{ github.workspace }}/.gradle
         run: |
-          set -euo pipefail
+          set -exo pipefail
 
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
