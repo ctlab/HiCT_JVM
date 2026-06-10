@@ -99,6 +99,14 @@ if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1
 fi
+OSX_RESOURCE_PLATFORM="osx_arm64"
+if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
+  OSX_RESOURCE_PLATFORM="osx_64"
+fi
+if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx "resources/libs/${OSX_RESOURCE_PLATFORM}/libhdf5.dylib"; then
+  echo "Fat JAR does not contain resources/libs/${OSX_RESOURCE_PLATFORM}/libhdf5.dylib; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
+  exit 1
+fi
 
 rm -rf "${APP_DIR}"
 mkdir -p \
@@ -491,6 +499,7 @@ fi
 
 exec "\${app_home}/bin/${LAUNCHER_BASENAME}" "$@"
 EOF
+cat "${PAYLOAD_PATH}" >> "${RUN_PATH}"
 chmod +x "${RUN_PATH}"
 
 {

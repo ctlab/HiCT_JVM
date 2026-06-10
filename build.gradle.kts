@@ -849,6 +849,14 @@ tasks.named<ProcessResources>("processResources") {
   from(nativeProcessingResourceRoot) {
     into("")
   }
+  from("src/main/resources/natives/osx_64") {
+    into("resources/libs/osx_64")
+    include("**/*.dylib", "**/*.jnilib", "**/*.so")
+  }
+  from("src/main/resources/natives/osx_arm64") {
+    into("resources/libs/osx_arm64")
+    include("**/*.dylib", "**/*.jnilib", "**/*.so")
+  }
   from(bundledToolchainSourceDirectory) {
     into("toolchains")
   }
