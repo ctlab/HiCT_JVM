@@ -563,8 +563,8 @@ public final class SelfDotplotPipeline {
     final var sorted = new ArrayList<>(ranges);
     sorted.sort(Comparator.comparingLong(range -> range[0]));
     long covered = 0L;
-    long currentStart = sorted.getFirst()[0];
-    long currentEnd = sorted.getFirst()[1];
+    long currentStart = sorted.get(0)[0];
+    long currentEnd = sorted.get(0)[1];
     for (int i = 1; i < sorted.size(); i++) {
       final var range = sorted.get(i);
       if (range[0] <= currentEnd) {

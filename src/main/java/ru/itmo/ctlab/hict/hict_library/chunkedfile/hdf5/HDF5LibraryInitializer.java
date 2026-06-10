@@ -30,6 +30,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.scijava.nativelib.JniExtractor;
 import org.scijava.nativelib.NativeLibraryUtil;
 import org.scijava.nativelib.NativeLoader;
@@ -42,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -244,26 +246,6 @@ public class HDF5LibraryInitializer {
   }
 
 
-  private static @Nullable String platformDirectory() {
-    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-    final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-    final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
-    if (!is64Bit) {
-      return null;
-    }
-    if (os.contains("linux")) {
-      return "linux_64";
-    }
-    if (os.contains("win")) {
-      return "windows_64";
-    }
-    if (os.contains("mac") || os.contains("darwin")) {
-      return "macos_64";
-    }
-    return null;
-  }
-
-
   private static boolean loadBundledNativeLibrary(final String libraryBaseName) throws IOException {
     final var platformDirectory = platformDirectory();
     if (platformDirectory == null) {
@@ -337,5 +319,24 @@ public class HDF5LibraryInitializer {
     public void extractRegistered() throws IOException {
       this.defaultExtractor.extractRegistered();
     }
+  }
+
+  private static @Nullable String platformDirectory() {
+    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+    final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+    final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
+    if (!is64Bit) {
+      return null;
+    }
+    if (os.contains("linux")) {
+      return "linux_64";
+    }
+    if (os.contains("win")) {
+      return "windows_64";
+    }
+    if (os.contains("mac") || os.contains("darwin")) {
+      return "macos_64";
+    }
+    return null;
   }
 }

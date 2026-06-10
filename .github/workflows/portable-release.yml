@@ -372,7 +372,9 @@ jobs:
             'lib/native/nativedata/amd64-Linux/*.so' \
             'lib/native/unix/amd64-Linux/*.so' \
             'lib/natives/linux_64/*.so' \
+            'lib/natives/linux_64/*/*.so' \
             'lib/libs/natives/linux_64/*.so' \
+            'lib/libs/natives/linux_64/*/*.so' \
             >/tmp/hict-strip-jhdf5.log 2>&1 || true
           cat /tmp/hict-strip-jhdf5.log || true
 
@@ -412,7 +414,7 @@ jobs:
           version_gt() { local a="$1" b="$2"; [[ "$(printf '%s\n%s\n' "$b" "$a" | sort -V | tail -n 1)" == "$a" && "$a" != "$b" ]]; }
           is_bundled_jhdf5_native() {
             case "$1" in
-              */lib/native/jhdf5/amd64-Linux/*.so|*/lib/native/nativedata/amd64-Linux/*.so|*/lib/native/unix/amd64-Linux/*.so|*/lib/natives/linux_64/*.so|*/lib/libs/natives/linux_64/*.so) return 0 ;;
+              */lib/native/jhdf5/amd64-Linux/*.so|*/lib/native/nativedata/amd64-Linux/*.so|*/lib/native/unix/amd64-Linux/*.so|*/lib/natives/linux_64/*.so|*/lib/natives/linux_64/*/*.so|*/lib/libs/natives/linux_64/*.so|*/lib/libs/natives/linux_64/*/*.so) return 0 ;;
               *) return 1 ;;
             esac
           }
