@@ -374,12 +374,17 @@ jobs:
           max_allowed="${HICT_GLIBC_MAX:-2.17}"
           jhdf5_policy="${HICT_LINUX_JHDF5_NATIVE_POLICY:-warn-only}"
           root="$(find build/portable -mindepth 1 -maxdepth 1 -type d -name 'HiCT-*-linux-x86_64' | sort | tail -n 1)"
-          jar_file="$(find "${root}" -path '*/lib/hict.jar' -type f | sort | tail -n 1)"
           [[ -n "${root}" && -d "${root}" ]] || { echo "::error::Portable Linux root was not found under build/portable."; exit 1; }
+          jar_file="$(find "${root}" -path '*/lib/hict.jar' -type f | sort | tail -n 1)"
+          if [[ -z "${jar_file}" || ! -f "${jar_file}" ]]; then
+            jar_file="$(find build/libs -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
+          fi
           tmp="$(mktemp -d)"
           trap 'rm -rf "${tmp}"' EXIT
           if [[ -n "${jar_file}" && -f "${jar_file}" ]]; then
             (cd "${tmp}" && jar xf "${jar_file}")
+          else
+            echo "::error::Neither portable lib/hict.jar nor build/libs/*-fat.jar was found for the GLIBC scan."; exit 1
           fi
           version_gt() { local a="$1" b="$2"; [[ "$(printf '%s\n%s\n' "$b" "$a" | sort -V | tail -n 1)" == "$a" && "$a" != "$b" ]]; }
           is_bundled_jhdf5_native() {
