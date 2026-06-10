@@ -225,7 +225,7 @@ if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
   MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
 fi
 
-CONAN_HOST_PROFILE="${WORK_DIR}/conan-host.profile"
+CONAN_HOST_PROFILE="${HICTK_CONAN_HOST_PROFILE:-default}"
 if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   CLANG_MAJOR_VERSION="$(clang --version | sed -nE 's/^.*version ([0-9]+).*/\1/p' | head -n 1)"
   if [[ -z "${CLANG_MAJOR_VERSION}" ]]; then
@@ -254,7 +254,8 @@ conan install --build=missing \
   -pr:h "${CONAN_HOST_PROFILE}" \
   -pr:b default \
   -s build_type=Release \
-  -s compiler.cppstd=17 \
+  -s:h compiler.cppstd=17 \
+  -s:b compiler.cppstd=17 \
   $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo "-o &:with_telemetry_deps=False") \
   -o "*:shared=False" \
   --output-folder="${BUILD_DIR}" \

@@ -323,6 +323,13 @@ jobs:
           restore-keys: |
             hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
 
+      - name: Restore Linux container JDK cache
+        id: cache-linux-container-jdk
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/container-jdks/temurin-21-linux-x64
+          key: container-jdk-temurin-21-linux-x64-v1
+
       - name: Build Linux native payload and fat JAR in Docker
         env:
           BUNDLE_HICTK: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -338,6 +345,7 @@ jobs:
             --rm -i
             -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}"
             -w "${GITHUB_WORKSPACE}"
+            -e GITHUB_WORKSPACE="${GITHUB_WORKSPACE}"
             -e GRADLE_USER_HOME="${GRADLE_USER_HOME}"
             -e GRADLE_OPTS="${GRADLE_OPTS}"
             -e HICTK_REF="${HICTK_REF}"
@@ -362,8 +370,6 @@ jobs:
 
             docker run \
               "${COMMON_DOCKER_ARGS[@]}" \
-              -v "${JAVA_HOME}:${JAVA_HOME}:ro" \
-              -e JAVA_HOME="${JAVA_HOME}" \
               -e HICT_STATIC_MUSL="0" \
               -e HICT_STATIC_MIMALLOC="0" \
               -e HICT_MANYLINUX_BUILD_TOOLCHAINS="${build_toolchains}" \
@@ -372,9 +378,11 @@ jobs:
           set -euxo pipefail
 
           yum install -y \
-            autoconf automake binutils bzip2-devel curl diffutils file findutils \
-            gcc gcc-c++ git gzip libtool make openssl-devel patch pkgconfig \
+            autoconf automake binutils bzip2-devel ca-certificates curl diffutils file findutils \
+            gcc gcc-c++ git gzip libtool make openssl-devel patch perl-core perl-IPC-Cmd pkgconfig \
             tar unzip which xz xz-devel zip zlib-devel
+
+          perl -MIPC::Cmd -e 1
 
           enable_devtoolset() {
             local enable_script=""
@@ -434,10 +442,35 @@ jobs:
           fi
           ln -sfn "${PYBIN}" /usr/local/bin/python3
 
+          install_temurin_jdk21_manylinux() {
+            local jdk_root="${GITHUB_WORKSPACE}/.cache/container-jdks/temurin-21-linux-x64"
+            local tmp_root="${jdk_root}.tmp"
+            local tarball="/tmp/temurin-jdk21-linux-x64.tar.gz"
+
+            if [[ ! -x "${jdk_root}/bin/java" || ! -x "${jdk_root}/bin/javac" || ! -x "${jdk_root}/bin/jlink" ]]; then
+              echo "Installing Temurin JDK 21 inside manylinux container: ${jdk_root}"
+              rm -rf "${tmp_root}"
+              mkdir -p "${tmp_root}" "$(dirname "${jdk_root}")"
+              curl --fail --location --retry 5 --retry-delay 2 --output "${tarball}" \
+                "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
+              tar -xzf "${tarball}" -C "${tmp_root}" --strip-components=1
+              rm -rf "${jdk_root}"
+              mv "${tmp_root}" "${jdk_root}"
+              rm -f "${tarball}"
+            else
+              echo "Using cached Temurin JDK 21 inside manylinux container: ${jdk_root}"
+            fi
+
+            export JAVA_HOME="${jdk_root}"
+          }
+          install_temurin_jdk21_manylinux
+
           export PATH="${JAVA_HOME}/bin:/usr/local/bin:$(dirname "${PYBIN}"):${PATH}"
 
           python3 --version
           java -version
+          javac -version
+          jlink --version
           gcc --version | head -n 1
           g++ --version | head -n 1
 
@@ -530,9 +563,10 @@ jobs:
               alpine:3.20 \
               sh -euxc '
                 apk add --no-cache \
-                  bash binutils bzip2-dev bzip2-static clang cmake coreutils curl file g++ gcc git \
+                  bash binutils bzip2-dev bzip2-static ca-certificates clang cmake coreutils curl file g++ gcc git \
                   libc-dev linux-headers lld make musl-dev ninja openssl-dev openssl-libs-static \
-                  patch py3-pip py3-virtualenv python3 tar unzip xz xz-dev zip zlib-dev zlib-static
+                  patch perl py3-pip py3-virtualenv python3 tar unzip xz xz-dev zip zlib-dev zlib-static
+                apk add --no-cache openjdk21-jdk || apk add --no-cache openjdk21
                 exec bash -s
               ' <<'ALPINE_MUSL_BUILD'
           set -euxo pipefail
@@ -540,11 +574,22 @@ jobs:
           export HICT_STATIC_MUSL=1
           export HICT_STATIC_MIMALLOC=1
           export HICT_MUSL_PREFIX="${HICT_MUSL_PREFIX:-/usr}"
-          export PATH="/usr/local/bin:${PATH}"
+          JAVA_BIN="$(command -v javac || command -v java)"
+          export JAVA_HOME="$(cd "$(dirname "${JAVA_BIN}")/.." && pwd -P)"
+          export PATH="${JAVA_HOME}/bin:/usr/local/bin:${PATH}"
 
           python3 --version
+          java -version
+          javac -version || true
           clang --version | head -n 1
           clang++ --version | head -n 1
+          perl -MIPC::Cmd -e 1 2>/dev/null || true
+
+          # Alpine's musl GCC runtime is installed under the alpine-specific target triple.
+          # The generic x86_64-linux-musl target can fail to find crtbeginS.o/libgcc.
+          echo 'int main(void) { return 0; }' > /tmp/hict-musl-smoke.c
+          clang --target=x86_64-alpine-linux-musl -static /tmp/hict-musl-smoke.c -o /tmp/hict-musl-smoke
+          /tmp/hict-musl-smoke
 
           preclone_plain_git_repo() {
             local work_dir="$1"
@@ -638,6 +683,20 @@ jobs:
               '    limitations.append("This payload may be dynamically linked against the manylinux glibc 2.17 runtime or statically linked with musl, depending on the linux_abi_mode used for this release.")',
               "mode-aware mm2-plus manifest limitation text",
           )
+
+          # On Alpine, Clang must use the Alpine target triple to discover GCC runtime
+          # files such as crtbeginS.o and libgcc. The generic x86_64-linux-musl target
+          # compiles objects but fails to link Conan test programs on Alpine.
+          for rel in (
+              "scripts/toolchains/build_hictk_linux.sh",
+              "scripts/toolchains/build_mimalloc_static.sh",
+              "scripts/toolchains/build_minimap2_linux.sh",
+              "scripts/toolchains/build_mm2plus_linux.sh",
+          ):
+              p = Path(rel)
+              txt = p.read_text(encoding="utf-8")
+              txt = txt.replace("x86_64-linux-musl", "x86_64-alpine-linux-musl")
+              p.write_text(txt, encoding="utf-8")
           PY
 
           if [[ "${BUNDLE_HICTK}" == "true" ]]; then
@@ -698,6 +757,14 @@ jobs:
           else
             run_manylinux2014 1
           fi
+
+      - name: Save Linux container JDK cache
+        if: ${{ steps.cache-linux-container-jdk.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: .cache/container-jdks/temurin-21-linux-x64
+          key: ${{ steps.cache-linux-container-jdk.outputs.cache-primary-key }}
 
       - name: Save HiCT native processing cache
         if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
