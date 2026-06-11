@@ -37,6 +37,12 @@ import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URISyntaxException;
+import java.util.jar.JarFile;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -286,8 +292,23 @@ public class HDF5LibraryInitializer {
   private static boolean loadBundledJhdf5NativeLibrary(final @NotNull JniExtractor libraryExtractor,
                                                      final @NotNull String libraryBaseName,
                                                      final @NotNull String jhdf5LibraryPath) {
+    final var mappedLibraryNames = mappedJhdf5LibraryNames(libraryBaseName);
+    final var normalizedDirectory = normalizeJhdf5ResourceDirectory(jhdf5LibraryPath);
+    for (final String mappedName : mappedLibraryNames) {
+      for (final String resourcePath : listBundledJhdf5CandidateLibraries(normalizedDirectory, mappedName)) {
+        try {
+          if (loadBundledJhdf5LibraryFromResource(libraryExtractor, resourcePath, mappedName)) {
+            return true;
+          }
+        } catch (final IOException err) {
+          log.debug("Failed to extract and load bundled Jhdf5 library resource {}", resourcePath, err);
+        }
+      }
+    }
+
+    final var absoluteDirectory = normalizedDirectory;
     try {
-      final File extractedLibrary = libraryExtractor.extractJni(jhdf5LibraryPath, libraryBaseName);
+      final File extractedLibrary = libraryExtractor.extractJni(absoluteDirectory, libraryBaseName);
       if (extractedLibrary == null) {
         return false;
       }
@@ -310,6 +331,157 @@ public class HDF5LibraryInitializer {
     }
 
     return false;
+  }
+
+  private static List<String> mappedJhdf5LibraryNames(final @NotNull String libraryBaseName) {
+    final var mappedName = System.mapLibraryName(libraryBaseName);
+    final var result = new ArrayList<String>(3);
+    result.add(mappedName);
+    if (!mappedName.startsWith("lib") && System.mapLibraryName("lib" + libraryBaseName).equals("lib" + mappedName)) {
+      result.add("lib" + mappedName);
+    }
+    if (mappedName.startsWith("lib") && !libraryBaseName.startsWith("lib")) {
+      final var withoutLibPrefix = mappedName.substring("lib".length());
+      result.add(withoutLibPrefix);
+    }
+    return result;
+  }
+
+  private static List<String> listBundledJhdf5CandidateLibraries(final @NotNull String resourceDirectory,
+                                                                final @NotNull String mappedName) {
+    final var result = new ArrayList<String>();
+    final var allEntries = listJarOrResourceEntries(resourceDirectory);
+    for (final var entry : allEntries) {
+      final var fileName = entry.substring(entry.lastIndexOf('/') + 1);
+      if (fileName.equals(mappedName) || fileName.startsWith(mappedName + ".")) {
+        result.add(entry);
+      }
+    }
+
+    if (result.isEmpty()) {
+      final var normalized = resourceDirectory.endsWith("/") ? resourceDirectory : resourceDirectory + "/";
+      final var directResource = normalized + mappedName;
+      try {
+        if (HDF5LibraryInitializer.class.getResource("/" + directResource) != null) {
+          result.add(directResource);
+        }
+      } catch (final Exception err) {
+        // Ignore and treat as unavailable resource.
+      }
+    }
+    return result;
+  }
+
+  private static boolean loadBundledJhdf5LibraryFromResource(final @NotNull JniExtractor libraryExtractor,
+                                                             final @NotNull String resourcePath,
+                                                             final @NotNull String mappedLibraryName) throws IOException {
+    final String absoluteResourcePath = resourcePath.startsWith("/") ? resourcePath : "/" + resourcePath;
+    try (InputStream stream = HDF5LibraryInitializer.class.getResourceAsStream(absoluteResourcePath)) {
+      if (stream == null) {
+        return false;
+      }
+      final var extractionDirectory = Files.createTempDirectory("hict-jhdf5-native-");
+      final var extractionFileName = resourcePath.substring(resourcePath.lastIndexOf('/') + 1, resourcePath.length());
+      final var extractedLibrary = extractionDirectory.resolve(extractionFileName);
+      Files.copy(stream, extractedLibrary, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      final File extractedLibraryFile = extractionLibraryPath(mappedLibraryName, extractedLibrary);
+      extractedLibraryFile.deleteOnExit();
+      extractionDirectory.toFile().deleteOnExit();
+      try {
+        System.load(extractedLibraryFile.getAbsolutePath());
+        if (libraryExtractor instanceof PathCollectingJNIExtractor pathCollectingExtractor) {
+          pathCollectingExtractor.pathsCollection.add(resourcePath);
+          pathCollectingExtractor.namesCollection.add(mappedLibraryName);
+          pathCollectingExtractor.absolutePathsCollection.add(extractedLibraryFile.getParent());
+          pathCollectingExtractor.fullPathsCollection.add(extractedLibraryFile.getAbsolutePath());
+        }
+        return true;
+      } catch (final UnsatisfiedLinkError unsatisfiedLinkError) {
+        final String message = unsatisfiedLinkError.getMessage();
+        if (message != null && message.contains("already loaded")) {
+          return true;
+        }
+        throw unsatisfiedLinkError;
+      }
+    }
+  }
+
+  private static @NotNull File extractionLibraryPath(final @NotNull String libraryName, final @NotNull Path extractedLibrary) {
+    return extractedLibrary.toFile();
+  }
+
+  private static @NotNull List<String> listJarOrResourceEntries(final @NotNull String resourceDirectory) {
+    final var directory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+    try {
+      final var codeSource = HDF5LibraryInitializer.class.getProtectionDomain().getCodeSource();
+      if (codeSource == null || codeSource.getLocation() == null) {
+        return List.of();
+      }
+      final var location = codeSource.getLocation().toURI();
+      final var sourceFile = new File(location);
+      if (!sourceFile.isFile() || !sourceFile.getName().endsWith(".jar")) {
+        return listFileSystemResourceEntries(resourceDirectory);
+      }
+      try (var jar = new JarFile(sourceFile)) {
+        final var result = new ArrayList<String>();
+        final var entries = jar.entries();
+        while (entries.hasMoreElements()) {
+          final var entry = entries.nextElement().getName();
+          if (entry.startsWith(directory)) {
+            final var child = entry.substring(directory.length());
+            if (child.isEmpty() || child.endsWith("/")) {
+              continue;
+            }
+            result.add(directory + child);
+          }
+        }
+        return result;
+      }
+    }
+    catch (final IOException | URISyntaxException err) {
+      return List.of();
+    }
+  }
+
+  private static @NotNull List<String> listFileSystemResourceEntries(final @NotNull String resourceDirectory) {
+    final var directory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+    final var root = normalizeClasspathDirectoryForFileSystem(directory);
+    if (!root.toFile().exists()) {
+      return List.of();
+    }
+    final var files = root.toFile().listFiles();
+    if (files == null) {
+      return List.of();
+    }
+    final var result = new ArrayList<String>(files.length);
+    for (final var file : files) {
+      if (file.isFile()) {
+        result.add(directory + file.getName());
+      }
+    }
+    return result;
+  }
+
+  private static @NotNull String normalizeJhdf5ResourceDirectory(final @NotNull String resourceDirectory) {
+    var normalized = resourceDirectory.startsWith("/") ? resourceDirectory.substring(1) : resourceDirectory;
+    if (!normalized.isEmpty() && !normalized.endsWith("/")) {
+      normalized = normalized + "/";
+    }
+    return normalized;
+  }
+
+  private static @NotNull java.nio.file.Path normalizeClasspathDirectoryForFileSystem(final @NotNull String resourceDirectory) {
+    final var root = HDF5LibraryInitializer.class.getResource("/" + resourceDirectory);
+    if (root == null) {
+      return java.nio.file.Path.of("");
+    }
+    try {
+      final var uri = root.toURI();
+      return java.nio.file.Path.of(uri);
+    }
+    catch (final URISyntaxException err) {
+      return java.nio.file.Path.of("");
+    }
   }
 
   private static void addBundledJhdf5LibrarySearchPaths(final @NotNull Collection<String> searchPaths,
