@@ -181,7 +181,7 @@ jobs:
           tmp_jar="$(mktemp)"
           jar_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
-            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_JAR_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
           fi
@@ -563,7 +563,7 @@ jobs:
           $tmpJar = Join-Path $env:RUNNER_TEMP "jhdf5.jar"
           $jarDownloaded = $false
           if ($env:HICT_JHDF5_RELEASE_TAG -eq "latest") {
-            $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/latest/download/$env:HICT_JHDF5_JAR_NAME"
+            $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/latest/$env:HICT_JHDF5_JAR_NAME"
           } else {
             $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/$env:HICT_JHDF5_RELEASE_TAG/$env:HICT_JHDF5_JAR_NAME"
           }
@@ -1027,7 +1027,7 @@ jobs:
           tmp_jar="$(mktemp)"
           jar_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
-            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_JAR_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
           fi
@@ -1166,7 +1166,7 @@ jobs:
           tmp_jar="$(mktemp)"
           jar_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
-            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/latest/download/${HICT_JHDF5_JAR_NAME}"
+            jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_JAR_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
           fi
