@@ -1084,10 +1084,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_arm64
-          key: hictk-conan-v2-darwin-arm64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-arm64-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            hictk-conan-v2-darwin-arm64-${{ env.HICTK_REF }}-
-            hictk-conan-v2-darwin-arm64-
+            hictk-conan-v3-darwin-arm64-explicit-profile-${{ env.HICTK_REF }}-
+            hictk-conan-v3-darwin-arm64-explicit-profile-
       - name: Build macOS Apple Silicon portable package
         run: ./scripts/portable/build_portable_darwin_arm64.sh
       - name: Validate macOS Apple Silicon artifacts
@@ -1223,10 +1223,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_x86_64
-          key: hictk-conan-v2-darwin-x86_64-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-x86_64-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            hictk-conan-v2-darwin-x86_64-${{ env.HICTK_REF }}-
-            hictk-conan-v2-darwin-x86_64-
+            hictk-conan-v3-darwin-x86_64-explicit-profile-${{ env.HICTK_REF }}-
+            hictk-conan-v3-darwin-x86_64-explicit-profile-
       - name: Build macOS Intel portable package
         run: ./scripts/portable/build_portable_darwin_x86_64.sh
       - name: Validate macOS Intel artifacts

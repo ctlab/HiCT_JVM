@@ -41,6 +41,57 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then usage; exit 0; fi
 require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }; }
 for cmd in git python3 cmake ninja make clang clang++ file otool codesign; do require_cmd "${cmd}"; done
 adhoc_sign_if_macho() { local path="$1"; [[ -f "${path}" ]] || return 0; if file "${path}" | grep -q 'Mach-O'; then codesign -s - --force --timestamp=none "${path}" >/dev/null 2>&1; fi; }
+
+conan_apple_clang_version() {
+  local version
+  version="$(${CXX:-clang++} --version 2>/dev/null | awk '/Apple clang version/ {print $4; exit}')"
+  version="${version%%.*}"
+  [[ -n "${version}" ]] || version="17"
+  printf '%s\n' "${version}"
+}
+
+sanitize_conan_home() {
+  mkdir -p "${CONAN_HOME_DIR}" "${CONAN_HOME_DIR}/profiles"
+  # Older iterations of this workflow cached Conan files containing the removed
+  # Conan 2.29+ key tools.apple:deployment_target. Conan validates cached
+  # global.conf/profile confs before resolving packages, so merely removing the
+  # command-line -c option is not enough when a restored cache contains it.
+  while IFS= read -r -d '' file; do
+    if grep -q 'tools\.apple:deployment_target' "${file}" 2>/dev/null; then
+      echo "[darwin/toolchains] Removing obsolete tools.apple:deployment_target from ${file}"
+      python3 - "${file}" <<'PY_CLEAN_CONAN'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+lines = path.read_text(encoding='utf-8', errors='ignore').splitlines()
+lines = [line for line in lines if 'tools.apple:deployment_target' not in line]
+path.write_text('\n'.join(lines) + ('\n' if lines else ''), encoding='utf-8')
+PY_CLEAN_CONAN
+    fi
+  done < <(find "${CONAN_HOME_DIR}" -type f \( -name 'global.conf' -o -path '*/profiles/*' \) -print0 2>/dev/null || true)
+}
+
+write_conan_profiles() {
+  local compiler_version host_profile build_profile
+  compiler_version="$(conan_apple_clang_version)"
+  host_profile="${WORK_DIR}/conan-profile-host"
+  build_profile="${WORK_DIR}/conan-profile-build"
+  cat > "${host_profile}" <<EOF_PROFILE
+[settings]
+os=Macos
+os.version=${MACOS_DEPLOYMENT_TARGET}
+arch=${CONAN_DARWIN_ARCH}
+compiler=apple-clang
+compiler.version=${compiler_version}
+compiler.libcxx=libc++
+compiler.cppstd=17
+build_type=Release
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+EOF_PROFILE
+  cp "${host_profile}" "${build_profile}"
+  echo "${host_profile};${build_profile}"
+}
 if [[ "${HICTK_REF}" == "latest" ]]; then HICTK_REF="$(git ls-remote --refs --tags "${HICTK_REPO_URL}" 'v*' | awk '{print $2}' | sed 's#refs/tags/##' | sort -V | tail -n 1)"; fi
 [[ -n "${HICTK_REF}" ]] || { echo "Failed to resolve an official hictk tag from ${HICTK_REPO_URL}" >&2; exit 1; }
 echo "[darwin/toolchains] Building ${PLATFORM_DIR}: hictk=${HICTK_REF} minimap2=${MINIMAP2_REF} mm2-plus=${MM2PLUS_REF}"
@@ -53,9 +104,16 @@ build_hictk() {
   local stage_dir="${WORK_DIR}/hictk-stage" build_dir="${WORK_DIR}/hictk-build" build_info="${OUTPUT_DIR}/share/doc/hictk/build-info.txt"
   if [[ -x "${OUTPUT_DIR}/bin/hictk" && -f "${build_info}" ]] && grep -qx "ref=${HICTK_REF}" "${build_info}" && grep -qx "platform=${PLATFORM_DIR}" "${build_info}" && grep -qx "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}" "${build_info}"; then echo "[darwin/toolchains] Reusing cached hictk payload"; return 0; fi
   if [[ ! -d "${SOURCE_HICTK}/.git" ]]; then git clone --depth 1 --branch "${HICTK_REF}" "${HICTK_REPO_URL}" "${SOURCE_HICTK}"; else git -C "${SOURCE_HICTK}" fetch --tags --force origin "${HICTK_REF}" || git -C "${SOURCE_HICTK}" fetch --tags --force origin; git -C "${SOURCE_HICTK}" checkout --force "${HICTK_REF}"; fi
-  python3 -m venv "${WORK_DIR}/hictk-venv"; "${WORK_DIR}/hictk-venv/bin/python" -m pip install --upgrade pip setuptools wheel; "${WORK_DIR}/hictk-venv/bin/python" -m pip install 'conan>=2' 'cmake>=3.25' ninja; export PATH="${WORK_DIR}/hictk-venv/bin:${PATH}"
-  conan profile detect --force >/dev/null
-  conan install --build=missing -pr:h default -pr:b default -s build_type=Release -s:h compiler.cppstd=17 -s:b compiler.cppstd=17 -s:h arch="${CONAN_DARWIN_ARCH}" -s:b arch="${CONAN_DARWIN_ARCH}" -s:h os.version="${MACOS_DEPLOYMENT_TARGET}" -s:b os.version="${MACOS_DEPLOYMENT_TARGET}" -c:h tools.apple:deployment_target="${MACOS_DEPLOYMENT_TARGET}" -c:b tools.apple:deployment_target="${MACOS_DEPLOYMENT_TARGET}" --output-folder="${build_dir}" "${SOURCE_HICTK}"
+  python3 -m venv "${WORK_DIR}/hictk-venv"; "${WORK_DIR}/hictk-venv/bin/python" -m pip install --upgrade pip setuptools wheel; "${WORK_DIR}/hictk-venv/bin/python" -m pip install 'conan>=2,<2.30' 'cmake>=3.25,<4.0' ninja; export PATH="${WORK_DIR}/hictk-venv/bin:${PATH}"
+  sanitize_conan_home
+  IFS=';' read -r conan_host_profile conan_build_profile <<< "$(write_conan_profiles)"
+  echo "[darwin/toolchains] Conan version: $(conan --version)"
+  echo "[darwin/toolchains] Conan host profile:"; sed 's/^/[darwin\/toolchains]   /' "${conan_host_profile}"
+  # Do not use Conan's detected default profile here. It can be restored from
+  # cache and may still contain removed conf keys such as tools.apple:deployment_target.
+  # The deployment target is represented by the supported Macos os.version
+  # setting and by MACOSX_DEPLOYMENT_TARGET/CMAKE_OSX_DEPLOYMENT_TARGET.
+  conan install --build=missing -pr:h "${conan_host_profile}" -pr:b "${conan_build_profile}" --output-folder="${build_dir}" "${SOURCE_HICTK}"
   rm -rf "${stage_dir}"
   cmake_args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${build_dir}" -DHICTK_ENABLE_TESTING=OFF -DHICTK_ENABLE_FUZZY_TESTING=OFF -DHICTK_BUILD_BENCHMARKS=OFF -DHICTK_BUILD_EXAMPLES=OFF -DHICTK_BUILD_TOOLS=ON -DHICTK_DOWNLOAD_TEST_DATASET=OFF -DHICTK_WITH_ARROW=OFF -DHICTK_WITH_EIGEN=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_COMPILER="${CC}" -DCMAKE_CXX_COMPILER="${CXX}" -DCMAKE_OSX_ARCHITECTURES="${DARWIN_ARCH}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}" -G Ninja -S "${SOURCE_HICTK}" -B "${build_dir}")
   [[ -f "${build_dir}/conan_toolchain.cmake" ]] && cmake_args+=(-DCMAKE_TOOLCHAIN_FILE="${build_dir}/conan_toolchain.cmake")
