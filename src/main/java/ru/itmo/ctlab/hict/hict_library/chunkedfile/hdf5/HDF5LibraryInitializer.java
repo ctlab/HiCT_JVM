@@ -81,7 +81,7 @@ public class HDF5LibraryInitializer {
     // The most important HDF5 filter plugins for HiCT (bitshuffle and LZF compression):
     libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
     libraryNames.put("h5bshuf", "HDF5 Shuffle filter plugin (Windows-style naming)");
-    libraryNames.put("h5lzf", "HDF5 LZ4 filter plugin (Windows-style naming)");
+    libraryNames.put("h5lzf", "HDF5 LZF filter plugin (Windows-style naming)");
     libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
     // SiS-modified jni/ folder source linked to libhdf5.a on Linux, SiS-modified version of hdf5_java.dll on Windows
     // libraryNames.put("jhdf5", "jHDF5");
@@ -335,16 +335,28 @@ public class HDF5LibraryInitializer {
 
   private static List<String> mappedJhdf5LibraryNames(final @NotNull String libraryBaseName) {
     final var mappedName = System.mapLibraryName(libraryBaseName);
-    final var result = new ArrayList<String>(3);
-    result.add(mappedName);
-    if (!mappedName.startsWith("lib") && System.mapLibraryName("lib" + libraryBaseName).equals("lib" + mappedName)) {
-      result.add("lib" + mappedName);
+    final var result = new LinkedHashSet<String>(3);
+
+    if (libraryBaseName.startsWith("lib")) {
+      final var baseWithoutLibPrefix = libraryBaseName.substring("lib".length());
+      if (!baseWithoutLibPrefix.isEmpty()) {
+        result.add(System.mapLibraryName(baseWithoutLibPrefix));
+      }
+      if (result.isEmpty()) {
+        result.add(mappedName);
+      }
+    } else {
+      result.add(mappedName);
+      if (!mappedName.startsWith("lib") && System.mapLibraryName("lib" + libraryBaseName).equals("lib" + mappedName)) {
+        result.add("lib" + mappedName);
+      }
     }
     if (mappedName.startsWith("lib") && !libraryBaseName.startsWith("lib")) {
       final var withoutLibPrefix = mappedName.substring("lib".length());
       result.add(withoutLibPrefix);
     }
-    return result;
+
+    return new ArrayList<>(result);
   }
 
   private static List<String> listBundledJhdf5CandidateLibraries(final @NotNull String resourceDirectory,

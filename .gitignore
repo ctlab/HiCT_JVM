@@ -16,6 +16,8 @@ local.properties
 .recommenders
 .cache/
 
+.gradle_local
+
 # External tool builders
 .externalToolBuilders/
 
