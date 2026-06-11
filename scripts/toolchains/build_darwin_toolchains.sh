@@ -51,17 +51,17 @@ SOURCE_HICTK="${WORK_DIR}/hictk-src"; SOURCE_MINIMAP2="${WORK_DIR}/minimap2-src"
 
 build_hictk() {
   local stage_dir="${WORK_DIR}/hictk-stage" build_dir="${WORK_DIR}/hictk-build" build_info="${OUTPUT_DIR}/share/doc/hictk/build-info.txt"
-  if [[ -x "${OUTPUT_DIR}/bin/hictk" && -f "${build_info}" ]] && grep -qx "ref=${HICTK_REF}" "${build_info}" && grep -qx "platform=${PLATFORM_DIR}" "${build_info}"; then echo "[darwin/toolchains] Reusing cached hictk payload"; return 0; fi
+  if [[ -x "${OUTPUT_DIR}/bin/hictk" && -f "${build_info}" ]] && grep -qx "ref=${HICTK_REF}" "${build_info}" && grep -qx "platform=${PLATFORM_DIR}" "${build_info}" && grep -qx "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}" "${build_info}"; then echo "[darwin/toolchains] Reusing cached hictk payload"; return 0; fi
   if [[ ! -d "${SOURCE_HICTK}/.git" ]]; then git clone --depth 1 --branch "${HICTK_REF}" "${HICTK_REPO_URL}" "${SOURCE_HICTK}"; else git -C "${SOURCE_HICTK}" fetch --tags --force origin "${HICTK_REF}" || git -C "${SOURCE_HICTK}" fetch --tags --force origin; git -C "${SOURCE_HICTK}" checkout --force "${HICTK_REF}"; fi
   python3 -m venv "${WORK_DIR}/hictk-venv"; "${WORK_DIR}/hictk-venv/bin/python" -m pip install --upgrade pip setuptools wheel; "${WORK_DIR}/hictk-venv/bin/python" -m pip install 'conan>=2' 'cmake>=3.25' ninja; export PATH="${WORK_DIR}/hictk-venv/bin:${PATH}"
   conan profile detect --force >/dev/null
-  conan install --build=missing -pr:h default -pr:b default -s build_type=Release -s:h compiler.cppstd=17 -s:b compiler.cppstd=17 -s:h arch="${CONAN_DARWIN_ARCH}" -s:b arch="${CONAN_DARWIN_ARCH}" --output-folder="${build_dir}" "${SOURCE_HICTK}"
+  conan install --build=missing -pr:h default -pr:b default -s build_type=Release -s:h compiler.cppstd=17 -s:b compiler.cppstd=17 -s:h arch="${CONAN_DARWIN_ARCH}" -s:b arch="${CONAN_DARWIN_ARCH}" -s:h os.version="${MACOS_DEPLOYMENT_TARGET}" -s:b os.version="${MACOS_DEPLOYMENT_TARGET}" -c:h tools.apple:deployment_target="${MACOS_DEPLOYMENT_TARGET}" -c:b tools.apple:deployment_target="${MACOS_DEPLOYMENT_TARGET}" --output-folder="${build_dir}" "${SOURCE_HICTK}"
   rm -rf "${stage_dir}"
   cmake_args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${build_dir}" -DHICTK_ENABLE_TESTING=OFF -DHICTK_ENABLE_FUZZY_TESTING=OFF -DHICTK_BUILD_BENCHMARKS=OFF -DHICTK_BUILD_EXAMPLES=OFF -DHICTK_BUILD_TOOLS=ON -DHICTK_DOWNLOAD_TEST_DATASET=OFF -DHICTK_WITH_ARROW=OFF -DHICTK_WITH_EIGEN=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_COMPILER="${CC}" -DCMAKE_CXX_COMPILER="${CXX}" -DCMAKE_OSX_ARCHITECTURES="${DARWIN_ARCH}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}" -G Ninja -S "${SOURCE_HICTK}" -B "${build_dir}")
   [[ -f "${build_dir}/conan_toolchain.cmake" ]] && cmake_args+=(-DCMAKE_TOOLCHAIN_FILE="${build_dir}/conan_toolchain.cmake")
   cmake "${cmake_args[@]}"; cmake --build "${build_dir}"; cmake --install "${build_dir}" --prefix "${stage_dir}" --component Runtime
   mkdir -p "${stage_dir}/share/doc/hictk"; cp "${SOURCE_HICTK}/CITATION.cff" "${stage_dir}/share/doc/hictk/CITATION.cff"; adhoc_sign_if_macho "${stage_dir}/bin/hictk"
-  { echo "project=hictk"; echo "repository=${HICTK_REPO_URL}"; echo "ref=${HICTK_REF}"; echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "compiler=$(clang++ --version | head -n 1)"; echo "build_shared_libs=OFF"; echo "runtime_linking=system_dylib"; echo "codesign=adhoc"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; echo "[file]"; file "${stage_dir}/bin/hictk"; echo; echo "[otool]"; otool -L "${stage_dir}/bin/hictk" || true; echo; echo "[codesign]"; codesign -dv --verbose=2 "${stage_dir}/bin/hictk" 2>&1 || true; } > "${stage_dir}/share/doc/hictk/build-info.txt"
+  { echo "project=hictk"; echo "repository=${HICTK_REPO_URL}"; echo "ref=${HICTK_REF}"; echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}"; echo "compiler=$(clang++ --version | head -n 1)"; echo "build_shared_libs=OFF"; echo "runtime_linking=system_dylib"; echo "codesign=adhoc"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; echo "[file]"; file "${stage_dir}/bin/hictk"; echo; echo "[otool]"; otool -L "${stage_dir}/bin/hictk" || true; echo; echo "[codesign]"; codesign -dv --verbose=2 "${stage_dir}/bin/hictk" 2>&1 || true; } > "${stage_dir}/share/doc/hictk/build-info.txt"
   mkdir -p "${OUTPUT_DIR}"; cp -a "${stage_dir}/." "${OUTPUT_DIR}/"; "${OUTPUT_DIR}/bin/hictk" --help >/dev/null
 }
 
@@ -131,7 +131,7 @@ build_mm2plus() {
   fi
   [[ -f "${SOURCE_MM2PLUS}/LICENSE.txt" ]] && install -m 0644 "${SOURCE_MM2PLUS}/LICENSE.txt" "${stage_dir}/share/licenses/mm2plus/LICENSE.txt" || { [[ -f "${SOURCE_MM2PLUS}/LICENSE" ]] && install -m 0644 "${SOURCE_MM2PLUS}/LICENSE" "${stage_dir}/share/licenses/mm2plus/LICENSE" || true; }
   [[ -f "${SOURCE_MM2PLUS}/README.md" ]] && install -m 0644 "${SOURCE_MM2PLUS}/README.md" "${stage_dir}/share/doc/mm2plus/README.md"
-  { echo "project=mm2-plus"; echo "repository=${MM2PLUS_REPO_URL}"; echo "ref=${MM2PLUS_REF}"; echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "compiler=$(clang++ --version | head -n 1)"; echo "openmp=disabled_serial_compatibility"; echo "codesign=adhoc_for_macho_outputs"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; echo "[files]"; find "${stage_dir}/bin" -maxdepth 1 -type f -print -exec file {} \;; } > "${stage_dir}/share/doc/mm2plus/build-info.txt"
+  { echo "project=mm2-plus"; echo "repository=${MM2PLUS_REPO_URL}"; echo "ref=${MM2PLUS_REF}"; echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}"; echo "compiler=$(clang++ --version | head -n 1)"; echo "openmp=disabled_serial_compatibility"; echo "codesign=adhoc_for_macho_outputs"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; echo "[files]"; find "${stage_dir}/bin" -maxdepth 1 -type f -print -exec file {} \;; } > "${stage_dir}/share/doc/mm2plus/build-info.txt"
   mkdir -p "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/share/licenses/mm2plus" "${OUTPUT_DIR}/share/doc/mm2plus"; cp -a "${stage_dir}/bin/." "${OUTPUT_DIR}/bin/"; cp -a "${stage_dir}/share/licenses/mm2plus/." "${OUTPUT_DIR}/share/licenses/mm2plus/" 2>/dev/null || true; cp -a "${stage_dir}/share/doc/mm2plus/." "${OUTPUT_DIR}/share/doc/mm2plus/"; "${OUTPUT_DIR}/bin/mm2plus-avx2" --help >/dev/null || true
 }
 
@@ -147,5 +147,5 @@ cat > "${OUTPUT_DIR}/manifest.json" <<EOF
 }
 EOF
 mkdir -p "${OUTPUT_DIR}/share/doc/darwin_toolchains"
-{ echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "hictk_ref=${HICTK_REF}"; echo "minimap2_ref=${MINIMAP2_REF}"; echo "mm2plus_ref=${MM2PLUS_REF}"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "${OUTPUT_DIR}/share/doc/darwin_toolchains/build-info.txt"
+{ echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}"; echo "hictk_ref=${HICTK_REF}"; echo "minimap2_ref=${MINIMAP2_REF}"; echo "mm2plus_ref=${MM2PLUS_REF}"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "${OUTPUT_DIR}/share/doc/darwin_toolchains/build-info.txt"
 echo "[darwin/toolchains] Bundled payload prepared at ${OUTPUT_DIR}"

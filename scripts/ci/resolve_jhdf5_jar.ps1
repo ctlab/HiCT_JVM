@@ -81,7 +81,7 @@ if (Test-Path $out) {
           }
           if ($LASTEXITCODE -ne 0) { $resolveError = "release $releaseTag in $repo has no downloadable $jarName payload" }
         }
-        { $_ -in @('artifact', 'branch', 'workflow') } {
+        { $_ -in @('artifact', 'branch', 'workflow', 'auto') } {
           $runId = gh run list --repo $repo --branch $ref --workflow build-native.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId'
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($runId) -or $runId -eq 'null') {
             $resolveError = "no successful build-native.yml run exists in $repo on branch/ref $ref"

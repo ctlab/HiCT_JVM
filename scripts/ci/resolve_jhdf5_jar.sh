@@ -88,7 +88,7 @@ else
       rc=$?
       if [[ ${rc} -ne 0 ]]; then resolve_error="release ${release_tag} in ${repo} has no downloadable ${jar_name} payload"; fi
       ;;
-    artifact|branch|workflow)
+    artifact|branch|workflow|auto)
       run_id="$(gh run list --repo "${repo}" --branch "${ref}" --workflow build-native.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
       rc=$?
       if [[ ${rc} -ne 0 || -z "${run_id}" || "${run_id}" == "null" ]]; then

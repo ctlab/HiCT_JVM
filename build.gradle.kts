@@ -29,6 +29,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.util.zip.ZipFile
 
 plugins {
   java
@@ -259,15 +260,26 @@ fun envOrProjectProperty(name: String): String? =
   (findProperty(name) as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv(name)?.takeIf { it.isNotBlank() }
 
+val jhdf5SourceMode = (envOrProjectProperty("HICT_JHDF5_SOURCE_MODE")
+  ?: envOrProjectProperty("hictJhdf5SourceMode")
+  ?: "artifact").lowercase()
+val useMavenJhdf5 = jhdf5SourceMode in setOf("maven", "maven-central", "published") ||
+  envOrProjectProperty("HICT_USE_MAVEN_JHDF5")
+    ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
+    ?: false
 val bundledJhdf5LocalJarPath = envOrProjectProperty("HICT_JHDF5_LOCAL_JAR")
   ?: envOrProjectProperty("hictJhdf5LocalJar")
-val requireBundledJhdf5 = envOrProjectProperty("HICT_REQUIRE_BUNDLED_JHDF5")
+val requireBundledJhdf5 = !useMavenJhdf5 && (envOrProjectProperty("HICT_REQUIRE_BUNDLED_JHDF5")
   ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
-  ?: false
+  ?: false)
 
-fun bundledJhdf5LocalJarFile(): File? = bundledJhdf5LocalJarPath
-  ?.let { file(it) }
-  ?.takeIf { it.isFile }
+fun bundledJhdf5LocalJarFile(): File? = if (useMavenJhdf5) {
+  null
+} else {
+  bundledJhdf5LocalJarPath
+    ?.let { file(it) }
+    ?.takeIf { it.isFile }
+}
 
 version = readVersion()
 
@@ -286,7 +298,11 @@ dependencies {
     implementation(files(localJhdf5Jar))
     logger.lifecycle("Using bundled JHDF5 jar from ${localJhdf5Jar.absolutePath}")
   } else {
-    val message = "HICT_JHDF5_LOCAL_JAR is not set or does not point to a file; using published cisd:jhdf5:19.04.1 from Maven repositories."
+    val message = if (useMavenJhdf5) {
+      "HICT_JHDF5_SOURCE_MODE=${jhdf5SourceMode}; using published cisd:jhdf5:19.04.1 from Maven repositories by explicit request."
+    } else {
+      "HICT_JHDF5_LOCAL_JAR is not set or does not point to a file; using published cisd:jhdf5:19.04.1 from Maven repositories."
+    }
     if (requireBundledJhdf5) {
       throw GradleException(message)
     }
@@ -980,11 +996,15 @@ tasks.register("verifyBundledJhdf5Payload") {
   description = "Verify that the selected JHDF5 jar/fat JAR carries the native payloads needed by portable releases."
   dependsOn("shadowJar")
   doLast {
+    if (useMavenJhdf5) {
+      emitCiWarning("Skipping bundled JHDF5 native-payload verification because HICT_JHDF5_SOURCE_MODE=maven / HICT_USE_MAVEN_JHDF5 is active.")
+      return@doLast
+    }
     val fatJar = tasks.named<ShadowJar>("shadowJar").get().archiveFile.get().asFile
     if (!fatJar.isFile) {
       throw GradleException("Fat JAR was not produced: ${fatJar.absolutePath}")
     }
-    val entries = java.util.zip.ZipFile(fatJar).use { zip -> zip.entries().asSequence().map { it.name }.toSet() }
+    val entries = ZipFile(fatJar).use { zip: ZipFile -> zip.entries().asSequence().map { entry -> entry.name }.toSet() }
     val requiredAnyOf = listOf(
       "Linux amd64 JHDF5 JNI" to listOf("native/jhdf5/amd64-Linux/libjhdf5.so", "libs/native/jhdf5/amd64-Linux/libjhdf5.so"),
       "Linux arm64 JHDF5 JNI" to listOf("native/jhdf5/arm64-Linux/libjhdf5.so", "libs/native/jhdf5/arm64-Linux/libjhdf5.so"),
@@ -1001,7 +1021,7 @@ tasks.register("verifyBundledJhdf5Payload") {
       val message = buildString {
         appendLine("The fat JAR does not contain the required bundled JHDF5/HDF5 native payloads:")
         missing.forEach { (label, candidates) -> appendLine("- $label; expected one of ${candidates.joinToString()}") }
-        appendLine("Set HICT_JHDF5_LOCAL_JAR to the packaged sis-jhdf5 jar from jhdf5-with-plugins-configuration-snapshot, and set HICT_REQUIRE_BUNDLED_JHDF5=1 in release builds.")
+        appendLine("Set HICT_JHDF5_LOCAL_JAR to the packaged sis-jhdf5 jar from jhdf5-with-plugins-configuration-snapshot, and set HICT_REQUIRE_BUNDLED_JHDF5=1 in release builds. To intentionally use Maven, set HICT_JHDF5_SOURCE_MODE=maven or -PhictJhdf5SourceMode=maven.")
       }
       if (requireBundledJhdf5) {
         throw GradleException(message)

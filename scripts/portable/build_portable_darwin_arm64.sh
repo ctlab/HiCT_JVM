@@ -84,8 +84,55 @@ if [[ -z "${JAR_TOOL}" || ! -x "${JAR_TOOL}" ]]; then
   exit 1
 fi
 
+
+resolve_jhdf5_for_portable_release() {
+  local mode="${HICT_JHDF5_SOURCE_MODE:-artifact}"
+  case "${mode}" in
+    maven|maven-central|published)
+      echo "[darwin/portable] HICT_JHDF5_SOURCE_MODE=${mode}; intentionally using Maven JHDF5."
+      export HICT_USE_MAVEN_JHDF5=1
+      export HICT_REQUIRE_BUNDLED_JHDF5=0
+      return 0
+      ;;
+    local)
+      local local_jar="${HICT_JHDF5_LOCAL_JAR:-src/main/resources/libs/${HICT_JHDF5_JAR_NAME:-sis-jhdf5-19.04.1.jar}}"
+      if [[ ! -f "${PROJECT_DIR}/${local_jar}" && ! -f "${local_jar}" ]]; then
+        echo "HICT_JHDF5_SOURCE_MODE=local but ${local_jar} does not exist. Use artifact/release mode, or set HICT_JHDF5_SOURCE_MODE=maven intentionally." >&2
+        exit 1
+      fi
+      export HICT_REQUIRE_BUNDLED_JHDF5=1
+      return 0
+      ;;
+    artifact|release|auto|"")
+      local resolver="${PROJECT_DIR}/scripts/ci/resolve_jhdf5_jar.sh"
+      if [[ ! -x "${resolver}" ]]; then
+        echo "Missing executable ${resolver}; cannot resolve bundled JHDF5 artifact for macOS portable release." >&2
+        echo "Set HICT_JHDF5_SOURCE_MODE=maven to intentionally use Maven JHDF5 instead." >&2
+        exit 1
+      fi
+      export HICT_JHDF5_SOURCE_MODE="${mode:-artifact}"
+      "${resolver}"
+      local local_jar="${HICT_JHDF5_LOCAL_JAR:-src/main/resources/libs/${HICT_JHDF5_JAR_NAME:-sis-jhdf5-19.04.1.jar}}"
+      if [[ -f "${PROJECT_DIR}/${local_jar}" || -f "${local_jar}" ]]; then
+        export HICT_REQUIRE_BUNDLED_JHDF5=1
+      else
+        echo "::warning::JHDF5 snapshot artifact was not resolved for this macOS runner; using Maven-provided cisd:jhdf5:19.04.1."
+        export HICT_JHDF5_SOURCE_MODE=maven
+        export HICT_USE_MAVEN_JHDF5=1
+        export HICT_REQUIRE_BUNDLED_JHDF5=0
+      fi
+      return 0
+      ;;
+    *)
+      echo "Unsupported HICT_JHDF5_SOURCE_MODE=${mode}; use artifact, release, local, or maven." >&2
+      exit 1
+      ;;
+  esac
+}
+
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
-  (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true shadowJar)
+  resolve_jhdf5_for_portable_release
+  (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true verifyBundledJhdf5Payload shadowJar)
 fi
 
 HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"

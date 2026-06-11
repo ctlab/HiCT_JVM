@@ -9,6 +9,16 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
+  HICT_JHDF5_REF: "jhdf5-with-plugins-configuration-snapshot"
+  HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1.jar"
+  HICT_JHDF5_LOCAL_JAR: "src/main/resources/libs/sis-jhdf5-19.04.1.jar"
+  HICT_JHDF5_SOURCE_MODE: "artifact"
 
 jobs:
   build:
@@ -30,6 +40,10 @@ jobs:
           java-version: "21"
           distribution: temurin
           cache: gradle
+
+      - name: Resolve JHDF5 jar or Maven fallback
+        shell: bash
+        run: bash scripts/ci/resolve_jhdf5_jar.sh
 
       - name: Build
         run: ./gradlew -PrequireBundledWebUI=true clean build

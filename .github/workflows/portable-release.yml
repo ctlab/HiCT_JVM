@@ -99,21 +99,29 @@ on:
         default: ""
         type: string
       jhdf5_release_tag:
-        description: "JHDF5 release tag to download for the bundled native jar; use latest to consume the newest published JHDF5 release"
+        description: "JHDF5 release tag to use when jhdf5_source_mode=release"
         required: true
         default: "latest"
         type: string
-      jhdf5_source_mode:
-        description: "JHDF5 jar source for HiCT builds: use the checked-in jar or download the published jar"
+      jhdf5_ref:
+        description: "Branch/ref in the JHDF5 repo to use when jhdf5_source_mode=artifact"
         required: true
-        default: "local"
+        default: "jhdf5-with-plugins-configuration-snapshot"
+        type: string
+      jhdf5_source_mode:
+        description: "JHDF5 source: artifact from snapshot repo by default, release/local, or Maven fallback by explicit request"
+        required: true
+        default: "artifact"
         type: choice
         options:
+          - "artifact"
+          - "release"
           - "local"
-          - "download"
+          - "maven"
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: portable-release-${{ github.event_name == 'push' && github.ref || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag || github.run_id }}
@@ -123,6 +131,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
   HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
+  HICT_JHDF5_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_ref || 'jhdf5-with-plugins-configuration-snapshot' }}
   HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1.jar"
   HICT_JHDF5_LOCAL_JAR: "src/main/resources/libs/sis-jhdf5-19.04.1.jar"
 
@@ -159,7 +168,7 @@ jobs:
       HICT_GLIBC_MAX: "2.17"
       HICTK_CONAN_BUILD_POLICY: "*"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -205,6 +214,10 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
+
+      - name: Resolve JHDF5 jar or Maven fallback
+        shell: bash
+        run: bash scripts/ci/resolve_jhdf5_jar.sh
 
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -536,7 +549,7 @@ jobs:
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -584,6 +597,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Resolve JHDF5 jar or Maven fallback
+        shell: pwsh
+        run: .\scripts\ci\resolve_jhdf5_jar.ps1
 
       - name: Cache HiCT native processing libraries
         uses: actions/cache@v5
@@ -997,7 +1014,7 @@ jobs:
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -1040,6 +1057,10 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
+
+      - name: Resolve JHDF5 jar or Maven fallback
+        shell: bash
+        run: bash scripts/ci/resolve_jhdf5_jar.sh
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
@@ -1132,7 +1153,7 @@ jobs:
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'local' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -1175,6 +1196,10 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
+
+      - name: Resolve JHDF5 jar or Maven fallback
+        shell: bash
+        run: bash scripts/ci/resolve_jhdf5_jar.sh
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
