@@ -266,6 +266,18 @@ public class HDF5LibraryInitializer {
         )) {
           return true;
         }
+        for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories(variantDirectory)) {
+          if (NativeLibraryUtil.loadNativeLibrary(
+            jniExtractor,
+            libraryBaseName,
+            "native/jhdf5/" + jhdf5PlatformDirectory + "/",
+            "/native/jhdf5/" + jhdf5PlatformDirectory + "/",
+            "libs/native/jhdf5/" + jhdf5PlatformDirectory + "/",
+            "/libs/native/jhdf5/" + jhdf5PlatformDirectory + "/"
+          )) {
+            return true;
+          }
+        }
       }
       if (NativeLibraryUtil.loadNativeLibrary(
         jniExtractor,
@@ -277,8 +289,20 @@ public class HDF5LibraryInitializer {
       )) {
         return true;
       }
+      for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories("")) {
+        if (NativeLibraryUtil.loadNativeLibrary(
+          jniExtractor,
+          libraryBaseName,
+          "native/jhdf5/" + jhdf5PlatformDirectory + "/",
+          "/native/jhdf5/" + jhdf5PlatformDirectory + "/",
+          "libs/native/jhdf5/" + jhdf5PlatformDirectory + "/",
+          "/libs/native/jhdf5/" + jhdf5PlatformDirectory + "/"
+        )) {
+          return true;
+        }
+      }
     }
-    return NativeLibraryUtil.loadNativeLibrary(
+    if (NativeLibraryUtil.loadNativeLibrary(
       jniExtractor,
       libraryBaseName,
       "resources/",
@@ -287,7 +311,45 @@ public class HDF5LibraryInitializer {
       "/resources/",
       "/resources/libs/",
       "/resources/libs/natives/"
-    );
+    )) {
+      return true;
+    }
+    return false;
+  }
+
+  private static @NotNull List<String> bundledJhdf5PlatformDirectories(final @NotNull String variantDirectory) {
+    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+    final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+    final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
+    final var isArm64 = arch.equals("aarch64") || arch.equals("arm64");
+    final var isAmd64 = arch.equals("amd64") || arch.equals("x86_64");
+    if (!is64Bit) {
+      return List.of();
+    }
+
+    final var candidateSet = new LinkedHashSet<String>(8);
+    if (os.contains("linux")) {
+      final var linuxBase = isAmd64 ? "amd64-Linux" : "arm64-Linux";
+      candidateSet.add(linuxBase);
+      candidateSet.add("arm-Linux");
+      if (!variantDirectory.isBlank()) {
+        candidateSet.add(linuxBase + "-" + variantDirectory);
+        candidateSet.add("arm64-Linux-" + variantDirectory);
+      }
+      return new ArrayList<>(candidateSet);
+    }
+    if (os.contains("win")) {
+      candidateSet.add("amd64-Windows");
+      if (!variantDirectory.isBlank()) {
+        candidateSet.add("amd64-Windows-" + variantDirectory);
+      }
+      return new ArrayList<>(candidateSet);
+    }
+    if (os.contains("mac") || os.contains("darwin")) {
+      candidateSet.add(isArm64 ? "aarch64-Mac OS X" : "x86_64-Mac OS X");
+      return new ArrayList<>(candidateSet);
+    }
+    return List.of();
   }
 
   private static @NotNull List<String> bundledVariantDirectories() {
