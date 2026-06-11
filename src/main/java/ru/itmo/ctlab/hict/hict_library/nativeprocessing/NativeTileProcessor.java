@@ -44,8 +44,6 @@ final class NativeTileProcessor {
   private static final @NotNull String SSE2_LIBRARY_BASE_NAME = "hict_native_sse2";
   private static final @NotNull String AVX2_LIBRARY_BASE_NAME = "hict_native";
   private static final @NotNull String AVX512_LIBRARY_BASE_NAME = "hict_native_avx512";
-  private static final @NotNull String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
-  private static final @NotNull String NATIVE_VARIANT_ENV = "HICT_NATIVE_VARIANT";
   private volatile @NotNull LoadReport loadReport = LoadReport.notAttempted();
   private volatile long sessionHandle;
 
@@ -480,40 +478,15 @@ final class NativeTileProcessor {
   }
 
   private static @NotNull List<String> preferredLibraryBaseNames() {
-    final var requestedVariant = NativeCpuFeatures.firstNonBlank(
-      System.getProperty(NATIVE_VARIANT_PROPERTY),
-      System.getenv(NATIVE_VARIANT_ENV)
-    );
-    final var normalizedVariant = requestedVariant == null
-      ? "auto"
-      : requestedVariant.trim().toLowerCase(Locale.ROOT);
     final var result = new ArrayList<String>(3);
-    if ("sse2".equals(normalizedVariant) || "baseline".equals(normalizedVariant) || "generic".equals(normalizedVariant) || "x86_64-v3".equals(normalizedVariant)) {
-      if (NativeCpuFeatures.supportsSse2Core()) {
-        result.add(SSE2_LIBRARY_BASE_NAME);
+    for (final var variant : NativeCpuFeatures.preferredNativeVariantOrder()) {
+      switch (variant) {
+        case "avx512" -> result.add(AVX512_LIBRARY_BASE_NAME);
+        case "avx2" -> result.add(AVX2_LIBRARY_BASE_NAME);
+        case "generic" -> result.add(SSE2_LIBRARY_BASE_NAME);
+        default -> {
+        }
       }
-      return result;
-    }
-    if ("avx2".equals(normalizedVariant)) {
-      if (NativeCpuFeatures.supportsAvx2Core()) {
-        result.add(AVX2_LIBRARY_BASE_NAME);
-      }
-      return result;
-    }
-    if ("avx512".equals(normalizedVariant)) {
-      if (NativeCpuFeatures.supportsAvx512Core()) {
-        result.add(AVX512_LIBRARY_BASE_NAME);
-      }
-      return result;
-    }
-    if (NativeCpuFeatures.supportsAvx512Core()) {
-      result.add(AVX512_LIBRARY_BASE_NAME);
-    }
-    if (NativeCpuFeatures.supportsAvx2Core()) {
-      result.add(AVX2_LIBRARY_BASE_NAME);
-    }
-    if (NativeCpuFeatures.supportsSse2Core()) {
-      result.add(SSE2_LIBRARY_BASE_NAME);
     }
     return result;
   }

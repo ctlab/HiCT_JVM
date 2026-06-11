@@ -46,7 +46,16 @@ public final class ExternalToolchainManager {
     if (override != null && !override.isBlank()) {
       return override;
     }
-    return normalizeDotplotAlignerPreference(readSetting(DOTPLOT_ALIGNER_KEY).orElse("auto"));
+    final var configuredPreference = readSetting(DOTPLOT_ALIGNER_KEY);
+    if (configuredPreference.isPresent()) {
+      return normalizeDotplotAlignerPreference(configuredPreference.get());
+    }
+    return switch (NativeCpuFeatures.requestedNativeVariantLimit()) {
+      case "generic" -> "minimap2";
+      case "avx2" -> "mm2plus-avx2";
+      case "avx512" -> "mm2plus-avx512";
+      default -> "auto";
+    };
   }
 
   public static void setDotplotAlignerPreference(final @Nullable String value) {
@@ -501,11 +510,14 @@ public final class ExternalToolchainManager {
       final var preference = normalizeDotplotAlignerPreference(requestedPreference == null ? dotplotAlignerPreference() : requestedPreference);
       return switch (preference) {
         case "minimap2" -> minimap2Command;
-        case "mm2plus-avx2" -> mm2PlusAvx2Command;
-        case "mm2plus-avx512" -> NativeCpuFeatures.supportsAvx512Core() ? mm2PlusAvx512Command : null;
-        case "mm2plus" -> selectBestMm2Plus();
+        case "mm2plus-avx2" -> mm2PlusAvx2Command == null ? minimap2Command : mm2PlusAvx2Command;
+        case "mm2plus-avx512" -> {
+          final var mm2Plus = selectBestMm2Plus("avx512");
+          yield mm2Plus == null ? minimap2Command : mm2Plus;
+        }
+        case "mm2plus" -> selectBestMm2Plus("auto");
         default -> {
-          final var mm2Plus = selectBestMm2Plus();
+          final var mm2Plus = selectBestMm2Plus(NativeCpuFeatures.requestedNativeVariantLimit());
           yield mm2Plus == null ? minimap2Command : mm2Plus;
         }
       };
@@ -528,11 +540,16 @@ public final class ExternalToolchainManager {
       return selected.getFileName().toString();
     }
 
-    private @Nullable Path selectBestMm2Plus() {
-      if (NativeCpuFeatures.supportsAvx512Core() && mm2PlusAvx512Command != null) {
-        return mm2PlusAvx512Command;
+    private @Nullable Path selectBestMm2Plus(final @Nullable String rawLimit) {
+      for (final var variant : NativeCpuFeatures.preferredNativeVariantOrder(rawLimit)) {
+        if (variant.equals("avx512") && mm2PlusAvx512Command != null) {
+          return mm2PlusAvx512Command;
+        }
+        if (variant.equals("avx2") && mm2PlusAvx2Command != null) {
+          return mm2PlusAvx2Command;
+        }
       }
-      return mm2PlusAvx2Command;
+      return null;
     }
   }
 

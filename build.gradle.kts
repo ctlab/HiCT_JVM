@@ -355,6 +355,81 @@ fun bundledJhdf5NativesArchiveFile(): File? = if (useMavenJhdf5) {
     ?: downloadedJhdf5NativesArchiveFile()
 }
 
+val runtimeJhdf5NativesArchiveFile = layout.buildDirectory.file("jhdf5-runtime/$bundledJhdf5NativesArchiveName")
+
+fun isRuntimeJhdf5NativeFile(fileName: String): Boolean {
+  val lower = fileName.lowercase()
+  if (lower == "jhdf5.dll" || lower == "hdf5.dll" || lower == "blosc.dll") {
+    return true
+  }
+  if (lower == "zlib1.dll" || lower == "zlib.dll" || lower == "zstd.dll" || lower == "lz4.dll" || lower == "bz2.dll" || lower == "bzip2.dll") {
+    return true
+  }
+  if (lower == "libjhdf5.so" || lower == "libjhdf5.jnilib") {
+    return true
+  }
+  if (Regex("""libhdf5\.so(?:\..*)?""").matches(lower)) {
+    return true
+  }
+  if (Regex("""libhdf5(?:\.\d+)+\.dylib""").matches(lower) || lower == "libhdf5.dylib") {
+    return true
+  }
+  if (Regex("""lib(?:z|zstd|lz4|bz2|jpeg|aec).*\.so(?:\..*)?""").matches(lower)) {
+    return true
+  }
+  if (Regex("""lib(?:z|zstd|lz4|bz2|jpeg|aec).*\.dylib""").matches(lower)) {
+    return true
+  }
+  if (Regex("""lib(?:zstd|lz4|bz2|jpeg|aec).*\.dll""").matches(lower)) {
+    return true
+  }
+  return Regex("""(?:lib)?h5[a-z0-9_+-]*\.(?:dll|dylib|so(?:\..*)?)""").matches(lower)
+}
+
+fun runtimeJhdf5NativesArchiveOrSource(): File? =
+  runtimeJhdf5NativesArchiveFile.get().asFile.takeIf { it.isFile }
+    ?: bundledJhdf5NativesArchiveFile()
+
+fun requiredJhdf5FilterPluginNames(platformDirectoryName: String): List<String> {
+  val extension = when {
+    platformDirectoryName.contains("Windows") -> "dll"
+    platformDirectoryName.contains("Mac OS X") -> "dylib"
+    else -> "so"
+  }
+  return listOf("bshuf", "lzf", "lz4", "zstd").map { "libh5$it.$extension" }
+}
+
+fun validateRequiredJhdf5FilterPlugins(nativeRoot: File) {
+  val requiredPlatforms = listOf(
+    "amd64-Linux",
+    "amd64-Linux-avx2",
+    "arm64-Linux",
+    "amd64-Windows",
+    "amd64-Windows-avx2",
+    "aarch64-Mac OS X",
+    "x86_64-Mac OS X"
+  )
+  val missing = mutableListOf<String>()
+  for (platform in requiredPlatforms) {
+    val platformDir = nativeRoot.resolve(platform)
+    if (!platformDir.isDirectory) {
+      missing += "$platform directory"
+      continue
+    }
+    for (plugin in requiredJhdf5FilterPluginNames(platform)) {
+      if (!platformDir.resolve(plugin).exists()) {
+        missing += "$platform/$plugin"
+      }
+    }
+  }
+  if (missing.isNotEmpty()) {
+    throw GradleException(
+      "JHDF5 native archive is missing required HDF5 filter plugins needed by HiCT datasets: " +
+        missing.joinToString(", ")
+    )
+  }
+}
+
 version = readVersion()
 
 application {
@@ -1121,6 +1196,55 @@ tasks.named("jar") {
   dependsOn("shadowJar")
 }
 
+val prepareRuntimeJhdf5NativesArchive = tasks.register("prepareRuntimeJhdf5NativesArchive") {
+  group = "build"
+  description = "Create the smaller JHDF5 native sidecar archive used by HiCT portable releases."
+  outputs.file(runtimeJhdf5NativesArchiveFile)
+  doLast {
+    val sourceArchive = bundledJhdf5NativesArchiveFile()
+    if (sourceArchive == null || !sourceArchive.isFile) {
+      if (preferBundledJhdf5NativesArchive || requireBundledJhdf5) {
+        throw GradleException("JHDF5 native archive is required but was not found at $bundledJhdf5NativesArchivePath")
+      }
+      logger.lifecycle("Skipping runtime JHDF5 native archive preparation because no native archive is configured.")
+      return@doLast
+    }
+
+    val extractRoot = layout.buildDirectory.dir("jhdf5-runtime/extracted").get().asFile
+    val targetArchive = runtimeJhdf5NativesArchiveFile.get().asFile
+    delete(extractRoot)
+    extractRoot.mkdirs()
+    targetArchive.parentFile.mkdirs()
+
+    exec {
+      commandLine("tar", "-xzf", sourceArchive.absolutePath, "-C", extractRoot.absolutePath)
+    }
+
+    val nativeRoot = extractRoot.resolve("native/jhdf5")
+    if (!nativeRoot.isDirectory) {
+      throw GradleException("JHDF5 native archive ${sourceArchive.absolutePath} does not contain native/jhdf5")
+    }
+
+    nativeRoot.walkTopDown()
+      .filter { it.isFile || Files.isSymbolicLink(it.toPath()) }
+      .filter { !isRuntimeJhdf5NativeFile(it.name) }
+      .forEach { Files.deleteIfExists(it.toPath()) }
+
+    nativeRoot.walkBottomUp()
+      .filter { it.isDirectory && it.list()?.isEmpty() == true }
+      .filter { it != nativeRoot }
+      .forEach { Files.deleteIfExists(it.toPath()) }
+
+    validateRequiredJhdf5FilterPlugins(nativeRoot)
+
+    targetArchive.delete()
+    exec {
+      commandLine("tar", "-czf", targetArchive.absolutePath, "-C", extractRoot.absolutePath, "native/jhdf5")
+    }
+    logger.lifecycle("Prepared runtime JHDF5 native archive at ${targetArchive.absolutePath} from ${sourceArchive.absolutePath}")
+  }
+}
+
 
 tasks.register("verifyBundledJhdf5Payload") {
   group = "verification"
@@ -1136,7 +1260,7 @@ tasks.register("verifyBundledJhdf5Payload") {
       throw GradleException("Fat JAR was not produced: ${fatJar.absolutePath}")
     }
     val entries = ZipFile(fatJar).use { zip: ZipFile -> zip.entries().asSequence().map { entry -> entry.name }.toSet() }
-    val nativesArchiveEntries = bundledJhdf5NativesArchiveFile()
+    val nativesArchiveEntries = runtimeJhdf5NativesArchiveOrSource()
       ?.takeIf { it.isFile }
       ?.let { archive ->
         ByteArrayOutputStream().use { out ->
@@ -1207,8 +1331,9 @@ tasks.register("verifyBundledJhdf5Payload") {
 
 tasks.named<ShadowJar>("shadowJar") {
   dependsOn("verifyNativeProcessingBuild")
+  dependsOn(prepareRuntimeJhdf5NativesArchive)
   doLast {
-    bundledJhdf5NativesArchiveFile()?.let { archive ->
+    runtimeJhdf5NativesArchiveOrSource()?.let { archive ->
       val target = archiveFile.get().asFile.parentFile.resolve(archive.name)
       if (archive.canonicalFile != target.canonicalFile) {
         Files.copy(archive.toPath(), target.toPath(), REPLACE_EXISTING)

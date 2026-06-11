@@ -291,11 +291,11 @@ public class HDF5LibraryInitializer {
 
     final var candidatePaths = new LinkedHashSet<String>();
     for (final var variantDirectory : bundledVariantDirectories()) {
-      for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories(variantDirectory)) {
+      for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories(variantDirectory, false)) {
         candidatePaths.add(jhdf5PlatformDirectory);
       }
     }
-    candidatePaths.addAll(bundledJhdf5PlatformDirectories(""));
+    candidatePaths.addAll(bundledJhdf5PlatformDirectories("", true));
 
     final var candidatePathList = new ArrayList<String>(candidatePaths.size() * 2 * BUNDLED_JHDF5_LIBRARY_ROOTS.length);
     for (final var jhdf5PlatformDirectory : candidatePaths) {
@@ -331,6 +331,7 @@ public class HDF5LibraryInitializer {
           }
           try {
             System.load(file.getAbsolutePath());
+            setNativeLibraryPropertyIfUnset(libraryBaseName, file.toPath());
             jniExtractor.pathsCollection.add(directory.toString());
             jniExtractor.namesCollection.add(mappedName);
             jniExtractor.absolutePathsCollection.add(directory.toString());
@@ -362,6 +363,8 @@ public class HDF5LibraryInitializer {
           }
         } catch (final IOException err) {
           log.debug("Failed to extract and load bundled Jhdf5 library resource {}", resourcePath, err);
+        } catch (final UnsatisfiedLinkError err) {
+          log.debug("Failed to load bundled JHDF5 library resource {}; trying the next candidate", resourcePath, err);
         }
       }
     }
@@ -589,6 +592,7 @@ public class HDF5LibraryInitializer {
   }
 
   private static @NotNull Optional<Path> prepareSidecarJhdf5NativeLibraryPath() throws IOException {
+    Optional<Path> firstExtractedJhdf5 = Optional.empty();
     for (final var archive : sidecarJhdf5NativeArchiveCandidates()) {
       if (!Files.isRegularFile(archive)) {
         continue;
@@ -609,20 +613,19 @@ public class HDF5LibraryInitializer {
           continue;
         }
 
-        setNativeLibraryPropertyIfUnset("jhdf5", extractedJhdf5);
-        firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "hdf5")
-          .map(path -> path.substring(path.lastIndexOf('/') + 1))
-          .map(extractionDirectory.get()::resolve)
-          .filter(Files::isRegularFile)
-          .ifPresent(path -> setNativeLibraryPropertyIfUnset("hdf5", path));
         jniExtractor.pathsCollection.add(archiveDirectory);
         jniExtractor.namesCollection.add("jhdf5");
         jniExtractor.absolutePathsCollection.add(extractionDirectory.get().toString());
         jniExtractor.fullPathsCollection.add(extractedJhdf5.toString());
-        return Optional.of(extractedJhdf5);
+        if (firstExtractedJhdf5.isEmpty()) {
+          firstExtractedJhdf5 = Optional.of(extractedJhdf5);
+        }
+      }
+      if (firstExtractedJhdf5.isPresent()) {
+        return firstExtractedJhdf5;
       }
     }
-    return Optional.empty();
+    return firstExtractedJhdf5;
   }
 
   private static @NotNull Optional<Path> prepareBundledJhdf5NativeLibraryPath() throws IOException {
@@ -678,9 +681,9 @@ public class HDF5LibraryInitializer {
   private static @NotNull List<String> bundledJhdf5NativeResourceDirectories() {
     final var candidatePaths = new LinkedHashSet<String>();
     for (final var variantDirectory : bundledVariantDirectories()) {
-      candidatePaths.addAll(bundledJhdf5PlatformDirectories(variantDirectory));
+      candidatePaths.addAll(bundledJhdf5PlatformDirectories(variantDirectory, false));
     }
-    candidatePaths.addAll(bundledJhdf5PlatformDirectories(""));
+    candidatePaths.addAll(bundledJhdf5PlatformDirectories("", true));
 
     final var result = new ArrayList<String>(candidatePaths.size() * BUNDLED_JHDF5_LIBRARY_ROOTS.length);
     for (final var jhdf5PlatformDirectory : candidatePaths) {
@@ -1165,7 +1168,8 @@ public class HDF5LibraryInitializer {
     return false;
   }
 
-  private static @NotNull List<String> bundledJhdf5PlatformDirectories(final @NotNull String variantDirectory) {
+  private static @NotNull List<String> bundledJhdf5PlatformDirectories(final @NotNull String variantDirectory,
+                                                                       final boolean includeDefaultDirectory) {
     final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
     final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
     final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
@@ -1178,17 +1182,21 @@ public class HDF5LibraryInitializer {
     final var candidateSet = new LinkedHashSet<String>(8);
     if (os.contains("linux")) {
       final var linuxBase = isAmd64 ? "amd64-Linux" : "arm64-Linux";
-      if (!variantDirectory.isBlank()) {
+      if (!variantDirectory.isBlank() && !isGenericVariantDirectory(variantDirectory)) {
         candidateSet.add(linuxBase + "-" + variantDirectory);
       }
-      candidateSet.add(linuxBase);
+      if (includeDefaultDirectory || isGenericVariantDirectory(variantDirectory)) {
+        candidateSet.add(linuxBase);
+      }
       return new ArrayList<>(candidateSet);
     }
     if (os.contains("win")) {
-      if (!variantDirectory.isBlank()) {
+      if (!variantDirectory.isBlank() && !isGenericVariantDirectory(variantDirectory)) {
         candidateSet.add("amd64-Windows-" + variantDirectory);
       }
-      candidateSet.add("amd64-Windows");
+      if (includeDefaultDirectory || isGenericVariantDirectory(variantDirectory)) {
+        candidateSet.add("amd64-Windows");
+      }
       return new ArrayList<>(candidateSet);
     }
     if (os.contains("mac") || os.contains("darwin")) {
@@ -1200,15 +1208,17 @@ public class HDF5LibraryInitializer {
 
   private static @NotNull List<String> bundledVariantDirectories() {
     final var variants = new ArrayList<String>(4);
-    if (NativeCpuFeatures.supportsAvx512Core()) {
-      variants.add("avx512");
-    }
-    if (NativeCpuFeatures.supportsAvx2Core()) {
-      variants.add("avx2");
-    }
-    variants.add("generic");
-    variants.add("sse2");
+    final var jhdf5Limit = NativeCpuFeatures.firstNonBlank(
+      System.getProperty("hict.jhdf5.native.variant"),
+      System.getenv("HICT_JHDF5_NATIVE_VARIANT"),
+      NativeCpuFeatures.requestedNativeVariantLimit()
+    );
+    variants.addAll(NativeCpuFeatures.preferredNativeVariantOrder(jhdf5Limit));
     return variants;
+  }
+
+  private static boolean isGenericVariantDirectory(final @NotNull String variantDirectory) {
+    return variantDirectory.equals("generic") || variantDirectory.equals("sse2");
   }
 
   private record NativeArchiveLink(Path target, String linkName, boolean hardLink) {
