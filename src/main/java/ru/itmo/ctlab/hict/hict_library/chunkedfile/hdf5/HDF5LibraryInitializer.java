@@ -50,6 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 @Getter
 public class HDF5LibraryInitializer {
+  private static final String[] BUNDLED_JHDF5_LIBRARY_ROOTS = {"native/jhdf5", "libs/native/jhdf5"};
   private static final AtomicBoolean hdf5LibraryInitialized = new AtomicBoolean(false);
   private static final LinkedHashMap<String, String> libraryNames = new LinkedHashMap<>();
   private static final JniExtractor defaultJNIExtractor = NativeLoader.getJniExtractor();
@@ -246,6 +247,9 @@ public class HDF5LibraryInitializer {
 
 
   private static boolean loadBundledNativeLibrary(final String libraryBaseName) throws IOException {
+    if (loadBundledJhdf5NativeLibrary(libraryBaseName)) {
+      return true;
+    }
     final var platformDirectories = bundledPlatformDirectories();
     if (platformDirectories.isEmpty()) {
       return false;
@@ -266,18 +270,6 @@ public class HDF5LibraryInitializer {
         )) {
           return true;
         }
-        for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories(variantDirectory)) {
-          if (NativeLibraryUtil.loadNativeLibrary(
-            jniExtractor,
-            libraryBaseName,
-            "native/jhdf5/" + jhdf5PlatformDirectory + "/",
-            "/native/jhdf5/" + jhdf5PlatformDirectory + "/",
-            "libs/native/jhdf5/" + jhdf5PlatformDirectory + "/",
-            "/libs/native/jhdf5/" + jhdf5PlatformDirectory + "/"
-          )) {
-            return true;
-          }
-        }
       }
       if (NativeLibraryUtil.loadNativeLibrary(
         jniExtractor,
@@ -288,18 +280,6 @@ public class HDF5LibraryInitializer {
         "/resources/libs/" + platformDirectory + "/"
       )) {
         return true;
-      }
-      for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories("")) {
-        if (NativeLibraryUtil.loadNativeLibrary(
-          jniExtractor,
-          libraryBaseName,
-          "native/jhdf5/" + jhdf5PlatformDirectory + "/",
-          "/native/jhdf5/" + jhdf5PlatformDirectory + "/",
-          "libs/native/jhdf5/" + jhdf5PlatformDirectory + "/",
-          "/libs/native/jhdf5/" + jhdf5PlatformDirectory + "/"
-        )) {
-          return true;
-        }
       }
     }
     if (NativeLibraryUtil.loadNativeLibrary(
@@ -313,6 +293,44 @@ public class HDF5LibraryInitializer {
       "/resources/libs/natives/"
     )) {
       return true;
+    }
+    return false;
+  }
+
+  private static boolean loadBundledJhdf5NativeLibrary(final String libraryBaseName) throws IOException {
+    final var candidatePaths = new LinkedHashSet<String>();
+    for (final var variantDirectory : bundledVariantDirectories()) {
+      for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories(variantDirectory)) {
+        candidatePaths.add(jhdf5PlatformDirectory);
+      }
+    }
+    candidatePaths.addAll(bundledJhdf5PlatformDirectories(""));
+
+    for (final var jhdf5PlatformDirectory : candidatePaths) {
+      if (loadBundledJhdf5NativeLibrary(libraryBaseName, jhdf5PlatformDirectory)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean loadBundledJhdf5NativeLibrary(final String libraryBaseName,
+    final String jhdf5PlatformDirectory) throws IOException {
+    for (final var rootDirectory : BUNDLED_JHDF5_LIBRARY_ROOTS) {
+      final File loadedLibrary = jniExtractor.extractJni(
+        rootDirectory + "/" + jhdf5PlatformDirectory + "/",
+        libraryBaseName
+      );
+      if (loadedLibrary == null) {
+        continue;
+      }
+      try {
+        System.load(loadedLibrary.getAbsolutePath());
+        return true;
+      } catch (final UnsatisfiedLinkError err) {
+        log.debug("Failed to load " + libraryBaseName + " from bundled path " +
+          rootDirectory + "/" + jhdf5PlatformDirectory, err);
+      }
     }
     return false;
   }
