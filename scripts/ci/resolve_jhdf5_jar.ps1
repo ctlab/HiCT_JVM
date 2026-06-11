@@ -34,10 +34,10 @@ function Get-RequiredPatternsForRunner() {
     return @('^native/jhdf5/amd64-Windows/jhdf5\.dll$')
   }
   if ($runnerOs -eq 'macOS' -and $runnerArch -eq 'ARM64') {
-    return @('^resources/libs/(osx_arm64|macos_arm64|darwin_arm64)/libhdf5\.dylib$')
+    return @('^(resources/libs/(osx_arm64|macos_arm64|darwin_arm64)/libhdf5\.dylib|native/jhdf5/aarch64-Mac OS X/libhdf5\.[0-9.]+\.dylib|libs/native/jhdf5/aarch64-Mac OS X/libhdf5\.[0-9.]+\.dylib)$')
   }
   if ($runnerOs -eq 'macOS') {
-    return @('^resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5\.dylib$')
+    return @('^(resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5\.dylib|native/jhdf5/x86_64-Mac OS X/libhdf5\.[0-9.]+\.dylib|libs/native/jhdf5/x86_64-Mac OS X/libhdf5\.[0-9.]+\.dylib)$')
   }
   if ($runnerOs -eq 'Linux' -and $runnerArch -eq 'ARM64') {
     return @('^native/jhdf5/(aarch64|arm64)-Linux/libjhdf5\.so$')

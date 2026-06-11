@@ -190,11 +190,7 @@ jobs:
             jar_downloaded=true
           fi
           if [[ "${jar_downloaded}" != "true" ]]; then
-            echo "::warning::Failed to download ${jar_url}; falling back to ${HICT_JHDF5_LOCAL_JAR}."
-            if [[ ! -f "${HICT_JHDF5_LOCAL_JAR}" ]]; then
-              echo "::error::Neither the published JHDF5 jar nor ${HICT_JHDF5_LOCAL_JAR} is available." >&2
-              exit 1
-            fi
+            echo "::warning::Failed to download ${jar_url}; resolver step will try workflow artifact and then Maven fallback."
           fi
 
       - name: Set up Node.js
@@ -575,9 +571,7 @@ jobs:
             Write-Host "::warning::Failed to download $jarUrl; falling back to $env:HICT_JHDF5_LOCAL_JAR."
           }
           if (-not $jarDownloaded) {
-            if (-not (Test-Path $env:HICT_JHDF5_LOCAL_JAR)) {
-              throw "Neither the published JHDF5 jar nor $env:HICT_JHDF5_LOCAL_JAR is available."
-            }
+            Write-Host "::warning::Resolver step will try workflow artifact and then Maven fallback."
           }
 
       - name: Set up Node.js
@@ -1036,11 +1030,7 @@ jobs:
             jar_downloaded=true
           fi
           if [[ "${jar_downloaded}" != "true" ]]; then
-            echo "::warning::Failed to download ${jar_url}; falling back to ${HICT_JHDF5_LOCAL_JAR}."
-            if [[ ! -f "${HICT_JHDF5_LOCAL_JAR}" ]]; then
-              echo "::error::Neither the published JHDF5 jar nor ${HICT_JHDF5_LOCAL_JAR} is available." >&2
-              exit 1
-            fi
+            echo "::warning::Failed to download ${jar_url}; resolver step will try workflow artifact and then Maven fallback."
           fi
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -1136,7 +1126,7 @@ jobs:
           "${launcher}" --help >/dev/null
       - name: Report non-blocking macOS Apple Silicon failure
         if: ${{ failure() }}
-        run: echo "::error::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
+        run: echo "::warning::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
 
   macos-intel-portable:
     name: macOS Intel portable .run
@@ -1175,11 +1165,7 @@ jobs:
             jar_downloaded=true
           fi
           if [[ "${jar_downloaded}" != "true" ]]; then
-            echo "::warning::Failed to download ${jar_url}; falling back to ${HICT_JHDF5_LOCAL_JAR}."
-            if [[ ! -f "${HICT_JHDF5_LOCAL_JAR}" ]]; then
-              echo "::error::Neither the published JHDF5 jar nor ${HICT_JHDF5_LOCAL_JAR} is available." >&2
-              exit 1
-            fi
+            echo "::warning::Failed to download ${jar_url}; resolver step will try workflow artifact and then Maven fallback."
           fi
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -1275,7 +1261,7 @@ jobs:
           "${launcher}" --help >/dev/null
       - name: Report non-blocking macOS Intel failure
         if: ${{ failure() }}
-        run: echo "::error::Non-blocking macOS Intel build failed; Windows/Linux release may still proceed without this artifact."
+        run: echo "::warning::Non-blocking macOS Intel build failed; Windows/Linux release may still proceed without this artifact."
   publish-release-assets:
     name: Publish release assets
     needs:
@@ -1406,9 +1392,18 @@ jobs:
             release_body_lines+=("- Linux: [\`${linux_run}\`](${release_base_url}/${linux_run})")
             release_body_lines+=("  After download, run \`chmod +x ${linux_run}\` and then \`bash ${linux_run}\`.")
           fi
-          if [[ -f "release-dist/${darwin_run}" ]]; then
-            release_body_lines+=("- macOS: [\`${darwin_run}\`](${release_base_url}/${darwin_run})")
+          darwin_assets=()
+          if [[ -f "release-dist/${darwin_arm64_run}" ]]; then
+            darwin_assets+=("[\`${darwin_arm64_run}\`](${release_base_url}/${darwin_arm64_run})")
+          fi
+          if [[ -f "release-dist/${darwin_x86_64_run}" ]]; then
+            darwin_assets+=("[\`${darwin_x86_64_run}\`](${release_base_url}/${darwin_x86_64_run})")
+          fi
+          if [[ ${#darwin_assets[@]} -gt 0 ]]; then
+            release_body_lines+=("- macOS: ${darwin_assets[*]}")
             release_body_lines+=("  If Gatekeeper blocks the file after download, run \`xattr -d com.apple.quarantine ./HiCT-*.run\`.")
+          else
+            echo "::warning::No macOS portable artifacts were collected; publishing Windows/Linux release only."
           fi
 
           release_body_lines+=("")

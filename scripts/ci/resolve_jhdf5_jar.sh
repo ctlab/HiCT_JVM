@@ -34,10 +34,10 @@ required_patterns_for_runner() {
       printf '%s\n' '^native/jhdf5/amd64-Windows/jhdf5\.dll$'
       ;;
     macOS:ARM64|Darwin:arm64|Darwin:aarch64)
-      printf '%s\n' '^resources/libs/(osx_arm64|macos_arm64|darwin_arm64)/libhdf5\.dylib$'
+      printf '%s\n' '^(resources/libs/(osx_arm64|macos_arm64|darwin_arm64)/libhdf5\.dylib|native/jhdf5/aarch64-Mac OS X/libhdf5\.[0-9.]+\.dylib|libs/native/jhdf5/aarch64-Mac OS X/libhdf5\.[0-9.]+\.dylib)$'
       ;;
     macOS:X64|macOS:AMD64|Darwin:x86_64)
-      printf '%s\n' '^resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5\.dylib$'
+      printf '%s\n' '^(resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5\.dylib|native/jhdf5/x86_64-Mac OS X/libhdf5\.[0-9.]+\.dylib|libs/native/jhdf5/x86_64-Mac OS X/libhdf5\.[0-9.]+\.dylib)$'
       ;;
     Linux:ARM64|Linux:AARCH64|Linux:aarch64)
       printf '%s\n' '^native/jhdf5/(aarch64|arm64)-Linux/libjhdf5\.so$'
