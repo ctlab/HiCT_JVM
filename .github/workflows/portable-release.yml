@@ -303,61 +303,155 @@ jobs:
             hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
 
       - name: Build HiCT native libraries in manylinux2014
+        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
         run: scripts/ci/linux_container_build.sh hict-native
 
+      - name: Upload Linux HiCT native processing artifact
+        uses: actions/upload-artifact@v6
+        with:
+          path: build/native-processing/resources
+          name: hict-native-linux-x86_64${{ matrix.artifact_suffix }}
+          if-no-files-found: error
+
       - name: Validate HiCT native libraries
-        if: ${{ false }}
         run: scripts/ci/validate_linux_component.sh hict-native
 
       - name: Save HiCT native processing cache
-        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        if: ${{ success() && steps.cache-native-processing.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
           path: build/native-processing/resources
           key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
 
+      - name: Restore Linux bundled toolchain cache
+        id: cache-linux-toolchains
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/cache/restore@v5
+        with:
+          path: toolchains-dist/linux_x86_64
+          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}
+          restore-keys: |
+            toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+            toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
+
+      - name: Inspect Linux bundled toolchain cache
+        id: inspect-linux-toolchain
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="toolchains-dist/linux_x86_64/manifest.json"
+          hictk_ready=false
+          minimap2_ready=false
+          mm2plus_avx2_ready=false
+          mm2plus_avx512_ready=false
+          if [[ -f "${manifest}" ]]; then
+            if grep -q '"hictk"' "${manifest}" && [[ -x toolchains-dist/linux_x86_64/bin/hictk ]]; then
+              hictk_ready=true
+            fi
+            if grep -q '"minimap2"' "${manifest}" && [[ -x toolchains-dist/linux_x86_64/bin/minimap2 ]]; then
+              minimap2_ready=true
+            fi
+            if grep -q '"mm2plus_avx2"' "${manifest}" && [[ -x toolchains-dist/linux_x86_64/bin/mm2plus-avx2 ]]; then
+              mm2plus_avx2_ready=true
+            fi
+            if grep -q '"mm2plus_avx512"' "${manifest}" && [[ -x toolchains-dist/linux_x86_64/bin/mm2plus-avx512 ]]; then
+              mm2plus_avx512_ready=true
+            fi
+          fi
+          {
+            echo "hictk_ready=${hictk_ready}"
+            echo "minimap2_ready=${minimap2_ready}"
+            echo "mm2plus_avx2_ready=${mm2plus_avx2_ready}"
+            echo "mm2plus_avx512_ready=${mm2plus_avx512_ready}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "hictk_ready=${hictk_ready}, minimap2_ready=${minimap2_ready}, mm2plus_avx2_ready=${mm2plus_avx2_ready}, mm2plus_avx512_ready=${mm2plus_avx512_ready}"
+
       - name: Clean Linux toolchain payload when disabled
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_hictk != 'true' }}
         run: rm -rf toolchains-dist/linux_x86_64
 
       - name: Build hictk in Docker
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-linux-toolchain.outputs.hictk_ready != 'true' }}
         run: scripts/ci/linux_container_build.sh hictk
 
+      - name: Build minimap2 in Docker
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-linux-toolchain.outputs.minimap2_ready != 'true' }}
+        run: scripts/ci/linux_container_build.sh minimap2
+
+      - name: Build mm2-plus in Docker
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-linux-toolchain.outputs.mm2plus_avx2_ready != 'true' || steps.inspect-linux-toolchain.outputs.mm2plus_avx512_ready != 'true') }}
+        run: scripts/ci/linux_container_build.sh mm2plus
+
+      - name: Upload Linux hictk artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: hictk-linux-x86_64${{ matrix.artifact_suffix }}
+          path: |
+            toolchains-dist/linux_x86_64/bin/hictk
+            toolchains-dist/linux_x86_64/share/licenses/hictk/**
+            toolchains-dist/linux_x86_64/share/doc/hictk/**
+            toolchains-dist/linux_x86_64/manifest.json
+          if-no-files-found: error
+
+      - name: Upload Linux minimap2 artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: minimap2-linux-x86_64${{ matrix.artifact_suffix }}
+          path: |
+            toolchains-dist/linux_x86_64/bin/minimap2
+            toolchains-dist/linux_x86_64/share/licenses/minimap2/**
+            toolchains-dist/linux_x86_64/share/doc/minimap2/**
+            toolchains-dist/linux_x86_64/manifest.json
+          if-no-files-found: error
+
+      - name: Upload Linux mm2-plus artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: mm2-plus-linux-x86_64${{ matrix.artifact_suffix }}
+          path: |
+            toolchains-dist/linux_x86_64/bin/mm2plus*
+            toolchains-dist/linux_x86_64/share/licenses/mm2plus/**
+            toolchains-dist/linux_x86_64/share/doc/mm2plus/**
+            toolchains-dist/linux_x86_64/manifest.json
+          if-no-files-found: error
+
       - name: Validate hictk payload
-        if: ${{ false }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: scripts/ci/validate_linux_component.sh hictk
 
+      - name: Validate minimap2 payload
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        run: scripts/ci/validate_linux_component.sh minimap2
+
+      - name: Validate mm2-plus payload
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        run: scripts/ci/validate_linux_component.sh mm2plus
+
       - name: Save hictk Conan package cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
+        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-linux-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
           path: .cache/hictk-conan/linux_x86_64-${{ env.HICT_LINUX_ABI_MODE }}
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
-      - name: Build minimap2 in Docker
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
-        run: scripts/ci/linux_container_build.sh minimap2
-
-      - name: Validate minimap2 payload
-        if: ${{ false }}
-        run: scripts/ci/validate_linux_component.sh minimap2
-
-      - name: Build mm2-plus in Docker
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
-        run: scripts/ci/linux_container_build.sh mm2plus
-
-      - name: Validate mm2-plus payload
-        if: ${{ false }}
-        run: scripts/ci/validate_linux_component.sh mm2plus
+      - name: Save Linux bundled toolchain cache
+        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-linux-toolchains.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: toolchains-dist/linux_x86_64
+          key: ${{ steps.cache-linux-toolchains.outputs.cache-primary-key }}
 
       - name: Build fat JAR in manylinux2014
         run: scripts/ci/linux_container_build.sh fatjar
 
       - name: Validate fat JAR
-        if: ${{ false }}
         run: scripts/ci/validate_linux_component.sh fatjar
 
       - name: Save Linux container JDK cache
@@ -409,7 +503,6 @@ jobs:
         run: ./scripts/portable/build_portable_linux.sh
 
       - name: Check Linux GLIBC floor
-        if: ${{ false }}
         run: |
           set -euo pipefail
           abi_mode="${HICT_LINUX_ABI_MODE:-glibc217}"
@@ -622,11 +715,14 @@ jobs:
         shell: pwsh
         run: .\scripts\ci\resolve_jhdf5_jar.ps1
 
-      - name: Cache HiCT native processing libraries
-        uses: actions/cache@v5
+      - name: Restore HiCT native processing libraries
+        id: cache-native-processing
+        uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
           key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          restore-keys: |
+            hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
 
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -721,7 +817,7 @@ jobs:
             hictk-conan-windows-x86_64-
 
       - name: Configure MSVC environment
-        if: ${{ ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
+        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' || ((github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true') || (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true' && inputs.windows_exe_mode == 'custom')) }}
         shell: pwsh
         run: |
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
@@ -793,6 +889,30 @@ jobs:
             "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
 
+      - name: Build HiCT native processing libraries
+        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        shell: pwsh
+        run: .\gradlew.bat verifyNativeProcessingBuild -x copyWebUI --no-daemon
+
+      - name: Upload Windows HiCT native processing artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-native-windows-x86_64
+          path: build/native-processing/resources
+          if-no-files-found: error
+
+      - name: Validate HiCT native processing libraries
+        shell: pwsh
+        run: .\gradlew.bat verifyNativeProcessingBuild -x copyWebUI --no-daemon
+
+      - name: Save HiCT native processing cache
+        if: ${{ success() && steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: build/native-processing/resources
+          key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
+
       - name: Build bundled hictk
         id: build-hictk
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' }}
@@ -812,6 +932,42 @@ jobs:
         env:
           HICT_REQUIRE_MM2PLUS_VARIANTS: "1"
         run: .\scripts\toolchains\build_mm2plus_windows.ps1
+
+      - name: Upload Windows hictk artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: hictk-windows-x86_64
+          path: |
+            toolchains-dist/windows_x86_64/bin/hictk.exe
+            toolchains-dist/windows_x86_64/share/licenses/hictk/**
+            toolchains-dist/windows_x86_64/share/doc/hictk/**
+            toolchains-dist/windows_x86_64/manifest.json
+          if-no-files-found: error
+
+      - name: Upload Windows minimap2 artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: minimap2-windows-x86_64
+          path: |
+            toolchains-dist/windows_x86_64/bin/minimap2.exe
+            toolchains-dist/windows_x86_64/share/licenses/minimap2/**
+            toolchains-dist/windows_x86_64/share/doc/minimap2/**
+            toolchains-dist/windows_x86_64/manifest.json
+          if-no-files-found: error
+
+      - name: Upload Windows mm2-plus artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: mm2-plus-windows-x86_64
+          path: |
+            toolchains-dist/windows_x86_64/bin/mm2plus*.exe
+            toolchains-dist/windows_x86_64/share/licenses/mm2plus/**
+            toolchains-dist/windows_x86_64/share/doc/mm2plus/**
+            toolchains-dist/windows_x86_64/manifest.json
+          if-no-files-found: error
 
       - name: Verify bundled toolchain payload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -851,7 +1007,7 @@ jobs:
           & "toolchains-dist\windows_x86_64\bin\mm2plus-avx2.exe" --version
 
       - name: Save hictk Conan package cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
+        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-toolchain.outputs.hictk_ready != 'true' && steps.cache-hictk-conan.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
@@ -859,7 +1015,7 @@ jobs:
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
       - name: Save bundled toolchain cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && (steps.inspect-toolchain.outputs.hictk_ready != 'true' || steps.inspect-toolchain.outputs.minimap2_ready != 'true') }}
+        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
@@ -867,7 +1023,7 @@ jobs:
           key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
 
       - name: Save bundled mm2-plus cache
-        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
+        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
@@ -1116,9 +1272,42 @@ jobs:
             hictk-conan-v3-darwin-arm64-explicit-profile-
       - name: Build macOS Apple Silicon portable package
         run: ./scripts/portable/build_portable_darwin_arm64.sh
-      - name: Validate macOS Apple Silicon artifacts
-        run: |
-          echo "macOS Apple Silicon artifact validation moved to post-upload step."
+      - name: Upload macOS Apple Silicon HiCT native processing artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-native-darwin-arm64
+          path: build/native-processing/resources
+          if-no-files-found: error
+      - name: Upload macOS Apple Silicon hictk artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hictk-darwin-arm64
+          path: |
+            toolchains-dist/darwin_arm64/bin/hictk
+            toolchains-dist/darwin_arm64/share/licenses/hictk/**
+            toolchains-dist/darwin_arm64/share/doc/hictk/**
+            toolchains-dist/darwin_arm64/manifest.json
+          if-no-files-found: error
+      - name: Upload macOS Apple Silicon minimap2 artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: minimap2-darwin-arm64
+          path: |
+            toolchains-dist/darwin_arm64/bin/minimap2
+            toolchains-dist/darwin_arm64/share/licenses/minimap2/**
+            toolchains-dist/darwin_arm64/share/doc/minimap2/**
+            toolchains-dist/darwin_arm64/manifest.json
+          if-no-files-found: error
+      - name: Upload macOS Apple Silicon mm2-plus artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: mm2-plus-darwin-arm64
+          path: |
+            toolchains-dist/darwin_arm64/bin/mm2plus*
+            toolchains-dist/darwin_arm64/share/licenses/mm2plus/**
+            toolchains-dist/darwin_arm64/share/doc/mm2plus/**
+            toolchains-dist/darwin_arm64/manifest.json
+          if-no-files-found: error
       - name: Upload macOS Apple Silicon package artifact
         uses: actions/upload-artifact@v6
         with:
@@ -1128,38 +1317,46 @@ jobs:
             build/distributions/HiCT-*-darwin-arm64.tar.gz
             build/distributions/HiCT-*-darwin-arm64.sha256
           if-no-files-found: error
-      - name: Save Darwin toolchain cache
-        if: ${{ steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: toolchains-dist/darwin_arm64
-          key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
-      - name: Save Darwin Conan cache
-        if: ${{ steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: .cache/hictk-conan/darwin_arm64
-          key: ${{ steps.cache-darwin-conan.outputs.cache-primary-key }}
-      - name: Save HiCT native processing cache
-        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: build/native-processing/resources
-          key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
       - name: Validate macOS Apple Silicon artifacts (post-upload)
         run: |
           set -euo pipefail
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-arm64.run' | sort | tail -n 1)"
           launcher="$(find build/portable -path '*/bin/hict-darwin-arm64' -type f | sort | tail -n 1)"
           shell_launcher="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+          [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS arm64 native processing payload."; exit 1; }
+          find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS arm64 native processing dylibs found."; exit 1; }
+          [[ -x toolchains-dist/darwin_arm64/bin/hictk ]] || { echo "::error::Missing macOS arm64 hictk."; exit 1; }
+          [[ -x toolchains-dist/darwin_arm64/bin/minimap2 ]] || { echo "::error::Missing macOS arm64 minimap2."; exit 1; }
+          [[ -x toolchains-dist/darwin_arm64/bin/mm2plus-avx2 ]] || { echo "::error::Missing macOS arm64 mm2-plus AVX2 compatibility entrypoint."; exit 1; }
+          toolchains-dist/darwin_arm64/bin/hictk --help >/dev/null
+          toolchains-dist/darwin_arm64/bin/minimap2 --help >/dev/null || true
+          toolchains-dist/darwin_arm64/bin/mm2plus-avx2 --help >/dev/null || true
           [[ -n "${runfile}" && -f "${runfile}" ]] || { echo "::error::Missing macOS arm64 runfile."; exit 1; }
           [[ -n "${launcher}" && -x "${launcher}" ]] || { echo "::error::Missing signed macOS arm64 launcher."; exit 1; }
           [[ -n "${shell_launcher}" && -x "${shell_launcher}" ]] || { echo "::error::Missing macOS shell launcher."; exit 1; }
           codesign -dv --verbose=2 "${launcher}" 2>&1 || { echo "::error::macOS arm64 launcher is not ad-hoc signed."; exit 1; }
           "${launcher}" --help >/dev/null
+      - name: Save Darwin toolchain cache
+        if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: toolchains-dist/darwin_arm64
+          key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
+      - name: Save Darwin Conan cache
+        if: ${{ success() && steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: .cache/hictk-conan/darwin_arm64
+          key: ${{ steps.cache-darwin-conan.outputs.cache-primary-key }}
+      - name: Save HiCT native processing cache
+        if: ${{ success() && steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: build/native-processing/resources
+          key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
       - name: Report non-blocking macOS Apple Silicon failure
         if: ${{ failure() }}
         run: echo "::warning::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
@@ -1261,9 +1458,42 @@ jobs:
             hictk-conan-v3-darwin-x86_64-explicit-profile-
       - name: Build macOS Intel portable package
         run: ./scripts/portable/build_portable_darwin_x86_64.sh
-      - name: Validate macOS Intel artifacts
-        run: |
-          echo "macOS Intel artifact validation moved to post-upload step."
+      - name: Upload macOS Intel HiCT native processing artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-native-darwin-x86_64
+          path: build/native-processing/resources
+          if-no-files-found: error
+      - name: Upload macOS Intel hictk artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: hictk-darwin-x86_64
+          path: |
+            toolchains-dist/darwin_x86_64/bin/hictk
+            toolchains-dist/darwin_x86_64/share/licenses/hictk/**
+            toolchains-dist/darwin_x86_64/share/doc/hictk/**
+            toolchains-dist/darwin_x86_64/manifest.json
+          if-no-files-found: error
+      - name: Upload macOS Intel minimap2 artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: minimap2-darwin-x86_64
+          path: |
+            toolchains-dist/darwin_x86_64/bin/minimap2
+            toolchains-dist/darwin_x86_64/share/licenses/minimap2/**
+            toolchains-dist/darwin_x86_64/share/doc/minimap2/**
+            toolchains-dist/darwin_x86_64/manifest.json
+          if-no-files-found: error
+      - name: Upload macOS Intel mm2-plus artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: mm2-plus-darwin-x86_64
+          path: |
+            toolchains-dist/darwin_x86_64/bin/mm2plus*
+            toolchains-dist/darwin_x86_64/share/licenses/mm2plus/**
+            toolchains-dist/darwin_x86_64/share/doc/mm2plus/**
+            toolchains-dist/darwin_x86_64/manifest.json
+          if-no-files-found: error
       - name: Upload macOS Intel package artifact
         uses: actions/upload-artifact@v6
         with:
@@ -1273,38 +1503,46 @@ jobs:
             build/distributions/HiCT-*-darwin-x86_64.tar.gz
             build/distributions/HiCT-*-darwin-x86_64.sha256
           if-no-files-found: error
-      - name: Save Darwin Intel toolchain cache
-        if: ${{ steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: toolchains-dist/darwin_x86_64
-          key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
-      - name: Save Darwin Intel Conan cache
-        if: ${{ steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: .cache/hictk-conan/darwin_x86_64
-          key: ${{ steps.cache-darwin-conan.outputs.cache-primary-key }}
-      - name: Save HiCT native processing cache
-        if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: build/native-processing/resources
-          key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
       - name: Validate macOS Intel artifacts (post-upload)
         run: |
           set -euo pipefail
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-x86_64.run' | sort | tail -n 1)"
           launcher="$(find build/portable -path '*/bin/hict-darwin-x86_64' -type f | sort | tail -n 1)"
           shell_launcher="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+          [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS Intel native processing payload."; exit 1; }
+          find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS Intel native processing dylibs found."; exit 1; }
+          [[ -x toolchains-dist/darwin_x86_64/bin/hictk ]] || { echo "::error::Missing macOS Intel hictk."; exit 1; }
+          [[ -x toolchains-dist/darwin_x86_64/bin/minimap2 ]] || { echo "::error::Missing macOS Intel minimap2."; exit 1; }
+          [[ -x toolchains-dist/darwin_x86_64/bin/mm2plus-avx2 ]] || { echo "::error::Missing macOS Intel mm2-plus AVX2 entrypoint."; exit 1; }
+          toolchains-dist/darwin_x86_64/bin/hictk --help >/dev/null
+          toolchains-dist/darwin_x86_64/bin/minimap2 --help >/dev/null || true
+          toolchains-dist/darwin_x86_64/bin/mm2plus-avx2 --help >/dev/null || true
           [[ -n "${runfile}" && -f "${runfile}" ]] || { echo "::error::Missing macOS Intel runfile."; exit 1; }
           [[ -n "${launcher}" && -x "${launcher}" ]] || { echo "::error::Missing signed macOS Intel launcher."; exit 1; }
           [[ -n "${shell_launcher}" && -x "${shell_launcher}" ]] || { echo "::error::Missing macOS shell launcher."; exit 1; }
           codesign -dv --verbose=2 "${launcher}" 2>&1 || { echo "::error::macOS Intel launcher is not ad-hoc signed."; exit 1; }
           "${launcher}" --help >/dev/null
+      - name: Save Darwin Intel toolchain cache
+        if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: toolchains-dist/darwin_x86_64
+          key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
+      - name: Save Darwin Intel Conan cache
+        if: ${{ success() && steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: .cache/hictk-conan/darwin_x86_64
+          key: ${{ steps.cache-darwin-conan.outputs.cache-primary-key }}
+      - name: Save HiCT native processing cache
+        if: ${{ success() && steps.cache-native-processing.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: build/native-processing/resources
+          key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
       - name: Report non-blocking macOS Intel failure
         if: ${{ failure() }}
         run: echo "::warning::Non-blocking macOS Intel build failed; Windows/Linux release may still proceed without this artifact."
