@@ -254,6 +254,21 @@ fun emitCiWarning(message: String) {
   logger.warn(message)
 }
 
+
+fun envOrProjectProperty(name: String): String? =
+  (findProperty(name) as String?)?.takeIf { it.isNotBlank() }
+    ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val bundledJhdf5LocalJarPath = envOrProjectProperty("HICT_JHDF5_LOCAL_JAR")
+  ?: envOrProjectProperty("hictJhdf5LocalJar")
+val requireBundledJhdf5 = envOrProjectProperty("HICT_REQUIRE_BUNDLED_JHDF5")
+  ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
+  ?: false
+
+fun bundledJhdf5LocalJarFile(): File? = bundledJhdf5LocalJarPath
+  ?.let { file(it) }
+  ?.takeIf { it.isFile }
+
 version = readVersion()
 
 application {
@@ -266,7 +281,18 @@ dependencies {
 //  implementation(fileTree("src/main/resources/libs"))
 //  runtimeOnly(fileTree("src/main/resources/libs/natives"))
 
-  implementation("cisd:jhdf5:19.04.1")
+  val localJhdf5Jar = bundledJhdf5LocalJarFile()
+  if (localJhdf5Jar != null) {
+    implementation(files(localJhdf5Jar))
+    logger.lifecycle("Using bundled JHDF5 jar from ${localJhdf5Jar.absolutePath}")
+  } else {
+    val message = "HICT_JHDF5_LOCAL_JAR is not set or does not point to a file; using published cisd:jhdf5:19.04.1 from Maven repositories."
+    if (requireBundledJhdf5) {
+      throw GradleException(message)
+    }
+    logger.lifecycle(message)
+    implementation("cisd:jhdf5:19.04.1")
+  }
 
 
   // https://mvnrepository.com/artifact/cisd/base
@@ -948,6 +974,52 @@ tasks.named("jar") {
   dependsOn("shadowJar")
 }
 
+
+tasks.register("verifyBundledJhdf5Payload") {
+  group = "verification"
+  description = "Verify that the selected JHDF5 jar/fat JAR carries the native payloads needed by portable releases."
+  dependsOn("shadowJar")
+  doLast {
+    val fatJar = tasks.named<ShadowJar>("shadowJar").get().archiveFile.get().asFile
+    if (!fatJar.isFile) {
+      throw GradleException("Fat JAR was not produced: ${fatJar.absolutePath}")
+    }
+    val entries = java.util.zip.ZipFile(fatJar).use { zip -> zip.entries().asSequence().map { it.name }.toSet() }
+    val requiredAnyOf = listOf(
+      "Linux amd64 JHDF5 JNI" to listOf("native/jhdf5/amd64-Linux/libjhdf5.so", "libs/native/jhdf5/amd64-Linux/libjhdf5.so"),
+      "Linux arm64 JHDF5 JNI" to listOf("native/jhdf5/arm64-Linux/libjhdf5.so", "libs/native/jhdf5/arm64-Linux/libjhdf5.so"),
+      "Windows amd64 JHDF5 JNI" to listOf("native/jhdf5/amd64-Windows/jhdf5.dll", "libs/native/jhdf5/amd64-Windows/jhdf5.dll"),
+      "macOS arm64 JHDF5 JNI" to listOf("native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib", "libs/native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib"),
+      "macOS x86_64 JHDF5 JNI" to listOf("native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib", "libs/native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib"),
+      "macOS arm64 HDF5 dylib" to listOf("resources/libs/osx_arm64/libhdf5.dylib", "resources/libs/macos_arm64/libhdf5.dylib", "resources/libs/darwin_arm64/libhdf5.dylib"),
+      "macOS x86_64 HDF5 dylib" to listOf("resources/libs/osx_64/libhdf5.dylib", "resources/libs/macos_64/libhdf5.dylib", "resources/libs/darwin_x86_64/libhdf5.dylib"),
+      "macOS arm64 bitshuffle plugin" to listOf("resources/libs/osx_arm64/libh5bshuf.dylib", "resources/libs/macos_arm64/libh5bshuf.dylib", "resources/libs/darwin_arm64/libh5bshuf.dylib"),
+      "macOS x86_64 bitshuffle plugin" to listOf("resources/libs/osx_64/libh5bshuf.dylib", "resources/libs/macos_64/libh5bshuf.dylib", "resources/libs/darwin_x86_64/libh5bshuf.dylib")
+    )
+    val missing = requiredAnyOf.filter { (_, candidates) -> candidates.none { it in entries } }
+    if (missing.isNotEmpty()) {
+      val message = buildString {
+        appendLine("The fat JAR does not contain the required bundled JHDF5/HDF5 native payloads:")
+        missing.forEach { (label, candidates) -> appendLine("- $label; expected one of ${candidates.joinToString()}") }
+        appendLine("Set HICT_JHDF5_LOCAL_JAR to the packaged sis-jhdf5 jar from jhdf5-with-plugins-configuration-snapshot, and set HICT_REQUIRE_BUNDLED_JHDF5=1 in release builds.")
+      }
+      if (requireBundledJhdf5) {
+        throw GradleException(message)
+      }
+      emitCiWarning(message)
+    } else {
+      logger.lifecycle("Verified bundled JHDF5/HDF5 native payloads in ${fatJar.absolutePath}")
+    }
+  }
+}
+
 tasks.named<ShadowJar>("shadowJar") {
   dependsOn("verifyNativeProcessingBuild")
+}
+
+
+if (requireBundledJhdf5) {
+  tasks.named("build") {
+    dependsOn("verifyBundledJhdf5Payload")
+  }
 }
