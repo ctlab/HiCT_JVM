@@ -4,6 +4,10 @@ $repo = if ($env:HICT_JHDF5_REPO) { $env:HICT_JHDF5_REPO } else { 'AxisAlexNT/jh
 $ref = if ($env:HICT_JHDF5_REF) { $env:HICT_JHDF5_REF } elseif ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { 'jhdf5-with-plugins-configuration-snapshot' }
 $jarName = if ($env:HICT_JHDF5_JAR_NAME) { $env:HICT_JHDF5_JAR_NAME } else { 'sis-jhdf5-19.04.1.jar' }
 $out = if ($env:HICT_JHDF5_LOCAL_JAR) { $env:HICT_JHDF5_LOCAL_JAR } else { Join-Path 'src/main/resources/libs' $jarName }
+$nativesArchiveName = if ($env:HICT_JHDF5_NATIVES_ARCHIVE_NAME) { $env:HICT_JHDF5_NATIVES_ARCHIVE_NAME } else { 'sis-jhdf5-19.04.1-natives.tar.gz' }
+$nativesArchiveOut = if ($env:HICT_JHDF5_NATIVES_ARCHIVE) { $env:HICT_JHDF5_NATIVES_ARCHIVE } else { Join-Path 'src/main/resources/libs' $nativesArchiveName }
+$fallbackJarName = if ($env:HICT_JHDF5_FALLBACK_JAR_NAME) { $env:HICT_JHDF5_FALLBACK_JAR_NAME } else { 'sis-jhdf5-19.04.1.jar' }
+$fallbackJarOut = if ($env:HICT_JHDF5_FALLBACK_LOCAL_JAR) { $env:HICT_JHDF5_FALLBACK_LOCAL_JAR } else { Join-Path 'src/main/resources/libs' $fallbackJarName }
 $mode = if ($env:HICT_JHDF5_SOURCE_MODE) { $env:HICT_JHDF5_SOURCE_MODE } else { 'artifact' }
 $releaseTag = if ($env:HICT_JHDF5_RELEASE_TAG) { $env:HICT_JHDF5_RELEASE_TAG } else { 'latest' }
 $artifactName = if ($env:HICT_JHDF5_ARTIFACT_NAME) { $env:HICT_JHDF5_ARTIFACT_NAME } else { 'jhdf5-packaged-jar' }
@@ -56,6 +60,7 @@ if ($mode -in @('maven', 'maven-central', 'published')) {
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $out) | Out-Null
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $nativesArchiveOut) | Out-Null
 
 if (Test-Path $out) {
   Write-Host "Using existing JHDF5 jar: $out"
@@ -79,7 +84,14 @@ if (Test-Path $out) {
           } else {
             gh release download $releaseTag --repo $repo --pattern $jarName --dir $tmp
           }
-          if ($LASTEXITCODE -ne 0) { $resolveError = "release $releaseTag in $repo has no downloadable $jarName payload" }
+          if ($LASTEXITCODE -ne 0 -and $fallbackJarName -ne $jarName) {
+            if ($releaseTag -eq 'latest') {
+              gh release download --repo $repo --pattern $fallbackJarName --dir $tmp
+            } else {
+              gh release download $releaseTag --repo $repo --pattern $fallbackJarName --dir $tmp
+            }
+          }
+          if ($LASTEXITCODE -ne 0) { $resolveError = "release $releaseTag in $repo has no downloadable $jarName or $fallbackJarName payload" }
         }
         { $_ -in @('artifact', 'branch', 'workflow', 'auto') } {
           $runId = gh run list --repo $repo --branch $ref --workflow build-native.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId'
@@ -100,6 +112,13 @@ if (Test-Path $out) {
       Use-MavenFallback $resolveError
     }
     $found = Get-ChildItem -Path $tmp -Recurse -Filter $jarName | Sort-Object FullName | Select-Object -First 1
+    if ((-not $found) -and $fallbackJarName -ne $jarName) {
+      $found = Get-ChildItem -Path $tmp -Recurse -Filter $fallbackJarName | Sort-Object FullName | Select-Object -First 1
+      if ($found) {
+        $out = $fallbackJarOut
+        Write-Host "::warning::Downloaded payload does not contain $jarName; using fallback $fallbackJarName."
+      }
+    }
     if (-not $found) {
       if ($strictSnapshot) {
         Get-ChildItem -Path $tmp -Recurse | Select-Object -ExpandProperty FullName | Write-Host
@@ -108,18 +127,71 @@ if (Test-Path $out) {
       Use-MavenFallback "downloaded $repo artifact does not contain $jarName"
     }
     Copy-Item -Force $found.FullName $out
+    $foundArchive = Get-ChildItem -Path $tmp -Recurse -Filter $nativesArchiveName | Sort-Object FullName | Select-Object -First 1
+    if ($foundArchive) {
+      Copy-Item -Force $foundArchive.FullName $nativesArchiveOut
+    }
   } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
   }
 }
 
-$entries = (& jar tf $out)
-if ($LASTEXITCODE -ne 0) { throw "jar tf failed for $out" }
-$missing = $false
-foreach ($pattern in Get-RequiredPatternsForRunner) {
-  if (-not ($entries | Select-String -Quiet -Pattern $pattern)) {
-    Write-Host "::warning::JHDF5 snapshot jar $out lacks required native entry matching $pattern for $($env:RUNNER_OS)/$($env:RUNNER_ARCH)."
-    $missing = $true
+if ((-not (Test-Path $nativesArchiveOut)) -and $mode -eq 'release' -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+  $tmpArchive = Join-Path ([System.IO.Path]::GetTempPath()) ("hict-jhdf5-natives-" + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $tmpArchive | Out-Null
+  try {
+    if ($releaseTag -eq 'latest') {
+      gh release download --repo $repo --pattern $nativesArchiveName --dir $tmpArchive
+    } else {
+      gh release download $releaseTag --repo $repo --pattern $nativesArchiveName --dir $tmpArchive
+    }
+    if ($LASTEXITCODE -eq 0) {
+      $foundArchive = Get-ChildItem -Path $tmpArchive -Recurse -Filter $nativesArchiveName | Sort-Object FullName | Select-Object -First 1
+      if ($foundArchive) {
+        Copy-Item -Force $foundArchive.FullName $nativesArchiveOut
+      }
+    }
+  } finally {
+    $global:LASTEXITCODE = 0
+    Remove-Item -Recurse -Force $tmpArchive -ErrorAction SilentlyContinue
+  }
+}
+
+function Get-Jhdf5PayloadEntries([string] $JarPath) {
+  $combined = @(& jar tf $JarPath)
+  if ($LASTEXITCODE -ne 0) { throw "jar tf failed for $JarPath" }
+  if (Test-Path $nativesArchiveOut) {
+    $archiveEntries = (& tar -tzf $nativesArchiveOut)
+    if ($LASTEXITCODE -eq 0) {
+      $combined += @($archiveEntries | ForEach-Object { "archive:$_" })
+    } else {
+      $global:LASTEXITCODE = 0
+      Write-Host "::warning::Failed to inspect JHDF5 native archive $nativesArchiveOut; runtime will rely on jar-embedded natives."
+    }
+  }
+  return $combined
+}
+
+function Test-RequiredJhdf5Entries([string] $JarPath, [string[]] $Entries) {
+  $localMissing = $false
+  foreach ($pattern in Get-RequiredPatternsForRunner) {
+    $archivePattern = '^archive:' + $pattern.Substring(1)
+    if (-not ($Entries | Select-String -Quiet -Pattern "($pattern)|($archivePattern)")) {
+      Write-Host "::warning::JHDF5 snapshot jar $JarPath lacks required native entry matching $pattern for $($env:RUNNER_OS)/$($env:RUNNER_ARCH)."
+      $localMissing = $true
+    }
+  }
+  return -not $localMissing
+}
+
+$entries = Get-Jhdf5PayloadEntries $out
+$missing = -not (Test-RequiredJhdf5Entries $out $entries)
+if ($missing -and $fallbackJarName -ne (Split-Path -Leaf $out) -and (Test-Path $fallbackJarOut)) {
+  $fallbackEntries = Get-Jhdf5PayloadEntries $fallbackJarOut
+  if (Test-RequiredJhdf5Entries $fallbackJarOut $fallbackEntries) {
+    Write-Host "::warning::Using fallback JHDF5 jar $fallbackJarOut because $out has no ready native payload for this runner."
+    $out = $fallbackJarOut
+    $missing = $false
   }
 }
 if ($missing) {
@@ -133,6 +205,12 @@ if ($missing) {
 Write-GitHubEnvLines @(
   "HICT_JHDF5_SOURCE_MODE=$mode",
   "HICT_JHDF5_LOCAL_JAR=$out",
+  "HICT_JHDF5_NATIVES_ARCHIVE=$nativesArchiveOut",
   'HICT_REQUIRE_BUNDLED_JHDF5=1'
 )
 Write-Host "Resolved JHDF5 jar: $out"
+if (Test-Path $nativesArchiveOut) {
+  Write-Host "Resolved JHDF5 native archive: $nativesArchiveOut"
+} else {
+  Write-Host "::warning::No split JHDF5 native archive was resolved; runtime will rely on jar-embedded natives."
+}

@@ -5,6 +5,10 @@ repo="${HICT_JHDF5_REPO:-AxisAlexNT/jhdf5-with-plugins-configuration-snapshot}"
 ref="${HICT_JHDF5_REF:-${GITHUB_REF_NAME:-jhdf5-with-plugins-configuration-snapshot}}"
 jar_name="${HICT_JHDF5_JAR_NAME:-sis-jhdf5-19.04.1.jar}"
 out="${HICT_JHDF5_LOCAL_JAR:-src/main/resources/libs/${jar_name}}"
+natives_archive_name="${HICT_JHDF5_NATIVES_ARCHIVE_NAME:-sis-jhdf5-19.04.1-natives.tar.gz}"
+natives_archive_out="${HICT_JHDF5_NATIVES_ARCHIVE:-src/main/resources/libs/${natives_archive_name}}"
+fallback_jar_name="${HICT_JHDF5_FALLBACK_JAR_NAME:-sis-jhdf5-19.04.1.jar}"
+fallback_jar_out="${HICT_JHDF5_FALLBACK_LOCAL_JAR:-src/main/resources/libs/${fallback_jar_name}}"
 mode="${HICT_JHDF5_SOURCE_MODE:-artifact}"
 release_tag="${HICT_JHDF5_RELEASE_TAG:-latest}"
 artifact_name="${HICT_JHDF5_ARTIFACT_NAME:-jhdf5-packaged-jar}"
@@ -60,6 +64,7 @@ case "${mode}" in
 esac
 
 mkdir -p "$(dirname "${out}")"
+mkdir -p "$(dirname "${natives_archive_out}")"
 resolve_error=""
 
 if [[ -f "${out}" ]]; then
@@ -86,7 +91,15 @@ else
         gh release download "${release_tag}" --repo "${repo}" --pattern "${jar_name}" --dir "${tmp}"
       fi
       rc=$?
-      if [[ ${rc} -ne 0 ]]; then resolve_error="release ${release_tag} in ${repo} has no downloadable ${jar_name} payload"; fi
+      if [[ ${rc} -ne 0 && "${fallback_jar_name}" != "${jar_name}" ]]; then
+        if [[ "${release_tag}" == "latest" ]]; then
+          gh release download --repo "${repo}" --pattern "${fallback_jar_name}" --dir "${tmp}"
+        else
+          gh release download "${release_tag}" --repo "${repo}" --pattern "${fallback_jar_name}" --dir "${tmp}"
+        fi
+        rc=$?
+      fi
+      if [[ ${rc} -ne 0 ]]; then resolve_error="release ${release_tag} in ${repo} has no downloadable ${jar_name} or ${fallback_jar_name} payload"; fi
       ;;
     artifact|branch|workflow|auto)
       run_id="$(gh run list --repo "${repo}" --branch "${ref}" --workflow build-native.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
@@ -113,6 +126,13 @@ else
     use_maven_fallback "${resolve_error}"
   fi
   found="$(find "${tmp}" -type f -name "${jar_name}" | sort | head -n 1)"
+  if [[ -z "${found}" && "${fallback_jar_name}" != "${jar_name}" ]]; then
+    found="$(find "${tmp}" -type f -name "${fallback_jar_name}" | sort | head -n 1)"
+    if [[ -n "${found}" ]]; then
+      out="${fallback_jar_out}"
+      echo "::warning::Downloaded payload does not contain ${jar_name}; using fallback ${fallback_jar_name}."
+    fi
+  fi
   if [[ -z "${found}" ]]; then
     if [[ "${strict_snapshot}" == "1" ]]; then
       echo "Downloaded payload does not contain ${jar_name}." >&2
@@ -124,14 +144,67 @@ else
   cp "${found}" "${out}"
 fi
 
-entries="$(jar tf "${out}")"
-missing=0
-while IFS= read -r pattern; do
-  if ! grep -Eq "${pattern}" <<<"${entries}"; then
-    echo "::warning::JHDF5 snapshot jar ${out} lacks required native entry matching ${pattern} for ${RUNNER_OS:-unknown}/${RUNNER_ARCH:-unknown}."
-    missing=1
+if [[ ! -f "${natives_archive_out}" ]]; then
+  if [[ "${mode}" == "release" ]]; then
+    tmp_archive="$(mktemp -d)"
+    trap 'rm -rf "${tmp_archive}"' EXIT
+    set +e
+    if [[ "${release_tag}" == "latest" ]]; then
+      gh release download --repo "${repo}" --pattern "${natives_archive_name}" --dir "${tmp_archive}"
+    else
+      gh release download "${release_tag}" --repo "${repo}" --pattern "${natives_archive_name}" --dir "${tmp_archive}"
+    fi
+    rc=$?
+    set -e
+    if [[ ${rc} -eq 0 ]]; then
+      found_archive="$(find "${tmp_archive}" -type f -name "${natives_archive_name}" | sort | head -n 1)"
+      [[ -z "${found_archive}" ]] || cp "${found_archive}" "${natives_archive_out}"
+    fi
+  elif [[ -d "${tmp:-}" ]]; then
+    found_archive="$(find "${tmp}" -type f -name "${natives_archive_name}" | sort | head -n 1)"
+    [[ -z "${found_archive}" ]] || cp "${found_archive}" "${natives_archive_out}"
   fi
-done < <(required_patterns_for_runner)
+fi
+
+build_entries() {
+  local jar_path="$1"
+  local combined
+  combined="$(jar tf "${jar_path}")"
+  if [[ -f "${natives_archive_out}" ]]; then
+    combined+=$'\n'
+    combined+="$(tar -tzf "${natives_archive_out}" | sed 's#^#archive:#')"
+  fi
+  printf '%s\n' "${combined}"
+}
+
+validate_required_entries() {
+  local jar_path="$1"
+  local entries="$2"
+  local local_missing=0
+  while IFS= read -r pattern; do
+    archive_pattern="^archive:${pattern#^}"
+    if ! grep -Eq "${pattern}|${archive_pattern}" <<<"${entries}"; then
+      echo "::warning::JHDF5 snapshot jar ${jar_path} lacks required native entry matching ${pattern} for ${RUNNER_OS:-unknown}/${RUNNER_ARCH:-unknown}."
+      local_missing=1
+    fi
+  done < <(required_patterns_for_runner)
+  return "${local_missing}"
+}
+
+entries="$(build_entries "${out}")"
+missing=0
+validate_required_entries "${out}" "${entries}" || missing=1
+
+if [[ ${missing} -ne 0 ]]; then
+  if [[ "${fallback_jar_name}" != "$(basename "${out}")" && -f "${fallback_jar_out}" ]]; then
+    fallback_entries="$(build_entries "${fallback_jar_out}")"
+    if validate_required_entries "${fallback_jar_out}" "${fallback_entries}"; then
+      echo "::warning::Using fallback JHDF5 jar ${fallback_jar_out} because ${out} has no ready native payload for this runner."
+      out="${fallback_jar_out}"
+      missing=0
+    fi
+  fi
+fi
 
 if [[ ${missing} -ne 0 ]]; then
   if [[ "${strict_snapshot}" == "1" ]]; then
@@ -145,5 +218,11 @@ fi
 emit_env \
   "HICT_JHDF5_SOURCE_MODE=${mode}" \
   "HICT_JHDF5_LOCAL_JAR=${out}" \
+  "HICT_JHDF5_NATIVES_ARCHIVE=${natives_archive_out}" \
   "HICT_REQUIRE_BUNDLED_JHDF5=1"
 echo "Resolved JHDF5 jar: ${out}"
+if [[ -f "${natives_archive_out}" ]]; then
+  echo "Resolved JHDF5 native archive: ${natives_archive_out}"
+else
+  echo "::warning::No split JHDF5 native archive was resolved; runtime will rely on jar-embedded natives."
+fi

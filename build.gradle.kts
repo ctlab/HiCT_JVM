@@ -271,46 +271,88 @@ val useMavenJhdf5 = jhdf5SourceMode in setOf("maven", "maven-central", "publishe
     ?: false
 val bundledJhdf5JarName = envOrProjectProperty("HICT_JHDF5_JAR_NAME")
   ?: "sis-jhdf5-19.04.1.jar"
+val bundledJhdf5FallbackJarName = envOrProjectProperty("HICT_JHDF5_FALLBACK_JAR_NAME")
+  ?: "sis-jhdf5-19.04.1.jar"
 val bundledJhdf5DefaultLocalJarPath = "src/main/resources/libs/$bundledJhdf5JarName"
 val bundledJhdf5LocalJarPath = envOrProjectProperty("HICT_JHDF5_LOCAL_JAR")
   ?: envOrProjectProperty("hictJhdf5LocalJar")
   ?: bundledJhdf5DefaultLocalJarPath
+val bundledJhdf5FallbackLocalJarPath = "src/main/resources/libs/$bundledJhdf5FallbackJarName"
 val bundledJhdf5DownloadUrl = envOrProjectProperty("HICT_JHDF5_DOWNLOAD_URL")
   ?: envOrProjectProperty("hictJhdf5DownloadUrl")
   ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/latest/$bundledJhdf5JarName"
+val bundledJhdf5FallbackDownloadUrl = envOrProjectProperty("HICT_JHDF5_FALLBACK_DOWNLOAD_URL")
+  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/latest/$bundledJhdf5FallbackJarName"
+val bundledJhdf5NativesArchiveName = envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE_NAME")
+  ?: "sis-jhdf5-19.04.1-natives.tar.gz"
+val bundledJhdf5NativesArchivePath = envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE")
+  ?: envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE_PATH")
+  ?: "src/main/resources/libs/$bundledJhdf5NativesArchiveName"
+val bundledJhdf5NativesArchiveDownloadUrl = envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE_URL")
+  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/latest/$bundledJhdf5NativesArchiveName"
+val preferBundledJhdf5NativesArchive = bundledJhdf5JarName.contains("slim", ignoreCase = true) ||
+  (envOrProjectProperty("HICT_REQUIRE_JHDF5_NATIVES_ARCHIVE")
+    ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
+    ?: false)
 val requireBundledJhdf5 = !useMavenJhdf5 && (envOrProjectProperty("HICT_REQUIRE_BUNDLED_JHDF5")
   ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
   ?: false)
+
+fun downloadFile(url: String, target: File, label: String): File? {
+  if (target.isFile) {
+    return target
+  }
+  return try {
+    target.parentFile.mkdirs()
+    URI(url).toURL().openStream().use { stream ->
+      Files.copy(stream, target.toPath(), REPLACE_EXISTING)
+    }
+    logger.lifecycle("Downloaded $label from $url to ${target.absolutePath}")
+    target.takeIf { it.isFile }
+  } catch (err: Exception) {
+    target.delete()
+    logger.warn("Failed to download $label from $url: ${err.message}")
+    null
+  }
+}
 
 fun downloadedJhdf5JarFile(): File? {
   if (useMavenJhdf5 || jhdf5SourceMode == "local") {
     return null
   }
   val target = layout.buildDirectory.file("jhdf5/$bundledJhdf5JarName").get().asFile
-  if (target.isFile) {
-    return target
+  downloadFile(bundledJhdf5DownloadUrl, target, "bundled JHDF5 jar")?.let { return it }
+  if (bundledJhdf5FallbackJarName != bundledJhdf5JarName) {
+    val fallbackTarget = layout.buildDirectory.file("jhdf5/$bundledJhdf5FallbackJarName").get().asFile
+    return downloadFile(bundledJhdf5FallbackDownloadUrl, fallbackTarget, "fallback bundled JHDF5 jar")
   }
-  return try {
-    target.parentFile.mkdirs()
-    URI(bundledJhdf5DownloadUrl).toURL().openStream().use { stream ->
-      Files.copy(stream, target.toPath(), REPLACE_EXISTING)
-    }
-    logger.lifecycle("Downloaded bundled JHDF5 jar from $bundledJhdf5DownloadUrl to ${target.absolutePath}")
-    target.takeIf { it.isFile }
-  } catch (err: Exception) {
-    target.delete()
-    logger.warn("Failed to download bundled JHDF5 jar from $bundledJhdf5DownloadUrl; Maven fallback may be used.", err)
-    null
-  }
+  return null
 }
 
 fun bundledJhdf5LocalJarFile(): File? = if (useMavenJhdf5) {
   null
 } else {
-  bundledJhdf5LocalJarPath
-    ?.let { file(it) }
-    ?.takeIf { it.isFile }
+  sequenceOf(bundledJhdf5LocalJarPath, bundledJhdf5FallbackLocalJarPath)
+    .distinct()
+    .map { file(it) }
+    .firstOrNull { it.isFile }
     ?: downloadedJhdf5JarFile()
+}
+
+fun downloadedJhdf5NativesArchiveFile(): File? {
+  if (useMavenJhdf5 || jhdf5SourceMode == "local" || !preferBundledJhdf5NativesArchive) {
+    return null
+  }
+  val target = layout.buildDirectory.file("jhdf5/$bundledJhdf5NativesArchiveName").get().asFile
+  return downloadFile(bundledJhdf5NativesArchiveDownloadUrl, target, "bundled JHDF5 native archive")
+}
+
+fun bundledJhdf5NativesArchiveFile(): File? = if (useMavenJhdf5) {
+  null
+} else {
+  file(bundledJhdf5NativesArchivePath)
+    .takeIf { it.isFile }
+    ?: downloadedJhdf5NativesArchiveFile()
 }
 
 version = readVersion()
@@ -1094,36 +1136,52 @@ tasks.register("verifyBundledJhdf5Payload") {
       throw GradleException("Fat JAR was not produced: ${fatJar.absolutePath}")
     }
     val entries = ZipFile(fatJar).use { zip: ZipFile -> zip.entries().asSequence().map { entry -> entry.name }.toSet() }
+    val nativesArchiveEntries = bundledJhdf5NativesArchiveFile()
+      ?.takeIf { it.isFile }
+      ?.let { archive ->
+        ByteArrayOutputStream().use { out ->
+          exec {
+            commandLine("tar", "-tzf", archive.absolutePath)
+            standardOutput = out
+          }
+          out.toString().lineSequence().filter { it.isNotBlank() }.toSet()
+        }
+      }
+      ?: emptySet()
     fun hasVersionedMacHdf5Dylib(platformDirectory: String): Boolean {
       val regex = Regex("^resources/libs/$platformDirectory/libhdf5\\.\\d+(?:\\.\\d+)*\\.dylib$")
       return entries.any { it == "resources/libs/$platformDirectory/libhdf5.dylib" || regex.matches(it) }
     }
+    fun hasJhdf5Entry(path: String): Boolean =
+      entries.contains(path) || nativesArchiveEntries.contains(path.removePrefix("libs/"))
 
     val requiredAnyOf = listOf(
       "Linux amd64 JHDF5 JNI" to { set: Set<String> ->
-        set.contains("native/jhdf5/amd64-Linux/libjhdf5.so") || set.contains("libs/native/jhdf5/amd64-Linux/libjhdf5.so")
+        set.contains("native/jhdf5/amd64-Linux/libjhdf5.so") || hasJhdf5Entry("libs/native/jhdf5/amd64-Linux/libjhdf5.so")
       },
       "Linux arm64 JHDF5 JNI" to { set: Set<String> ->
-        set.contains("native/jhdf5/arm64-Linux/libjhdf5.so") || set.contains("libs/native/jhdf5/arm64-Linux/libjhdf5.so")
+        set.contains("native/jhdf5/arm64-Linux/libjhdf5.so") || hasJhdf5Entry("libs/native/jhdf5/arm64-Linux/libjhdf5.so")
       },
       "Windows amd64 JHDF5 JNI" to { set: Set<String> ->
-        set.contains("native/jhdf5/amd64-Windows/jhdf5.dll") || set.contains("libs/native/jhdf5/amd64-Windows/jhdf5.dll")
+        set.contains("native/jhdf5/amd64-Windows/jhdf5.dll") || hasJhdf5Entry("libs/native/jhdf5/amd64-Windows/jhdf5.dll")
       },
       "macOS arm64 JHDF5 JNI" to { set: Set<String> ->
-        set.contains("native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib") || set.contains("libs/native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib")
+        set.contains("native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib") || hasJhdf5Entry("libs/native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib")
       },
       "macOS x86_64 JHDF5 JNI" to { set: Set<String> ->
-        set.contains("native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib") || set.contains("libs/native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib")
+        set.contains("native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib") || hasJhdf5Entry("libs/native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib")
       },
       "macOS arm64 HDF5 dylib" to { entriesSet: Set<String> ->
         hasVersionedMacHdf5Dylib("osx_arm64") ||
           hasVersionedMacHdf5Dylib("macos_arm64") ||
-          hasVersionedMacHdf5Dylib("darwin_arm64")
+          hasVersionedMacHdf5Dylib("darwin_arm64") ||
+          nativesArchiveEntries.any { it.matches(Regex("^native/jhdf5/aarch64-Mac OS X/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib$")) }
       },
       "macOS x86_64 HDF5 dylib" to { entriesSet: Set<String> ->
         hasVersionedMacHdf5Dylib("osx_64") ||
           hasVersionedMacHdf5Dylib("macos_64") ||
-          hasVersionedMacHdf5Dylib("darwin_x86_64")
+          hasVersionedMacHdf5Dylib("darwin_x86_64") ||
+          nativesArchiveEntries.any { it.matches(Regex("^native/jhdf5/x86_64-Mac OS X/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib$")) }
       },
       // Current JHDF5 macOS package provides the core HDF5/JHDF5 dylib tree.
       // Plugins are validated by the producing JHDF5 workflow when present, but
@@ -1149,6 +1207,15 @@ tasks.register("verifyBundledJhdf5Payload") {
 
 tasks.named<ShadowJar>("shadowJar") {
   dependsOn("verifyNativeProcessingBuild")
+  doLast {
+    bundledJhdf5NativesArchiveFile()?.let { archive ->
+      val target = archiveFile.get().asFile.parentFile.resolve(archive.name)
+      if (archive.canonicalFile != target.canonicalFile) {
+        Files.copy(archive.toPath(), target.toPath(), REPLACE_EXISTING)
+      }
+      logger.lifecycle("Staged bundled JHDF5 native archive at ${target.absolutePath}")
+    }
+  }
 }
 
 

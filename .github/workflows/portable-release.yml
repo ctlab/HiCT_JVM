@@ -132,8 +132,11 @@ env:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
   HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
   HICT_JHDF5_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_ref || 'jhdf5-with-plugins-configuration-snapshot' }}
-  HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1.jar"
-  HICT_JHDF5_LOCAL_JAR: "src/main/resources/libs/sis-jhdf5-19.04.1.jar"
+  HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1-slim.jar"
+  HICT_JHDF5_FALLBACK_JAR_NAME: "sis-jhdf5-19.04.1.jar"
+  HICT_JHDF5_NATIVES_ARCHIVE_NAME: "sis-jhdf5-19.04.1-natives.tar.gz"
+  HICT_JHDF5_LOCAL_JAR: "src/main/resources/libs/sis-jhdf5-19.04.1-slim.jar"
+  HICT_JHDF5_NATIVES_ARCHIVE: "src/main/resources/libs/sis-jhdf5-19.04.1-natives.tar.gz"
 
 jobs:
   linux-portable:
@@ -179,18 +182,28 @@ jobs:
           set -euo pipefail
           mkdir -p src/main/resources/libs
           tmp_jar="$(mktemp)"
+          tmp_natives="$(mktemp)"
           jar_downloaded=false
+          natives_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_JAR_NAME}"
+            natives_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
+            natives_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
           fi
           if curl -fL --retry 5 -o "${tmp_jar}" "${jar_url}"; then
-            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
             jar_downloaded=true
           fi
-          if [[ "${jar_downloaded}" != "true" ]]; then
-            echo "::warning::Failed to download ${jar_url}; resolver step will try workflow artifact and then Maven fallback."
+          if curl -fL --retry 5 -o "${tmp_natives}" "${natives_url}"; then
+            natives_downloaded=true
+          fi
+          if [[ "${jar_downloaded}" == "true" && "${natives_downloaded}" == "true" ]]; then
+            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
+            mv "${tmp_natives}" "src/main/resources/libs/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
+          else
+            rm -f "${tmp_jar}" "${tmp_natives}"
+            echo "::warning::Failed to download split JHDF5 assets (${jar_url}, ${natives_url}); resolver step will try workflow artifact and then Maven/legacy fallback."
           fi
 
       - name: Set up Node.js
@@ -557,21 +570,34 @@ jobs:
           $jarDir = "src\main\resources\libs"
           New-Item -ItemType Directory -Force -Path $jarDir | Out-Null
           $tmpJar = Join-Path $env:RUNNER_TEMP "jhdf5.jar"
+          $tmpNatives = Join-Path $env:RUNNER_TEMP "jhdf5-natives.tar.gz"
           $jarDownloaded = $false
+          $nativesDownloaded = $false
           if ($env:HICT_JHDF5_RELEASE_TAG -eq "latest") {
             $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/latest/$env:HICT_JHDF5_JAR_NAME"
+            $nativesUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/latest/$env:HICT_JHDF5_NATIVES_ARCHIVE_NAME"
           } else {
             $jarUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/$env:HICT_JHDF5_RELEASE_TAG/$env:HICT_JHDF5_JAR_NAME"
+            $nativesUrl = "https://github.com/$env:HICT_JHDF5_REPO/releases/download/$env:HICT_JHDF5_RELEASE_TAG/$env:HICT_JHDF5_NATIVES_ARCHIVE_NAME"
           }
           try {
             Invoke-WebRequest -Uri $jarUrl -OutFile $tmpJar
-            Move-Item -Force $tmpJar (Join-Path $jarDir $env:HICT_JHDF5_JAR_NAME)
             $jarDownloaded = $true
           } catch {
-            Write-Host "::warning::Failed to download $jarUrl; falling back to $env:HICT_JHDF5_LOCAL_JAR."
+            Write-Host "::warning::Failed to download $jarUrl."
           }
-          if (-not $jarDownloaded) {
-            Write-Host "::warning::Resolver step will try workflow artifact and then Maven fallback."
+          try {
+            Invoke-WebRequest -Uri $nativesUrl -OutFile $tmpNatives
+            $nativesDownloaded = $true
+          } catch {
+            Write-Host "::warning::Failed to download $nativesUrl."
+          }
+          if ($jarDownloaded -and $nativesDownloaded) {
+            Move-Item -Force $tmpJar (Join-Path $jarDir $env:HICT_JHDF5_JAR_NAME)
+            Move-Item -Force $tmpNatives (Join-Path $jarDir $env:HICT_JHDF5_NATIVES_ARCHIVE_NAME)
+          } else {
+            Remove-Item -Force -ErrorAction SilentlyContinue $tmpJar, $tmpNatives
+            Write-Host "::warning::Resolver step will try workflow artifact and then Maven/legacy fallback."
           }
 
       - name: Set up Node.js
@@ -1019,18 +1045,28 @@ jobs:
           set -euo pipefail
           mkdir -p src/main/resources/libs
           tmp_jar="$(mktemp)"
+          tmp_natives="$(mktemp)"
           jar_downloaded=false
+          natives_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_JAR_NAME}"
+            natives_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
+            natives_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
           fi
           if curl -fL --retry 5 -o "${tmp_jar}" "${jar_url}"; then
-            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
             jar_downloaded=true
           fi
-          if [[ "${jar_downloaded}" != "true" ]]; then
-            echo "::warning::Failed to download ${jar_url}; resolver step will try workflow artifact and then Maven fallback."
+          if curl -fL --retry 5 -o "${tmp_natives}" "${natives_url}"; then
+            natives_downloaded=true
+          fi
+          if [[ "${jar_downloaded}" == "true" && "${natives_downloaded}" == "true" ]]; then
+            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
+            mv "${tmp_natives}" "src/main/resources/libs/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
+          else
+            rm -f "${tmp_jar}" "${tmp_natives}"
+            echo "::warning::Failed to download split JHDF5 assets (${jar_url}, ${natives_url}); resolver step will try workflow artifact and then Maven/legacy fallback."
           fi
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -1154,18 +1190,28 @@ jobs:
           set -euo pipefail
           mkdir -p src/main/resources/libs
           tmp_jar="$(mktemp)"
+          tmp_natives="$(mktemp)"
           jar_downloaded=false
+          natives_downloaded=false
           if [[ "${HICT_JHDF5_RELEASE_TAG}" == "latest" ]]; then
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_JAR_NAME}"
+            natives_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/latest/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
           else
             jar_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_JAR_NAME}"
+            natives_url="https://github.com/${HICT_JHDF5_REPO}/releases/download/${HICT_JHDF5_RELEASE_TAG}/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
           fi
           if curl -fL --retry 5 -o "${tmp_jar}" "${jar_url}"; then
-            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
             jar_downloaded=true
           fi
-          if [[ "${jar_downloaded}" != "true" ]]; then
-            echo "::warning::Failed to download ${jar_url}; resolver step will try workflow artifact and then Maven fallback."
+          if curl -fL --retry 5 -o "${tmp_natives}" "${natives_url}"; then
+            natives_downloaded=true
+          fi
+          if [[ "${jar_downloaded}" == "true" && "${natives_downloaded}" == "true" ]]; then
+            mv "${tmp_jar}" "src/main/resources/libs/${HICT_JHDF5_JAR_NAME}"
+            mv "${tmp_natives}" "src/main/resources/libs/${HICT_JHDF5_NATIVES_ARCHIVE_NAME}"
+          else
+            rm -f "${tmp_jar}" "${tmp_natives}"
+            echo "::warning::Failed to download split JHDF5 assets (${jar_url}, ${natives_url}); resolver step will try workflow artifact and then Maven/legacy fallback."
           fi
       - name: Set up Node.js
         uses: actions/setup-node@v5

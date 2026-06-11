@@ -104,6 +104,10 @@ mkdir -p \
   "${ARTIFACT_DIR}"
 
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
+JHDF5_NATIVES_ARCHIVE="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
+if [[ -n "${JHDF5_NATIVES_ARCHIVE}" && -f "${JHDF5_NATIVES_ARCHIVE}" ]]; then
+  cp "${JHDF5_NATIVES_ARCHIVE}" "${APP_DIR}/lib/$(basename "${JHDF5_NATIVES_ARCHIVE}")"
+fi
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"
@@ -240,6 +244,12 @@ if [[ -z "${DATA_DIR:-}" ]]; then
 fi
 export HICT_APP_HOME="${APP_HOME}"
 export HICT_JAR_PATH="${APP_HOME}/lib/hict.jar"
+if [[ -z "${HICT_JHDF5_NATIVES_ARCHIVE:-}" ]]; then
+  HICT_JHDF5_NATIVES_CANDIDATE="$(find "${APP_HOME}/lib" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
+  if [[ -n "${HICT_JHDF5_NATIVES_CANDIDATE}" ]]; then
+    export HICT_JHDF5_NATIVES_ARCHIVE="${HICT_JHDF5_NATIVES_CANDIDATE}"
+  fi
+fi
 if [[ -z "${WEBUI_ROOT:-}" && -d "${APP_HOME}/webui" ]]; then
   export WEBUI_ROOT="${APP_HOME}/webui"
 fi
@@ -352,6 +362,8 @@ Run:
 
 The package includes:
   - HiCT_JVM fat JAR, including the built HiCT_WebUI resources
+  - optional split JHDF5 native archive under lib/ when the release uses the
+    slim JHDF5 jar packaging
   - extracted HiCT_WebUI assets used as WEBUI_ROOT for robust portable serving
   - extracted bundled hictk payload under toolchains/ when release packaging
     was built with .hic conversion support

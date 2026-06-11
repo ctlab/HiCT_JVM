@@ -142,6 +142,7 @@ if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
   echo "Fat JAR was not found under ${PROJECT_DIR}/build/libs" >&2
   exit 1
 fi
+JHDF5_NATIVES_ARCHIVE="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1
@@ -151,12 +152,14 @@ if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
   OSX_RESOURCE_PLATFORM="osx_64"
 fi
 if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
-  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'; then
+  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib' &&
+     { [[ -z "${JHDF5_NATIVES_ARCHIVE}" || ! -f "${JHDF5_NATIVES_ARCHIVE}" ]] || ! tar -tzf "${JHDF5_NATIVES_ARCHIVE}" | grep -E -qx 'native/jhdf5/x86_64-Mac OS X/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'; }; then
     echo "Fat JAR does not contain a supported x86_64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
     exit 1
   fi
 else
-  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx "resources/libs/(${OSX_RESOURCE_PLATFORM}|darwin_${DARWIN_ARCH})/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib"; then
+  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx "resources/libs/(${OSX_RESOURCE_PLATFORM}|darwin_${DARWIN_ARCH})/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib" &&
+     { [[ -z "${JHDF5_NATIVES_ARCHIVE}" || ! -f "${JHDF5_NATIVES_ARCHIVE}" ]] || ! tar -tzf "${JHDF5_NATIVES_ARCHIVE}" | grep -E -qx 'native/jhdf5/aarch64-Mac OS X/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'; }; then
     echo "Fat JAR does not contain a supported arm64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
     exit 1
   fi
@@ -172,6 +175,9 @@ mkdir -p \
   "${ARTIFACT_DIR}"
 
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
+if [[ -n "${JHDF5_NATIVES_ARCHIVE}" && -f "${JHDF5_NATIVES_ARCHIVE}" ]]; then
+  cp "${JHDF5_NATIVES_ARCHIVE}" "${APP_DIR}/lib/$(basename "${JHDF5_NATIVES_ARCHIVE}")"
+fi
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"
@@ -303,6 +309,16 @@ int main(int argc, char* argv[]) {
   set_env_if_unset("DATA_DIR", data_dir);
   set_env_if_unset("HICT_APP_HOME", app_home);
   set_env_if_unset("HICT_JAR_PATH", app_home + "/lib/hict.jar");
+  for (const auto& entry : fs::directory_iterator(app_home + "/lib")) {
+    const auto file_name = entry.path().filename().string();
+    if (entry.is_regular_file() &&
+        file_name.rfind("sis-jhdf5-", 0) == 0 &&
+        file_name.size() >= std::string("-natives.tar.gz").size() &&
+        file_name.substr(file_name.size() - std::string("-natives.tar.gz").size()) == "-natives.tar.gz") {
+      set_env_if_unset("HICT_JHDF5_NATIVES_ARCHIVE", entry.path().string());
+      break;
+    }
+  }
   if (fs::exists(app_home + "/webui")) {
     set_env_if_unset("WEBUI_ROOT", app_home + "/webui");
   }
@@ -390,6 +406,8 @@ Run:
 
 The package includes:
   - HiCT_JVM fat JAR, including the built HiCT_WebUI resources
+  - optional split JHDF5 native archive under lib/ when the release uses the
+    slim JHDF5 jar packaging
   - extracted HiCT_WebUI assets used as WEBUI_ROOT for robust portable serving
   - a signed native ${DARWIN_ARCH} launcher at bin/${LAUNCHER_BASENAME}
   - a jlink runtime built from the JDK used by the release runner
@@ -540,6 +558,12 @@ fi
 
 export HICT_APP_HOME="\${app_home}"
 export HICT_JAR_PATH="\${app_home}/lib/hict.jar"
+if [[ -z "\${HICT_JHDF5_NATIVES_ARCHIVE:-}" ]]; then
+  HICT_JHDF5_NATIVES_CANDIDATE="$(find "\${app_home}/lib" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
+  if [[ -n "\${HICT_JHDF5_NATIVES_CANDIDATE}" ]]; then
+    export HICT_JHDF5_NATIVES_ARCHIVE="\${HICT_JHDF5_NATIVES_CANDIDATE}"
+  fi
+fi
 if [[ -z "\${WEBUI_ROOT:-}" && -d "\${app_home}/webui" ]]; then
   export WEBUI_ROOT="\${app_home}/webui"
 fi
