@@ -174,7 +174,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
@@ -556,7 +556,7 @@ jobs:
 
       - name: Download published JHDF5 jar
         shell: pwsh
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
         run: |
           $jarDir = "src\main\resources\libs"
           New-Item -ItemType Directory -Force -Path $jarDir | Out-Null
@@ -1020,7 +1020,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
@@ -1159,7 +1159,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'download' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
