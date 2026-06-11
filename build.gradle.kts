@@ -27,6 +27,7 @@ import org.gradle.api.file.RelativePath
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.ByteArrayOutputStream
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -268,11 +269,40 @@ val useMavenJhdf5 = jhdf5SourceMode in setOf("maven", "maven-central", "publishe
   envOrProjectProperty("HICT_USE_MAVEN_JHDF5")
     ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
     ?: false
+val bundledJhdf5JarName = envOrProjectProperty("HICT_JHDF5_JAR_NAME")
+  ?: "sis-jhdf5-19.04.1.jar"
+val bundledJhdf5DefaultLocalJarPath = "src/main/resources/libs/$bundledJhdf5JarName"
 val bundledJhdf5LocalJarPath = envOrProjectProperty("HICT_JHDF5_LOCAL_JAR")
   ?: envOrProjectProperty("hictJhdf5LocalJar")
+  ?: bundledJhdf5DefaultLocalJarPath
+val bundledJhdf5DownloadUrl = envOrProjectProperty("HICT_JHDF5_DOWNLOAD_URL")
+  ?: envOrProjectProperty("hictJhdf5DownloadUrl")
+  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/latest/$bundledJhdf5JarName"
 val requireBundledJhdf5 = !useMavenJhdf5 && (envOrProjectProperty("HICT_REQUIRE_BUNDLED_JHDF5")
   ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
   ?: false)
+
+fun downloadedJhdf5JarFile(): File? {
+  if (useMavenJhdf5 || jhdf5SourceMode == "local") {
+    return null
+  }
+  val target = layout.buildDirectory.file("jhdf5/$bundledJhdf5JarName").get().asFile
+  if (target.isFile) {
+    return target
+  }
+  return try {
+    target.parentFile.mkdirs()
+    URI(bundledJhdf5DownloadUrl).toURL().openStream().use { stream ->
+      Files.copy(stream, target.toPath(), REPLACE_EXISTING)
+    }
+    logger.lifecycle("Downloaded bundled JHDF5 jar from $bundledJhdf5DownloadUrl to ${target.absolutePath}")
+    target.takeIf { it.isFile }
+  } catch (err: Exception) {
+    target.delete()
+    logger.warn("Failed to download bundled JHDF5 jar from $bundledJhdf5DownloadUrl; Maven fallback may be used.", err)
+    null
+  }
+}
 
 fun bundledJhdf5LocalJarFile(): File? = if (useMavenJhdf5) {
   null
@@ -280,6 +310,7 @@ fun bundledJhdf5LocalJarFile(): File? = if (useMavenJhdf5) {
   bundledJhdf5LocalJarPath
     ?.let { file(it) }
     ?.takeIf { it.isFile }
+    ?: downloadedJhdf5JarFile()
 }
 
 version = readVersion()
@@ -302,7 +333,7 @@ dependencies {
     val message = if (useMavenJhdf5) {
       "HICT_JHDF5_SOURCE_MODE=${jhdf5SourceMode}; using published cisd:jhdf5:19.04.1 from Maven repositories by explicit request."
     } else {
-      "HICT_JHDF5_LOCAL_JAR is not set or does not point to a file; using published cisd:jhdf5:19.04.1 from Maven repositories."
+      "No bundled JHDF5 jar is available at ${bundledJhdf5LocalJarPath} and ${bundledJhdf5DownloadUrl} could not be downloaded; using published cisd:jhdf5:19.04.1 from Maven repositories."
     }
     if (requireBundledJhdf5) {
       throw GradleException(message)
