@@ -904,6 +904,7 @@ tasks.named("clean") {
 tasks.named<ProcessResources>("processResources") {
   dependsOn("copyWebUI")
   dependsOn("verifyNativeProcessingBuild")
+  duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.EXCLUDE
   from(nativeProcessingResourceRoot) {
     into("")
   }
@@ -915,19 +916,11 @@ tasks.named<ProcessResources>("processResources") {
   // `resources/libs/osx_arm64` directories.  Expand and alias the relevant
   // dylibs while processing resources so the final fat jar is self-contained.
   bundledJhdf5LocalJarFile()?.let { jhdf5Jar ->
+    val macJhdf5AliasNames = mutableSetOf<String>()
     fun addMacJhdf5Tree(sourcePrefix: String, targetDir: String) {
       from(zipTree(jhdf5Jar)) {
-        include("$sourcePrefix/*.dylib", "$sourcePrefix/*.jnilib")
+        include("$sourcePrefix/*.dylib")
         eachFile { relativePath = RelativePath(true, name) }
-        includeEmptyDirs = false
-        into("resources/libs/$targetDir")
-      }
-    }
-
-    fun addMacJhdf5Alias(sourcePrefix: String, targetDir: String, versionedGlob: String, aliasName: String) {
-      from(zipTree(jhdf5Jar)) {
-        include("$sourcePrefix/$versionedGlob")
-        eachFile { relativePath = RelativePath(true, aliasName) }
         includeEmptyDirs = false
         into("resources/libs/$targetDir")
       }
@@ -935,11 +928,31 @@ tasks.named<ProcessResources>("processResources") {
 
     fun addMacJhdf5Aliases(sourcePrefix: String, targetDir: String) {
       addMacJhdf5Tree(sourcePrefix, targetDir)
-      addMacJhdf5Alias(sourcePrefix, targetDir, "libhdf5.[0-9]*.dylib", "libhdf5.dylib")
-      addMacJhdf5Alias(sourcePrefix, targetDir, "libhdf5_hl.[0-9]*.dylib", "libhdf5_hl.dylib")
-      addMacJhdf5Alias(sourcePrefix, targetDir, "libhdf5_java.[0-9]*.dylib", "libhdf5_java.dylib")
-      addMacJhdf5Alias(sourcePrefix, targetDir, "libhdf5_tools.[0-9]*.dylib", "libhdf5_tools.dylib")
-      addMacJhdf5Alias(sourcePrefix, targetDir, "libjhdf5.jnilib", "libjhdf5.jnilib")
+      from(zipTree(jhdf5Jar)) {
+        include("$sourcePrefix/*.dylib", "$sourcePrefix/*.jnilib")
+        includeEmptyDirs = false
+        eachFile {
+          val alias = when {
+            name.matches(Regex("^libhdf5\\.\\d+(?:\\.\\d+)*\\.dylib$")) -> "libhdf5.dylib"
+            name.matches(Regex("^libhdf5_hl\\.\\d+(?:\\.\\d+)*\\.dylib$")) -> "libhdf5_hl.dylib"
+            name.matches(Regex("^libhdf5_java\\.\\d+(?:\\.\\d+)*\\.dylib$")) -> "libhdf5_java.dylib"
+            name.matches(Regex("^libhdf5_tools\\.\\d+(?:\\.\\d+)*\\.dylib$")) -> "libhdf5_tools.dylib"
+            name == "libjhdf5.jnilib" -> "libjhdf5.jnilib"
+            else -> null
+          }
+          if (alias == null) {
+            exclude()
+          } else {
+            val aliasKey = "$targetDir/$alias"
+            if (macJhdf5AliasNames.add(aliasKey)) {
+              relativePath = RelativePath(true, alias)
+            } else {
+              exclude()
+            }
+          }
+        }
+        into("resources/libs/$targetDir")
+      }
     }
 
     addMacJhdf5Aliases("native/jhdf5/x86_64-Mac OS X", "osx_64")
@@ -1050,24 +1063,47 @@ tasks.register("verifyBundledJhdf5Payload") {
       throw GradleException("Fat JAR was not produced: ${fatJar.absolutePath}")
     }
     val entries = ZipFile(fatJar).use { zip: ZipFile -> zip.entries().asSequence().map { entry -> entry.name }.toSet() }
+    fun hasVersionedMacHdf5Dylib(platformDirectory: String): Boolean {
+      val regex = Regex("^resources/libs/$platformDirectory/libhdf5\\.\\d+(?:\\.\\d+)*\\.dylib$")
+      return entries.any { it == "resources/libs/$platformDirectory/libhdf5.dylib" || regex.matches(it) }
+    }
+
     val requiredAnyOf = listOf(
-      "Linux amd64 JHDF5 JNI" to listOf("native/jhdf5/amd64-Linux/libjhdf5.so", "libs/native/jhdf5/amd64-Linux/libjhdf5.so"),
-      "Linux arm64 JHDF5 JNI" to listOf("native/jhdf5/arm64-Linux/libjhdf5.so", "libs/native/jhdf5/arm64-Linux/libjhdf5.so"),
-      "Windows amd64 JHDF5 JNI" to listOf("native/jhdf5/amd64-Windows/jhdf5.dll", "libs/native/jhdf5/amd64-Windows/jhdf5.dll"),
-      "macOS arm64 JHDF5 JNI" to listOf("native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib", "libs/native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib"),
-      "macOS x86_64 JHDF5 JNI" to listOf("native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib", "libs/native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib"),
-      "macOS arm64 HDF5 dylib" to listOf("resources/libs/osx_arm64/libhdf5.dylib", "resources/libs/macos_arm64/libhdf5.dylib", "resources/libs/darwin_arm64/libhdf5.dylib"),
-      "macOS x86_64 HDF5 dylib" to listOf("resources/libs/osx_64/libhdf5.dylib", "resources/libs/macos_64/libhdf5.dylib", "resources/libs/darwin_x86_64/libhdf5.dylib"),
+      "Linux amd64 JHDF5 JNI" to { set: Set<String> ->
+        set.contains("native/jhdf5/amd64-Linux/libjhdf5.so") || set.contains("libs/native/jhdf5/amd64-Linux/libjhdf5.so")
+      },
+      "Linux arm64 JHDF5 JNI" to { set: Set<String> ->
+        set.contains("native/jhdf5/arm64-Linux/libjhdf5.so") || set.contains("libs/native/jhdf5/arm64-Linux/libjhdf5.so")
+      },
+      "Windows amd64 JHDF5 JNI" to { set: Set<String> ->
+        set.contains("native/jhdf5/amd64-Windows/jhdf5.dll") || set.contains("libs/native/jhdf5/amd64-Windows/jhdf5.dll")
+      },
+      "macOS arm64 JHDF5 JNI" to { set: Set<String> ->
+        set.contains("native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib") || set.contains("libs/native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib")
+      },
+      "macOS x86_64 JHDF5 JNI" to { set: Set<String> ->
+        set.contains("native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib") || set.contains("libs/native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib")
+      },
+      "macOS arm64 HDF5 dylib" to { entriesSet: Set<String> ->
+        hasVersionedMacHdf5Dylib("osx_arm64") ||
+          hasVersionedMacHdf5Dylib("macos_arm64") ||
+          hasVersionedMacHdf5Dylib("darwin_arm64")
+      },
+      "macOS x86_64 HDF5 dylib" to { entriesSet: Set<String> ->
+        hasVersionedMacHdf5Dylib("osx_64") ||
+          hasVersionedMacHdf5Dylib("macos_64") ||
+          hasVersionedMacHdf5Dylib("darwin_x86_64")
+      },
       // Current JHDF5 macOS package provides the core HDF5/JHDF5 dylib tree.
       // Plugins are validated by the producing JHDF5 workflow when present, but
       // HiCT packaging must not reject a valid core macOS runtime because optional
       // plugin dylibs are absent for Darwin.
     )
-    val missing = requiredAnyOf.filter { (_, candidates) -> candidates.none { it in entries } }
+    val missing = requiredAnyOf.filter { (_, checker) -> !checker(entries) }
     if (missing.isNotEmpty()) {
       val message = buildString {
         appendLine("The fat JAR does not contain the required bundled JHDF5/HDF5 native payloads:")
-        missing.forEach { (label, candidates) -> appendLine("- $label; expected one of ${candidates.joinToString()}") }
+        missing.forEach { (label, _) -> appendLine("- $label") }
         appendLine("Set HICT_JHDF5_LOCAL_JAR to the packaged sis-jhdf5 jar from jhdf5-with-plugins-configuration-snapshot, and set HICT_REQUIRE_BUNDLED_JHDF5=1 in release builds. To intentionally use Maven, set HICT_JHDF5_SOURCE_MODE=maven or -PhictJhdf5SourceMode=maven.")
       }
       if (requireBundledJhdf5) {

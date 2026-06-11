@@ -199,3 +199,6 @@ nbdist/
 /src/main/resources/webui/**
 data/**
 start.sh
+
+# Large local/vendor jars
+src/main/resources/libs/sis-jhdf5-19.04.1.jar

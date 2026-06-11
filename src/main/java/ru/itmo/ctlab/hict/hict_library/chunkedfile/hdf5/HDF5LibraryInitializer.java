@@ -30,7 +30,6 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.scijava.nativelib.JniExtractor;
 import org.scijava.nativelib.NativeLibraryUtil;
 import org.scijava.nativelib.NativeLoader;
@@ -247,18 +246,30 @@ public class HDF5LibraryInitializer {
 
 
   private static boolean loadBundledNativeLibrary(final String libraryBaseName) throws IOException {
-    final var platformDirectory = platformDirectory();
-    if (platformDirectory == null) {
+    final var platformDirectories = bundledPlatformDirectories();
+    if (platformDirectories.isEmpty()) {
       return false;
     }
-    for (final var variantDirectory : bundledVariantDirectories()) {
+    for (final var platformDirectory : platformDirectories) {
+      for (final var variantDirectory : bundledVariantDirectories()) {
+        if (NativeLibraryUtil.loadNativeLibrary(
+          jniExtractor,
+          libraryBaseName,
+          "resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "/resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "/resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "resources/libs/natives/" + platformDirectory + "/",
+          "/resources/libs/natives/" + platformDirectory + "/",
+          "resources/libs/" + platformDirectory + "/",
+          "/resources/libs/" + platformDirectory + "/"
+        )) {
+          return true;
+        }
+      }
       if (NativeLibraryUtil.loadNativeLibrary(
         jniExtractor,
         libraryBaseName,
-        "resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
-        "/resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
-        "resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
-        "/resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
         "resources/libs/natives/" + platformDirectory + "/",
         "/resources/libs/natives/" + platformDirectory + "/",
         "resources/libs/" + platformDirectory + "/",
@@ -321,22 +332,27 @@ public class HDF5LibraryInitializer {
     }
   }
 
-  private static @Nullable String platformDirectory() {
+  private static @NotNull List<String> bundledPlatformDirectories() {
     final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
     final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
     final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
+    final var isArm64 = arch.equals("aarch64") || arch.equals("arm64");
+    final var isAmd64 = arch.equals("amd64") || arch.equals("x86_64");
     if (!is64Bit) {
-      return null;
+      return List.of();
     }
     if (os.contains("linux")) {
-      return "linux_64";
+      return List.of("linux_64");
     }
     if (os.contains("win")) {
-      return "windows_64";
+      return List.of("windows_64");
     }
     if (os.contains("mac") || os.contains("darwin")) {
-      return "macos_64";
+      final var isArmBuild = isArm64 && !isAmd64;
+      final var macPlatform = isArmBuild ? "darwin_arm64" : "darwin_x86_64";
+      final var modernPlatform = isArmBuild ? "osx_arm64" : "osx_64";
+      return List.of("macos_64", modernPlatform, macPlatform);
     }
-    return null;
+    return List.of();
   }
 }

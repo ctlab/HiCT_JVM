@@ -151,12 +151,12 @@ if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
   OSX_RESOURCE_PLATFORM="osx_64"
 fi
 if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
-  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5.dylib'; then
+  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'; then
     echo "Fat JAR does not contain a supported x86_64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
     exit 1
   fi
 else
-  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx "resources/libs/(${OSX_RESOURCE_PLATFORM}|darwin_${DARWIN_ARCH})/libhdf5.dylib"; then
+  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx "resources/libs/(${OSX_RESOURCE_PLATFORM}|darwin_${DARWIN_ARCH})/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib"; then
     echo "Fat JAR does not contain a supported arm64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
     exit 1
   fi
