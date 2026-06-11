@@ -9,8 +9,8 @@ natives_archive_name="${HICT_JHDF5_NATIVES_ARCHIVE_NAME:-sis-jhdf5-19.04.1-nativ
 natives_archive_out="${HICT_JHDF5_NATIVES_ARCHIVE:-src/main/resources/libs/${natives_archive_name}}"
 fallback_jar_name="${HICT_JHDF5_FALLBACK_JAR_NAME:-sis-jhdf5-19.04.1.jar}"
 fallback_jar_out="${HICT_JHDF5_FALLBACK_LOCAL_JAR:-src/main/resources/libs/${fallback_jar_name}}"
-mode="${HICT_JHDF5_SOURCE_MODE:-artifact}"
-release_tag="${HICT_JHDF5_RELEASE_TAG:-latest}"
+mode="${HICT_JHDF5_SOURCE_MODE:-release}"
+release_tag="${HICT_JHDF5_RELEASE_TAG:-release-artifacts}"
 artifact_name="${HICT_JHDF5_ARTIFACT_NAME:-jhdf5-packaged-jar}"
 strict_snapshot="${HICT_REQUIRE_SNAPSHOT_JHDF5:-0}"
 
@@ -125,9 +125,9 @@ else
     fi
     use_maven_fallback "${resolve_error}"
   fi
-  found="$(find "${tmp}" -type f -name "${jar_name}" | sort | head -n 1)"
+  found="$(find "${tmp}" -type f -name "${jar_name}" | sort | sed -n '1p')"
   if [[ -z "${found}" && "${fallback_jar_name}" != "${jar_name}" ]]; then
-    found="$(find "${tmp}" -type f -name "${fallback_jar_name}" | sort | head -n 1)"
+    found="$(find "${tmp}" -type f -name "${fallback_jar_name}" | sort | sed -n '1p')"
     if [[ -n "${found}" ]]; then
       out="${fallback_jar_out}"
       echo "::warning::Downloaded payload does not contain ${jar_name}; using fallback ${fallback_jar_name}."
@@ -157,11 +157,11 @@ if [[ ! -f "${natives_archive_out}" ]]; then
     rc=$?
     set -e
     if [[ ${rc} -eq 0 ]]; then
-      found_archive="$(find "${tmp_archive}" -type f -name "${natives_archive_name}" | sort | head -n 1)"
+      found_archive="$(find "${tmp_archive}" -type f -name "${natives_archive_name}" | sort | sed -n '1p')"
       [[ -z "${found_archive}" ]] || cp "${found_archive}" "${natives_archive_out}"
     fi
   elif [[ -d "${tmp:-}" ]]; then
-    found_archive="$(find "${tmp}" -type f -name "${natives_archive_name}" | sort | head -n 1)"
+    found_archive="$(find "${tmp}" -type f -name "${natives_archive_name}" | sort | sed -n '1p')"
     [[ -z "${found_archive}" ]] || cp "${found_archive}" "${natives_archive_out}"
   fi
 fi

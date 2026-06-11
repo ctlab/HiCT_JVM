@@ -264,7 +264,7 @@ fun envOrProjectProperty(name: String): String? =
 
 val jhdf5SourceMode = (envOrProjectProperty("HICT_JHDF5_SOURCE_MODE")
   ?: envOrProjectProperty("hictJhdf5SourceMode")
-  ?: "artifact").lowercase()
+  ?: "release").lowercase()
 val useMavenJhdf5 = jhdf5SourceMode in setOf("maven", "maven-central", "published") ||
   envOrProjectProperty("HICT_USE_MAVEN_JHDF5")
     ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
@@ -280,16 +280,16 @@ val bundledJhdf5LocalJarPath = envOrProjectProperty("HICT_JHDF5_LOCAL_JAR")
 val bundledJhdf5FallbackLocalJarPath = "src/main/resources/libs/$bundledJhdf5FallbackJarName"
 val bundledJhdf5DownloadUrl = envOrProjectProperty("HICT_JHDF5_DOWNLOAD_URL")
   ?: envOrProjectProperty("hictJhdf5DownloadUrl")
-  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/latest/$bundledJhdf5JarName"
+  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/release-artifacts/$bundledJhdf5JarName"
 val bundledJhdf5FallbackDownloadUrl = envOrProjectProperty("HICT_JHDF5_FALLBACK_DOWNLOAD_URL")
-  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/latest/$bundledJhdf5FallbackJarName"
+  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/release-artifacts/$bundledJhdf5FallbackJarName"
 val bundledJhdf5NativesArchiveName = envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE_NAME")
   ?: "sis-jhdf5-19.04.1-natives.tar.gz"
 val bundledJhdf5NativesArchivePath = envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE")
   ?: envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE_PATH")
   ?: "src/main/resources/libs/$bundledJhdf5NativesArchiveName"
 val bundledJhdf5NativesArchiveDownloadUrl = envOrProjectProperty("HICT_JHDF5_NATIVES_ARCHIVE_URL")
-  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/latest/$bundledJhdf5NativesArchiveName"
+  ?: "https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot/releases/download/release-artifacts/$bundledJhdf5NativesArchiveName"
 val preferBundledJhdf5NativesArchive = bundledJhdf5JarName.contains("slim", ignoreCase = true) ||
   (envOrProjectProperty("HICT_REQUIRE_JHDF5_NATIVES_ARCHIVE")
     ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }

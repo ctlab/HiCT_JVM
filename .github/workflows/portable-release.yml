@@ -99,9 +99,9 @@ on:
         default: ""
         type: string
       jhdf5_release_tag:
-        description: "JHDF5 release tag to use when jhdf5_source_mode=release"
+        description: "JHDF5 release tag containing the split slim jar and natives archive"
         required: true
-        default: "latest"
+        default: "release-artifacts"
         type: string
       jhdf5_ref:
         description: "Branch/ref in the JHDF5 repo to use when jhdf5_source_mode=artifact"
@@ -109,9 +109,9 @@ on:
         default: "jhdf5-with-plugins-configuration-snapshot"
         type: string
       jhdf5_source_mode:
-        description: "JHDF5 source: artifact from snapshot repo by default, release/local, or Maven fallback by explicit request"
+        description: "JHDF5 source: release assets by default, workflow artifact/local, or Maven fallback by explicit request"
         required: true
-        default: "artifact"
+        default: "release"
         type: choice
         options:
           - "artifact"
@@ -170,14 +170,14 @@ jobs:
       HICT_PORTABLE_ARTIFACT_SUFFIX: ${{ matrix.artifact_suffix }}
       HICT_GLIBC_MAX: "2.17"
       HICTK_CONAN_BUILD_POLICY: "*"
-      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'release' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
@@ -650,15 +650,15 @@ jobs:
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
-      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'release' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
         shell: pwsh
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
         run: |
           $jarDir = "src\main\resources\libs"
           New-Item -ItemType Directory -Force -Path $jarDir | Out-Null
@@ -1189,14 +1189,14 @@ jobs:
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
-      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'release' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs
@@ -1375,14 +1375,14 @@ jobs:
       HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
-      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'latest' }}
-      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'artifact' }}
+      HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
+      HICT_JHDF5_SOURCE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_source_mode || 'release' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Download published JHDF5 jar
-        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' }}
+        if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
         run: |
           set -euo pipefail
           mkdir -p src/main/resources/libs

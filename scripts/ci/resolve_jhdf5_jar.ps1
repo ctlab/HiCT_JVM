@@ -8,8 +8,8 @@ $nativesArchiveName = if ($env:HICT_JHDF5_NATIVES_ARCHIVE_NAME) { $env:HICT_JHDF
 $nativesArchiveOut = if ($env:HICT_JHDF5_NATIVES_ARCHIVE) { $env:HICT_JHDF5_NATIVES_ARCHIVE } else { Join-Path 'src/main/resources/libs' $nativesArchiveName }
 $fallbackJarName = if ($env:HICT_JHDF5_FALLBACK_JAR_NAME) { $env:HICT_JHDF5_FALLBACK_JAR_NAME } else { 'sis-jhdf5-19.04.1.jar' }
 $fallbackJarOut = if ($env:HICT_JHDF5_FALLBACK_LOCAL_JAR) { $env:HICT_JHDF5_FALLBACK_LOCAL_JAR } else { Join-Path 'src/main/resources/libs' $fallbackJarName }
-$mode = if ($env:HICT_JHDF5_SOURCE_MODE) { $env:HICT_JHDF5_SOURCE_MODE } else { 'artifact' }
-$releaseTag = if ($env:HICT_JHDF5_RELEASE_TAG) { $env:HICT_JHDF5_RELEASE_TAG } else { 'latest' }
+$mode = if ($env:HICT_JHDF5_SOURCE_MODE) { $env:HICT_JHDF5_SOURCE_MODE } else { 'release' }
+$releaseTag = if ($env:HICT_JHDF5_RELEASE_TAG) { $env:HICT_JHDF5_RELEASE_TAG } else { 'release-artifacts' }
 $artifactName = if ($env:HICT_JHDF5_ARTIFACT_NAME) { $env:HICT_JHDF5_ARTIFACT_NAME } else { 'jhdf5-packaged-jar' }
 $strictSnapshot = $env:HICT_REQUIRE_SNAPSHOT_JHDF5 -eq '1'
 
