@@ -148,10 +148,10 @@ jobs:
             static_musl: "0"
             static_mimalloc: "0"
             artifact_suffix: ""
-          - abi_mode: musl-static
-            static_musl: "1"
-            static_mimalloc: "1"
-            artifact_suffix: "-musl"
+          # - abi_mode: musl-static
+          #   static_musl: "1"
+          #   static_mimalloc: "1"
+          #   artifact_suffix: "-musl"
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
