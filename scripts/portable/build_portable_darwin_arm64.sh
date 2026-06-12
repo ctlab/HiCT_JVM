@@ -394,6 +394,7 @@ adhoc_sign_macho_tree() {
 
 adhoc_sign_macho_tree "${APP_DIR}/runtime"
 adhoc_sign_macho_tree "${APP_DIR}/toolchains"
+adhoc_sign_macho_tree "${APP_DIR}/browsers"
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
 #!/usr/bin/env bash
