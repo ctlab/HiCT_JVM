@@ -4,7 +4,7 @@ on:
   release:
     types: [published]
   push:
-    branches: ["master"]
+    branches: ["**"]
   workflow_dispatch:
     inputs:
       bundle_hictk:
@@ -87,14 +87,14 @@ on:
       publish_target:
         description: "Manual publish target after building artifacts"
         required: true
-        default: "artifacts-only"
+        default: "release-tag"
         type: choice
         options:
           - "artifacts-only"
           - "latest-master"
           - "release-tag"
       release_tag:
-        description: "Existing release tag to attach assets to when publish_target=release-tag"
+        description: "Release tag to create/update when publish_target=release-tag. Leave empty to use latest-{selected branch}."
         required: false
         default: ""
         type: string
@@ -124,7 +124,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: portable-release-${{ github.event_name == 'push' && github.ref || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag || github.run_id }}
+  group: portable-release-${{ github.event_name == 'push' && format('latest-{0}', github.ref_name) || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && (inputs.release_tag != '' && inputs.release_tag || format('latest-{0}', github.ref_name)) || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -1553,7 +1553,7 @@ jobs:
       - windows-portable
       - macos-portable
       - macos-intel-portable
-    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
+    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
     runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
@@ -1572,6 +1572,7 @@ jobs:
           path: downloaded-artifacts
 
       - name: Collect assets and provenance
+        id: collect-assets
         shell: bash
         env:
           PUBLISH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target || '' }}
@@ -1580,20 +1581,35 @@ jobs:
           set -euo pipefail
 
           version="$(tr -d '[:space:]' < version.txt)"
+          default_latest_tag="latest-${GITHUB_REF_NAME}"
           release_tag="${GITHUB_REF_NAME}"
+          rolling_release="false"
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            release_tag="latest-master"
+            release_tag="${default_latest_tag}"
+            rolling_release="true"
           elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             if [[ "${PUBLISH_TARGET}" == "latest-master" ]]; then
               release_tag="latest-master"
+              rolling_release="true"
             elif [[ "${PUBLISH_TARGET}" == "release-tag" ]]; then
-              release_tag="${SELECTED_RELEASE_TAG}"
+              release_tag="${SELECTED_RELEASE_TAG:-${default_latest_tag}}"
               if [[ -z "${release_tag}" ]]; then
                 echo "release_tag is required when publish_target=release-tag." >&2
                 exit 1
               fi
+              if [[ -z "${SELECTED_RELEASE_TAG}" ]]; then
+                rolling_release="true"
+              fi
             fi
           fi
+          {
+            echo "HICT_PORTABLE_RELEASE_TAG=${release_tag}"
+            echo "HICT_PORTABLE_ROLLING_RELEASE=${rolling_release}"
+          } >> "${GITHUB_ENV}"
+          {
+            echo "release_tag=${release_tag}"
+            echo "rolling_release=${rolling_release}"
+          } >> "${GITHUB_OUTPUT}"
 
           rm -rf release-dist
           mkdir -p release-dist
@@ -1694,37 +1710,37 @@ jobs:
           release_body_lines+=("See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.")
           printf '%s\n' "${release_body_lines[@]}" > release-body.md
 
-      - name: Move latest-master tag
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+      - name: Move rolling release tag
+        if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f latest-master "${GITHUB_SHA}"
-          git push --force origin refs/tags/latest-master
+          git tag -f "${HICT_PORTABLE_RELEASE_TAG}" "${GITHUB_SHA}"
+          git push --force origin "refs/tags/${HICT_PORTABLE_RELEASE_TAG}"
 
-      - name: Clear previous latest-master assets
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+      - name: Clear previous rolling release assets
+        if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if gh release view latest-master >/dev/null 2>&1; then
-            gh release view latest-master --json assets -q '.assets[].name' |
+          if gh release view "${HICT_PORTABLE_RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release view "${HICT_PORTABLE_RELEASE_TAG}" --json assets -q '.assets[].name' |
               while IFS= read -r asset; do
-                [[ -n "${asset}" ]] && gh release delete-asset latest-master "${asset}" -y
+                [[ -n "${asset}" ]] && gh release delete-asset "${HICT_PORTABLE_RELEASE_TAG}" "${asset}" -y
               done
           fi
 
-      - name: Publish latest master release
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master') }}
+      - name: Publish rolling release
+        if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-master
+          tag_name: ${{ steps.collect-assets.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
-          name: Latest master portable build
+          name: Latest ${{ github.ref_name }} portable build
           body_path: release-body.md
           prerelease: true
           files: release-dist/*
@@ -1740,7 +1756,7 @@ jobs:
           overwrite_files: true
 
       - name: Attach assets to selected release tag
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && inputs.release_tag != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
