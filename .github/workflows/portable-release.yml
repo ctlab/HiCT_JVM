@@ -1760,16 +1760,6 @@ jobs:
           release_body_lines+=("See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.")
           printf '%s\n' "${release_body_lines[@]}" > release-body.md
 
-      - name: Move rolling release tag
-        if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "${HICT_PORTABLE_RELEASE_TAG}" "${GITHUB_SHA}"
-          git push --force origin "refs/tags/${HICT_PORTABLE_RELEASE_TAG}"
-
       - name: Clear previous rolling release assets
         if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
         shell: bash
@@ -1777,19 +1767,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if gh release view "${HICT_PORTABLE_RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release view "${HICT_PORTABLE_RELEASE_TAG}" --json assets -q '.assets[].name' |
-              while IFS= read -r asset; do
-                [[ -n "${asset}" ]] && gh release delete-asset "${HICT_PORTABLE_RELEASE_TAG}" "${asset}" -y
-              done
+          if ! gh release view "${HICT_PORTABLE_RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "::error::Rolling release ${HICT_PORTABLE_RELEASE_TAG} does not exist. Create this release/tag once manually, then rerun this workflow. The workflow intentionally does not create or move Git tags."
+            exit 1
           fi
+          gh release view "${HICT_PORTABLE_RELEASE_TAG}" --json assets -q '.assets[].name' |
+            while IFS= read -r asset; do
+              [[ -n "${asset}" ]] && gh release delete-asset "${HICT_PORTABLE_RELEASE_TAG}" "${asset}" -y
+            done
 
       - name: Publish rolling release
         if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.collect-assets.outputs.release_tag }}
-          target_commitish: ${{ github.sha }}
           name: Latest ${{ github.ref_name }} portable build
           body_path: release-body.md
           prerelease: true
