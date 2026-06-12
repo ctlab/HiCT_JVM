@@ -1,6 +1,7 @@
 package ru.itmo.ctlab.hict.hict_server.tools;
 
 import io.vertx.core.Launcher;
+import hdf.hdf5lib.H5;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -8,6 +9,8 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
@@ -18,6 +21,7 @@ import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
@@ -160,6 +164,12 @@ public class HictCli implements Runnable {
     @Option(names = "--require-dotplot", description = "Fail if no selected dotplot aligner is available.")
     boolean requireDotplot;
 
+    @Option(names = "--require-hdf5-native", description = "Fail if bundled JHDF5/HDF5 native libraries cannot be initialized.")
+    boolean requireHdf5Native;
+
+    @Option(names = "--check-available-natives", description = "Smoke-test available native components without failing for absent or CPU-unsupported optional variants.")
+    boolean checkAvailableNatives;
+
     @Option(names = "--quiet", description = "Only print errors.")
     boolean quiet;
 
@@ -183,6 +193,33 @@ public class HictCli implements Runnable {
       if (requireDotplot && status.selectedDotplotAlignerCommand() == null) {
         failures.add("dotplot aligner is unavailable");
       }
+      if (requireHdf5Native) {
+        try {
+          HDF5LibraryInitializer.initializeHDF5Library();
+          final int[] version = new int[3];
+          H5.H5get_libversion(version);
+          if (!quiet) {
+            System.out.println("HDF5 native library: " + version[0] + "." + version[1] + "." + version[2]);
+          }
+        } catch (final Throwable err) {
+          failures.add("HDF5 native library is unavailable: " + err.getClass().getSimpleName() + ": " + err.getMessage());
+        }
+      }
+      if (checkAvailableNatives) {
+        smokeHictNativeIfSupported(failures);
+        smokeCommandIfPresent("hictk", status.hictkCommand(), List.of("--version"), failures);
+        smokeCommandIfPresent("minimap2", status.minimap2Command(), List.of("--version"), failures);
+        if (NativeCpuFeatures.supportsAvx2Core()) {
+          smokeCommandIfPresent("mm2-plus AVX2", status.mm2PlusAvx2Command(), List.of("--version"), failures);
+        } else if (!quiet && status.mm2PlusAvx2Command() != null) {
+          System.out.println("mm2-plus AVX2: skipped because this runner does not advertise AVX2");
+        }
+        if (NativeCpuFeatures.supportsAvx512Core()) {
+          smokeCommandIfPresent("mm2-plus AVX-512", status.mm2PlusAvx512Command(), List.of("--version"), failures);
+        } else if (!quiet && status.mm2PlusAvx512Command() != null) {
+          System.out.println("mm2-plus AVX-512: skipped because this runner does not advertise AVX-512 core features");
+        }
+      }
       if (!failures.isEmpty()) {
         System.err.println("External toolchain check failed: " + String.join("; ", failures));
         System.err.println(status.summary());
@@ -193,6 +230,106 @@ public class HictCli implements Runnable {
 
     private static String valueOrNone(final String value) {
       return value == null || value.isBlank() ? "none" : value;
+    }
+
+    private void smokeHictNativeIfSupported(final List<String> failures) {
+      final var arch = System.getProperty("os.arch", "").toLowerCase(java.util.Locale.ROOT);
+      if (arch.equals("aarch64") || arch.equals("arm64")) {
+        if (!quiet) {
+          System.out.println("HiCT native processing: skipped on ARM runner unless an ARM native-processing payload is selected");
+        }
+        return;
+      }
+      if (!hasBundledHictNativeResource()) {
+        if (!quiet) {
+          System.out.println("HiCT native processing: not bundled for this runtime platform; skipping");
+        }
+        return;
+      }
+      final var status = NativeProcessingService.getInstance().setRequestedEnabled(true);
+      if (!status.available()) {
+        failures.add("HiCT native processing is unavailable: " + status.reason());
+      } else if (!quiet) {
+        System.out.println("HiCT native processing: " + status.version() + " from " + status.source());
+      }
+    }
+
+    private boolean hasBundledHictNativeResource() {
+      final var os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+      final var arch = System.getProperty("os.arch", "").toLowerCase(java.util.Locale.ROOT);
+      final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
+      if (!is64Bit) {
+        return false;
+      }
+      final String platformDirectory;
+      if (os.contains("linux")) {
+        platformDirectory = "linux_64";
+      } else if (os.contains("win")) {
+        platformDirectory = "windows_64";
+      } else if (os.contains("mac") || os.contains("darwin")) {
+        platformDirectory = "macos_64";
+      } else {
+        return false;
+      }
+      for (final var variant : NativeCpuFeatures.preferredNativeVariantOrder()) {
+        final String libraryBaseName;
+        final String variantDirectory;
+        switch (variant) {
+          case "avx512" -> {
+            libraryBaseName = "hict_native_avx512";
+            variantDirectory = "avx512";
+          }
+          case "avx2" -> {
+            libraryBaseName = "hict_native";
+            variantDirectory = "avx2";
+          }
+          case "generic" -> {
+            libraryBaseName = "hict_native_sse2";
+            variantDirectory = "generic";
+          }
+          default -> {
+            continue;
+          }
+        }
+        final var mappedName = System.mapLibraryName(libraryBaseName);
+        if (HictCli.class.getResource("/natives/" + platformDirectory + "/" + variantDirectory + "/native/" + mappedName) != null
+          || HictCli.class.getResource("/natives/" + platformDirectory + "/" + mappedName) != null) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    private void smokeCommandIfPresent(final String label,
+                                       final String command,
+                                       final List<String> arguments,
+                                       final List<String> failures) {
+      if (command == null || command.isBlank()) {
+        if (!quiet) {
+          System.out.println(label + ": not bundled or configured; skipping");
+        }
+        return;
+      }
+      final var commandLine = new ArrayList<String>(1 + arguments.size());
+      commandLine.add(command);
+      commandLine.addAll(arguments);
+      try {
+        final var process = new ProcessBuilder(commandLine)
+          .redirectErrorStream(true)
+          .start();
+        if (!process.waitFor(15, TimeUnit.SECONDS)) {
+          process.destroyForcibly();
+          failures.add(label + " timed out");
+          return;
+        }
+        if (process.exitValue() != 0) {
+          failures.add(label + " failed with exit code " + process.exitValue());
+        } else if (!quiet) {
+          System.out.println(label + ": executable smoke test passed");
+        }
+      } catch (final Exception err) {
+        failures.add(label + " could not be executed: " + err.getMessage());
+      }
     }
   }
 

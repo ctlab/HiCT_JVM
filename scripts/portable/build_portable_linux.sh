@@ -607,6 +607,21 @@ if [[ -x "${RUN_PATH}" ]]; then
   "${RUN_PATH}" --hict-extract-only "${RUN_EXTRACT_TEST_DIR}" >/dev/null
   test -x "${RUN_EXTRACT_TEST_DIR}/${PACKAGE_NAME}/bin/hict"
   rm -rf "${RUN_EXTRACT_TEST_DIR}"
+  RUN_SMOKE_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hict-run-smoke-test.XXXXXX")"
+  cleanup_run_smoke_test() {
+    rm -rf "${RUN_SMOKE_TEST_DIR}"
+  }
+  trap cleanup_run_smoke_test EXIT
+  mkdir -p "${RUN_SMOKE_TEST_DIR}/data" "${RUN_SMOKE_TEST_DIR}/cache" "${RUN_SMOKE_TEST_DIR}/tmp"
+  perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 60 env \
+    DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
+    HICT_PORTABLE_DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
+    XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" \
+    TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
+    HICT_LAUNCHER_MODE=cli \
+    "${RUN_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+  rm -rf "${RUN_SMOKE_TEST_DIR}"
+  trap - EXIT
 fi
 
 (

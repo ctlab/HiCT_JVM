@@ -30,6 +30,75 @@ function Invoke-Native {
   }
 }
 
+function Invoke-PortableSmoke {
+  param(
+    [Parameter(Mandatory = $true)][string]$Label,
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$Arguments = @()
+  )
+
+  if (-not (Test-Path $FilePath)) {
+    throw "Portable smoke test target is missing: $FilePath"
+  }
+
+  $root = Join-Path ([System.IO.Path]::GetTempPath()) ("hict-portable-smoke-" + [System.Guid]::NewGuid().ToString("N"))
+  $dataDir = Join-Path $root "data"
+  $cacheDir = Join-Path $root "cache"
+  $tmpDir = Join-Path $root "tmp"
+  New-Item -ItemType Directory -Force -Path $dataDir, $cacheDir, $tmpDir | Out-Null
+
+  try {
+    Write-Host "Testing ${Label}: $FilePath $($Arguments -join ' ')"
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    if ($FilePath.EndsWith(".cmd", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $FilePath.EndsWith(".bat", [System.StringComparison]::OrdinalIgnoreCase)) {
+      $psi.FileName = "$env:ComSpec"
+      [void]$psi.ArgumentList.Add("/d")
+      [void]$psi.ArgumentList.Add("/c")
+      [void]$psi.ArgumentList.Add("call")
+      [void]$psi.ArgumentList.Add($FilePath)
+    } else {
+      $psi.FileName = $FilePath
+    }
+    foreach ($argument in $Arguments) {
+      [void]$psi.ArgumentList.Add($argument)
+    }
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.Environment["DATA_DIR"] = $dataDir
+    $psi.Environment["HICT_PORTABLE_DATA_DIR"] = $dataDir
+    $psi.Environment["XDG_CACHE_HOME"] = $cacheDir
+    $psi.Environment["TEMP"] = $tmpDir
+    $psi.Environment["TMP"] = $tmpDir
+    $psi.Environment["HICT_LAUNCHER_MODE"] = "cli"
+
+    $process = [System.Diagnostics.Process]::Start($psi)
+    if (-not $process.WaitForExit(60000)) {
+      try {
+        $process.Kill($true)
+      } catch {
+        $process.Kill()
+      }
+      throw "Portable smoke test timed out after 60 seconds: $Label"
+    }
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    if ($stdout) {
+      Write-Host $stdout
+    }
+    if ($stderr) {
+      Write-Host $stderr
+    }
+    if ($process.ExitCode -ne 0) {
+      throw "Portable smoke test failed with exit code $($process.ExitCode): $Label"
+    }
+  }
+  finally {
+    Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
+  }
+}
+
 function Get-JdkTool {
   param([Parameter(Mandatory = $true)][string]$Name)
   if ($env:JAVA_HOME) {
@@ -643,6 +712,11 @@ if (Test-Path $zipPath) {
 }
 Compress-Archive -Path $appDir -DestinationPath $zipPath -CompressionLevel Optimal
 
+Invoke-PortableSmoke `
+  -Label "portable ZIP run.cmd" `
+  -FilePath (Join-Path $appDir "run.cmd") `
+  -Arguments @("check-toolchains", "--require-hdf5-native", "--check-available-natives", "--quiet")
+
 $shaPath = Join-Path $artifactDir "$appName-$version-$platform.sha256"
 $hashLines = @()
 $hashLines += "$((Get-FileHash -Algorithm SHA256 $zipPath).Hash.ToLowerInvariant())  $(Split-Path -Leaf $zipPath)"
@@ -747,6 +821,13 @@ if ($CreateSelfExtractingExe) {
   Write-Host "Built optional portable $WindowsExeMode EXE in $artifactDir"
 }
 if ($CreateSelfExtractingExe -and (Test-Path $exePath)) {
-  Invoke-Native -FilePath $exePath -Arguments @("--help")
+  if ($WindowsExeMode -eq "custom") {
+    Invoke-PortableSmoke `
+      -Label "portable EXE" `
+      -FilePath $exePath `
+      -Arguments @("check-toolchains", "--require-hdf5-native", "--check-available-natives", "--quiet")
+  } else {
+    Invoke-Native -FilePath $exePath -Arguments @("--help")
+  }
 }
 Write-Host "Wrote $shaPath"

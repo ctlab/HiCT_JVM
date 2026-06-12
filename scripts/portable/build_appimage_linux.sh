@@ -524,6 +524,23 @@ fi
 
 ARCH="${APPIMAGE_ARCH}" APPIMAGE_EXTRACT_AND_RUN=1 "${APPIMAGETOOL_BIN}" "${APPIMAGETOOL_ARGS[@]}" "${APPDIR}" "${APPIMAGE_PATH}"
 
+APPIMAGE_SMOKE_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hict-appimage-smoke-test.XXXXXX")"
+cleanup_appimage_smoke_test() {
+  rm -rf "${APPIMAGE_SMOKE_TEST_DIR}"
+}
+trap cleanup_appimage_smoke_test EXIT
+mkdir -p "${APPIMAGE_SMOKE_TEST_DIR}/data" "${APPIMAGE_SMOKE_TEST_DIR}/cache" "${APPIMAGE_SMOKE_TEST_DIR}/tmp"
+perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 60 env \
+  APPIMAGE_EXTRACT_AND_RUN=1 \
+  DATA_DIR="${APPIMAGE_SMOKE_TEST_DIR}/data" \
+  HICT_PORTABLE_DATA_DIR="${APPIMAGE_SMOKE_TEST_DIR}/data" \
+  XDG_CACHE_HOME="${APPIMAGE_SMOKE_TEST_DIR}/cache" \
+  TMPDIR="${APPIMAGE_SMOKE_TEST_DIR}/tmp" \
+  HICT_LAUNCHER_MODE=cli \
+  "${APPIMAGE_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+rm -rf "${APPIMAGE_SMOKE_TEST_DIR}"
+trap - EXIT
+
 (
   cd "${ARTIFACT_DIR}"
   sha256sum "$(basename "${APPIMAGE_PATH}")" > "${SHA_PATH}"
