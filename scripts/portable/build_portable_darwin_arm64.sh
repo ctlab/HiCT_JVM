@@ -616,7 +616,7 @@ fi
 export HICT_APP_HOME="\${app_home}"
 export HICT_JAR_PATH="\${app_home}/lib/hict.jar"
 if [[ -z "\${HICT_JHDF5_NATIVES_ARCHIVE:-}" ]]; then
-  HICT_JHDF5_NATIVES_CANDIDATE="$(find "\${app_home}/lib" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
+  HICT_JHDF5_NATIVES_CANDIDATE="\$(find "\${app_home}/lib" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
   if [[ -n "\${HICT_JHDF5_NATIVES_CANDIDATE}" ]]; then
     export HICT_JHDF5_NATIVES_ARCHIVE="\${HICT_JHDF5_NATIVES_CANDIDATE}"
   fi
