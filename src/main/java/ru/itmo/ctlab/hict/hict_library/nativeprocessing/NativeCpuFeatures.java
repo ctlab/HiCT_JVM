@@ -41,6 +41,8 @@ import java.util.Locale;
 public final class NativeCpuFeatures {
   private static final String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
   private static final String NATIVE_VARIANT_ENV = "HICT_NATIVE_VARIANT";
+  private static volatile boolean hotSpotUseAvxQueried = false;
+  private static volatile @Nullable Integer hotSpotUseAvxLevel = null;
 
   private NativeCpuFeatures() {
   }
@@ -156,6 +158,20 @@ public final class NativeCpuFeatures {
   }
 
   private static @Nullable Integer hotSpotUseAvxLevel() {
+    if (hotSpotUseAvxQueried) {
+      return hotSpotUseAvxLevel;
+    }
+    synchronized (NativeCpuFeatures.class) {
+      if (hotSpotUseAvxQueried) {
+        return hotSpotUseAvxLevel;
+      }
+      hotSpotUseAvxLevel = queryHotSpotUseAvxLevel();
+      hotSpotUseAvxQueried = true;
+      return hotSpotUseAvxLevel;
+    }
+  }
+
+  private static @Nullable Integer queryHotSpotUseAvxLevel() {
     try {
       final var beanType = Class
         .forName("com.sun.management.HotSpotDiagnosticMXBean")

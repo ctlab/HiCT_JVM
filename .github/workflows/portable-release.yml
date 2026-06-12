@@ -621,7 +621,7 @@ jobs:
         run: |
           set -uo pipefail
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-linux_x86_64.run' -o -name 'HiCT-*-linux-x86_64.run' | sort | tail -n 1)"
-          portable_bin="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+          portable_bin="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
           failed=0
           check_binary() {
             local label="$1" path="$2" warning_only="${3:-false}"
@@ -643,6 +643,9 @@ jobs:
           }
           check_binary "portable runfile" "${runfile}" || failed=1
           check_binary "portable hict binary" "${portable_bin}" || failed=1
+          if [[ -n "${portable_bin}" && -x "${portable_bin}" ]]; then
+            "${portable_bin}" check-toolchains --require-hictk --require-dotplot || failed=1
+          fi
           appimage="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-x86_64.AppImage' | sort | tail -n 1)"
           if [[ -n "${appimage}" && -x "${appimage}" ]]; then
             export APPIMAGE_EXTRACT_AND_RUN=1
@@ -1354,7 +1357,7 @@ jobs:
           set -euo pipefail
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-arm64.run' | sort | tail -n 1)"
           launcher="$(find build/portable -path '*/bin/hict-darwin-arm64' -type f | sort | tail -n 1)"
-          shell_launcher="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+          shell_launcher="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
           [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS arm64 native processing payload."; exit 1; }
           find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS arm64 native processing dylibs found."; exit 1; }
           [[ -x toolchains-dist/darwin_arm64/bin/hictk ]] || { echo "::error::Missing macOS arm64 hictk."; exit 1; }
@@ -1368,6 +1371,7 @@ jobs:
           [[ -n "${shell_launcher}" && -x "${shell_launcher}" ]] || { echo "::error::Missing macOS shell launcher."; exit 1; }
           codesign -dv --verbose=2 "${launcher}" 2>&1 || { echo "::error::macOS arm64 launcher is not ad-hoc signed."; exit 1; }
           "${launcher}" --help >/dev/null
+          "${launcher}" check-toolchains --require-hictk --require-dotplot
       - name: Save Darwin toolchain cache
         if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -1540,7 +1544,7 @@ jobs:
           set -euo pipefail
           runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-x86_64.run' | sort | tail -n 1)"
           launcher="$(find build/portable -path '*/bin/hict-darwin-x86_64' -type f | sort | tail -n 1)"
-          shell_launcher="$(find build/portable -path '*/bin/hict' -type f | sort | tail -n 1)"
+          shell_launcher="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
           [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS Intel native processing payload."; exit 1; }
           find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS Intel native processing dylibs found."; exit 1; }
           [[ -x toolchains-dist/darwin_x86_64/bin/hictk ]] || { echo "::error::Missing macOS Intel hictk."; exit 1; }
@@ -1554,6 +1558,7 @@ jobs:
           [[ -n "${shell_launcher}" && -x "${shell_launcher}" ]] || { echo "::error::Missing macOS shell launcher."; exit 1; }
           codesign -dv --verbose=2 "${launcher}" 2>&1 || { echo "::error::macOS Intel launcher is not ad-hoc signed."; exit 1; }
           "${launcher}" --help >/dev/null
+          "${launcher}" check-toolchains --require-hictk --require-dotplot
       - name: Save Darwin Intel toolchain cache
         if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -1729,7 +1734,7 @@ jobs:
           fi
           if [[ -f "release-dist/${linux_appimage}" ]]; then
             release_body_lines+=("- Linux AppImage: [\`${linux_appimage}\`](${release_base_url}/${linux_appimage})")
-            release_body_lines+=("  Use this when the Linux runfile does not start, or on older/minimal Linux systems such as manylinux2010-like environments and Alpine/musl containers. It includes its own glibc/ld-linux runtime and starts HiCT through that bundled runtime.")
+            release_body_lines+=("  Use this when the Linux runfile does not start, or on older/minimal Linux systems such as manylinux2010-like environments and Alpine/musl containers. On normal desktop Linux it uses the system loader; if that cannot start the bundled Java runtime, it falls back to its included glibc/ld-linux runtime.")
             release_body_lines+=("  Run it with: \`chmod +x ${linux_appimage}\` and then \`./${linux_appimage}\`.")
             release_body_lines+=("  If the AppImage reports a FUSE or mount error, run: \`APPIMAGE_EXTRACT_AND_RUN=1 ./${linux_appimage}\`. This mode is more compatible but may unpack the application to a temporary directory each time.")
           fi

@@ -31,7 +31,8 @@ import java.util.regex.Pattern;
     HictCli.StartServer.class,
     HictCli.StartApiServer.class,
     HictCli.LauncherGui.class,
-    HictCli.Convert.class
+    HictCli.Convert.class,
+    HictCli.CheckToolchains.class
   }
 )
 public class HictCli implements Runnable {
@@ -144,6 +145,54 @@ public class HictCli implements Runnable {
       }
       HictLauncherGui.launchAndBlock();
       return 0;
+    }
+  }
+
+  @Command(
+    name = "check-toolchains",
+    mixinStandardHelpOptions = true,
+    description = "Verify bundled or configured external conversion and dotplot tools."
+  )
+  static class CheckToolchains implements Callable<Integer> {
+    @Option(names = "--require-hictk", description = "Fail if hictk is not available.")
+    boolean requireHictk;
+
+    @Option(names = "--require-dotplot", description = "Fail if no selected dotplot aligner is available.")
+    boolean requireDotplot;
+
+    @Option(names = "--quiet", description = "Only print errors.")
+    boolean quiet;
+
+    @Override
+    public Integer call() {
+      final var status = new ExternalToolchainManager().inspect();
+      if (!quiet) {
+        System.out.println(status.summary());
+        System.out.println("Platform: " + status.platform());
+        System.out.println("Source: " + status.source());
+        System.out.println("hictk: " + valueOrNone(status.hictkCommand()));
+        System.out.println("minimap2: " + valueOrNone(status.minimap2Command()));
+        System.out.println("mm2-plus AVX2: " + valueOrNone(status.mm2PlusAvx2Command()));
+        System.out.println("selected dotplot aligner: " + status.selectedDotplotAligner()
+          + " (" + valueOrNone(status.selectedDotplotAlignerCommand()) + ")");
+      }
+      final var failures = new ArrayList<String>();
+      if (requireHictk && !status.hictkAvailable()) {
+        failures.add("hictk is unavailable");
+      }
+      if (requireDotplot && status.selectedDotplotAlignerCommand() == null) {
+        failures.add("dotplot aligner is unavailable");
+      }
+      if (!failures.isEmpty()) {
+        System.err.println("External toolchain check failed: " + String.join("; ", failures));
+        System.err.println(status.summary());
+        return 1;
+      }
+      return 0;
+    }
+
+    private static String valueOrNone(final String value) {
+      return value == null || value.isBlank() ? "none" : value;
     }
   }
 

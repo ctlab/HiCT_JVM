@@ -36,6 +36,19 @@ static void set_env_if_unset(const char* key, const std::string& value) {
   }
 }
 
+static void set_env_if_unset_existing_dir(const char* key, const std::vector<std::string>& candidates) {
+  if (std::getenv(key) != nullptr) {
+    return;
+  }
+  for (const auto& candidate : candidates) {
+    std::error_code ec;
+    if (fs::is_directory(candidate, ec)) {
+      setenv(key, candidate.c_str(), 1);
+      return;
+    }
+  }
+}
+
 static std::string selected_data_dir(const std::string& app_home) {
   if (const char* data_dir = std::getenv("DATA_DIR"); data_dir != nullptr && *data_dir != '\0') {
     return data_dir;
@@ -100,8 +113,14 @@ int main(int argc, char* argv[]) {
   set_env_if_unset("HICT_APP_HOME", app_home);
   set_env_if_unset("HICT_JAR_PATH", app_home + "/lib/hict.jar");
   set_env_if_unset("WEBUI_ROOT", app_home + "/webui");
-  set_env_if_unset("HICT_TOOLCHAIN_DIR", app_home + "/toolchains/darwin_arm64");
-  set_env_if_unset("HICT_BROWSER_DIR", app_home + "/browsers/darwin_arm64");
+  set_env_if_unset_existing_dir("HICT_TOOLCHAIN_DIR", {
+    app_home + "/toolchains/darwin_arm64",
+    app_home + "/toolchains/darwin_x86_64"
+  });
+  set_env_if_unset_existing_dir("HICT_BROWSER_DIR", {
+    app_home + "/browsers/darwin_arm64",
+    app_home + "/browsers/darwin_x86_64"
+  });
   set_env_if_unset("HICT_TEMP_DIR", temp_dir);
   set_env_if_unset("TMPDIR", temp_dir);
   set_env_if_unset("TMP", temp_dir);

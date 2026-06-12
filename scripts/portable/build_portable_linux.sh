@@ -451,10 +451,10 @@ HiCT portable launcher cannot start because required command '\$1' is not availa
 Install the standard archive/shell utilities for your Linux distribution, then
 run this file again. Common commands:
 
-  Debian/Ubuntu: sudo apt-get install coreutils gawk tar xz-utils
-  Fedora/RHEL:   sudo dnf install coreutils gawk tar xz
-  Arch Linux:    sudo pacman -S coreutils gawk tar xz
-  openSUSE:      sudo zypper install coreutils gawk tar xz
+  Debian/Ubuntu: sudo apt-get install coreutils tar xz-utils
+  Fedora/RHEL:   sudo dnf install coreutils tar xz
+  Arch Linux:    sudo pacman -S coreutils tar xz
+  openSUSE:      sudo zypper install coreutils tar xz
 
 If this machine is locked down, use the .tar.gz portable artifact instead and
 extract it on a machine that has these standard tools.
@@ -467,7 +467,6 @@ if [[ "\${1:-}" == "--hict-run-help" || "\${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-require_runtime_cmd awk
 require_runtime_cmd tail
 require_runtime_cmd tar
 require_runtime_cmd xz
@@ -503,6 +502,19 @@ EOW
 }
 warn_missing_tauri_webview_dependencies
 
+print_banner() {
+  cat <<'EOB'
+HiCT - Hi-C scaffolding and visualization workstation
+Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin,
+Aleksandr Sinitsyn, Vitalii Dravgelis, and CT Lab ITMO University.
+License: MIT. Bundled third-party tools keep their own licenses.
+
+Preparing the portable HiCT package. The first start extracts the application
+payload and can take a while. Please keep this Terminal window open.
+
+EOB
+}
+
 can_execute_from_directory() {
   local directory="\$1"
   mkdir -p "\${directory}" 2>/dev/null || return 1
@@ -518,7 +530,20 @@ can_execute_from_directory() {
   return "\${status}"
 }
 
-payload_line="\$(awk "/^\${MARKER}\$/ { print NR + 1; exit 0; }" "\${SELF_PATH}")"
+find_payload_line() {
+  local line_number=0
+  local line
+  while IFS= read -r line; do
+    line_number=\$((line_number + 1))
+    if [[ "\${line}" == "\${MARKER}" ]]; then
+      echo \$((line_number + 1))
+      return 0
+    fi
+  done < "\${SELF_PATH}"
+  return 1
+}
+
+payload_line="\$(find_payload_line || true)"
 if [[ -z "\${payload_line}" ]]; then
   echo "Cannot find embedded HiCT payload." >&2
   exit 1
@@ -530,10 +555,13 @@ if [[ "\${1:-}" == "--hict-extract-only" ]]; then
     exit 1
   fi
   mkdir -p "\$2"
+  echo "Extracting HiCT to \$2. Please wait..." >&2
   tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\$2"
   echo "Extracted HiCT to \$2/\${APP_PACKAGE_NAME}"
   exit 0
 fi
+
+print_banner
 
 home_dir="\${HOME:-/tmp}"
 local_cache_root="\${SELF_DIR}/HiCT.portable/payloads"
@@ -561,6 +589,7 @@ marker_file="\${extract_root}/.payload.sha256"
 if [[ ! -x "\${app_home}/bin/hict" || ! -f "\${marker_file}" || "\$(cat "\${marker_file}" 2>/dev/null || true)" != "\${PAYLOAD_SHA256}" ]]; then
   rm -rf "\${extract_root}"
   mkdir -p "\${extract_root}"
+  echo "Extracting HiCT to \${extract_root}. Please wait..." >&2
   tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\${extract_root}"
   printf '%s\n' "\${PAYLOAD_SHA256}" > "\${marker_file}"
 fi
@@ -574,6 +603,10 @@ cat "${PAYLOAD_PATH}" >> "${RUN_PATH}"
 chmod +x "${RUN_PATH}"
 if [[ -x "${RUN_PATH}" ]]; then
   "${RUN_PATH}" --help >/dev/null
+  RUN_EXTRACT_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hict-run-extract-test.XXXXXX")"
+  "${RUN_PATH}" --hict-extract-only "${RUN_EXTRACT_TEST_DIR}" >/dev/null
+  test -x "${RUN_EXTRACT_TEST_DIR}/${PACKAGE_NAME}/bin/hict"
+  rm -rf "${RUN_EXTRACT_TEST_DIR}"
 fi
 
 (

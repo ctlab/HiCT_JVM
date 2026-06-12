@@ -386,6 +386,12 @@ if [ -z "${HICT_BROWSER_DIR:-}" ] && [ -d "${APPDIR}/usr/lib/hict/browsers/linux
   export HICT_BROWSER_DIR="${APPDIR}/usr/lib/hict/browsers/linux_x86_64"
 fi
 
+if [ "${HICT_APPIMAGE_FORCE_BUNDLED_GLIBC:-0}" != "1" ] &&
+   [ -x "${APPDIR}/usr/lib/hict/runtime/bin/java" ] &&
+   "${APPDIR}/usr/lib/hict/runtime/bin/java" -version >/dev/null 2>&1; then
+  exec "${APPDIR}/usr/lib/hict/bin/hict" "$@"
+fi
+
 if [ -x "${APPDIR}/usr/lib/hict/bin/hict-appimage-glibc" ]; then
   exec "${APPDIR}/usr/lib/hict/bin/hict-appimage-glibc" "$@"
 fi

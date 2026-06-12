@@ -400,12 +400,19 @@ public final class ExternalToolchainManager {
   private static @NotNull String detectPlatform() {
     final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
     final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-    final var archId = arch.contains("64") ? "x86_64" : arch;
+    final var archId = switch (arch) {
+      case "amd64", "x86_64", "x64" -> "x86_64";
+      case "aarch64", "arm64" -> "arm64";
+      default -> arch.replaceAll("[^a-z0-9]+", "_");
+    };
     if (os.contains("win")) {
       return "windows_" + archId;
     }
     if (os.contains("linux")) {
       return "linux_" + archId;
+    }
+    if (os.contains("mac") || os.contains("darwin")) {
+      return "darwin_" + archId;
     }
     return os.replaceAll("[^a-z0-9]+", "_") + "_" + archId;
   }
@@ -580,7 +587,9 @@ public final class ExternalToolchainManager {
   ) {
     private static @NotNull ToolchainStatus fromResolved(final @NotNull ResolvedToolchain toolchain,
                                                          final @NotNull String dotplotAlignerPreference) {
-      final var supportedPlatform = toolchain.platform().startsWith("linux_") || toolchain.platform().startsWith("windows_");
+      final var supportedPlatform = toolchain.platform().startsWith("linux_")
+        || toolchain.platform().startsWith("windows_")
+        || toolchain.platform().startsWith("darwin_");
       final var hictkAvailable = toolchain.hictkCommand() != null;
       final var minimap2Available = toolchain.minimap2Command() != null;
       final var mm2PlusAvx2Available = toolchain.mm2PlusAvx2Command() != null;
