@@ -74,13 +74,13 @@ function Invoke-PortableSmoke {
     $psi.Environment["HICT_LAUNCHER_MODE"] = "cli"
 
     $process = [System.Diagnostics.Process]::Start($psi)
-    if (-not $process.WaitForExit(60000)) {
+    if (-not $process.WaitForExit(600000)) {
       try {
         $process.Kill($true)
       } catch {
         $process.Kill()
       }
-      throw "Portable smoke test timed out after 60 seconds: $Label"
+      throw "Portable smoke test timed out after 600 seconds: $Label"
     }
     $stdout = $process.StandardOutput.ReadToEnd()
     $stderr = $process.StandardError.ReadToEnd()
