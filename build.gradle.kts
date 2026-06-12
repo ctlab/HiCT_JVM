@@ -1053,6 +1053,11 @@ tasks.named<ProcessResources>("processResources") {
   dependsOn("copyWebUI")
   dependsOn("verifyNativeProcessingBuild")
   duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.EXCLUDE
+  exclude(
+    "libs/$bundledJhdf5JarName",
+    "libs/$bundledJhdf5FallbackJarName",
+    "libs/$bundledJhdf5NativesArchiveName",
+  )
   from(nativeProcessingResourceRoot) {
     into("")
   }
@@ -1280,6 +1285,10 @@ tasks.register("verifyBundledJhdf5Payload") {
       entries.contains(path) || nativesArchiveEntries.contains(path.removePrefix("libs/"))
 
     val requiredAnyOf = listOf(
+      "Embedded JHDF5 native archive" to { set: Set<String> ->
+        runtimeJhdf5NativesArchiveOrSource()?.isFile != true ||
+          set.contains("libs/$bundledJhdf5NativesArchiveName")
+      },
       "Linux amd64 JHDF5 JNI" to { set: Set<String> ->
         set.contains("native/jhdf5/amd64-Linux/libjhdf5.so") || hasJhdf5Entry("libs/native/jhdf5/amd64-Linux/libjhdf5.so")
       },
@@ -1332,6 +1341,12 @@ tasks.register("verifyBundledJhdf5Payload") {
 tasks.named<ShadowJar>("shadowJar") {
   dependsOn("verifyNativeProcessingBuild")
   dependsOn(prepareRuntimeJhdf5NativesArchive)
+  from(provider {
+    val archive = runtimeJhdf5NativesArchiveFile.get().asFile
+    if (archive.isFile) listOf(archive) else emptyList<File>()
+  }) {
+    into("libs")
+  }
   doLast {
     runtimeJhdf5NativesArchiveOrSource()?.let { archive ->
       val target = archiveFile.get().asFile.parentFile.resolve(archive.name)

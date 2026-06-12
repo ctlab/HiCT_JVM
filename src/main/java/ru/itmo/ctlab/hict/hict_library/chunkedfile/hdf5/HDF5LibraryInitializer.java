@@ -61,6 +61,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Getter
 public class HDF5LibraryInitializer {
   private static final String[] BUNDLED_JHDF5_LIBRARY_ROOTS = {"native/jhdf5", "libs/native/jhdf5"};
+  private static final String[] BUNDLED_JHDF5_NATIVE_ARCHIVE_ROOTS = {"libs", "resources/libs"};
   private static final String[] JHDF5_NATIVES_ARCHIVE_NAMES = {
     "sis-jhdf5-19.04.1-natives.tar.gz",
     "jhdf5-natives.tar.gz"
@@ -125,12 +126,17 @@ public class HDF5LibraryInitializer {
       if (sidecarPath.isPresent()) {
         log.info("Using sidecar JHDF5 native library {}", sidecarPath.get());
       } else {
-        prepareBundledJhdf5NativeLibraryPath().ifPresent(path ->
-          log.info("Using bundled JHDF5 native library {}", path)
-        );
+        final var embeddedArchivePath = prepareEmbeddedJhdf5NativeLibraryPath();
+        if (embeddedArchivePath.isPresent()) {
+          log.info("Using embedded JHDF5 native archive library {}", embeddedArchivePath.get());
+        } else {
+          prepareBundledJhdf5NativeLibraryPath().ifPresent(path ->
+            log.info("Using bundled JHDF5 native library {}", path)
+          );
+        }
       }
     } catch (final IOException err) {
-      log.debug("Failed to prepare bundled or sidecar JHDF5 native library path", err);
+      log.debug("Failed to prepare bundled, embedded, or sidecar JHDF5 native library path", err);
     }
 
     try {
@@ -592,37 +598,68 @@ public class HDF5LibraryInitializer {
   }
 
   private static @NotNull Optional<Path> prepareSidecarJhdf5NativeLibraryPath() throws IOException {
-    Optional<Path> firstExtractedJhdf5 = Optional.empty();
     for (final var archive : sidecarJhdf5NativeArchiveCandidates()) {
-      if (!Files.isRegularFile(archive)) {
+      final var extractedJhdf5 = prepareJhdf5NativeLibraryPathFromArchive(archive);
+      if (extractedJhdf5.isPresent()) {
+        return extractedJhdf5;
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static @NotNull Optional<Path> prepareEmbeddedJhdf5NativeLibraryPath() throws IOException {
+    for (final var resourcePath : embeddedJhdf5NativeArchiveResources()) {
+      try (InputStream stream = HDF5LibraryInitializer.class.getResourceAsStream("/" + resourcePath)) {
+        if (stream == null) {
+          continue;
+        }
+        final var archive = Files.createTempFile("hict-jhdf5-native-resource-", ".tar.gz");
+        archive.toFile().deleteOnExit();
+        Files.copy(stream, archive, StandardCopyOption.REPLACE_EXISTING);
+        final var extractedJhdf5 = prepareJhdf5NativeLibraryPathFromArchive(archive);
+        if (extractedJhdf5.isPresent()) {
+          return extractedJhdf5;
+        }
+        Files.deleteIfExists(archive);
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static @NotNull Optional<Path> prepareJhdf5NativeLibraryPathFromArchive(final @NotNull Path archive) throws IOException {
+    if (!Files.isRegularFile(archive)) {
+      return Optional.empty();
+    }
+
+    Optional<Path> firstExtractedJhdf5 = Optional.empty();
+    for (final var resourceDirectory : bundledJhdf5NativeResourceDirectories()) {
+      final var archiveDirectory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+      final var jhdf5ArchivePath = firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "jhdf5");
+      if (jhdf5ArchivePath.isEmpty()) {
         continue;
       }
-      for (final var resourceDirectory : bundledJhdf5NativeResourceDirectories()) {
-        final var archiveDirectory = normalizeJhdf5ResourceDirectory(resourceDirectory);
-        final var jhdf5ArchivePath = firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "jhdf5");
-        if (jhdf5ArchivePath.isEmpty()) {
-          continue;
-        }
-        final var extractionDirectory = extractJhdf5NativeArchiveDirectory(archive, archiveDirectory);
-        if (extractionDirectory.isEmpty()) {
-          continue;
-        }
-        final var fileName = jhdf5ArchivePath.get().substring(jhdf5ArchivePath.get().lastIndexOf('/') + 1);
-        final var extractedJhdf5 = extractionDirectory.get().resolve(fileName);
-        if (!Files.isRegularFile(extractedJhdf5)) {
-          continue;
-        }
-
-        jniExtractor.pathsCollection.add(archiveDirectory);
-        jniExtractor.namesCollection.add("jhdf5");
-        jniExtractor.absolutePathsCollection.add(extractionDirectory.get().toString());
-        jniExtractor.fullPathsCollection.add(extractedJhdf5.toString());
-        if (firstExtractedJhdf5.isEmpty()) {
-          firstExtractedJhdf5 = Optional.of(extractedJhdf5);
-        }
+      final var extractionDirectory = extractJhdf5NativeArchiveDirectory(archive, archiveDirectory);
+      if (extractionDirectory.isEmpty()) {
+        continue;
       }
-      if (firstExtractedJhdf5.isPresent()) {
-        return firstExtractedJhdf5;
+      final var fileName = jhdf5ArchivePath.get().substring(jhdf5ArchivePath.get().lastIndexOf('/') + 1);
+      final var extractedJhdf5 = extractionDirectory.get().resolve(fileName);
+      if (!Files.isRegularFile(extractedJhdf5)) {
+        continue;
+      }
+
+      setNativeLibraryPropertyIfUnset("jhdf5", extractedJhdf5);
+      firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "hdf5")
+        .map(path -> path.substring(path.lastIndexOf('/') + 1))
+        .map(extractionDirectory.get()::resolve)
+        .filter(Files::isRegularFile)
+        .ifPresent(path -> setNativeLibraryPropertyIfUnset("hdf5", path));
+      jniExtractor.pathsCollection.add(archiveDirectory);
+      jniExtractor.namesCollection.add("jhdf5");
+      jniExtractor.absolutePathsCollection.add(extractionDirectory.get().toString());
+      jniExtractor.fullPathsCollection.add(extractedJhdf5.toString());
+      if (firstExtractedJhdf5.isEmpty()) {
+        firstExtractedJhdf5 = Optional.of(extractedJhdf5);
       }
     }
     return firstExtractedJhdf5;
@@ -689,6 +726,20 @@ public class HDF5LibraryInitializer {
     for (final var jhdf5PlatformDirectory : candidatePaths) {
       for (final var rootDirectory : BUNDLED_JHDF5_LIBRARY_ROOTS) {
         result.add(normalizeJhdf5ResourceDirectory(rootDirectory + "/" + jhdf5PlatformDirectory));
+      }
+    }
+    return result;
+  }
+
+  private static @NotNull List<String> embeddedJhdf5NativeArchiveResources() {
+    final var result = new ArrayList<String>();
+    for (final var rootDirectory : BUNDLED_JHDF5_NATIVE_ARCHIVE_ROOTS) {
+      final var normalizedRoot = normalizeJhdf5ResourceDirectory(rootDirectory);
+      for (final var archiveName : JHDF5_NATIVES_ARCHIVE_NAMES) {
+        final var resourcePath = normalizedRoot + archiveName;
+        if (HDF5LibraryInitializer.class.getResource("/" + resourcePath) != null) {
+          result.add(resourcePath);
+        }
       }
     }
     return result;
