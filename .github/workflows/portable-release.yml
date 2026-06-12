@@ -1739,6 +1739,7 @@ jobs:
             release_body_lines+=("- Start with the \`.run\` file on normal Linux installations.")
             release_body_lines+=("- Use the AppImage for older systems, Alpine/musl, containers, or if the \`.run\` file reports a glibc/runtime error.")
             release_body_lines+=("- Both Linux packages can start the server from the command line, for example: \`start-server\` or \`start-server --help\` after the artifact name.")
+            release_body_lines+=("- For a remote SSH cluster, forward both ports from your local computer: \`ssh -L 8080:127.0.0.1:8080 -L 5000:127.0.0.1:5000 user@cluster.example.org\`, then run HiCT on the remote machine with \`start-server\` and open \`http://localhost:8080\` locally.")
           fi
           darwin_assets=()
           if [[ -f "release-dist/${darwin_arm64_run}" ]]; then

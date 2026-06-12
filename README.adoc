@@ -57,6 +57,36 @@ DATA_DIR=/path/to/your/data bash HiCT-<version>-linux-x86_64.run
 DATA_DIR=/path/to/your/data ./HiCT-<version>-x86_64.AppImage
 ----
 
+=== Linux on a remote SSH cluster
+
+If HiCT is running on a remote Linux server or compute node, start it in server mode and forward both HiCT ports to your computer.
+Run this command on your local computer:
+
+[source,bash]
+----
+ssh -L 8080:127.0.0.1:8080 -L 5000:127.0.0.1:5000 user@cluster.example.org
+----
+
+After SSH connects, run HiCT on the remote machine with `start-server` explicitly:
+
+[source,bash]
+----
+cd /path/to/HiCT
+DATA_DIR=/path/to/your/data bash HiCT-<version>-linux-x86_64.run start-server
+----
+
+For the AppImage artifact, use:
+
+[source,bash]
+----
+cd /path/to/HiCT
+DATA_DIR=/path/to/your/data ./HiCT-<version>-x86_64.AppImage start-server
+----
+
+Keep the SSH session open while HiCT is running.
+Then open `http://localhost:8080` in the browser on your local computer.
+The forwarded API port is `http://localhost:5000`.
+
 === Windows quick start
 
 Double-click the downloaded `.exe`, or start the server from Command Line/PowerShell:
