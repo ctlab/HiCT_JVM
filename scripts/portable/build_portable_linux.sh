@@ -345,7 +345,11 @@ if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
   JAVA_OPTS=(${HICT_JAVA_OPTS})
 fi
 
-exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
+  exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+else
+  exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+fi
 EOF
 chmod +x "${APP_DIR}/bin/hict"
 

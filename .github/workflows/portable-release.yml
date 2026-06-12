@@ -84,6 +84,14 @@ on:
         options:
           - "true"
           - "false"
+      build_linux_appimage:
+        description: "Build Linux AppImage with bundled glibc runtime"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       publish_target:
         description: "Manual publish target after building artifacts"
         required: true
@@ -260,6 +268,7 @@ jobs:
           chmod +x gradlew \
             scripts/ci/linux_container_build.sh \
             scripts/ci/validate_linux_component.sh \
+            scripts/portable/build_appimage_linux.sh \
             scripts/portable/build_portable_linux.sh \
             scripts/portable/prepare_tauri_browser_payload_linux.sh \
             scripts/portable/prepare_electron_browser_payload_linux.sh \
@@ -502,6 +511,13 @@ jobs:
           HICT_SKIP_GRADLE: "1"
         run: ./scripts/portable/build_portable_linux.sh
 
+      - name: Build Linux AppImage on Ubuntu
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_linux_appimage == 'true') }}
+        env:
+          HICT_SKIP_PORTABLE: "1"
+          HICT_APPIMAGE_BUNDLE_GLIBC: "1"
+        run: ./scripts/portable/build_appimage_linux.sh
+
       - name: Check Linux GLIBC floor
         run: |
           set -euo pipefail
@@ -581,6 +597,16 @@ jobs:
             build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.sha256
           if-no-files-found: error
 
+      - name: Upload Linux AppImage artifact
+        if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_linux_appimage == 'true') }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: hict-linux-appimage${{ matrix.artifact_suffix }}
+          path: |
+            build/distributions/HiCT-*-x86_64.AppImage
+            build/distributions/HiCT-*-x86_64.AppImage.sha256
+          if-no-files-found: error
+
       - name: Upload Linux runfile artifact
         uses: actions/upload-artifact@v6
         with:
@@ -617,6 +643,12 @@ jobs:
           }
           check_binary "portable runfile" "${runfile}" || failed=1
           check_binary "portable hict binary" "${portable_bin}" || failed=1
+          appimage="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-x86_64.AppImage' | sort | tail -n 1)"
+          if [[ -n "${appimage}" && -x "${appimage}" ]]; then
+            export APPIMAGE_EXTRACT_AND_RUN=1
+            check_binary "portable AppImage" "${appimage}" || failed=1
+            unset APPIMAGE_EXTRACT_AND_RUN
+          fi
           check_binary "hictk" "toolchains-dist/linux_x86_64/bin/hictk" || failed=1
           check_binary "minimap2" "toolchains-dist/linux_x86_64/bin/minimap2" || failed=1
           if [[ -x toolchains-dist/linux_x86_64/bin/mm2plus-avx2 ]]; then
@@ -1619,6 +1651,7 @@ jobs:
             find downloaded-artifacts -type f \( \
               -name '*.jar' -o \
               -name '*.run' -o \
+              -name '*.AppImage' -o \
               -name '*.exe' -o \
               -name '*.zip' -o \
               -name '*.tar.gz' -o \
@@ -1673,6 +1706,7 @@ jobs:
 
           release_base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}"
           linux_run="HiCT-${version}-linux-x86_64.run"
+          linux_appimage="HiCT-${version}-x86_64.AppImage"
           windows_exe="HiCT-${version}-windows-x86_64.exe"
           darwin_arm64_run="HiCT-${version}-darwin-arm64.run"
           darwin_x86_64_run="HiCT-${version}-darwin-x86_64.run"
@@ -1691,6 +1725,10 @@ jobs:
           if [[ -f "release-dist/${linux_run}" ]]; then
             release_body_lines+=("- Linux: [\`${linux_run}\`](${release_base_url}/${linux_run})")
             release_body_lines+=("  After download, run \`chmod +x ${linux_run}\` and then \`bash ${linux_run}\`.")
+          fi
+          if [[ -f "release-dist/${linux_appimage}" ]]; then
+            release_body_lines+=("- Linux AppImage: [\`${linux_appimage}\`](${release_base_url}/${linux_appimage})")
+            release_body_lines+=("  The AppImage starts HiCT through a bundled glibc/ld-linux runtime for broader distro coverage.")
           fi
           darwin_assets=()
           if [[ -f "release-dist/${darwin_arm64_run}" ]]; then
