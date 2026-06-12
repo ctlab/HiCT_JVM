@@ -4,12 +4,132 @@ image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release
 
 == Launching pre-built version
 
-== For users of `.jar` distribution
+Most users should download a ready-to-run package from the https://github.com/ctlab/HiCT_JVM/releases[GitHub Releases page].
+You do not need to clone this repository or build the project unless you want to develop HiCT itself.
 
-This section is intended for bioinformatics users who download a ready-to-run fat JAR from GitHub Releases.
+Open the Releases page, choose the newest release, scroll to *Assets*, and download the file for your operating system.
+
+=== What should I download?
+
+* *Windows:* download `HiCT-<version>-windows-x86_64.exe`.
+  At first start, Windows might display a window "Windows protected your PC" and advise you not to run this file. That happens because HiCT does not have a digital signature now. Usually you can click on "More info" and the button "Run anyway" would appear.
+  If Windows or your organization blocks unsigned `.exe` files, download `HiCT-<version>-windows-x86_64-portable.zip`, unzip it, and run `HiCT.cmd`.
+* *Linux, normal desktop/server distributions:* download `HiCT-<version>-linux-x86_64.run`.
+  This is the recommended choice for recent versions Ubuntu, Debian, Fedora, RHEL, CentOS, openSUSE, Arch, and similar Linux systems.
+* *Linux, older/minimal systems or containers:* download `HiCT-<version>-x86_64.AppImage`.
+  Use this if the `.run` file does not start, if it reports a glibc/runtime error, or if you are using Alpine/musl or an old manylinux-like container.
+* *macOS Apple Silicon (M1, M2, ...):* download `HiCT-<version>-darwin-arm64.run`.
+* *macOS Intel (Core i3/i5/i7):* download `HiCT-<version>-darwin-x86_64.run`.
+  This is not a `.dmg` installer: there is no application icon to drag into Applications. Download the `.run` file, open Terminal, go to the folder with the downloaded file, unblock it if macOS asks, make it runnable, and start it from Terminal.
+
+=== Linux quick start
+
+For most Linux systems:
+
+[source,bash]
+----
+chmod +x HiCT-<version>-linux-x86_64.run
+bash HiCT-<version>-linux-x86_64.run
+----
+
+For older/minimal Linux systems, Alpine, or containers:
+
+[source,bash]
+----
+chmod +x HiCT-<version>-x86_64.AppImage
+./HiCT-<version>-x86_64.AppImage
+----
+
+If the AppImage reports a FUSE or mount error, use the extraction fallback:
+
+[source,bash]
+----
+APPIMAGE_EXTRACT_AND_RUN=1 ./HiCT-<version>-x86_64.AppImage
+----
+
+After startup, open the WebUI at `http://localhost:8080`.
+
+To choose the folder where HiCT looks for `.hict.hdf5`, `.mcool`, `.cool`, `.agp`, and `.fasta` files, set `DATA_DIR`:
+
+[source,bash]
+----
+DATA_DIR=/path/to/your/data bash HiCT-<version>-linux-x86_64.run
+DATA_DIR=/path/to/your/data ./HiCT-<version>-x86_64.AppImage
+----
+
+=== Windows quick start
+
+Double-click the downloaded `.exe`, or start the server from Command Line/PowerShell:
+
+[source,powershell]
+----
+.\HiCT-<version>-windows-x86_64.exe
+----
+
+Then open `http://localhost:8080`.
+
+If you downloaded the `.zip`, unzip it first and run:
+
+[source,powershell]
+----
+.\HiCT.cmd
+----
+
+=== macOS quick start
+
+The macOS package is a `.run` file, not a `.dmg` installer.
+Do not look for a drag-and-drop Applications window.
+Open Terminal and run the downloaded file from the folder where it was saved.
+
+For Apple Silicon Macs (M1/M2/M3 and newer):
+
+[source,bash]
+----
+cd ~/Downloads
+chmod +x HiCT-<version>-darwin-arm64.run
+./HiCT-<version>-darwin-arm64.run
+----
+
+For Intel Macs, use `darwin-x86_64` instead:
+
+[source,bash]
+----
+cd ~/Downloads
+chmod +x HiCT-<version>-darwin-x86_64.run
+./HiCT-<version>-darwin-x86_64.run
+----
+
+If macOS says the file cannot be opened because it is from an unidentified developer or was downloaded from the Internet, unblock it first:
+
+[source,bash]
+----
+xattr -d com.apple.quarantine ./HiCT-<version>-darwin-*.run
+----
+
+Then run the `chmod +x ...` and `./HiCT-....run` commands again.
+After startup, open the WebUI at `http://localhost:8080`.
+
+=== Command-line help
+
+All portable packages accept the same HiCT commands:
+
+[source,bash]
+----
+./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run
+./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run --help
+./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run start-server --help
+./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run convert --help
+----
+
+Replace the file name with the `.AppImage`, Windows `.exe`, macOS `.run`, or `HiCT.cmd` that you downloaded.
+
+== Advanced: fat JAR distribution
+
+This section is for users who specifically need the legacy ready-to-run fat JAR from GitHub Releases.
+The portable packages above are recommended for normal use because they include the matching Java runtime and native libraries.
 You need to install Java 21+ (this project is built for Java 21 bytecode).
 Download the latest fat JAR from the https://github.com/ctlab/HiCT_JVM/releases[Releases page] (Assets section).
-**NOTE:** prebuilt native bundles are currently provided for *Windows* (tested on 10/11), *Linux x86_64 static-musl* binaries, and *macOS arm64* (Apple Silicon). The Linux and macOS portable artifacts are built to run without the host libc/stdlib dependencies that previously blocked Ubuntu 18.04/22.04 and Alpine users. On Windows you might need to install https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170[Microsoft Visual C++ Redistributable].
+**NOTE:** prebuilt native bundles are currently provided for portable Windows, Linux, and macOS release artifacts. The legacy fat JAR path can still require a compatible local Java installation and platform-specific native libraries. On Windows you might need to install https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170[Microsoft Visual C++ Redistributable].
 
 === Quick start
 
@@ -432,7 +552,8 @@ HICT_SKIP_PORTABLE=1 ./scripts/portable/build_appimage_linux.sh
 ----
 
 The Linux `.run` uses an appended `tar.xz` payload for smaller single-file releases; the companion `.tar.gz` stays available for environments that prefer direct archive extraction.
-AppImage builds use xz-compressed SquashFS by default; set `APPIMAGE_COMPRESSION=gzip` only when startup speed is more important than artifact size.
+AppImage builds use a static AppImage runtime and gzip-compressed SquashFS by default, so the AppImage can start on older or musl-based Linux systems before HiCT switches to its bundled glibc runtime.
+Set `APPIMAGE_COMPRESSION=xz` only together with a compatible AppImage runtime when smaller artifact size is more important than old-system compatibility.
 
 Windows:
 

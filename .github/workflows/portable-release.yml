@@ -1724,11 +1724,21 @@ jobs:
           fi
           if [[ -f "release-dist/${linux_run}" ]]; then
             release_body_lines+=("- Linux: [\`${linux_run}\`](${release_base_url}/${linux_run})")
-            release_body_lines+=("  After download, run \`chmod +x ${linux_run}\` and then \`bash ${linux_run}\`.")
+            release_body_lines+=("  Recommended for most desktop/server Linux systems such as Ubuntu, Debian, Fedora, RHEL, CentOS, openSUSE, Arch, and similar glibc-based distributions. It caches the extracted program next to the downloaded file, so repeated starts usually do less unpacking.")
+            release_body_lines+=("  Run it with: \`chmod +x ${linux_run}\` and then \`bash ${linux_run}\`.")
           fi
           if [[ -f "release-dist/${linux_appimage}" ]]; then
             release_body_lines+=("- Linux AppImage: [\`${linux_appimage}\`](${release_base_url}/${linux_appimage})")
-            release_body_lines+=("  The AppImage starts HiCT through a bundled glibc/ld-linux runtime for broader distro coverage.")
+            release_body_lines+=("  Use this when the Linux runfile does not start, or on older/minimal Linux systems such as manylinux2010-like environments and Alpine/musl containers. It includes its own glibc/ld-linux runtime and starts HiCT through that bundled runtime.")
+            release_body_lines+=("  Run it with: \`chmod +x ${linux_appimage}\` and then \`./${linux_appimage}\`.")
+            release_body_lines+=("  If the AppImage reports a FUSE or mount error, run: \`APPIMAGE_EXTRACT_AND_RUN=1 ./${linux_appimage}\`. This mode is more compatible but may unpack the application to a temporary directory each time.")
+          fi
+          if [[ -f "release-dist/${linux_run}" || -f "release-dist/${linux_appimage}" ]]; then
+            release_body_lines+=("")
+            release_body_lines+=("Linux choice summary:")
+            release_body_lines+=("- Start with the \`.run\` file on normal Linux installations.")
+            release_body_lines+=("- Use the AppImage for older systems, Alpine/musl, containers, or if the \`.run\` file reports a glibc/runtime error.")
+            release_body_lines+=("- Both Linux packages can start the server from the command line, for example: \`start-server\` or \`start-server --help\` after the artifact name.")
           fi
           darwin_assets=()
           if [[ -f "release-dist/${darwin_arm64_run}" ]]; then
@@ -1739,7 +1749,8 @@ jobs:
           fi
           if [[ ${#darwin_assets[@]} -gt 0 ]]; then
             release_body_lines+=("- macOS: ${darwin_assets[*]}")
-            release_body_lines+=("  If Gatekeeper blocks the file after download, run \`xattr -d com.apple.quarantine ./HiCT-*.run\`.")
+            release_body_lines+=("  These are Terminal-run \`.run\` files, not \`.dmg\` installers. There is no application icon to drag into Applications.")
+            release_body_lines+=("  Open Terminal, go to the download folder, run \`xattr -d com.apple.quarantine ./HiCT-*.run\` if macOS blocks the file, then run \`chmod +x ./HiCT-*.run\` and \`./HiCT-*.run\`.")
           else
             echo "::warning::No macOS portable artifacts were collected; publishing Windows/Linux release only."
           fi
