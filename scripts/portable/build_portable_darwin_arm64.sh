@@ -632,6 +632,8 @@ if [[ "$#" -eq 0 ]]; then
 fi
 
 exec "\${app_home}/bin/${LAUNCHER_BASENAME}" "$@"
+
+__HICT_PAYLOAD_BELOW__
 EOF
 cat "${PAYLOAD_PATH}" >> "${RUN_PATH}"
 chmod +x "${RUN_PATH}"
