@@ -1767,14 +1767,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if ! gh release view "${HICT_PORTABLE_RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "::error::Rolling release ${HICT_PORTABLE_RELEASE_TAG} does not exist. Create this release/tag once manually, then rerun this workflow. The workflow intentionally does not create or move Git tags."
-            exit 1
+          if gh release view "${HICT_PORTABLE_RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release view "${HICT_PORTABLE_RELEASE_TAG}" --json assets -q '.assets[].name' |
+              while IFS= read -r asset; do
+                [[ -n "${asset}" ]] && gh release delete-asset "${HICT_PORTABLE_RELEASE_TAG}" "${asset}" -y
+              done
+          else
+            echo "Rolling release ${HICT_PORTABLE_RELEASE_TAG} does not exist yet; the publish step may create it without force-moving an existing tag."
           fi
-          gh release view "${HICT_PORTABLE_RELEASE_TAG}" --json assets -q '.assets[].name' |
-            while IFS= read -r asset; do
-              [[ -n "${asset}" ]] && gh release delete-asset "${HICT_PORTABLE_RELEASE_TAG}" "${asset}" -y
-            done
 
       - name: Publish rolling release
         if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
