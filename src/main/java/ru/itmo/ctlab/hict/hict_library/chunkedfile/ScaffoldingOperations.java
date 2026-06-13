@@ -367,9 +367,12 @@ public class ScaffoldingOperations {
     final long minBpResolution = this.chunkedFile.getResolutions()[1];
 
     final var contigTree = this.chunkedFile.getContigTree();
+    final var scaffoldTree = this.chunkedFile.getScaffoldTree();
     final var lock = contigTree.getRootLock();
+    final var scaffoldLock = scaffoldTree.getRootLock();
     try {
       lock.writeLock().lock();
+      scaffoldLock.writeLock().lock();
       final var oldContigTreeRoot = contigTree.getRoot();
       final var oldAssemblyLengthBp = oldContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
       final var splitPositionBp = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
@@ -379,14 +382,15 @@ public class ScaffoldingOperations {
       final var leftBins = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BINS, minResolutionDescriptor);
       final var leftBps = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
 
-      unscaffoldRegion(leftBps, 1 + leftBps, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
-
       final var oldContigNode = es.segment().push().updateSizes();
 
       assert (oldContigNode != null) : "Split position is outside of any contig??";
 
       final var oldContigDescriptor = oldContigNode.getContigDescriptor();
       final var deltaBpsFromContigStart = splitPositionBp - leftBps;
+      if (deltaBpsFromContigStart <= 0L || deltaBpsFromContigStart + minBpResolution >= oldContigDescriptor.getLengthBp()) {
+        throw new IllegalArgumentException("Split bin must be inside a contig and leave sequence on both sides of the removed bin.");
+      }
 
       final int maxContigId = contigTree.getContigDescriptors().keySet().stream().max(Integer::compareTo).orElse(0);
 
@@ -395,24 +399,28 @@ public class ScaffoldingOperations {
         deltaBpsFromContigStart,
         oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart - minBpResolution
       );
+      final long rightContigStartInSource = deltaBpsFromContigStart + minBpResolution;
 
       final var newContigNames = switch (oldContigNode.getContigDirection()) {
         case FORWARD -> List.of(
           String.format("%s_%d_%d", oldContigDescriptor.getContigName(), 0, deltaBpsFromContigStart),
-          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp())
+          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), rightContigStartInSource, oldContigDescriptor.getLengthBp())
         );
         case REVERSED -> List.of(
 //          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp()),
 //          String.format("%s_%d_%d", oldContigDescriptor.getContigName(), 0, deltaBpsFromContigStart),
           String.format("%s_reversed_%d_%d", oldContigDescriptor.getContigName(), 0, deltaBpsFromContigStart),
-          String.format("%s_reversed_%d_%d", oldContigDescriptor.getContigName(), newContigLengthBps.get(1), oldContigDescriptor.getLengthBp())
+          String.format("%s_reversed_%d_%d", oldContigDescriptor.getContigName(), rightContigStartInSource, oldContigDescriptor.getLengthBp())
         );
       };
 
       final var newContigNamesInSourceFasta = List.of(oldContigDescriptor.getContigNameInSourceFASTA(), oldContigDescriptor.getContigNameInSourceFASTA());
       final var newContigOffsetsInSourceFasta = switch (oldContigNode.getContigDirection()) {
-        case FORWARD -> List.of(oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getOffsetInSourceFASTA() + (int) minBpResolution);
-        case REVERSED -> List.of(oldContigDescriptor.getOffsetInSourceFASTA() + (int) minBpResolution, oldContigDescriptor.getOffsetInSourceFASTA());
+        case FORWARD -> List.of(oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getOffsetInSourceFASTA() + (int) rightContigStartInSource);
+        case REVERSED -> List.of(
+          oldContigDescriptor.getOffsetInSourceFASTA() + (int) (oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart),
+          oldContigDescriptor.getOffsetInSourceFASTA()
+        );
       };
 
 
@@ -505,6 +513,8 @@ public class ScaffoldingOperations {
 
       final var newExposedSegment = new ContigTree.Node.ExposedSegment(es.less(), newSegment, es.greater());
 
+      scaffoldTree.unscaffold(splitPositionBp, splitPositionBp + minBpResolution);
+      scaffoldTree.removeSegmentFromAssembly(splitPositionBp, splitPositionBp + minBpResolution);
       contigTree.commitExposedSegment(newExposedSegment);
 
       final var newContigTreeRoot = contigTree.getRoot();
@@ -513,6 +523,7 @@ public class ScaffoldingOperations {
       assert (oldAssemblyLengthBp == (newAssemblyLengthBp + minBpResolution)) : "Assembly length has changed after splitting contig??";
 
     } finally {
+      scaffoldLock.writeLock().unlock();
       lock.writeLock().unlock();
     }
   }

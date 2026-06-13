@@ -237,7 +237,7 @@ public class McoolToHictConverter {
       final long[] contigLengthBins = contigLengthBinsByResolution.get(resolution);
       final byte[] hideTypes = new byte[contigRecords.size()];
       for (int i = 0; i < contigRecords.size(); i++) {
-        hideTypes[i] = (byte) ((contigLengthBins[i] > 1L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
+        hideTypes[i] = (byte) ((contigLengthBins[i] > 0L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
       }
 
       dst.int64().writeArray(getContigLengthBinsDatasetPath(resolution), contigLengthBins, intStorageFeatures);
@@ -1416,7 +1416,7 @@ public class McoolToHictConverter {
       final var contigLengthBins = contigLengthBinsByResolution.get(resolution);
       final var hideTypes = new byte[contigCount];
       for (int i = 0; i < contigCount; i++) {
-        hideTypes[i] = (byte) ((contigLengthBins[i] > 1L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
+        hideTypes[i] = (byte) ((contigLengthBins[i] > 0L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
       }
 
       dst.int64().writeArray(getContigLengthBinsDatasetPath(resolution), contigLengthBins, intStorageFeatures);

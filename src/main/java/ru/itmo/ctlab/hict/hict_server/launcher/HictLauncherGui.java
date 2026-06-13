@@ -2362,9 +2362,9 @@ public final class HictLauncherGui {
   private record UiScale(double scale, Rectangle screenBounds) {
     private static UiScale detect() {
       final var screen = detectScreenBounds();
-      final double geometryScale = clamp(Math.hypot(screen.getWidth(), screen.getHeight()) / LauncherWindow.REFERENCE_SCREEN_DIAGONAL, 0.95, 1.55);
-      final double densityScale = clamp(detectDeviceScaleFactor(), 1.0, 2.25);
-      final double scale = clamp(Math.max(geometryScale, densityScale * 0.92), 1.0, 2.0);
+      final double maxGeometryScale = LauncherWindow.isMac() ? 1.12 : 1.45;
+      final double geometryScale = clamp(Math.hypot(screen.getWidth(), screen.getHeight()) / LauncherWindow.REFERENCE_SCREEN_DIAGONAL, 0.95, maxGeometryScale);
+      final double scale = clamp(geometryScale, 1.0, maxGeometryScale);
       return new UiScale(scale, screen);
     }
 
@@ -2382,19 +2382,6 @@ public final class HictLauncherGui {
         return bounds;
       } catch (final Exception ignored) {
         return new Rectangle(0, 0, 1280, 720);
-      }
-    }
-
-    private static double detectDeviceScaleFactor() {
-      try {
-        final GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();
-        final GraphicsConfiguration configuration = environment.getDefaultScreenDevice().getDefaultConfiguration();
-        return Math.max(
-          configuration.getDefaultTransform().getScaleX(),
-          configuration.getDefaultTransform().getScaleY()
-        );
-      } catch (final Exception ignored) {
-        return 1.0;
       }
     }
 

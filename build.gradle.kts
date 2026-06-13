@@ -262,6 +262,43 @@ fun envOrProjectProperty(name: String): String? =
   (findProperty(name) as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv(name)?.takeIf { it.isNotBlank() }
 
+fun selectedBundledToolchainPlatforms(): List<String> {
+  val override = envOrProjectProperty("HICT_BUNDLED_TOOLCHAIN_PLATFORMS")
+    ?: envOrProjectProperty("hictBundledToolchainPlatforms")
+  if (!override.isNullOrBlank()) {
+    if (override.equals("all", ignoreCase = true)) {
+      val root = bundledToolchainSourceDirectory.asFile
+      return if (root.isDirectory) {
+        root.listFiles()
+          ?.filter { it.isDirectory }
+          ?.map { it.name }
+          ?.sorted()
+          ?: emptyList()
+      } else {
+        emptyList()
+      }
+    }
+    return override.split(',', ';', ' ', '\n')
+      .map { it.trim() }
+      .filter { it.isNotBlank() }
+      .distinct()
+  }
+
+  envOrProjectProperty("HICT_DARWIN_PLATFORM_DIR")?.let { return listOf(it) }
+
+  val osName = System.getProperty("os.name").lowercase()
+  val osArch = System.getProperty("os.arch").lowercase()
+  return when {
+    osName.contains("win") -> listOf("windows_x86_64")
+    osName.contains("mac") || osName.contains("darwin") ->
+      if (osArch.contains("aarch64") || osArch.contains("arm64")) listOf("darwin_arm64") else listOf("darwin_x86_64")
+    osName.contains("linux") -> listOf("linux_x86_64")
+    else -> emptyList()
+  }
+}
+
+val bundledToolchainPlatforms = selectedBundledToolchainPlatforms()
+
 val jhdf5SourceMode = (envOrProjectProperty("HICT_JHDF5_SOURCE_MODE")
   ?: envOrProjectProperty("hictJhdf5SourceMode")
   ?: "release").lowercase()
@@ -1162,8 +1199,10 @@ tasks.named<ProcessResources>("processResources") {
     include("**/*.so")
     rename { it.replace(".so", ".dylib") }
   }
-  from(bundledToolchainSourceDirectory) {
-    into("toolchains")
+  bundledToolchainPlatforms.forEach { platform ->
+    from(bundledToolchainSourceDirectory.dir(platform)) {
+      into("toolchains/$platform")
+    }
   }
   doLast {
     Files.copy(

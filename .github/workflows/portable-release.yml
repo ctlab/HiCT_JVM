@@ -1735,6 +1735,10 @@ jobs:
               -name '*.sha256' \
             \) -print0
           )
+          find release-dist -maxdepth 1 -type f \
+            ! -name 'HiCT-*' \
+            ! -name '*-fat.jar' \
+            -delete
 
           compgen -G "release-dist/*-fat.jar" >/dev/null || { echo "No fat JAR was collected." >&2; exit 1; }
           compgen -G "release-dist/HiCT-*-linux-x86_64.run" >/dev/null || { echo "No Linux .run artifact was collected." >&2; exit 1; }

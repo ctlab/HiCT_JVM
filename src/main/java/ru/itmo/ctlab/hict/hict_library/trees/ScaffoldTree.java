@@ -333,7 +333,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
 
   public void removeSegmentFromAssembly(final long startBpIncl, final long endBpExcl) {
     if (startBpIncl > endBpExcl) {
-      unscaffold(endBpExcl, startBpIncl);
+      removeSegmentFromAssembly(endBpExcl, startBpIncl);
       return;
     }
 
@@ -341,25 +341,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       this.rootLock.writeLock().lock();
       final var oldAssemblyLength = this.root.subtreeLengthBp;
       final @NotNull var es = Node.expose(this.root, startBpIncl, endBpExcl);
-      assert (es.segment() != null) : "Requested segment is not covered by scaffold tree??";
-      final @NotNull var segment = Node.optimizeEmptySpace(es.segment());
-
-      final int[] scaffoldDescriptorCount = {0};
-
-      Node.traverseNode(segment, node -> {
-        if (node.scaffoldDescriptor != null) {
-          ++scaffoldDescriptorCount[0];
-        }
-      });
-
-      assert (scaffoldDescriptorCount[0] <= 1) : "At most one scaffold could cover the splicing area";
-      assert (segment.left == null) : "Exposed more than one nodes and there is left??";
-      assert (segment.right == null) : "Exposed more than one nodes and there is right??";
-
-      final @NotNull var newSegment = segment.cloneBuilder().scaffoldDescriptor(null).build().push().updateSizes(); //.nodeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).subtreeLengthBp(segment.nodeLengthBp - (endBpExcl - startBpIncl)).build();
-
-      commitExposedSegment(new Node.ExposedSegment(es.less(), newSegment, es.greater()));
-//      assert (oldAssemblyLength == this.root.subtreeLengthBp) : "Assembly length changed after removing a region?";
+      if (es.segment() == null) {
+        return;
+      }
+      this.root = Node.mergeNodes(new Node.SplitResult(es.less(), es.greater()));
+      final long removedLength = endBpExcl - startBpIncl;
+      final long newAssemblyLength = this.root == null ? 0L : this.root.subtreeLengthBp;
+      assert (oldAssemblyLength == newAssemblyLength + removedLength) : "Assembly length did not shrink by the removed segment length";
     } finally {
       this.rootLock.writeLock().unlock();
     }
