@@ -50,6 +50,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
+import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
@@ -65,8 +66,10 @@ import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Image;
 import java.awt.Insets;
 import java.awt.Rectangle;
+import java.awt.Taskbar;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
@@ -151,7 +154,7 @@ public final class HictLauncherGui {
 
   private enum NativeProcessingMode {
     JAVA("java", "Java fallback"),
-    SSE2("sse2", "Native SSE2"),
+    SSE2("generic", "Native Generic"),
     AVX2("avx2", "Native AVX2"),
     AVX512("avx512", "Native AVX-512");
 
@@ -168,7 +171,7 @@ public final class HictLauncherGui {
         return JAVA;
       }
       final var normalized = value.trim().toLowerCase(Locale.ROOT);
-      if ("baseline".equals(normalized)) {
+      if ("baseline".equals(normalized) || "sse2".equals(normalized) || "generic".equals(normalized) || "x86_64-v3".equals(normalized)) {
         return SSE2;
       }
       for (final var mode : values()) {
@@ -190,6 +193,14 @@ public final class HictLauncherGui {
     private static final Set<String> VERSION_SCOPED_SETTING_KEYS = Set.of(
       "WEBUI_ROOT",
       "HICT_TOOLCHAIN_DIR"
+    );
+    private static final Set<String> TOOLCHAIN_EXECUTABLE_SETTING_KEYS = Set.of(
+      "HICT_HICTK_BIN",
+      "HICT_MINIMAP2_BIN",
+      "HICT_MM2PLUS_AVX2_BIN",
+      "HICT_MM2PLUS_AVX512_BIN",
+      "HICT_COOLER_BIN",
+      "HICT_PYTHON_BIN"
     );
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
@@ -301,6 +312,7 @@ public final class HictLauncherGui {
       configureLookAndFeel();
 
       this.frame = new JFrame("HiCT Launcher");
+      applyWindowIcons(this.frame);
       this.frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
       this.frame.setMinimumSize(this.uiScale.windowMinimumSize());
       this.frame.setPreferredSize(this.uiScale.windowPreferredSize());
@@ -676,7 +688,7 @@ public final class HictLauncherGui {
       this.avx512NativeRadio.setEnabled(hasNativeProcessingMode(NativeProcessingMode.AVX512));
       this.javaNativeRadio.setToolTipText("Use the pure Java implementation. This is the safest compatibility fallback.");
       this.sse2NativeRadio.setToolTipText(this.sse2NativeRadio.isEnabled()
-        ? "Use the bundled or configured HiCT native SSE2 baseline backend for the next server start."
+        ? "Use the bundled or configured HiCT native generic backend for the next server start."
         : sse2UnavailableReason());
       this.avx2NativeRadio.setToolTipText(this.avx2NativeRadio.isEnabled()
         ? "Use the bundled or configured HiCT native AVX2 backend for the next server start."
@@ -1004,7 +1016,7 @@ public final class HictLauncherGui {
         if ("DATA_DIR".equals(spec.key()) || "HICT_JAVA_OPTS".equals(spec.key())) {
           continue;
         }
-        putIfNotBlank(env, spec.key(), getFieldValue(spec.key()));
+        putIfNotBlank(env, spec.key(), effectiveConfigValueForEnvironment(spec.key()));
       }
       env.put("SERVE_WEBUI", "true");
       env.put("AUTO_OPEN_BROWSER", "false");
@@ -1045,6 +1057,112 @@ public final class HictLauncherGui {
       if (!this.browserBundles.isEmpty()) {
         env.put("HICT_BROWSER_DIR", this.browserPayloadRoot.toString());
       }
+    }
+
+    private String effectiveConfigValueForEnvironment(final String key) {
+      final var value = getFieldValue(key);
+      if (isManagedVersionScopedSetting(key)) {
+        return effectiveManagedPathValue(key, value);
+      }
+      if (TOOLCHAIN_EXECUTABLE_SETTING_KEYS.contains(key)) {
+        return effectiveExternalExecutableValue(value);
+      }
+      return value;
+    }
+
+    private String effectiveManagedPathValue(final String key, final String rawValue) {
+      final var managed = managedDefaultValue(key);
+      if (managed.isBlank()) {
+        return rawValue;
+      }
+      if (rawValue == null || rawValue.isBlank()) {
+        return managed;
+      }
+      final var configured = safeNormalizePath(rawValue);
+      if (configured == null) {
+        return managed;
+      }
+      final var managedPath = safeNormalizePath(managed);
+      if (managedPath != null && configured.equals(managedPath)) {
+        return managed;
+      }
+      if (isStalePortableManagedPath(configured) || !isUsableManagedPath(key, configured)) {
+        return managed;
+      }
+      return rawValue;
+    }
+
+    private String effectiveExternalExecutableValue(final String rawValue) {
+      if (rawValue == null || rawValue.isBlank()) {
+        return "";
+      }
+      final var configured = safeNormalizePath(rawValue);
+      if (configured == null || isStalePortableManagedPath(configured) || !Files.isRegularFile(configured)) {
+        return "";
+      }
+      return rawValue;
+    }
+
+    private boolean isUsableManagedPath(final String key, final Path path) {
+      return switch (key) {
+        case "WEBUI_ROOT" -> Files.isRegularFile(path.resolve("index.html"));
+        case "HICT_TOOLCHAIN_DIR" -> Files.isRegularFile(path.resolve("manifest.json"));
+        default -> true;
+      };
+    }
+
+    private boolean isStalePortableManagedPath(final Path path) {
+      final var normalized = path.toString().replace('\\', '/');
+      return normalized.contains("/HiCT.portable/")
+        || normalized.contains("/hict-toolchains/")
+        || normalized.contains("/.mount_HiCT-");
+    }
+
+    private Path safeNormalizePath(final String rawValue) {
+      try {
+        return normalizePath(rawValue);
+      } catch (final RuntimeException ignored) {
+        return null;
+      }
+    }
+
+    private void applyWindowIcons(final JFrame targetFrame) {
+      final var icons = loadApplicationIcons();
+      if (icons.isEmpty()) {
+        return;
+      }
+      targetFrame.setIconImages(icons);
+      try {
+        if (Taskbar.isTaskbarSupported()) {
+          Taskbar.getTaskbar().setIconImage(icons.get(icons.size() - 1));
+        }
+      } catch (final UnsupportedOperationException | SecurityException ignored) {
+        // Some desktops expose no taskbar/dock icon API to Java.
+      }
+    }
+
+    private List<Image> loadApplicationIcons() {
+      final var icons = new ArrayList<Image>();
+      for (final var resource : List.of(
+        "/icons/hict-icon-16.png",
+        "/icons/hict-icon-32.png",
+        "/icons/hict-icon-64.png",
+        "/icons/hict-icon-128.png",
+        "/icons/hict-icon-256.png"
+      )) {
+        try (var stream = HictLauncherGui.class.getResourceAsStream(resource)) {
+          if (stream == null) {
+            continue;
+          }
+          final var image = ImageIO.read(stream);
+          if (image != null) {
+            icons.add(image);
+          }
+        } catch (final IOException ignored) {
+          // Icon loading must never prevent the launcher from starting.
+        }
+      }
+      return List.copyOf(icons);
     }
 
     private void putIfNotBlank(final Map<String, String> env, final String key, final String value) {
@@ -1450,12 +1568,26 @@ public final class HictLauncherGui {
       if (platformDirectory == null) {
         return false;
       }
-      final var resourcePath = "/natives/" + platformDirectory + "/" + System.mapLibraryName(libraryBaseName);
-      return HictLauncherGui.class.getResource(resourcePath) != null;
+      final var mappedName = System.mapLibraryName(libraryBaseName);
+      final var resourcePath = "/natives/" + platformDirectory + "/" + nativeProcessingVariantDirectory(libraryBaseName) + "/native/" + mappedName;
+      if (HictLauncherGui.class.getResource(resourcePath) != null) {
+        return true;
+      }
+      final var legacyResourcePath = "/natives/" + platformDirectory + "/" + mappedName;
+      return HictLauncherGui.class.getResource(legacyResourcePath) != null;
+    }
+
+    private String nativeProcessingVariantDirectory(final String libraryBaseName) {
+      return switch (libraryBaseName) {
+        case "hict_native_avx512" -> "avx512";
+        case "hict_native" -> "avx2";
+        case "hict_native_sse2" -> "generic";
+        default -> "generic";
+      };
     }
 
     private String nativeProcessingStatusText() {
-      final var sse2 = hasNativeProcessingMode(NativeProcessingMode.SSE2) ? "SSE2 available" : sse2UnavailableReason();
+      final var sse2 = hasNativeProcessingMode(NativeProcessingMode.SSE2) ? "Generic available" : sse2UnavailableReason();
       final var avx2 = hasNativeProcessingMode(NativeProcessingMode.AVX2) ? "AVX2 available" : avx2UnavailableReason();
       final var avx512 = hasNativeProcessingMode(NativeProcessingMode.AVX512) ? "AVX-512 available" : avx512UnavailableReason();
       return selectedNativeProcessingMode().label + "; " + sse2 + "; " + avx2 + "; " + avx512;
@@ -1463,12 +1595,12 @@ public final class HictLauncherGui {
 
     private String sse2UnavailableReason() {
       if (!NativeCpuFeatures.supportsSse2Core()) {
-        return "SSE2 unavailable on this CPU/JVM";
+        return "Generic backend unavailable on this CPU/JVM";
       }
       if (!hasNativeLibraryOverride("hict_native_sse2") && !hasBundledNativeLibrary("hict_native_sse2")) {
-        return "SSE2 native library unavailable";
+        return "Generic native library unavailable";
       }
-      return "SSE2 unavailable";
+      return "Generic backend unavailable";
     }
 
     private String avx2UnavailableReason() {
@@ -1658,6 +1790,7 @@ public final class HictLauncherGui {
       try (var in = Files.newInputStream(configPath)) {
         this.settings.load(in);
         migrateSettingsForCurrentVersion(configPath);
+        sanitizeSettingsForCurrentPackage(configPath);
       } catch (final IOException ex) {
         appendLogEarly("Could not load launcher settings from " + configPath + ": " + ex.getMessage());
       }
@@ -1732,6 +1865,39 @@ public final class HictLauncherGui {
       } catch (final IOException ex) {
         appendLogEarly("Could not persist launcher settings migration to " + configPath + ": " + ex.getMessage());
       }
+    }
+
+    private void sanitizeSettingsForCurrentPackage(final Path configPath) {
+      final var resetKeys = new ArrayList<String>();
+      for (final var key : VERSION_SCOPED_SETTING_KEYS) {
+        final var value = this.settings.getProperty(key);
+        if (value == null || value.isBlank()) {
+          continue;
+        }
+        final var effective = effectiveManagedPathValue(key, value);
+        if (!Objects.equals(value.trim(), effective.trim())) {
+          this.settings.remove(key);
+          resetKeys.add(key);
+        }
+      }
+      for (final var key : TOOLCHAIN_EXECUTABLE_SETTING_KEYS) {
+        final var value = this.settings.getProperty(key);
+        if (value == null || value.isBlank()) {
+          continue;
+        }
+        if (effectiveExternalExecutableValue(value).isBlank()) {
+          this.settings.remove(key);
+          resetKeys.add(key);
+        }
+      }
+      if (resetKeys.isEmpty()) {
+        return;
+      }
+      this.settingsMigrationNotice = "Launcher settings contained stale paths from an older HiCT package. "
+        + "The current bundled paths will be used instead: "
+        + String.join(", ", resetKeys)
+        + ".";
+      persistSettingsMigration(configPath);
     }
 
     private boolean settingsFileMatches(final Path configPath) {

@@ -44,8 +44,6 @@ final class NativeTileProcessor {
   private static final @NotNull String SSE2_LIBRARY_BASE_NAME = "hict_native_sse2";
   private static final @NotNull String AVX2_LIBRARY_BASE_NAME = "hict_native";
   private static final @NotNull String AVX512_LIBRARY_BASE_NAME = "hict_native_avx512";
-  private static final @NotNull String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
-  private static final @NotNull String NATIVE_VARIANT_ENV = "HICT_NATIVE_VARIANT";
   private volatile @NotNull LoadReport loadReport = LoadReport.notAttempted();
   private volatile long sessionHandle;
 
@@ -426,11 +424,23 @@ final class NativeTileProcessor {
     var lastFailure = "";
     for (final var libraryBaseName : preferredLibraryBaseNames()) {
       final var mappedName = System.mapLibraryName(libraryBaseName);
-      final var resourcePath = "/natives/" + platformDirectory + "/" + mappedName;
+      final var resourcePath = "/natives/" + platformDirectory + "/" + variantDirectory(libraryBaseName) + "/native/" + mappedName;
       try (InputStream stream = NativeTileProcessor.class.getResourceAsStream(resourcePath)) {
         if (stream == null) {
-          lastFailure = "Bundled native processing library not found at " + resourcePath;
-          continue;
+          final var legacyResourcePath = "/natives/" + platformDirectory + "/" + mappedName;
+          try (InputStream legacyStream = NativeTileProcessor.class.getResourceAsStream(legacyResourcePath)) {
+            if (legacyStream == null) {
+              lastFailure = "Bundled native processing library not found at " + resourcePath;
+              continue;
+            }
+            final var extractionDirectory = Files.createTempDirectory("hict-native-processing-");
+            final var extractedLibrary = extractionDirectory.resolve(mappedName);
+            Files.copy(legacyStream, extractedLibrary, StandardCopyOption.REPLACE_EXISTING);
+            extractedLibrary.toFile().deleteOnExit();
+            extractionDirectory.toFile().deleteOnExit();
+            System.load(extractedLibrary.toAbsolutePath().normalize().toString());
+            return loaded("bundled resource " + legacyResourcePath, nativeVersion());
+          }
         }
         final var extractionDirectory = Files.createTempDirectory("hict-native-processing-");
         final var extractedLibrary = extractionDirectory.resolve(mappedName);
@@ -468,42 +478,26 @@ final class NativeTileProcessor {
   }
 
   private static @NotNull List<String> preferredLibraryBaseNames() {
-    final var requestedVariant = NativeCpuFeatures.firstNonBlank(
-      System.getProperty(NATIVE_VARIANT_PROPERTY),
-      System.getenv(NATIVE_VARIANT_ENV)
-    );
-    final var normalizedVariant = requestedVariant == null
-      ? "auto"
-      : requestedVariant.trim().toLowerCase(Locale.ROOT);
     final var result = new ArrayList<String>(3);
-    if ("sse2".equals(normalizedVariant) || "baseline".equals(normalizedVariant)) {
-      if (NativeCpuFeatures.supportsSse2Core()) {
-        result.add(SSE2_LIBRARY_BASE_NAME);
+    for (final var variant : NativeCpuFeatures.preferredNativeVariantOrder()) {
+      switch (variant) {
+        case "avx512" -> result.add(AVX512_LIBRARY_BASE_NAME);
+        case "avx2" -> result.add(AVX2_LIBRARY_BASE_NAME);
+        case "generic" -> result.add(SSE2_LIBRARY_BASE_NAME);
+        default -> {
+        }
       }
-      return result;
-    }
-    if ("avx2".equals(normalizedVariant)) {
-      if (NativeCpuFeatures.supportsAvx2Core()) {
-        result.add(AVX2_LIBRARY_BASE_NAME);
-      }
-      return result;
-    }
-    if ("avx512".equals(normalizedVariant)) {
-      if (NativeCpuFeatures.supportsAvx512Core()) {
-        result.add(AVX512_LIBRARY_BASE_NAME);
-      }
-      return result;
-    }
-    if (NativeCpuFeatures.supportsAvx512Core()) {
-      result.add(AVX512_LIBRARY_BASE_NAME);
-    }
-    if (NativeCpuFeatures.supportsAvx2Core()) {
-      result.add(AVX2_LIBRARY_BASE_NAME);
-    }
-    if (NativeCpuFeatures.supportsSse2Core()) {
-      result.add(SSE2_LIBRARY_BASE_NAME);
     }
     return result;
+  }
+
+  private static @NotNull String variantDirectory(final @NotNull String libraryBaseName) {
+    return switch (libraryBaseName) {
+      case AVX512_LIBRARY_BASE_NAME -> "avx512";
+      case AVX2_LIBRARY_BASE_NAME -> "avx2";
+      case SSE2_LIBRARY_BASE_NAME -> "generic";
+      default -> "generic";
+    };
   }
 
   private static @NotNull LoadReport loaded(final @NotNull String source,

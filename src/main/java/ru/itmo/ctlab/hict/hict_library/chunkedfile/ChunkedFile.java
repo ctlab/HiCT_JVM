@@ -36,6 +36,7 @@ import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
 import ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundle;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5FileDatasetsBundleFactory;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
@@ -103,6 +104,7 @@ public class ChunkedFile implements AutoCloseable {
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
     this.hdfFilePath = options.hdfFilePath;
 
+    HDF5LibraryInitializer.initializeHDF5Library();
 
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
       final var parsedResolutions = reader.object().getAllGroupMembers("/resolutions").parallelStream().flatMap(s -> {

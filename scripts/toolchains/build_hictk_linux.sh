@@ -10,6 +10,8 @@ REPO_URL="${HICTK_REPO_URL:-https://github.com/paulsengroup/hictk.git}"
 REF="${HICTK_REF:-latest}"
 RUN_TESTS="${RUN_TESTS:-0}"
 ENABLE_MOSTLY_STATIC_RUNTIME="${ENABLE_MOSTLY_STATIC_RUNTIME:-0}"
+ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"
+ENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"
 COMPILER="${COMPILER:-gcc}"
 BUILD_JOBS="${BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
@@ -25,6 +27,9 @@ Environment overrides:
   COMPILER=gcc|clang                   Default: gcc
   RUN_TESTS=1                          Run ctest after building.
   ENABLE_MOSTLY_STATIC_RUNTIME=1       Add -static-libstdc++ -static-libgcc on GCC builds.
+  HICT_STATIC_MUSL=1                   Prefer musl compiler wrappers and full static linking.
+  HICT_STATIC_MIMALLOC=1               Link mimalloc statically into the final executable.
+  HICTK_CONAN_BUILD_POLICY=missing      Conan build policy: missing, *, m4/*, or comma-separated list.
   BUILD_JOBS=8                         Parallelism for Conan/CMake builds.
 
 Example:
@@ -50,9 +55,18 @@ require_cmd g++
 require_cmd cmake
 require_cmd ninja
 require_cmd ldd
+require_cmd readelf
 require_cmd file
+if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
+  require_cmd clang
+  require_cmd clang++
+fi
 
 if [[ "${COMPILER}" == "clang" ]]; then
+  require_cmd clang
+  require_cmd clang++
+fi
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
   require_cmd clang
   require_cmd clang++
 fi
@@ -86,12 +100,88 @@ rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}" "${CONAN_HOME_DIR}"
 
 python3 -m venv "${VENV_DIR}"
-"${VENV_DIR}/bin/python" -m pip install --upgrade pip setuptools wheel
-"${VENV_DIR}/bin/python" -m pip install 'conan>=2' 'cmake>=3.25' ninja
+"${VENV_DIR}/bin/python" -m pip install --disable-pip-version-check --no-input 'conan>=2' 'cmake>=3.25' ninja
 
 "${VENV_DIR}/bin/git" --version >/dev/null 2>&1 || true
 
 git clone --depth 1 --branch "${REF}" "${REPO_URL}" "${SOURCE_DIR}"
+
+python3 - "${SOURCE_DIR}/cmake/modules/FindFilesystem.cmake" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+marker = 'if(Filesystem_FIND_REQUIRED AND NOT Filesystem_FOUND)'
+guard = '''if(DEFINED ENV{HICT_SKIP_FILESYSTEM_RUN_CHECK} AND "$ENV{HICT_SKIP_FILESYSTEM_RUN_CHECK}" STREQUAL "1")
+  if(NOT TARGET std::filesystem)
+    add_library(std::filesystem INTERFACE IMPORTED)
+    set_property(
+      TARGET std::filesystem
+      APPEND
+      PROPERTY INTERFACE_COMPILE_FEATURES cxx_std_17)
+  endif()
+  set(Filesystem_FOUND TRUE CACHE BOOL "TRUE if we can run a program using std::filesystem" FORCE)
+endif()
+
+'''
+if guard not in text:
+    text = text.replace(marker, guard + marker)
+    path.write_text(text, encoding="utf-8")
+PY
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  python3 - "${SOURCE_DIR}/CMakeLists.txt" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = 'set(ENABLE_INTERPROCEDURAL_OPTIMIZATION_DEFAULT ON)'
+new = 'set(ENABLE_INTERPROCEDURAL_OPTIMIZATION_DEFAULT OFF)'
+if old in text:
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+  python3 - "${SOURCE_DIR}/src/hictk/build_metadata/CMakeLists.txt" "${SOURCE_DIR}/src/hictk/build_metadata/dependency_metadata.cpp" <<'PY'
+from pathlib import Path
+import sys
+
+cmake_path = Path(sys.argv[1])
+cpp_path = Path(sys.argv[2])
+
+cmake_text = cmake_path.read_text(encoding="utf-8")
+old_block = """  nlohmann_json
+  phmap
+  opentelemetry-cpp
+  readerwriterqueue
+  span-lite
+  spdlog
+  tomlplusplus
+  zstd
+)
+"""
+new_block = """  nlohmann_json
+  phmap
+  readerwriterqueue
+  span-lite
+  spdlog
+  tomlplusplus
+  zstd
+)
+
+if(HICTK_ENABLE_TELEMETRY)
+  list(APPEND HICTK_DEPENDENCIES opentelemetry-cpp)
+endif()
+"""
+if old_block in cmake_text and new_block not in cmake_text:
+    cmake_path.write_text(cmake_text.replace(old_block, new_block, 1), encoding="utf-8")
+
+cpp_text = cpp_path.read_text(encoding="utf-8")
+old = '    deps.emplace("opentelemetry-cpp", HICTK_OPENTELEMETRY_CPP_VERSION);\n'
+new = '#ifdef HICTK_ENABLE_TELEMETRY\n    deps.emplace("opentelemetry-cpp", HICTK_OPENTELEMETRY_CPP_VERSION);\n#endif\n'
+if old in cpp_text and new not in cpp_text:
+    cpp_path.write_text(cpp_text.replace(old, new, 1), encoding="utf-8")
+PY
+fi
 
 export PATH="${VENV_DIR}/bin:${PATH}"
 export CONAN_HOME="${CONAN_HOME_DIR}"
@@ -100,7 +190,29 @@ export CMAKE_BUILD_PARALLEL_LEVEL="${BUILD_JOBS}"
 
 conan profile detect --force >/dev/null
 
-if [[ "${COMPILER}" == "clang" ]]; then
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  export CC=clang
+  export CXX=clang++
+  export CFLAGS="${CFLAGS:-} --target=x86_64-alpine-linux-musl"
+  export CXXFLAGS="${CXXFLAGS:-} --target=x86_64-alpine-linux-musl"
+  export HICT_SKIP_FILESYSTEM_RUN_CHECK=1
+  cat > "${WORK_DIR}/clang-scan-deps-shim" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+primary_output=""
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+  if [[ "${args[i]}" == "-o" && $((i + 1)) -lt ${#args[@]} ]]; then
+    primary_output="${args[i + 1]}"
+    break
+  fi
+done
+
+printf '{"revision":0,"rules":[{"primary-output":"%s","provides":[],"requires":[]}]}\\n' "${primary_output}"
+EOF
+  chmod +x "${WORK_DIR}/clang-scan-deps-shim"
+elif [[ "${COMPILER}" == "clang" ]]; then
   export CC=clang
   export CXX=clang++
 else
@@ -108,40 +220,106 @@ else
   export CXX=g++
 fi
 
+MIMALLOC_LINK_FLAGS=""
+if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
+  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="${BUILD_JOBS}" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
+  MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
+fi
+
+CONAN_HOST_PROFILE="${HICTK_CONAN_HOST_PROFILE:-default}"
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  CLANG_MAJOR_VERSION="$(clang --version | sed -nE 's/^.*version ([0-9]+).*/\1/p' | head -n 1)"
+  if [[ -z "${CLANG_MAJOR_VERSION}" ]]; then
+    CLANG_MAJOR_VERSION="18"
+  fi
+  cat > "${WORK_DIR}/conan-musl.profile" <<EOF
+[settings]
+os=Linux
+arch=x86_64
+build_type=Release
+compiler=clang
+compiler.version=${CLANG_MAJOR_VERSION}
+compiler.libcxx=libstdc++11
+compiler.cppstd=17
+
+[conf]
+tools.build:compiler_executables={"c":"clang","cpp":"clang++"}
+tools.cmake.cmaketoolchain:generator=Ninja
+EOF
+  CONAN_HOST_PROFILE="${WORK_DIR}/conan-musl.profile"
+fi
+
 cd "${SOURCE_DIR}"
 
-conan install --build=missing \
-  -pr default \
+CONAN_BUILD_POLICY="${HICTK_CONAN_BUILD_POLICY:-missing}"
+conan_build_args=()
+IFS=',' read -r -a conan_build_policies <<< "${CONAN_BUILD_POLICY}"
+for conan_build_policy in "${conan_build_policies[@]}"; do
+  conan_build_policy="$(echo "${conan_build_policy}" | xargs)"
+  [[ -z "${conan_build_policy}" ]] && continue
+  conan_build_args+=(--build="${conan_build_policy}")
+done
+if [[ "${#conan_build_args[@]}" -eq 0 ]]; then
+  conan_build_args+=(--build=missing)
+fi
+
+conan install \
+  "${conan_build_args[@]}" \
+  -pr:h "${CONAN_HOST_PROFILE}" \
+  -pr:b default \
   -s build_type=Release \
-  -s compiler.cppstd=17 \
+  -s:h compiler.cppstd=17 \
+  -s:b compiler.cppstd=17 \
+  $([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo "-o &:with_telemetry_deps=False") \
+  -o "*:shared=False" \
   --output-folder="${BUILD_DIR}" \
   .
 
 linker_flags=""
-if [[ "${ENABLE_MOSTLY_STATIC_RUNTIME}" == "1" && "${COMPILER}" == "gcc" ]]; then
+if [[ "${ENABLE_MOSTLY_STATIC_RUNTIME}" == "1" && ( "${COMPILER}" == "gcc" || "${ENABLE_STATIC_MUSL}" == "1" ) ]]; then
   linker_flags="-static-libstdc++ -static-libgcc"
 fi
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  linker_flags="${linker_flags} -static -fuse-ld=lld ${MIMALLOC_LINK_FLAGS}"
+fi
+if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
+  if [[ "${ENABLE_STATIC_MUSL}" != "1" ]]; then
+    linker_flags="${linker_flags} -Wl,--whole-archive -lmimalloc -Wl,--no-whole-archive"
+  fi
+fi
 
-cmake \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="${BUILD_DIR}" \
-  -DHICTK_ENABLE_TESTING=$([[ "${RUN_TESTS}" == "1" ]] && echo ON || echo OFF) \
-  -DHICTK_ENABLE_FUZZY_TESTING=OFF \
-  -DHICTK_BUILD_BENCHMARKS=OFF \
-  -DHICTK_BUILD_EXAMPLES=OFF \
-  -DHICTK_BUILD_TOOLS=ON \
-  -DHICTK_DOWNLOAD_TEST_DATASET=OFF \
-  -DHICTK_WITH_ARROW=OFF \
-  -DHICTK_WITH_EIGEN=OFF \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DCMAKE_C_COMPILER="${CC}" \
-  -DCMAKE_CXX_COMPILER="${CXX}" \
-  -DCMAKE_EXE_LINKER_FLAGS="${linker_flags}" \
-  -G Ninja \
-  -S "${SOURCE_DIR}" \
+cmake_args=(
+  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_PREFIX_PATH="${BUILD_DIR}"
+  -DHICTK_ENABLE_TESTING=$([[ "${RUN_TESTS}" == "1" ]] && echo ON || echo OFF)
+  -DHICTK_ENABLE_FUZZY_TESTING=OFF
+  -DHICTK_BUILD_BENCHMARKS=OFF
+  -DHICTK_BUILD_EXAMPLES=OFF
+  -DHICTK_BUILD_TOOLS=ON
+  -DHICTK_ENABLE_TELEMETRY=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo OFF || echo ON)
+  -DHICTK_DOWNLOAD_TEST_DATASET=OFF
+  -DHICTK_WITH_ARROW=OFF
+  -DHICTK_WITH_EIGEN=OFF
+  -DBUILD_SHARED_LIBS=OFF
+  -DCMAKE_C_COMPILER_CLANG_SCAN_DEPS="${WORK_DIR}/clang-scan-deps-shim"
+  -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS="${WORK_DIR}/clang-scan-deps-shim"
+  -DCMAKE_C_COMPILER="${CC}"
+  -DCMAKE_CXX_COMPILER="${CXX}"
+  -DCMAKE_EXE_LINKER_FLAGS="${linker_flags}"
+  -G Ninja
+  -S "${SOURCE_DIR}"
   -B "${BUILD_DIR}"
+)
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  cmake_args+=(
+    -DCMAKE_C_COMPILER_TARGET=x86_64-alpine-linux-musl
+    -DCMAKE_CXX_COMPILER_TARGET=x86_64-alpine-linux-musl
+    -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
+  )
+fi
+cmake "${cmake_args[@]}"
 
-cmake --build "${BUILD_DIR}"
+cmake --build "${BUILD_DIR}" --target hictk
 
 if [[ "${RUN_TESTS}" == "1" ]]; then
   ctest --test-dir "${BUILD_DIR}" --output-on-failure -j "${BUILD_JOBS}"
@@ -149,6 +327,13 @@ fi
 
 rm -rf "${STAGE_DIR}"
 cmake --install "${BUILD_DIR}" --prefix "${STAGE_DIR}" --component Runtime
+if [[ -x "${STAGE_DIR}/bin/hictk" ]]; then
+  "${STAGE_DIR}/bin/hictk" --help >/dev/null
+fi
+
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${STAGE_DIR}/bin/hictk" | grep -q 'NEEDED'; then
+  echo "::warning::hictk is still dynamically linked in the static-musl preset; artifact remains available for inspection." >&2
+fi
 
 mkdir -p "${STAGE_DIR}/share/doc/hictk"
 cp "${SOURCE_DIR}/CITATION.cff" "${STAGE_DIR}/share/doc/hictk/CITATION.cff"
@@ -162,6 +347,8 @@ cp "${SOURCE_DIR}/CITATION.cff" "${STAGE_DIR}/share/doc/hictk/CITATION.cff"
   echo "build_shared_libs=OFF"
   echo "cpu_flag_policy=generic official hictk Release build; no AVX-specific hictk executable is produced so the same payload remains portable across x86-64 hosts."
   echo "hictk_dependencies_linking=static_or_embedded_per_upstream"
+  echo "static_runtime=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo musl || echo host_glibc)"
+  echo "mimalloc_linking=$([[ "${ENABLE_MIMALLOC}" == "1" ]] && echo static || echo disabled)"
   echo "runtime_linker_flags=${linker_flags:-<default>}"
   echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo
@@ -193,7 +380,7 @@ cat > "${STAGE_DIR}/manifest.json" <<EOF
     "hictk: Rossini R, Paulsen J. hictk: blazing fast toolkit to work with .hic and .cool files. Bioinformatics. 2024;40(7):btae408. doi:10.1093/bioinformatics/btae408."
   ],
   "limitations": [
-    "Upstream hictk builds embed their own third-party dependencies, but Linux libc/libstdc++ ABI compatibility still depends on the target system.",
+    "$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo "This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime." || echo "This payload was compiled against the manylinux2014 glibc 2.17 runtime floor." )",
     "This payload was compiled on Linux and should only be bundled into Linux fat-JAR releases."
   ]
 }

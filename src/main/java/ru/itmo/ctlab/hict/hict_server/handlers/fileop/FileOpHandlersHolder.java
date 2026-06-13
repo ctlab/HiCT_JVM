@@ -36,6 +36,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
+import ru.itmo.ctlab.hict.hict_library.assembly.AssemblyLayoutConverter;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
@@ -736,7 +737,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
           final @NotNull var requestBody = ctx.body();
           final @NotNull var requestJSON = requestBody.asJsonObject();
-          final var agpFilename = Objects.requireNonNull(requestJSON.getString("agpFilename"), "AGP filename must be provided to load it.");
+          final var agpFilename = Objects.requireNonNull(
+            requestJSON.getString("agpFilename", requestJSON.getString("assemblyFilename")),
+            "AGP or assembly filename must be provided to load it."
+          );
           final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
             .trim()
             .toUpperCase();
@@ -749,7 +753,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw new RuntimeException("Data directory is not present in local map");
           }
           final var dataDirectory = dataDirectoryWrapper.getPath();
-          final var agpFile = Path.of(dataDirectory.toString(), agpFilename);
+          final var sourceLayoutFile = resolveAssemblyLayoutFile(dataDirectory, agpFilename);
+          final var agpFile = materializeAgpLayoutFile(sourceLayoutFile);
           try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
             targetChunkedFile.importAGP(reader);
           } catch (IOException | NoSuchFieldException e) {
@@ -771,6 +776,20 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           return AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile);
         },
+        response -> ctx.response().end(Json.encode(response))
+      );
+    });
+
+    router.post("/apply_juicebox_assembly").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.ASSEMBLY,
+        null,
+        () -> applyAssemblyLayoutFromRequest(ctx),
         response -> ctx.response().end(Json.encode(response))
       );
     });
@@ -813,6 +832,129 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final var activeAssemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
     synchronizeOverlayAssembly(map, activeAssemblySource);
     refreshSecondaryCompatibility(map);
+  }
+
+  private @NotNull AssemblyInfoDTO applyAssemblyLayoutFromRequest(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+    final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+    if (chunkedFileWrapper == null) {
+      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+    }
+    final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+
+    final var requestJSON = ctx.body().asJsonObject();
+    final var assemblyFilename = Objects.requireNonNull(
+      requestJSON.getString("assemblyFilename", requestJSON.getString("agpFilename")),
+      "Assembly filename must be provided"
+    );
+    final var requestedSource = String.valueOf(requestJSON.getString("source", ASSEMBLY_SOURCE_PRIMARY))
+      .trim()
+      .toUpperCase();
+    final var fastaFilename = requestJSON.getString("fastaFilename");
+    final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
+    if (dataDirectoryWrapper == null) {
+      throw new RuntimeException("Data directory is not present in local map");
+    }
+    final var dataDirectory = dataDirectoryWrapper.getPath();
+
+    final var layoutFile = resolveAssemblyLayoutFile(dataDirectory, assemblyFilename);
+    final var agpFile = materializeAgpLayoutFile(layoutFile);
+    final var targetWrapper = resolveChunkedFileWrapperBySource(map, requestedSource);
+    final var targetChunkedFile = targetWrapper.getChunkedFile();
+    if (fastaFilename == null || fastaFilename.isBlank()) {
+      log.warn("Applying Juicebox assembly {} without original FASTA; contig matching will be best-effort", assemblyFilename);
+    } else {
+      final Path fastaPath = dataDirectory.resolve(fastaFilename).normalize().toAbsolutePath();
+      if (!fastaPath.startsWith(dataDirectory)) {
+        throw new IllegalArgumentException("FASTA path " + fastaFilename + " is outside DATA_DIR");
+      }
+      if (!Files.isRegularFile(fastaPath)) {
+        throw new IllegalArgumentException("FASTA file " + fastaFilename + " does not exist");
+      }
+
+      log.info("Linking FASTA {} before applying Juicebox assembly {}", fastaPath, assemblyFilename);
+      final var report = targetChunkedFile.getFastaProcessor().analyzeLinkCandidate(fastaPath);
+      final var normalizedSource = requestedSource.equalsIgnoreCase(ASSEMBLY_SOURCE_SECONDARY)
+        ? ASSEMBLY_SOURCE_SECONDARY
+        : ASSEMBLY_SOURCE_PRIMARY;
+      if (ASSEMBLY_SOURCE_SECONDARY.equals(normalizedSource)) {
+        map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
+        map.put(SECONDARY_FASTA_FILENAME_KEY, fastaFilename);
+      } else {
+        map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
+        map.put("linkedFastaFilename", fastaFilename);
+        map.put(PRIMARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
+        map.put(PRIMARY_FASTA_FILENAME_KEY, fastaFilename);
+        final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+        if (trackManagerWrapper != null) {
+          trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(
+            targetChunkedFile.getFastaProcessor().buildSourceNameAliases(fastaPath)
+          );
+        }
+      }
+      log.info("Linked FASTA {} for Juicebox assembly apply warnings={} mismatches={}", fastaPath, report.warnings().size(), report.mismatches().size());
+    }
+    try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
+      targetChunkedFile.importAGP(reader);
+    } catch (IOException | NoSuchFieldException e) {
+      throw new RuntimeException(e);
+    }
+    if (requestedSource.equalsIgnoreCase(String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))) {
+      synchronizeOverlayAssembly(map, requestedSource);
+      refreshSecondaryCompatibility(map);
+    }
+    final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+    if (schedulerWrapper != null) {
+      schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
+    }
+    TileHandlersHolder.clearExpectedProfileCache(map);
+    final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+    if (trackManagerWrapper != null) {
+      trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
+    }
+    return AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile);
+  }
+
+  private static @NotNull Path resolveAssemblyLayoutFile(final @NotNull Path dataDirectory,
+                                                         final @NotNull String filename) {
+    final var lowerFilename = filename.toLowerCase(java.util.Locale.ROOT);
+    if (!lowerFilename.endsWith(".assembly") && !lowerFilename.endsWith(".agp")) {
+      throw new IllegalArgumentException("Assembly layout file must be .assembly or .agp: " + filename);
+    }
+    final var assemblyPath = dataDirectory.resolve(filename).normalize();
+    if (!assemblyPath.startsWith(dataDirectory)) {
+      throw new IllegalArgumentException("Invalid assembly layout filename");
+    }
+    if (!Files.isRegularFile(assemblyPath)) {
+      throw new IllegalArgumentException("Assembly layout file not found: " + filename);
+    }
+    return assemblyPath;
+  }
+
+  private static @NotNull Path materializeAgpLayoutFile(final @NotNull Path sourceLayoutFile) {
+    final var lowerFilename = sourceLayoutFile.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+    if (!lowerFilename.endsWith(".assembly")) {
+      return sourceLayoutFile;
+    }
+    final var outputPath = deriveAgpOutputPath(sourceLayoutFile);
+    try {
+      AssemblyLayoutConverter.convertToAgp(sourceLayoutFile, outputPath);
+    } catch (IOException | NoSuchFieldException e) {
+      throw new RuntimeException("Failed to convert Juicebox assembly to AGP: " + sourceLayoutFile.getFileName(), e);
+    }
+    return outputPath;
+  }
+
+  private static @NotNull Path deriveAgpOutputPath(final @NotNull Path sourcePath) {
+    final var filename = sourcePath.getFileName().toString();
+    final var lowerFilename = filename.toLowerCase(java.util.Locale.ROOT);
+    if (lowerFilename.endsWith(".assembly")) {
+      return sourcePath.resolveSibling(filename.substring(0, filename.length() - ".assembly".length()) + ".agp");
+    }
+    if (lowerFilename.endsWith(".agp")) {
+      return sourcePath;
+    }
+    return sourcePath.resolveSibling(filename + ".agp");
   }
 
   private static void synchronizeOverlayAssembly(final @NotNull LocalMap<String, Object> map,

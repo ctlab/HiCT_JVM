@@ -7,6 +7,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_DIR}/toolchains-dist/linux_x86_64}"
 WORK_DIR="${WORK_DIR:-/tmp/minimap2-build-linux-x86_64}"
 REF="${MINIMAP2_REF:-v2.31}"
 REPO_URL="${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
+ENABLE_STATIC_MUSL="${HICT_STATIC_MUSL:-0}"
+ENABLE_MIMALLOC="${HICT_STATIC_MIMALLOC:-0}"
 
 usage() {
   cat <<USAGE
@@ -17,6 +19,8 @@ Environment:
   MINIMAP2_REPO_URL=$REPO_URL
   OUTPUT_DIR=$OUTPUT_DIR
   WORK_DIR=$WORK_DIR
+  HICT_STATIC_MUSL=1
+  HICT_STATIC_MIMALLOC=1
 
 The script augments an existing hictk toolchain payload when present, then rewrites
 manifest.json to expose both hictk and minimap2 to HiCT.
@@ -34,6 +38,16 @@ for cmd in git make gcc python3; do
     exit 1
   }
 done
+if [[ "${ENABLE_STATIC_MUSL}" == "1" || "${ENABLE_MIMALLOC}" == "1" ]]; then
+  command -v clang >/dev/null 2>&1 || {
+    echo "Required command not found: clang" >&2
+    exit 1
+  }
+  command -v readelf >/dev/null 2>&1 || {
+    echo "Required command not found: readelf" >&2
+    exit 1
+  }
+fi
 
 echo "[minimap2/linux] Building ${REF} into ${OUTPUT_DIR}"
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/share/licenses/minimap2" "${OUTPUT_DIR}/share/doc/minimap2"
@@ -41,16 +55,40 @@ mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/share/licenses/minimap
 SOURCE_DIR="${WORK_DIR}/src"
 if [[ ! -d "${SOURCE_DIR}/.git" ]]; then
   rm -rf "${SOURCE_DIR}"
-  git clone --filter=blob:none "${REPO_URL}" "${SOURCE_DIR}"
+  git clone --filter=blob:none "${REPO_URL}" "${SOURCE_DIR}" || git clone "${REPO_URL}" "${SOURCE_DIR}"
 fi
 
 git -C "${SOURCE_DIR}" fetch --tags --force origin "${REF}" || git -C "${SOURCE_DIR}" fetch --tags --force origin
 git -C "${SOURCE_DIR}" checkout --force "${REF}"
 
 make -C "${SOURCE_DIR}" clean >/dev/null 2>&1 || true
-make -C "${SOURCE_DIR}" -j"$(nproc)" CFLAGS="${CFLAGS:--O3 -DNDEBUG}" LDFLAGS="${LDFLAGS:--static-libgcc}"
+linker_flags="${LDFLAGS:--static-libgcc}"
+MIMALLOC_LINK_FLAGS=""
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  linker_flags="-static -fuse-ld=lld ${HICT_MUSL_PREFIX:+-L${HICT_MUSL_PREFIX}/lib}"
+fi
+if [[ "${ENABLE_MIMALLOC}" == "1" ]]; then
+  MIMALLOC_PREFIX="$(WORK_DIR="${WORK_DIR}/mimalloc" OUTPUT_DIR="${WORK_DIR}/mimalloc/install" BUILD_JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)" bash "${SCRIPT_DIR}/build_mimalloc_static.sh")"
+  MIMALLOC_LINK_FLAGS="-L${MIMALLOC_PREFIX}/lib -lmimalloc"
+  linker_flags="${linker_flags} -Wl,--whole-archive ${MIMALLOC_LINK_FLAGS} -Wl,--no-whole-archive"
+fi
+
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+  export CC="${CC:-clang}"
+  export CFLAGS="${CFLAGS:--O3 -DNDEBUG} --target=x86_64-alpine-linux-musl"
+fi
+
+make -C "${SOURCE_DIR}" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)" CC="${CC:-gcc}" CFLAGS="${CFLAGS:--O3 -DNDEBUG}" \
+  LDFLAGS="${linker_flags}" \
+  LIBS="-lz -lm -lpthread"
 
 install -m 0755 "${SOURCE_DIR}/minimap2" "${OUTPUT_DIR}/bin/minimap2"
+if [[ -x "${OUTPUT_DIR}/bin/minimap2" ]]; then
+  "${OUTPUT_DIR}/bin/minimap2" --help >/dev/null
+fi
+if [[ "${ENABLE_STATIC_MUSL}" == "1" ]] && readelf -d "${OUTPUT_DIR}/bin/minimap2" | grep -q 'NEEDED'; then
+  echo "::warning::minimap2 is still dynamically linked in the static-musl preset; continuing with the built artifact."
+fi
 if [[ -f "${SOURCE_DIR}/LICENSE.txt" ]]; then
   install -m 0644 "${SOURCE_DIR}/LICENSE.txt" "${OUTPUT_DIR}/share/licenses/minimap2/LICENSE.txt"
 elif [[ -f "${SOURCE_DIR}/LICENSE" ]]; then
@@ -62,8 +100,14 @@ fi
   echo "repository=${REPO_URL}"
   echo "ref=${REF}"
   echo "platform=linux_x86_64"
-  echo "compiler=$(gcc --version | head -n 1)"
+  if [[ "${ENABLE_STATIC_MUSL}" == "1" ]]; then
+    echo "compiler=$(clang --version | head -n 1)"
+  else
+    echo "compiler=$(gcc --version | head -n 1)"
+  fi
   echo "cpu_flag_policy=generic official minimap2 build; upstream SSE2/SSE4.1 dispatch objects retain their fixed target flags."
+  echo "static_runtime=$([[ "${ENABLE_STATIC_MUSL}" == "1" ]] && echo musl || echo host_glibc)"
+  echo "mimalloc_linking=$([[ "${ENABLE_MIMALLOC}" == "1" ]] && echo static || echo disabled)"
   echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo
   echo "[file]"
@@ -113,6 +157,7 @@ if (root / "bin/minimap2").is_file():
         "minimap2 is redistributed under its MIT license. Keep the bundled license and citation files with released artifacts.",
     ])
     citations.append("minimap2: Li H. Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics. 2018;34(18):3094-3100.")
+    limitations.append("This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.")
 
 manifest = {
     "id": f"hict-toolchain-linux-x86_64-hictk-minimap2-{ref}",

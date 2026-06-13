@@ -28,6 +28,24 @@ class ExternalToolchainManagerTest {
   }
 
   @Test
+  void detectsDarwinArm64PlatformWithoutCollapsingToX86() throws Exception {
+    final var originalOsName = System.getProperty("os.name");
+    final var originalOsArch = System.getProperty("os.arch");
+    try {
+      System.setProperty("os.name", "Mac OS X");
+      System.setProperty("os.arch", "aarch64");
+
+      final var detectPlatform = ExternalToolchainManager.class.getDeclaredMethod("detectPlatform");
+      detectPlatform.setAccessible(true);
+
+      assertEquals("darwin_arm64", detectPlatform.invoke(null));
+    } finally {
+      restoreSystemProperty("os.name", originalOsName);
+      restoreSystemProperty("os.arch", originalOsArch);
+    }
+  }
+
+  @Test
   void resolvesManifestBackedExternalHictkPayload() throws Exception {
     final var toolchainDir = tempDir.resolve("toolchain");
     final var binDir = toolchainDir.resolve("bin");
@@ -153,5 +171,13 @@ class ExternalToolchainManagerTest {
     Files.writeString(path, "stub");
     path.toFile().setExecutable(true, true);
     return path;
+  }
+
+  private static void restoreSystemProperty(final String key, final String value) {
+    if (value == null) {
+      System.clearProperty(key);
+    } else {
+      System.setProperty(key, value);
+    }
   }
 }

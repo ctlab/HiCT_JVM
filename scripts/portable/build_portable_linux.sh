@@ -7,7 +7,12 @@ DIST_ROOT="${HICT_PORTABLE_DIST_DIR:-${PROJECT_DIR}/build/portable}"
 PLATFORM="linux-x86_64"
 APP_NAME="HiCT"
 VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
-APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
+ABI_SUFFIX=""
+if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then
+  ABI_SUFFIX="-musl"
+fi
+APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}"
+PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
@@ -17,9 +22,9 @@ usage() {
 Build a self-contained Linux HiCT portable package with an embedded Java runtime.
 
 Outputs:
-  build/distributions/HiCT-<version>-linux-x86_64.run
-  build/distributions/HiCT-<version>-linux-x86_64.tar.gz
-  build/distributions/HiCT-<version>-linux-x86_64.sha256
+  build/distributions/HiCT-<version>[-musl]-linux-x86_64.run
+  build/distributions/HiCT-<version>[-musl]-linux-x86_64.tar.gz
+  build/distributions/HiCT-<version>[-musl]-linux-x86_64.sha256
 
 Environment overrides:
   HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
@@ -30,6 +35,7 @@ Environment overrides:
 The .run file is a transparent shell script with a tar.xz payload appended. It
 extracts to the user's cache and sets DATA_DIR to the directory containing the
 .run file unless DATA_DIR was explicitly provided.
+The .run wrapper also accepts --help to print launcher usage without starting HiCT.
 EOF
 }
 
@@ -98,6 +104,10 @@ mkdir -p \
   "${ARTIFACT_DIR}"
 
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
+JHDF5_NATIVES_ARCHIVE="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
+if [[ -n "${JHDF5_NATIVES_ARCHIVE}" && -f "${JHDF5_NATIVES_ARCHIVE}" ]]; then
+  cp "${JHDF5_NATIVES_ARCHIVE}" "${APP_DIR}/lib/$(basename "${JHDF5_NATIVES_ARCHIVE}")"
+fi
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"
@@ -131,7 +141,7 @@ if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
       echo "Portable package is missing executable bundled mm2-plus AVX2 at toolchains/linux_x86_64/bin/mm2plus-avx2." >&2
       exit 1
     fi
-    "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null
+    "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null || "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --help >/dev/null || true
   fi
   if grep -q '"mm2plus_avx512"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" ]]; then
@@ -170,6 +180,10 @@ if [[ -d "${PROJECT_DIR}/browsers-dist/linux_x86_64" ]] &&
     fi
     chmod 0755 "${BROWSER_COMMAND_TARGET}" 2>/dev/null || true
   done < <(find "${APP_DIR}/browsers/linux_x86_64" -name manifest.json -type f | sort)
+fi
+
+if [[ -x "${APP_DIR}/bin/hict" ]]; then
+  "${APP_DIR}/bin/hict" --help >/dev/null
 fi
 
 cat > "${APP_DIR}/licenses/PORTABLE_DISTRIBUTION_NOTICE.txt" <<'EOF'
@@ -230,6 +244,12 @@ if [[ -z "${DATA_DIR:-}" ]]; then
 fi
 export HICT_APP_HOME="${APP_HOME}"
 export HICT_JAR_PATH="${APP_HOME}/lib/hict.jar"
+if [[ -z "${HICT_JHDF5_NATIVES_ARCHIVE:-}" ]]; then
+  HICT_JHDF5_NATIVES_CANDIDATE="$(find "${APP_HOME}/lib" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
+  if [[ -n "${HICT_JHDF5_NATIVES_CANDIDATE}" ]]; then
+    export HICT_JHDF5_NATIVES_ARCHIVE="${HICT_JHDF5_NATIVES_CANDIDATE}"
+  fi
+fi
 if [[ -z "${WEBUI_ROOT:-}" && -d "${APP_HOME}/webui" ]]; then
   export WEBUI_ROOT="${APP_HOME}/webui"
 fi
@@ -325,7 +345,11 @@ if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
   JAVA_OPTS=(${HICT_JAVA_OPTS})
 fi
 
-exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
+  exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+else
+  exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+fi
 EOF
 chmod +x "${APP_DIR}/bin/hict"
 
@@ -342,6 +366,8 @@ Run:
 
 The package includes:
   - HiCT_JVM fat JAR, including the built HiCT_WebUI resources
+  - optional split JHDF5 native archive under lib/ when the release uses the
+    slim JHDF5 jar packaging
   - extracted HiCT_WebUI assets used as WEBUI_ROOT for robust portable serving
   - extracted bundled hictk payload under toolchains/ when release packaging
     was built with .hic conversion support
@@ -372,13 +398,13 @@ Java runtime notices:
   notices and third-party notices shipped with the runtime.
 EOF
 
-TAR_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.tar.gz"
-RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.run"
-SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.sha256"
-PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.xz"
+TAR_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.tar.gz"
+RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.run"
+SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.sha256"
+PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.payload.tar.xz"
 
-tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
-tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | gzip -9 > "${TAR_PATH}"
+tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(sha256sum "${PAYLOAD_PATH}" | awk '{print $1}')"
 BUNDLED_TAURI_BROWSER="0"
 if [[ -d "${APP_DIR}/browsers/linux_x86_64" ]] &&
@@ -393,6 +419,7 @@ set -euo pipefail
 APP_NAME="${APP_NAME}"
 APP_VERSION="${VERSION}"
 APP_PLATFORM="${PLATFORM}"
+APP_PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 PAYLOAD_SHA256="${PAYLOAD_SHA}"
 BUNDLED_TAURI_BROWSER="${BUNDLED_TAURI_BROWSER}"
 
@@ -406,6 +433,7 @@ HiCT portable launcher
 
 Usage:
   ./HiCT-<version>-linux-x86_64.run [HiCT CLI args...]
+  ./HiCT-<version>-linux-x86_64.run --help
   ./HiCT-<version>-linux-x86_64.run --hict-extract-only <directory>
 
 DATA_DIR defaults to the directory containing this .run file. Set DATA_DIR
@@ -423,10 +451,10 @@ HiCT portable launcher cannot start because required command '\$1' is not availa
 Install the standard archive/shell utilities for your Linux distribution, then
 run this file again. Common commands:
 
-  Debian/Ubuntu: sudo apt-get install coreutils gawk tar xz-utils
-  Fedora/RHEL:   sudo dnf install coreutils gawk tar xz
-  Arch Linux:    sudo pacman -S coreutils gawk tar xz
-  openSUSE:      sudo zypper install coreutils gawk tar xz
+  Debian/Ubuntu: sudo apt-get install coreutils tar xz-utils
+  Fedora/RHEL:   sudo dnf install coreutils tar xz
+  Arch Linux:    sudo pacman -S coreutils tar xz
+  openSUSE:      sudo zypper install coreutils tar xz
 
 If this machine is locked down, use the .tar.gz portable artifact instead and
 extract it on a machine that has these standard tools.
@@ -434,12 +462,11 @@ EOM
   exit 127
 }
 
-if [[ "\${1:-}" == "--hict-run-help" ]]; then
+if [[ "\${1:-}" == "--hict-run-help" || "\${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
 
-require_runtime_cmd awk
 require_runtime_cmd tail
 require_runtime_cmd tar
 require_runtime_cmd xz
@@ -475,6 +502,19 @@ EOW
 }
 warn_missing_tauri_webview_dependencies
 
+print_banner() {
+  cat <<'EOB'
+HiCT - Hi-C scaffolding and visualization workstation
+Copyright (c) 2021-2026 Aleksandr Serdiukov, Anton Zamyatin,
+Aleksandr Sinitsyn, Vitalii Dravgelis, and CT Lab ITMO University.
+License: MIT. Bundled third-party tools keep their own licenses.
+
+Preparing the portable HiCT package. The first start extracts the application
+payload and can take a while. Please keep this Terminal window open.
+
+EOB
+}
+
 can_execute_from_directory() {
   local directory="\$1"
   mkdir -p "\${directory}" 2>/dev/null || return 1
@@ -490,7 +530,20 @@ can_execute_from_directory() {
   return "\${status}"
 }
 
-payload_line="\$(awk "/^\${MARKER}\$/ { print NR + 1; exit 0; }" "\${SELF_PATH}")"
+find_payload_line() {
+  local line_number=0
+  local line
+  while IFS= read -r line; do
+    line_number=\$((line_number + 1))
+    if [[ "\${line}" == "\${MARKER}" ]]; then
+      echo \$((line_number + 1))
+      return 0
+    fi
+  done < "\${SELF_PATH}"
+  return 1
+}
+
+payload_line="\$(find_payload_line || true)"
 if [[ -z "\${payload_line}" ]]; then
   echo "Cannot find embedded HiCT payload." >&2
   exit 1
@@ -502,10 +555,13 @@ if [[ "\${1:-}" == "--hict-extract-only" ]]; then
     exit 1
   fi
   mkdir -p "\$2"
+  echo "Extracting HiCT to \$2. Please wait..." >&2
   tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\$2"
-  echo "Extracted HiCT to \$2/${APP_NAME}-${VERSION}-${PLATFORM}"
+  echo "Extracted HiCT to \$2/\${APP_PACKAGE_NAME}"
   exit 0
 fi
+
+print_banner
 
 home_dir="\${HOME:-/tmp}"
 local_cache_root="\${SELF_DIR}/HiCT.portable/payloads"
@@ -526,13 +582,14 @@ fi
 if [[ "\${cache_root}" != "\${local_cache_root}" ]]; then
   export HICT_PORTABLE_NOTICE="The directory containing the .run file could not be used as an executable payload cache; using \${cache_root}."
 fi
-extract_root="\${cache_root}/${APP_NAME}-${VERSION}-${PLATFORM}-\${PAYLOAD_SHA256}"
-app_home="\${extract_root}/${APP_NAME}-${VERSION}-${PLATFORM}"
+extract_root="\${cache_root}/\${APP_PACKAGE_NAME}-\${PAYLOAD_SHA256}"
+app_home="\${extract_root}/\${APP_PACKAGE_NAME}"
 marker_file="\${extract_root}/.payload.sha256"
 
 if [[ ! -x "\${app_home}/bin/hict" || ! -f "\${marker_file}" || "\$(cat "\${marker_file}" 2>/dev/null || true)" != "\${PAYLOAD_SHA256}" ]]; then
   rm -rf "\${extract_root}"
   mkdir -p "\${extract_root}"
+  echo "Extracting HiCT to \${extract_root}. Please wait..." >&2
   tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\${extract_root}"
   printf '%s\n' "\${PAYLOAD_SHA256}" > "\${marker_file}"
 fi
@@ -544,6 +601,28 @@ __HICT_PAYLOAD_BELOW__
 EOF
 cat "${PAYLOAD_PATH}" >> "${RUN_PATH}"
 chmod +x "${RUN_PATH}"
+if [[ -x "${RUN_PATH}" ]]; then
+  "${RUN_PATH}" --help >/dev/null
+  RUN_EXTRACT_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hict-run-extract-test.XXXXXX")"
+  "${RUN_PATH}" --hict-extract-only "${RUN_EXTRACT_TEST_DIR}" >/dev/null
+  test -x "${RUN_EXTRACT_TEST_DIR}/${PACKAGE_NAME}/bin/hict"
+  rm -rf "${RUN_EXTRACT_TEST_DIR}"
+  RUN_SMOKE_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hict-run-smoke-test.XXXXXX")"
+  cleanup_run_smoke_test() {
+    rm -rf "${RUN_SMOKE_TEST_DIR}"
+  }
+  trap cleanup_run_smoke_test EXIT
+  mkdir -p "${RUN_SMOKE_TEST_DIR}/data" "${RUN_SMOKE_TEST_DIR}/cache" "${RUN_SMOKE_TEST_DIR}/tmp"
+  perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 600 env \
+    DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
+    HICT_PORTABLE_DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
+    XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" \
+    TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
+    HICT_LAUNCHER_MODE=cli \
+    "${RUN_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+  rm -rf "${RUN_SMOKE_TEST_DIR}"
+  trap - EXIT
+fi
 
 (
   cd "${ARTIFACT_DIR}"

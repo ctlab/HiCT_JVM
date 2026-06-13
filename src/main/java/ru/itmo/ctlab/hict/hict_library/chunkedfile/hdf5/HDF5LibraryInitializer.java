@@ -29,24 +29,46 @@ import hdf.hdf5lib.exceptions.HDF5LibraryException;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.scijava.nativelib.JniExtractor;
 import org.scijava.nativelib.NativeLibraryUtil;
 import org.scijava.nativelib.NativeLoader;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URISyntaxException;
+import java.util.jar.JarFile;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Locale;
+import java.util.Collection;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.zip.GZIPInputStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 
 @Slf4j
 @Getter
 public class HDF5LibraryInitializer {
+  private static final String[] BUNDLED_JHDF5_LIBRARY_ROOTS = {"native/jhdf5", "libs/native/jhdf5"};
+  private static final String[] BUNDLED_JHDF5_NATIVE_ARCHIVE_ROOTS = {"libs", "resources/libs"};
+  private static final String[] JHDF5_NATIVES_ARCHIVE_NAMES = {
+    "sis-jhdf5-19.04.1-natives.tar.gz",
+    "jhdf5-natives.tar.gz"
+  };
   private static final AtomicBoolean hdf5LibraryInitialized = new AtomicBoolean(false);
   private static final LinkedHashMap<String, String> libraryNames = new LinkedHashMap<>();
+  private static final LinkedHashMap<String, Path> extractedJhdf5NativeDirectories = new LinkedHashMap<>();
   private static final JniExtractor defaultJNIExtractor = NativeLoader.getJniExtractor();
   private static final PathCollectingJNIExtractor jniExtractor = new PathCollectingJNIExtractor(defaultJNIExtractor);
 
@@ -68,7 +90,7 @@ public class HDF5LibraryInitializer {
     // The most important HDF5 filter plugins for HiCT (bitshuffle and LZF compression):
     libraryNames.put("libh5bshuf", "HDF5 Shuffle filter plugin (Linux-style naming)");
     libraryNames.put("h5bshuf", "HDF5 Shuffle filter plugin (Windows-style naming)");
-    libraryNames.put("h5lzf", "HDF5 LZ4 filter plugin (Windows-style naming)");
+    libraryNames.put("h5lzf", "HDF5 LZF filter plugin (Windows-style naming)");
     libraryNames.put("libh5lzf", "HDF5 LZF filter plugin (Linux-style naming)");
     // SiS-modified jni/ folder source linked to libhdf5.a on Linux, SiS-modified version of hdf5_java.dll on Windows
     // libraryNames.put("jhdf5", "jHDF5");
@@ -99,8 +121,36 @@ public class HDF5LibraryInitializer {
       return;
     }
 
-    NativeLibraryUtil.loadNativeLibrary(jniExtractor, "hdf5", "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/");
-    log.info("Loaded HDF5");
+    try {
+      final var sidecarPath = prepareSidecarJhdf5NativeLibraryPath();
+      if (sidecarPath.isPresent()) {
+        log.info("Using sidecar JHDF5 native library {}", sidecarPath.get());
+      } else {
+        final var embeddedArchivePath = prepareEmbeddedJhdf5NativeLibraryPath();
+        if (embeddedArchivePath.isPresent()) {
+          log.info("Using embedded JHDF5 native archive library {}", embeddedArchivePath.get());
+        } else {
+          prepareBundledJhdf5NativeLibraryPath().ifPresent(path ->
+            log.info("Using bundled JHDF5 native library {}", path)
+          );
+        }
+      }
+    } catch (final IOException err) {
+      log.debug("Failed to prepare bundled, embedded, or sidecar JHDF5 native library path", err);
+    }
+
+    try {
+      if (!loadBundledNativeLibrary("hdf5")) {
+        log.warn("Failed to load HDF5 with custom JNI Extractor, will try fallback method.");
+        NativeLoader.loadLibrary("hdf5");
+        log.warn("Fallback method succeeded but the library path won't be added to the H5 plugins search registry.");
+      }
+      log.info("Loaded HDF5");
+    } catch (final IOException err) {
+      log.warn("Failed to load HDF5 due to IOException", err);
+    } catch (final UnsatisfiedLinkError unsatisfiedLinkError) {
+      log.error("Failed to load HDF5 due to unsatisfied link error", unsatisfiedLinkError);
+    }
 //    NativeLibraryUtil.loadNativeLibrary(jniExtractor, "jhdf5", "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/");
 //    log.info("Loaded JHDF5");
 
@@ -150,14 +200,14 @@ public class HDF5LibraryInitializer {
       final var name = e.getValue();
       log.info("Loading " + name + " library");
       try {
-        if (!NativeLibraryUtil.loadNativeLibrary(jniExtractor, lib, "resources/", "resources/libs/", "resources/libs/natives/", "/resources/", "/resources/libs/", "/resources/libs/natives/")) {
+        if (!loadBundledNativeLibrary(lib)) {
           log.warn("Failed to load library " + lib + " with custom JNI Extractor, will try fallback method.");
           NativeLoader.loadLibrary(lib);
           log.warn("Fallback method succeeded but the library path won't be added to the H5 plugins search registry.");
         }
         log.info("Successfully loaded library " + lib + " using NativeLoader");
       } catch (final IOException err) {
-        log.warn("Failed to load native library " + name + " by NativeLoader due to IOException", err);
+        log.warn("Failed to load native library {} by NativeLoader due to IOException: {}", name, err.getMessage());
 //        log.warn("Failed to load native library due to IOException");
 //        throw new RuntimeException("Failed to load native library " + name + " by NativeLoader", err);
       } catch (UnsatisfiedLinkError unsatisfiedLinkError) {
@@ -229,6 +279,1056 @@ public class HDF5LibraryInitializer {
     hdf5LibraryInitialized.set(true);
   }
 
+
+  private static boolean loadBundledNativeLibrary(final String libraryBaseName) throws IOException {
+    if (loadBundledJhdf5NativeLibrary(libraryBaseName)) {
+      return true;
+    }
+    if (loadBundledLegacyNativeLibrary(libraryBaseName)) {
+      return true;
+    }
+    return false;
+  }
+
+  private static boolean loadBundledJhdf5NativeLibrary(final String libraryBaseName) throws IOException {
+    if (loadExtractedJhdf5NativeLibrary(libraryBaseName)) {
+      return true;
+    }
+
+    final var candidatePaths = new LinkedHashSet<String>();
+    for (final var variantDirectory : bundledVariantDirectories()) {
+      for (final var jhdf5PlatformDirectory : bundledJhdf5PlatformDirectories(variantDirectory, false)) {
+        candidatePaths.add(jhdf5PlatformDirectory);
+      }
+    }
+    candidatePaths.addAll(bundledJhdf5PlatformDirectories("", true));
+
+    final var candidatePathList = new ArrayList<String>(candidatePaths.size() * 2 * BUNDLED_JHDF5_LIBRARY_ROOTS.length);
+    for (final var jhdf5PlatformDirectory : candidatePaths) {
+      addBundledJhdf5LibrarySearchPaths(candidatePathList, jhdf5PlatformDirectory);
+    }
+    if (candidatePathList.isEmpty()) {
+      return false;
+    }
+
+    for (final String jhdf5LibraryPath : candidatePathList) {
+      if (loadBundledJhdf5NativeLibrary(jniExtractor, libraryBaseName, jhdf5LibraryPath)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static boolean loadExtractedJhdf5NativeLibrary(final @NotNull String libraryBaseName) {
+    final var mappedLibraryNames = mappedJhdf5LibraryNames(libraryBaseName);
+    for (final var directory : new LinkedHashSet<>(extractedJhdf5NativeDirectories.values())) {
+      if (!Files.isDirectory(directory)) {
+        continue;
+      }
+      final File[] files = directory.toFile().listFiles();
+      if (files == null) {
+        continue;
+      }
+      for (final var mappedName : mappedLibraryNames) {
+        for (final var file : files) {
+          if (!file.isFile() || !matchesBundledLibraryFile(file.getName(), mappedName)) {
+            continue;
+          }
+          try {
+            System.load(file.getAbsolutePath());
+            setNativeLibraryPropertyIfUnset(libraryBaseName, file.toPath());
+            jniExtractor.pathsCollection.add(directory.toString());
+            jniExtractor.namesCollection.add(mappedName);
+            jniExtractor.absolutePathsCollection.add(directory.toString());
+            jniExtractor.fullPathsCollection.add(file.getAbsolutePath());
+            return true;
+          } catch (final UnsatisfiedLinkError unsatisfiedLinkError) {
+            final String message = unsatisfiedLinkError.getMessage();
+            if (message != null && message.contains("already loaded")) {
+              return true;
+            }
+            log.debug("Failed to load extracted JHDF5 library {} from {}", libraryBaseName, file.getAbsolutePath(), unsatisfiedLinkError);
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean loadBundledJhdf5NativeLibrary(final @NotNull JniExtractor libraryExtractor,
+                                                     final @NotNull String libraryBaseName,
+                                                     final @NotNull String jhdf5LibraryPath) {
+    final var mappedLibraryNames = mappedJhdf5LibraryNames(libraryBaseName);
+    final var normalizedDirectory = normalizeJhdf5ResourceDirectory(jhdf5LibraryPath);
+    for (final String mappedName : mappedLibraryNames) {
+      for (final String resourcePath : listBundledJhdf5CandidateLibraries(normalizedDirectory, mappedName)) {
+        try {
+          if (loadBundledJhdf5LibraryFromResource(libraryExtractor, resourcePath, mappedName)) {
+            return true;
+          }
+        } catch (final IOException err) {
+          log.debug("Failed to extract and load bundled Jhdf5 library resource {}", resourcePath, err);
+        } catch (final UnsatisfiedLinkError err) {
+          log.debug("Failed to load bundled JHDF5 library resource {}; trying the next candidate", resourcePath, err);
+        }
+      }
+    }
+
+    final var absoluteDirectory = normalizedDirectory;
+    try {
+      final File extractedLibrary = libraryExtractor.extractJni(absoluteDirectory, libraryBaseName);
+      if (extractedLibrary == null) {
+        return false;
+      }
+
+      try {
+        System.load(extractedLibrary.getAbsolutePath());
+        return true;
+      }
+      catch (final UnsatisfiedLinkError unsatisfiedLinkError) {
+        final String message = unsatisfiedLinkError.getMessage();
+        if (message != null && message.contains("already loaded")) {
+          log.debug("Bundled JHDF5 library {} is already loaded from {}", libraryBaseName, extractedLibrary.getAbsolutePath());
+          return true;
+        }
+        log.debug("Failed to load bundled JHDF5 library {} from {}", libraryBaseName, extractedLibrary.getAbsolutePath(), unsatisfiedLinkError);
+      }
+    }
+    catch (final IOException err) {
+      log.debug("Failed to extract bundled JHDF5 library {} from {}", libraryBaseName, jhdf5LibraryPath, err);
+    }
+
+    return false;
+  }
+
+  private static List<String> mappedJhdf5LibraryNames(final @NotNull String libraryBaseName) {
+    final var mappedName = System.mapLibraryName(libraryBaseName);
+    final var result = new LinkedHashSet<String>(3);
+
+    if (libraryBaseName.startsWith("lib")) {
+      final var baseWithoutLibPrefix = libraryBaseName.substring("lib".length());
+      if (!baseWithoutLibPrefix.isEmpty()) {
+        result.add(System.mapLibraryName(baseWithoutLibPrefix));
+      }
+      if (result.isEmpty()) {
+        result.add(mappedName);
+      }
+    } else {
+      result.add(mappedName);
+      if (!mappedName.startsWith("lib") && System.mapLibraryName("lib" + libraryBaseName).equals("lib" + mappedName)) {
+        result.add("lib" + mappedName);
+      }
+    }
+    if (mappedName.startsWith("lib") && !libraryBaseName.startsWith("lib")) {
+      final var withoutLibPrefix = mappedName.substring("lib".length());
+      result.add(withoutLibPrefix);
+    }
+    if (mappedName.endsWith(".dylib")) {
+      result.add(mappedName.substring(0, mappedName.length() - ".dylib".length()) + ".jnilib");
+    }
+
+    return new ArrayList<>(result);
+  }
+
+  private static List<String> listBundledJhdf5CandidateLibraries(final @NotNull String resourceDirectory,
+                                                                final @NotNull String mappedName) {
+    final var result = new ArrayList<String>();
+    final var allEntries = listJarOrResourceEntries(resourceDirectory);
+    for (final var entry : allEntries) {
+      final var fileName = entry.substring(entry.lastIndexOf('/') + 1);
+      if (matchesBundledLibraryFile(fileName, mappedName)) {
+        result.add(entry);
+      }
+    }
+
+    if (result.isEmpty()) {
+      final var normalized = resourceDirectory.endsWith("/") ? resourceDirectory : resourceDirectory + "/";
+      final var directResource = normalized + mappedName;
+      try {
+        if (HDF5LibraryInitializer.class.getResource("/" + directResource) != null) {
+          result.add(directResource);
+        }
+      } catch (final Exception err) {
+        // Ignore and treat as unavailable resource.
+      }
+    }
+    return result;
+  }
+
+  private static boolean matchesBundledLibraryFile(final @NotNull String fileName, final @NotNull String mappedName) {
+    if (fileName.equals(mappedName) || fileName.startsWith(mappedName + ".")) {
+      return true;
+    }
+
+    final var extensionIndex = mappedName.lastIndexOf('.');
+    if (extensionIndex <= 0) {
+      return false;
+    }
+    final var baseName = mappedName.substring(0, extensionIndex);
+    final var extension = mappedName.substring(extensionIndex);
+    return fileName.startsWith(baseName + ".") && fileName.endsWith(extension);
+  }
+
+  private static boolean loadBundledJhdf5LibraryFromResource(final @NotNull JniExtractor libraryExtractor,
+                                                             final @NotNull String resourcePath,
+                                                             final @NotNull String mappedLibraryName) throws IOException {
+    final var normalizedResourcePath = resourcePath.startsWith("/") ? resourcePath.substring(1) : resourcePath;
+    final var separatorIndex = normalizedResourcePath.lastIndexOf('/');
+    if (separatorIndex < 0) {
+      return false;
+    }
+
+    final var resourceDirectory = normalizedResourcePath.substring(0, separatorIndex + 1);
+    final var extractionDirectory = extractBundledJhdf5NativeDirectory(resourceDirectory);
+    if (extractionDirectory.isEmpty()) {
+      return false;
+    }
+
+    final var extractionFileName = normalizedResourcePath.substring(separatorIndex + 1);
+    final var extractedLibrary = extractionDirectory.get().resolve(extractionFileName);
+    if (!Files.isRegularFile(extractedLibrary)) {
+      return false;
+    }
+
+    final File extractedLibraryFile = extractionLibraryPath(mappedLibraryName, extractedLibrary);
+    try {
+      System.load(extractedLibraryFile.getAbsolutePath());
+      if (libraryExtractor instanceof PathCollectingJNIExtractor pathCollectingExtractor) {
+        pathCollectingExtractor.pathsCollection.add(resourceDirectory);
+        pathCollectingExtractor.namesCollection.add(mappedLibraryName);
+        pathCollectingExtractor.absolutePathsCollection.add(extractedLibraryFile.getParent());
+        pathCollectingExtractor.fullPathsCollection.add(extractedLibraryFile.getAbsolutePath());
+      }
+      return true;
+    } catch (final UnsatisfiedLinkError unsatisfiedLinkError) {
+      final String message = unsatisfiedLinkError.getMessage();
+      if (message != null && message.contains("already loaded")) {
+        return true;
+      }
+      throw unsatisfiedLinkError;
+    }
+  }
+
+  private static @NotNull File extractionLibraryPath(final @NotNull String libraryName, final @NotNull Path extractedLibrary) {
+    return extractedLibrary.toFile();
+  }
+
+  private static @NotNull List<String> listJarOrResourceEntries(final @NotNull String resourceDirectory) {
+    final var directory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+    try {
+      final var codeSource = HDF5LibraryInitializer.class.getProtectionDomain().getCodeSource();
+      if (codeSource == null || codeSource.getLocation() == null) {
+        return List.of();
+      }
+      final var location = codeSource.getLocation().toURI();
+      final var sourceFile = new File(location);
+      if (!sourceFile.isFile() || !sourceFile.getName().endsWith(".jar")) {
+        return listFileSystemResourceEntries(resourceDirectory);
+      }
+      try (var jar = new JarFile(sourceFile)) {
+        final var result = new ArrayList<String>();
+        final var entries = jar.entries();
+        while (entries.hasMoreElements()) {
+          final var entry = entries.nextElement().getName();
+          if (entry.startsWith(directory)) {
+            final var child = entry.substring(directory.length());
+            if (child.isEmpty() || child.endsWith("/")) {
+              continue;
+            }
+            result.add(directory + child);
+          }
+        }
+        return result;
+      }
+    }
+    catch (final IOException | URISyntaxException err) {
+      return List.of();
+    }
+  }
+
+  private static @NotNull List<String> listFileSystemResourceEntries(final @NotNull String resourceDirectory) {
+    final var directory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+    final var root = normalizeClasspathDirectoryForFileSystem(directory);
+    if (!root.toFile().exists()) {
+      return List.of();
+    }
+    final var files = root.toFile().listFiles();
+    if (files == null) {
+      return List.of();
+    }
+    final var result = new ArrayList<String>(files.length);
+    for (final var file : files) {
+      if (file.isFile()) {
+        result.add(directory + file.getName());
+      }
+    }
+    return result;
+  }
+
+  private static @NotNull String normalizeJhdf5ResourceDirectory(final @NotNull String resourceDirectory) {
+    var normalized = resourceDirectory.startsWith("/") ? resourceDirectory.substring(1) : resourceDirectory;
+    if (!normalized.isEmpty() && !normalized.endsWith("/")) {
+      normalized = normalized + "/";
+    }
+    return normalized;
+  }
+
+  private static @NotNull java.nio.file.Path normalizeClasspathDirectoryForFileSystem(final @NotNull String resourceDirectory) {
+    final var root = HDF5LibraryInitializer.class.getResource("/" + resourceDirectory);
+    if (root == null) {
+      return java.nio.file.Path.of("");
+    }
+    try {
+      final var uri = root.toURI();
+      return java.nio.file.Path.of(uri);
+    }
+    catch (final URISyntaxException err) {
+      return java.nio.file.Path.of("");
+    }
+  }
+
+  private static void addBundledJhdf5LibrarySearchPaths(final @NotNull Collection<String> searchPaths,
+                                                       final @NotNull String jhdf5PlatformDirectory) {
+    for (final var rootDirectory : BUNDLED_JHDF5_LIBRARY_ROOTS) {
+      final var candidatePath = rootDirectory + "/" + jhdf5PlatformDirectory + "/";
+      searchPaths.add(candidatePath);
+      searchPaths.add("/" + candidatePath);
+    }
+  }
+
+  private static @NotNull Optional<Path> prepareSidecarJhdf5NativeLibraryPath() throws IOException {
+    for (final var archive : sidecarJhdf5NativeArchiveCandidates()) {
+      final var extractedJhdf5 = prepareJhdf5NativeLibraryPathFromArchive(archive);
+      if (extractedJhdf5.isPresent()) {
+        return extractedJhdf5;
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static @NotNull Optional<Path> prepareEmbeddedJhdf5NativeLibraryPath() throws IOException {
+    for (final var resourcePath : embeddedJhdf5NativeArchiveResources()) {
+      try (InputStream stream = HDF5LibraryInitializer.class.getResourceAsStream("/" + resourcePath)) {
+        if (stream == null) {
+          continue;
+        }
+        final var archive = Files.createTempFile("hict-jhdf5-native-resource-", ".tar.gz");
+        archive.toFile().deleteOnExit();
+        Files.copy(stream, archive, StandardCopyOption.REPLACE_EXISTING);
+        final var extractedJhdf5 = prepareJhdf5NativeLibraryPathFromArchive(archive);
+        if (extractedJhdf5.isPresent()) {
+          return extractedJhdf5;
+        }
+        Files.deleteIfExists(archive);
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static @NotNull Optional<Path> prepareJhdf5NativeLibraryPathFromArchive(final @NotNull Path archive) throws IOException {
+    if (!Files.isRegularFile(archive)) {
+      return Optional.empty();
+    }
+
+    Optional<Path> firstExtractedJhdf5 = Optional.empty();
+    for (final var resourceDirectory : bundledJhdf5NativeResourceDirectories()) {
+      final var archiveDirectory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+      final var jhdf5ArchivePath = firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "jhdf5");
+      if (jhdf5ArchivePath.isEmpty()) {
+        continue;
+      }
+      final var extractionDirectory = extractJhdf5NativeArchiveDirectory(archive, archiveDirectory);
+      if (extractionDirectory.isEmpty()) {
+        continue;
+      }
+      final var fileName = jhdf5ArchivePath.get().substring(jhdf5ArchivePath.get().lastIndexOf('/') + 1);
+      final var extractedJhdf5 = extractionDirectory.get().resolve(fileName);
+      if (!Files.isRegularFile(extractedJhdf5)) {
+        continue;
+      }
+
+      setNativeLibraryPropertyIfUnset("jhdf5", extractedJhdf5);
+      firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "hdf5")
+        .map(path -> path.substring(path.lastIndexOf('/') + 1))
+        .map(extractionDirectory.get()::resolve)
+        .filter(Files::isRegularFile)
+        .ifPresent(path -> setNativeLibraryPropertyIfUnset("hdf5", path));
+      jniExtractor.pathsCollection.add(archiveDirectory);
+      jniExtractor.namesCollection.add("jhdf5");
+      jniExtractor.absolutePathsCollection.add(extractionDirectory.get().toString());
+      jniExtractor.fullPathsCollection.add(extractedJhdf5.toString());
+      if (firstExtractedJhdf5.isEmpty()) {
+        firstExtractedJhdf5 = Optional.of(extractedJhdf5);
+      }
+    }
+    return firstExtractedJhdf5;
+  }
+
+  private static @NotNull Optional<Path> prepareBundledJhdf5NativeLibraryPath() throws IOException {
+    for (final var resourceDirectory : bundledJhdf5NativeResourceDirectories()) {
+      final var jhdf5ResourcePath = firstBundledJhdf5LibraryResource(resourceDirectory, "jhdf5");
+      if (jhdf5ResourcePath.isEmpty()) {
+        continue;
+      }
+      final var extractionDirectory = extractBundledJhdf5NativeDirectory(resourceDirectory);
+      if (extractionDirectory.isEmpty()) {
+        continue;
+      }
+      final var fileName = jhdf5ResourcePath.get().substring(jhdf5ResourcePath.get().lastIndexOf('/') + 1);
+      final var extractedJhdf5 = extractionDirectory.get().resolve(fileName);
+      if (!Files.isRegularFile(extractedJhdf5)) {
+        continue;
+      }
+
+      setNativeLibraryPropertyIfUnset("jhdf5", extractedJhdf5);
+      firstBundledJhdf5LibraryResource(resourceDirectory, "hdf5")
+        .map(path -> path.substring(path.lastIndexOf('/') + 1))
+        .map(extractionDirectory.get()::resolve)
+        .filter(Files::isRegularFile)
+        .ifPresent(path -> setNativeLibraryPropertyIfUnset("hdf5", path));
+      jniExtractor.pathsCollection.add(resourceDirectory);
+      jniExtractor.namesCollection.add("jhdf5");
+      jniExtractor.absolutePathsCollection.add(extractionDirectory.get().toString());
+      jniExtractor.fullPathsCollection.add(extractedJhdf5.toString());
+      return Optional.of(extractedJhdf5);
+    }
+    return Optional.empty();
+  }
+
+  private static void setNativeLibraryPropertyIfUnset(final @NotNull String libraryBaseName, final @NotNull Path libraryPath) {
+    final var propertyName = "native.libpath." + libraryBaseName;
+    if (System.getProperty(propertyName) == null) {
+      System.setProperty(propertyName, libraryPath.toAbsolutePath().normalize().toString());
+    }
+  }
+
+  private static @NotNull Optional<String> firstBundledJhdf5LibraryResource(final @NotNull String resourceDirectory,
+                                                                            final @NotNull String libraryBaseName) {
+    final var normalizedDirectory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+    for (final var mappedName : mappedJhdf5LibraryNames(libraryBaseName)) {
+      final var candidates = listBundledJhdf5CandidateLibraries(normalizedDirectory, mappedName);
+      if (!candidates.isEmpty()) {
+        return Optional.of(candidates.get(0));
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static @NotNull List<String> bundledJhdf5NativeResourceDirectories() {
+    final var candidatePaths = new LinkedHashSet<String>();
+    for (final var variantDirectory : bundledVariantDirectories()) {
+      candidatePaths.addAll(bundledJhdf5PlatformDirectories(variantDirectory, false));
+    }
+    candidatePaths.addAll(bundledJhdf5PlatformDirectories("", true));
+
+    final var result = new ArrayList<String>(candidatePaths.size() * BUNDLED_JHDF5_LIBRARY_ROOTS.length);
+    for (final var jhdf5PlatformDirectory : candidatePaths) {
+      for (final var rootDirectory : BUNDLED_JHDF5_LIBRARY_ROOTS) {
+        result.add(normalizeJhdf5ResourceDirectory(rootDirectory + "/" + jhdf5PlatformDirectory));
+      }
+    }
+    return result;
+  }
+
+  private static @NotNull List<String> embeddedJhdf5NativeArchiveResources() {
+    final var result = new ArrayList<String>();
+    for (final var rootDirectory : BUNDLED_JHDF5_NATIVE_ARCHIVE_ROOTS) {
+      final var normalizedRoot = normalizeJhdf5ResourceDirectory(rootDirectory);
+      for (final var archiveName : JHDF5_NATIVES_ARCHIVE_NAMES) {
+        final var resourcePath = normalizedRoot + archiveName;
+        if (HDF5LibraryInitializer.class.getResource("/" + resourcePath) != null) {
+          result.add(resourcePath);
+        }
+      }
+    }
+    return result;
+  }
+
+  private static @NotNull Optional<Path> extractBundledJhdf5NativeDirectory(final @NotNull String resourceDirectory) throws IOException {
+    final var normalizedDirectory = normalizeJhdf5ResourceDirectory(resourceDirectory);
+    if (extractedJhdf5NativeDirectories.containsKey(normalizedDirectory)) {
+      return Optional.of(extractedJhdf5NativeDirectories.get(normalizedDirectory));
+    }
+
+    final var entries = listJarOrResourceEntries(normalizedDirectory);
+    if (entries.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final var extractionDirectory = Files.createTempDirectory("hict-jhdf5-native-");
+    extractionDirectory.toFile().deleteOnExit();
+    for (final var entry : entries) {
+      final var normalizedEntry = entry.startsWith("/") ? entry.substring(1) : entry;
+      if (!normalizedEntry.startsWith(normalizedDirectory)) {
+        continue;
+      }
+      final var relativeEntry = normalizedEntry.substring(normalizedDirectory.length());
+      if (relativeEntry.isBlank() || relativeEntry.endsWith("/")) {
+        continue;
+      }
+      final var target = extractionDirectory.resolve(relativeEntry).normalize();
+      if (!target.startsWith(extractionDirectory)) {
+        throw new IOException("Refusing to extract native resource outside temporary directory: " + entry);
+      }
+      final var parent = target.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+        parent.toFile().deleteOnExit();
+      }
+      try (InputStream stream = HDF5LibraryInitializer.class.getResourceAsStream("/" + normalizedEntry)) {
+        if (stream == null) {
+          continue;
+        }
+        Files.copy(stream, target, StandardCopyOption.REPLACE_EXISTING);
+        target.toFile().deleteOnExit();
+      }
+    }
+
+    extractedJhdf5NativeDirectories.put(normalizedDirectory, extractionDirectory);
+    return Optional.of(extractionDirectory);
+  }
+
+  private static @NotNull List<Path> sidecarJhdf5NativeArchiveCandidates() {
+    final var candidates = new LinkedHashSet<Path>();
+    addSidecarCandidate(candidates, System.getProperty("hict.jhdf5.natives.archive"));
+    addSidecarCandidate(candidates, System.getenv("HICT_JHDF5_NATIVES_ARCHIVE"));
+    addSidecarCandidate(candidates, System.getenv("HICT_JHDF5_NATIVE_ARCHIVE"));
+
+    final var appHome = System.getenv("HICT_APP_HOME");
+    if (appHome != null && !appHome.isBlank()) {
+      for (final var archiveName : JHDF5_NATIVES_ARCHIVE_NAMES) {
+        candidates.add(Path.of(appHome).resolve("lib").resolve(archiveName));
+        candidates.add(Path.of(appHome).resolve(archiveName));
+      }
+    }
+
+    final var jarPath = System.getenv("HICT_JAR_PATH");
+    if (jarPath != null && !jarPath.isBlank()) {
+      addSidecarCandidatesNearJar(candidates, Path.of(jarPath));
+    }
+
+    try {
+      final var codeSource = HDF5LibraryInitializer.class.getProtectionDomain().getCodeSource();
+      if (codeSource != null && codeSource.getLocation() != null) {
+        final var sourcePath = Path.of(codeSource.getLocation().toURI());
+        addSidecarCandidatesNearJar(candidates, sourcePath);
+      }
+    } catch (final IllegalArgumentException | URISyntaxException err) {
+      log.debug("Failed to resolve code-source path while searching for JHDF5 native sidecar archives", err);
+    }
+
+    final var userDirectory = System.getProperty("user.dir");
+    if (userDirectory != null && !userDirectory.isBlank()) {
+      for (final var archiveName : JHDF5_NATIVES_ARCHIVE_NAMES) {
+        candidates.add(Path.of(userDirectory).resolve("lib").resolve(archiveName));
+        candidates.add(Path.of(userDirectory).resolve(archiveName));
+      }
+    }
+
+    return candidates.stream()
+      .map(Path::toAbsolutePath)
+      .map(Path::normalize)
+      .toList();
+  }
+
+  private static void addSidecarCandidate(final @NotNull Collection<Path> candidates, final String rawPath) {
+    if (rawPath == null || rawPath.isBlank()) {
+      return;
+    }
+    candidates.add(Path.of(rawPath));
+  }
+
+  private static void addSidecarCandidatesNearJar(final @NotNull Collection<Path> candidates, final @NotNull Path jarPath) {
+    final var jarDirectory = Files.isDirectory(jarPath) ? jarPath : jarPath.getParent();
+    if (jarDirectory == null) {
+      return;
+    }
+    for (final var archiveName : JHDF5_NATIVES_ARCHIVE_NAMES) {
+      candidates.add(jarDirectory.resolve(archiveName));
+      candidates.add(jarDirectory.resolve("natives").resolve(archiveName));
+      final var parent = jarDirectory.getParent();
+      if (parent != null) {
+        candidates.add(parent.resolve("lib").resolve(archiveName));
+        candidates.add(parent.resolve("natives").resolve(archiveName));
+        candidates.add(parent.resolve(archiveName));
+      }
+    }
+  }
+
+  private static @NotNull Optional<String> firstJhdf5NativeArchiveEntry(final @NotNull Path archive,
+                                                                        final @NotNull String archiveDirectory,
+                                                                        final @NotNull String libraryBaseName) throws IOException {
+    final var normalizedDirectory = normalizeJhdf5ResourceDirectory(archiveDirectory);
+    final var mappedNames = mappedJhdf5LibraryNames(libraryBaseName);
+    final var result = new String[1];
+    forEachTarEntry(archive, header -> {
+      if (result[0] != null || header.typeFlag == '5' || !header.name.startsWith(normalizedDirectory)) {
+        return;
+      }
+      final var relativeName = header.name.substring(normalizedDirectory.length());
+      if (relativeName.isBlank() || relativeName.contains("/")) {
+        return;
+      }
+      final var fileName = header.name.substring(header.name.lastIndexOf('/') + 1);
+      for (final var mappedName : mappedNames) {
+        if (matchesBundledLibraryFile(fileName, mappedName)) {
+          result[0] = header.name;
+          return;
+        }
+      }
+    });
+    return Optional.ofNullable(result[0]);
+  }
+
+  private static @NotNull Optional<Path> extractJhdf5NativeArchiveDirectory(final @NotNull Path archive,
+                                                                            final @NotNull String archiveDirectory) throws IOException {
+    final var normalizedArchive = archive.toAbsolutePath().normalize();
+    final var normalizedDirectory = normalizeJhdf5ResourceDirectory(archiveDirectory);
+    final var cacheKey = normalizedArchive + "!" + normalizedDirectory;
+    if (extractedJhdf5NativeDirectories.containsKey(cacheKey)) {
+      return Optional.of(extractedJhdf5NativeDirectories.get(cacheKey));
+    }
+
+    final var extractionDirectory = Files.createTempDirectory("hict-jhdf5-native-archive-");
+    extractionDirectory.toFile().deleteOnExit();
+    final var links = new ArrayList<NativeArchiveLink>();
+    final var extractedAny = new boolean[] { false };
+
+    try (var input = new BufferedInputStream(new GZIPInputStream(Files.newInputStream(normalizedArchive)))) {
+      TarHeader pendingHeader;
+      while ((pendingHeader = readTarHeader(input)) != null) {
+        var header = pendingHeader;
+        if (header.typeFlag == 'x') {
+          final var paxAttributes = parsePaxAttributes(readTarEntryPayload(input, header.size));
+          skipTarPadding(input, header.size);
+          final var next = readTarHeader(input);
+          if (next == null) {
+            break;
+          }
+          header = next.withPaxAttributes(paxAttributes);
+        } else if (header.typeFlag == 'L') {
+          final var longName = readNullTerminatedString(readTarEntryPayload(input, header.size));
+          skipTarPadding(input, header.size);
+          final var next = readTarHeader(input);
+          if (next == null) {
+            break;
+          }
+          header = next.withName(longName);
+        } else if (header.typeFlag == 'K') {
+          final var longLinkName = readNullTerminatedString(readTarEntryPayload(input, header.size));
+          skipTarPadding(input, header.size);
+          final var next = readTarHeader(input);
+          if (next == null) {
+            break;
+          }
+          header = next.withLinkName(longLinkName);
+        }
+
+        if (!header.name.startsWith(normalizedDirectory)) {
+          skipTarPayload(input, header.size);
+          continue;
+        }
+        final var relativeEntry = header.name.substring(normalizedDirectory.length());
+        if (relativeEntry.isBlank()) {
+          skipTarPayload(input, header.size);
+          continue;
+        }
+        final var target = extractionDirectory.resolve(relativeEntry).normalize();
+        if (!target.startsWith(extractionDirectory)) {
+          throw new IOException("Refusing to extract native archive entry outside temporary directory: " + header.name);
+        }
+        if (header.typeFlag == '5') {
+          Files.createDirectories(target);
+          target.toFile().deleteOnExit();
+          skipTarPayload(input, header.size);
+        } else if (header.typeFlag == '2' || header.typeFlag == '1') {
+          final var parent = target.getParent();
+          if (parent != null) {
+            Files.createDirectories(parent);
+            parent.toFile().deleteOnExit();
+          }
+          links.add(new NativeArchiveLink(target, header.linkName, header.typeFlag == '1'));
+          skipTarPayload(input, header.size);
+          extractedAny[0] = true;
+        } else if (header.typeFlag == '0' || header.typeFlag == '\0') {
+          final var parent = target.getParent();
+          if (parent != null) {
+            Files.createDirectories(parent);
+            parent.toFile().deleteOnExit();
+          }
+          Files.copy(new BoundedInputStream(input, header.size), target, StandardCopyOption.REPLACE_EXISTING);
+          skipTarPadding(input, header.size);
+          target.toFile().setReadable(true, false);
+          target.toFile().setExecutable(true, false);
+          target.toFile().deleteOnExit();
+          extractedAny[0] = true;
+        } else {
+          skipTarPayload(input, header.size);
+        }
+      }
+    }
+
+    for (final var link : links) {
+      createNativeArchiveLink(extractionDirectory, link);
+    }
+
+    if (!extractedAny[0]) {
+      return Optional.empty();
+    }
+    extractedJhdf5NativeDirectories.put(cacheKey, extractionDirectory);
+    return Optional.of(extractionDirectory);
+  }
+
+  private static void createNativeArchiveLink(final @NotNull Path extractionDirectory,
+                                              final @NotNull NativeArchiveLink link) throws IOException {
+    if (link.linkName == null || link.linkName.isBlank()) {
+      return;
+    }
+    try {
+      Files.deleteIfExists(link.target);
+      if (link.hardLink) {
+        final var hardLinkSource = extractionDirectory.resolve(link.linkName).normalize();
+        if (hardLinkSource.startsWith(extractionDirectory) && Files.isRegularFile(hardLinkSource)) {
+          Files.createLink(link.target, hardLinkSource);
+          link.target.toFile().deleteOnExit();
+        }
+      } else {
+        Files.createSymbolicLink(link.target, Path.of(link.linkName));
+        link.target.toFile().deleteOnExit();
+      }
+    } catch (final UnsupportedOperationException | IOException err) {
+      final var fallbackSource = link.target.getParent().resolve(link.linkName).normalize();
+      if (fallbackSource.startsWith(extractionDirectory) && Files.isRegularFile(fallbackSource)) {
+        Files.copy(fallbackSource, link.target, StandardCopyOption.REPLACE_EXISTING);
+        link.target.toFile().setReadable(true, false);
+        link.target.toFile().setExecutable(true, false);
+        link.target.toFile().deleteOnExit();
+      } else {
+        log.debug("Could not materialize native archive link {} -> {}", link.target, link.linkName, err);
+      }
+    }
+  }
+
+  private static void forEachTarEntry(final @NotNull Path archive, final @NotNull Consumer<TarHeader> consumer) throws IOException {
+    try (var input = new BufferedInputStream(new GZIPInputStream(Files.newInputStream(archive)))) {
+      TarHeader pendingHeader;
+      while ((pendingHeader = readTarHeader(input)) != null) {
+        var header = pendingHeader;
+        if (header.typeFlag == 'x') {
+          final var paxAttributes = parsePaxAttributes(readTarEntryPayload(input, header.size));
+          skipTarPadding(input, header.size);
+          final var next = readTarHeader(input);
+          if (next == null) {
+            break;
+          }
+          header = next.withPaxAttributes(paxAttributes);
+        } else if (header.typeFlag == 'L') {
+          final var longName = readNullTerminatedString(readTarEntryPayload(input, header.size));
+          skipTarPadding(input, header.size);
+          final var next = readTarHeader(input);
+          if (next == null) {
+            break;
+          }
+          header = next.withName(longName);
+        } else if (header.typeFlag == 'K') {
+          final var longLinkName = readNullTerminatedString(readTarEntryPayload(input, header.size));
+          skipTarPadding(input, header.size);
+          final var next = readTarHeader(input);
+          if (next == null) {
+            break;
+          }
+          header = next.withLinkName(longLinkName);
+        }
+        consumer.accept(header);
+        skipTarPayload(input, header.size);
+      }
+    }
+  }
+
+  private static TarHeader readTarHeader(final @NotNull InputStream input) throws IOException {
+    final var header = input.readNBytes(512);
+    if (header.length == 0) {
+      return null;
+    }
+    if (header.length < 512) {
+      throw new IOException("Truncated tar header in JHDF5 native archive");
+    }
+    var allZero = true;
+    for (final byte b : header) {
+      if (b != 0) {
+        allZero = false;
+        break;
+      }
+    }
+    if (allZero) {
+      return null;
+    }
+
+    final var name = tarString(header, 0, 100);
+    final var prefix = tarString(header, 345, 155);
+    final var fullName = prefix.isBlank() ? name : prefix + "/" + name;
+    final var size = tarOctal(header, 124, 12);
+    final var typeFlag = (char) header[156];
+    final var linkName = tarString(header, 157, 100);
+    return new TarHeader(fullName, linkName, size, typeFlag);
+  }
+
+  private static long tarOctal(final byte[] header, final int offset, final int length) {
+    long result = 0L;
+    int index = offset;
+    final int end = offset + length;
+    while (index < end && (header[index] == 0 || header[index] == ' ')) {
+      index++;
+    }
+    while (index < end && header[index] >= '0' && header[index] <= '7') {
+      result = (result << 3) + (header[index] - '0');
+      index++;
+    }
+    return result;
+  }
+
+  private static @NotNull String tarString(final byte[] header, final int offset, final int length) {
+    int end = offset;
+    final int limit = offset + length;
+    while (end < limit && header[end] != 0) {
+      end++;
+    }
+    return new String(header, offset, end - offset).trim();
+  }
+
+  private static byte[] readTarEntryPayload(final @NotNull InputStream input, final long size) throws IOException {
+    if (size > Integer.MAX_VALUE) {
+      throw new IOException("Tar metadata entry is too large: " + size);
+    }
+    return input.readNBytes((int) size);
+  }
+
+  private static void skipTarPayload(final @NotNull InputStream input, final long size) throws IOException {
+    skipFully(input, size);
+    skipTarPadding(input, size);
+  }
+
+  private static void skipTarPadding(final @NotNull InputStream input, final long size) throws IOException {
+    final var padding = (512 - (size % 512)) % 512;
+    skipFully(input, padding);
+  }
+
+  private static void skipFully(final @NotNull InputStream input, final long bytes) throws IOException {
+    var remaining = bytes;
+    while (remaining > 0) {
+      final var skipped = input.skip(remaining);
+      if (skipped > 0) {
+        remaining -= skipped;
+        continue;
+      }
+      if (input.read() < 0) {
+        throw new IOException("Unexpected end of tar archive");
+      }
+      remaining--;
+    }
+  }
+
+  private static @NotNull String readNullTerminatedString(final byte[] bytes) {
+    var length = 0;
+    while (length < bytes.length && bytes[length] != 0) {
+      length++;
+    }
+    return new String(bytes, 0, length).trim();
+  }
+
+  private static @NotNull LinkedHashMap<String, String> parsePaxAttributes(final byte[] bytes) {
+    final var attributes = new LinkedHashMap<String, String>();
+    final var text = new String(bytes);
+    var index = 0;
+    while (index < text.length()) {
+      final var spaceIndex = text.indexOf(' ', index);
+      if (spaceIndex <= index) {
+        break;
+      }
+      final int recordLength;
+      try {
+        recordLength = Integer.parseInt(text.substring(index, spaceIndex));
+      } catch (final NumberFormatException err) {
+        break;
+      }
+      if (recordLength <= 0 || index + recordLength > text.length()) {
+        break;
+      }
+      final var record = text.substring(spaceIndex + 1, index + recordLength);
+      final var equalsIndex = record.indexOf('=');
+      if (equalsIndex > 0) {
+        final var key = record.substring(0, equalsIndex);
+        var value = record.substring(equalsIndex + 1);
+        if (value.endsWith("\n")) {
+          value = value.substring(0, value.length() - 1);
+        }
+        attributes.put(key, value);
+      }
+      index += recordLength;
+    }
+    return attributes;
+  }
+
+
+  private static boolean loadBundledLegacyNativeLibrary(final String libraryBaseName) throws IOException {
+    final var platformDirectories = bundledPlatformDirectories();
+    if (platformDirectories.isEmpty()) {
+      return false;
+    }
+    for (final var platformDirectory : platformDirectories) {
+      for (final var variantDirectory : bundledVariantDirectories()) {
+        if (NativeLibraryUtil.loadNativeLibrary(
+          jniExtractor,
+          libraryBaseName,
+          "resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "/resources/libs/natives/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "/resources/libs/" + platformDirectory + "/" + variantDirectory + "/native/",
+          "resources/libs/natives/" + platformDirectory + "/",
+          "/resources/libs/natives/" + platformDirectory + "/",
+          "resources/libs/" + platformDirectory + "/",
+          "/resources/libs/" + platformDirectory + "/"
+        )) {
+          return true;
+        }
+      }
+      if (NativeLibraryUtil.loadNativeLibrary(
+        jniExtractor,
+        libraryBaseName,
+        "resources/libs/natives/" + platformDirectory + "/",
+        "/resources/libs/natives/" + platformDirectory + "/",
+        "resources/libs/" + platformDirectory + "/",
+        "/resources/libs/" + platformDirectory + "/"
+      )) {
+        return true;
+      }
+    }
+    if (NativeLibraryUtil.loadNativeLibrary(
+      jniExtractor,
+      libraryBaseName,
+      "resources/",
+      "resources/libs/",
+      "resources/libs/natives/",
+      "/resources/",
+      "/resources/libs/",
+      "/resources/libs/natives/"
+    )) {
+      return true;
+    }
+    return false;
+  }
+
+  private static @NotNull List<String> bundledJhdf5PlatformDirectories(final @NotNull String variantDirectory,
+                                                                       final boolean includeDefaultDirectory) {
+    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+    final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+    final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
+    final var isArm64 = arch.equals("aarch64") || arch.equals("arm64");
+    final var isAmd64 = arch.equals("amd64") || arch.equals("x86_64");
+    if (!is64Bit) {
+      return List.of();
+    }
+
+    final var candidateSet = new LinkedHashSet<String>(8);
+    if (os.contains("linux")) {
+      final var linuxBase = isAmd64 ? "amd64-Linux" : "arm64-Linux";
+      if (!variantDirectory.isBlank() && !isGenericVariantDirectory(variantDirectory)) {
+        candidateSet.add(linuxBase + "-" + variantDirectory);
+      }
+      if (includeDefaultDirectory || isGenericVariantDirectory(variantDirectory)) {
+        candidateSet.add(linuxBase);
+      }
+      return new ArrayList<>(candidateSet);
+    }
+    if (os.contains("win")) {
+      if (!variantDirectory.isBlank() && !isGenericVariantDirectory(variantDirectory)) {
+        candidateSet.add("amd64-Windows-" + variantDirectory);
+      }
+      if (includeDefaultDirectory || isGenericVariantDirectory(variantDirectory)) {
+        candidateSet.add("amd64-Windows");
+      }
+      return new ArrayList<>(candidateSet);
+    }
+    if (os.contains("mac") || os.contains("darwin")) {
+      candidateSet.add(isArm64 ? "aarch64-Mac OS X" : "x86_64-Mac OS X");
+      return new ArrayList<>(candidateSet);
+    }
+    return List.of();
+  }
+
+  private static @NotNull List<String> bundledVariantDirectories() {
+    final var variants = new ArrayList<String>(4);
+    final var jhdf5Limit = NativeCpuFeatures.firstNonBlank(
+      System.getProperty("hict.jhdf5.native.variant"),
+      System.getenv("HICT_JHDF5_NATIVE_VARIANT"),
+      NativeCpuFeatures.requestedNativeVariantLimit()
+    );
+    variants.addAll(NativeCpuFeatures.preferredNativeVariantOrder(jhdf5Limit));
+    return variants;
+  }
+
+  private static boolean isGenericVariantDirectory(final @NotNull String variantDirectory) {
+    return variantDirectory.equals("generic") || variantDirectory.equals("sse2");
+  }
+
+  private record NativeArchiveLink(Path target, String linkName, boolean hardLink) {
+  }
+
+  private record TarHeader(String name, String linkName, long size, char typeFlag) {
+    private TarHeader withName(final @NotNull String newName) {
+      return new TarHeader(newName, linkName, size, typeFlag);
+    }
+
+    private TarHeader withLinkName(final @NotNull String newLinkName) {
+      return new TarHeader(name, newLinkName, size, typeFlag);
+    }
+
+    private TarHeader withPaxAttributes(final @NotNull LinkedHashMap<String, String> attributes) {
+      return new TarHeader(
+        attributes.getOrDefault("path", name),
+        attributes.getOrDefault("linkpath", linkName),
+        size,
+        typeFlag
+      );
+    }
+  }
+
+  private static class BoundedInputStream extends InputStream {
+    private final InputStream delegate;
+    private long remaining;
+
+    private BoundedInputStream(final @NotNull InputStream delegate, final long limit) {
+      this.delegate = delegate;
+      this.remaining = limit;
+    }
+
+    @Override
+    public int read() throws IOException {
+      if (remaining <= 0) {
+        return -1;
+      }
+      final var value = delegate.read();
+      if (value >= 0) {
+        remaining--;
+      }
+      return value;
+    }
+
+    @Override
+    public int read(final byte @NotNull [] buffer, final int offset, final int length) throws IOException {
+      if (remaining <= 0) {
+        return -1;
+      }
+      final var limitedLength = (int) Math.min(length, remaining);
+      final var read = delegate.read(buffer, offset, limitedLength);
+      if (read > 0) {
+        remaining -= read;
+      }
+      return read;
+    }
+  }
+
   @RequiredArgsConstructor
   @Getter
   private static class PathCollectingJNIExtractor implements JniExtractor {
@@ -256,5 +1356,29 @@ public class HDF5LibraryInitializer {
     public void extractRegistered() throws IOException {
       this.defaultExtractor.extractRegistered();
     }
+  }
+
+  private static @NotNull List<String> bundledPlatformDirectories() {
+    final var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+    final var arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+    final var is64Bit = arch.contains("64") || arch.equals("amd64") || arch.equals("x86_64");
+    final var isArm64 = arch.equals("aarch64") || arch.equals("arm64");
+    final var isAmd64 = arch.equals("amd64") || arch.equals("x86_64");
+    if (!is64Bit) {
+      return List.of();
+    }
+    if (os.contains("linux")) {
+      return List.of("linux_64");
+    }
+    if (os.contains("win")) {
+      return List.of("windows_64");
+    }
+    if (os.contains("mac") || os.contains("darwin")) {
+      final var isArmBuild = isArm64 && !isAmd64;
+      final var macPlatform = isArmBuild ? "darwin_arm64" : "darwin_x86_64";
+      final var modernPlatform = isArmBuild ? "osx_arm64" : "osx_64";
+      return List.of("macos_64", modernPlatform, macPlatform);
+    }
+    return List.of();
   }
 }

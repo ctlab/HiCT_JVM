@@ -5,6 +5,7 @@ import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +22,7 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 public class HictToMcoolConverter {
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) throws IOException, NoSuchFieldException {
+    HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
     final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8));
     try {
@@ -84,6 +86,7 @@ public class HictToMcoolConverter {
 
     for (final var resolution : selectedResolutions) {
       futures.add(executor.submit(() -> {
+        HDF5LibraryInitializer.initializeHDF5Library();
         final var stagedFile = Files.createTempFile("hict-to-mcool-r" + resolution + "-", ".h5");
         try (final var src = HDF5Factory.openForReading(inputPath.toFile());
              final var dst = HDF5Factory.open(stagedFile.toFile())) {

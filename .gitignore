@@ -14,6 +14,9 @@ local.properties
 .settings/
 .loadpath
 .recommenders
+.cache/
+
+.gradle_local
 
 # External tool builders
 .externalToolBuilders/
@@ -198,3 +201,8 @@ nbdist/
 /src/main/resources/webui/**
 data/**
 start.sh
+
+# Large local/vendor jars
+src/main/resources/libs/sis-jhdf5-19.04.1.jar
+src/main/resources/libs/sis-jhdf5-19.04.1-natives.tar.gz
+src/main/resources/libs/sis-jhdf5-19.04.1-slim.jar

@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_library.nativeprocessing;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -32,10 +33,17 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.PlatformManagedObject;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 @Slf4j
 public final class NativeCpuFeatures {
+  private static final String NATIVE_VARIANT_PROPERTY = "hict.native.variant";
+  private static final String NATIVE_VARIANT_ENV = "HICT_NATIVE_VARIANT";
+  private static volatile boolean hotSpotUseAvxQueried = false;
+  private static volatile @Nullable Integer hotSpotUseAvxLevel = null;
+
   private NativeCpuFeatures() {
   }
 
@@ -96,6 +104,49 @@ public final class NativeCpuFeatures {
     return null;
   }
 
+  public static @NotNull String requestedNativeVariantLimit() {
+    return normalizeNativeVariantLimit(firstNonBlank(
+      System.getProperty(NATIVE_VARIANT_PROPERTY),
+      System.getenv(NATIVE_VARIANT_ENV)
+    ));
+  }
+
+  public static @NotNull String normalizeNativeVariantLimit(final @Nullable String raw) {
+    if (raw == null || raw.isBlank()) {
+      return "auto";
+    }
+    final var normalized = raw.trim().toLowerCase(Locale.ROOT).replace('_', '-');
+    return switch (normalized) {
+      case "", "default", "auto", "best" -> "auto";
+      case "generic", "baseline", "sse2", "x86-64-v2", "x86_64-v2", "x64-v2" -> "generic";
+      case "avx2", "x86-64-v3", "x86_64-v3", "x64-v3" -> "avx2";
+      case "avx512", "avx-512", "x86-64-v4", "x86_64-v4", "x64-v4" -> "avx512";
+      default -> "auto";
+    };
+  }
+
+  public static @NotNull List<String> preferredNativeVariantOrder() {
+    return preferredNativeVariantOrder(requestedNativeVariantLimit());
+  }
+
+  public static @NotNull List<String> preferredNativeVariantOrder(final @Nullable String rawLimit) {
+    final var limit = normalizeNativeVariantLimit(rawLimit);
+    final var result = new ArrayList<String>(3);
+    final var allowAvx512 = limit.equals("auto") || limit.equals("avx512");
+    final var allowAvx2 = allowAvx512 || limit.equals("avx2");
+
+    if (allowAvx512 && supportsAvx512Core()) {
+      result.add("avx512");
+    }
+    if (allowAvx2 && supportsAvx2Core()) {
+      result.add("avx2");
+    }
+    if (supportsSse2Core()) {
+      result.add("generic");
+    }
+    return List.copyOf(result);
+  }
+
   private static boolean supportsAvx512FromHotSpot() {
     final var useAvx = hotSpotUseAvxLevel();
     return useAvx != null && useAvx >= 3;
@@ -107,6 +158,20 @@ public final class NativeCpuFeatures {
   }
 
   private static @Nullable Integer hotSpotUseAvxLevel() {
+    if (hotSpotUseAvxQueried) {
+      return hotSpotUseAvxLevel;
+    }
+    synchronized (NativeCpuFeatures.class) {
+      if (hotSpotUseAvxQueried) {
+        return hotSpotUseAvxLevel;
+      }
+      hotSpotUseAvxLevel = queryHotSpotUseAvxLevel();
+      hotSpotUseAvxQueried = true;
+      return hotSpotUseAvxLevel;
+    }
+  }
+
+  private static @Nullable Integer queryHotSpotUseAvxLevel() {
     try {
       final var beanType = Class
         .forName("com.sun.management.HotSpotDiagnosticMXBean")

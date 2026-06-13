@@ -115,10 +115,38 @@ public class DotplotHandlersHolder extends HandlersHolder {
         response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response))
       );
     });
+
+    router.post("/dotplot/jobs/:jobId/stop").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.UI_UX,
+        null,
+        () -> {
+          final var job = jobs.get(ctx.pathParam("jobId"));
+          if (job == null) {
+            throw new IllegalArgumentException("Dotplot job not found");
+          }
+          job.requestCancel();
+          return Map.of("status", "cancelling", "jobId", job.jobId);
+        },
+        response -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(response))
+      );
+    });
   }
 
   private void runJob(final @NotNull DotplotJob job) {
+    if (job.cancelRequested.get()) {
+      job.status = "cancelled";
+      job.finishedAtMs = Instant.now().toEpochMilli();
+      job.log("Dotplot generation cancelled before start.");
+      return;
+    }
     job.status = "running";
+    job.workerThread = Thread.currentThread();
     job.startedAtMs = Instant.now().toEpochMilli();
     try {
       job.log("Starting integrated dotplot generation for " + job.sourcePath.getFileName());
@@ -185,6 +213,7 @@ public class DotplotHandlersHolder extends HandlersHolder {
       job.log("ERROR: " + job.error);
       log.warn("Dotplot job failed", e);
     } finally {
+      job.workerThread = null;
       job.finishedAtMs = Instant.now().toEpochMilli();
     }
   }
@@ -310,6 +339,7 @@ public class DotplotHandlersHolder extends HandlersHolder {
     private volatile double overallProgress = 0.0d;
     private volatile long startedAtMs = 0L;
     private volatile long finishedAtMs = 0L;
+    private volatile Thread workerThread = null;
     private volatile Process activeProcess = null;
     private final @NotNull AtomicBoolean cancelRequested = new AtomicBoolean(false);
     private final @NotNull CopyOnWriteArrayList<String> toolchainNotices = new CopyOnWriteArrayList<>(
@@ -372,6 +402,26 @@ public class DotplotHandlersHolder extends HandlersHolder {
           // Keep the previous progress value if a malformed diagnostic line reaches the UI.
         }
       }
+    }
+
+    private void requestCancel() {
+      cancelRequested.set(true);
+      if ("queued".equals(status)) {
+        status = "cancelled";
+        currentStageLabel = "Cancellation requested";
+        finishedAtMs = Instant.now().toEpochMilli();
+      } else if ("running".equals(status)) {
+        currentStageLabel = "Cancelling";
+      }
+      final var process = activeProcess;
+      if (process != null) {
+        process.destroyForcibly();
+      }
+      final var thread = workerThread;
+      if (thread != null) {
+        thread.interrupt();
+      }
+      log("Cancellation requested.");
     }
 
     private ConversionJobDTO toDto() {
