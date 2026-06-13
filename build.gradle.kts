@@ -270,7 +270,7 @@ val useMavenJhdf5 = jhdf5SourceMode in setOf("maven", "maven-central", "publishe
     ?.let { it == "1" || it.equals("true", ignoreCase = true) || it.equals("yes", ignoreCase = true) }
     ?: false
 val bundledJhdf5JarName = envOrProjectProperty("HICT_JHDF5_JAR_NAME")
-  ?: "sis-jhdf5-19.04.1.jar"
+  ?: "sis-jhdf5-19.04.1-slim.jar"
 val bundledJhdf5FallbackJarName = envOrProjectProperty("HICT_JHDF5_FALLBACK_JAR_NAME")
   ?: "sis-jhdf5-19.04.1.jar"
 val bundledJhdf5DefaultLocalJarPath = "src/main/resources/libs/$bundledJhdf5JarName"
@@ -320,10 +320,10 @@ fun downloadedJhdf5JarFile(): File? {
   if (useMavenJhdf5 || jhdf5SourceMode == "local") {
     return null
   }
-  val target = layout.buildDirectory.file("jhdf5/$bundledJhdf5JarName").get().asFile
+  val target = file(".gradle/jhdf5/$bundledJhdf5JarName")
   downloadFile(bundledJhdf5DownloadUrl, target, "bundled JHDF5 jar")?.let { return it }
   if (bundledJhdf5FallbackJarName != bundledJhdf5JarName) {
-    val fallbackTarget = layout.buildDirectory.file("jhdf5/$bundledJhdf5FallbackJarName").get().asFile
+    val fallbackTarget = file(".gradle/jhdf5/$bundledJhdf5FallbackJarName")
     return downloadFile(bundledJhdf5FallbackDownloadUrl, fallbackTarget, "fallback bundled JHDF5 jar")
   }
   return null
@@ -343,7 +343,7 @@ fun downloadedJhdf5NativesArchiveFile(): File? {
   if (useMavenJhdf5 || jhdf5SourceMode == "local" || !preferBundledJhdf5NativesArchive) {
     return null
   }
-  val target = layout.buildDirectory.file("jhdf5/$bundledJhdf5NativesArchiveName").get().asFile
+  val target = file(".gradle/jhdf5/$bundledJhdf5NativesArchiveName")
   return downloadFile(bundledJhdf5NativesArchiveDownloadUrl, target, "bundled JHDF5 native archive")
 }
 
@@ -1060,6 +1060,14 @@ tasks.named<ProcessResources>("processResources") {
   )
   from(nativeProcessingResourceRoot) {
     into("")
+  }
+  from(provider {
+    bundledJhdf5NativesArchiveFile()
+      ?.takeIf { it.isFile }
+      ?.let { listOf(it) }
+      ?: emptyList<File>()
+  }) {
+    into("libs")
   }
 
   // The custom JHDF5 snapshot jar stores macOS natives under the original

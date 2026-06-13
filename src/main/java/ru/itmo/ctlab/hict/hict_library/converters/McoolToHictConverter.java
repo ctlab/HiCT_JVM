@@ -11,6 +11,7 @@ import ch.systemsx.cisd.hdf5.IHDF5Writer;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
 import ru.itmo.ctlab.hict.hict_library.assembly.AssemblyLayoutConverter;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
@@ -60,6 +61,7 @@ public class McoolToHictConverter {
   private static final int DENSE_THRESHOLD = (SUBMATRIX_SIZE * SUBMATRIX_SIZE) / 2;
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+    HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
     try (final var src = HDF5Factory.openForReading(options.inputPath().toFile())) {
       final var selectedResolutions = resolveResolutions(src, options.resolutions());
@@ -424,6 +426,7 @@ public class McoolToHictConverter {
     final ExecutorService stripeExecutor = Executors.newFixedThreadPool(stripeWorkers);
     final var readers = java.util.Collections.synchronizedList(new ArrayList<IHDF5Reader>());
     final ThreadLocal<IHDF5Reader> readerHolder = ThreadLocal.withInitial(() -> {
+      HDF5LibraryInitializer.initializeHDF5Library();
       final IHDF5Reader reader = HDF5Factory.openForReading(inputPath.toFile());
       readers.add(reader);
       return reader;
@@ -677,6 +680,7 @@ public class McoolToHictConverter {
     final ExecutorService stripeExecutor = stripeWorkers > 1 ? Executors.newFixedThreadPool(stripeWorkers) : null;
     final var readers = java.util.Collections.synchronizedList(new ArrayList<IHDF5Reader>());
     final ThreadLocal<IHDF5Reader> readerHolder = ThreadLocal.withInitial(() -> {
+      HDF5LibraryInitializer.initializeHDF5Library();
       final IHDF5Reader reader = HDF5Factory.openForReading(inputPath.toFile());
       readers.add(reader);
       return reader;

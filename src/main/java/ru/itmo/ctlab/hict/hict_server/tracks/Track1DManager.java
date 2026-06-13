@@ -42,6 +42,7 @@ import org.broad.igv.bbfile.WigItem;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
@@ -1306,6 +1307,7 @@ public class Track1DManager {
     final var groupPath = precomputeGroupPath(bpResolution, modeKey, assemblySignature);
     final var valuesPath = groupPath + "/values";
     final var supportPath = groupPath + "/support";
+    HDF5LibraryInitializer.initializeHDF5Library();
     try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
       if (!sidecarMetadataMatches(reader, cacheContext)) {
         return Optional.empty();
@@ -1342,6 +1344,7 @@ public class Track1DManager {
         1,
         Math.min(PRECOMPUTE_DATASET_CHUNK_SIZE, Math.max(series.values().length, series.support().length))
       );
+      HDF5LibraryInitializer.initializeHDF5Library();
       try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
         writePrecomputeMetadata(writer, cacheContext);
         ensureGroupPath(writer, groupPath);
@@ -1388,6 +1391,7 @@ public class Track1DManager {
                                              final @NotNull PrecomputeCacheContext cacheContext) {
     try {
       Files.createDirectories(sidecarPath.getParent());
+      HDF5LibraryInitializer.initializeHDF5Library();
       try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
         writePrecomputeMetadata(writer, cacheContext);
       }
@@ -1447,6 +1451,7 @@ public class Track1DManager {
     if (!Files.exists(sidecarPath) || !Files.isRegularFile(sidecarPath)) {
       return false;
     }
+    HDF5LibraryInitializer.initializeHDF5Library();
     try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
       return sidecarMetadataMatches(reader, cacheContext);
     } catch (final Exception e) {

@@ -50,6 +50,7 @@ public class HDF5FileDatasetsBundle implements AutoCloseable {
   public HDF5FileDatasetsBundle(final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull ChunkedFile chunkedFile) {
     this.chunkedFile = chunkedFile;
     final var resolution = this.chunkedFile.getResolutions()[resolutionDescriptor.getResolutionOrderInArray()];
+    HDF5LibraryInitializer.initializeHDF5Library();
     this.reader = HDF5Factory.openForReading(this.chunkedFile.getHdfFilePath().toFile());
     this.blockLengthDataSet = reader.object().openDataSet(getBlockLengthDatasetPath(resolution));
     this.blockOffsetDataSet = reader.object().openDataSet(getBlockOffsetDatasetPath(resolution));

@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo="${HICT_JHDF5_REPO:-AxisAlexNT/jhdf5-with-plugins-configuration-snapshot}"
 ref="${HICT_JHDF5_REF:-${GITHUB_REF_NAME:-jhdf5-with-plugins-configuration-snapshot}}"
-jar_name="${HICT_JHDF5_JAR_NAME:-sis-jhdf5-19.04.1.jar}"
+jar_name="${HICT_JHDF5_JAR_NAME:-sis-jhdf5-19.04.1-slim.jar}"
 out="${HICT_JHDF5_LOCAL_JAR:-src/main/resources/libs/${jar_name}}"
 natives_archive_name="${HICT_JHDF5_NATIVES_ARCHIVE_NAME:-sis-jhdf5-19.04.1-natives.tar.gz}"
 natives_archive_out="${HICT_JHDF5_NATIVES_ARCHIVE:-src/main/resources/libs/${natives_archive_name}}"

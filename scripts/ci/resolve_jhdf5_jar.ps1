@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $repo = if ($env:HICT_JHDF5_REPO) { $env:HICT_JHDF5_REPO } else { 'AxisAlexNT/jhdf5-with-plugins-configuration-snapshot' }
 $ref = if ($env:HICT_JHDF5_REF) { $env:HICT_JHDF5_REF } elseif ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { 'jhdf5-with-plugins-configuration-snapshot' }
-$jarName = if ($env:HICT_JHDF5_JAR_NAME) { $env:HICT_JHDF5_JAR_NAME } else { 'sis-jhdf5-19.04.1.jar' }
+$jarName = if ($env:HICT_JHDF5_JAR_NAME) { $env:HICT_JHDF5_JAR_NAME } else { 'sis-jhdf5-19.04.1-slim.jar' }
 $out = if ($env:HICT_JHDF5_LOCAL_JAR) { $env:HICT_JHDF5_LOCAL_JAR } else { Join-Path 'src/main/resources/libs' $jarName }
 $nativesArchiveName = if ($env:HICT_JHDF5_NATIVES_ARCHIVE_NAME) { $env:HICT_JHDF5_NATIVES_ARCHIVE_NAME } else { 'sis-jhdf5-19.04.1-natives.tar.gz' }
 $nativesArchiveOut = if ($env:HICT_JHDF5_NATIVES_ARCHIVE) { $env:HICT_JHDF5_NATIVES_ARCHIVE } else { Join-Path 'src/main/resources/libs' $nativesArchiveName }
