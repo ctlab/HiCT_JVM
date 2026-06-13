@@ -50,6 +50,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
+import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
@@ -65,8 +66,10 @@ import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Image;
 import java.awt.Insets;
 import java.awt.Rectangle;
+import java.awt.Taskbar;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
@@ -309,6 +312,7 @@ public final class HictLauncherGui {
       configureLookAndFeel();
 
       this.frame = new JFrame("HiCT Launcher");
+      applyWindowIcons(this.frame);
       this.frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
       this.frame.setMinimumSize(this.uiScale.windowMinimumSize());
       this.frame.setPreferredSize(this.uiScale.windowPreferredSize());
@@ -1122,6 +1126,45 @@ public final class HictLauncherGui {
       }
     }
 
+    private void applyWindowIcons(final JFrame targetFrame) {
+      final var icons = loadApplicationIcons();
+      if (icons.isEmpty()) {
+        return;
+      }
+      targetFrame.setIconImages(icons);
+      try {
+        if (Taskbar.isTaskbarSupported()) {
+          Taskbar.getTaskbar().setIconImage(icons.get(icons.size() - 1));
+        }
+      } catch (final UnsupportedOperationException | SecurityException ignored) {
+        // Some desktops expose no taskbar/dock icon API to Java.
+      }
+    }
+
+    private List<Image> loadApplicationIcons() {
+      final var icons = new ArrayList<Image>();
+      for (final var resource : List.of(
+        "/icons/hict-icon-16.png",
+        "/icons/hict-icon-32.png",
+        "/icons/hict-icon-64.png",
+        "/icons/hict-icon-128.png",
+        "/icons/hict-icon-256.png"
+      )) {
+        try (var stream = HictLauncherGui.class.getResourceAsStream(resource)) {
+          if (stream == null) {
+            continue;
+          }
+          final var image = ImageIO.read(stream);
+          if (image != null) {
+            icons.add(image);
+          }
+        } catch (final IOException ignored) {
+          // Icon loading must never prevent the launcher from starting.
+        }
+      }
+      return List.copyOf(icons);
+    }
+
     private void putIfNotBlank(final Map<String, String> env, final String key, final String value) {
       if (value != null && !value.isBlank()) {
         env.put(key, value.trim());
@@ -1747,6 +1790,7 @@ public final class HictLauncherGui {
       try (var in = Files.newInputStream(configPath)) {
         this.settings.load(in);
         migrateSettingsForCurrentVersion(configPath);
+        sanitizeSettingsForCurrentPackage(configPath);
       } catch (final IOException ex) {
         appendLogEarly("Could not load launcher settings from " + configPath + ": " + ex.getMessage());
       }
@@ -1821,6 +1865,39 @@ public final class HictLauncherGui {
       } catch (final IOException ex) {
         appendLogEarly("Could not persist launcher settings migration to " + configPath + ": " + ex.getMessage());
       }
+    }
+
+    private void sanitizeSettingsForCurrentPackage(final Path configPath) {
+      final var resetKeys = new ArrayList<String>();
+      for (final var key : VERSION_SCOPED_SETTING_KEYS) {
+        final var value = this.settings.getProperty(key);
+        if (value == null || value.isBlank()) {
+          continue;
+        }
+        final var effective = effectiveManagedPathValue(key, value);
+        if (!Objects.equals(value.trim(), effective.trim())) {
+          this.settings.remove(key);
+          resetKeys.add(key);
+        }
+      }
+      for (final var key : TOOLCHAIN_EXECUTABLE_SETTING_KEYS) {
+        final var value = this.settings.getProperty(key);
+        if (value == null || value.isBlank()) {
+          continue;
+        }
+        if (effectiveExternalExecutableValue(value).isBlank()) {
+          this.settings.remove(key);
+          resetKeys.add(key);
+        }
+      }
+      if (resetKeys.isEmpty()) {
+        return;
+      }
+      this.settingsMigrationNotice = "Launcher settings contained stale paths from an older HiCT package. "
+        + "The current bundled paths will be used instead: "
+        + String.join(", ", resetKeys)
+        + ".";
+      persistSettingsMigration(configPath);
     }
 
     private boolean settingsFileMatches(final Path configPath) {
