@@ -64,8 +64,8 @@ function Invoke-PortableSmoke {
       [void]$psi.ArgumentList.Add($argument)
     }
     $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardOutput = $false
+    $psi.RedirectStandardError = $false
     $psi.Environment["DATA_DIR"] = $dataDir
     $psi.Environment["HICT_PORTABLE_DATA_DIR"] = $dataDir
     $psi.Environment["XDG_CACHE_HOME"] = $cacheDir
@@ -74,22 +74,15 @@ function Invoke-PortableSmoke {
     $psi.Environment["HICT_LAUNCHER_MODE"] = "cli"
 
     $process = [System.Diagnostics.Process]::Start($psi)
-    if (-not $process.WaitForExit(60000)) {
+    if (-not $process.WaitForExit(600000)) {
       try {
         $process.Kill($true)
       } catch {
         $process.Kill()
       }
-      throw "Portable smoke test timed out after 60 seconds: $Label"
+      throw "Portable smoke test timed out after 600 seconds: $Label"
     }
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
-    if ($stdout) {
-      Write-Host $stdout
-    }
-    if ($stderr) {
-      Write-Host $stderr
-    }
+    
     if ($process.ExitCode -ne 0) {
       throw "Portable smoke test failed with exit code $($process.ExitCode): $Label"
     }

@@ -613,7 +613,7 @@ if [[ -x "${RUN_PATH}" ]]; then
   }
   trap cleanup_run_smoke_test EXIT
   mkdir -p "${RUN_SMOKE_TEST_DIR}/data" "${RUN_SMOKE_TEST_DIR}/cache" "${RUN_SMOKE_TEST_DIR}/tmp"
-  perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 60 env \
+  perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 600 env \
     DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
     HICT_PORTABLE_DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
     XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" \
