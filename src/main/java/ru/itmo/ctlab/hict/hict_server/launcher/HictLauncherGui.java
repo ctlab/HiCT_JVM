@@ -191,6 +191,14 @@ public final class HictLauncherGui {
       "WEBUI_ROOT",
       "HICT_TOOLCHAIN_DIR"
     );
+    private static final Set<String> TOOLCHAIN_EXECUTABLE_SETTING_KEYS = Set.of(
+      "HICT_HICTK_BIN",
+      "HICT_MINIMAP2_BIN",
+      "HICT_MM2PLUS_AVX2_BIN",
+      "HICT_MM2PLUS_AVX512_BIN",
+      "HICT_COOLER_BIN",
+      "HICT_PYTHON_BIN"
+    );
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
       new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY),
@@ -1004,7 +1012,7 @@ public final class HictLauncherGui {
         if ("DATA_DIR".equals(spec.key()) || "HICT_JAVA_OPTS".equals(spec.key())) {
           continue;
         }
-        putIfNotBlank(env, spec.key(), getFieldValue(spec.key()));
+        putIfNotBlank(env, spec.key(), effectiveConfigValueForEnvironment(spec.key()));
       }
       env.put("SERVE_WEBUI", "true");
       env.put("AUTO_OPEN_BROWSER", "false");
@@ -1044,6 +1052,73 @@ public final class HictLauncherGui {
       }
       if (!this.browserBundles.isEmpty()) {
         env.put("HICT_BROWSER_DIR", this.browserPayloadRoot.toString());
+      }
+    }
+
+    private String effectiveConfigValueForEnvironment(final String key) {
+      final var value = getFieldValue(key);
+      if (isManagedVersionScopedSetting(key)) {
+        return effectiveManagedPathValue(key, value);
+      }
+      if (TOOLCHAIN_EXECUTABLE_SETTING_KEYS.contains(key)) {
+        return effectiveExternalExecutableValue(value);
+      }
+      return value;
+    }
+
+    private String effectiveManagedPathValue(final String key, final String rawValue) {
+      final var managed = managedDefaultValue(key);
+      if (managed.isBlank()) {
+        return rawValue;
+      }
+      if (rawValue == null || rawValue.isBlank()) {
+        return managed;
+      }
+      final var configured = safeNormalizePath(rawValue);
+      if (configured == null) {
+        return managed;
+      }
+      final var managedPath = safeNormalizePath(managed);
+      if (managedPath != null && configured.equals(managedPath)) {
+        return managed;
+      }
+      if (isStalePortableManagedPath(configured) || !isUsableManagedPath(key, configured)) {
+        return managed;
+      }
+      return rawValue;
+    }
+
+    private String effectiveExternalExecutableValue(final String rawValue) {
+      if (rawValue == null || rawValue.isBlank()) {
+        return "";
+      }
+      final var configured = safeNormalizePath(rawValue);
+      if (configured == null || isStalePortableManagedPath(configured) || !Files.isRegularFile(configured)) {
+        return "";
+      }
+      return rawValue;
+    }
+
+    private boolean isUsableManagedPath(final String key, final Path path) {
+      return switch (key) {
+        case "WEBUI_ROOT" -> Files.isRegularFile(path.resolve("index.html"));
+        case "HICT_TOOLCHAIN_DIR" -> Files.isRegularFile(path.resolve("manifest.json"));
+        default -> true;
+      };
+    }
+
+    private boolean isStalePortableManagedPath(final Path path) {
+      final var normalized = path.toString().replace('\\', '/');
+      return normalized.contains("/HiCT.portable/")
+        || normalized.contains("/hict-toolchains/")
+        || normalized.contains("/.mount_HiCT-");
+    }
+
+    private Path safeNormalizePath(final String rawValue) {
+      try {
+        return normalizePath(rawValue);
+      } catch (final RuntimeException ignored) {
+        return null;
       }
     }
 

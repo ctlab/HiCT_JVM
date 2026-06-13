@@ -180,6 +180,10 @@ public final class ExternalToolchainManager {
       final var resourcePath = BUNDLED_ROOT + "/" + platform + "/" + relative;
       try (final InputStream fileStream = ExternalToolchainManager.class.getResourceAsStream(resourcePath)) {
         if (fileStream == null) {
+          if (isOptionalBundledMetadata(relative)) {
+            log.debug("Optional bundled toolchain metadata resource {} is missing; continuing with executable payload extraction.", resourcePath);
+            continue;
+          }
           throw new IOException("Missing bundled resource " + resourcePath);
         }
         Files.copy(fileStream, target, StandardCopyOption.REPLACE_EXISTING);
@@ -189,6 +193,14 @@ public final class ExternalToolchainManager {
       }
     }
     return extractionRoot;
+  }
+
+  private static boolean isOptionalBundledMetadata(final @NotNull String relative) {
+    final var normalized = relative.replace('\\', '/');
+    return normalized.startsWith("share/licenses/")
+      || normalized.startsWith("share/doc/")
+      || normalized.startsWith("share/citations/")
+      || normalized.startsWith("share/notices/");
   }
 
   private @NotNull ResolvedToolchain resolveFromDirectory(final @NotNull String platform,
