@@ -33,9 +33,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 public final class AssemblyLayoutConverter {
@@ -95,22 +97,89 @@ public final class AssemblyLayoutConverter {
     if (lines.isEmpty()) {
       throw new IOException("Juicebox assembly file is empty");
     }
-    if ((lines.size() & 1) != 0) {
-      throw new IOException("Juicebox assembly file must contain an even number of non-empty lines");
+    int contigCount = 0;
+    while (contigCount < lines.size() && lines.get(contigCount).startsWith(">")) {
+      ++contigCount;
+    }
+    if (contigCount == 0) {
+      throw new IOException("Juicebox assembly file contains no contig headers");
+    }
+    if (contigCount == lines.size()) {
+      throw new IOException("Juicebox assembly file contains no scaffold layout lines");
     }
 
-    final int contigCount = lines.size() / 2;
-    final List<JuiceboxAssemblyContig> contigs = new ArrayList<>(contigCount);
+    final List<JuiceboxAssemblyContigHeader> headers = new ArrayList<>(contigCount);
+    final Map<Long, JuiceboxAssemblyContigHeader> headersById = new LinkedHashMap<>();
+    long sourceStartBp0 = 0L;
     for (int i = 0; i < contigCount; i++) {
-      final var header = parseContigHeader(lines.get(i), i + 1);
-      final long scaffoldId = parseLongLine(lines.get(contigCount + i), i + 1);
-      contigs.add(new JuiceboxAssemblyContig(
-        i + 1,
-        header.contigName(),
-        header.lengthBp(),
-        scaffoldId,
-        inferOrientation(header.contigName())
-      ));
+      final var header = parseContigHeader(lines.get(i), i + 1, sourceStartBp0);
+      if (headersById.put(header.contigId(), header) != null) {
+        throw new IOException("Duplicate Juicebox assembly contig id " + header.contigId() + " at line " + (i + 1));
+      }
+      headers.add(header);
+      sourceStartBp0 += header.lengthBp();
+    }
+
+    final var layoutLines = lines.subList(contigCount, lines.size());
+    for (int i = 0; i < layoutLines.size(); i++) {
+      if (layoutLines.get(i).startsWith(">")) {
+        throw new IOException("Juicebox assembly contig header found after scaffold layout at line " + (contigCount + i + 1));
+      }
+    }
+
+    final List<JuiceboxAssemblyContig> contigs = new ArrayList<>(contigCount);
+    if (isLegacyPerContigScaffoldLayout(layoutLines, contigCount)) {
+      for (int i = 0; i < contigCount; i++) {
+        final var header = headers.get(i);
+        final long scaffoldId = parseSingleLongToken(layoutLines.get(i), contigCount + i + 1, "scaffold id");
+        contigs.add(new JuiceboxAssemblyContig(
+          i + 1,
+          header.contigName(),
+          header.lengthBp(),
+          header.sourceStartBp0(),
+          scaffoldId,
+          header.orientation()
+        ));
+      }
+      return contigs;
+    }
+
+    final Set<Long> emittedContigIds = new HashSet<>();
+    for (int scaffoldLineIndex = 0; scaffoldLineIndex < layoutLines.size(); scaffoldLineIndex++) {
+      final var line = layoutLines.get(scaffoldLineIndex);
+      final int lineNumber = contigCount + scaffoldLineIndex + 1;
+      final String[] tokens = line.split("\\s+");
+      if (tokens.length == 0) {
+        continue;
+      }
+      final long scaffoldId = scaffoldLineIndex + 1L;
+      for (final var token : tokens) {
+        final long signedContigId = parseLongToken(token, lineNumber, "contig id");
+        final long contigId = Math.abs(signedContigId);
+        final var header = headersById.get(contigId);
+        if (header == null) {
+          throw new IOException("Unknown Juicebox assembly contig id " + contigId + " at line " + lineNumber);
+        }
+        if (!emittedContigIds.add(contigId)) {
+          throw new IOException("Duplicate Juicebox assembly contig id " + contigId + " in scaffold layout at line " + lineNumber);
+        }
+        contigs.add(new JuiceboxAssemblyContig(
+          contigs.size() + 1,
+          header.contigName(),
+          header.lengthBp(),
+          header.sourceStartBp0(),
+          scaffoldId,
+          applyLayoutSign(header.orientation(), signedContigId < 0L)
+        ));
+      }
+    }
+
+    if (emittedContigIds.size() != headers.size()) {
+      for (final var header : headers) {
+        if (!emittedContigIds.contains(header.contigId())) {
+          throw new IOException("Juicebox assembly scaffold layout does not place contig id " + header.contigId() + " (" + header.contigName() + ")");
+        }
+      }
     }
     return contigs;
   }
@@ -149,19 +218,62 @@ public final class AssemblyLayoutConverter {
     return filename.toLowerCase().endsWith(".assembly");
   }
 
-  private static @NotNull JuiceboxAssemblyContigHeader parseContigHeader(final @NotNull String line, final int lineNumber) throws IOException {
+  private static @NotNull JuiceboxAssemblyContigHeader parseContigHeader(final @NotNull String line,
+                                                                         final int lineNumber,
+                                                                         final long sourceStartBp0) throws IOException {
     final var matcher = JUICEBOX_CONTIG_HEADER.matcher(line);
     if (!matcher.matches()) {
       throw new IOException("Invalid Juicebox assembly contig header at line " + lineNumber + ": " + line);
     }
-    return new JuiceboxAssemblyContigHeader(matcher.group(1), Long.parseLong(matcher.group(3)));
+    final var contigName = matcher.group(1);
+    return new JuiceboxAssemblyContigHeader(
+      Long.parseLong(matcher.group(2)),
+      contigName,
+      Long.parseLong(matcher.group(3)),
+      sourceStartBp0,
+      inferOrientation(contigName)
+    );
   }
 
-  private static long parseLongLine(final @NotNull String line, final int lineNumber) throws IOException {
+  private static boolean isLegacyPerContigScaffoldLayout(final @NotNull List<String> layoutLines, final int contigCount) {
+    if (layoutLines.size() != contigCount) {
+      return false;
+    }
+    final Set<Long> values = new HashSet<>();
+    for (int i = 0; i < layoutLines.size(); i++) {
+      final var tokens = layoutLines.get(i).split("\\s+");
+      if (tokens.length != 1) {
+        return false;
+      }
+      try {
+        final long value = Long.parseLong(tokens[0]);
+        if (value < 1L || value > contigCount || !values.add(value)) {
+          return true;
+        }
+      } catch (NumberFormatException e) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  private static long parseSingleLongToken(final @NotNull String line,
+                                           final int lineNumber,
+                                           final @NotNull String description) throws IOException {
+    final var tokens = line.split("\\s+");
+    if (tokens.length != 1) {
+      throw new IOException("Expected one Juicebox assembly " + description + " at line " + lineNumber + ": " + line);
+    }
+    return parseLongToken(tokens[0], lineNumber, description);
+  }
+
+  private static long parseLongToken(final @NotNull String token,
+                                     final int lineNumber,
+                                     final @NotNull String description) throws IOException {
     try {
-      return Long.parseLong(line);
+      return Long.parseLong(token);
     } catch (NumberFormatException e) {
-      throw new IOException("Invalid Juicebox assembly scaffold id at line " + lineNumber + ": " + line, e);
+      throw new IOException("Invalid Juicebox assembly " + description + " at line " + lineNumber + ": " + token, e);
     }
   }
 
@@ -173,15 +285,36 @@ public final class AssemblyLayoutConverter {
     return AGPProcessor.AGPContigOrientation.PLUS;
   }
 
+  private static @NotNull AGPProcessor.AGPContigOrientation applyLayoutSign(
+    final @NotNull AGPProcessor.AGPContigOrientation orientation,
+    final boolean reverse
+  ) {
+    if (!reverse) {
+      return orientation;
+    }
+    return switch (orientation) {
+      case PLUS -> AGPProcessor.AGPContigOrientation.MINUS;
+      case MINUS -> AGPProcessor.AGPContigOrientation.PLUS;
+      case UNKNOWN, IRRELEVANT -> orientation;
+    };
+  }
+
   public record JuiceboxAssemblyContig(
     int index,
     @NotNull String contigName,
     long lengthBp,
+    long sourceStartBp0,
     long scaffoldId,
     @NotNull AGPProcessor.AGPContigOrientation orientation
   ) {
   }
 
-  private record JuiceboxAssemblyContigHeader(@NotNull String contigName, long lengthBp) {
+  private record JuiceboxAssemblyContigHeader(
+    long contigId,
+    @NotNull String contigName,
+    long lengthBp,
+    long sourceStartBp0,
+    @NotNull AGPProcessor.AGPContigOrientation orientation
+  ) {
   }
 }
