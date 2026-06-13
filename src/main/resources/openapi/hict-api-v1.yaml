@@ -1299,6 +1299,20 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/GenericMap' }
+  /dotplot/jobs/{jobId}/stop:
+    post:
+      tags: [Conversion]
+      summary: Request dotplot job cancellation
+      operationId: stopDotplotJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      requestBody: { $ref: '#/components/requestBodies/EmptyBody' }
+      responses:
+        '200':
+          description: Stop status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
   /convert/download/{jobId}:
     get:
       tags: [Conversion]

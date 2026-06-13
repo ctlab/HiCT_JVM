@@ -98,6 +98,7 @@ Typically:
 | `POST` | `/convert/jobs/list` | List all conversion jobs |
 | `GET` | `/convert/jobs/:jobId` | Get single job status |
 | `POST` | `/convert/jobs/:jobId/stop` | Cancel running job |
+| `POST` | `/dotplot/jobs/:jobId/stop` | Cancel running dotplot job |
 | `GET` | `/convert/download/:jobId` | Download completed conversion output |
 
 `/convert/jobs` and `/convert/jobs/batch` support `overwrite` boolean.
