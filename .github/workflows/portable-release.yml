@@ -1291,7 +1291,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_arm64
-          key: tauri-darwin-arm64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh') }}
+          key: tauri-darwin-arm64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
             tauri-darwin-arm64-${{ env.HICT_WEBUI_REF }}-
             tauri-darwin-arm64-
@@ -1514,7 +1514,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_x86_64
-          key: tauri-darwin-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh') }}
+          key: tauri-darwin-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
             tauri-darwin-x86_64-${{ env.HICT_WEBUI_REF }}-
             tauri-darwin-x86_64-

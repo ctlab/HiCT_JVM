@@ -109,4 +109,7 @@ echo "[tauri-browser] Writing payload to: ${OUTPUT_DIR}"
   npm run build:web
 )
 
-node "${WEBUI_DIR}/scripts/build-tauri-browser-payload.mjs" --platform "${PLATFORM}" --output "${OUTPUT_DIR}"
+node "${PROJECT_DIR}/scripts/portable/build_tauri_browser_payload.mjs" \
+  --webui-dir "${WEBUI_DIR}" \
+  --platform "${PLATFORM}" \
+  --output "${OUTPUT_DIR}"
