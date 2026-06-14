@@ -41,7 +41,7 @@ import java.util.List;
 import java.util.Locale;
 
 public final class MatrixConversionCacheManager {
-  private static final String CACHE_VERSION = "1";
+  private static final String CACHE_VERSION = "2";
 
   private final @NotNull Path dataDirectory;
   private final @NotNull Path processedDirectory;
@@ -81,7 +81,7 @@ public final class MatrixConversionCacheManager {
         null
       );
     }
-    if (!(ConversionDirection.isCoolerFilename(lowered) || ConversionDirection.isHicFilename(lowered))) {
+    if (!(ConversionDirection.isCoolerFilename(lowered) || ConversionDirection.isHicFilename(lowered) || ConversionDirection.isHictkLoadFilename(lowered))) {
       warnings.add("Unsupported matrix source type for cache resolution.");
       return new MatrixOpenResolution(
         relativeFilename,
@@ -140,6 +140,8 @@ public final class MatrixConversionCacheManager {
     final var metadata = readMetadata(metadataPath);
     final var currentSourceFingerprint = this.fingerprintService.fingerprint(sourcePath);
     final var sourceCurrent = metadata.sourceFingerprint().matches(currentSourceFingerprint);
+    final var currentDependencyFingerprints = fingerprintDependencies(sourcePath, direction);
+    final var dependenciesCurrent = metadata.dependenciesMatch(currentDependencyFingerprints);
     final boolean outputCurrent;
     final FileFingerprint currentOutputFingerprint;
     if (outputExists) {
@@ -150,7 +152,7 @@ public final class MatrixConversionCacheManager {
       outputCurrent = false;
     }
 
-    if (sourceCurrent && outputCurrent) {
+    if (sourceCurrent && dependenciesCurrent && outputCurrent) {
       return new MatrixOpenResolution(
         relativeFilename,
         kindForFilename(relativeFilename),
@@ -168,6 +170,9 @@ public final class MatrixConversionCacheManager {
 
     if (!sourceCurrent) {
       warnings.add("Source file changed since the last conversion. A fresh conversion is required.");
+    }
+    if (!dependenciesCurrent) {
+      warnings.add("One or more conversion sidecar files changed or were added/removed. A fresh conversion is required.");
     }
     if (!outputCurrent) {
       warnings.add("Converted output changed since the cache metadata was written. Re-convert to ensure consistency.");
@@ -190,11 +195,19 @@ public final class MatrixConversionCacheManager {
   public void recordSuccessfulConversion(final @NotNull Path sourcePath,
                                          final @NotNull Path outputPath,
                                          final @NotNull ConversionDirection direction) {
+    recordSuccessfulConversion(sourcePath, outputPath, direction, List.of());
+  }
+
+  public void recordSuccessfulConversion(final @NotNull Path sourcePath,
+                                         final @NotNull Path outputPath,
+                                         final @NotNull ConversionDirection direction,
+                                         final @NotNull List<Path> dependencyPaths) {
     final var absoluteSource = sourcePath.normalize().toAbsolutePath();
     final var absoluteOutput = outputPath.normalize().toAbsolutePath();
     if (!absoluteSource.startsWith(this.dataDirectory) || !absoluteOutput.startsWith(this.dataDirectory)) {
       return;
     }
+    final var dependencies = fingerprintDependencies(absoluteSource, direction, dependencyPaths);
     final var metadata = new MatrixConversionMetadata(
       CACHE_VERSION,
       relativizeToDataDirectory(absoluteSource),
@@ -202,6 +215,7 @@ public final class MatrixConversionCacheManager {
       direction.wireName(),
       this.fingerprintService.fingerprint(absoluteSource),
       this.fingerprintService.fingerprint(absoluteOutput),
+      dependencies,
       System.currentTimeMillis()
     );
     final var metadataPath = metadataPath(absoluteSource, direction);
@@ -253,7 +267,86 @@ public final class MatrixConversionCacheManager {
     if (ConversionDirection.isHicFilename(filename)) {
       return "HIC";
     }
+    if (ConversionDirection.isHicProMatrixFilename(filename)) {
+      return "HIC_PRO_MATRIX";
+    }
+    if (ConversionDirection.isPairsFilename(filename)) {
+      return "PAIRS";
+    }
+    if (ConversionDirection.isValidPairsFilename(filename)) {
+      return "VALID_PAIRS";
+    }
+    if (ConversionDirection.isBg2Filename(filename)) {
+      return "BEDPE_BG2";
+    }
+    if (ConversionDirection.isCooFilename(filename)) {
+      return "COO";
+    }
     return "UNKNOWN";
+  }
+
+  private @NotNull List<DependencyFingerprint> fingerprintDependencies(final @NotNull Path sourcePath,
+                                                                       final @NotNull ConversionDirection direction) {
+    return fingerprintDependencies(sourcePath, direction, List.of());
+  }
+
+  private @NotNull List<DependencyFingerprint> fingerprintDependencies(final @NotNull Path sourcePath,
+                                                                       final @NotNull ConversionDirection direction,
+                                                                       final @NotNull List<Path> explicitDependencies) {
+    final var dependencies = new ArrayList<Path>();
+    explicitDependencies.stream()
+      .filter(path -> path != null && Files.isRegularFile(path))
+      .map(path -> path.normalize().toAbsolutePath())
+      .forEach(dependencies::add);
+    discoverDefaultDependencies(sourcePath, direction).forEach(path -> {
+      final var absolute = path.normalize().toAbsolutePath();
+      if (!dependencies.contains(absolute)) {
+        dependencies.add(absolute);
+      }
+    });
+    return dependencies.stream()
+      .filter(path -> path.startsWith(this.dataDirectory) && Files.isRegularFile(path))
+      .map(path -> new DependencyFingerprint(relativizeToDataDirectory(path), this.fingerprintService.fingerprint(path)))
+      .sorted(java.util.Comparator.comparing(DependencyFingerprint::filename))
+      .toList();
+  }
+
+  private static @NotNull List<Path> discoverDefaultDependencies(final @NotNull Path sourcePath,
+                                                                 final @NotNull ConversionDirection direction) {
+    if (direction == ConversionDirection.HICPRO_MATRIX_TO_HICT || direction == ConversionDirection.COO_TO_HICT) {
+      final var candidate = discoverSibling(sourcePath, List.of(".bed", ".bins.bed", ".bin_table.bed"));
+      return candidate == null ? List.of() : List.of(candidate);
+    }
+    if (direction == ConversionDirection.BG2_TO_HICT || direction == ConversionDirection.VALIDPAIRS_TO_HICT) {
+      final var candidate = discoverSibling(sourcePath, List.of(".chrom.sizes", ".chromsizes", ".chrom_sizes.txt"));
+      return candidate == null ? List.of() : List.of(candidate);
+    }
+    return List.of();
+  }
+
+  private static Path discoverSibling(final @NotNull Path inputPath,
+                                      final @NotNull List<String> suffixes) {
+    final var parent = inputPath.getParent();
+    if (parent == null) {
+      return null;
+    }
+    final var filename = inputPath.getFileName().toString();
+    final var decompressed = ConversionDirection.stripCompressionSuffix(filename);
+    final var dot = decompressed.lastIndexOf('.');
+    final var stem = dot > 0 ? decompressed.substring(0, dot) : decompressed;
+    for (final var suffix : suffixes) {
+      final var candidate = parent.resolve(stem + suffix);
+      if (Files.isRegularFile(candidate)) {
+        return candidate;
+      }
+    }
+    for (final var suffix : suffixes) {
+      final var candidate = parent.resolve(suffix.startsWith(".") ? suffix.substring(1) : suffix);
+      if (Files.isRegularFile(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   private static int deleteRecursively(final @NotNull Path root) {
@@ -326,6 +419,7 @@ public final class MatrixConversionCacheManager {
                                           @NotNull String conversionDirection,
                                           @NotNull FileFingerprint sourceFingerprint,
                                           FileFingerprint outputFingerprint,
+                                          @NotNull List<DependencyFingerprint> dependencies,
                                           long createdAtMs) {
     private @NotNull JsonObject toJson() {
       return new JsonObject()
@@ -335,10 +429,30 @@ public final class MatrixConversionCacheManager {
         .put("conversionDirection", this.conversionDirection)
         .put("sourceFingerprint", this.sourceFingerprint.toJson())
         .put("outputFingerprint", this.outputFingerprint != null ? this.outputFingerprint.toJson() : null)
+        .put("dependencies", new JsonArray(this.dependencies.stream().map(DependencyFingerprint::toJson).toList()))
         .put("createdAtMs", this.createdAtMs);
     }
 
+    private boolean dependenciesMatch(final @NotNull List<DependencyFingerprint> currentDependencies) {
+      if (this.dependencies.size() != currentDependencies.size()) {
+        return false;
+      }
+      for (int i = 0; i < this.dependencies.size(); i++) {
+        final var expected = this.dependencies.get(i);
+        final var current = currentDependencies.get(i);
+        if (!expected.filename().equals(current.filename()) || !expected.fingerprint().matches(current.fingerprint())) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     private static @NotNull MatrixConversionMetadata fromJson(final @NotNull JsonObject json) {
+      final var dependenciesJson = json.getJsonArray("dependencies", new JsonArray());
+      final var dependencies = new ArrayList<DependencyFingerprint>(dependenciesJson.size());
+      for (int i = 0; i < dependenciesJson.size(); i++) {
+        dependencies.add(DependencyFingerprint.fromJson(dependenciesJson.getJsonObject(i)));
+      }
       return new MatrixConversionMetadata(
         json.getString("version", ""),
         json.getString("sourceFilename", ""),
@@ -348,7 +462,24 @@ public final class MatrixConversionCacheManager {
         json.getJsonObject("outputFingerprint") != null
           ? FileFingerprint.fromJson(json.getJsonObject("outputFingerprint"))
           : null,
+        dependencies,
         json.getLong("createdAtMs", 0L)
+      );
+    }
+  }
+
+  private record DependencyFingerprint(@NotNull String filename,
+                                       @NotNull FileFingerprint fingerprint) {
+    private @NotNull JsonObject toJson() {
+      return new JsonObject()
+        .put("filename", this.filename)
+        .put("fingerprint", this.fingerprint.toJson());
+    }
+
+    private static @NotNull DependencyFingerprint fromJson(final @NotNull JsonObject json) {
+      return new DependencyFingerprint(
+        json.getString("filename", ""),
+        FileFingerprint.fromJson(json.getJsonObject("fingerprint", new JsonObject()))
       );
     }
   }

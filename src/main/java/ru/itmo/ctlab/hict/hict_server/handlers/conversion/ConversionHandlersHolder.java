@@ -157,7 +157,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             parallelism
                         );
 
-                        final var job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true);
+                        final var job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true, HictkLoadOptions.EMPTY);
                         submitJob(job, options, ensureGroup("upload", 1));
                         return new ConversionSubmitResponseDTO("submitted", job.jobId);
                     } catch (IOException e) {
@@ -269,6 +269,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var assemblyPathForOptions = assemblyPath == null
                       ? ConversionOptions.NO_AGP
                       : assemblyPath.toString();
+                    final var loadOptions = parseHictkLoadOptions(dataDirectory, requestJson);
 
                     final var options = new ConversionOptions(
                         sourcePath,
@@ -283,7 +284,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     );
                     final ConversionJob job;
                     try {
-                        job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false);
+                        job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false, loadOptions);
                     } catch (IOException e) {
                         throw new RuntimeException("Failed to create conversion job", e);
                     }
@@ -350,6 +351,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var assemblyPathForOptions = assemblyPath == null
                           ? ConversionOptions.NO_AGP
                           : assemblyPath.toString();
+                        final var loadOptions = parseHictkLoadOptions(dataDirectory, requestJson);
                         final var options = new ConversionOptions(
                             sourcePath,
                             outputPath,
@@ -363,7 +365,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         );
                         final ConversionJob job;
                         try {
-                            job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false);
+                            job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false, loadOptions);
                         } catch (IOException e) {
                             throw new RuntimeException("Failed to create conversion job for " + filename, e);
                         }
@@ -572,15 +574,42 @@ public class ConversionHandlersHolder extends HandlersHolder {
         return assemblyPath;
     }
 
+    private static @NotNull HictkLoadOptions parseHictkLoadOptions(final @NotNull Path dataDirectory,
+                                                                   final @NotNull io.vertx.core.json.JsonObject requestJson) {
+        final var binTablePath = resolveOptionalRegularDataPath(dataDirectory, requestJson.getString("binTableFilename", ""));
+        final var chromSizesPath = resolveOptionalRegularDataPath(dataDirectory, requestJson.getString("chromSizesFilename", ""));
+        final var binSizeValue = requestJson.getValue("binSize");
+        final Long binSize = binSizeValue instanceof Number number ? number.longValue() : null;
+        final var oneBased = requestJson.getBoolean("oneBased", false);
+        final var countAsFloat = requestJson.getBoolean("countAsFloat", false);
+        return new HictkLoadOptions(binTablePath, chromSizesPath, binSize, oneBased, countAsFloat);
+    }
+
+    private static Path resolveOptionalRegularDataPath(final @NotNull Path dataDirectory,
+                                                       final String filename) {
+        if (filename == null || filename.isBlank()) {
+            return null;
+        }
+        final var path = dataDirectory.resolve(filename).normalize();
+        if (!path.startsWith(dataDirectory)) {
+            throw new IllegalArgumentException("Invalid sidecar filename");
+        }
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalArgumentException("Sidecar file not found: " + filename);
+        }
+        return path;
+    }
+
     private ConversionJob createJob(final @NotNull Path sourcePath,
                                     final @NotNull Path outputPath,
                                     final Path dataDirectory,
                                     final @NotNull ConversionDirection direction,
                                     final int parallelism,
                                     final boolean deleteSourceOnCleanup,
-                                    final boolean deleteOutputOnCleanup) throws IOException {
+                                    final boolean deleteOutputOnCleanup,
+                                    final @NotNull HictkLoadOptions loadOptions) throws IOException {
         final var jobId = UUID.randomUUID().toString();
-        final var job = new ConversionJob(jobId, sourcePath, outputPath, dataDirectory, direction, parallelism, deleteSourceOnCleanup, deleteOutputOnCleanup);
+        final var job = new ConversionJob(jobId, sourcePath, outputPath, dataDirectory, direction, parallelism, deleteSourceOnCleanup, deleteOutputOnCleanup, loadOptions);
         job.inputSizeBytes = Files.exists(sourcePath) ? Files.size(sourcePath) : 0L;
         jobs.put(jobId, job);
         return job;
@@ -627,7 +656,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                   toolchain,
                   conversionLogger,
                   process -> job.activeProcess = process,
-                  () -> job.cancelRequested.get()
+                  () -> job.cancelRequested.get(),
+                  job.loadOptions
                 );
             } else {
                 throw new IllegalArgumentException("Unknown conversion direction: " + job.direction.wireName());
@@ -664,7 +694,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             ? processedDirectoryWrapper.getPath()
             : dataDirectory.resolve("processed").normalize().toAbsolutePath();
         final var cacheManager = new MatrixConversionCacheManager(dataDirectory, processedDirectory, this.fingerprintService);
-        cacheManager.recordSuccessfulConversion(job.sourcePath, job.outputPath, job.direction);
+        cacheManager.recordSuccessfulConversion(job.sourcePath, job.outputPath, job.direction, job.loadOptions.dependencyPaths());
     }
 
     private void parseProgress(final @NotNull ConversionJob job, final @NotNull String message) {
@@ -821,6 +851,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
         private final int parallelism;
         private final boolean deleteSourceOnCleanup;
         private final boolean deleteOutputOnCleanup;
+        private final HictkLoadOptions loadOptions;
         private volatile String status = "queued";
         private volatile String error = "";
         private final CopyOnWriteArrayList<String> logs = new CopyOnWriteArrayList<>();
@@ -847,7 +878,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
         private final CopyOnWriteArrayList<String> toolchainCitations = new CopyOnWriteArrayList<>();
         private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
 
-        private ConversionJob(String jobId, Path sourcePath, Path outputPath, Path dataDirectory, ConversionDirection direction, int parallelism, boolean deleteSourceOnCleanup, boolean deleteOutputOnCleanup) {
+        private ConversionJob(String jobId, Path sourcePath, Path outputPath, Path dataDirectory, ConversionDirection direction, int parallelism, boolean deleteSourceOnCleanup, boolean deleteOutputOnCleanup, HictkLoadOptions loadOptions) {
             this.jobId = jobId;
             this.sourcePath = sourcePath;
             this.outputPath = outputPath;
@@ -856,6 +887,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             this.parallelism = parallelism;
             this.deleteSourceOnCleanup = deleteSourceOnCleanup;
             this.deleteOutputOnCleanup = deleteOutputOnCleanup;
+            this.loadOptions = loadOptions == null ? HictkLoadOptions.EMPTY : loadOptions;
         }
 
         private void updateOutputSize() {

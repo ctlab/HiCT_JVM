@@ -60,7 +60,18 @@ public class FSHandlersHolder extends HandlersHolder {
     ".fasta.gz", ".fa.gz", ".fna.gz", ".fas.gz"
   );
   private static final List<String> CONVERTIBLE_MATRIX_SUFFIXES = List.of(
-    ".hic", ".cool", ".mcool"
+    ".hic", ".cool", ".mcool",
+    ".matrix", ".matrix.gz", ".matrix.xz", ".matrix.zst", ".matrix.zstd", ".matrix.bz2",
+    ".coo", ".coo.gz", ".coo.xz", ".coo.zst", ".coo.zstd", ".coo.bz2",
+    ".coo.tsv", ".coo.tsv.gz", ".coo.tsv.xz", ".coo.tsv.zst", ".coo.tsv.zstd", ".coo.tsv.bz2",
+    ".coo.csv", ".coo.csv.gz", ".coo.csv.xz", ".coo.csv.zst", ".coo.csv.zstd", ".coo.csv.bz2",
+    ".tsv", ".tsv.gz", ".tsv.xz", ".tsv.zst", ".tsv.zstd", ".tsv.bz2",
+    ".csv", ".csv.gz", ".csv.xz", ".csv.zst", ".csv.zstd", ".csv.bz2",
+    ".bg2", ".bg2.gz", ".bg2.xz", ".bg2.zst", ".bg2.zstd", ".bg2.bz2",
+    ".bedgraph2", ".bedgraph2.gz", ".bedgraph2.xz", ".bedgraph2.zst", ".bedgraph2.zstd", ".bedgraph2.bz2",
+    ".bedpe", ".bedpe.gz", ".bedpe.xz", ".bedpe.zst", ".bedpe.zstd", ".bedpe.bz2",
+    ".pairs", ".pairs.gz", ".pairs.bgz", ".pairs.xz", ".pairs.zst", ".pairs.zstd", ".pairs.bz2",
+    ".validpairs", ".validpairs.gz", ".validpairs.xz", ".validpairs.zst", ".validpairs.zstd", ".validpairs.bz2"
   );
 
   @Override

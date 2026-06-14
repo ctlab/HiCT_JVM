@@ -35,6 +35,32 @@ class ConversionDirectionTest {
       Path.of("/tmp/sample.mcool"),
       ConversionDirection.HICT_TO_MCOOL.deriveOutputPath(Path.of("/tmp/sample.hict.hdf5"))
     );
+
+    assertEquals(
+      ConversionDirection.HICPRO_MATRIX_TO_HICT,
+      ConversionDirection.defaultForSource(Path.of("/tmp/sample.matrix.gz"))
+    );
+    assertEquals(
+      Path.of("/tmp/sample.hict.hdf5"),
+      ConversionDirection.HICPRO_MATRIX_TO_HICT.deriveOutputPath(Path.of("/tmp/sample.matrix.gz"))
+    );
+
+    assertEquals(
+      ConversionDirection.COO_TO_HICT,
+      ConversionDirection.defaultForSource(Path.of("/tmp/sample.coo.tsv"))
+    );
+    assertEquals(
+      ConversionDirection.BG2_TO_HICT,
+      ConversionDirection.defaultForSource(Path.of("/tmp/sample.bedpe.zst"))
+    );
+    assertEquals(
+      ConversionDirection.PAIRS_TO_HICT,
+      ConversionDirection.defaultForSource(Path.of("/tmp/sample.pairs.gz"))
+    );
+    assertEquals(
+      ConversionDirection.VALIDPAIRS_TO_HICT,
+      ConversionDirection.defaultForSource(Path.of("/tmp/sample.validPairs"))
+    );
   }
 
   @Test

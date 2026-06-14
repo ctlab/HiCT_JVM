@@ -504,3 +504,31 @@ When resuming, implement in this order:
 - `.npz` and PAF should not be silently advertised as fully supported until their semantics/runtime requirements are explicit.
 - Cache metadata must include sidecar fingerprints, otherwise converted outputs can become stale without HiCT noticing.
 - Full native reimplementation is not the right first release path; hictk already provides native loading and compression support for most requested formats.
+
+## Implementation Status - 2026-06-14
+
+Implemented release-scoped support without a global conversion overhaul:
+
+- Backend source detection and output derivation now cover:
+  - Hi-C Pro `.matrix` plus compressed variants
+  - generic COO `.coo`, `.coo.tsv`, `.coo.csv`, `.tsv`, `.csv` plus compressed variants
+  - BEDPE/bedGraph2 `.bedpe`, `.bg2`, `.bedgraph2` plus compressed variants
+  - `.pairs`/`.pairs.gz`/`.pairs.bgz`
+  - `.validPairs` plus compressed variants
+- Existing `hictk` pipeline now supports `hictk load -> zoomify -> balance -> .hict.hdf5 import`.
+- Matrix conversion cache schema was bumped and now includes sidecar fingerprints for selected or auto-discovered `.bed`/chrom-sizes files.
+- File listing, Open Wizard, manual Open, and batch converter now expose the new hictk-loadable formats.
+- Open Wizard and batch converter can pass optional BED bin table, chrom sizes, bin size, and float-count options.
+
+Important hictk CLI finding from local smoke tests:
+
+- `hictk load --format coo` in bundled hictk v2.2.0 rejects `--bin-table` for pre-binned COO input.
+- HiCT therefore derives temporary `.chrom.sizes` plus bin size from Hi-C Pro BED bin tables, and uses `--chrom-sizes --bin-size` for COO/Hi-C Pro matrix loading.
+- Generic COO without explicit chrom sizes is auto-scanned only for plain text and `.gz`; HiCT creates a synthetic single-chromosome `assembly` coordinate system with default bin size `1`.
+- hictk COO parsing accepted tab-separated input in smoke testing. Space-separated generic COO is not guaranteed by hictk and should be normalized by users or handled by a future streaming normalizer if needed.
+
+Still intentionally not implemented in this release slice:
+
+- Direct SciPy `.npz` import.
+- PAF as a primary matrix source. PAF is still better treated as dotplot/overlay input until matrix semantics are explicitly designed.
+- Native reimplementation of hictk loaders in `hict-native`; this remains a later performance project after measuring real bottlenecks.
