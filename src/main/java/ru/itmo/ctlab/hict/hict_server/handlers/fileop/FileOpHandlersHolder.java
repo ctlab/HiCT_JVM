@@ -592,6 +592,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
+      if (ctx.body() == null || ctx.body().asJsonObject() == null) {
+        ctx.fail(new IllegalArgumentException("Selection FASTA export requires a JSON request body"));
+        return;
+      }
       final var requestJSON = ctx.body().asJsonObject();
       final var fromBpX = requestJSON.getLong("fromBpX");
       final var fromBpY = requestJSON.getLong("fromBpY");

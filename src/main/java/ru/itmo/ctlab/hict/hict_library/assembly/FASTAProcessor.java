@@ -29,6 +29,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
@@ -43,6 +44,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -178,6 +180,7 @@ public class FASTAProcessor {
 
   public @NotNull String exportAssembly(final @NotNull Path fastaPath) {
     final var sequences = readSequenceContents(fastaPath);
+    final var sequenceNameAliases = buildSourceNameAliases(sequences);
     final var records = new ArrayList<FASTARecord>();
     final var contigs = this.chunkedFile.getAssemblyInfo().contigs();
     final var scaffolds = this.chunkedFile.getAssemblyInfo().scaffolds();
@@ -198,7 +201,7 @@ public class FASTAProcessor {
         scaffoldIndex++;
       }
 
-      final var sequence = extractContigSequence(sequences, contig);
+      final var sequence = extractContigSequence(sequences, sequenceNameAliases, contig);
       final ScaffoldTree.ScaffoldTuple coveringScaffold =
         scaffoldIndex < scaffolds.size()
           && scaffolds.get(scaffoldIndex).scaffoldDescriptor() != null
@@ -287,13 +290,15 @@ public class FASTAProcessor {
                                         final long toBp,
                                         final @NotNull String recordName) {
     final var sequences = readSequenceContents(fastaPath);
+    final var sequenceNameAliases = buildSourceNameAliases(sequences);
     final long selectionStart = Math.max(0L, Math.min(fromBp, toBp));
     final long selectionEnd = Math.max(selectionStart + 1L, Math.max(fromBp, toBp));
-    final var sequence = buildAssemblySlice(sequences, selectionStart, selectionEnd);
+    final var sequence = buildAssemblySlice(sequences, sequenceNameAliases, selectionStart, selectionEnd);
     return renderRecords(List.of(new FASTARecord(recordName, sequence)));
   }
 
   private @NotNull String buildAssemblySlice(final @NotNull Map<String, String> sequences,
+                                             final @NotNull Map<String, String> sequenceNameAliases,
                                              final long selectionStart,
                                              final long selectionEnd) {
     final var builder = new StringBuilder();
@@ -306,7 +311,7 @@ public class FASTAProcessor {
       if (overlapEnd > overlapStart) {
         final long startInsideContig = overlapStart - contigStart;
         final long endInsideContig = overlapEnd - contigStart;
-        builder.append(extractContigSlice(sequences, contig, startInsideContig, endInsideContig));
+        builder.append(extractContigSlice(sequences, sequenceNameAliases, contig, startInsideContig, endInsideContig));
       }
       assemblyPosition = contigEnd;
       if (assemblyPosition >= selectionEnd) {
@@ -367,7 +372,7 @@ public class FASTAProcessor {
   }
 
   public static @NotNull Map<String, String> readSequenceContents(final @NotNull Path fastaPath) {
-    final var sequences = new HashMap<String, StringBuilder>();
+    final var sequences = new LinkedHashMap<String, StringBuilder>();
     final var order = new ArrayList<String>();
     try (final var stream = openPossiblyGzippedStream(fastaPath);
          final var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
@@ -390,7 +395,7 @@ public class FASTAProcessor {
     } catch (final IOException e) {
       throw new RuntimeException("Failed to read FASTA file " + fastaPath, e);
     }
-    final var result = new HashMap<String, String>();
+    final var result = new LinkedHashMap<String, String>();
     for (final var name : order) {
       result.put(name, sequences.get(name).toString());
     }
@@ -424,32 +429,94 @@ public class FASTAProcessor {
     return -1;
   }
 
+  private @NotNull Map<String, String> buildSourceNameAliases(final @NotNull Map<String, String> sequences) {
+    final var sourceDescriptors = this.chunkedFile.getOriginalDescriptors().values().stream()
+      .sorted(Comparator.comparingInt(ContigDescriptor::getContigId))
+      .toList();
+    if (sequences.size() != sourceDescriptors.size()) {
+      return Map.of();
+    }
+    final var fastaEntries = new ArrayList<>(sequences.entrySet());
+    for (int i = 0; i < fastaEntries.size(); ++i) {
+      if (fastaEntries.get(i).getValue().length() != sourceDescriptors.get(i).getLengthBp()) {
+        return Map.of();
+      }
+    }
+    final var aliases = new HashMap<String, String>();
+    for (int i = 0; i < fastaEntries.size(); ++i) {
+      aliases.put(sourceDescriptors.get(i).getContigNameInSourceFASTA(), fastaEntries.get(i).getKey());
+    }
+    return aliases;
+  }
+
   private @NotNull String extractContigSequence(final @NotNull Map<String, String> sequences,
+                                                final @NotNull Map<String, String> sequenceNameAliases,
                                                 final @NotNull ContigTree.ContigTuple contig) {
-    return extractContigSlice(sequences, contig, 0L, contig.descriptor().getLengthBp());
+    return extractContigSlice(sequences, sequenceNameAliases, contig, 0L, contig.descriptor().getLengthBp());
   }
 
   private @NotNull String extractContigSlice(final @NotNull Map<String, String> sequences,
+                                             final @NotNull Map<String, String> sequenceNameAliases,
                                              final @NotNull ContigTree.ContigTuple contig,
                                              final long startInsideContig,
                                              final long endInsideContig) {
     final var descriptor = contig.descriptor();
-    final var source = sequences.get(descriptor.getContigNameInSourceFASTA());
+    final var sourceName = sequenceNameAliases.getOrDefault(
+      descriptor.getContigNameInSourceFASTA(),
+      descriptor.getContigNameInSourceFASTA()
+    );
+    final var source = sequences.get(sourceName);
     if (source == null) {
       throw new IllegalArgumentException(
         "Linked FASTA does not contain sequence '" + descriptor.getContigNameInSourceFASTA() + "'"
       );
     }
-    final int sourceStart = Math.toIntExact(descriptor.getOffsetInSourceFASTA() + startInsideContig);
-    final int sourceEnd = Math.toIntExact(descriptor.getOffsetInSourceFASTA() + endInsideContig);
+    return extractContigSliceFromSource(
+      source,
+      descriptor.getContigNameInSourceFASTA(),
+      descriptor.getOffsetInSourceFASTA(),
+      descriptor.getLengthBp(),
+      contig.direction(),
+      startInsideContig,
+      endInsideContig
+    );
+  }
+
+  static @NotNull String extractContigSliceFromSource(final @NotNull String source,
+                                                      final @NotNull String sourceName,
+                                                      final int sourceOffset,
+                                                      final long contigLengthBp,
+                                                      final @NotNull ContigDirection direction,
+                                                      final long startInsideContig,
+                                                      final long endInsideContig) {
+    if (startInsideContig < 0L || endInsideContig > contigLengthBp || startInsideContig >= endInsideContig) {
+      throw new IllegalArgumentException(
+        "Requested contig slice [" + startInsideContig + ", " + endInsideContig + ") is outside contig of length " + contigLengthBp
+      );
+    }
+    final long sourceStartLong;
+    final long sourceEndLong;
+    switch (direction) {
+      case FORWARD -> {
+        sourceStartLong = sourceOffset + startInsideContig;
+        sourceEndLong = sourceOffset + endInsideContig;
+      }
+      case REVERSED -> {
+        sourceStartLong = sourceOffset + (contigLengthBp - endInsideContig);
+        sourceEndLong = sourceOffset + (contigLengthBp - startInsideContig);
+      }
+      default -> throw new IllegalStateException("Unexpected contig direction: " + direction);
+    }
+    final int sourceStart = Math.toIntExact(sourceStartLong);
+    final int sourceEnd = Math.toIntExact(sourceEndLong);
     if (sourceStart < 0 || sourceEnd > source.length() || sourceStart >= sourceEnd) {
       throw new IllegalArgumentException(
         "Requested source FASTA slice [" + sourceStart + ", " + sourceEnd + ") is outside sequence '"
-          + descriptor.getContigNameInSourceFASTA() + "' of length " + source.length()
+          + sourceName + "' of length " + source.length()
       );
     }
     final var subsequence = source.substring(sourceStart, sourceEnd);
-    return switch (contig.direction()) {
+    return switch (direction) {
       case FORWARD -> subsequence;
       case REVERSED -> reverseComplement(subsequence);
     };

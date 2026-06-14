@@ -179,17 +179,61 @@ public class McoolToHictConverter {
     final long[] orderedContigIds = new long[contigRecords.size()];
     final long[] contigScaffoldIds = new long[contigRecords.size()];
     final long[] contigLengthBp = new long[contigRecords.size()];
+    final int[] sourceChromIds = new int[contigRecords.size()];
+    final long[] componentStartBp0 = new long[contigRecords.size()];
+    final long[] componentEndBpExclusive = new long[contigRecords.size()];
     final var scaffoldIds = new java.util.LinkedHashMap<String, Long>();
+    final var sourceChromLayout = readSourceChromLayout(src, selectedResolutions.get(0));
+    final boolean allContigNamesResolve = contigRecords.stream()
+      .allMatch(record -> canResolveSourceChromIndex(sourceChromLayout, record.getContigName()));
+    final boolean useSingleAssemblyChromosome = !allContigNamesResolve && sourceChromLayout.lengthsBp().length == 1;
+    if (!allContigNamesResolve && !useSingleAssemblyChromosome) {
+      final var missingContigName = contigRecords.stream()
+        .map(AGPProcessor.ContigAGPRecord::getContigName)
+        .filter(name -> !canResolveSourceChromIndex(sourceChromLayout, name))
+        .findFirst()
+        .orElse("<unknown>");
+      throw missingSourceChromException(missingContigName, layoutPath);
+    }
+    long assemblyChromosomeOffsetBp = 0L;
+    final Map<String, SourceComponentRange> singleAssemblySourceRanges = useSingleAssemblyChromosome
+      ? readSingleAssemblySourceRanges(layoutPath)
+      : Map.of();
 
     for (int i = 0; i < contigRecords.size(); i++) {
       final var record = contigRecords.get(i);
+      final long componentLengthBp = record.getIntraContigEndBpIncl() - record.getIntraContigStartBpIncl() + 1L;
       contigNames[i] = record.getContigName();
       contigDirections[i] = switch (record.getContigOrientation()) {
         case PLUS, UNKNOWN, IRRELEVANT -> 0L;
         case MINUS -> 1L;
       };
       orderedContigIds[i] = i;
-      contigLengthBp[i] = record.getIntraContigEndBpIncl() - record.getIntraContigStartBpIncl() + 1L;
+      if (useSingleAssemblyChromosome) {
+        sourceChromIds[i] = 0;
+        final var sourceRange = singleAssemblySourceRanges.get(record.getContigName());
+        if (sourceRange != null) {
+          componentStartBp0[i] = sourceRange.startBp0() + record.getIntraContigStartBpIncl() - 1L;
+          componentEndBpExclusive[i] = sourceRange.startBp0() + record.getIntraContigEndBpIncl();
+        } else {
+          componentStartBp0[i] = assemblyChromosomeOffsetBp;
+          componentEndBpExclusive[i] = assemblyChromosomeOffsetBp + componentLengthBp;
+        }
+        assemblyChromosomeOffsetBp = componentEndBpExclusive[i];
+      } else {
+        sourceChromIds[i] = resolveSourceChromIndex(sourceChromLayout, record.getContigName(), layoutPath);
+        componentStartBp0[i] = record.getIntraContigStartBpIncl() - 1L;
+        componentEndBpExclusive[i] = record.getIntraContigEndBpIncl();
+      }
+      final long sourceChromLengthBp = sourceChromLayout.lengthsBp()[sourceChromIds[i]];
+      if (componentStartBp0[i] < 0L || componentEndBpExclusive[i] <= componentStartBp0[i] || componentEndBpExclusive[i] > sourceChromLengthBp) {
+        throw new IllegalArgumentException(
+          "Assembly layout component " + record.getContigName() + ":" + record.getIntraContigStartBpIncl() +
+            "-" + record.getIntraContigEndBpIncl() + " is outside source contig length " + sourceChromLengthBp +
+            " from " + layoutPath.getFileName()
+        );
+      }
+      contigLengthBp[i] = componentLengthBp;
       contigScaffoldIds[i] = scaffoldIds.computeIfAbsent(record.getScaffoldName(), ignored -> (long) scaffoldIds.size());
     }
 
@@ -203,16 +247,29 @@ public class McoolToHictConverter {
     final Map<Long, List<StripeDescriptor>> stripesByResolution = new HashMap<>();
 
     for (final var resolution : selectedResolutions) {
-      final long totalBins = datasetLength(src, "/resolutions/" + resolution + "/bins/end");
-      if (totalBins <= 0L) {
-        throw new IllegalStateException("Resolution " + resolution + " does not contain any bins");
+      final long[] chromOffsets = src.int64().readArray("/resolutions/" + resolution + "/indexes/chrom_offset");
+      if (chromOffsets.length != sourceChromLayout.lengthsBp().length + 1) {
+        throw new IllegalStateException(
+          "Resolution " + resolution + " has " + chromOffsets.length +
+            " chromosome offset entries, but source chromosome metadata has " + sourceChromLayout.lengthsBp().length + " chromosomes"
+        );
       }
-      final long[] lengthBins = apportionAssemblyBins(contigLengthBp, totalBins, totalAssemblyLengthBp);
       final long[] startBins = new long[contigRecords.size()];
-      long prefix = 0L;
+      final long[] lengthBins = new long[contigRecords.size()];
+      final long[] sourceBinStarts = src.int64().readArray("/resolutions/" + resolution + "/bins/start");
+      final long[] sourceBinEnds = src.int64().readArray("/resolutions/" + resolution + "/bins/end");
       for (int i = 0; i < contigRecords.size(); i++) {
-        startBins[i] = prefix;
-        prefix += lengthBins[i];
+        final var range = resolveSourceBinRange(
+          resolution,
+          sourceChromIds[i],
+          componentStartBp0[i],
+          componentEndBpExclusive[i],
+          chromOffsets,
+          sourceBinStarts,
+          sourceBinEnds
+        );
+        startBins[i] = range.startBin();
+        lengthBins[i] = range.lengthBins();
       }
       contigStartBinsByResolution.put(resolution, startBins);
       contigLengthBinsByResolution.put(resolution, lengthBins);
@@ -284,40 +341,144 @@ public class McoolToHictConverter {
       dst.int64().writeMatrix(getBasisATUDatasetPath(resolution), basisAtu);
     }
 
-    logConsumer.accept("Rewrote contig metadata from assembly layout: contigs=" + contigRecords.size() + ", scaffolds=" + scaffoldIds.size());
+    logConsumer.accept(
+      "Rewrote contig metadata from assembly layout using source bin offsets: contigs=" +
+        contigRecords.size() + ", scaffolds=" + scaffoldIds.size() +
+        (useSingleAssemblyChromosome ? ", source=single-assembly-chromosome" : ", source=named-contigs")
+    );
   }
 
-  private static long[] apportionAssemblyBins(
-    final long[] contigLengthBp,
-    final long totalBins,
-    final long totalAssemblyLengthBp
+  private static @NotNull Map<String, SourceComponentRange> readSingleAssemblySourceRanges(final @NotNull Path layoutPath) throws IOException {
+    if (!layoutPath.getFileName().toString().toLowerCase().endsWith(".assembly")) {
+      return Map.of();
+    }
+    final Map<String, SourceComponentRange> rangesByContigName = new HashMap<>();
+    try (final var reader = Files.newBufferedReader(layoutPath)) {
+      for (final var contig : AssemblyLayoutConverter.parseJuiceboxContigs(reader)) {
+        final var previous = rangesByContigName.put(
+          contig.contigName(),
+          new SourceComponentRange(contig.sourceStartBp0(), contig.sourceStartBp0() + contig.lengthBp())
+        );
+        if (previous != null) {
+          throw new IllegalArgumentException(
+            "Juicebox assembly file contains duplicate contig name '" + contig.contigName() +
+              "'; source offsets for hictk single-assembly conversion would be ambiguous"
+          );
+        }
+      }
+    }
+    return rangesByContigName;
+  }
+
+  private static @NotNull SourceChromLayout readSourceChromLayout(final @NotNull IHDF5Reader src, final long resolution) {
+    final var nameLengthPath = resolveNameLengthPath(src, resolution);
+    final long[] chromLengths = src.int64().readArray(nameLengthPath + "/length");
+    final String[] chromNames = src.string().readArray(nameLengthPath + "/name");
+    if (chromLengths.length != chromNames.length) {
+      throw new IllegalStateException("Chromosome lengths and names have different sizes at " + nameLengthPath);
+    }
+    final Map<String, Integer> chromIdsByName = new HashMap<>();
+    for (int i = 0; i < chromNames.length; i++) {
+      final var name = chromNames[i];
+      if (name == null || name.isBlank()) {
+        throw new IllegalStateException("Blank chromosome name at index " + i + " in " + nameLengthPath);
+      }
+      chromIdsByName.putIfAbsent(name, i);
+      chromIdsByName.putIfAbsent(name.trim(), i);
+    }
+    return new SourceChromLayout(chromIdsByName, chromLengths);
+  }
+
+  private static int resolveSourceChromIndex(
+    final @NotNull SourceChromLayout sourceChromLayout,
+    final @NotNull String contigName,
+    final @NotNull Path layoutPath
   ) {
-    final int contigCount = contigLengthBp.length;
-    final long[] assignedBins = new long[contigCount];
-    final double[] remainders = new double[contigCount];
-    long assignedTotal = 0L;
+    final var sourceChromId = sourceChromLayout.chromIdsByName().get(contigName);
+    if (sourceChromId != null) {
+      return sourceChromId;
+    }
+    final var trimmed = contigName.trim();
+    final var trimmedSourceChromId = sourceChromLayout.chromIdsByName().get(trimmed);
+    if (trimmedSourceChromId != null) {
+      return trimmedSourceChromId;
+    }
+    throw missingSourceChromException(contigName, layoutPath);
+  }
 
-    for (int i = 0; i < contigCount; i++) {
-      final double ideal = ((double) contigLengthBp[i] * (double) totalBins) / (double) totalAssemblyLengthBp;
-      final long floor = (long) Math.floor(ideal);
-      assignedBins[i] = floor;
-      remainders[i] = ideal - floor;
-      assignedTotal += floor;
+  private static boolean canResolveSourceChromIndex(
+    final @NotNull SourceChromLayout sourceChromLayout,
+    final @NotNull String contigName
+  ) {
+    return sourceChromLayout.chromIdsByName().containsKey(contigName) || sourceChromLayout.chromIdsByName().containsKey(contigName.trim());
+  }
+
+  private static @NotNull IllegalArgumentException missingSourceChromException(
+    final @NotNull String contigName,
+    final @NotNull Path layoutPath
+  ) {
+    return new IllegalArgumentException(
+      "Assembly layout contig '" + contigName + "' from " + layoutPath.getFileName() +
+        " is not present in source .mcool chromosome metadata"
+    );
+  }
+
+  private static @NotNull BinRange resolveSourceBinRange(
+    final long resolution,
+    final int sourceChromId,
+    final long componentStartBp0,
+    final long componentEndBpExclusive,
+    final long @NotNull [] chromOffsets,
+    final long @NotNull [] sourceBinStarts,
+    final long @NotNull [] sourceBinEnds
+  ) {
+    final long chromStartBin = chromOffsets[sourceChromId];
+    final long chromEndBin = chromOffsets[sourceChromId + 1];
+    if (chromStartBin < 0L || chromEndBin < chromStartBin || chromEndBin > sourceBinStarts.length || chromEndBin > sourceBinEnds.length) {
+      throw new IllegalStateException(
+        "Resolution " + resolution + " has invalid bin offsets for source chromosome index " + sourceChromId +
+          ": [" + chromStartBin + ", " + chromEndBin + ")"
+      );
+    }
+    if (chromStartBin == chromEndBin || componentStartBp0 == componentEndBpExclusive) {
+      return new BinRange(chromStartBin, chromStartBin);
     }
 
-    long remaining = totalBins - assignedTotal;
-    if (remaining > 0L) {
-      final Integer[] order = new Integer[contigCount];
-      for (int i = 0; i < contigCount; i++) {
-        order[i] = i;
-      }
-      Arrays.sort(order, Comparator.<Integer>comparingDouble(i -> remainders[i]).reversed().thenComparingInt(i -> i));
-      for (int i = 0; i < remaining && i < order.length; i++) {
-        assignedBins[order[i]]++;
+    long firstBin = chromStartBin;
+    if (componentStartBp0 > 0L) {
+      firstBin = chromEndBin;
+      for (long bin = chromStartBin; bin < chromEndBin; bin++) {
+        if (sourceBinStarts[(int) bin] >= componentStartBp0) {
+          firstBin = bin;
+          break;
+        }
       }
     }
 
-    return assignedBins;
+    long endBinExclusive = chromEndBin;
+    for (long bin = firstBin; bin < chromEndBin; bin++) {
+      if (sourceBinStarts[(int) bin] >= componentEndBpExclusive) {
+        endBinExclusive = bin;
+        break;
+      }
+    }
+
+    if (firstBin > endBinExclusive) {
+      firstBin = endBinExclusive;
+    }
+    return new BinRange(firstBin, endBinExclusive);
+  }
+
+  private record SourceChromLayout(@NotNull Map<String, Integer> chromIdsByName, long @NotNull [] lengthsBp) {
+  }
+
+  private record SourceComponentRange(long startBp0, long endBpExclusive) {
+  }
+
+  private record BinRange(long startBin, long endBinExclusive) {
+    private long lengthBins() {
+      return endBinExclusive - startBin;
+    }
   }
 
   private static @NotNull Path resolveLayoutPath(final @NotNull ConversionOptions options) {

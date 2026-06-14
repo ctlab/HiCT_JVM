@@ -60,4 +60,34 @@ class AssemblyLayoutConverterTest {
       Files.deleteIfExists(output);
     }
   }
+
+  @Test
+  void parsesJuiceboxScaffoldLinesWithSignedContigIds() throws Exception {
+    final var assembly = """
+      >ctgA 1 100
+      >ctgB 2 200
+      >ctgC 3 300
+      1 -2
+      3
+      """;
+
+    final var records = AssemblyLayoutConverter.parseJuiceboxAssembly(new StringReader(assembly));
+
+    assertEquals(3, records.size());
+    final var first = (AGPProcessor.ContigAGPRecord) records.get(0);
+    final var second = (AGPProcessor.ContigAGPRecord) records.get(1);
+    final var third = (AGPProcessor.ContigAGPRecord) records.get(2);
+    assertEquals("1", first.getScaffoldName());
+    assertEquals("ctgA", first.getContigName());
+    assertEquals(1L, first.getInterScaffoldStartIncl());
+    assertEquals(100L, first.getInterScaffoldEndIncl());
+    assertEquals(AGPProcessor.AGPContigOrientation.PLUS, first.getContigOrientation());
+    assertEquals("1", second.getScaffoldName());
+    assertEquals("ctgB", second.getContigName());
+    assertEquals(101L, second.getInterScaffoldStartIncl());
+    assertEquals(300L, second.getInterScaffoldEndIncl());
+    assertEquals(AGPProcessor.AGPContigOrientation.MINUS, second.getContigOrientation());
+    assertEquals("2", third.getScaffoldName());
+    assertEquals("ctgC", third.getContigName());
+  }
 }
