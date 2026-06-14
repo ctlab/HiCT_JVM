@@ -16,9 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HicAssemblyConversionIntegrationTest {
-  private static final Path HIC = Path.of("/mnt/Models/HiCT/data/DNAZoo/AedisAegypti/AGWG.draft.hic");
-  private static final Path ASSEMBLY = Path.of("/mnt/Models/HiCT/data/DNAZoo/AedisAegypti/AGWG.draft.assembly");
-  private static final Path FASTA = Path.of("/mnt/Models/HiCT/data/DNAZoo/AedisAegypti/AGWG.draft.fasta.gz");
+  private static final Path HIC = Path.of("/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.hic");
+  private static final Path ASSEMBLY = Path.of("/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.assembly");
+  private static final Path FASTA = Path.of("/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.fasta.gz");
 
   @TempDir
   Path tempDir;
@@ -44,7 +44,7 @@ class HicAssemblyConversionIntegrationTest {
       new ConversionOptions(
         HIC,
         output,
-        List.of(),
+        List.of(2_500_000L),
         8_192,
         6,
         ConversionOptions.CompressionAlgorithm.DEFLATE,
@@ -80,7 +80,7 @@ class HicAssemblyConversionIntegrationTest {
       chunkedFile.getAssemblyInfo().contigs().size(),
       chunkedFile.getContigTree().getOrderedContigList().size()
     );
-    assertTrue(chunkedFile.getContigTree().getOrderedContigList().size() > 1);
+    assertTrue(chunkedFile.getContigTree().getOrderedContigList().size() > 3);
   }
 
   private static Path findLocalHictkBinary() throws IOException {

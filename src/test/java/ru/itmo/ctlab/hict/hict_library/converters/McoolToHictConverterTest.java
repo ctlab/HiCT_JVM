@@ -155,6 +155,53 @@ class McoolToHictConverterTest {
     }
   }
 
+  @Test
+  void juiceboxAssemblyKeepsContigsMissingFromMultiChromSourceHidden() throws Exception {
+    final var mcool = tempDir.resolve("partial-source.mcool");
+    final var assembly = tempDir.resolve("partial-layout.assembly");
+    final var output = tempDir.resolve("partial-output.hict.hdf5");
+
+    writeSyntheticMcool(mcool);
+    Files.writeString(
+      assembly,
+      String.join(
+        System.lineSeparator(),
+        ">ctgA 1 2500",
+        ">ctgB 2 3600",
+        ">ctgC 3 1500",
+        "1",
+        "2",
+        "3"
+      ) + System.lineSeparator()
+    );
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        assembly.toString(),
+        false,
+        1
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertArrayEquals(new String[]{"ctgA", "ctgB", "ctgC"}, reader.string().readArray(getContigNameDatasetPath()));
+      assertArrayEquals(new long[]{3L, 4L, 0L}, reader.int64().readArray(getContigLengthBinsDatasetPath(1_000L)));
+
+      final long[][] basisAtu = reader.int64().readMatrix(getBasisATUDatasetPath(1_000L));
+      assertEquals(2, basisAtu.length);
+      assertArrayEquals(new long[]{0L, 0L, 3L, 1L}, basisAtu[0]);
+      assertArrayEquals(new long[]{0L, 3L, 7L, 1L}, basisAtu[1]);
+    }
+  }
+
   private static void writeSyntheticMcool(final Path path) {
     HDF5LibraryInitializer.initializeHDF5Library();
     try (final var writer = HDF5Factory.open(path.toFile())) {
