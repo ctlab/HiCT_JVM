@@ -1,7 +1,10 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -10,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HictkConversionPipelineTest {
+  @TempDir
+  Path tempDir;
 
   @Test
   void resolveTargetResolutionsKeepsAvailableOrderWhenNoFilterRequested() {
@@ -60,5 +65,27 @@ class HictkConversionPipelineTest {
         List.of(50_000L)
       )
     );
+  }
+
+  @Test
+  void syntheticCooChromSizesUseObservedZeroBasedBinRange() throws Exception {
+    final var coo = tempDir.resolve("sample.coo");
+    Files.writeString(
+      coo,
+      """
+      # row col count
+      0\t0\t1
+      0\t2\t3
+      2\t2\t4
+      """
+    );
+
+    final var geometry = HictkConversionPipeline.createSyntheticChromSizes(coo, tempDir, 1L);
+
+    assertEquals(
+      List.of("assembly\t3"),
+      Files.readAllLines(geometry.chromSizesPath())
+    );
+    assertEquals(1L, geometry.binSize());
   }
 }
