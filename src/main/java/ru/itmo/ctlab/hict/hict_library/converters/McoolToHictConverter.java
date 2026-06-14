@@ -184,10 +184,12 @@ public class McoolToHictConverter {
     final long[] componentEndBpExclusive = new long[contigRecords.size()];
     final var scaffoldIds = new java.util.LinkedHashMap<String, Long>();
     final var sourceChromLayout = readSourceChromLayout(src, selectedResolutions.get(0));
+    final boolean isJuiceboxAssemblyLayout = layoutPath.getFileName().toString().toLowerCase().endsWith(".assembly");
     final boolean allContigNamesResolve = contigRecords.stream()
       .allMatch(record -> canResolveSourceChromIndex(sourceChromLayout, record.getContigName()));
     final boolean useSingleAssemblyChromosome = !allContigNamesResolve && sourceChromLayout.lengthsBp().length == 1;
-    if (!allContigNamesResolve && !useSingleAssemblyChromosome) {
+    final boolean allowUnmappedJuiceboxContigs = !allContigNamesResolve && !useSingleAssemblyChromosome && isJuiceboxAssemblyLayout;
+    if (!allContigNamesResolve && !useSingleAssemblyChromosome && !allowUnmappedJuiceboxContigs) {
       final var missingContigName = contigRecords.stream()
         .map(AGPProcessor.ContigAGPRecord::getContigName)
         .filter(name -> !canResolveSourceChromIndex(sourceChromLayout, name))
@@ -199,6 +201,7 @@ public class McoolToHictConverter {
     final Map<String, SourceComponentRange> singleAssemblySourceRanges = useSingleAssemblyChromosome
       ? readSingleAssemblySourceRanges(layoutPath)
       : Map.of();
+    int unmappedJuiceboxContigs = 0;
 
     for (int i = 0; i < contigRecords.size(); i++) {
       final var record = contigRecords.get(i);
@@ -220,21 +223,34 @@ public class McoolToHictConverter {
           componentEndBpExclusive[i] = assemblyChromosomeOffsetBp + componentLengthBp;
         }
         assemblyChromosomeOffsetBp = componentEndBpExclusive[i];
+      } else if (allowUnmappedJuiceboxContigs && !canResolveSourceChromIndex(sourceChromLayout, record.getContigName())) {
+        sourceChromIds[i] = -1;
+        componentStartBp0[i] = 0L;
+        componentEndBpExclusive[i] = componentLengthBp;
+        unmappedJuiceboxContigs++;
       } else {
         sourceChromIds[i] = resolveSourceChromIndex(sourceChromLayout, record.getContigName(), layoutPath);
         componentStartBp0[i] = record.getIntraContigStartBpIncl() - 1L;
         componentEndBpExclusive[i] = record.getIntraContigEndBpIncl();
       }
-      final long sourceChromLengthBp = sourceChromLayout.lengthsBp()[sourceChromIds[i]];
-      if (componentStartBp0[i] < 0L || componentEndBpExclusive[i] <= componentStartBp0[i] || componentEndBpExclusive[i] > sourceChromLengthBp) {
-        throw new IllegalArgumentException(
-          "Assembly layout component " + record.getContigName() + ":" + record.getIntraContigStartBpIncl() +
-            "-" + record.getIntraContigEndBpIncl() + " is outside source contig length " + sourceChromLengthBp +
-            " from " + layoutPath.getFileName()
-        );
+      if (sourceChromIds[i] >= 0) {
+        final long sourceChromLengthBp = sourceChromLayout.lengthsBp()[sourceChromIds[i]];
+        if (componentStartBp0[i] < 0L || componentEndBpExclusive[i] <= componentStartBp0[i] || componentEndBpExclusive[i] > sourceChromLengthBp) {
+          throw new IllegalArgumentException(
+            "Assembly layout component " + record.getContigName() + ":" + record.getIntraContigStartBpIncl() +
+              "-" + record.getIntraContigEndBpIncl() + " is outside source contig length " + sourceChromLengthBp +
+              " from " + layoutPath.getFileName()
+          );
+        }
       }
       contigLengthBp[i] = componentLengthBp;
       contigScaffoldIds[i] = scaffoldIds.computeIfAbsent(record.getScaffoldName(), ignored -> (long) scaffoldIds.size());
+    }
+    if (unmappedJuiceboxContigs > 0) {
+      logConsumer.accept(
+        "Assembly layout contains " + unmappedJuiceboxContigs +
+          " contig(s) that are absent from source .mcool chromosome metadata; keeping them as hidden zero-bin contigs."
+      );
     }
 
     final long totalAssemblyLengthBp = Arrays.stream(contigLengthBp).sum();
@@ -259,6 +275,11 @@ public class McoolToHictConverter {
       final long[] sourceBinStarts = src.int64().readArray("/resolutions/" + resolution + "/bins/start");
       final long[] sourceBinEnds = src.int64().readArray("/resolutions/" + resolution + "/bins/end");
       for (int i = 0; i < contigRecords.size(); i++) {
+        if (sourceChromIds[i] < 0) {
+          startBins[i] = 0L;
+          lengthBins[i] = 0L;
+          continue;
+        }
         final var range = resolveSourceBinRange(
           resolution,
           sourceChromIds[i],
