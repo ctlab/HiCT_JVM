@@ -42,6 +42,7 @@ import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -122,6 +123,27 @@ public class FSHandlersHolder extends HandlersHolder {
             .toList();
         },
         files -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(files))
+      );
+    });
+
+    router.post("/list_directory").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) {
+        return;
+      }
+      scheduler.submit(
+        ctx,
+        RequestTaskScheduler.RequestPriority.UI_UX,
+        null,
+        () -> {
+          final var request = ctx.body() != null && ctx.body().asJsonObject() != null
+            ? ctx.body().asJsonObject()
+            : new JsonObject();
+          final var directory = request.getString("directory", "");
+          final var dataDirectory = dataDirectory();
+          return listDirectoryEntries(dataDirectory, directory);
+        },
+        entries -> ctx.response().putHeader("content-type", "application/json").end(Json.encode(entries))
       );
     });
 
@@ -288,7 +310,7 @@ public class FSHandlersHolder extends HandlersHolder {
         @Override
         public @NotNull FileVisitResult preVisitDirectory(final @NotNull Path dir,
                                                           final @NotNull BasicFileAttributes attrs) {
-          if (!dir.equals(dataDirectory) && (Files.isSymbolicLink(dir) || attrs.isOther())) {
+          if (!dir.equals(dataDirectory) && attrs.isOther()) {
             log.debug("Skipping non-standard directory while listing files: {}", dir);
             return FileVisitResult.SKIP_SUBTREE;
           }
@@ -298,7 +320,7 @@ public class FSHandlersHolder extends HandlersHolder {
         @Override
         public @NotNull FileVisitResult visitFile(final @NotNull Path file,
                                                   final @NotNull BasicFileAttributes attrs) {
-          if (attrs.isRegularFile()) {
+          if (attrs.isRegularFile() || Files.isRegularFile(file)) {
             files.add(file);
           }
           return FileVisitResult.CONTINUE;
@@ -327,18 +349,64 @@ public class FSHandlersHolder extends HandlersHolder {
     return files;
   }
 
+  private static @NotNull List<FileEntry> listDirectoryEntries(final @NotNull Path dataDirectory,
+                                                               final String requestedDirectory) {
+    final var normalizedDataDirectory = dataDirectory.normalize().toAbsolutePath();
+    final var cleanRequestedDirectory = requestedDirectory == null ? "" : requestedDirectory.strip();
+    final var directory = cleanRequestedDirectory.isBlank()
+      ? normalizedDataDirectory
+      : normalizedDataDirectory.resolve(cleanRequestedDirectory).normalize().toAbsolutePath();
+    if (!directory.startsWith(normalizedDataDirectory)) {
+      throw new IllegalArgumentException("Directory is outside the configured data directory");
+    }
+    if (!Files.isDirectory(directory)) {
+      throw new IllegalArgumentException("Directory does not exist: " + cleanRequestedDirectory);
+    }
+
+    final var entries = new ArrayList<FileEntry>();
+    try (final var stream = Files.list(directory)) {
+      stream.forEach(path -> {
+        if (Files.isDirectory(path)) {
+          entries.add(toDetailedFileEntry(normalizedDataDirectory, path, "directory"));
+        } else if (Files.isRegularFile(path)) {
+          entries.add(toDetailedFileEntry(normalizedDataDirectory, path, "file"));
+        }
+      });
+    } catch (final IOException e) {
+      throw new RuntimeException("Failed to list directory " + cleanRequestedDirectory, e);
+    }
+    entries.sort(
+      Comparator.comparing((FileEntry entry) -> !"directory".equals(entry.type()))
+        .thenComparing(entry -> entry.name().toLowerCase())
+        .thenComparing(FileEntry::path)
+    );
+    return entries;
+  }
+
   private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
                                                         final @NotNull java.nio.file.Path path) {
+    return toDetailedFileEntry(dataDirectory, path, Files.isDirectory(path) ? "directory" : "file");
+  }
+
+  private static @NotNull FileEntry toDetailedFileEntry(final @NotNull java.nio.file.Path dataDirectory,
+                                                        final @NotNull java.nio.file.Path path,
+                                                        final @NotNull String type) {
     final var relative = dataDirectory.relativize(path).toString();
     final var fileName = path.getFileName() == null ? relative : path.getFileName().toString();
     final var lowered = fileName.toLowerCase();
     final int dotIndex = lowered.lastIndexOf('.');
     final var extension = dotIndex >= 0 ? lowered.substring(dotIndex) : "";
+    final var symbolicLink = Files.isSymbolicLink(path);
     try {
       final var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
-      return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension);
+      return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension, type, symbolicLink);
     } catch (final IOException e) {
-      return new FileEntry(relative, fileName, -1L, 0L, extension);
+      try {
+        final var attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        return new FileEntry(relative, fileName, attrs.size(), attrs.lastModifiedTime().toMillis(), extension, type, symbolicLink);
+      } catch (final IOException ignored) {
+        return new FileEntry(relative, fileName, -1L, 0L, extension, type, symbolicLink);
+      }
     }
   }
 
@@ -346,7 +414,9 @@ public class FSHandlersHolder extends HandlersHolder {
                            @NotNull String name,
                            long sizeBytes,
                            long modifiedAtMs,
-                           @NotNull String extension) {
+                           @NotNull String extension,
+                           @NotNull String type,
+                           boolean symbolicLink) {
   }
 
   private @NotNull MatrixConversionCacheManager cacheManager() {

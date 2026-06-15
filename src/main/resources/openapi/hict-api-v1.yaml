@@ -164,6 +164,26 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/FileEntry'
+  /list_directory:
+    post:
+      tags: [Files]
+      summary: List one DATA_DIR directory without recursive traversal
+      operationId: listDirectory
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListDirectoryRequest'
+      responses:
+        '200':
+          description: Immediate child files and directories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileEntry'
   /list_fasta_files:
     post:
       tags: [Files]
@@ -1444,6 +1464,16 @@ components:
         sizeBytes: { type: integer, format: int64 }
         modifiedAtMs: { type: integer, format: int64 }
         extension: { type: string }
+        type:
+          type: string
+          enum: [file, directory]
+        symbolicLink: { type: boolean }
+    ListDirectoryRequest:
+      type: object
+      properties:
+        directory:
+          type: string
+          description: Relative directory path under DATA_DIR. Empty or omitted means DATA_DIR root.
 
     OpenFileRequest:
       type: object
