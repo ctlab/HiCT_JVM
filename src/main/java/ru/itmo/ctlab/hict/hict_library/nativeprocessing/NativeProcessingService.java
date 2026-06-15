@@ -518,7 +518,7 @@ public final class NativeProcessingService {
         || normalized.equals("yes")
         || normalized.equals("on");
     }
-    return false;
+    return true;
   }
 
   private static int checkedElementCount(final int rows, final int columns) {

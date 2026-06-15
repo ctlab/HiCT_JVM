@@ -21,6 +21,7 @@ import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -248,6 +249,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
                     final var chunkSize = requestJson.getInteger("chunkSize", 8192);
                     final var assemblyFilename = requestJson.getString("assemblyFilename", "");
+                    final var useCurrentAssembly = requestJson.getBoolean("useCurrentAssembly", false);
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
                     if (dataDirectoryWrapper == null) {
@@ -265,10 +267,15 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var direction = ConversionDirection.fromRequestOrSource(requestJson.getString("direction"), sourcePath);
                     final var outputPath = deriveOutputPath(sourcePath, direction);
                     prepareOutputPath(outputPath, overwrite);
-                    final var assemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
+                    final var requestedAssemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
+                    final var currentAssemblyPath = useCurrentAssembly && direction == ConversionDirection.HICT_TO_MCOOL
+                      ? writeCurrentAssemblySnapshot()
+                      : null;
+                    final var assemblyPath = currentAssemblyPath != null ? currentAssemblyPath : requestedAssemblyPath;
                     final var assemblyPathForOptions = assemblyPath == null
                       ? ConversionOptions.NO_AGP
                       : assemblyPath.toString();
+                    final var applyAgpBeforeExport = direction == ConversionDirection.HICT_TO_MCOOL && assemblyPath != null;
                     final var loadOptions = parseHictkLoadOptions(dataDirectory, requestJson);
 
                     final var options = new ConversionOptions(
@@ -279,7 +286,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         compression,
                         compressionAlgorithm,
                         assemblyPathForOptions,
-                        false,
+                        applyAgpBeforeExport,
                         parallelism
                     );
                     final ConversionJob job;
@@ -572,6 +579,24 @@ public class ConversionHandlersHolder extends HandlersHolder {
             throw new IllegalArgumentException("Assembly layout file not found: " + filename);
         }
         return assemblyPath;
+    }
+
+    private @NotNull Path writeCurrentAssemblySnapshot() {
+        final @NotNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+        final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
+        if (chunkedFileWrapper == null) {
+            throw new IllegalStateException("Open a .hict.hdf5 matrix before exporting with the current assembly state");
+        }
+        final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+        final var builder = new StringBuilder();
+        chunkedFile.getAgpProcessor().getAGPStream(1000L).sequential().forEach(builder::append);
+        try {
+            final var path = Files.createTempFile("hict-current-assembly-", ".agp");
+            Files.writeString(path, builder.toString(), StandardCharsets.UTF_8);
+            return path;
+        } catch (final IOException e) {
+            throw new RuntimeException("Failed to create current assembly AGP snapshot", e);
+        }
     }
 
     private static @NotNull HictkLoadOptions parseHictkLoadOptions(final @NotNull Path dataDirectory,

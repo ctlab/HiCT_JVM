@@ -27,10 +27,14 @@ public class HictToMcoolConverter {
     final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8));
     try {
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
-        try (final var reader = Files.newBufferedReader(options.inputPath().resolveSibling(options.agpPath()), StandardCharsets.UTF_8)) {
+        final var requestedAgpPath = Path.of(options.agpPath());
+        final var resolvedAgpPath = requestedAgpPath.isAbsolute()
+          ? requestedAgpPath
+          : options.inputPath().resolveSibling(requestedAgpPath).normalize();
+        try (final var reader = Files.newBufferedReader(resolvedAgpPath, StandardCharsets.UTF_8)) {
           chunkedFile.importAGP(reader);
         }
-        synchronizedLogConsumer.accept("Applied AGP before export");
+        synchronizedLogConsumer.accept("Applied AGP before export: " + resolvedAgpPath);
       }
 
       final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions());
