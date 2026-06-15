@@ -1,6 +1,6 @@
 # HiCT Changelog
 
-## Current development build
+## 1.0.177-4b3d5e0-webui_1329134
 
 Changes since the last merge point with `master`:
 
@@ -16,4 +16,3 @@ Changes since the last merge point with `master`:
 - Improved color threshold controls for live updates and very small signal values.
 - Reduced WebUI freezes caused by large contig/scaffold style updates.
 - Updated the About window with correspondence contacts and this changelog.
-
