@@ -32,6 +32,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VersionResponse'
+  /changelog:
+    get:
+      tags: [Info]
+      summary: Get packaged end-user changelog text
+      operationId: getChangelog
+      responses:
+        '200':
+          description: Changelog text for the current build
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangelogResponse'
   /diagnostics/workers:
     post:
       tags: [Info]
@@ -1383,6 +1395,11 @@ components:
         version: { type: string }
         webuiVersion: { type: string }
       required: [version, webuiVersion]
+    ChangelogResponse:
+      type: object
+      properties:
+        text: { type: string }
+      required: [text]
     NativeProcessingStatus:
       type: object
       properties:

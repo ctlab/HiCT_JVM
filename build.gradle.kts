@@ -69,6 +69,7 @@ val watchForChange = "src/**/*"
 val doOnChange = "${projectDir}/gradlew classes"
 
 val versionFile = file("${project.projectDir}/version.txt")
+val changelogFile = file("${project.projectDir}/CHANGELOG.md")
 val webUiPackageJson = file("${project.projectDir}/../HiCT_WebUI/package.json")
 
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
@@ -1211,6 +1212,13 @@ tasks.named<ProcessResources>("processResources") {
       layout.buildDirectory.file("resources/main/version.txt").get().asFile.toPath(),
       StandardCopyOption.REPLACE_EXISTING
     )
+    if (changelogFile.exists()) {
+      Files.copy(
+        changelogFile.toPath(),
+        layout.buildDirectory.file("resources/main/CHANGELOG.md").get().asFile.toPath(),
+        StandardCopyOption.REPLACE_EXISTING
+      )
+    }
     if (webUiPackageJson.exists()) {
       Files.copy(
         webUiPackageJson.toPath(),
