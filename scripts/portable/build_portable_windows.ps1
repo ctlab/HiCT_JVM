@@ -345,12 +345,6 @@ New-Item -ItemType Directory -Force -Path (Join-Path $appDir "licenses") | Out-N
 New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 
 Copy-Item -Force $fatJar.FullName (Join-Path $appDir "lib\hict.jar")
-$jhdf5NativesArchive = Get-ChildItem -Path (Join-Path $projectDir "build\libs") -Filter "sis-jhdf5-*-natives.tar.gz" -File -ErrorAction SilentlyContinue |
-  Sort-Object Name |
-  Select-Object -Last 1
-if ($jhdf5NativesArchive) {
-  Copy-Item -Force $jhdf5NativesArchive.FullName (Join-Path $appDir ("lib\" + $jhdf5NativesArchive.Name))
-}
 Copy-Item -Force (Join-Path $projectDir "LICENSE") (Join-Path $appDir "licenses\HiCT_JVM_LICENSE")
 $webUiLicense = Join-Path $projectDir "..\HiCT_WebUI\LICENSE"
 if (Test-Path $webUiLicense) {

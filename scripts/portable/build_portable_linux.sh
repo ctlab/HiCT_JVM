@@ -104,10 +104,6 @@ mkdir -p \
   "${ARTIFACT_DIR}"
 
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
-JHDF5_NATIVES_ARCHIVE="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
-if [[ -n "${JHDF5_NATIVES_ARCHIVE}" && -f "${JHDF5_NATIVES_ARCHIVE}" ]]; then
-  cp "${JHDF5_NATIVES_ARCHIVE}" "${APP_DIR}/lib/$(basename "${JHDF5_NATIVES_ARCHIVE}")"
-fi
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"

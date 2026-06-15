@@ -1089,6 +1089,7 @@ tasks.named("clean") {
 tasks.named<ProcessResources>("processResources") {
   dependsOn("copyWebUI")
   dependsOn("verifyNativeProcessingBuild")
+  dependsOn("prepareRuntimeJhdf5NativesArchive")
   duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.EXCLUDE
   exclude(
     "libs/$bundledJhdf5JarName",
@@ -1099,8 +1100,8 @@ tasks.named<ProcessResources>("processResources") {
     into("")
   }
   from(provider {
-    bundledJhdf5NativesArchiveFile()
-      ?.takeIf { it.isFile }
+    runtimeJhdf5NativesArchiveFile.get().asFile
+      .takeIf { it.isFile }
       ?.let { listOf(it) }
       ?: emptyList<File>()
   }) {
@@ -1388,20 +1389,10 @@ tasks.register("verifyBundledJhdf5Payload") {
 tasks.named<ShadowJar>("shadowJar") {
   dependsOn("verifyNativeProcessingBuild")
   dependsOn(prepareRuntimeJhdf5NativesArchive)
-  from(provider {
-    val archive = runtimeJhdf5NativesArchiveFile.get().asFile
-    if (archive.isFile) listOf(archive) else emptyList<File>()
-  }) {
-    into("libs")
-  }
-  doLast {
-    runtimeJhdf5NativesArchiveOrSource()?.let { archive ->
-      val target = archiveFile.get().asFile.parentFile.resolve(archive.name)
-      if (archive.canonicalFile != target.canonicalFile) {
-        Files.copy(archive.toPath(), target.toPath(), REPLACE_EXISTING)
-      }
-      logger.lifecycle("Staged bundled JHDF5 native archive at ${target.absolutePath}")
-    }
+  doFirst {
+    archiveFile.get().asFile.parentFile
+      ?.listFiles { file -> file.isFile && file.name.matches(Regex("""sis-jhdf5-.*-natives\.tar\.gz""")) }
+      ?.forEach { Files.deleteIfExists(it.toPath()) }
   }
 }
 
