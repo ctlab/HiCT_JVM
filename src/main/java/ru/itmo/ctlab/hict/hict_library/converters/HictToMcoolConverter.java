@@ -1,13 +1,26 @@
 package ru.itmo.ctlab.hict.hict_library.converters;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
+import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
+import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
+import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,10 +29,12 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.PriorityQueue;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.zip.GZIPInputStream;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 
@@ -49,29 +64,18 @@ public class HictToMcoolConverter {
         synchronizedLogConsumer.accept("Applied AGP before export: " + resolvedAgpPath);
       }
 
-      final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions());
+      final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions(), options.exportAllResolutions());
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
-      final var requestedWorkers = resolveRequestedWorkers(options.parallelism());
-      final var workers = Math.max(1, Math.min(requestedWorkers, selectedResolutions.size()));
-      final var totalVectorItems = countVectorItems(options.inputPath(), selectedResolutions, synchronizedLogConsumer);
+      final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
       final var progressTracker = new ExportProgressTracker(
-        Math.max(0L, (totalVectorItems * 2L) + countBins(chunkedFile, selectedResolutions)),
+        Math.max(1L, (totalSourcePixels * 4L) + countBins(chunkedFile, selectedResolutions)),
         System.nanoTime(),
         synchronizedLogConsumer
       );
 
-      synchronizedLogConsumer.accept("Converting in parallel with workers=" + workers + ", chunkSize=" + options.chunkSize());
+      synchronizedLogConsumer.accept("Converting internally with chunkSize=" + options.chunkSize());
 
-      final var stagedResolutionFiles = convertResolutionsInParallel(
-        options.inputPath(),
-        selectedResolutions,
-        options.chunkSize(),
-        compression,
-        workers,
-        progressTracker,
-        synchronizedLogConsumer
-      );
-
+      Files.deleteIfExists(options.outputPath());
       try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
         dst.object().createGroup("/resolutions");
         dst.string().setAttrVL("/", "format", "HDF5::MCOOL");
@@ -81,16 +85,38 @@ public class HictToMcoolConverter {
         dst.string().write("/source_format", "hict");
         dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
 
-        for (final var staged : stagedResolutionFiles.stream().sorted(Comparator.comparingLong(StagedResolutionFile::resolution)).toList()) {
-          try (final var stagedReader = HDF5Factory.openForReading(staged.path().toFile())) {
-            mergeResolution(stagedReader, dst, chunkedFile, staged.resolution(), options.chunkSize(), compression, progressTracker, logConsumer);
-            synchronizedLogConsumer.accept("Merged resolution " + staged.resolution() + " to final output");
+        for (final var resolution : selectedResolutions.stream().sorted().toList()) {
+          final Integer resolutionOrder = chunkedFile.getResolutionToIndex().get(resolution);
+          if (resolutionOrder == null) {
+            throw new IllegalStateException("Resolution " + resolution + " is not present in " + options.inputPath().getFileName());
+          }
+          final var resolutionTmpDir = Files.createTempDirectory("hict-to-mcool-r" + resolution + "-");
+          try {
+            final var cooPath = resolutionTmpDir.resolve("pixels.coo.gz");
+            final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
+            exportTransformedCoo(
+              options.inputPath(),
+              resolution,
+              cooPath,
+              mapper,
+              options.chunkSize(),
+              progressTracker,
+              synchronizedLogConsumer
+            );
+            mergeResolutionFromSortedCoo(
+              cooPath,
+              dst,
+              chunkedFile.getMatrixSizeBins()[0],
+              resolution,
+              chunkedFile.getMatrixSizeBins()[resolutionOrder],
+              options.chunkSize(),
+              compression,
+              progressTracker,
+              synchronizedLogConsumer
+            );
+            synchronizedLogConsumer.accept("Merged resolution " + resolution + " to final output");
           } finally {
-            try {
-              Files.deleteIfExists(staged.path());
-            } catch (IOException e) {
-              synchronizedLogConsumer.accept("Failed to delete temp file " + staged.path() + ": " + e.getMessage());
-            }
+            deleteRecursively(resolutionTmpDir, synchronizedLogConsumer);
           }
         }
       }
@@ -516,6 +542,28 @@ public class HictToMcoolConverter {
     }
   }
 
+  private static long countSourcePixels(
+    final @NotNull Path inputPath,
+    final @NotNull List<Long> resolutions
+  ) {
+    try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
+      long total = 0L;
+      for (final var resolution : resolutions) {
+        final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
+        final long[] stripeLengths = src.int64().readArray(getStripeLengthsBinsDatasetPath(resolution));
+        final int stripeCount = stripeLengths.length;
+        for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+          final long rowBase = (long) rowStripe * stripeCount;
+          final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
+          for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+            total += rowBlockLengths[colStripe];
+          }
+        }
+      }
+      return total;
+    }
+  }
+
   private static long countBins(
     final @NotNull ChunkedFile chunkedFile,
     final @NotNull List<Long> selectedResolutions
@@ -531,6 +579,508 @@ public class HictToMcoolConverter {
     return total;
   }
 
+  private static void exportTransformedCoo(
+    final @NotNull Path inputPath,
+    final long resolution,
+    final @NotNull Path outputPath,
+    final @NotNull SourceToAssemblyMapper mapper,
+    final int chunkSize,
+    final @NotNull ExportProgressTracker overallTracker,
+    final @NotNull Consumer<String> logger
+  ) throws IOException {
+    final var workDir = Files.createDirectories(outputPath.getParent());
+    final var chunkPaths = new ArrayList<Path>();
+    final int sortBatchSize = Math.max(50_000, Math.min(Math.max(50_000, chunkSize), 250_000));
+    final var batch = new ArrayList<CooRecord>(sortBatchSize);
+    try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
+      final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
+      final var blockOffsetsPath = getBlockOffsetDatasetPath(resolution);
+      final var rowsPath = getBlockRowsDatasetPath(resolution);
+      final var colsPath = getBlockColsDatasetPath(resolution);
+      final var valuesPath = getBlockValuesDatasetPath(resolution);
+      final var denseBlocksPath = getDenseBlockDatasetPath(resolution);
+      final long[] stripeLengths = src.int64().readArray(getStripeLengthsBinsDatasetPath(resolution));
+      final long[] stripeOffsets = new long[stripeLengths.length];
+      long stripeCursor = 0L;
+      for (int i = 0; i < stripeLengths.length; i++) {
+        stripeOffsets[i] = stripeCursor;
+        stripeCursor += stripeLengths[i];
+      }
+      final int stripeCount = stripeLengths.length;
+      if (isFloatingPointDataset(src, valuesPath)) {
+        throw new IllegalStateException("Internal .mcool export currently supports integer HiCT matrices only");
+      }
+      long processedPixels = 0L;
+      long total = 0L;
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        final long rowBase = (long) rowStripe * stripeCount;
+        final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
+        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+          total += rowBlockLengths[colStripe];
+        }
+      }
+      final long startedNanos = System.nanoTime();
+      int lastLoggedPercent = -1;
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        final long rowBase = (long) rowStripe * stripeCount;
+        final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
+        final long[] rowBlockOffsets = src.int64().readArrayBlockWithOffset(blockOffsetsPath, stripeCount, rowBase);
+        final long rowStripeOffset = stripeOffsets[rowStripe];
+        final int rowStripeLength = Math.toIntExact(stripeLengths[rowStripe]);
+        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+          final long blockLen = rowBlockLengths[colStripe];
+          if (blockLen <= 0L) {
+            continue;
+          }
+          final long blockOffset = rowBlockOffsets[colStripe];
+          final long colStripeOffset = stripeOffsets[colStripe];
+          final int colStripeLength = Math.toIntExact(stripeLengths[colStripe]);
+          if (blockOffset >= 0L) {
+            final int actualBlockLen = Math.toIntExact(blockLen);
+            final var rows = src.int64().readArrayBlockWithOffset(rowsPath, actualBlockLen, blockOffset);
+            final var cols = src.int64().readArrayBlockWithOffset(colsPath, actualBlockLen, blockOffset);
+            final var vals = src.int64().readArrayBlockWithOffset(valuesPath, actualBlockLen, blockOffset);
+            for (int i = 0; i < actualBlockLen; i++) {
+              appendMappedRecord(batch, mapper, rowStripeOffset + rows[i], colStripeOffset + cols[i], vals[i]);
+              if (batch.size() >= sortBatchSize) {
+                final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
+                chunkPaths.add(chunkPath);
+                batch.clear();
+              }
+            }
+          } else {
+            final long denseIndex = -(blockOffset + 1L);
+            final var denseValues = readDenseLongBlock(src, denseBlocksPath, denseIndex);
+            for (int row = 0; row < rowStripeLength; row++) {
+              final int colStart = (rowStripe == colStripe) ? row : 0;
+              for (int col = colStart; col < colStripeLength; col++) {
+                final long value = denseValues[(row * 256) + col];
+                if (value == 0L) {
+                  continue;
+                }
+                appendMappedRecord(batch, mapper, rowStripeOffset + row, colStripeOffset + col, value);
+                if (batch.size() >= sortBatchSize) {
+                  final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
+                  chunkPaths.add(chunkPath);
+                  batch.clear();
+                }
+              }
+            }
+          }
+          processedPixels += blockLen;
+          overallTracker.add(blockLen, "Resolution " + resolution + " COO export");
+          if (total > 0) {
+            final int percent = (int) ((processedPixels * 100L) / total);
+            if (percent >= 100 || percent - lastLoggedPercent >= 10) {
+              lastLoggedPercent = percent;
+              final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+              final long etaMillis = estimateEtaMillis(processedPixels, total, elapsedMillis);
+              logger.accept(
+                String.format(
+                  "Resolution %d COO export: %d%% (%d/%d), elapsed=%s, eta=%s",
+                  resolution,
+                  percent,
+                  processedPixels,
+                  total,
+                  formatDuration(elapsedMillis),
+                  formatDuration(etaMillis)
+                )
+              );
+            }
+          }
+        }
+      }
+    }
+    if (!batch.isEmpty()) {
+      final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
+      chunkPaths.add(chunkPath);
+      batch.clear();
+    }
+    mergeSortedChunks(chunkPaths, outputPath, logger);
+  }
+
+  private static void mergeResolutionFromSortedCoo(
+    final @NotNull Path cooPath,
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+    final long assemblyLengthBp,
+    final long resolution,
+    final long binsCount,
+    final int chunkSize,
+    final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull ExportProgressTracker progressTracker,
+    final @NotNull Consumer<String> logger
+  ) throws IOException {
+    final var summary = summarizeSortedCoo(cooPath, binsCount);
+    final var root = "/resolutions/" + resolution;
+    dst.object().createGroup(root);
+    dst.object().createGroup(root + "/chroms");
+    dst.object().createGroup(root + "/bins");
+    dst.object().createGroup(root + "/pixels");
+    dst.object().createGroup(root + "/indexes");
+
+    writeChromsGroup(dst, root + "/chroms", DEFAULT_CHROM_NAME, assemblyLengthBp, compression);
+    writeBinsGroup(dst, root + "/bins", resolution, binsCount, assemblyLengthBp, compression, progressTracker, logger, "Merge resolution " + resolution + " bins");
+    writePixelsFromSortedCoo(cooPath, dst, root, summary.nonzeroPixelCount(), chunkSize, compression, progressTracker, logger, resolution);
+    dst.int64().writeArray(root + "/indexes/bin1_offset", summary.bin1Offset(), compression);
+    dst.int64().writeArray(root + "/indexes/chrom_offset", new long[]{0L, binsCount}, compression);
+    writeResolutionMetadata(dst, root, resolution, binsCount, summary.nonzeroPixelCount(), summary.totalCounts());
+  }
+
+  private static @NotNull SortedCooSummary summarizeSortedCoo(
+    final @NotNull Path cooPath,
+    final long binsCount
+  ) throws IOException {
+    final var bin1Offset = new long[Math.toIntExact(binsCount + 1L)];
+    long nonzeroPixelCount = 0L;
+    long totalCounts = 0L;
+    long lastRow = -1L;
+    long lastCol = -1L;
+    boolean seenAnyPixel = false;
+    try (final var reader = new BufferedReader(new InputStreamReader(
+      new GZIPInputStream(new BufferedInputStream(Files.newInputStream(cooPath))), StandardCharsets.UTF_8))) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        if (line.isBlank()) {
+          continue;
+        }
+        final var record = parseCooLine(line);
+        final long row = record[0];
+        final long col = record[1];
+        final long count = record[2];
+        if (row < 0L || row >= binsCount || col < row || col >= binsCount) {
+          throw new IllegalStateException("Sorted COO record is out of Cooler bounds: " + line);
+        }
+        if (!seenAnyPixel) {
+          for (long emptyBin = 1L; emptyBin <= row; emptyBin++) {
+            bin1Offset[(int) emptyBin] = 0L;
+          }
+          lastRow = row;
+          lastCol = col;
+          seenAnyPixel = true;
+        } else {
+          if (row < lastRow || (row == lastRow && col < lastCol)) {
+            throw new IllegalStateException("Sorted COO stream is not row-major sorted at line: " + line);
+          }
+          if (row != lastRow) {
+            for (long nextBin = lastRow + 1L; nextBin <= row; nextBin++) {
+              bin1Offset[(int) nextBin] = nonzeroPixelCount;
+            }
+            lastRow = row;
+          }
+          lastCol = col;
+        }
+        nonzeroPixelCount++;
+        totalCounts += count;
+      }
+    }
+    if (!seenAnyPixel) {
+      return new SortedCooSummary(0L, 0L, bin1Offset);
+    }
+    for (long nextBin = Math.max(0L, lastRow + 1L); nextBin <= binsCount; nextBin++) {
+      bin1Offset[(int) nextBin] = nonzeroPixelCount;
+    }
+    return new SortedCooSummary(nonzeroPixelCount, totalCounts, bin1Offset);
+  }
+
+  private static void writePixelsFromSortedCoo(
+    final @NotNull Path cooPath,
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+    final @NotNull String root,
+    final long nonzeroPixelCount,
+    final int chunkSize,
+    final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull ExportProgressTracker progressTracker,
+    final @NotNull Consumer<String> logger,
+    final long resolution
+  ) throws IOException {
+    final int datasetChunk = safeChunkLen(nonzeroPixelCount, chunkSize);
+    dst.int64().createArray(root + "/pixels/bin1_id", nonzeroPixelCount, datasetChunk, compression);
+    dst.int64().createArray(root + "/pixels/bin2_id", nonzeroPixelCount, datasetChunk, compression);
+    dst.int32().createArray(root + "/pixels/count", nonzeroPixelCount, datasetChunk, compression);
+
+    final long startedNanos = System.nanoTime();
+    long offset = 0L;
+    int lastLoggedPercent = -1;
+    final var rows = new long[datasetChunk];
+    final var cols = new long[datasetChunk];
+    final var counts = new int[datasetChunk];
+    int buffered = 0;
+    try (final var reader = new BufferedReader(new InputStreamReader(
+      new GZIPInputStream(new BufferedInputStream(Files.newInputStream(cooPath))), StandardCharsets.UTF_8))) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        if (line.isBlank()) {
+          continue;
+        }
+        final var record = parseCooLine(line);
+        rows[buffered] = record[0];
+        cols[buffered] = record[1];
+        counts[buffered] = Math.toIntExact(record[2]);
+        buffered++;
+        if (buffered >= datasetChunk) {
+          dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin1_id", rows, buffered, offset);
+          dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin2_id", cols, buffered, offset);
+          dst.int32().writeArrayBlockWithOffset(root + "/pixels/count", counts, buffered, offset);
+          offset += buffered;
+          progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
+          if (nonzeroPixelCount > 0L) {
+            final int percent = (int) ((offset * 100L) / nonzeroPixelCount);
+            if (percent >= 100 || percent - lastLoggedPercent >= 10) {
+              lastLoggedPercent = percent;
+              final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+              final long etaMillis = estimateEtaMillis(offset, nonzeroPixelCount, elapsedMillis);
+              logger.accept(
+                String.format(
+                  "Resolution %d pixels write: %d%% (%d/%d), elapsed=%s, eta=%s",
+                  resolution,
+                  percent,
+                  offset,
+                  nonzeroPixelCount,
+                  formatDuration(elapsedMillis),
+                  formatDuration(etaMillis)
+                )
+              );
+            }
+          }
+          buffered = 0;
+        }
+      }
+    }
+    if (buffered > 0) {
+      final var rowsTail = java.util.Arrays.copyOf(rows, buffered);
+      final var colsTail = java.util.Arrays.copyOf(cols, buffered);
+      final var countsTail = java.util.Arrays.copyOf(counts, buffered);
+      dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin1_id", rowsTail, buffered, offset);
+      dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin2_id", colsTail, buffered, offset);
+      dst.int32().writeArrayBlockWithOffset(root + "/pixels/count", countsTail, buffered, offset);
+      offset += buffered;
+      progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
+    }
+    logger.accept("Resolution " + resolution + " pixels write: 100% (" + offset + "/" + nonzeroPixelCount + "), elapsed=" +
+      formatDuration((System.nanoTime() - startedNanos) / 1_000_000L) + ", eta=00:00");
+  }
+
+  private static long @NotNull [] parseCooLine(final @NotNull String line) {
+    final int firstTab = line.indexOf('\t');
+    final int secondTab = firstTab < 0 ? -1 : line.indexOf('\t', firstTab + 1);
+    if (firstTab <= 0 || secondTab <= firstTab + 1 || secondTab >= line.length() - 1) {
+      throw new IllegalStateException("Malformed COO line: " + line);
+    }
+    return new long[]{
+      Long.parseLong(line, 0, firstTab, 10),
+      Long.parseLong(line, firstTab + 1, secondTab, 10),
+      Long.parseLong(line, secondTab + 1, line.length(), 10)
+    };
+  }
+
+  private static void appendMappedRecord(
+    final @NotNull List<CooRecord> batch,
+    final @NotNull SourceToAssemblyMapper mapper,
+    final long sourceRow,
+    final long sourceCol,
+    final long count
+  ) {
+    long mappedRow = mapper.map(sourceRow);
+    long mappedCol = mapper.map(sourceCol);
+    if (mappedRow > mappedCol) {
+      final long tmp = mappedRow;
+      mappedRow = mappedCol;
+      mappedCol = tmp;
+    }
+    batch.add(new CooRecord(mappedRow, mappedCol, count));
+  }
+
+  private static @NotNull Path flushSortedChunk(
+    final @NotNull Path workDir,
+    final long resolution,
+    final int chunkIndex,
+    final @NotNull List<CooRecord> records
+  ) throws IOException {
+    records.sort(Comparator
+      .comparingLong(CooRecord::row)
+      .thenComparingLong(CooRecord::col)
+      .thenComparingLong(CooRecord::count));
+    final var chunkPath = workDir.resolve(String.format("pixels-r%d-%05d.bin", resolution, chunkIndex));
+    try (final var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(chunkPath)))) {
+      for (final var record : records) {
+        out.writeLong(record.row());
+        out.writeLong(record.col());
+        out.writeLong(record.count());
+      }
+    }
+    return chunkPath;
+  }
+
+  private static void mergeSortedChunks(
+    final @NotNull List<Path> chunkPaths,
+    final @NotNull Path outputPath,
+    final @NotNull Consumer<String> logger
+  ) throws IOException {
+    if (chunkPaths.isEmpty()) {
+      try (final var rawOut = Files.newOutputStream(outputPath);
+           final var gzipOut = new java.util.zip.GZIPOutputStream(rawOut);
+           final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
+        writer.flush();
+      }
+      return;
+    }
+
+    final var cursors = new ArrayList<ChunkCursor>(chunkPaths.size());
+    final var queue = new PriorityQueue<ChunkCursor>(Comparator
+      .comparingLong((ChunkCursor cursor) -> cursor.record().row())
+      .thenComparingLong(cursor -> cursor.record().col())
+      .thenComparingLong(cursor -> cursor.record().count()));
+    try {
+      for (final var chunkPath : chunkPaths) {
+        final var cursor = new ChunkCursor(chunkPath);
+        if (cursor.advance()) {
+          cursors.add(cursor);
+          queue.add(cursor);
+        } else {
+          cursor.close();
+        }
+      }
+      try (final var rawOut = Files.newOutputStream(outputPath);
+           final var gzipOut = new java.util.zip.GZIPOutputStream(rawOut);
+           final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
+        long rawRecords = 0L;
+        long written = 0L;
+        boolean hasPending = false;
+        long pendingRow = 0L;
+        long pendingCol = 0L;
+        long pendingCount = 0L;
+        while (!queue.isEmpty()) {
+          final var cursor = queue.poll();
+          final var record = cursor.record();
+          if (!hasPending) {
+            pendingRow = record.row();
+            pendingCol = record.col();
+            pendingCount = record.count();
+            hasPending = true;
+          } else if (pendingRow == record.row() && pendingCol == record.col()) {
+            pendingCount += record.count();
+          } else {
+            writer.write(Long.toString(pendingRow));
+            writer.write('\t');
+            writer.write(Long.toString(pendingCol));
+            writer.write('\t');
+            writer.write(Long.toString(pendingCount));
+            writer.newLine();
+            written++;
+            pendingRow = record.row();
+            pendingCol = record.col();
+            pendingCount = record.count();
+          }
+          rawRecords++;
+          if (cursor.advance()) {
+            queue.add(cursor);
+          }
+          if (rawRecords % 1_000_000L == 0L) {
+            logger.accept("Merged sorted COO records: raw=" + rawRecords + ", unique=" + written);
+          }
+        }
+        if (hasPending) {
+          writer.write(Long.toString(pendingRow));
+          writer.write('\t');
+          writer.write(Long.toString(pendingCol));
+          writer.write('\t');
+          writer.write(Long.toString(pendingCount));
+          writer.newLine();
+          written++;
+        }
+        logger.accept("Merged sorted COO records complete: raw=" + rawRecords + ", unique=" + written);
+      }
+    } finally {
+      IOException closeFailure = null;
+      for (final var cursor : cursors) {
+        try {
+          cursor.close();
+        } catch (IOException e) {
+          if (closeFailure == null) {
+            closeFailure = e;
+          } else {
+            closeFailure.addSuppressed(e);
+          }
+        }
+      }
+      IOException deleteFailure = null;
+      for (final var chunkPath : chunkPaths) {
+        try {
+          Files.deleteIfExists(chunkPath);
+        } catch (IOException e) {
+          if (deleteFailure == null) {
+            deleteFailure = e;
+          } else {
+            deleteFailure.addSuppressed(e);
+          }
+        }
+      }
+      if (closeFailure != null) {
+        throw closeFailure;
+      }
+      if (deleteFailure != null) {
+        throw deleteFailure;
+      }
+    }
+  }
+
+  private static @NotNull SourceToAssemblyMapper buildMapper(
+    final @NotNull ChunkedFile chunkedFile,
+    final @NotNull Path inputPath,
+    final int resolutionOrder
+  ) throws IOException {
+    final var currentContigs = chunkedFile.getAssemblyInfo().contigs();
+    try (final var reader = HDF5Factory.openForReading(inputPath.toFile())) {
+      final var resolution = chunkedFile.getResolutions()[resolutionOrder];
+      final var stripes = Initializers.readStripeDescriptors(resolution, reader);
+      final long[] stripeOffsets = new long[stripes.size()];
+      long stripeCursor = 0L;
+      for (int i = 0; i < stripes.size(); i++) {
+        stripeOffsets[i] = stripeCursor;
+        stripeCursor += stripes.get(i).stripeLengthBins();
+      }
+
+      final var segments = new ArrayList<SourceSegment>();
+      long targetCursor = 0L;
+      for (final ContigTree.ContigTuple tuple : currentContigs) {
+        final var descriptor = tuple.descriptor();
+        final var contigAtus = descriptor.getAtus().get(resolutionOrder);
+        for (final ATUDescriptor atu : contigAtus) {
+          final var stripe = atu.getStripeDescriptor();
+          final long sourceStart = stripeOffsets[stripe.stripeId()] + atu.getStartIndexInStripeIncl();
+          final long sourceEnd = stripeOffsets[stripe.stripeId()] + atu.getEndIndexInStripeExcl();
+          final long targetStart = targetCursor;
+          final long targetEnd = targetStart + atu.getLength();
+          segments.add(new SourceSegment(sourceStart, sourceEnd, targetStart, targetEnd, atu.getDirection()));
+          targetCursor = targetEnd;
+        }
+      }
+
+      segments.sort(Comparator.comparingLong(SourceSegment::sourceStart));
+      return new SourceToAssemblyMapper(segments);
+    }
+  }
+
+  private static boolean isFloatingPointDataset(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
+    final @NotNull String path
+  ) {
+    return reader.object().getDataSetInformation(path).getTypeInformation().getDataClass() == HDF5DataClass.FLOAT;
+  }
+
+  private static long @NotNull [] readDenseLongBlock(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
+    final @NotNull String path,
+    final long denseIndex
+  ) {
+    final var block = reader.int64().readMDArrayBlockWithOffset(
+      path,
+      new int[]{1, 1, 256, 256},
+      new long[]{denseIndex, 0L, 0L, 0L}
+    );
+    return block.getAsFlatArray();
+  }
+
   private static long datasetLength(
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
     final @NotNull String path
@@ -544,13 +1094,18 @@ public class HictToMcoolConverter {
     return (int) Math.min(base, Integer.MAX_VALUE);
   }
 
-  private @NotNull List<Long> resolveResolutions(final long @NotNull [] availableResolutions, final @NotNull List<Long> requested) {
+  private @NotNull List<Long> resolveResolutions(final long @NotNull [] availableResolutions,
+                                                 final @NotNull List<Long> requested,
+                                                 final boolean exportAllResolutions) {
     final var available = new ArrayList<Long>();
     for (int i = 1; i < availableResolutions.length; i++) {
       available.add(availableResolutions[i]);
     }
     if (requested == null || requested.isEmpty()) {
-      return available;
+      if (exportAllResolutions) {
+        return available;
+      }
+      return available.stream().min(Long::compareTo).map(List::of).orElse(List.of());
     }
     return available.stream().filter(requested::contains).toList();
   }
@@ -700,5 +1255,89 @@ public class HictToMcoolConverter {
       return Math.max(1, Runtime.getRuntime().availableProcessors());
     }
     return parallelismOption;
+  }
+
+  private record SortedCooSummary(long nonzeroPixelCount, long totalCounts, long @NotNull [] bin1Offset) {
+  }
+
+  private record SourceSegment(long sourceStart, long sourceEnd, long targetStart, long targetEnd,
+                               @NotNull ATUDirection direction) {
+    private long map(final long sourceBin) {
+      final long local = sourceBin - sourceStart;
+      return switch (direction) {
+        case FORWARD -> targetStart + local;
+        case REVERSED -> targetEnd - 1L - local;
+      };
+    }
+  }
+
+  private record SourceToAssemblyMapper(@NotNull List<SourceSegment> segments) {
+    private long map(final long sourceBin) {
+      int left = 0;
+      int right = segments.size() - 1;
+      while (left <= right) {
+        final int mid = (left + right) >>> 1;
+        final var segment = segments.get(mid);
+        if (sourceBin < segment.sourceStart()) {
+          right = mid - 1;
+        } else if (sourceBin >= segment.sourceEnd()) {
+          left = mid + 1;
+        } else {
+          return segment.map(sourceBin);
+        }
+      }
+      throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+    }
+  }
+
+  private record CooRecord(long row, long col, long count) {
+  }
+
+  private static final class ChunkCursor implements AutoCloseable {
+    private final DataInputStream input;
+    private CooRecord record;
+
+    private ChunkCursor(final @NotNull Path path) throws IOException {
+      this.input = new DataInputStream(new BufferedInputStream(Files.newInputStream(path)));
+    }
+
+    private boolean advance() throws IOException {
+      try {
+        this.record = new CooRecord(input.readLong(), input.readLong(), input.readLong());
+        return true;
+      } catch (java.io.EOFException eof) {
+        this.record = null;
+        return false;
+      }
+    }
+
+    private @NotNull CooRecord record() {
+      if (record == null) {
+        throw new IllegalStateException("Chunk cursor is not positioned on a record");
+      }
+      return record;
+    }
+
+    @Override
+    public void close() throws IOException {
+      input.close();
+    }
+  }
+
+  private static void deleteRecursively(final @NotNull Path path, final @NotNull Consumer<String> logger) {
+    if (!Files.exists(path)) {
+      return;
+    }
+    try (final var stream = Files.walk(path)) {
+      stream.sorted(Comparator.reverseOrder()).forEach(candidate -> {
+        try {
+          Files.deleteIfExists(candidate);
+        } catch (IOException e) {
+          logger.accept("Failed to delete temp path " + candidate + ": " + e.getMessage());
+        }
+      });
+    } catch (IOException e) {
+      logger.accept("Failed to cleanup temp directory " + path + ": " + e.getMessage());
+    }
   }
 }

@@ -46,7 +46,9 @@ class McoolToHictConverterTest {
         ConversionOptions.CompressionAlgorithm.DEFLATE,
         assembly.toString(),
         false,
-        1
+        1,
+        true,
+        ConversionOptions.ExportMode.AUTO
       ),
       ignored -> {
       }
@@ -94,7 +96,9 @@ class McoolToHictConverterTest {
         ConversionOptions.CompressionAlgorithm.DEFLATE,
         assembly.toString(),
         false,
-        1
+        1,
+        true,
+        ConversionOptions.ExportMode.AUTO
       ),
       ignored -> {
       }
@@ -138,7 +142,9 @@ class McoolToHictConverterTest {
         ConversionOptions.CompressionAlgorithm.DEFLATE,
         assembly.toString(),
         false,
-        1
+        1,
+        true,
+        ConversionOptions.ExportMode.AUTO
       ),
       ignored -> {
       }
@@ -185,7 +191,9 @@ class McoolToHictConverterTest {
         ConversionOptions.CompressionAlgorithm.DEFLATE,
         assembly.toString(),
         false,
-        1
+        1,
+        true,
+        ConversionOptions.ExportMode.AUTO
       ),
       ignored -> {
       }

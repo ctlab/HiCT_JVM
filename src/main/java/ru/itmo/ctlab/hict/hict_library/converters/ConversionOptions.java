@@ -14,7 +14,9 @@ public record ConversionOptions(
   @NotNull CompressionAlgorithm compressionAlgorithm,
   @NotNull String agpPath,
   boolean applyAgpBeforeExport,
-  int parallelism
+  int parallelism,
+  boolean exportAllResolutions,
+  @NotNull ExportMode exportMode
 ) {
   public static final String NO_AGP = "";
 
@@ -34,6 +36,9 @@ public record ConversionOptions(
     if (parallelism <= 0) {
       parallelism = Math.max(1, Runtime.getRuntime().availableProcessors());
     }
+    if (exportMode == null) {
+      exportMode = ExportMode.AUTO;
+    }
   }
 
   public enum CompressionAlgorithm {
@@ -48,6 +53,22 @@ public record ConversionOptions(
         case "ZSTD" -> ZSTD;
         case "LZF" -> LZF;
         default -> throw new IllegalArgumentException("Unknown compression algorithm: " + value + " (expected: deflate|zstd|lzf)");
+      };
+    }
+  }
+
+  public enum ExportMode {
+    AUTO,
+    INTERNAL,
+    HICTK;
+
+    public static @NotNull ExportMode parse(final @NotNull String value) {
+      final var normalized = value.trim().toUpperCase();
+      return switch (normalized) {
+        case "AUTO" -> AUTO;
+        case "INTERNAL", "DIRECT" -> INTERNAL;
+        case "HICTK", "TOOLCHAIN" -> HICTK;
+        default -> throw new IllegalArgumentException("Unknown export mode: " + value + " (expected: auto|internal|hictk)");
       };
     }
   }

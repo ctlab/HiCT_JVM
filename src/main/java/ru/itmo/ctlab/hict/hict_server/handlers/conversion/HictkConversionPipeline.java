@@ -243,7 +243,9 @@ public final class HictkConversionPipeline {
           options.compressionAlgorithm(),
           options.agpPath(),
           false,
-          options.parallelism()
+          options.parallelism(),
+          true,
+          ConversionOptions.ExportMode.AUTO
         ),
         wrappedLogger
       );
@@ -383,7 +385,9 @@ public final class HictkConversionPipeline {
           options.compressionAlgorithm(),
           ConversionOptions.NO_AGP,
           false,
-          options.parallelism()
+          options.parallelism(),
+          true,
+          ConversionOptions.ExportMode.AUTO
         ),
         createWrappedImportLogger(logger, stagePlan, "import_hict")
       );

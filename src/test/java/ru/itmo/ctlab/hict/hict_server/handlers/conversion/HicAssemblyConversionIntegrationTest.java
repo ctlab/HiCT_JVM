@@ -50,7 +50,9 @@ class HicAssemblyConversionIntegrationTest {
         ConversionOptions.CompressionAlgorithm.DEFLATE,
         ASSEMBLY.toString(),
         false,
-        Runtime.getRuntime().availableProcessors()
+        Runtime.getRuntime().availableProcessors(),
+        true,
+        ConversionOptions.ExportMode.AUTO
       ),
       new ExternalToolchainManager.ResolvedToolchain(
         "linux_x86_64",

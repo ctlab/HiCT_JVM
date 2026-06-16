@@ -2,10 +2,10 @@ package ru.itmo.ctlab.hict.hict_server.tools;
 
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
-import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictToMcoolExportPipeline;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 
 import java.nio.file.Path;
@@ -40,11 +40,13 @@ public class ConversionCliLauncher {
       ConversionOptions.CompressionAlgorithm.parse(parser.value("compression-algorithm", "deflate")),
       parser.value("agp", ConversionOptions.NO_AGP),
       parser.flag("apply-agp"),
-      parser.integer("parallelism", Runtime.getRuntime().availableProcessors())
+      parser.integer("parallelism", Runtime.getRuntime().availableProcessors()),
+      parser.flag("all-resolutions"),
+      ConversionOptions.ExportMode.parse(parser.value("export-mode", "auto"))
     );
 
     switch (command) {
-      case "hict-to-mcool" -> new HictToMcoolConverter().convert(options, stdoutLogger(verbose));
+      case "hict-to-mcool" -> new HictToMcoolExportPipeline(new ExternalToolchainManager()).convert(options, stdoutLogger(verbose));
       case "mcool-to-hict" -> new McoolToHictConverter().convert(options, stdoutLogger(verbose));
       case "hic-to-mcool" -> new HictkConversionPipeline(new ExternalToolchainManager()).convert(
         ConversionDirection.HIC_TO_MCOOL,
@@ -93,7 +95,7 @@ public class ConversionCliLauncher {
 
   private static void printHelp() {
     System.out.println("Usage:");
-    System.out.println("  hict-to-mcool --input=<in.hict> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--agp=foo.agp --apply-agp] [--parallelism=N] [--verbose]");
+    System.out.println("  hict-to-mcool --input=<in.hict> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--agp=foo.agp --apply-agp] [--parallelism=N] [--all-resolutions] [--export-mode=auto|internal|hictk] [--verbose]");
     System.out.println("  mcool-to-hict --input=<in.mcool> --output=<out.hict> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
     System.out.println("  hic-to-mcool --input=<in.hic> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
     System.out.println("  hic-to-hict --input=<in.hic> --output=<out.hict.hdf5> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
