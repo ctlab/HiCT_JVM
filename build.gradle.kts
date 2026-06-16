@@ -413,6 +413,17 @@ fun selectedRuntimeJhdf5NativePlatforms(): List<String> {
 
 val runtimeJhdf5NativePlatforms = selectedRuntimeJhdf5NativePlatforms()
 
+fun selectedJhdf5VerificationScope(): String {
+  val explicit = envOrProjectProperty("HICT_VERIFY_BUNDLED_JHDF5_SCOPE")
+    ?: envOrProjectProperty("hictVerifyBundledJhdf5Scope")
+  if (!explicit.isNullOrBlank()) {
+    return explicit.lowercase()
+  }
+  return if (runtimeJhdf5NativePlatforms.isNotEmpty()) "runtime" else "universal"
+}
+
+val bundledJhdf5VerificationScope = selectedJhdf5VerificationScope()
+
 fun isRuntimeJhdf5NativeFile(fileName: String): Boolean {
   val lower = fileName.lowercase()
   if (lower == "jhdf5.dll" || lower == "hdf5.dll" || lower == "blosc.dll") {
@@ -1377,7 +1388,7 @@ tasks.register("verifyBundledJhdf5Payload") {
     fun hasJhdf5Entry(path: String): Boolean =
       entries.contains(path) || nativesArchiveEntries.contains(path.removePrefix("libs/"))
 
-    val requiredAnyOf = listOf(
+    val universalRequirements = listOf(
       "Embedded JHDF5 native archive" to { set: Set<String> ->
         runtimeJhdf5NativesArchiveOrSource()?.isFile != true ||
           set.contains("libs/$bundledJhdf5NativesArchiveName")
@@ -1414,10 +1425,59 @@ tasks.register("verifyBundledJhdf5Payload") {
       // HiCT packaging must not reject a valid core macOS runtime because optional
       // plugin dylibs are absent for Darwin.
     )
+    val runtimeRequirements = when (runtimeJhdf5NativePlatforms.toSet()) {
+      setOf("aarch64-Mac OS X") -> listOf(
+        "Embedded JHDF5 native archive" to { set: Set<String> ->
+          runtimeJhdf5NativesArchiveOrSource()?.isFile != true ||
+            set.contains("libs/$bundledJhdf5NativesArchiveName")
+        },
+        "macOS arm64 JHDF5 JNI" to { set: Set<String> ->
+          set.contains("native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib") ||
+            hasJhdf5Entry("libs/native/jhdf5/aarch64-Mac OS X/libjhdf5.jnilib")
+        },
+        "macOS arm64 HDF5 dylib" to { _: Set<String> ->
+          hasVersionedMacHdf5Dylib("osx_arm64") ||
+            hasVersionedMacHdf5Dylib("macos_arm64") ||
+            hasVersionedMacHdf5Dylib("darwin_arm64") ||
+            nativesArchiveEntries.any { it.matches(Regex("^native/jhdf5/aarch64-Mac OS X/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib$")) }
+        },
+      )
+      setOf("x86_64-Mac OS X") -> listOf(
+        "Embedded JHDF5 native archive" to { set: Set<String> ->
+          runtimeJhdf5NativesArchiveOrSource()?.isFile != true ||
+            set.contains("libs/$bundledJhdf5NativesArchiveName")
+        },
+        "macOS x86_64 JHDF5 JNI" to { set: Set<String> ->
+          set.contains("native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib") ||
+            hasJhdf5Entry("libs/native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib")
+        },
+        "macOS x86_64 HDF5 dylib" to { _: Set<String> ->
+          hasVersionedMacHdf5Dylib("osx_64") ||
+            hasVersionedMacHdf5Dylib("macos_64") ||
+            hasVersionedMacHdf5Dylib("darwin_x86_64") ||
+            nativesArchiveEntries.any { it.matches(Regex("^native/jhdf5/x86_64-Mac OS X/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib$")) }
+        },
+      )
+      else -> universalRequirements
+    }
+    val requiredAnyOf = when (bundledJhdf5VerificationScope) {
+      "runtime", "platform", "portable" -> runtimeRequirements
+      "universal", "all" -> universalRequirements
+      else -> throw GradleException(
+        "Unsupported HICT_VERIFY_BUNDLED_JHDF5_SCOPE=$bundledJhdf5VerificationScope; expected runtime or universal."
+      )
+    }
     val missing = requiredAnyOf.filter { (_, checker) -> !checker(entries) }
     if (missing.isNotEmpty()) {
       val message = buildString {
-        appendLine("The fat JAR does not contain the required bundled JHDF5/HDF5 native payloads:")
+        appendLine(
+          when (bundledJhdf5VerificationScope) {
+            "runtime", "platform", "portable" ->
+              "The fat JAR/runtime sidecar pair does not contain the required bundled JHDF5/HDF5 payloads for the selected portable target:"
+            else ->
+              "The fat JAR does not contain the required bundled JHDF5/HDF5 native payloads:"
+          }
+        )
         missing.forEach { (label, _) -> appendLine("- $label") }
         appendLine("Set HICT_JHDF5_LOCAL_JAR to the packaged sis-jhdf5 jar from jhdf5-with-plugins-configuration-snapshot, and set HICT_REQUIRE_BUNDLED_JHDF5=1 in release builds. To intentionally use Maven, set HICT_JHDF5_SOURCE_MODE=maven or -PhictJhdf5SourceMode=maven.")
       }
