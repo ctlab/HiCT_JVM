@@ -15,11 +15,21 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 
 public class HictToMcoolConverter {
+
+  private static final List<DatasetCopySpec> MCOOL_VECTOR_DATASETS = List.of(
+    new DatasetCopySpec("pixels/count", HictToMcoolConverter::blockCountPath, "pixels/count"),
+    new DatasetCopySpec("indexes/block_offset", HictToMcoolConverter::blockOffsetPath, "indexes/block_offset"),
+    new DatasetCopySpec("pixels/bin1_id", HictToMcoolConverter::blockRowsPath, "pixels/bin1_id"),
+    new DatasetCopySpec("pixels/bin2_id", HictToMcoolConverter::blockColsPath, "pixels/bin2_id"),
+    new DatasetCopySpec("pixels/counts", HictToMcoolConverter::blockValuesPath, "pixels/counts")
+  );
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) throws IOException, NoSuchFieldException {
     HDF5LibraryInitializer.initializeHDF5Library();
@@ -41,6 +51,12 @@ public class HictToMcoolConverter {
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
       final var requestedWorkers = resolveRequestedWorkers(options.parallelism());
       final var workers = Math.max(1, Math.min(requestedWorkers, selectedResolutions.size()));
+      final var totalVectorItems = countVectorItems(options.inputPath(), selectedResolutions, synchronizedLogConsumer);
+      final var progressTracker = new ExportProgressTracker(
+        Math.max(0L, totalVectorItems * 2L),
+        System.nanoTime(),
+        synchronizedLogConsumer
+      );
 
       synchronizedLogConsumer.accept("Converting in parallel with workers=" + workers + ", chunkSize=" + options.chunkSize());
 
@@ -50,6 +66,7 @@ public class HictToMcoolConverter {
         options.chunkSize(),
         compression,
         workers,
+        progressTracker,
         synchronizedLogConsumer
       );
 
@@ -61,7 +78,7 @@ public class HictToMcoolConverter {
 
         for (final var staged : stagedResolutionFiles.stream().sorted(Comparator.comparingLong(StagedResolutionFile::resolution)).toList()) {
           try (final var stagedReader = HDF5Factory.openForReading(staged.path().toFile())) {
-            mergeResolution(stagedReader, dst, staged.resolution(), options.chunkSize(), compression, logConsumer);
+            mergeResolution(stagedReader, dst, staged.resolution(), options.chunkSize(), compression, progressTracker, logConsumer);
             synchronizedLogConsumer.accept("Merged resolution " + staged.resolution() + " to final output");
           } finally {
             try {
@@ -72,6 +89,7 @@ public class HictToMcoolConverter {
           }
         }
       }
+      progressTracker.finish();
     } finally {
       chunkedFile.close();
     }
@@ -83,6 +101,7 @@ public class HictToMcoolConverter {
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
     final int workers,
+    final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logConsumer
   ) {
     final ExecutorService executor = Executors.newFixedThreadPool(workers);
@@ -94,7 +113,7 @@ public class HictToMcoolConverter {
         final var stagedFile = Files.createTempFile("hict-to-mcool-r" + resolution + "-", ".h5");
         try (final var src = HDF5Factory.openForReading(inputPath.toFile());
              final var dst = HDF5Factory.open(stagedFile.toFile())) {
-          stageResolution(src, dst, resolution, chunkSize, compression, logConsumer);
+          stageResolution(src, dst, resolution, chunkSize, compression, progressTracker, logConsumer);
           return new StagedResolutionFile(resolution, stagedFile);
         } catch (Exception e) {
           Files.deleteIfExists(stagedFile);
@@ -125,6 +144,7 @@ public class HictToMcoolConverter {
     final long resolution,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logConsumer
   ) {
     final var root = "/resolutions/" + resolution;
@@ -134,12 +154,19 @@ public class HictToMcoolConverter {
     dst.object().createGroup(root + "/indexes");
 
     final var prefix = "Resolution " + resolution;
-    copyLongArrayChunked(src, dst, getBlockLengthDatasetPath(resolution), root + "/pixels/count", chunkSize, compression, logConsumer, prefix + " pixels/count");
-    copyLongArrayChunked(src, dst, getBlockOffsetDatasetPath(resolution), root + "/indexes/block_offset", chunkSize, compression, logConsumer, prefix + " indexes/block_offset");
-    copyLongArrayChunked(src, dst, getBlockRowsDatasetPath(resolution), root + "/pixels/bin1_id", chunkSize, compression, logConsumer, prefix + " pixels/bin1_id");
-    copyLongArrayChunked(src, dst, getBlockColsDatasetPath(resolution), root + "/pixels/bin2_id", chunkSize, compression, logConsumer, prefix + " pixels/bin2_id");
-    copyLongArrayChunked(src, dst, getBlockValuesDatasetPath(resolution), root + "/pixels/counts", chunkSize, compression, logConsumer, prefix + " pixels/counts");
-    copyLongArrayChunked(src, dst, getDenseBlockDatasetPath(resolution), root + "/pixels/dense_blocks", chunkSize, compression, logConsumer, prefix + " pixels/dense_blocks");
+    for (final var spec : MCOOL_VECTOR_DATASETS) {
+      copyLongArrayChunked(
+        src,
+        dst,
+        spec.sourcePath(resolution),
+        root + "/" + spec.destinationRelativePath(),
+        chunkSize,
+        compression,
+        progressTracker,
+        logConsumer,
+        prefix + " " + spec.progressName()
+      );
+    }
     dst.int64().setAttr(root, "bin_size", resolution);
     logConsumer.accept("Staged resolution " + resolution + " in worker=" + Thread.currentThread().getName());
   }
@@ -150,6 +177,7 @@ public class HictToMcoolConverter {
     final long resolution,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logConsumer
   ) {
     final var root = "/resolutions/" + resolution;
@@ -158,12 +186,11 @@ public class HictToMcoolConverter {
     dst.object().createGroup(root + "/indexes");
 
     final var prefix = "Merge resolution " + resolution;
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/count", root + "/pixels/count", chunkSize, compression, logConsumer, prefix + " pixels/count");
-    copyLongArrayChunked(stagedReader, dst, root + "/indexes/block_offset", root + "/indexes/block_offset", chunkSize, compression, logConsumer, prefix + " indexes/block_offset");
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin1_id", root + "/pixels/bin1_id", chunkSize, compression, logConsumer, prefix + " pixels/bin1_id");
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin2_id", root + "/pixels/bin2_id", chunkSize, compression, logConsumer, prefix + " pixels/bin2_id");
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/counts", root + "/pixels/counts", chunkSize, compression, logConsumer, prefix + " pixels/counts");
-    copyLongArrayChunked(stagedReader, dst, root + "/pixels/dense_blocks", root + "/pixels/dense_blocks", chunkSize, compression, logConsumer, prefix + " pixels/dense_blocks");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/count", root + "/pixels/count", chunkSize, compression, progressTracker, logConsumer, prefix + " pixels/count");
+    copyLongArrayChunked(stagedReader, dst, root + "/indexes/block_offset", root + "/indexes/block_offset", chunkSize, compression, progressTracker, logConsumer, prefix + " indexes/block_offset");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin1_id", root + "/pixels/bin1_id", chunkSize, compression, progressTracker, logConsumer, prefix + " pixels/bin1_id");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/bin2_id", root + "/pixels/bin2_id", chunkSize, compression, progressTracker, logConsumer, prefix + " pixels/bin2_id");
+    copyLongArrayChunked(stagedReader, dst, root + "/pixels/counts", root + "/pixels/counts", chunkSize, compression, progressTracker, logConsumer, prefix + " pixels/counts");
     dst.int64().setAttr(root, "bin_size", resolution);
   }
 
@@ -174,6 +201,7 @@ public class HictToMcoolConverter {
     final @NotNull String dstPath,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logConsumer,
     final @NotNull String progressLabel
   ) {
@@ -183,6 +211,10 @@ public class HictToMcoolConverter {
     }
 
     final var dims = src.object().getDataSetInformation(srcPath).getDimensions();
+    if (dims.length != 1) {
+      logConsumer.accept("Skipped non-vector dataset " + srcPath + " (rank=" + dims.length + ")");
+      return;
+    }
     final long length = dims.length == 0 ? 0 : dims[0];
     dst.int64().createArray(dstPath, length, chunkSize, compression);
 
@@ -194,6 +226,7 @@ public class HictToMcoolConverter {
       final var block = src.int64().readArrayBlockWithOffset(srcPath, blockLen, offset);
       dst.int64().writeArrayBlockWithOffset(dstPath, block, blockLen, offset);
       offset += blockLen;
+      progressTracker.add(blockLen, progressLabel);
       if (length > 0) {
         final int percent = (int) ((offset * 100L) / length);
         if (percent >= 100 || percent - lastLoggedPercent >= 10) {
@@ -217,6 +250,31 @@ public class HictToMcoolConverter {
     logConsumer.accept("Copied " + srcPath + " -> " + dstPath + " (" + length + " items)");
   }
 
+  private static long countVectorItems(
+    final @NotNull Path inputPath,
+    final @NotNull List<Long> selectedResolutions,
+    final @NotNull Consumer<String> logConsumer
+  ) {
+    try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
+      long total = 0L;
+      for (final var resolution : selectedResolutions) {
+        for (final var spec : MCOOL_VECTOR_DATASETS) {
+          final var path = spec.sourcePath(resolution);
+          if (!src.object().isDataSet(path)) {
+            continue;
+          }
+          final var dims = src.object().getDataSetInformation(path).getDimensions();
+          if (dims.length == 1) {
+            total += dims[0];
+          } else {
+            logConsumer.accept("Will not export non-vector dataset " + path + " to .mcool (rank=" + dims.length + ")");
+          }
+        }
+      }
+      return total;
+    }
+  }
+
   private @NotNull List<Long> resolveResolutions(final long @NotNull [] availableResolutions, final @NotNull List<Long> requested) {
     final var available = new ArrayList<Long>();
     for (int i = 1; i < availableResolutions.length; i++) {
@@ -229,6 +287,101 @@ public class HictToMcoolConverter {
   }
 
   private record StagedResolutionFile(long resolution, @NotNull Path path) {
+  }
+
+  private record DatasetCopySpec(
+    @NotNull String progressName,
+    @NotNull ResolutionPathFactory sourcePathFactory,
+    @NotNull String destinationRelativePath
+  ) {
+    private @NotNull String sourcePath(final long resolution) {
+      return sourcePathFactory.path(resolution);
+    }
+  }
+
+  @FunctionalInterface
+  private interface ResolutionPathFactory {
+    @NotNull String path(long resolution);
+  }
+
+  private static @NotNull String blockCountPath(final long resolution) {
+    return getBlockLengthDatasetPath(resolution);
+  }
+
+  private static @NotNull String blockOffsetPath(final long resolution) {
+    return getBlockOffsetDatasetPath(resolution);
+  }
+
+  private static @NotNull String blockRowsPath(final long resolution) {
+    return getBlockRowsDatasetPath(resolution);
+  }
+
+  private static @NotNull String blockColsPath(final long resolution) {
+    return getBlockColsDatasetPath(resolution);
+  }
+
+  private static @NotNull String blockValuesPath(final long resolution) {
+    return getBlockValuesDatasetPath(resolution);
+  }
+
+  private static final class ExportProgressTracker {
+    private final long totalItems;
+    private final long startedNanos;
+    private final Consumer<String> logConsumer;
+    private final AtomicLong copiedItems = new AtomicLong(0L);
+    private final AtomicInteger lastLoggedPercent = new AtomicInteger(-1);
+
+    private ExportProgressTracker(
+      final long totalItems,
+      final long startedNanos,
+      final @NotNull Consumer<String> logConsumer
+    ) {
+      this.totalItems = totalItems;
+      this.startedNanos = startedNanos;
+      this.logConsumer = logConsumer;
+    }
+
+    private void add(final long copied, final @NotNull String detail) {
+      if (copied <= 0 || totalItems <= 0) {
+        return;
+      }
+      final long done = Math.min(totalItems, copiedItems.addAndGet(copied));
+      final int percent = (int) ((done * 100L) / totalItems);
+      int previous;
+      do {
+        previous = lastLoggedPercent.get();
+        if (percent < 100 && percent - previous < 1) {
+          return;
+        }
+      } while (!lastLoggedPercent.compareAndSet(previous, percent));
+      logOverall(done, detail);
+    }
+
+    private void finish() {
+      if (totalItems <= 0) {
+        logConsumer.accept("Overall progress: 100% (0/0), elapsed=00:00, eta=00:00");
+        return;
+      }
+      copiedItems.set(totalItems);
+      lastLoggedPercent.set(100);
+      logOverall(totalItems, "Finished .mcool export");
+    }
+
+    private void logOverall(final long done, final @NotNull String detail) {
+      final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+      final long etaMillis = estimateEtaMillis(done, totalItems, elapsedMillis);
+      logConsumer.accept(
+        String.format(
+          "Overall progress: %d%% (%d/%d), elapsed=%s, eta=%s - %s",
+          (int) ((done * 100L) / totalItems),
+          done,
+          totalItems,
+          formatDuration(elapsedMillis),
+          formatDuration(etaMillis),
+          detail
+        )
+      );
+    }
   }
 
   private static @NotNull HDF5IntStorageFeatures resolveIntStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {

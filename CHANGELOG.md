@@ -1,6 +1,6 @@
 # HiCT Changelog
 
-## 1.0.177-4b3d5e0-webui_1329134
+## 1.0.178-eb2770f-webui_09b8ce7
 
 Changes since the last merge point with `master`:
 

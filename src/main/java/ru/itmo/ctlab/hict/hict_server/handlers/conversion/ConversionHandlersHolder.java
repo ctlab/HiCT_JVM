@@ -57,7 +57,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
       "Overall progress: (\\d+)% \\((\\d+)/(\\d+)\\), elapsed=([0-9:]+), eta=([0-9:]+)"
     );
     private static final Pattern RESOLUTION_PROGRESS_PATTERN = Pattern.compile(
-      "Resolution (\\d+) write: (\\d+)% \\((\\d+)/(\\d+) stripes\\), elapsed=([0-9:]+), eta=([0-9:]+)"
+      "Resolution (\\d+) (?:write|[^:]+): (\\d+)% \\((\\d+)/(\\d+)(?: stripes)?\\), elapsed=([0-9:]+), eta=([0-9:]+)"
     );
 
     private final ConcurrentHashMap<String, ConversionJob> jobs = new ConcurrentHashMap<>();
@@ -749,6 +749,10 @@ public class ConversionHandlersHolder extends HandlersHolder {
         }
         Matcher res = RESOLUTION_PROGRESS_PATTERN.matcher(message);
         if (res.find()) {
+            if (job.currentStage == null || job.currentStage.isBlank()) {
+                job.currentStage = "export_mcool";
+                job.currentStageLabel = "Export .mcool";
+            }
             job.currentResolution = Long.parseLong(res.group(1));
             job.resolutionProgress = clampPercent(res.group(2));
             job.resolutionElapsedMillis = parseDurationMillis(res.group(5));
