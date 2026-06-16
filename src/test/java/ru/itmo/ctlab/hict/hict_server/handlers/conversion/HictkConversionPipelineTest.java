@@ -68,6 +68,39 @@ class HictkConversionPipelineTest {
   }
 
   @Test
+  void pyramidTargetResolutionsUseFinestInputWhenNoExplicitFilterRequested() {
+    assertEquals(
+      List.of(1_000L),
+      HictkConversionPipeline.resolvePyramidTargetResolutions(
+        List.of(),
+        List.of(1_000L, 100_000L, 10_000_000L)
+      )
+    );
+  }
+
+  @Test
+  void pyramidTargetResolutionsKeepFinestInputAndRequestedValues() {
+    assertEquals(
+      List.of(1_000L, 5_000L, 25_000L),
+      HictkConversionPipeline.resolvePyramidTargetResolutions(
+        List.of(25_000L, 5_000L, 5_000L),
+        List.of(1_000L, 100_000L)
+      )
+    );
+  }
+
+  @Test
+  void pyramidTargetResolutionsDropRequestsFinerThanInputBaseResolution() {
+    assertEquals(
+      List.of(1_000L, 2_000L),
+      HictkConversionPipeline.resolvePyramidTargetResolutions(
+        List.of(500L, 2_000L),
+        List.of(1_000L, 5_000L)
+      )
+    );
+  }
+
+  @Test
   void syntheticCooChromSizesUseObservedZeroBasedBinRange() throws Exception {
     final var coo = tempDir.resolve("sample.coo");
     Files.writeString(

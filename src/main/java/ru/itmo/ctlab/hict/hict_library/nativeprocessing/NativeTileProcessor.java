@@ -253,6 +253,13 @@ final class NativeTileProcessor {
     return sessionHandle != 0L && nativeSortSparseBlockLong(sessionHandle, rows, columns, values, submatrixSize);
   }
 
+  boolean sortCoolerRecordsLong(final long @NotNull [] rows,
+                                final long @NotNull [] columns,
+                                final long @NotNull [] values) {
+    final var sessionHandle = sessionHandle();
+    return sessionHandle != 0L && nativeSortCoolerRecordsLong(sessionHandle, rows, columns, values);
+  }
+
   boolean transformExpectedSignal(final double @NotNull [] signal,
                                   final int rows,
                                   final int columns,
@@ -606,6 +613,11 @@ final class NativeTileProcessor {
                                                           long[] columns,
                                                           long[] values,
                                                           int submatrixSize);
+
+  private static native boolean nativeSortCoolerRecordsLong(long sessionHandle,
+                                                            long[] rows,
+                                                            long[] columns,
+                                                            long[] values);
 
   private static native boolean nativeTransformExpectedSignal(long sessionHandle,
                                                               double[] signal,

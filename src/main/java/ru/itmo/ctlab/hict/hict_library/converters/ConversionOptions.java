@@ -16,9 +16,39 @@ public record ConversionOptions(
   boolean applyAgpBeforeExport,
   int parallelism,
   boolean exportAllResolutions,
+  boolean buildResolutionPyramid,
   @NotNull ExportMode exportMode
 ) {
   public static final String NO_AGP = "";
+
+  public ConversionOptions(
+    final @NotNull Path inputPath,
+    final @NotNull Path outputPath,
+    final @NotNull List<@NotNull Long> resolutions,
+    final int chunkSize,
+    final int compressionLevel,
+    final @NotNull CompressionAlgorithm compressionAlgorithm,
+    final @NotNull String agpPath,
+    final boolean applyAgpBeforeExport,
+    final int parallelism,
+    final boolean exportAllResolutions,
+    final @NotNull ExportMode exportMode
+  ) {
+    this(
+      inputPath,
+      outputPath,
+      resolutions,
+      chunkSize,
+      compressionLevel,
+      compressionAlgorithm,
+      agpPath,
+      applyAgpBeforeExport,
+      parallelism,
+      exportAllResolutions,
+      defaultBuildResolutionPyramid(),
+      exportMode
+    );
+  }
 
   public ConversionOptions {
     if (chunkSize <= 0) {
@@ -39,6 +69,33 @@ public record ConversionOptions(
     if (exportMode == null) {
       exportMode = ExportMode.AUTO;
     }
+  }
+
+  public static boolean defaultBuildResolutionPyramid() {
+    final var value = firstNonBlank(
+      System.getProperty("hict.buildResolutionPyramid"),
+      System.getenv("HICT_BUILD_RESOLUTION_PYRAMID"),
+      System.getenv("HICT_IMPORT_BUILD_RESOLUTION_PYRAMID")
+    );
+    return value == null || isTruthy(value);
+  }
+
+  private static boolean isTruthy(final @NotNull String value) {
+    final var normalized = value.trim().toLowerCase();
+    return normalized.equals("1")
+      || normalized.equals("true")
+      || normalized.equals("yes")
+      || normalized.equals("y")
+      || normalized.equals("on");
+  }
+
+  private static String firstNonBlank(final String... values) {
+    for (final var value : values) {
+      if (value != null && !value.isBlank()) {
+        return value;
+      }
+    }
+    return null;
   }
 
   public enum CompressionAlgorithm {

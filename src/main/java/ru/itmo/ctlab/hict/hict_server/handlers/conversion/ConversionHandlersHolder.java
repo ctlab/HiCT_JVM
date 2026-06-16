@@ -134,8 +134,9 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var chunkSize = parseInteger(req.getParam("chunkSize"), 8192);
                         final var applyAgpRaw = Boolean.parseBoolean(req.getParam("applyAgp"));
                         final var agpPathRaw = req.getParam("agpPath") == null ? ConversionOptions.NO_AGP : req.getParam("agpPath");
-                        final var parallelism = parseInteger(req.getParam("parallelism"), Runtime.getRuntime().availableProcessors());
+                        final var parallelism = parseInteger(req.getParam("parallelism"), defaultConversionParallelism());
                         final var exportAllResolutions = Boolean.parseBoolean(req.getParam("exportAllResolutions"));
+                        final var buildResolutionPyramid = parseBoolean(req.getParam("buildResolutionPyramid"), ConversionOptions.defaultBuildResolutionPyramid());
                         final var exportMode = ConversionOptions.ExportMode.parse(
                           req.getParam("exportMode") == null ? "auto" : req.getParam("exportMode")
                         );
@@ -161,6 +162,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             useAgp,
                             parallelism,
                             exportAllResolutions,
+                            buildResolutionPyramid,
                             exportMode
                         );
 
@@ -248,7 +250,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     if (filename == null || filename.isBlank()) {
                         throw new IllegalArgumentException("filename is required");
                     }
-                    final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
+                    final var parallelism = requestJson.getInteger("parallelism", defaultConversionParallelism());
                     final var overwrite = requestJson.getBoolean("overwrite", false);
                     final var resolutions = parseResolutions(requestJson.getString("resolutions"));
                     final var compression = requestJson.getInteger("compression", 6);
@@ -257,6 +259,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var assemblyFilename = requestJson.getString("assemblyFilename", "");
                     final var useCurrentAssembly = requestJson.getBoolean("useCurrentAssembly", false);
                     final var exportAllResolutions = requestJson.getBoolean("exportAllResolutions", false);
+                    final var buildResolutionPyramid = requestJson.getBoolean("buildResolutionPyramid", ConversionOptions.defaultBuildResolutionPyramid());
                     final var exportMode = ConversionOptions.ExportMode.parse(requestJson.getString("exportMode", "auto"));
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
@@ -297,6 +300,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         applyAgpBeforeExport,
                         parallelism,
                         exportAllResolutions,
+                        buildResolutionPyramid,
                         exportMode
                     );
                     final ConversionJob job;
@@ -330,7 +334,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         throw new IllegalArgumentException("files is required");
                     }
                     final var parallelJobs = Math.max(1, requestJson.getInteger("parallelJobs", 1));
-                    final var parallelism = requestJson.getInteger("parallelism", Runtime.getRuntime().availableProcessors());
+                    final var parallelism = requestJson.getInteger("parallelism", defaultConversionParallelism());
                     final var overwrite = requestJson.getBoolean("overwrite", false);
                     final var resolutions = parseResolutions(requestJson.getString("resolutions"));
                     final var compression = requestJson.getInteger("compression", 6);
@@ -339,6 +343,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var assemblyFilename = requestJson.getString("assemblyFilename", "");
                     final var assemblyByFileJson = requestJson.getJsonObject("assemblyFilenameByFile");
                     final var exportAllResolutions = requestJson.getBoolean("exportAllResolutions", false);
+                    final var buildResolutionPyramid = requestJson.getBoolean("buildResolutionPyramid", ConversionOptions.defaultBuildResolutionPyramid());
                     final var exportMode = ConversionOptions.ExportMode.parse(requestJson.getString("exportMode", "auto"));
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
@@ -382,6 +387,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             false,
                             parallelism,
                             exportAllResolutions,
+                            buildResolutionPyramid,
                             exportMode
                         );
                         final ConversionJob job;
@@ -530,6 +536,45 @@ public class ConversionHandlersHolder extends HandlersHolder {
             return defaultValue;
         }
         return Integer.parseInt(value);
+    }
+
+    private static boolean parseBoolean(final String value, final boolean defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        final var normalized = value.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("1")
+          || normalized.equals("true")
+          || normalized.equals("yes")
+          || normalized.equals("y")
+          || normalized.equals("on");
+    }
+
+    private static int defaultConversionParallelism() {
+        final var configured = firstNonBlank(
+          System.getProperty("hict.conversion.threads"),
+          System.getenv("HICT_CONVERSION_THREADS"),
+          System.getenv("HICT_CONVERSION_PARALLELISM")
+        );
+        if (configured != null) {
+            try {
+                final var parsed = Integer.parseInt(configured.trim());
+                if (parsed > 0) {
+                    return parsed;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return Runtime.getRuntime().availableProcessors();
+    }
+
+    private static String firstNonBlank(final String... values) {
+        for (final var value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private static @NotNull List<Long> parseResolutions(final String csv) {
@@ -685,7 +730,32 @@ public class ConversionHandlersHolder extends HandlersHolder {
                   () -> job.cancelRequested.get()
                 );
             } else if (job.direction == ConversionDirection.MCOOL_TO_HICT) {
-                new McoolToHictConverter().convert(options, conversionLogger);
+                if (options.buildResolutionPyramid()) {
+                    try {
+                        final var toolchain = this.hictkConversionPipeline.requireToolchain();
+                        job.toolchainSource = toolchain.source();
+                        job.toolchainSummary = "Using hictk command " + toolchain.hictkCommand() + " to build a Cooler resolution pyramid";
+                        job.toolchainNotices.clear();
+                        job.toolchainNotices.addAll(toolchain.notices());
+                        job.toolchainCitations.clear();
+                        job.toolchainCitations.addAll(toolchain.citations());
+                        this.hictkConversionPipeline.convertCoolerToHictWithPyramid(
+                          options,
+                          toolchain,
+                          conversionLogger,
+                          process -> job.activeProcess = process,
+                          () -> job.cancelRequested.get()
+                        );
+                    } catch (IllegalStateException toolchainFailure) {
+                        conversionLogger.accept(
+                          "WARNING: hictk pyramid generation is enabled but hictk is unavailable or failed before conversion; falling back to direct .mcool import. "
+                            + toolchainFailure.getMessage()
+                        );
+                        new McoolToHictConverter().convert(options, conversionLogger);
+                    }
+                } else {
+                    new McoolToHictConverter().convert(options, conversionLogger);
+                }
             } else if (job.direction.requiresExternalHicToolchain()) {
                 final var toolchain = this.hictkConversionPipeline.requireToolchain();
                 job.toolchainSource = toolchain.source();

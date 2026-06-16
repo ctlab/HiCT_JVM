@@ -16,6 +16,19 @@ class HictToMcoolConverterTest {
   Path tempDir;
 
   @Test
+  void javaCoolerSorterOrdersPrimitiveRecordsByRowColumnAndCount() {
+    final var rows = new long[]{2L, 0L, 1L, 0L, 1L, 0L};
+    final var cols = new long[]{2L, 3L, 1L, 1L, 1L, 1L};
+    final var counts = new long[]{9L, 4L, 5L, 7L, 3L, 2L};
+
+    HictToMcoolConverter.sortCoolerRecordsJava(rows, cols, counts);
+
+    assertArrayEquals(new long[]{0L, 0L, 0L, 1L, 1L, 2L}, rows);
+    assertArrayEquals(new long[]{1L, 1L, 3L, 1L, 1L, 2L}, cols);
+    assertArrayEquals(new long[]{2L, 7L, 4L, 3L, 5L, 9L}, counts);
+  }
+
+  @Test
   void internalExporterRoundTripsCoolerArraysAndOverwritesExistingOutput() throws Exception {
     final var sourceMcool = tempDir.resolve("source.mcool");
     final var intermediateHict = tempDir.resolve("source.hict.hdf5");

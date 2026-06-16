@@ -5,28 +5,27 @@ import ch.systemsx.cisd.hdf5.HDF5DataClass;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -34,7 +33,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.util.zip.GZIPInputStream;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 
@@ -42,6 +40,10 @@ public class HictToMcoolConverter {
 
   private static final String DEFAULT_CHROM_NAME = "assembly";
   private static final String ROOT_CHROMS_GROUP = "/chroms";
+  private static final long DEFAULT_EXPORT_MEMORY_LIMIT_BYTES = 16L * 1024L * 1024L * 1024L;
+  private static final int MIN_SORT_BATCH_SIZE = 50_000;
+  private static final int MAX_SORT_BATCH_SIZE = 8_000_000;
+  private static final int ESTIMATED_SORT_BYTES_PER_RECORD = 112;
   private static final List<DatasetCopySpec> MCOOL_PIXEL_DATASETS = List.of(
     new DatasetCopySpec("pixels/bin1_id", HictToMcoolConverter::blockRowsPath, "pixels/bin1_id"),
     new DatasetCopySpec("pixels/bin2_id", HictToMcoolConverter::blockColsPath, "pixels/bin2_id"),
@@ -72,8 +74,13 @@ public class HictToMcoolConverter {
         System.nanoTime(),
         synchronizedLogConsumer
       );
+      final int sortBatchSize = resolveSortBatchSize(options.chunkSize(), options.parallelism(), synchronizedLogConsumer);
 
-      synchronizedLogConsumer.accept("Converting internally with chunkSize=" + options.chunkSize());
+      synchronizedLogConsumer.accept(
+        "Converting internally with chunkSize=" + options.chunkSize() +
+          ", sortBatchSize=" + sortBatchSize +
+          ", parallelism=" + options.parallelism()
+      );
 
       Files.deleteIfExists(options.outputPath());
       try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
@@ -92,7 +99,7 @@ public class HictToMcoolConverter {
           }
           final var resolutionTmpDir = Files.createTempDirectory("hict-to-mcool-r" + resolution + "-");
           try {
-            final var cooPath = resolutionTmpDir.resolve("pixels.coo.gz");
+            final var cooPath = resolutionTmpDir.resolve("pixels.coo.bin");
             final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
             exportTransformedCoo(
               options.inputPath(),
@@ -100,6 +107,7 @@ public class HictToMcoolConverter {
               cooPath,
               mapper,
               options.chunkSize(),
+              sortBatchSize,
               progressTracker,
               synchronizedLogConsumer
             );
@@ -585,13 +593,13 @@ public class HictToMcoolConverter {
     final @NotNull Path outputPath,
     final @NotNull SourceToAssemblyMapper mapper,
     final int chunkSize,
+    final int sortBatchSize,
     final @NotNull ExportProgressTracker overallTracker,
     final @NotNull Consumer<String> logger
   ) throws IOException {
     final var workDir = Files.createDirectories(outputPath.getParent());
     final var chunkPaths = new ArrayList<Path>();
-    final int sortBatchSize = Math.max(50_000, Math.min(Math.max(50_000, chunkSize), 250_000));
-    final var batch = new ArrayList<CooRecord>(sortBatchSize);
+    final var batch = new CooRecordBatch(sortBatchSize);
     try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
       final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
       final var blockOffsetsPath = getBlockOffsetDatasetPath(resolution);
@@ -736,19 +744,20 @@ public class HictToMcoolConverter {
     long lastRow = -1L;
     long lastCol = -1L;
     boolean seenAnyPixel = false;
-    try (final var reader = new BufferedReader(new InputStreamReader(
-      new GZIPInputStream(new BufferedInputStream(Files.newInputStream(cooPath))), StandardCharsets.UTF_8))) {
-      String line;
-      while ((line = reader.readLine()) != null) {
-        if (line.isBlank()) {
-          continue;
+    try (final var reader = new DataInputStream(new BufferedInputStream(Files.newInputStream(cooPath)))) {
+      while (true) {
+        final long row;
+        final long col;
+        final long count;
+        try {
+          row = reader.readLong();
+          col = reader.readLong();
+          count = reader.readLong();
+        } catch (java.io.EOFException eof) {
+          break;
         }
-        final var record = parseCooLine(line);
-        final long row = record[0];
-        final long col = record[1];
-        final long count = record[2];
         if (row < 0L || row >= binsCount || col < row || col >= binsCount) {
-          throw new IllegalStateException("Sorted COO record is out of Cooler bounds: " + line);
+          throw new IllegalStateException("Sorted COO record is out of Cooler bounds: " + row + "\t" + col + "\t" + count);
         }
         if (!seenAnyPixel) {
           for (long emptyBin = 1L; emptyBin <= row; emptyBin++) {
@@ -759,7 +768,7 @@ public class HictToMcoolConverter {
           seenAnyPixel = true;
         } else {
           if (row < lastRow || (row == lastRow && col < lastCol)) {
-            throw new IllegalStateException("Sorted COO stream is not row-major sorted at line: " + line);
+            throw new IllegalStateException("Sorted COO stream is not row-major sorted at record: " + row + "\t" + col + "\t" + count);
           }
           if (row != lastRow) {
             for (long nextBin = lastRow + 1L; nextBin <= row; nextBin++) {
@@ -805,17 +814,21 @@ public class HictToMcoolConverter {
     final var cols = new long[datasetChunk];
     final var counts = new int[datasetChunk];
     int buffered = 0;
-    try (final var reader = new BufferedReader(new InputStreamReader(
-      new GZIPInputStream(new BufferedInputStream(Files.newInputStream(cooPath))), StandardCharsets.UTF_8))) {
-      String line;
-      while ((line = reader.readLine()) != null) {
-        if (line.isBlank()) {
-          continue;
+    try (final var reader = new DataInputStream(new BufferedInputStream(Files.newInputStream(cooPath)))) {
+      while (true) {
+        final long row;
+        final long col;
+        final long count;
+        try {
+          row = reader.readLong();
+          col = reader.readLong();
+          count = reader.readLong();
+        } catch (java.io.EOFException eof) {
+          break;
         }
-        final var record = parseCooLine(line);
-        rows[buffered] = record[0];
-        cols[buffered] = record[1];
-        counts[buffered] = Math.toIntExact(record[2]);
+        rows[buffered] = row;
+        cols[buffered] = col;
+        counts[buffered] = Math.toIntExact(count);
         buffered++;
         if (buffered >= datasetChunk) {
           dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin1_id", rows, buffered, offset);
@@ -860,21 +873,8 @@ public class HictToMcoolConverter {
       formatDuration((System.nanoTime() - startedNanos) / 1_000_000L) + ", eta=00:00");
   }
 
-  private static long @NotNull [] parseCooLine(final @NotNull String line) {
-    final int firstTab = line.indexOf('\t');
-    final int secondTab = firstTab < 0 ? -1 : line.indexOf('\t', firstTab + 1);
-    if (firstTab <= 0 || secondTab <= firstTab + 1 || secondTab >= line.length() - 1) {
-      throw new IllegalStateException("Malformed COO line: " + line);
-    }
-    return new long[]{
-      Long.parseLong(line, 0, firstTab, 10),
-      Long.parseLong(line, firstTab + 1, secondTab, 10),
-      Long.parseLong(line, secondTab + 1, line.length(), 10)
-    };
-  }
-
   private static void appendMappedRecord(
-    final @NotNull List<CooRecord> batch,
+    final @NotNull CooRecordBatch batch,
     final @NotNull SourceToAssemblyMapper mapper,
     final long sourceRow,
     final long sourceCol,
@@ -887,28 +887,146 @@ public class HictToMcoolConverter {
       mappedRow = mappedCol;
       mappedCol = tmp;
     }
-    batch.add(new CooRecord(mappedRow, mappedCol, count));
+    batch.add(mappedRow, mappedCol, count);
   }
 
   private static @NotNull Path flushSortedChunk(
     final @NotNull Path workDir,
     final long resolution,
     final int chunkIndex,
-    final @NotNull List<CooRecord> records
+    final @NotNull CooRecordBatch batch
   ) throws IOException {
-    records.sort(Comparator
-      .comparingLong(CooRecord::row)
-      .thenComparingLong(CooRecord::col)
-      .thenComparingLong(CooRecord::count));
+    final var rows = batch.copyRows();
+    final var cols = batch.copyCols();
+    final var counts = batch.copyCounts();
+    if (!NativeProcessingService.getInstance().trySortCoolerRecordsRowMajor(rows, cols, counts)) {
+      sortCoolerRecordsJava(rows, cols, counts);
+    }
     final var chunkPath = workDir.resolve(String.format("pixels-r%d-%05d.bin", resolution, chunkIndex));
     try (final var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(chunkPath)))) {
-      for (final var record : records) {
-        out.writeLong(record.row());
-        out.writeLong(record.col());
-        out.writeLong(record.count());
+      for (int i = 0; i < rows.length; i++) {
+        out.writeLong(rows[i]);
+        out.writeLong(cols[i]);
+        out.writeLong(counts[i]);
       }
     }
     return chunkPath;
+  }
+
+  static void sortCoolerRecordsJava(final long @NotNull [] rows,
+                                    final long @NotNull [] cols,
+                                    final long @NotNull [] counts) {
+    if (rows.length != cols.length || rows.length != counts.length) {
+      throw new IllegalArgumentException("COO arrays must have identical lengths");
+    }
+    if (rows.length <= 1) {
+      return;
+    }
+    quickSortCoolerRecords(rows, cols, counts, 0, rows.length - 1);
+  }
+
+  private static void quickSortCoolerRecords(final long @NotNull [] rows,
+                                             final long @NotNull [] cols,
+                                             final long @NotNull [] counts,
+                                             final int left,
+                                             final int right) {
+    if (right - left <= 32) {
+      insertionSortCoolerRecords(rows, cols, counts, left, right);
+      return;
+    }
+    int i = left;
+    int j = right;
+    final int pivotIndex = left + ((right - left) >>> 1);
+    final long pivotRow = rows[pivotIndex];
+    final long pivotCol = cols[pivotIndex];
+    final long pivotCount = counts[pivotIndex];
+    while (i <= j) {
+      while (compareRecordToPivot(rows, cols, counts, i, pivotRow, pivotCol, pivotCount) < 0) {
+        i++;
+      }
+      while (compareRecordToPivot(rows, cols, counts, j, pivotRow, pivotCol, pivotCount) > 0) {
+        j--;
+      }
+      if (i <= j) {
+        swapCoolerRecords(rows, cols, counts, i, j);
+        i++;
+        j--;
+      }
+    }
+    if (left < j) {
+      quickSortCoolerRecords(rows, cols, counts, left, j);
+    }
+    if (i < right) {
+      quickSortCoolerRecords(rows, cols, counts, i, right);
+    }
+  }
+
+  private static void insertionSortCoolerRecords(final long @NotNull [] rows,
+                                                 final long @NotNull [] cols,
+                                                 final long @NotNull [] counts,
+                                                 final int left,
+                                                 final int right) {
+    for (int i = left + 1; i <= right; i++) {
+      final long row = rows[i];
+      final long col = cols[i];
+      final long count = counts[i];
+      int j = i - 1;
+      while (j >= left && compareRecord(rows[j], cols[j], counts[j], row, col, count) > 0) {
+        rows[j + 1] = rows[j];
+        cols[j + 1] = cols[j];
+        counts[j + 1] = counts[j];
+        j--;
+      }
+      rows[j + 1] = row;
+      cols[j + 1] = col;
+      counts[j + 1] = count;
+    }
+  }
+
+  private static int compareRecordToPivot(final long @NotNull [] rows,
+                                          final long @NotNull [] cols,
+                                          final long @NotNull [] counts,
+                                          final int index,
+                                          final long pivotRow,
+                                          final long pivotCol,
+                                          final long pivotCount) {
+    return compareRecord(rows[index], cols[index], counts[index], pivotRow, pivotCol, pivotCount);
+  }
+
+  private static int compareRecord(final long row,
+                                   final long col,
+                                   final long count,
+                                   final long otherRow,
+                                   final long otherCol,
+                                   final long otherCount) {
+    int cmp = Long.compare(row, otherRow);
+    if (cmp != 0) {
+      return cmp;
+    }
+    cmp = Long.compare(col, otherCol);
+    if (cmp != 0) {
+      return cmp;
+    }
+    return Long.compare(count, otherCount);
+  }
+
+  private static void swapCoolerRecords(final long @NotNull [] rows,
+                                        final long @NotNull [] cols,
+                                        final long @NotNull [] counts,
+                                        final int first,
+                                        final int second) {
+    if (first == second) {
+      return;
+    }
+    long tmp = rows[first];
+    rows[first] = rows[second];
+    rows[second] = tmp;
+    tmp = cols[first];
+    cols[first] = cols[second];
+    cols[second] = tmp;
+    tmp = counts[first];
+    counts[first] = counts[second];
+    counts[second] = tmp;
   }
 
   private static void mergeSortedChunks(
@@ -917,11 +1035,7 @@ public class HictToMcoolConverter {
     final @NotNull Consumer<String> logger
   ) throws IOException {
     if (chunkPaths.isEmpty()) {
-      try (final var rawOut = Files.newOutputStream(outputPath);
-           final var gzipOut = new java.util.zip.GZIPOutputStream(rawOut);
-           final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
-        writer.flush();
-      }
+      Files.write(outputPath, new byte[0]);
       return;
     }
 
@@ -940,9 +1054,7 @@ public class HictToMcoolConverter {
           cursor.close();
         }
       }
-      try (final var rawOut = Files.newOutputStream(outputPath);
-           final var gzipOut = new java.util.zip.GZIPOutputStream(rawOut);
-           final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
+      try (final var writer = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(outputPath)))) {
         long rawRecords = 0L;
         long written = 0L;
         boolean hasPending = false;
@@ -960,12 +1072,9 @@ public class HictToMcoolConverter {
           } else if (pendingRow == record.row() && pendingCol == record.col()) {
             pendingCount += record.count();
           } else {
-            writer.write(Long.toString(pendingRow));
-            writer.write('\t');
-            writer.write(Long.toString(pendingCol));
-            writer.write('\t');
-            writer.write(Long.toString(pendingCount));
-            writer.newLine();
+            writer.writeLong(pendingRow);
+            writer.writeLong(pendingCol);
+            writer.writeLong(pendingCount);
             written++;
             pendingRow = record.row();
             pendingCol = record.col();
@@ -980,12 +1089,9 @@ public class HictToMcoolConverter {
           }
         }
         if (hasPending) {
-          writer.write(Long.toString(pendingRow));
-          writer.write('\t');
-          writer.write(Long.toString(pendingCol));
-          writer.write('\t');
-          writer.write(Long.toString(pendingCount));
-          writer.newLine();
+          writer.writeLong(pendingRow);
+          writer.writeLong(pendingCol);
+          writer.writeLong(pendingCount);
           written++;
         }
         logger.accept("Merged sorted COO records complete: raw=" + rawRecords + ", unique=" + written);
@@ -1257,6 +1363,78 @@ public class HictToMcoolConverter {
     return parallelismOption;
   }
 
+  private static int resolveSortBatchSize(final int chunkSize,
+                                          final int parallelism,
+                                          final @NotNull Consumer<String> logger) {
+    final long memoryLimitBytes = resolveExportMemoryLimitBytes(logger);
+    final long perWorkerBudget = Math.max(64L * 1024L * 1024L, memoryLimitBytes / Math.max(1, parallelism));
+    final long memoryLimitedRecords = perWorkerBudget / ESTIMATED_SORT_BYTES_PER_RECORD;
+    final long requestedRecords = Math.max((long) MIN_SORT_BATCH_SIZE, memoryLimitedRecords);
+    return (int) Math.max(
+      MIN_SORT_BATCH_SIZE,
+      Math.min((long) MAX_SORT_BATCH_SIZE, Math.min(requestedRecords, Integer.MAX_VALUE - 8L))
+    );
+  }
+
+  private static long resolveExportMemoryLimitBytes(final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.maxMemoryBytes"),
+      System.getenv("HICT_EXPORT_MAX_MEMORY_BYTES")
+    );
+    if (configured == null) {
+      return DEFAULT_EXPORT_MEMORY_LIMIT_BYTES;
+    }
+    try {
+      final long parsed = parseByteSize(configured);
+      if (parsed <= 0L) {
+        throw new IllegalArgumentException("must be positive");
+      }
+      return parsed;
+    } catch (final RuntimeException err) {
+      logger.accept("Ignoring invalid HiCT export memory limit '" + configured + "': " + err.getMessage());
+      return DEFAULT_EXPORT_MEMORY_LIMIT_BYTES;
+    }
+  }
+
+  private static long parseByteSize(final @NotNull String rawValue) {
+    final var value = rawValue.trim().toLowerCase(java.util.Locale.ROOT);
+    if (value.isEmpty()) {
+      throw new IllegalArgumentException("empty value");
+    }
+    long multiplier = 1L;
+    String numeric = value;
+    if (value.endsWith("kib")) {
+      multiplier = 1024L;
+      numeric = value.substring(0, value.length() - 3);
+    } else if (value.endsWith("mib")) {
+      multiplier = 1024L * 1024L;
+      numeric = value.substring(0, value.length() - 3);
+    } else if (value.endsWith("gib")) {
+      multiplier = 1024L * 1024L * 1024L;
+      numeric = value.substring(0, value.length() - 3);
+    } else if (value.endsWith("kb") || value.endsWith("k")) {
+      multiplier = 1024L;
+      numeric = value.substring(0, value.endsWith("kb") ? value.length() - 2 : value.length() - 1);
+    } else if (value.endsWith("mb") || value.endsWith("m")) {
+      multiplier = 1024L * 1024L;
+      numeric = value.substring(0, value.endsWith("mb") ? value.length() - 2 : value.length() - 1);
+    } else if (value.endsWith("gb") || value.endsWith("g")) {
+      multiplier = 1024L * 1024L * 1024L;
+      numeric = value.substring(0, value.endsWith("gb") ? value.length() - 2 : value.length() - 1);
+    }
+    return Math.multiplyExact(Long.parseLong(numeric.trim()), multiplier);
+  }
+
+  private static @Nullable String firstNonBlank(final @Nullable String first, final @Nullable String second) {
+    if (first != null && !first.isBlank()) {
+      return first;
+    }
+    if (second != null && !second.isBlank()) {
+      return second;
+    }
+    return null;
+  }
+
   private record SortedCooSummary(long nonzeroPixelCount, long totalCounts, long @NotNull [] bin1Offset) {
   }
 
@@ -1287,6 +1465,56 @@ public class HictToMcoolConverter {
         }
       }
       throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+    }
+  }
+
+  private static final class CooRecordBatch {
+    private final long[] rows;
+    private final long[] cols;
+    private final long[] counts;
+    private int size;
+
+    private CooRecordBatch(final int capacity) {
+      if (capacity <= 0) {
+        throw new IllegalArgumentException("COO batch capacity must be positive");
+      }
+      this.rows = new long[capacity];
+      this.cols = new long[capacity];
+      this.counts = new long[capacity];
+    }
+
+    private void add(final long row, final long col, final long count) {
+      if (size >= rows.length) {
+        throw new IllegalStateException("COO batch is full");
+      }
+      rows[size] = row;
+      cols[size] = col;
+      counts[size] = count;
+      size++;
+    }
+
+    private int size() {
+      return size;
+    }
+
+    private boolean isEmpty() {
+      return size == 0;
+    }
+
+    private void clear() {
+      size = 0;
+    }
+
+    private long @NotNull [] copyRows() {
+      return Arrays.copyOf(rows, size);
+    }
+
+    private long @NotNull [] copyCols() {
+      return Arrays.copyOf(cols, size);
+    }
+
+    private long @NotNull [] copyCounts() {
+      return Arrays.copyOf(counts, size);
     }
   }
 

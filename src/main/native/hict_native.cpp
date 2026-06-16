@@ -586,6 +586,49 @@ bool sort_sparse_block_row_major(jlong* rows,
   return true;
 }
 
+struct CoolerLongRecord {
+  jlong row;
+  jlong column;
+  jlong value;
+};
+
+bool sort_cooler_records_row_major(jlong* rows,
+                                   jlong* columns,
+                                   jlong* values,
+                                   const jsize length) {
+  if (rows == nullptr || columns == nullptr || values == nullptr || length < 0) {
+    return false;
+  }
+  if (length <= 1) {
+    return true;
+  }
+
+  std::vector<CoolerLongRecord> records(static_cast<std::size_t>(length));
+#pragma omp parallel for schedule(static) if(length >= PARALLEL_THRESHOLD)
+  for (jsize i = 0; i < length; ++i) {
+    records[static_cast<std::size_t>(i)] = CoolerLongRecord{rows[i], columns[i], values[i]};
+  }
+
+  std::sort(records.begin(), records.end(), [](const CoolerLongRecord& lhs, const CoolerLongRecord& rhs) {
+    if (lhs.row != rhs.row) {
+      return lhs.row < rhs.row;
+    }
+    if (lhs.column != rhs.column) {
+      return lhs.column < rhs.column;
+    }
+    return lhs.value < rhs.value;
+  });
+
+#pragma omp parallel for schedule(static) if(length >= PARALLEL_THRESHOLD)
+  for (jsize i = 0; i < length; ++i) {
+    const auto& record = records[static_cast<std::size_t>(i)];
+    rows[i] = record.row;
+    columns[i] = record.column;
+    values[i] = record.value;
+  }
+  return true;
+}
+
 bool transform_expected_signal(const double* signal,
                                const jint rows,
                                const jint columns,
@@ -1226,6 +1269,54 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   }
 
   const auto ok = sort_sparse_block_row_major(rows, columns, values, length, submatrix_size);
+  env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
+  env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
+  env->ReleaseLongArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
+  return native_result(session_handle, ok);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSortCoolerRecordsLong(
+  JNIEnv* env,
+  jclass,
+  jlong session_handle,
+  jlongArray rows_array,
+  jlongArray columns_array,
+  jlongArray values_array
+) {
+  if (session_from_handle(session_handle) == nullptr) {
+    return JNI_FALSE;
+  }
+  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+    return native_failure(session_handle);
+  }
+  const auto length = env->GetArrayLength(rows_array);
+  if (env->GetArrayLength(columns_array) != length || env->GetArrayLength(values_array) != length) {
+    return native_failure(session_handle);
+  }
+
+  auto* rows = env->GetLongArrayElements(rows_array, nullptr);
+  auto* columns = env->GetLongArrayElements(columns_array, nullptr);
+  auto* values = env->GetLongArrayElements(values_array, nullptr);
+  if (rows == nullptr || columns == nullptr || values == nullptr) {
+    if (rows != nullptr) {
+      env->ReleaseLongArrayElements(rows_array, rows, JNI_ABORT);
+    }
+    if (columns != nullptr) {
+      env->ReleaseLongArrayElements(columns_array, columns, JNI_ABORT);
+    }
+    if (values != nullptr) {
+      env->ReleaseLongArrayElements(values_array, values, JNI_ABORT);
+    }
+    return native_failure(session_handle);
+  }
+
+  bool ok = false;
+  try {
+    ok = sort_cooler_records_row_major(rows, columns, values, length);
+  } catch (...) {
+    ok = false;
+  }
   env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
   env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
   env->ReleaseLongArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
