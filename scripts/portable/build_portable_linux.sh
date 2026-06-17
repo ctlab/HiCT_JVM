@@ -78,7 +78,11 @@ if [[ -z "${JAR_TOOL}" || ! -x "${JAR_TOOL}" ]]; then
 fi
 
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
-  (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true shadowJar)
+  (
+    export HICT_JHDF5_RUNTIME_PLATFORMS="${HICT_JHDF5_RUNTIME_PLATFORMS:-amd64-Linux}"
+    export HICT_VERIFY_BUNDLED_JHDF5_SCOPE="${HICT_VERIFY_BUNDLED_JHDF5_SCOPE:-runtime}"
+    cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true verifyBundledJhdf5Payload shadowJar
+  )
 fi
 
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"

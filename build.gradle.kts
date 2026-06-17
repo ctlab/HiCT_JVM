@@ -412,6 +412,10 @@ fun selectedRuntimeJhdf5NativePlatforms(): List<String> {
 }
 
 val runtimeJhdf5NativePlatforms = selectedRuntimeJhdf5NativePlatforms()
+val runtimeJhdf5NativePlatformSet = runtimeJhdf5NativePlatforms.toSet()
+val universalJhdf5Runtime = runtimeJhdf5NativePlatforms.isEmpty()
+val includeMacX64Jhdf5Runtime = universalJhdf5Runtime || "x86_64-Mac OS X" in runtimeJhdf5NativePlatformSet
+val includeMacArm64Jhdf5Runtime = universalJhdf5Runtime || "aarch64-Mac OS X" in runtimeJhdf5NativePlatformSet
 
 fun selectedJhdf5VerificationScope(): String {
   val explicit = envOrProjectProperty("HICT_VERIFY_BUNDLED_JHDF5_SCOPE")
@@ -1185,51 +1189,59 @@ tasks.named<ProcessResources>("processResources") {
       }
     }
 
-    addMacJhdf5Aliases("native/jhdf5/x86_64-Mac OS X", "osx_64")
-    addMacJhdf5Aliases("libs/native/jhdf5/x86_64-Mac OS X", "osx_64")
-    addMacJhdf5Aliases("native/jhdf5/x86_64-Mac OS X", "macos_64")
-    addMacJhdf5Aliases("libs/native/jhdf5/x86_64-Mac OS X", "macos_64")
-    addMacJhdf5Aliases("native/jhdf5/aarch64-Mac OS X", "osx_arm64")
-    addMacJhdf5Aliases("libs/native/jhdf5/aarch64-Mac OS X", "osx_arm64")
-    addMacJhdf5Aliases("native/jhdf5/aarch64-Mac OS X", "macos_arm64")
-    addMacJhdf5Aliases("libs/native/jhdf5/aarch64-Mac OS X", "macos_arm64")
+    if (includeMacX64Jhdf5Runtime) {
+      addMacJhdf5Aliases("native/jhdf5/x86_64-Mac OS X", "osx_64")
+      addMacJhdf5Aliases("libs/native/jhdf5/x86_64-Mac OS X", "osx_64")
+      addMacJhdf5Aliases("native/jhdf5/x86_64-Mac OS X", "macos_64")
+      addMacJhdf5Aliases("libs/native/jhdf5/x86_64-Mac OS X", "macos_64")
+    }
+    if (includeMacArm64Jhdf5Runtime) {
+      addMacJhdf5Aliases("native/jhdf5/aarch64-Mac OS X", "osx_arm64")
+      addMacJhdf5Aliases("libs/native/jhdf5/aarch64-Mac OS X", "osx_arm64")
+      addMacJhdf5Aliases("native/jhdf5/aarch64-Mac OS X", "macos_arm64")
+      addMacJhdf5Aliases("libs/native/jhdf5/aarch64-Mac OS X", "macos_arm64")
+    }
   }
   // New platform naming in loader code uses "macos_64"; keep aliasing from legacy "osx_64".
-  from("src/main/resources/natives/osx_64") {
-    into("resources/libs/osx_64")
-    include("**/*.dylib", "**/*.jnilib")
+  if (includeMacX64Jhdf5Runtime) {
+    from("src/main/resources/natives/osx_64") {
+      into("resources/libs/osx_64")
+      include("**/*.dylib", "**/*.jnilib")
+    }
+    from("src/main/resources/natives/osx_64") {
+      into("resources/libs/osx_64")
+      include("**/*.so")
+      rename { it.replace(".so", ".dylib") }
+    }
+    from("src/main/resources/natives/osx_64") {
+      into("resources/libs/macos_64")
+      include("**/*.dylib", "**/*.jnilib")
+    }
+    from("src/main/resources/natives/osx_64") {
+      into("resources/libs/macos_64")
+      include("**/*.so")
+      rename { it.replace(".so", ".dylib") }
+    }
+    from("src/main/resources/natives/macos_64") {
+      into("resources/libs/macos_64")
+      include("**/*.dylib", "**/*.jnilib")
+    }
+    from("src/main/resources/natives/macos_64") {
+      into("resources/libs/macos_64")
+      include("**/*.so")
+      rename { it.replace(".so", ".dylib") }
+    }
   }
-  from("src/main/resources/natives/osx_64") {
-    into("resources/libs/osx_64")
-    include("**/*.so")
-    rename { it.replace(".so", ".dylib") }
-  }
-  from("src/main/resources/natives/osx_64") {
-    into("resources/libs/macos_64")
-    include("**/*.dylib", "**/*.jnilib")
-  }
-  from("src/main/resources/natives/osx_64") {
-    into("resources/libs/macos_64")
-    include("**/*.so")
-    rename { it.replace(".so", ".dylib") }
-  }
-  from("src/main/resources/natives/macos_64") {
-    into("resources/libs/macos_64")
-    include("**/*.dylib", "**/*.jnilib")
-  }
-  from("src/main/resources/natives/macos_64") {
-    into("resources/libs/macos_64")
-    include("**/*.so")
-    rename { it.replace(".so", ".dylib") }
-  }
-  from("src/main/resources/natives/osx_arm64") {
-    into("resources/libs/osx_arm64")
-    include("**/*.dylib", "**/*.jnilib")
-  }
-  from("src/main/resources/natives/osx_arm64") {
-    into("resources/libs/osx_arm64")
-    include("**/*.so")
-    rename { it.replace(".so", ".dylib") }
+  if (includeMacArm64Jhdf5Runtime) {
+    from("src/main/resources/natives/osx_arm64") {
+      into("resources/libs/osx_arm64")
+      include("**/*.dylib", "**/*.jnilib")
+    }
+    from("src/main/resources/natives/osx_arm64") {
+      into("resources/libs/osx_arm64")
+      include("**/*.so")
+      rename { it.replace(".so", ".dylib") }
+    }
   }
   bundledToolchainPlatforms.forEach { platform ->
     from(bundledToolchainSourceDirectory.dir(platform)) {
@@ -1408,13 +1420,13 @@ tasks.register("verifyBundledJhdf5Payload") {
       "macOS x86_64 JHDF5 JNI" to { set: Set<String> ->
         set.contains("native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib") || hasJhdf5Entry("libs/native/jhdf5/x86_64-Mac OS X/libjhdf5.jnilib")
       },
-      "macOS arm64 HDF5 dylib" to { entriesSet: Set<String> ->
+      "macOS arm64 HDF5 dylib" to { _: Set<String> ->
         hasVersionedMacHdf5Dylib("osx_arm64") ||
           hasVersionedMacHdf5Dylib("macos_arm64") ||
           hasVersionedMacHdf5Dylib("darwin_arm64") ||
           nativesArchiveEntries.any { it.matches(Regex("^native/jhdf5/aarch64-Mac OS X/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib$")) }
       },
-      "macOS x86_64 HDF5 dylib" to { entriesSet: Set<String> ->
+      "macOS x86_64 HDF5 dylib" to { _: Set<String> ->
         hasVersionedMacHdf5Dylib("osx_64") ||
           hasVersionedMacHdf5Dylib("macos_64") ||
           hasVersionedMacHdf5Dylib("darwin_x86_64") ||
@@ -1425,7 +1437,27 @@ tasks.register("verifyBundledJhdf5Payload") {
       // HiCT packaging must not reject a valid core macOS runtime because optional
       // plugin dylibs are absent for Darwin.
     )
-    val runtimeRequirements = when (runtimeJhdf5NativePlatforms.toSet()) {
+    val runtimeRequirements = when (runtimeJhdf5NativePlatformSet) {
+      setOf("amd64-Linux") -> listOf(
+        "Embedded JHDF5 native archive" to { set: Set<String> ->
+          runtimeJhdf5NativesArchiveOrSource()?.isFile != true ||
+            set.contains("libs/$bundledJhdf5NativesArchiveName")
+        },
+        "Linux amd64 JHDF5 JNI" to { set: Set<String> ->
+          set.contains("native/jhdf5/amd64-Linux/libjhdf5.so") ||
+            hasJhdf5Entry("libs/native/jhdf5/amd64-Linux/libjhdf5.so")
+        },
+      )
+      setOf("amd64-Windows") -> listOf(
+        "Embedded JHDF5 native archive" to { set: Set<String> ->
+          runtimeJhdf5NativesArchiveOrSource()?.isFile != true ||
+            set.contains("libs/$bundledJhdf5NativesArchiveName")
+        },
+        "Windows amd64 JHDF5 JNI" to { set: Set<String> ->
+          set.contains("native/jhdf5/amd64-Windows/jhdf5.dll") ||
+            hasJhdf5Entry("libs/native/jhdf5/amd64-Windows/jhdf5.dll")
+        },
+      )
       setOf("aarch64-Mac OS X") -> listOf(
         "Embedded JHDF5 native archive" to { set: Set<String> ->
           runtimeJhdf5NativesArchiveOrSource()?.isFile != true ||

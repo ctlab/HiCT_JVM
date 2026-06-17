@@ -211,6 +211,9 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   # macOS portable packages intentionally embed only the target platform's
   # JHDF5/HDF5 runtime sidecar.  The separately published fat JAR remains
   # universal and is validated by the Linux release build.
+  export HICT_DARWIN_ARCH="${DARWIN_ARCH}"
+  export HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}"
+  export HICT_JHDF5_RUNTIME_PLATFORMS="${HICT_JHDF5_RUNTIME_PLATFORMS:-$(darwin_jhdf5_platform_dir)}"
   export HICT_VERIFY_BUNDLED_JHDF5_SCOPE="${HICT_VERIFY_BUNDLED_JHDF5_SCOPE:-runtime}"
   (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true verifyBundledJhdf5Payload shadowJar)
 fi

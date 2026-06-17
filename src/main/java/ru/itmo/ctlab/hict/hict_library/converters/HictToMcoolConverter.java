@@ -1370,6 +1370,11 @@ public class HictToMcoolConverter {
     final long perWorkerBudget = Math.max(64L * 1024L * 1024L, memoryLimitBytes / Math.max(1, parallelism));
     final long memoryLimitedRecords = perWorkerBudget / ESTIMATED_SORT_BYTES_PER_RECORD;
     final long requestedRecords = Math.max((long) MIN_SORT_BATCH_SIZE, memoryLimitedRecords);
+    logger.accept(
+      "HiCT -> Cooler export memory budget=" + formatByteSize(memoryLimitBytes) +
+        ", per-worker sort budget=" + formatByteSize(perWorkerBudget) +
+        ", estimated bytes/record=" + ESTIMATED_SORT_BYTES_PER_RECORD
+    );
     return (int) Math.max(
       MIN_SORT_BATCH_SIZE,
       Math.min((long) MAX_SORT_BATCH_SIZE, Math.min(requestedRecords, Integer.MAX_VALUE - 8L))
@@ -1379,7 +1384,8 @@ public class HictToMcoolConverter {
   private static long resolveExportMemoryLimitBytes(final @NotNull Consumer<String> logger) {
     final var configured = firstNonBlank(
       System.getProperty("hict.export.maxMemoryBytes"),
-      System.getenv("HICT_EXPORT_MAX_MEMORY_BYTES")
+      System.getenv("HICT_EXPORT_MAX_MEMORY_BYTES"),
+      System.getenv("HICT_CONVERSION_MAX_MEMORY_BYTES")
     );
     if (configured == null) {
       return DEFAULT_EXPORT_MEMORY_LIMIT_BYTES;
@@ -1398,39 +1404,55 @@ public class HictToMcoolConverter {
 
   private static long parseByteSize(final @NotNull String rawValue) {
     final var value = rawValue.trim().toLowerCase(java.util.Locale.ROOT);
-    if (value.isEmpty()) {
-      throw new IllegalArgumentException("empty value");
+    if (value.isBlank()) {
+      throw new IllegalArgumentException("blank byte size");
     }
-    long multiplier = 1L;
-    String numeric = value;
-    if (value.endsWith("kib")) {
-      multiplier = 1024L;
-      numeric = value.substring(0, value.length() - 3);
-    } else if (value.endsWith("mib")) {
-      multiplier = 1024L * 1024L;
-      numeric = value.substring(0, value.length() - 3);
-    } else if (value.endsWith("gib")) {
-      multiplier = 1024L * 1024L * 1024L;
-      numeric = value.substring(0, value.length() - 3);
-    } else if (value.endsWith("kb") || value.endsWith("k")) {
-      multiplier = 1024L;
-      numeric = value.substring(0, value.endsWith("kb") ? value.length() - 2 : value.length() - 1);
-    } else if (value.endsWith("mb") || value.endsWith("m")) {
-      multiplier = 1024L * 1024L;
-      numeric = value.substring(0, value.endsWith("mb") ? value.length() - 2 : value.length() - 1);
-    } else if (value.endsWith("gb") || value.endsWith("g")) {
-      multiplier = 1024L * 1024L * 1024L;
-      numeric = value.substring(0, value.endsWith("gb") ? value.length() - 2 : value.length() - 1);
+    int suffixStart = value.length();
+    while (suffixStart > 0 && Character.isLetter(value.charAt(suffixStart - 1))) {
+      suffixStart--;
     }
-    return Math.multiplyExact(Long.parseLong(numeric.trim()), multiplier);
+    final var numberPart = value.substring(0, suffixStart).trim();
+    final var suffix = value.substring(suffixStart).trim();
+    final long multiplier = switch (suffix) {
+      case "", "b", "bytes" -> 1L;
+      case "k", "kb", "kib" -> 1024L;
+      case "m", "mb", "mib" -> 1024L * 1024L;
+      case "g", "gb", "gib" -> 1024L * 1024L * 1024L;
+      case "t", "tb", "tib" -> 1024L * 1024L * 1024L * 1024L;
+      default -> throw new IllegalArgumentException("unsupported size suffix: " + suffix);
+    };
+    final double number = Double.parseDouble(numberPart);
+    if (!Double.isFinite(number) || number <= 0.0d) {
+      throw new IllegalArgumentException("byte size must be positive");
+    }
+    final double bytes = number * multiplier;
+    if (bytes > Long.MAX_VALUE) {
+      throw new IllegalArgumentException("byte size is too large");
+    }
+    return Math.max(1L, (long) bytes);
   }
 
-  private static @Nullable String firstNonBlank(final @Nullable String first, final @Nullable String second) {
-    if (first != null && !first.isBlank()) {
-      return first;
+  private static @NotNull String formatByteSize(final long bytes) {
+    final double gib = bytes / (1024.0d * 1024.0d * 1024.0d);
+    if (gib >= 1.0d) {
+      return String.format(java.util.Locale.ROOT, "%.1f GiB", gib);
     }
-    if (second != null && !second.isBlank()) {
-      return second;
+    final double mib = bytes / (1024.0d * 1024.0d);
+    if (mib >= 1.0d) {
+      return String.format(java.util.Locale.ROOT, "%.1f MiB", mib);
+    }
+    final double kib = bytes / 1024.0d;
+    if (kib >= 1.0d) {
+      return String.format(java.util.Locale.ROOT, "%.1f KiB", kib);
+    }
+    return bytes + " B";
+  }
+
+  private static @Nullable String firstNonBlank(final @Nullable String... values) {
+    for (final var value : values) {
+      if (value != null && !value.isBlank()) {
+        return value;
+      }
     }
     return null;
   }

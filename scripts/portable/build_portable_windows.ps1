@@ -307,7 +307,13 @@ Require-Command "powershell"
 if (-not $SkipGradle) {
   Push-Location $projectDir
   try {
-    & .\gradlew.bat -PrequireBundledWebUI=true shadowJar
+    if ([string]::IsNullOrWhiteSpace($env:HICT_JHDF5_RUNTIME_PLATFORMS)) {
+      $env:HICT_JHDF5_RUNTIME_PLATFORMS = "amd64-Windows"
+    }
+    if ([string]::IsNullOrWhiteSpace($env:HICT_VERIFY_BUNDLED_JHDF5_SCOPE)) {
+      $env:HICT_VERIFY_BUNDLED_JHDF5_SCOPE = "runtime"
+    }
+    & .\gradlew.bat -PrequireBundledWebUI=true verifyBundledJhdf5Payload shadowJar
     if ($LASTEXITCODE -ne 0) {
       throw "Gradle shadowJar failed with exit code $LASTEXITCODE"
     }
