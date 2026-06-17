@@ -1933,8 +1933,11 @@ components:
         filename: { type: string }
         direction:
           type: string
-          enum: [mcool-to-hict, hict-to-mcool]
+          enum: [mcool-to-hict, hict-to-mcool, hic-to-mcool, hic-to-hict, hicpro-matrix-to-hict, coo-to-hict, bg2-to-hict, pairs-to-hict, validpairs-to-hict]
           default: mcool-to-hict
+        outputFilename:
+          type: string
+          description: Optional output filename relative to DATA_DIR. HiCT-to-Cooler export accepts .cool and .mcool; other directions use their fixed output extension.
         overwrite: { type: boolean, default: false }
         resolutions:
           type: string
@@ -1947,7 +1950,27 @@ components:
         chunkSize: { type: integer, default: 8192 }
         assemblyFilename:
           type: string
-          description: Optional .assembly or .agp layout file relative to DATA_DIR. Used for .hic conversion requests.
+          description: Optional .assembly or .agp layout file relative to DATA_DIR. Used for .hic conversion and HiCT export layout requests.
+        useCurrentAssembly:
+          type: boolean
+          default: false
+          description: Export the currently opened HiCT assembly state when converting .hict.hdf5 to Cooler.
+        exportMode:
+          type: string
+          enum: [auto, internal, hictk]
+          default: auto
+        exportAllResolutions:
+          type: boolean
+          default: false
+        buildResolutionPyramid:
+          type: boolean
+          default: true
+        balanceInputCoolers:
+          type: boolean
+          default: true
+        balanceExportedCoolers:
+          type: boolean
+          default: true
         parallelism: { type: integer }
       required: [filename]
     StartBatchConversionRequest:
@@ -1973,6 +1996,22 @@ components:
           type: object
           additionalProperties: { type: string }
           description: Optional per-input assembly layout override keyed by source filename.
+        exportMode:
+          type: string
+          enum: [auto, internal, hictk]
+          default: auto
+        exportAllResolutions:
+          type: boolean
+          default: false
+        buildResolutionPyramid:
+          type: boolean
+          default: true
+        balanceInputCoolers:
+          type: boolean
+          default: true
+        balanceExportedCoolers:
+          type: boolean
+          default: true
       required: [files]
     StartDotplotJobsRequest:
       type: object

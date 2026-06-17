@@ -397,6 +397,27 @@ public class HictCli implements Runnable {
     boolean exportAllResolutions;
 
     @Option(
+      names = "--build-resolution-pyramid",
+      defaultValue = "true",
+      description = "Build a hictk nice-step resolution pyramid when importing Cooler files (default: ${DEFAULT-VALUE})."
+    )
+    boolean buildResolutionPyramid;
+
+    @Option(
+      names = "--balance-input-coolers",
+      defaultValue = "true",
+      description = "Balance .cool/.mcool inputs with hictk before importing (default: ${DEFAULT-VALUE})."
+    )
+    boolean balanceInputCoolers;
+
+    @Option(
+      names = "--balance-exported-coolers",
+      defaultValue = "true",
+      description = "Balance hictk-assisted Cooler exports (default: ${DEFAULT-VALUE})."
+    )
+    boolean balanceExportedCoolers;
+
+    @Option(
       names = "--export-mode",
       defaultValue = "AUTO",
       description = "Export mode for .hict.hdf5 -> .mcool: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})."
@@ -415,6 +436,9 @@ public class HictCli implements Runnable {
         applyAgp,
         parallelism,
         exportAllResolutions,
+        buildResolutionPyramid,
+        balanceInputCoolers,
+        balanceExportedCoolers,
         exportMode
       );
     }

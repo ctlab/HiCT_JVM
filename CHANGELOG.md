@@ -1,6 +1,6 @@
 # HiCT Changelog
 
-## 1.0.181-7d4d4d9-webui_31467f1
+## 1.0.182-49a01f0-webui_9129e8b
 
 Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 
@@ -13,6 +13,13 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Added ruler modes for global, intra-contig, and intra-scaffold coordinates.
 - Added configurable OSD overlay settings, including field visibility, order, and position.
 - Added an export workflow for converting `.hict.hdf5` matrices to `.mcool`, with current or custom AGP assembly state.
+- Added native-assisted sorting and chunked direct export improvements for HiCT-to-Cooler conversion, reducing memory pressure while preserving the existing `.hict.hdf5` layout and Cooler contracts.
+- Added default-on hictk zoomify and balancing controls for opening `.cool` and `.mcool` inputs, so single-resolution Cooler files can be expanded into an optimized resolution pyramid before import.
+- Added editable Cooler export filenames, with `.cool` used by default for finest-resolution exports and `.mcool` used by default for all-resolution exports.
+- Added default-on balancing for exported Cooler files in hictk-assisted export mode, and made automatic export mode prefer hictk when it is available.
+- Added real single-resolution `.cool` export support through both direct internal and hictk-assisted export, while keeping multi-resolution `.mcool` export for all-resolution workflows.
+- Added WebUI, API, CLI, and OpenAPI options for Cooler input balancing, exported Cooler balancing, and explicit export filenames.
+- Improved `.mcool` to `.hict.hdf5` conversion throughput and added round-trip validation coverage for `.mcool -> .hict.hdf5 -> .mcool` workflows.
 - Improved portable package size by reducing redundant bundled content where possible.
 - Split platform-specific portable runtime contents from the universal fat JAR intent so portable packages can avoid incompatible native payloads while the universal JAR can keep broad compatibility.
 - Fixed macOS packaging checks around platform-specific JHDF5/HDF5 native payloads.

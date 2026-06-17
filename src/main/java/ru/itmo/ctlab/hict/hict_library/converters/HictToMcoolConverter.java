@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.PriorityQueue;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -88,6 +89,10 @@ public class HictToMcoolConverter {
         synchronizedLogConsumer
       );
       final int sortBatchSize = resolveSortBatchSize(options.chunkSize(), options.parallelism(), synchronizedLogConsumer);
+      final boolean singleCoolerOutput = isSingleCoolerOutput(options.outputPath());
+      if (singleCoolerOutput && selectedResolutions.size() != 1) {
+        throw new IllegalArgumentException("Direct .cool export requires exactly one selected resolution. Use .mcool output for all-resolution export.");
+      }
 
       synchronizedLogConsumer.accept(
         "Converting internally with chunkSize=" + options.chunkSize() +
@@ -97,11 +102,13 @@ public class HictToMcoolConverter {
 
       Files.deleteIfExists(options.outputPath());
       try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
-        dst.object().createGroup("/resolutions");
-        dst.string().setAttrVL("/", "format", "HDF5::MCOOL");
-        dst.int64().setAttr("/", "format-version", 2L);
-        dst.object().createGroup(ROOT_CHROMS_GROUP);
-        writeChromsGroup(dst, ROOT_CHROMS_GROUP, assemblyLayout.chroms(), compression);
+        if (!singleCoolerOutput) {
+          dst.object().createGroup("/resolutions");
+          dst.string().setAttrVL("/", "format", "HDF5::MCOOL");
+          dst.int64().setAttr("/", "format-version", 2L);
+          dst.object().createGroup(ROOT_CHROMS_GROUP);
+          writeChromsGroup(dst, ROOT_CHROMS_GROUP, assemblyLayout.chroms(), compression);
+        }
         writeHictAssemblyMetadata(dst, assemblyLayout, compression);
         dst.string().write("/source_format", "hict");
         dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
@@ -125,17 +132,31 @@ public class HictToMcoolConverter {
               progressTracker,
               synchronizedLogConsumer
             );
-            mergeResolutionFromSortedCoo(
-              cooPath,
-              dst,
-              assemblyLayout.resolutionLayout(resolution),
-              options.chunkSize(),
-              compression,
-              floatCompression,
-              progressTracker,
-              synchronizedLogConsumer
-            );
-            synchronizedLogConsumer.accept("Merged resolution " + resolution + " to final output");
+            if (singleCoolerOutput) {
+              mergeSingleResolutionFromSortedCoo(
+                cooPath,
+                dst,
+                assemblyLayout.resolutionLayout(resolution),
+                options.chunkSize(),
+                compression,
+                floatCompression,
+                progressTracker,
+                synchronizedLogConsumer
+              );
+              synchronizedLogConsumer.accept("Merged resolution " + resolution + " to root Cooler output");
+            } else {
+              mergeResolutionFromSortedCoo(
+                cooPath,
+                dst,
+                assemblyLayout.resolutionLayout(resolution),
+                options.chunkSize(),
+                compression,
+                floatCompression,
+                progressTracker,
+                synchronizedLogConsumer
+              );
+              synchronizedLogConsumer.accept("Merged resolution " + resolution + " to final output");
+            }
           } finally {
             deleteRecursively(resolutionTmpDir, synchronizedLogConsumer);
           }
@@ -949,22 +970,74 @@ public class HictToMcoolConverter {
     final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logger
   ) throws IOException {
+    mergeResolutionFromSortedCoo(
+      cooPath,
+      dst,
+      layout,
+      "/resolutions/" + layout.resolution(),
+      chunkSize,
+      compression,
+      floatCompression,
+      progressTracker,
+      logger
+    );
+  }
+
+  private static void mergeSingleResolutionFromSortedCoo(
+    final @NotNull Path cooPath,
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+    final @NotNull ResolutionLayout layout,
+    final int chunkSize,
+    final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull HDF5FloatStorageFeatures floatCompression,
+    final @NotNull ExportProgressTracker progressTracker,
+    final @NotNull Consumer<String> logger
+  ) throws IOException {
+    mergeResolutionFromSortedCoo(
+      cooPath,
+      dst,
+      layout,
+      "/",
+      chunkSize,
+      compression,
+      floatCompression,
+      progressTracker,
+      logger
+    );
+  }
+
+  private static void mergeResolutionFromSortedCoo(
+    final @NotNull Path cooPath,
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+    final @NotNull ResolutionLayout layout,
+    final @NotNull String root,
+    final int chunkSize,
+    final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull HDF5FloatStorageFeatures floatCompression,
+    final @NotNull ExportProgressTracker progressTracker,
+    final @NotNull Consumer<String> logger
+  ) throws IOException {
     final long resolution = layout.resolution();
     final long binsCount = layout.binsCount();
     final var summary = summarizeSortedCoo(cooPath, binsCount);
-    final var root = "/resolutions/" + resolution;
-    dst.object().createGroup(root);
-    dst.object().createGroup(root + "/chroms");
-    dst.object().createGroup(root + "/bins");
-    dst.object().createGroup(root + "/pixels");
-    dst.object().createGroup(root + "/indexes");
+    if (!"/".equals(root)) {
+      dst.object().createGroup(root);
+    }
+    dst.object().createGroup(coolerChildPath(root, "chroms"));
+    dst.object().createGroup(coolerChildPath(root, "bins"));
+    dst.object().createGroup(coolerChildPath(root, "pixels"));
+    dst.object().createGroup(coolerChildPath(root, "indexes"));
 
-    writeChromsGroup(dst, root + "/chroms", layout.chroms(), compression);
-    writeBinsGroup(dst, root + "/bins", layout, compression, floatCompression, progressTracker, logger, "Merge resolution " + resolution + " bins");
+    writeChromsGroup(dst, coolerChildPath(root, "chroms"), layout.chroms(), compression);
+    writeBinsGroup(dst, coolerChildPath(root, "bins"), layout, compression, floatCompression, progressTracker, logger, "Merge resolution " + resolution + " bins");
     writePixelsFromSortedCoo(cooPath, dst, root, summary.nonzeroPixelCount(), chunkSize, compression, progressTracker, logger, resolution);
-    dst.int64().writeArray(root + "/indexes/bin1_offset", summary.bin1Offset(), compression);
-    dst.int64().writeArray(root + "/indexes/chrom_offset", layout.chromOffsets(), compression);
+    dst.int64().writeArray(coolerChildPath(root, "indexes/bin1_offset"), summary.bin1Offset(), compression);
+    dst.int64().writeArray(coolerChildPath(root, "indexes/chrom_offset"), layout.chromOffsets(), compression);
     writeResolutionMetadata(dst, root, resolution, binsCount, layout.chroms().size(), summary.nonzeroPixelCount(), summary.totalCounts());
+  }
+
+  private static @NotNull String coolerChildPath(final @NotNull String root, final @NotNull String relativePath) {
+    return "/".equals(root) ? "/" + relativePath : root + "/" + relativePath;
   }
 
   private static @NotNull SortedCooSummary summarizeSortedCoo(
@@ -1036,9 +1109,12 @@ public class HictToMcoolConverter {
     final long resolution
   ) throws IOException {
     final int datasetChunk = safeChunkLen(nonzeroPixelCount, chunkSize);
-    dst.int64().createArray(root + "/pixels/bin1_id", nonzeroPixelCount, datasetChunk, compression);
-    dst.int64().createArray(root + "/pixels/bin2_id", nonzeroPixelCount, datasetChunk, compression);
-    dst.int32().createArray(root + "/pixels/count", nonzeroPixelCount, datasetChunk, compression);
+    final var bin1IdPath = coolerChildPath(root, "pixels/bin1_id");
+    final var bin2IdPath = coolerChildPath(root, "pixels/bin2_id");
+    final var countPath = coolerChildPath(root, "pixels/count");
+    dst.int64().createArray(bin1IdPath, nonzeroPixelCount, datasetChunk, compression);
+    dst.int64().createArray(bin2IdPath, nonzeroPixelCount, datasetChunk, compression);
+    dst.int32().createArray(countPath, nonzeroPixelCount, datasetChunk, compression);
 
     final long startedNanos = System.nanoTime();
     long offset = 0L;
@@ -1064,9 +1140,9 @@ public class HictToMcoolConverter {
         counts[buffered] = Math.toIntExact(count);
         buffered++;
         if (buffered >= datasetChunk) {
-          dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin1_id", rows, buffered, offset);
-          dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin2_id", cols, buffered, offset);
-          dst.int32().writeArrayBlockWithOffset(root + "/pixels/count", counts, buffered, offset);
+          dst.int64().writeArrayBlockWithOffset(bin1IdPath, rows, buffered, offset);
+          dst.int64().writeArrayBlockWithOffset(bin2IdPath, cols, buffered, offset);
+          dst.int32().writeArrayBlockWithOffset(countPath, counts, buffered, offset);
           offset += buffered;
           progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
           if (nonzeroPixelCount > 0L) {
@@ -1096,14 +1172,20 @@ public class HictToMcoolConverter {
       final var rowsTail = java.util.Arrays.copyOf(rows, buffered);
       final var colsTail = java.util.Arrays.copyOf(cols, buffered);
       final var countsTail = java.util.Arrays.copyOf(counts, buffered);
-      dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin1_id", rowsTail, buffered, offset);
-      dst.int64().writeArrayBlockWithOffset(root + "/pixels/bin2_id", colsTail, buffered, offset);
-      dst.int32().writeArrayBlockWithOffset(root + "/pixels/count", countsTail, buffered, offset);
+      dst.int64().writeArrayBlockWithOffset(bin1IdPath, rowsTail, buffered, offset);
+      dst.int64().writeArrayBlockWithOffset(bin2IdPath, colsTail, buffered, offset);
+      dst.int32().writeArrayBlockWithOffset(countPath, countsTail, buffered, offset);
       offset += buffered;
       progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
     }
     logger.accept("Resolution " + resolution + " pixels write: 100% (" + offset + "/" + nonzeroPixelCount + "), elapsed=" +
       formatDuration((System.nanoTime() - startedNanos) / 1_000_000L) + ", eta=00:00");
+  }
+
+  private static boolean isSingleCoolerOutput(final @NotNull Path outputPath) {
+    final var fileName = outputPath.getFileName();
+    final var lowered = (fileName == null ? outputPath.toString() : fileName.toString()).toLowerCase(Locale.ROOT);
+    return lowered.endsWith(".cool") && !lowered.endsWith(".mcool");
   }
 
   private static void appendMappedRecord(

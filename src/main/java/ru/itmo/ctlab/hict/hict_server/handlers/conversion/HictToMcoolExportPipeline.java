@@ -71,6 +71,9 @@ public final class HictToMcoolExportPipeline {
                       final @NotNull BooleanSupplier cancellationRequested) throws Exception {
     final var effectiveMode = resolveEffectiveMode(options);
     if (effectiveMode == ConversionOptions.ExportMode.INTERNAL) {
+      if (options.balanceExportedCoolers()) {
+        logger.accept("WARNING: Direct internal Cooler exporter cannot run Cooler balancing; use hictk-assisted or auto mode for balanced output.");
+      }
       new HictToMcoolConverter().convert(options, logger);
       return;
     }
@@ -82,6 +85,20 @@ public final class HictToMcoolExportPipeline {
 
   private @NotNull ConversionOptions.ExportMode resolveEffectiveMode(final @NotNull ConversionOptions options) {
     if (options.exportMode() == ConversionOptions.ExportMode.AUTO) {
+      try {
+        toolchainManager.requireHictkToolchain();
+        return ConversionOptions.ExportMode.HICTK;
+      } catch (IllegalStateException ignored) {
+        return ConversionOptions.ExportMode.INTERNAL;
+      }
+    }
+    if (options.exportMode() == ConversionOptions.ExportMode.HICTK && isSingleCoolerOutput(options.outputPath())) {
+      return ConversionOptions.ExportMode.HICTK;
+    }
+    if (options.exportMode() == ConversionOptions.ExportMode.HICTK) {
+      return ConversionOptions.ExportMode.HICTK;
+    }
+    if (options.exportMode() == ConversionOptions.ExportMode.INTERNAL) {
       return ConversionOptions.ExportMode.INTERNAL;
     }
     return options.exportMode();
@@ -113,6 +130,25 @@ public final class HictToMcoolExportPipeline {
         Math.max(1L, totalSourcePixels * 2L),
         synchronizedLogger
       );
+      if (isSingleCoolerOutput(options.outputPath())) {
+        if (selectedResolutions.size() != 1) {
+          throw new IllegalArgumentException("Single-resolution .cool export requires exactly one selected resolution. Enable finest-only export or use .mcool output.");
+        }
+        exportSingleCoolerViaHictk(
+          options,
+          toolchain,
+          chunkedFile,
+          assemblyLayout,
+          selectedResolutions.get(0),
+          tmpDirectory,
+          overallTracker,
+          synchronizedLogger,
+          processSink,
+          cancellationRequested
+        );
+        overallTracker.finish("Finished .cool export");
+        return;
+      }
 
       Files.deleteIfExists(options.outputPath());
       try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
@@ -163,6 +199,19 @@ public final class HictToMcoolExportPipeline {
             processSink,
             cancellationRequested
           );
+          if (options.balanceExportedCoolers()) {
+            runHictkBalance(
+              toolchain,
+              coolPath.toString(),
+              options.parallelism(),
+              resolutionTmpDir,
+              synchronizedLogger,
+              processSink,
+              cancellationRequested
+            );
+          } else {
+            synchronizedLogger.accept("Skipping hictk balance for exported resolution " + resolution);
+          }
 
           try (final var coolReader = HDF5Factory.openForReading(coolPath.toFile())) {
             mergeResolutionFromCool(
@@ -216,6 +265,106 @@ public final class HictToMcoolExportPipeline {
       coolPath.toString()
     );
     runStreamingCommand(command, workDirectory, logger, processSink, cancellationRequested);
+  }
+
+  private void exportSingleCoolerViaHictk(final @NotNull ConversionOptions options,
+                                          final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
+                                          final @NotNull ChunkedFile chunkedFile,
+                                          final @NotNull HictToMcoolConverter.CoolerAssemblyLayout assemblyLayout,
+                                          final long resolution,
+                                          final @NotNull Path tmpDirectory,
+                                          final @NotNull OverallProgressTracker overallTracker,
+                                          final @NotNull Consumer<String> logger,
+                                          final @NotNull Consumer<Process> processSink,
+                                          final @NotNull BooleanSupplier cancellationRequested) throws Exception {
+    checkCancelled(cancellationRequested);
+    final var resolutionOrder = chunkedFile.getResolutionToIndex().get(resolution);
+    if (resolutionOrder == null) {
+      throw new IllegalStateException("Resolution " + resolution + " is not present in " + options.inputPath().getFileName());
+    }
+    final var outputParent = options.outputPath().getParent();
+    if (outputParent != null) {
+      Files.createDirectories(outputParent);
+    }
+    Files.deleteIfExists(options.outputPath());
+    final var resolutionTmpDir = Files.createDirectories(tmpDirectory.resolve("single-r" + resolution));
+    final var chromSizesPath = resolutionTmpDir.resolve("chrom.sizes");
+    final var cooPath = resolutionTmpDir.resolve("pixels.coo.gz");
+
+    writeChromSizesFile(assemblyLayout, chromSizesPath);
+    final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
+    exportTransformedCoo(
+      options.inputPath(),
+      resolution,
+      cooPath,
+      mapper,
+      options.chunkSize(),
+      overallTracker,
+      logger,
+      cancellationRequested
+    );
+    runHictkLoad(
+      toolchain,
+      cooPath,
+      chromSizesPath,
+      resolution,
+      options.outputPath(),
+      options.parallelism(),
+      resolutionTmpDir,
+      logger,
+      processSink,
+      cancellationRequested
+    );
+    if (options.balanceExportedCoolers()) {
+      runHictkBalance(
+        toolchain,
+        options.outputPath().toString(),
+        options.parallelism(),
+        resolutionTmpDir,
+        logger,
+        processSink,
+        cancellationRequested
+      );
+    } else {
+      logger.accept("Skipping hictk balance for exported .cool");
+    }
+  }
+
+  private static void runHictkBalance(final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
+                                      final @NotNull String coolerUri,
+                                      final int parallelism,
+                                      final @NotNull Path workDirectory,
+                                      final @NotNull Consumer<String> logger,
+                                      final @NotNull Consumer<Process> processSink,
+                                      final @NotNull BooleanSupplier cancellationRequested) throws Exception {
+    try {
+      runStreamingCommand(
+        List.of(
+          Objects.requireNonNull(toolchain.hictkCommand()).toString(),
+          "balance",
+          "ice",
+          "--force",
+          "--threads",
+          Integer.toString(Math.max(2, Math.min(Math.max(2, parallelism), 24))),
+          "--tmpdir",
+          workDirectory.toString(),
+          "--ignore-diags",
+          "2",
+          coolerUri
+        ),
+        workDirectory,
+        logger,
+        processSink,
+        cancellationRequested
+      );
+    } catch (IllegalStateException balanceFailure) {
+      logger.accept("WARNING: hictk balance failed for exported Cooler; output remains unbalanced. " + balanceFailure.getMessage());
+    }
+  }
+
+  private static boolean isSingleCoolerOutput(final @NotNull Path outputPath) {
+    final var lowered = outputPath.getFileName().toString().toLowerCase();
+    return lowered.endsWith(".cool") && !lowered.endsWith(".mcool");
   }
 
   private static void mergeResolutionFromCool(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,

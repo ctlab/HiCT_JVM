@@ -42,6 +42,9 @@ public class ConversionCliLauncher {
       parser.flag("apply-agp"),
       parser.integer("parallelism", Runtime.getRuntime().availableProcessors()),
       parser.flag("all-resolutions"),
+      !parser.flag("no-build-resolution-pyramid"),
+      !parser.flag("no-balance-input-coolers"),
+      !parser.flag("no-balance-exported-coolers"),
       ConversionOptions.ExportMode.parse(parser.value("export-mode", "auto"))
     );
 
@@ -95,8 +98,8 @@ public class ConversionCliLauncher {
 
   private static void printHelp() {
     System.out.println("Usage:");
-    System.out.println("  hict-to-mcool --input=<in.hict> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--agp=foo.agp --apply-agp] [--parallelism=N] [--all-resolutions] [--export-mode=auto|internal|hictk] [--verbose]");
-    System.out.println("  mcool-to-hict --input=<in.mcool> --output=<out.hict> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
+    System.out.println("  hict-to-mcool --input=<in.hict> --output=<out.mcool|out.cool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--agp=foo.agp --apply-agp] [--parallelism=N] [--all-resolutions] [--export-mode=auto|internal|hictk] [--no-balance-exported-coolers] [--verbose]");
+    System.out.println("  mcool-to-hict --input=<in.mcool> --output=<out.hict> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--no-build-resolution-pyramid] [--no-balance-input-coolers] [--verbose]");
     System.out.println("  hic-to-mcool --input=<in.hic> --output=<out.mcool> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
     System.out.println("  hic-to-hict --input=<in.hic> --output=<out.hict.hdf5> [--resolutions=10000,50000] [--compression=0..9 (default: 6)] [--compression-algorithm=deflate|zstd|lzf] [--chunk-size=8192] [--parallelism=N] [--verbose]");
   }

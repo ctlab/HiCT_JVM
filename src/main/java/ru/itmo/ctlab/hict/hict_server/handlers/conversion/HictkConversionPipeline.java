@@ -430,6 +430,32 @@ public final class HictkConversionPipeline {
         "Resolved finest resolution " + baseResolution + " from " + metadata.resolutions().size() + " input resolution(s)"
       );
 
+      if (!options.buildResolutionPyramid()) {
+        emitStage(logger, stagePlan, "extract_base", 0.0d, "Preparing Cooler file for balanced import");
+        final var preparedCoolerPath = tmpDirectory.resolve(options.inputPath().getFileName().toString());
+        Files.copy(options.inputPath(), preparedCoolerPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        emitStage(logger, stagePlan, "extract_base", 1.0d, "Prepared Cooler file " + preparedCoolerPath.getFileName());
+        emitStage(logger, stagePlan, "zoomify", 1.0d, "Resolution pyramid generation disabled");
+        if (options.balanceInputCoolers()) {
+          balanceCoolerResolutions(
+            preparedCoolerPath,
+            metadata.resolutions(),
+            toolchain,
+            tmpDirectory,
+            stagePlan,
+            logger,
+            processSink,
+            cancellationRequested,
+            options.parallelism()
+          );
+        } else {
+          emitStage(logger, stagePlan, "balance", 1.0d, "Input Cooler balancing disabled");
+        }
+        importPreparedCoolerToHict(options, preparedCoolerPath, metadata.resolutions(), logger, stagePlan);
+        emitStage(logger, stagePlan, "import_hict", 1.0d, "Created " + options.outputPath().getFileName());
+        return;
+      }
+
       emitStage(logger, stagePlan, "extract_base", 0.0d, "Preparing base .cool at resolution " + baseResolution);
       final Path baseCoolPath;
       if (isSingleResolutionCooler(options.inputPath())) {
@@ -481,61 +507,103 @@ public final class HictkConversionPipeline {
       final var generatedResolutions = readMetadata(generatedMcoolPath, toolchain, processSink, cancellationRequested).resolutions();
       emitStage(logger, stagePlan, "zoomify", 1.0d, "Generated " + generatedResolutions.size() + " resolution(s)");
 
-      emitStage(logger, stagePlan, "balance", 0.0d, "Balancing " + generatedResolutions.size() + " generated resolution(s)");
-      for (int i = 0; i < generatedResolutions.size(); i++) {
-        checkCancelled(cancellationRequested);
-        final var resolution = generatedResolutions.get(i);
-        emitStage(logger, stagePlan, "balance", i / (double) generatedResolutions.size(), "Balancing resolution " + resolution);
-        try {
-          runStreamingCommand(
-            List.of(
-              Objects.requireNonNull(toolchain.hictkCommand()).toString(),
-              "balance",
-              "ice",
-              "--force",
-              "--threads",
-              Integer.toString(normalizeParallelism(options.parallelism())),
-              "--tmpdir",
-              tmpDirectory.toString(),
-              "--ignore-diags",
-              "2",
-              generatedMcoolPath + "::/resolutions/" + resolution
-            ),
-            tmpDirectory,
-            logger,
-            logger::accept,
-            processSink,
-            cancellationRequested
-          );
-        } catch (IllegalStateException balanceFailure) {
-          logger.accept("WARNING: hictk balance failed for resolution " + resolution + "; keeping unbalanced generated pixels. " + balanceFailure.getMessage());
-        }
-        emitStage(logger, stagePlan, "balance", (i + 1) / (double) generatedResolutions.size(), "Processed balance for resolution " + resolution);
+      if (options.balanceInputCoolers()) {
+        balanceCoolerResolutions(
+          generatedMcoolPath,
+          generatedResolutions,
+          toolchain,
+          tmpDirectory,
+          stagePlan,
+          logger,
+          processSink,
+          cancellationRequested,
+          options.parallelism()
+        );
+      } else {
+        emitStage(logger, stagePlan, "balance", 1.0d, "Generated Cooler balancing disabled");
       }
 
-      emitStage(logger, stagePlan, "import_hict", 0.0d, "Importing generated .mcool into HiCT");
-      new McoolToHictConverter().convert(
-        new ConversionOptions(
-          generatedMcoolPath,
-          options.outputPath(),
-          generatedResolutions,
-          options.chunkSize(),
-          options.compressionLevel(),
-          options.compressionAlgorithm(),
-          options.agpPath(),
-          false,
-          options.parallelism(),
-          true,
-          false,
-          ConversionOptions.ExportMode.AUTO
-        ),
-        createWrappedImportLogger(logger, stagePlan, "import_hict")
-      );
+      importPreparedCoolerToHict(options, generatedMcoolPath, generatedResolutions, logger, stagePlan);
       emitStage(logger, stagePlan, "import_hict", 1.0d, "Created " + options.outputPath().getFileName());
     } finally {
       processSink.accept(null);
       deleteRecursively(tmpDirectory);
     }
+  }
+
+  private void balanceCoolerResolutions(final @NotNull Path coolerPath,
+                                        final @NotNull List<Long> resolutions,
+                                        final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
+                                        final @NotNull Path tmpDirectory,
+                                        final @NotNull List<StageDefinition> stagePlan,
+                                        final @NotNull Consumer<String> logger,
+                                        final @NotNull Consumer<Process> processSink,
+                                        final @NotNull BooleanSupplier cancellationRequested,
+                                        final int parallelism) throws Exception {
+    emitStage(logger, stagePlan, "balance", 0.0d, "Balancing " + resolutions.size() + " Cooler resolution(s)");
+    for (int i = 0; i < resolutions.size(); i++) {
+      checkCancelled(cancellationRequested);
+      final var resolution = resolutions.get(i);
+      emitStage(logger, stagePlan, "balance", i / (double) resolutions.size(), "Balancing resolution " + resolution);
+      try {
+        runStreamingCommand(
+          List.of(
+            Objects.requireNonNull(toolchain.hictkCommand()).toString(),
+            "balance",
+            "ice",
+            "--force",
+            "--threads",
+            Integer.toString(normalizeParallelism(parallelism)),
+            "--tmpdir",
+            tmpDirectory.toString(),
+            "--ignore-diags",
+            "2",
+            coolerUriForResolution(coolerPath, resolution)
+          ),
+          tmpDirectory,
+          logger,
+          logger::accept,
+          processSink,
+          cancellationRequested
+        );
+      } catch (IllegalStateException balanceFailure) {
+        logger.accept("WARNING: hictk balance failed for resolution " + resolution + "; keeping unbalanced pixels. " + balanceFailure.getMessage());
+      }
+      emitStage(logger, stagePlan, "balance", (i + 1) / (double) resolutions.size(), "Processed balance for resolution " + resolution);
+    }
+  }
+
+  private void importPreparedCoolerToHict(final @NotNull ConversionOptions options,
+                                          final @NotNull Path coolerPath,
+                                          final @NotNull List<Long> resolutions,
+                                          final @NotNull Consumer<String> logger,
+                                          final @NotNull List<StageDefinition> stagePlan) {
+    emitStage(logger, stagePlan, "import_hict", 0.0d, "Importing prepared Cooler into HiCT");
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        coolerPath,
+        options.outputPath(),
+        resolutions,
+        options.chunkSize(),
+        options.compressionLevel(),
+        options.compressionAlgorithm(),
+        options.agpPath(),
+        false,
+        options.parallelism(),
+        true,
+        false,
+        false,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      createWrappedImportLogger(logger, stagePlan, "import_hict")
+    );
+  }
+
+  private static @NotNull String coolerUriForResolution(final @NotNull Path coolerPath, final long resolution) {
+    return isSingleResolutionCooler(coolerPath)
+      ? coolerPath.toString()
+      : coolerPath + "::/resolutions/" + resolution;
   }
 
   private void convertMcoolResolutionToCool(final @NotNull ConversionOptions options,
