@@ -12,6 +12,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
@@ -702,11 +703,12 @@ public class HictToMcoolConverter {
   ) {
     final var currentContigs = chunkedFile.getAssemblyInfo().contigs();
     final var currentScaffolds = chunkedFile.getAssemblyInfo().scaffolds();
-    final var scaffoldIds = buildExportScaffoldIds(chunkedFile, currentContigs, currentScaffolds);
-    final var chroms = new ArrayList<CoolerChrom>(currentContigs.size());
+    final var exportContigs = filterExportableContigs(chunkedFile, currentContigs, selectedResolutions);
+    final var scaffoldIds = buildExportScaffoldIds(chunkedFile, exportContigs, currentScaffolds);
+    final var chroms = new ArrayList<CoolerChrom>(exportContigs.size());
     final var seenNames = new java.util.HashMap<String, Integer>();
-    for (int i = 0; i < currentContigs.size(); i++) {
-      final var descriptor = currentContigs.get(i).descriptor();
+    for (int i = 0; i < exportContigs.size(); i++) {
+      final var descriptor = exportContigs.get(i).descriptor();
       final var rawName = descriptor.getContigName();
       final var baseName = rawName == null || rawName.isBlank() ? "contig_" + descriptor.getContigId() : rawName;
       final int occurrence = seenNames.merge(baseName, 1, Integer::sum);
@@ -714,7 +716,7 @@ public class HictToMcoolConverter {
       chroms.add(new CoolerChrom(
         uniqueName,
         descriptor.getLengthBp(),
-        currentContigs.get(i).direction().ordinal(),
+        exportContigs.get(i).direction().ordinal(),
         scaffoldIds[i]
       ));
     }
@@ -725,9 +727,49 @@ public class HictToMcoolConverter {
       if (resolutionOrder == null) {
         throw new IllegalStateException("Resolution " + resolution + " is not present in the input HiCT file");
       }
-      resolutionLayouts.add(buildResolutionLayout(currentContigs, chroms, resolution, resolutionOrder));
+      resolutionLayouts.add(buildResolutionLayout(exportContigs, chroms, resolution, resolutionOrder));
     }
     return new CoolerAssemblyLayout(List.copyOf(chroms), List.copyOf(resolutionLayouts));
+  }
+
+  private static @NotNull List<ContigTree.ContigTuple> filterExportableContigs(
+    final @NotNull ChunkedFile chunkedFile,
+    final @NotNull List<ContigTree.ContigTuple> currentContigs,
+    final @NotNull List<Long> selectedResolutions
+  ) {
+    final var resolutionOrders = new ArrayList<Integer>(selectedResolutions.size());
+    for (final var resolution : selectedResolutions) {
+      final Integer resolutionOrder = chunkedFile.getResolutionToIndex().get(resolution);
+      if (resolutionOrder == null) {
+        throw new IllegalStateException("Resolution " + resolution + " is not present in the input HiCT file");
+      }
+      resolutionOrders.add(resolutionOrder);
+    }
+
+    final var exportContigs = currentContigs.stream()
+      .filter(tuple -> hasExportedBins(tuple.descriptor(), resolutionOrders))
+      .toList();
+    if (exportContigs.isEmpty() && !currentContigs.isEmpty()) {
+      throw new IllegalStateException("Cannot export Cooler layout because all contigs are hidden or have no bins at selected resolutions");
+    }
+    return exportContigs;
+  }
+
+  private static boolean hasExportedBins(
+    final @NotNull ContigDescriptor descriptor,
+    final @NotNull List<Integer> resolutionOrders
+  ) {
+    for (final int resolutionOrder : resolutionOrders) {
+      if (resolutionOrder < 0 || resolutionOrder >= descriptor.getAtus().size()) {
+        continue;
+      }
+      for (final var atu : descriptor.getAtus().get(resolutionOrder)) {
+        if (atu.getLength() > 0L) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private static long @NotNull [] buildExportScaffoldIds(

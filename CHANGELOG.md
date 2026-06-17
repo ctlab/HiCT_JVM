@@ -8,6 +8,7 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Added support for opening and converting additional matrix-like input formats through the conversion workflow, including sparse text formats supported by hictk.
 - Fixed `.hic` plus Juicebox assembly conversion regressions and improved handling of hidden/missing contigs during conversion.
 - Fixed `.hict.hdf5` to `.mcool` export and `.mcool` re-import so exported files preserve contigs, contig lengths, directions, scaffold IDs, hidden contigs, and raw pixels instead of reopening as a single `assembly` contig.
+- Fixed Cooler export after `.hic` plus `.assembly` import so hidden zero-bin assembly placeholders are not serialized as real Cooler chromosomes and do not reappear after export-import.
 - Added metadata-preserving internal `.mcool` export as the default automatic export path, while keeping explicit hictk-assisted export available.
 - Added resolution restriction controls so users can keep the map at selected bin sizes while zooming.
 - Added ruler modes for global, intra-contig, and intra-scaffold coordinates.
@@ -15,6 +16,7 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Added an export workflow for converting `.hict.hdf5` matrices to `.mcool`, with current or custom AGP assembly state.
 - Added native-assisted sorting and chunked direct export improvements for HiCT-to-Cooler conversion, reducing memory pressure while preserving the existing `.hict.hdf5` layout and Cooler contracts.
 - Added default-on hictk zoomify and balancing controls for opening `.cool` and `.mcool` inputs, so single-resolution Cooler files can be expanded into an optimized resolution pyramid before import.
+- Fixed Open Wizard Cooler import preparation so hictk zoomify/balance options invalidate stale direct-import caches and no longer silently open a single-resolution map when pyramid generation was requested.
 - Added editable Cooler export filenames, with `.cool` used by default for finest-resolution exports and `.mcool` used by default for all-resolution exports.
 - Added default-on balancing for exported Cooler files in hictk-assisted export mode, and made automatic export mode prefer hictk when it is available.
 - Added real single-resolution `.cool` export support through both direct internal and hictk-assisted export, while keeping multi-resolution `.mcool` export for all-resolution workflows.

@@ -505,6 +505,7 @@ public final class HictkConversionPipeline {
         cancellationRequested
       );
       final var generatedResolutions = readMetadata(generatedMcoolPath, toolchain, processSink, cancellationRequested).resolutions();
+      ensureRequestedPyramidWasGenerated(metadata.resolutions(), generatedResolutions, options.inputPath());
       emitStage(logger, stagePlan, "zoomify", 1.0d, "Generated " + generatedResolutions.size() + " resolution(s)");
 
       if (options.balanceInputCoolers()) {
@@ -1046,6 +1047,18 @@ public final class HictkConversionPipeline {
   private static boolean isSingleResolutionCooler(final @NotNull Path inputPath) {
     final var lowered = inputPath.getFileName().toString().toLowerCase(Locale.ROOT);
     return lowered.endsWith(".cool") && !lowered.endsWith(".mcool");
+  }
+
+  static void ensureRequestedPyramidWasGenerated(final @NotNull List<Long> inputResolutions,
+                                                 final @NotNull List<Long> generatedResolutions,
+                                                 final @NotNull Path inputPath) {
+    if (inputResolutions.size() <= 1 && generatedResolutions.size() <= 1) {
+      throw new IllegalStateException(
+        "hictk zoomify was requested for single-resolution Cooler input "
+          + inputPath.getFileName()
+          + ", but the prepared .mcool still contains only one resolution"
+      );
+    }
   }
 
   private @NotNull Consumer<String> createWrappedImportLogger(final @NotNull Consumer<String> logger,

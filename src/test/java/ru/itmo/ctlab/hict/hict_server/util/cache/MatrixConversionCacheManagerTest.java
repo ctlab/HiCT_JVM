@@ -61,6 +61,51 @@ class MatrixConversionCacheManagerTest {
   }
 
   @Test
+  void requiresFreshConversionWhenCachedCoolerImportWasNotPreparedWithRequestedOptions() throws Exception {
+    final var dataDir = tempDir.resolve("data");
+    final var processedDir = tempDir.resolve("processed");
+    Files.createDirectories(dataDir);
+    Files.createDirectories(processedDir);
+
+    final var input = dataDir.resolve("single-resolution.mcool");
+    final var output = dataDir.resolve("single-resolution.hict.hdf5");
+    Files.writeString(input, "mcool-data");
+    Files.writeString(output, "hict-data");
+
+    final var manager = new MatrixConversionCacheManager(dataDir, processedDir, new FileFingerprintService());
+    manager.recordSuccessfulConversion(input, output, ConversionDirection.MCOOL_TO_HICT);
+
+    final var resolution = manager.resolveOpenPath("single-resolution.mcool", true, true);
+
+    assertEquals(MatrixConversionCacheManager.MatrixOpenAction.CONVERSION_REQUIRED, resolution.action());
+    assertTrue(
+      resolution.warnings().stream().anyMatch(warning -> warning.toLowerCase().contains("cooler preparation"))
+    );
+  }
+
+  @Test
+  void reusesPreparedCoolerImportWhenRequestedOptionsAreSatisfied() throws Exception {
+    final var dataDir = tempDir.resolve("data");
+    final var processedDir = tempDir.resolve("processed");
+    Files.createDirectories(dataDir);
+    Files.createDirectories(processedDir);
+
+    final var input = dataDir.resolve("prepared.mcool");
+    final var output = dataDir.resolve("prepared.hict.hdf5");
+    Files.writeString(input, "mcool-data");
+    Files.writeString(output, "hict-data");
+
+    final var manager = new MatrixConversionCacheManager(dataDir, processedDir, new FileFingerprintService());
+    manager.recordSuccessfulConversion(input, output, ConversionDirection.MCOOL_TO_HICT, java.util.List.of(), true, true);
+
+    final var resolution = manager.resolveOpenPath("prepared.mcool", true, true);
+
+    assertEquals(MatrixConversionCacheManager.MatrixOpenAction.REUSE_CONVERTED, resolution.action());
+    assertEquals("prepared.hict.hdf5", resolution.resolvedFilename());
+    assertTrue(resolution.cacheCurrent());
+  }
+
+  @Test
   void requiresFreshConversionWhenSourceChanges() throws Exception {
     final var dataDir = tempDir.resolve("data");
     final var processedDir = tempDir.resolve("processed");

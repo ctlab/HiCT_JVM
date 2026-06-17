@@ -768,8 +768,17 @@ public class ConversionHandlersHolder extends HandlersHolder {
                 );
             } else if (job.direction == ConversionDirection.MCOOL_TO_HICT) {
                 if (options.buildResolutionPyramid() || options.balanceInputCoolers()) {
+                    ExternalToolchainManager.ResolvedToolchain toolchain = null;
                     try {
-                        final var toolchain = this.hictkConversionPipeline.requireToolchain();
+                        toolchain = this.hictkConversionPipeline.requireToolchain();
+                    } catch (IllegalStateException toolchainFailure) {
+                        conversionLogger.accept(
+                          "WARNING: hictk Cooler import preparation is enabled but hictk is unavailable; falling back to direct .mcool import. "
+                            + toolchainFailure.getMessage()
+                        );
+                        new McoolToHictConverter().convert(options, conversionLogger);
+                    }
+                    if (toolchain != null) {
                         job.toolchainSource = toolchain.source();
                         job.toolchainSummary = "Using hictk command " + toolchain.hictkCommand() + " to prepare Cooler import";
                         job.toolchainNotices.clear();
@@ -783,12 +792,6 @@ public class ConversionHandlersHolder extends HandlersHolder {
                           process -> job.activeProcess = process,
                           () -> job.cancelRequested.get()
                         );
-                    } catch (IllegalStateException toolchainFailure) {
-                        conversionLogger.accept(
-                          "WARNING: hictk Cooler import preparation is enabled but hictk is unavailable or failed before conversion; falling back to direct .mcool import. "
-                            + toolchainFailure.getMessage()
-                        );
-                        new McoolToHictConverter().convert(options, conversionLogger);
                     }
                 } else {
                     new McoolToHictConverter().convert(options, conversionLogger);
@@ -813,7 +816,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             } else {
                 throw new IllegalArgumentException("Unknown conversion direction: " + job.direction.wireName());
             }
-            recordSuccessfulConversionIfPossible(job);
+            recordSuccessfulConversionIfPossible(job, options);
             job.overallProgress = 1.0d;
             job.stageProgress = 1.0d;
             job.status = job.cancelRequested.get() ? "cancelled" : "finished";
@@ -833,7 +836,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
         }
     }
 
-    private void recordSuccessfulConversionIfPossible(final @NotNull ConversionJob job) {
+    private void recordSuccessfulConversionIfPossible(final @NotNull ConversionJob job,
+                                                      final @NotNull ConversionOptions options) {
         final var map = this.vertx.sharedData().getLocalMap("hict_server");
         final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
         if (dataDirectoryWrapper == null) {
@@ -845,7 +849,14 @@ public class ConversionHandlersHolder extends HandlersHolder {
             ? processedDirectoryWrapper.getPath()
             : dataDirectory.resolve("processed").normalize().toAbsolutePath();
         final var cacheManager = new MatrixConversionCacheManager(dataDirectory, processedDirectory, this.fingerprintService);
-        cacheManager.recordSuccessfulConversion(job.sourcePath, job.outputPath, job.direction, job.loadOptions.dependencyPaths());
+        cacheManager.recordSuccessfulConversion(
+          job.sourcePath,
+          job.outputPath,
+          job.direction,
+          job.loadOptions.dependencyPaths(),
+          options.buildResolutionPyramid(),
+          options.balanceInputCoolers()
+        );
     }
 
     private void parseProgress(final @NotNull ConversionJob job, final @NotNull String message) {

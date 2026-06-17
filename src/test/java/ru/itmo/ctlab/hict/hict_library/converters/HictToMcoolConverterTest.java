@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigNameDatasetPath;
 
 class HictToMcoolConverterTest {
   @TempDir
@@ -124,6 +125,97 @@ class HictToMcoolConverterTest {
         toIntArray(sourceReader.int64().readArray("/chroms/length")),
         exportedReader.int32().readArray("/chroms/length")
       );
+    }
+  }
+
+  @Test
+  void internalExporterDoesNotSerializeHiddenAssemblyPlaceholdersAsCoolerChroms() throws Exception {
+    final var sourceMcool = tempDir.resolve("partial-source.mcool");
+    final var assembly = tempDir.resolve("partial-layout.assembly");
+    final var intermediateHict = tempDir.resolve("partial-source.hict.hdf5");
+    final var exportedMcool = tempDir.resolve("partial-exported.mcool");
+    final var reimportedHict = tempDir.resolve("partial-reimported.hict.hdf5");
+
+    writeSyntheticMcool(sourceMcool);
+    Files.writeString(
+      assembly,
+      String.join(
+        System.lineSeparator(),
+        ">ctgA 1 2000",
+        ">ctgB 2 2000",
+        ">ctgC 3 1500",
+        "1",
+        "2",
+        "3"
+      ) + System.lineSeparator()
+    );
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        sourceMcool,
+        intermediateHict,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        assembly.toString(),
+        false,
+        1,
+        true,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(intermediateHict.toFile())) {
+      assertArrayEquals(new String[]{"ctgA", "ctgB", "ctgC"}, reader.string().readArray(getContigNameDatasetPath()));
+    }
+
+    new HictToMcoolConverter().convert(
+      new ConversionOptions(
+        intermediateHict,
+        exportedMcool,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        true,
+        ConversionOptions.ExportMode.INTERNAL
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(exportedMcool.toFile())) {
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray("/chroms/name"));
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray("/resolutions/1000/chroms/name"));
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_NAME_PATH));
+    }
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        exportedMcool,
+        reimportedHict,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(reimportedHict.toFile())) {
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray(getContigNameDatasetPath()));
     }
   }
 
