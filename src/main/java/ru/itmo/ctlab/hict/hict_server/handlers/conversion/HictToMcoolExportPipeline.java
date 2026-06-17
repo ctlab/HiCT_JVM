@@ -50,7 +50,7 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.ge
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getStripeLengthsBinsDatasetPath;
 
 public final class HictToMcoolExportPipeline {
-  private static final String DEFAULT_CHROM_NAME = "assembly";
+  private static final String DEFAULT_ASSEMBLY_NAME = "HiCT current assembly";
   private static final int DENSE_BLOCK_SIZE = 256;
   private final @NotNull ExternalToolchainManager toolchainManager;
 
@@ -81,7 +81,7 @@ public final class HictToMcoolExportPipeline {
 
   private @NotNull ConversionOptions.ExportMode resolveEffectiveMode(final @NotNull ConversionOptions options) {
     if (options.exportMode() == ConversionOptions.ExportMode.AUTO) {
-      return ConversionOptions.ExportMode.HICTK;
+      return ConversionOptions.ExportMode.INTERNAL;
     }
     return options.exportMode();
   }
@@ -106,6 +106,7 @@ public final class HictToMcoolExportPipeline {
       }
 
       final var selectedResolutions = resolveResolutions(chunkedFile, options);
+      final var assemblyLayout = HictToMcoolConverter.buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
       final var overallTracker = new OverallProgressTracker(
         Math.max(1L, totalSourcePixels * 2L),
@@ -121,7 +122,8 @@ public final class HictToMcoolExportPipeline {
         dst.string().write("/source_format", "hict");
         dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
 
-        writeChromsGroup(dst, "/chroms", DEFAULT_CHROM_NAME, chunkedFile.getMatrixSizeBins()[0], resolveIntStorageFeatures(options));
+        writeChromsGroup(dst, "/chroms", assemblyLayout.chroms(), resolveIntStorageFeatures(options));
+        HictToMcoolConverter.writeHictAssemblyMetadata(dst, assemblyLayout, resolveIntStorageFeatures(options));
 
         for (final var resolution : selectedResolutions.stream().sorted().toList()) {
           checkCancelled(cancellationRequested);
@@ -135,7 +137,7 @@ public final class HictToMcoolExportPipeline {
           final var cooPath = resolutionTmpDir.resolve("pixels.coo.gz");
           final var coolPath = resolutionTmpDir.resolve("pixels.cool");
 
-          writeChromSizesFile(chunkedFile, chromSizesPath);
+          writeChromSizesFile(assemblyLayout, chromSizesPath);
           final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
           exportTransformedCoo(
             options.inputPath(),
@@ -165,7 +167,6 @@ public final class HictToMcoolExportPipeline {
             mergeResolutionFromCool(
               coolReader,
               dst,
-              chunkedFile.getMatrixSizeBins()[0],
               resolution,
               options.chunkSize(),
               resolveIntStorageFeatures(options),
@@ -216,7 +217,6 @@ public final class HictToMcoolExportPipeline {
 
   private static void mergeResolutionFromCool(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
                                               final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
-                                              final long assemblyLengthBp,
                                               final long resolution,
                                               final int chunkSize,
                                               final @NotNull HDF5IntStorageFeatures compression,
@@ -240,20 +240,22 @@ public final class HictToMcoolExportPipeline {
     copyLongArrayChunked(src, dst, "/indexes/chrom_offset", root + "/indexes/chrom_offset", chunkSize, compression);
 
     final long binsCount = datasetLength(src, "/bins/end");
+    final long chromCount = src.string().readArray("/chroms/name").length;
     final long nonzeroPixelCount = datasetLength(src, "/pixels/bin1_id");
     final long totalCounts = sumIntArrayChunked(src, "/pixels/count", chunkSize);
-    writeResolutionMetadata(dst, root, resolution, binsCount, nonzeroPixelCount, totalCounts);
+    writeResolutionMetadata(dst, root, resolution, binsCount, chromCount, nonzeroPixelCount, totalCounts);
     logger.accept("Merged resolution " + resolution + " to final output");
   }
 
-  private static void writeChromSizesFile(final @NotNull ChunkedFile chunkedFile,
+  private static void writeChromSizesFile(final @NotNull HictToMcoolConverter.CoolerAssemblyLayout layout,
                                           final @NotNull Path outputPath) throws IOException {
-    final long assemblyLengthBp = chunkedFile.getMatrixSizeBins()[0];
     try (final var writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
-      writer.write(DEFAULT_CHROM_NAME);
-      writer.write('\t');
-      writer.write(Long.toString(assemblyLengthBp));
-      writer.newLine();
+      for (final var chrom : layout.chroms()) {
+        writer.write(chrom.name());
+        writer.write('\t');
+        writer.write(Long.toString(chrom.lengthBp()));
+        writer.newLine();
+      }
     }
   }
 
@@ -732,20 +734,26 @@ public final class HictToMcoolExportPipeline {
 
   private static void writeChromsGroup(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
                                        final @NotNull String groupPath,
-                                       final @NotNull String chromName,
-                                       final long chromLengthBp,
+                                       final @NotNull List<HictToMcoolConverter.CoolerChrom> chroms,
                                        final @NotNull HDF5IntStorageFeatures compression) {
-    dst.string().writeArray(groupPath + "/name", new String[]{chromName});
-    dst.int32().writeArray(groupPath + "/length", new int[]{Math.toIntExact(chromLengthBp)}, compression);
+    final var names = new String[chroms.size()];
+    final var lengths = new int[chroms.size()];
+    for (int i = 0; i < chroms.size(); i++) {
+      names[i] = chroms.get(i).name();
+      lengths[i] = Math.toIntExact(chroms.get(i).lengthBp());
+    }
+    dst.string().writeArray(groupPath + "/name", names);
+    dst.int32().writeArray(groupPath + "/length", lengths, compression);
   }
 
   private static void writeResolutionMetadata(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
                                               final @NotNull String root,
                                               final long resolution,
                                               final long binsCount,
+                                              final long chromCount,
                                               final long nonzeroPixelCount,
                                               final long totalCounts) {
-    dst.string().setAttrVL(root, "assembly", DEFAULT_CHROM_NAME);
+    dst.string().setAttrVL(root, "assembly", DEFAULT_ASSEMBLY_NAME);
     dst.int64().setAttr(root, "bin-size", resolution);
     dst.string().setAttrVL(root, "bin-type", "fixed");
     dst.int64().setAttr(root, "cis", totalCounts);
@@ -756,7 +764,7 @@ public final class HictToMcoolExportPipeline {
     dst.string().setAttrVL(root, "generated-by", "HiCT hict-to-mcool hictk-assisted exporter");
     dst.string().setAttrVL(root, "metadata", "{}");
     dst.int64().setAttr(root, "nbins", binsCount);
-    dst.int64().setAttr(root, "nchroms", 1L);
+    dst.int64().setAttr(root, "nchroms", chromCount);
     dst.int64().setAttr(root, "nnz", nonzeroPixelCount);
     dst.string().setAttrVL(root, "storage-mode", "symmetric-upper");
     dst.int64().setAttr(root, "sum", totalCounts);

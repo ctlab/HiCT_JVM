@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -1647,19 +1648,6 @@ public class McoolToHictConverter {
     final int contigCount = contigNames.length;
     dst.string().writeArray(getContigNameDatasetPath(), contigNames);
 
-    final long[] contigDirections = new long[contigCount];
-    Arrays.fill(contigDirections, ContigDirection.FORWARD.ordinal());
-    dst.int64().writeArray(getContigDirectionDatasetPath(), contigDirections, intStorageFeatures);
-
-    final long[] orderedContigIds = new long[contigCount];
-    final long[] contigScaffoldIds = new long[contigCount];
-    Arrays.fill(contigScaffoldIds, -1L);
-    for (int i = 0; i < contigCount; i++) {
-      orderedContigIds[i] = i;
-    }
-    dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
-    dst.int64().writeArray("/contig_info/contig_scaffold_id", contigScaffoldIds, intStorageFeatures);
-
     final long[] contigLengthBp;
     if (src.object().isDataSet(nameLengthPath + "/length")) {
       contigLengthBp = src.int64().readArray(nameLengthPath + "/length");
@@ -1674,6 +1662,21 @@ public class McoolToHictConverter {
     }
     dst.int64().writeArray(getContigLengthBpDatasetPath(), contigLengthBp, intStorageFeatures);
 
+    final var hictMetadata = readHictAssemblyMetadata(src, contigNames, contigLengthBp);
+    final long[] contigDirections = hictMetadata
+      .map(HictAssemblyMetadata::directions)
+      .orElseGet(() -> defaultDirections(contigCount));
+    dst.int64().writeArray(getContigDirectionDatasetPath(), contigDirections, intStorageFeatures);
+
+    final long[] orderedContigIds = hictMetadata
+      .map(HictAssemblyMetadata::orderedContigIds)
+      .orElseGet(() -> defaultOrderedContigIds(contigCount));
+    final long[] contigScaffoldIds = hictMetadata
+      .map(HictAssemblyMetadata::scaffoldIds)
+      .orElseGet(() -> defaultScaffoldIds(contigCount));
+    dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
+    dst.int64().writeArray("/contig_info/contig_scaffold_id", contigScaffoldIds, intStorageFeatures);
+
     final Map<Long, long[]> contigStartBinsByResolution = new HashMap<>();
     final Map<Long, long[]> contigLengthBinsByResolution = new HashMap<>();
     final Map<Long, List<StripeDescriptor>> stripesByResolution = new HashMap<>();
@@ -1683,8 +1686,8 @@ public class McoolToHictConverter {
       final var lengthBins = new long[chromOffsets.length - 1];
       for (int i = 0; i < lengthBins.length; i++) {
         lengthBins[i] = chromOffsets[i + 1] - chromOffsets[i];
-        if (lengthBins[i] <= 0) {
-          throw new IllegalStateException("Zero-length contig found at resolution " + resolution + " contig=" + i);
+        if (lengthBins[i] < 0) {
+          throw new IllegalStateException("Negative-length contig found at resolution " + resolution + " contig=" + i);
         }
       }
 
@@ -1750,6 +1753,90 @@ public class McoolToHictConverter {
     }
   }
 
+  private static @NotNull Optional<HictAssemblyMetadata> readHictAssemblyMetadata(
+    final @NotNull IHDF5Reader src,
+    final String @NotNull [] contigNames,
+    final long @NotNull [] contigLengthBp
+  ) {
+    if (!src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_NAME_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_LENGTH_BP_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_DIRECTION_PATH)) {
+      return Optional.empty();
+    }
+
+    final var metadataNames = src.string().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_NAME_PATH);
+    final var metadataLengths = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_LENGTH_BP_PATH);
+    if (!Arrays.equals(metadataNames, contigNames) || !Arrays.equals(metadataLengths, contigLengthBp)) {
+      return Optional.empty();
+    }
+
+    final var directions = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_DIRECTION_PATH);
+    if (directions.length != contigNames.length) {
+      return Optional.empty();
+    }
+    for (final long direction : directions) {
+      if (direction < 0L || direction >= ContigDirection.values().length) {
+        return Optional.empty();
+      }
+    }
+
+    final long[] orderedContigIds;
+    if (src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_ORDER_PATH)) {
+      final var candidate = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_ORDER_PATH);
+      orderedContigIds = isValidContigOrder(candidate, contigNames.length)
+        ? candidate
+        : defaultOrderedContigIds(contigNames.length);
+    } else {
+      orderedContigIds = defaultOrderedContigIds(contigNames.length);
+    }
+
+    final long[] scaffoldIds;
+    if (src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH)) {
+      final var candidate = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH);
+      scaffoldIds = candidate.length == contigNames.length
+        ? candidate
+        : defaultScaffoldIds(contigNames.length);
+    } else {
+      scaffoldIds = defaultScaffoldIds(contigNames.length);
+    }
+
+    return Optional.of(new HictAssemblyMetadata(directions, orderedContigIds, scaffoldIds));
+  }
+
+  private static long @NotNull [] defaultDirections(final int contigCount) {
+    final var directions = new long[contigCount];
+    Arrays.fill(directions, ContigDirection.FORWARD.ordinal());
+    return directions;
+  }
+
+  private static long @NotNull [] defaultOrderedContigIds(final int contigCount) {
+    final var orderedContigIds = new long[contigCount];
+    for (int i = 0; i < contigCount; i++) {
+      orderedContigIds[i] = i;
+    }
+    return orderedContigIds;
+  }
+
+  private static long @NotNull [] defaultScaffoldIds(final int contigCount) {
+    final var scaffoldIds = new long[contigCount];
+    Arrays.fill(scaffoldIds, -1L);
+    return scaffoldIds;
+  }
+
+  private static boolean isValidContigOrder(final long @NotNull [] orderedContigIds, final int contigCount) {
+    if (orderedContigIds.length != contigCount) {
+      return false;
+    }
+    final var seen = new boolean[contigCount];
+    for (final long orderedContigId : orderedContigIds) {
+      if (orderedContigId < 0L || orderedContigId >= contigCount || seen[(int) orderedContigId]) {
+        return false;
+      }
+      seen[(int) orderedContigId] = true;
+    }
+    return true;
+  }
+
   private static @NotNull List<ATUDescriptor> generateAtusForContig(
     final int contigId,
     final long resolution,
@@ -1759,6 +1846,9 @@ public class McoolToHictConverter {
   ) {
     long startBin = contigStartBinsByResolution.get(resolution)[contigId];
     final long endBin = startBin + contigLengthBinsByResolution.get(resolution)[contigId];
+    if (endBin <= startBin) {
+      return List.of();
+    }
     final long startStripeId = startBin / SUBMATRIX_SIZE;
 
     final var stripes = stripesByResolution.get(resolution);
@@ -2184,5 +2274,12 @@ public class McoolToHictConverter {
   }
 
   private record SaveBlockResult(long sparseOffset, long denseOffset) {
+  }
+
+  private record HictAssemblyMetadata(
+    long @NotNull [] directions,
+    long @NotNull [] orderedContigIds,
+    long @NotNull [] scaffoldIds
+  ) {
   }
 }

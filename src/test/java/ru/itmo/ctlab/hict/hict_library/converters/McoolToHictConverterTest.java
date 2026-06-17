@@ -4,6 +4,7 @@ import ch.systemsx.cisd.hdf5.HDF5Factory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,8 +13,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigDirectionDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigLengthBinsDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigNameDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigOrderDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigsATLDatasetPath;
 
 class McoolToHictConverterTest {
@@ -207,6 +210,55 @@ class McoolToHictConverterTest {
       assertEquals(2, basisAtu.length);
       assertArrayEquals(new long[]{0L, 0L, 3L, 1L}, basisAtu[0]);
       assertArrayEquals(new long[]{0L, 3L, 7L, 1L}, basisAtu[1]);
+    }
+  }
+
+  @Test
+  void noAssemblyImportRestoresHiCTAssemblyMetadataWhenPresent() throws Exception {
+    final var mcool = tempDir.resolve("hict-origin-source.mcool");
+    final var output = tempDir.resolve("hict-origin-output.hict.hdf5");
+
+    writeSyntheticMcool(mcool);
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (final var writer = HDF5Factory.open(mcool.toFile())) {
+      writer.object().createGroup(HictToMcoolConverter.HICT_METADATA_GROUP);
+      writer.object().createGroup(HictToMcoolConverter.HICT_ASSEMBLY_METADATA_GROUP);
+      writer.string().writeArray(HictToMcoolConverter.HICT_METADATA_CONTIG_NAME_PATH, new String[]{"ctgA", "ctgB"});
+      writer.int64().writeArray(HictToMcoolConverter.HICT_METADATA_CONTIG_LENGTH_BP_PATH, new long[]{2_500L, 3_600L});
+      writer.int64().writeArray(
+        HictToMcoolConverter.HICT_METADATA_CONTIG_DIRECTION_PATH,
+        new long[]{ContigDirection.REVERSED.ordinal(), ContigDirection.FORWARD.ordinal()}
+      );
+      writer.int64().writeArray(HictToMcoolConverter.HICT_METADATA_CONTIG_ORDER_PATH, new long[]{0L, 1L});
+      writer.int64().writeArray(HictToMcoolConverter.HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH, new long[]{42L, 42L});
+    }
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray(getContigNameDatasetPath()));
+      assertArrayEquals(
+        new long[]{ContigDirection.REVERSED.ordinal(), ContigDirection.FORWARD.ordinal()},
+        reader.int64().readArray(getContigDirectionDatasetPath())
+      );
+      assertArrayEquals(new long[]{0L, 1L}, reader.int64().readArray(getContigOrderDatasetPath()));
+      assertArrayEquals(new long[]{42L, 42L}, reader.int64().readArray("/contig_info/contig_scaffold_id"));
     }
   }
 

@@ -11,8 +11,11 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
+import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
+import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -38,8 +41,15 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.*;
 
 public class HictToMcoolConverter {
 
-  private static final String DEFAULT_CHROM_NAME = "assembly";
+  private static final String DEFAULT_ASSEMBLY_NAME = "HiCT current assembly";
   private static final String ROOT_CHROMS_GROUP = "/chroms";
+  public static final String HICT_METADATA_GROUP = "/hict_metadata";
+  public static final String HICT_ASSEMBLY_METADATA_GROUP = HICT_METADATA_GROUP + "/assembly";
+  public static final String HICT_METADATA_CONTIG_NAME_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/contig_name";
+  public static final String HICT_METADATA_CONTIG_LENGTH_BP_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/contig_length_bp";
+  public static final String HICT_METADATA_CONTIG_DIRECTION_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/contig_direction";
+  public static final String HICT_METADATA_CONTIG_ORDER_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/ordered_contig_ids";
+  public static final String HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/contig_scaffold_id";
   private static final long DEFAULT_EXPORT_MEMORY_LIMIT_BYTES = 16L * 1024L * 1024L * 1024L;
   private static final int MIN_SORT_BATCH_SIZE = 50_000;
   private static final int MAX_SORT_BATCH_SIZE = 8_000_000;
@@ -67,10 +77,11 @@ public class HictToMcoolConverter {
       }
 
       final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions(), options.exportAllResolutions());
+      final var assemblyLayout = buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
       final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
       final var progressTracker = new ExportProgressTracker(
-        Math.max(1L, (totalSourcePixels * 4L) + countBins(chunkedFile, selectedResolutions)),
+        Math.max(1L, (totalSourcePixels * 4L) + countBins(assemblyLayout)),
         System.nanoTime(),
         synchronizedLogConsumer
       );
@@ -88,7 +99,8 @@ public class HictToMcoolConverter {
         dst.string().setAttrVL("/", "format", "HDF5::MCOOL");
         dst.int64().setAttr("/", "format-version", 2L);
         dst.object().createGroup(ROOT_CHROMS_GROUP);
-        writeChromsGroup(dst, ROOT_CHROMS_GROUP, DEFAULT_CHROM_NAME, chunkedFile.getMatrixSizeBins()[0], compression);
+        writeChromsGroup(dst, ROOT_CHROMS_GROUP, assemblyLayout.chroms(), compression);
+        writeHictAssemblyMetadata(dst, assemblyLayout, compression);
         dst.string().write("/source_format", "hict");
         dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
 
@@ -114,9 +126,7 @@ public class HictToMcoolConverter {
             mergeResolutionFromSortedCoo(
               cooPath,
               dst,
-              chunkedFile.getMatrixSizeBins()[0],
-              resolution,
-              chunkedFile.getMatrixSizeBins()[resolutionOrder],
+              assemblyLayout.resolutionLayout(resolution),
               options.chunkSize(),
               compression,
               progressTracker,
@@ -236,10 +246,11 @@ public class HictToMcoolConverter {
     final long nonzeroPixelCount = datasetLength(stagedReader, root + "/pixels/bin1_id");
     final long totalCounts = sumLongArrayChunked(stagedReader, root + "/pixels/counts", chunkSize);
 
-    writeChromsGroup(dst, root + "/chroms", DEFAULT_CHROM_NAME, assemblyLengthBp, compression);
-    writeBinsGroup(dst, root + "/bins", resolution, binsCount, assemblyLengthBp, compression, progressTracker, logConsumer, prefix + " bins");
-    writeIndexesGroup(stagedReader, dst, root, binsCount, nonzeroPixelCount, chunkSize, compression);
-    writeResolutionMetadata(dst, root, resolution, binsCount, nonzeroPixelCount, totalCounts);
+    final var layout = buildSingleChromLayout(DEFAULT_ASSEMBLY_NAME, assemblyLengthBp, resolution, binsCount);
+    writeChromsGroup(dst, root + "/chroms", layout.chroms(), compression);
+    writeBinsGroup(dst, root + "/bins", layout, compression, progressTracker, logConsumer, prefix + " bins");
+    writeIndexesGroup(stagedReader, dst, root, binsCount, layout.chromOffsets(), nonzeroPixelCount, chunkSize, compression);
+    writeResolutionMetadata(dst, root, resolution, binsCount, layout.chroms().size(), nonzeroPixelCount, totalCounts);
   }
 
   static void copyLongArrayChunked(
@@ -303,10 +314,11 @@ public class HictToMcoolConverter {
     final @NotNull String root,
     final long resolution,
     final long binsCount,
+    final long chromCount,
     final long nonzeroPixelCount,
     final long totalCounts
   ) {
-    dst.string().setAttrVL(root, "assembly", DEFAULT_CHROM_NAME);
+    dst.string().setAttrVL(root, "assembly", DEFAULT_ASSEMBLY_NAME);
     dst.int64().setAttr(root, "bin-size", resolution);
     dst.string().setAttrVL(root, "bin-type", "fixed");
     dst.int64().setAttr(root, "cis", totalCounts);
@@ -317,7 +329,7 @@ public class HictToMcoolConverter {
     dst.string().setAttrVL(root, "generated-by", "HiCT hict-to-mcool exporter");
     dst.string().setAttrVL(root, "metadata", "{}");
     dst.int64().setAttr(root, "nbins", binsCount);
-    dst.int64().setAttr(root, "nchroms", 1L);
+    dst.int64().setAttr(root, "nchroms", chromCount);
     dst.int64().setAttr(root, "nnz", nonzeroPixelCount);
     dst.string().setAttrVL(root, "storage-mode", "symmetric-upper");
     dst.int64().setAttr(root, "sum", totalCounts);
@@ -326,25 +338,67 @@ public class HictToMcoolConverter {
   private static void writeChromsGroup(
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
     final @NotNull String groupPath,
-    final @NotNull String chromName,
-    final long chromLengthBp,
+    final @NotNull List<CoolerChrom> chroms,
     final @NotNull HDF5IntStorageFeatures compression
   ) {
-    dst.string().writeArray(groupPath + "/name", new String[]{chromName});
-    dst.int32().writeArray(groupPath + "/length", new int[]{Math.toIntExact(chromLengthBp)}, compression);
+    final var names = new String[chroms.size()];
+    final var lengths = new int[chroms.size()];
+    for (int i = 0; i < chroms.size(); i++) {
+      names[i] = chroms.get(i).name();
+      lengths[i] = Math.toIntExact(chroms.get(i).lengthBp());
+    }
+    dst.string().writeArray(groupPath + "/name", names);
+    dst.int32().writeArray(groupPath + "/length", lengths, compression);
+  }
+
+  public static void writeHictAssemblyMetadata(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+    final @NotNull CoolerAssemblyLayout layout,
+    final @NotNull HDF5IntStorageFeatures compression
+  ) {
+    if (!dst.object().isGroup(HICT_METADATA_GROUP)) {
+      dst.object().createGroup(HICT_METADATA_GROUP);
+    }
+    if (!dst.object().isGroup(HICT_ASSEMBLY_METADATA_GROUP)) {
+      dst.object().createGroup(HICT_ASSEMBLY_METADATA_GROUP);
+    }
+    dst.string().setAttrVL(HICT_METADATA_GROUP, "format", "hict-mcool-metadata");
+    dst.int64().setAttr(HICT_METADATA_GROUP, "format-version", 1L);
+    dst.string().setAttrVL(HICT_ASSEMBLY_METADATA_GROUP, "description", "HiCT assembly state used to export this .mcool file");
+
+    final var chroms = layout.chroms();
+    final var names = new String[chroms.size()];
+    final var lengths = new long[chroms.size()];
+    final var directions = new long[chroms.size()];
+    final var orderedIds = new long[chroms.size()];
+    final var scaffoldIds = new long[chroms.size()];
+    for (int i = 0; i < chroms.size(); i++) {
+      final var chrom = chroms.get(i);
+      names[i] = chrom.name();
+      lengths[i] = chrom.lengthBp();
+      directions[i] = chrom.direction();
+      orderedIds[i] = i;
+      scaffoldIds[i] = chrom.scaffoldId();
+    }
+
+    dst.string().writeArray(HICT_METADATA_CONTIG_NAME_PATH, names);
+    dst.int64().writeArray(HICT_METADATA_CONTIG_LENGTH_BP_PATH, lengths, compression);
+    dst.int64().writeArray(HICT_METADATA_CONTIG_DIRECTION_PATH, directions, compression);
+    dst.int64().writeArray(HICT_METADATA_CONTIG_ORDER_PATH, orderedIds, compression);
+    dst.int64().writeArray(HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH, scaffoldIds, compression);
   }
 
   private static void writeBinsGroup(
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
     final @NotNull String groupPath,
-    final long resolution,
-    final long binsCount,
-    final long assemblyLengthBp,
+    final @NotNull ResolutionLayout layout,
     final @NotNull HDF5IntStorageFeatures compression,
     final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logConsumer,
     final @NotNull String progressLabel
   ) {
+    final long resolution = layout.resolution();
+    final long binsCount = layout.binsCount();
     final int chunkLength = safeChunkLen(binsCount, 8192);
     final int compressionChunkLength = Math.max(1, chunkLength);
     dst.int32().createArray(groupPath + "/chrom", binsCount, compressionChunkLength, compression);
@@ -352,6 +406,7 @@ public class HictToMcoolConverter {
     dst.int32().createArray(groupPath + "/end", binsCount, compressionChunkLength, compression);
 
     long written = 0L;
+    int spanIndex = 0;
     int lastLoggedPercent = -1;
     while (written < binsCount) {
       final int blockLen = (int) Math.min(chunkLength, binsCount - written);
@@ -360,9 +415,15 @@ public class HictToMcoolConverter {
       final var ends = new int[blockLen];
       for (int i = 0; i < blockLen; i++) {
         final long binIndex = written + i;
-        final long startBp = binIndex * resolution;
+        while (spanIndex + 1 < layout.spans().size() && binIndex >= layout.spans().get(spanIndex).globalBinEnd()) {
+          spanIndex++;
+        }
+        final var span = layout.spans().get(spanIndex);
+        final long localBin = binIndex - span.globalBinStart();
+        final long startBp = localBin * resolution;
+        chrom[i] = span.chromIndex();
         starts[i] = Math.toIntExact(startBp);
-        ends[i] = Math.toIntExact(Math.min(assemblyLengthBp, startBp + resolution));
+        ends[i] = Math.toIntExact(Math.min(span.chrom().lengthBp(), startBp + resolution));
       }
       dst.int32().writeArrayBlockWithOffset(groupPath + "/chrom", chrom, blockLen, written);
       dst.int32().writeArrayBlockWithOffset(groupPath + "/start", starts, blockLen, written);
@@ -444,13 +505,14 @@ public class HictToMcoolConverter {
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
     final @NotNull String root,
     final long binsCount,
+    final long @NotNull [] chromOffsets,
     final long nonzeroPixelCount,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression
   ) {
     final long[] bin1Offset = buildBin1Offset(stagedReader, root + "/pixels/bin1_id", binsCount, nonzeroPixelCount, chunkSize);
     dst.int64().writeArray(root + "/indexes/bin1_offset", bin1Offset, compression);
-    dst.int64().writeArray(root + "/indexes/chrom_offset", new long[]{0L, binsCount}, compression);
+    dst.int64().writeArray(root + "/indexes/chrom_offset", chromOffsets, compression);
   }
 
   private static long @NotNull [] buildBin1Offset(
@@ -572,19 +634,150 @@ public class HictToMcoolConverter {
     }
   }
 
-  private static long countBins(
+  private static long countBins(final @NotNull CoolerAssemblyLayout layout) {
+    long total = 0L;
+    for (final var resolutionLayout : layout.resolutionLayouts()) {
+      total += resolutionLayout.binsCount() * 3L;
+    }
+    return total;
+  }
+
+  public static @NotNull CoolerAssemblyLayout buildCoolerAssemblyLayout(
     final @NotNull ChunkedFile chunkedFile,
     final @NotNull List<Long> selectedResolutions
   ) {
-    long total = 0L;
+    final var currentContigs = chunkedFile.getAssemblyInfo().contigs();
+    final var currentScaffolds = chunkedFile.getAssemblyInfo().scaffolds();
+    final var scaffoldIds = buildExportScaffoldIds(chunkedFile, currentContigs, currentScaffolds);
+    final var chroms = new ArrayList<CoolerChrom>(currentContigs.size());
+    final var seenNames = new java.util.HashMap<String, Integer>();
+    for (int i = 0; i < currentContigs.size(); i++) {
+      final var descriptor = currentContigs.get(i).descriptor();
+      final var rawName = descriptor.getContigName();
+      final var baseName = rawName == null || rawName.isBlank() ? "contig_" + descriptor.getContigId() : rawName;
+      final int occurrence = seenNames.merge(baseName, 1, Integer::sum);
+      final var uniqueName = occurrence == 1 ? baseName : baseName + "__" + occurrence;
+      chroms.add(new CoolerChrom(
+        uniqueName,
+        descriptor.getLengthBp(),
+        currentContigs.get(i).direction().ordinal(),
+        scaffoldIds[i]
+      ));
+    }
+
+    final var resolutionLayouts = new ArrayList<ResolutionLayout>(selectedResolutions.size());
     for (final var resolution : selectedResolutions) {
       final Integer resolutionOrder = chunkedFile.getResolutionToIndex().get(resolution);
       if (resolutionOrder == null) {
-        continue;
+        throw new IllegalStateException("Resolution " + resolution + " is not present in the input HiCT file");
       }
-      total += chunkedFile.getMatrixSizeBins()[resolutionOrder] * 3L;
+      resolutionLayouts.add(buildResolutionLayout(currentContigs, chroms, resolution, resolutionOrder));
     }
-    return total;
+    return new CoolerAssemblyLayout(List.copyOf(chroms), List.copyOf(resolutionLayouts));
+  }
+
+  private static long @NotNull [] buildExportScaffoldIds(
+    final @NotNull ChunkedFile chunkedFile,
+    final @NotNull List<ContigTree.ContigTuple> currentContigs,
+    final @NotNull List<ScaffoldTree.ScaffoldTuple> currentScaffolds
+  ) {
+    final var storedScaffoldIds = readStoredScaffoldIds(chunkedFile, currentContigs);
+    if (storedScaffoldIds != null) {
+      return storedScaffoldIds;
+    }
+    return buildScaffoldIds(currentContigs, currentScaffolds);
+  }
+
+  private static long @Nullable [] readStoredScaffoldIds(
+    final @NotNull ChunkedFile chunkedFile,
+    final @NotNull List<ContigTree.ContigTuple> currentContigs
+  ) {
+    final var scaffoldIdPath = "/contig_info/contig_scaffold_id";
+    try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
+      if (!reader.object().isDataSet(scaffoldIdPath)) {
+        return null;
+      }
+      final var originalScaffoldIds = reader.int64().readArray(scaffoldIdPath);
+      final var scaffoldIds = new long[currentContigs.size()];
+      for (int i = 0; i < currentContigs.size(); i++) {
+        final int originalContigId = currentContigs.get(i).descriptor().getContigId();
+        scaffoldIds[i] = originalContigId >= 0 && originalContigId < originalScaffoldIds.length
+          ? originalScaffoldIds[originalContigId]
+          : -1L;
+      }
+      return scaffoldIds;
+    } catch (Exception ignored) {
+      return null;
+    }
+  }
+
+  private static long @NotNull [] buildScaffoldIds(
+    final @NotNull List<ContigTree.ContigTuple> currentContigs,
+    final @NotNull List<ScaffoldTree.ScaffoldTuple> currentScaffolds
+  ) {
+    final var scaffoldIds = new long[currentContigs.size()];
+    Arrays.fill(scaffoldIds, -1L);
+    if (currentScaffolds.isEmpty() || currentContigs.isEmpty()) {
+      return scaffoldIds;
+    }
+
+    int scaffoldIndex = 0;
+    long assemblyPosition = 0L;
+    for (int contigIndex = 0; contigIndex < currentContigs.size(); contigIndex++) {
+      while (scaffoldIndex < currentScaffolds.size()
+        && currentScaffolds.get(scaffoldIndex).scaffoldBordersBP().endBP() <= assemblyPosition) {
+        scaffoldIndex++;
+      }
+      if (scaffoldIndex < currentScaffolds.size()) {
+        final var scaffold = currentScaffolds.get(scaffoldIndex);
+        final ScaffoldDescriptor descriptor = scaffold.scaffoldDescriptor();
+        if (descriptor != null
+          && scaffold.scaffoldBordersBP().startBP() <= assemblyPosition
+          && assemblyPosition < scaffold.scaffoldBordersBP().endBP()) {
+          scaffoldIds[contigIndex] = descriptor.scaffoldId();
+        }
+      }
+      assemblyPosition += currentContigs.get(contigIndex).descriptor().getLengthBp();
+    }
+    return scaffoldIds;
+  }
+
+  private static @NotNull ResolutionLayout buildResolutionLayout(
+    final @NotNull List<ContigTree.ContigTuple> currentContigs,
+    final @NotNull List<CoolerChrom> chroms,
+    final long resolution,
+    final int resolutionOrder
+  ) {
+    final var spans = new ArrayList<ContigBinSpan>(currentContigs.size());
+    final var chromOffsets = new long[currentContigs.size() + 1];
+    long cursor = 0L;
+    for (int chromIndex = 0; chromIndex < currentContigs.size(); chromIndex++) {
+      chromOffsets[chromIndex] = cursor;
+      long binCount = 0L;
+      for (final var atu : currentContigs.get(chromIndex).descriptor().getAtus().get(resolutionOrder)) {
+        binCount += atu.getLength();
+      }
+      spans.add(new ContigBinSpan(chromIndex, chroms.get(chromIndex), cursor, cursor + binCount));
+      cursor += binCount;
+    }
+    chromOffsets[currentContigs.size()] = cursor;
+    return new ResolutionLayout(resolution, List.copyOf(chroms), List.copyOf(spans), chromOffsets, cursor);
+  }
+
+  private static @NotNull ResolutionLayout buildSingleChromLayout(
+    final @NotNull String chromName,
+    final long chromLengthBp,
+    final long resolution,
+    final long binsCount
+  ) {
+    final var chrom = new CoolerChrom(chromName, chromLengthBp);
+    return new ResolutionLayout(
+      resolution,
+      List.of(chrom),
+      List.of(new ContigBinSpan(0, chrom, 0L, binsCount)),
+      new long[]{0L, binsCount},
+      binsCount
+    );
   }
 
   private static void exportTransformedCoo(
@@ -710,14 +903,14 @@ public class HictToMcoolConverter {
   private static void mergeResolutionFromSortedCoo(
     final @NotNull Path cooPath,
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
-    final long assemblyLengthBp,
-    final long resolution,
-    final long binsCount,
+    final @NotNull ResolutionLayout layout,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
     final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logger
   ) throws IOException {
+    final long resolution = layout.resolution();
+    final long binsCount = layout.binsCount();
     final var summary = summarizeSortedCoo(cooPath, binsCount);
     final var root = "/resolutions/" + resolution;
     dst.object().createGroup(root);
@@ -726,12 +919,12 @@ public class HictToMcoolConverter {
     dst.object().createGroup(root + "/pixels");
     dst.object().createGroup(root + "/indexes");
 
-    writeChromsGroup(dst, root + "/chroms", DEFAULT_CHROM_NAME, assemblyLengthBp, compression);
-    writeBinsGroup(dst, root + "/bins", resolution, binsCount, assemblyLengthBp, compression, progressTracker, logger, "Merge resolution " + resolution + " bins");
+    writeChromsGroup(dst, root + "/chroms", layout.chroms(), compression);
+    writeBinsGroup(dst, root + "/bins", layout, compression, progressTracker, logger, "Merge resolution " + resolution + " bins");
     writePixelsFromSortedCoo(cooPath, dst, root, summary.nonzeroPixelCount(), chunkSize, compression, progressTracker, logger, resolution);
     dst.int64().writeArray(root + "/indexes/bin1_offset", summary.bin1Offset(), compression);
-    dst.int64().writeArray(root + "/indexes/chrom_offset", new long[]{0L, binsCount}, compression);
-    writeResolutionMetadata(dst, root, resolution, binsCount, summary.nonzeroPixelCount(), summary.totalCounts());
+    dst.int64().writeArray(root + "/indexes/chrom_offset", layout.chromOffsets(), compression);
+    writeResolutionMetadata(dst, root, resolution, binsCount, layout.chroms().size(), summary.nonzeroPixelCount(), summary.totalCounts());
   }
 
   private static @NotNull SortedCooSummary summarizeSortedCoo(
@@ -1458,6 +1651,43 @@ public class HictToMcoolConverter {
   }
 
   private record SortedCooSummary(long nonzeroPixelCount, long totalCounts, long @NotNull [] bin1Offset) {
+  }
+
+  public record CoolerAssemblyLayout(
+    @NotNull List<CoolerChrom> chroms,
+    @NotNull List<ResolutionLayout> resolutionLayouts
+  ) {
+    public @NotNull ResolutionLayout resolutionLayout(final long resolution) {
+      for (final var layout : resolutionLayouts) {
+        if (layout.resolution() == resolution) {
+          return layout;
+        }
+      }
+      throw new IllegalArgumentException("Resolution " + resolution + " is not present in the Cooler assembly layout");
+    }
+  }
+
+  public record CoolerChrom(@NotNull String name, long lengthBp, long direction, long scaffoldId) {
+    public CoolerChrom(final @NotNull String name, final long lengthBp) {
+      this(name, lengthBp, ContigDirection.FORWARD.ordinal(), -1L);
+    }
+  }
+
+  public record ResolutionLayout(
+    long resolution,
+    @NotNull List<CoolerChrom> chroms,
+    @NotNull List<ContigBinSpan> spans,
+    long @NotNull [] chromOffsets,
+    long binsCount
+  ) {
+  }
+
+  public record ContigBinSpan(
+    int chromIndex,
+    @NotNull CoolerChrom chrom,
+    long globalBinStart,
+    long globalBinEnd
+  ) {
   }
 
   private record SourceSegment(long sourceStart, long sourceEnd, long targetStart, long targetEnd,

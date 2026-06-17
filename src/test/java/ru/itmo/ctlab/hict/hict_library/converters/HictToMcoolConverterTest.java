@@ -99,6 +99,22 @@ class HictToMcoolConverterTest {
         exportedReader.int32().readArray("/resolutions/1000/bins/end")
       );
       assertArrayEquals(
+        toIntArray(sourceReader.int64().readArray("/resolutions/1000/bins/chrom")),
+        exportedReader.int32().readArray("/resolutions/1000/bins/chrom")
+      );
+      assertArrayEquals(
+        sourceReader.int64().readArray("/resolutions/1000/indexes/chrom_offset"),
+        exportedReader.int64().readArray("/resolutions/1000/indexes/chrom_offset")
+      );
+      assertArrayEquals(
+        sourceReader.string().readArray("/chroms/name"),
+        exportedReader.string().readArray("/chroms/name")
+      );
+      assertArrayEquals(
+        sourceReader.string().readArray("/resolutions/1000/chroms/name"),
+        exportedReader.string().readArray("/resolutions/1000/chroms/name")
+      );
+      assertArrayEquals(
         toIntArray(sourceReader.int64().readArray("/chroms/length")),
         exportedReader.int32().readArray("/chroms/length")
       );
@@ -109,20 +125,23 @@ class HictToMcoolConverterTest {
     HDF5LibraryInitializer.initializeHDF5Library();
     try (final var writer = HDF5Factory.open(path.toFile())) {
       writer.object().createGroup("/chroms");
-      writer.string().writeArray("/chroms/name", new String[]{"assembly"});
-      writer.int64().writeArray("/chroms/length", new long[]{4_000L});
+      writer.string().writeArray("/chroms/name", new String[]{"ctgA", "ctgB"});
+      writer.int64().writeArray("/chroms/length", new long[]{2_000L, 2_000L});
 
       writer.object().createGroup("/resolutions");
       writer.object().createGroup("/resolutions/1000");
+      writer.object().createGroup("/resolutions/1000/chroms");
       writer.object().createGroup("/resolutions/1000/indexes");
       writer.object().createGroup("/resolutions/1000/bins");
       writer.object().createGroup("/resolutions/1000/pixels");
 
-      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset", new long[]{0L, 4L});
+      writer.string().writeArray("/resolutions/1000/chroms/name", new String[]{"ctgA", "ctgB"});
+      writer.int64().writeArray("/resolutions/1000/chroms/length", new long[]{2_000L, 2_000L});
+      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset", new long[]{0L, 2L, 4L});
       writer.int64().writeArray("/resolutions/1000/indexes/bin1_offset", new long[]{0L, 3L, 5L, 6L, 7L});
-      writer.int64().writeArray("/resolutions/1000/bins/chrom", new long[]{0L, 0L, 0L, 0L});
-      writer.int64().writeArray("/resolutions/1000/bins/start", new long[]{0L, 1_000L, 2_000L, 3_000L});
-      writer.int64().writeArray("/resolutions/1000/bins/end", new long[]{1_000L, 2_000L, 3_000L, 4_000L});
+      writer.int64().writeArray("/resolutions/1000/bins/chrom", new long[]{0L, 0L, 1L, 1L});
+      writer.int64().writeArray("/resolutions/1000/bins/start", new long[]{0L, 1_000L, 0L, 1_000L});
+      writer.int64().writeArray("/resolutions/1000/bins/end", new long[]{1_000L, 2_000L, 1_000L, 2_000L});
       writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 0L, 0L, 1L, 1L, 2L, 3L});
       writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 3L, 1L, 2L, 3L, 3L});
       writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{11L, 5L, 2L, 9L, 4L, 3L, 7L});
