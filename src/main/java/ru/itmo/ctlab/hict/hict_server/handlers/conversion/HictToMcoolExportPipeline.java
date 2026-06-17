@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.HDF5DataClass;
+import ch.systemsx.cisd.hdf5.HDF5FloatStorageFeatures;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
@@ -167,9 +168,11 @@ public final class HictToMcoolExportPipeline {
             mergeResolutionFromCool(
               coolReader,
               dst,
+              assemblyLayout.resolutionLayout(resolution),
               resolution,
               options.chunkSize(),
               resolveIntStorageFeatures(options),
+              resolveFloatStorageFeatures(options),
               synchronizedLogger
             );
           }
@@ -217,9 +220,11 @@ public final class HictToMcoolExportPipeline {
 
   private static void mergeResolutionFromCool(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
                                               final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+                                              final @NotNull HictToMcoolConverter.ResolutionLayout layout,
                                               final long resolution,
                                               final int chunkSize,
                                               final @NotNull HDF5IntStorageFeatures compression,
+                                              final @NotNull HDF5FloatStorageFeatures floatCompression,
                                               final @NotNull Consumer<String> logger) {
     final var root = "/resolutions/" + resolution;
     dst.object().createGroup(root);
@@ -233,6 +238,11 @@ public final class HictToMcoolExportPipeline {
     copyIntArrayChunked(src, dst, "/bins/chrom", root + "/bins/chrom", chunkSize, compression);
     copyIntArrayChunked(src, dst, "/bins/start", root + "/bins/start", chunkSize, compression);
     copyIntArrayChunked(src, dst, "/bins/end", root + "/bins/end", chunkSize, compression);
+    if (src.object().isDataSet("/bins/weight")) {
+      copyDoubleArrayChunked(src, dst, "/bins/weight", root + "/bins/weight", chunkSize, floatCompression);
+    } else {
+      writeBinWeightsForCopiedCoolerBins(src, dst, root + "/bins/weight", layout, resolution, chunkSize, floatCompression);
+    }
     copyLongArrayChunked(src, dst, "/pixels/bin1_id", root + "/pixels/bin1_id", chunkSize, compression);
     copyLongArrayChunked(src, dst, "/pixels/bin2_id", root + "/pixels/bin2_id", chunkSize, compression);
     copyIntArrayChunked(src, dst, "/pixels/count", root + "/pixels/count", chunkSize, compression);
@@ -706,6 +716,86 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
+  private static void copyDoubleArrayChunked(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
+                                             final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+                                             final @NotNull String srcPath,
+                                             final @NotNull String dstPath,
+                                             final int chunkSize,
+                                             final @NotNull HDF5FloatStorageFeatures compression) {
+    final long length = datasetLength(src, srcPath);
+    dst.float64().createArray(dstPath, length, safeChunkLen(length, chunkSize), compression);
+    long offset = 0L;
+    while (offset < length) {
+      final int blockLen = (int) Math.min(chunkSize, length - offset);
+      final var block = src.float64().readArrayBlockWithOffset(srcPath, blockLen, offset);
+      dst.float64().writeArrayBlockWithOffset(dstPath, block, blockLen, offset);
+      offset += blockLen;
+    }
+  }
+
+  private static void writeBinWeightsForCopiedCoolerBins(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
+                                                         final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+                                                         final @NotNull String dstPath,
+                                                         final @NotNull HictToMcoolConverter.ResolutionLayout layout,
+                                                         final long resolution,
+                                                         final int chunkSize,
+                                                         final @NotNull HDF5FloatStorageFeatures compression) {
+    final long length = datasetLength(src, "/bins/chrom");
+    final int safeChunkSize = safeChunkLen(length, chunkSize);
+    dst.float64().createArray(dstPath, length, safeChunkSize, compression);
+
+    @SuppressWarnings("unchecked") final List<HictToMcoolConverter.ContigBinSpan>[] spansByChrom = new List[layout.chroms().size()];
+    for (final var span : layout.spans()) {
+      spansByChrom[span.chromIndex()] = List.of(span);
+    }
+
+    long offset = 0L;
+    while (offset < length) {
+      final int blockLen = (int) Math.min(safeChunkSize, length - offset);
+      final var chroms = src.int32().readArrayBlockWithOffset("/bins/chrom", blockLen, offset);
+      final var starts = src.int32().readArrayBlockWithOffset("/bins/start", blockLen, offset);
+      final var weights = new double[blockLen];
+      for (int i = 0; i < blockLen; i++) {
+        weights[i] = weightForCopiedCoolerBin(spansByChrom, chroms[i], Math.floorDiv((long) starts[i], resolution));
+      }
+      dst.float64().writeArrayBlockWithOffset(dstPath, weights, blockLen, offset);
+      offset += blockLen;
+    }
+  }
+
+  private static double weightForCopiedCoolerBin(
+    final @NotNull List<HictToMcoolConverter.ContigBinSpan> @NotNull [] spansByChrom,
+    final int chromIndex,
+    final long localBin
+  ) {
+    if (chromIndex < 0 || chromIndex >= spansByChrom.length || localBin < 0) {
+      return 1.0d;
+    }
+    final var spans = spansByChrom[chromIndex];
+    if (spans == null || spans.isEmpty()) {
+      return 1.0d;
+    }
+    final var span = spans.get(0);
+    long atuLocalStart = 0L;
+    for (final var atu : span.atus()) {
+      final long atuEnd = atuLocalStart + atu.getLength();
+      if (localBin < atuEnd) {
+        return weightFromAtu(atu, (int) (localBin - atuLocalStart));
+      }
+      atuLocalStart = atuEnd;
+    }
+    return 1.0d;
+  }
+
+  private static double weightFromAtu(final @NotNull ATUDescriptor atu, final int offsetInAtu) {
+    final int sourceIndex = switch (atu.getDirection()) {
+      case FORWARD -> atu.getStartIndexInStripeIncl() + offsetInAtu;
+      case REVERSED -> atu.getEndIndexInStripeExcl() - 1 - offsetInAtu;
+    };
+    final var weights = atu.getStripeDescriptor().bin_weights();
+    return sourceIndex >= 0 && sourceIndex < weights.length ? weights[sourceIndex] : 1.0d;
+  }
+
   private static long datasetLength(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
                                     final @NotNull String path) {
     final var dims = reader.object().getDataSetInformation(path).getDimensions();
@@ -775,6 +865,13 @@ public final class HictToMcoolExportPipeline {
       return HDF5IntStorageFeatures.INT_CHUNKED;
     }
     return HDF5IntStorageFeatures.createDeflation(options.compressionLevel());
+  }
+
+  private static @NotNull HDF5FloatStorageFeatures resolveFloatStorageFeatures(final @NotNull ConversionOptions options) {
+    if (options.compressionLevel() <= 0) {
+      return HDF5FloatStorageFeatures.FLOAT_CHUNKED;
+    }
+    return HDF5FloatStorageFeatures.createDeflation(options.compressionLevel());
   }
 
   private static int safeChunkLen(final long length, final int preferred) {

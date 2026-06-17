@@ -103,6 +103,11 @@ class HictToMcoolConverterTest {
         exportedReader.int32().readArray("/resolutions/1000/bins/chrom")
       );
       assertArrayEquals(
+        sourceReader.float64().readArray("/resolutions/1000/bins/weight"),
+        exportedReader.float64().readArray("/resolutions/1000/bins/weight"),
+        1.0e-12
+      );
+      assertArrayEquals(
         sourceReader.int64().readArray("/resolutions/1000/indexes/chrom_offset"),
         exportedReader.int64().readArray("/resolutions/1000/indexes/chrom_offset")
       );
@@ -142,6 +147,7 @@ class HictToMcoolConverterTest {
       writer.int64().writeArray("/resolutions/1000/bins/chrom", new long[]{0L, 0L, 1L, 1L});
       writer.int64().writeArray("/resolutions/1000/bins/start", new long[]{0L, 1_000L, 0L, 1_000L});
       writer.int64().writeArray("/resolutions/1000/bins/end", new long[]{1_000L, 2_000L, 1_000L, 2_000L});
+      writer.float64().writeArray("/resolutions/1000/bins/weight", new double[]{0.25d, 2.0d, 1.5d, 0.75d});
       writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 0L, 0L, 1L, 1L, 2L, 3L});
       writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 3L, 1L, 2L, 3L, 3L});
       writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{11L, 5L, 2L, 9L, 4L, 3L, 7L});

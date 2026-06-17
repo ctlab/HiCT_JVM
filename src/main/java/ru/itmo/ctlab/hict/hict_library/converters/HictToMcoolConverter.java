@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_library.converters;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.HDF5DataClass;
+import ch.systemsx.cisd.hdf5.HDF5FloatStorageFeatures;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
@@ -79,6 +80,7 @@ public class HictToMcoolConverter {
       final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions(), options.exportAllResolutions());
       final var assemblyLayout = buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
+      final var floatCompression = resolveFloatStorageFeatures(options, synchronizedLogConsumer);
       final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
       final var progressTracker = new ExportProgressTracker(
         Math.max(1L, (totalSourcePixels * 4L) + countBins(assemblyLayout)),
@@ -129,6 +131,7 @@ public class HictToMcoolConverter {
               assemblyLayout.resolutionLayout(resolution),
               options.chunkSize(),
               compression,
+              floatCompression,
               progressTracker,
               synchronizedLogConsumer
             );
@@ -248,7 +251,7 @@ public class HictToMcoolConverter {
 
     final var layout = buildSingleChromLayout(DEFAULT_ASSEMBLY_NAME, assemblyLengthBp, resolution, binsCount);
     writeChromsGroup(dst, root + "/chroms", layout.chroms(), compression);
-    writeBinsGroup(dst, root + "/bins", layout, compression, progressTracker, logConsumer, prefix + " bins");
+    writeBinsGroup(dst, root + "/bins", layout, compression, HDF5FloatStorageFeatures.FLOAT_CHUNKED, progressTracker, logConsumer, prefix + " bins");
     writeIndexesGroup(stagedReader, dst, root, binsCount, layout.chromOffsets(), nonzeroPixelCount, chunkSize, compression);
     writeResolutionMetadata(dst, root, resolution, binsCount, layout.chroms().size(), nonzeroPixelCount, totalCounts);
   }
@@ -393,6 +396,7 @@ public class HictToMcoolConverter {
     final @NotNull String groupPath,
     final @NotNull ResolutionLayout layout,
     final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull HDF5FloatStorageFeatures floatCompression,
     final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logConsumer,
     final @NotNull String progressLabel
@@ -404,15 +408,18 @@ public class HictToMcoolConverter {
     dst.int32().createArray(groupPath + "/chrom", binsCount, compressionChunkLength, compression);
     dst.int32().createArray(groupPath + "/start", binsCount, compressionChunkLength, compression);
     dst.int32().createArray(groupPath + "/end", binsCount, compressionChunkLength, compression);
+    dst.float64().createArray(groupPath + "/weight", binsCount, compressionChunkLength, floatCompression);
 
     long written = 0L;
     int spanIndex = 0;
+    final var weightCursor = new BinWeightCursor(layout);
     int lastLoggedPercent = -1;
     while (written < binsCount) {
       final int blockLen = (int) Math.min(chunkLength, binsCount - written);
       final var chrom = new int[blockLen];
       final var starts = new int[blockLen];
       final var ends = new int[blockLen];
+      final var weights = new double[blockLen];
       for (int i = 0; i < blockLen; i++) {
         final long binIndex = written + i;
         while (spanIndex + 1 < layout.spans().size() && binIndex >= layout.spans().get(spanIndex).globalBinEnd()) {
@@ -424,12 +431,14 @@ public class HictToMcoolConverter {
         chrom[i] = span.chromIndex();
         starts[i] = Math.toIntExact(startBp);
         ends[i] = Math.toIntExact(Math.min(span.chrom().lengthBp(), startBp + resolution));
+        weights[i] = weightCursor.weightAt(binIndex);
       }
       dst.int32().writeArrayBlockWithOffset(groupPath + "/chrom", chrom, blockLen, written);
       dst.int32().writeArrayBlockWithOffset(groupPath + "/start", starts, blockLen, written);
       dst.int32().writeArrayBlockWithOffset(groupPath + "/end", ends, blockLen, written);
+      dst.float64().writeArrayBlockWithOffset(groupPath + "/weight", weights, blockLen, written);
       written += blockLen;
-      progressTracker.add(blockLen * 3L, progressLabel);
+      progressTracker.add(blockLen * 4L, progressLabel);
       if (binsCount > 0) {
         final int percent = (int) ((written * 100L) / binsCount);
         if (percent >= 100 || percent - lastLoggedPercent >= 10) {
@@ -437,6 +446,30 @@ public class HictToMcoolConverter {
           logConsumer.accept(String.format("%s: %d%% (%d/%d)", progressLabel, percent, written, binsCount));
         }
       }
+    }
+  }
+
+  public static void writeBinWeights(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+    final @NotNull String binsGroupPath,
+    final @NotNull ResolutionLayout layout,
+    final int chunkSize,
+    final @NotNull HDF5FloatStorageFeatures floatCompression
+  ) {
+    final long binsCount = layout.binsCount();
+    final int chunkLength = safeChunkLen(binsCount, Math.max(1, chunkSize));
+    dst.float64().createArray(binsGroupPath + "/weight", binsCount, chunkLength, floatCompression);
+
+    final var cursor = new BinWeightCursor(layout);
+    long written = 0L;
+    while (written < binsCount) {
+      final int blockLen = (int) Math.min(chunkLength, binsCount - written);
+      final var weights = new double[blockLen];
+      for (int i = 0; i < blockLen; i++) {
+        weights[i] = cursor.weightAt(written + i);
+      }
+      dst.float64().writeArrayBlockWithOffset(binsGroupPath + "/weight", weights, blockLen, written);
+      written += blockLen;
     }
   }
 
@@ -637,7 +670,7 @@ public class HictToMcoolConverter {
   private static long countBins(final @NotNull CoolerAssemblyLayout layout) {
     long total = 0L;
     for (final var resolutionLayout : layout.resolutionLayouts()) {
-      total += resolutionLayout.binsCount() * 3L;
+      total += resolutionLayout.binsCount() * 4L;
     }
     return total;
   }
@@ -757,7 +790,13 @@ public class HictToMcoolConverter {
       for (final var atu : currentContigs.get(chromIndex).descriptor().getAtus().get(resolutionOrder)) {
         binCount += atu.getLength();
       }
-      spans.add(new ContigBinSpan(chromIndex, chroms.get(chromIndex), cursor, cursor + binCount));
+      spans.add(new ContigBinSpan(
+        chromIndex,
+        chroms.get(chromIndex),
+        cursor,
+        cursor + binCount,
+        List.copyOf(currentContigs.get(chromIndex).descriptor().getAtus().get(resolutionOrder))
+      ));
       cursor += binCount;
     }
     chromOffsets[currentContigs.size()] = cursor;
@@ -774,7 +813,7 @@ public class HictToMcoolConverter {
     return new ResolutionLayout(
       resolution,
       List.of(chrom),
-      List.of(new ContigBinSpan(0, chrom, 0L, binsCount)),
+      List.of(new ContigBinSpan(0, chrom, 0L, binsCount, List.of())),
       new long[]{0L, binsCount},
       binsCount
     );
@@ -906,6 +945,7 @@ public class HictToMcoolConverter {
     final @NotNull ResolutionLayout layout,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
+    final @NotNull HDF5FloatStorageFeatures floatCompression,
     final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logger
   ) throws IOException {
@@ -920,7 +960,7 @@ public class HictToMcoolConverter {
     dst.object().createGroup(root + "/indexes");
 
     writeChromsGroup(dst, root + "/chroms", layout.chroms(), compression);
-    writeBinsGroup(dst, root + "/bins", layout, compression, progressTracker, logger, "Merge resolution " + resolution + " bins");
+    writeBinsGroup(dst, root + "/bins", layout, compression, floatCompression, progressTracker, logger, "Merge resolution " + resolution + " bins");
     writePixelsFromSortedCoo(cooPath, dst, root, summary.nonzeroPixelCount(), chunkSize, compression, progressTracker, logger, resolution);
     dst.int64().writeArray(root + "/indexes/bin1_offset", summary.bin1Offset(), compression);
     dst.int64().writeArray(root + "/indexes/chrom_offset", layout.chromOffsets(), compression);
@@ -1519,6 +1559,22 @@ public class HictToMcoolConverter {
     };
   }
 
+  private static @NotNull HDF5FloatStorageFeatures resolveFloatStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+    if (options.compressionLevel() <= 0) {
+      return HDF5FloatStorageFeatures.FLOAT_CHUNKED;
+    }
+    return switch (options.compressionAlgorithm()) {
+      case DEFLATE -> HDF5FloatStorageFeatures.createDeflation(options.compressionLevel());
+      case ZSTD, LZF -> {
+        logConsumer.accept(
+          "Compression algorithm " + options.compressionAlgorithm() +
+            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to uncompressed chunked float datasets."
+        );
+        yield HDF5FloatStorageFeatures.FLOAT_CHUNKED;
+      }
+    };
+  }
+
   private static long estimateEtaMillis(final long done, final long total, final long elapsedMillis) {
     if (done <= 0 || total <= 0 || done >= total || elapsedMillis <= 0) {
       return 0L;
@@ -1686,8 +1742,57 @@ public class HictToMcoolConverter {
     int chromIndex,
     @NotNull CoolerChrom chrom,
     long globalBinStart,
-    long globalBinEnd
+    long globalBinEnd,
+    @NotNull List<ATUDescriptor> atus
   ) {
+  }
+
+  private static final class BinWeightCursor {
+    private final @NotNull ResolutionLayout layout;
+    private int spanIndex = 0;
+    private int atuIndex = 0;
+    private long atuLocalStart = 0L;
+
+    private BinWeightCursor(final @NotNull ResolutionLayout layout) {
+      this.layout = layout;
+    }
+
+    private double weightAt(final long binIndex) {
+      if (layout.spans().isEmpty()) {
+        return 1.0d;
+      }
+      while (spanIndex + 1 < layout.spans().size() && binIndex >= layout.spans().get(spanIndex).globalBinEnd()) {
+        spanIndex++;
+        atuIndex = 0;
+        atuLocalStart = 0L;
+      }
+
+      final var span = layout.spans().get(spanIndex);
+      if (binIndex < span.globalBinStart() || binIndex >= span.globalBinEnd() || span.atus().isEmpty()) {
+        return 1.0d;
+      }
+
+      final long localBin = binIndex - span.globalBinStart();
+      while (atuIndex < span.atus().size()) {
+        final var atu = span.atus().get(atuIndex);
+        final long atuEnd = atuLocalStart + atu.getLength();
+        if (localBin < atuEnd) {
+          return weightFromAtu(atu, (int) (localBin - atuLocalStart));
+        }
+        atuLocalStart = atuEnd;
+        atuIndex++;
+      }
+      return 1.0d;
+    }
+
+    private static double weightFromAtu(final @NotNull ATUDescriptor atu, final int offsetInAtu) {
+      final int sourceIndex = switch (atu.getDirection()) {
+        case FORWARD -> atu.getStartIndexInStripeIncl() + offsetInAtu;
+        case REVERSED -> atu.getEndIndexInStripeExcl() - 1 - offsetInAtu;
+      };
+      final var weights = atu.getStripeDescriptor().bin_weights();
+      return sourceIndex >= 0 && sourceIndex < weights.length ? weights[sourceIndex] : 1.0d;
+    }
   }
 
   private record SourceSegment(long sourceStart, long sourceEnd, long targetStart, long targetEnd,
