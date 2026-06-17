@@ -137,6 +137,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var parallelism = parseInteger(req.getParam("parallelism"), defaultConversionParallelism());
                         final var exportAllResolutions = Boolean.parseBoolean(req.getParam("exportAllResolutions"));
                         final var buildResolutionPyramid = parseBoolean(req.getParam("buildResolutionPyramid"), ConversionOptions.defaultBuildResolutionPyramid());
+                        final var balanceInputCoolers = parseBoolean(req.getParam("balanceInputCoolers"), ConversionOptions.defaultBalanceInputCoolers());
+                        final var balanceExportedCoolers = parseBoolean(req.getParam("balanceExportedCoolers"), ConversionOptions.defaultBalanceExportedCoolers());
                         final var exportMode = ConversionOptions.ExportMode.parse(
                           req.getParam("exportMode") == null ? "auto" : req.getParam("exportMode")
                         );
@@ -163,6 +165,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             parallelism,
                             exportAllResolutions,
                             buildResolutionPyramid,
+                            balanceInputCoolers,
+                            balanceExportedCoolers,
                             exportMode
                         );
 
@@ -260,6 +264,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var useCurrentAssembly = requestJson.getBoolean("useCurrentAssembly", false);
                     final var exportAllResolutions = requestJson.getBoolean("exportAllResolutions", false);
                     final var buildResolutionPyramid = requestJson.getBoolean("buildResolutionPyramid", ConversionOptions.defaultBuildResolutionPyramid());
+                    final var balanceInputCoolers = requestJson.getBoolean("balanceInputCoolers", ConversionOptions.defaultBalanceInputCoolers());
+                    final var balanceExportedCoolers = requestJson.getBoolean("balanceExportedCoolers", ConversionOptions.defaultBalanceExportedCoolers());
                     final var exportMode = ConversionOptions.ExportMode.parse(requestJson.getString("exportMode", "auto"));
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
@@ -276,7 +282,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     }
 
                     final var direction = ConversionDirection.fromRequestOrSource(requestJson.getString("direction"), sourcePath);
-                    final var outputPath = deriveOutputPath(sourcePath, direction);
+                    final var outputPath = resolveOutputPath(dataDirectory, sourcePath, direction, requestJson.getString("outputFilename", ""));
                     prepareOutputPath(outputPath, overwrite);
                     final var requestedAssemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
                     final var currentAssemblyPath = useCurrentAssembly && direction == ConversionDirection.HICT_TO_MCOOL
@@ -301,6 +307,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         parallelism,
                         exportAllResolutions,
                         buildResolutionPyramid,
+                        balanceInputCoolers,
+                        balanceExportedCoolers,
                         exportMode
                     );
                     final ConversionJob job;
@@ -344,6 +352,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final var assemblyByFileJson = requestJson.getJsonObject("assemblyFilenameByFile");
                     final var exportAllResolutions = requestJson.getBoolean("exportAllResolutions", false);
                     final var buildResolutionPyramid = requestJson.getBoolean("buildResolutionPyramid", ConversionOptions.defaultBuildResolutionPyramid());
+                    final var balanceInputCoolers = requestJson.getBoolean("balanceInputCoolers", ConversionOptions.defaultBalanceInputCoolers());
+                    final var balanceExportedCoolers = requestJson.getBoolean("balanceExportedCoolers", ConversionOptions.defaultBalanceExportedCoolers());
                     final var exportMode = ConversionOptions.ExportMode.parse(requestJson.getString("exportMode", "auto"));
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
@@ -388,6 +398,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             parallelism,
                             exportAllResolutions,
                             buildResolutionPyramid,
+                            balanceInputCoolers,
+                            balanceExportedCoolers,
                             exportMode
                         );
                         final ConversionJob job;
@@ -596,6 +608,31 @@ public class ConversionHandlersHolder extends HandlersHolder {
         return direction.deriveOutputPath(sourcePath);
     }
 
+    private static Path resolveOutputPath(final @NotNull Path dataDirectory,
+                                          final @NotNull Path sourcePath,
+                                          final @NotNull ConversionDirection direction,
+                                          final String requestedOutputFilename) {
+        final var outputPath = requestedOutputFilename == null || requestedOutputFilename.isBlank()
+          ? deriveOutputPath(sourcePath, direction)
+          : dataDirectory.resolve(requestedOutputFilename).normalize();
+        if (!outputPath.startsWith(dataDirectory)) {
+            throw new IllegalArgumentException("Invalid output filename");
+        }
+        final var outputFilename = outputPath.getFileName();
+        if (outputFilename == null || outputFilename.toString().isBlank()) {
+            throw new IllegalArgumentException("Invalid output filename");
+        }
+        final var lowered = outputFilename.toString().toLowerCase(Locale.ROOT);
+        if (direction == ConversionDirection.HICT_TO_MCOOL) {
+            if (!lowered.endsWith(".mcool") && !lowered.endsWith(".cool")) {
+                throw new IllegalArgumentException("HiCT matrix export output must end with .mcool or .cool");
+            }
+        } else if (!lowered.endsWith(direction.outputExtension())) {
+            throw new IllegalArgumentException("Output file for " + direction.wireName() + " must end with " + direction.outputExtension());
+        }
+        return outputPath;
+    }
+
     private static Path deriveAgpOutputPath(final @NotNull Path sourcePath) {
         final var filename = sourcePath.getFileName().toString();
         final var lowerFilename = filename.toLowerCase(Locale.ROOT);
@@ -730,11 +767,11 @@ public class ConversionHandlersHolder extends HandlersHolder {
                   () -> job.cancelRequested.get()
                 );
             } else if (job.direction == ConversionDirection.MCOOL_TO_HICT) {
-                if (options.buildResolutionPyramid()) {
+                if (options.buildResolutionPyramid() || options.balanceInputCoolers()) {
                     try {
                         final var toolchain = this.hictkConversionPipeline.requireToolchain();
                         job.toolchainSource = toolchain.source();
-                        job.toolchainSummary = "Using hictk command " + toolchain.hictkCommand() + " to build a Cooler resolution pyramid";
+                        job.toolchainSummary = "Using hictk command " + toolchain.hictkCommand() + " to prepare Cooler import";
                         job.toolchainNotices.clear();
                         job.toolchainNotices.addAll(toolchain.notices());
                         job.toolchainCitations.clear();
@@ -748,7 +785,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         );
                     } catch (IllegalStateException toolchainFailure) {
                         conversionLogger.accept(
-                          "WARNING: hictk pyramid generation is enabled but hictk is unavailable or failed before conversion; falling back to direct .mcool import. "
+                          "WARNING: hictk Cooler import preparation is enabled but hictk is unavailable or failed before conversion; falling back to direct .mcool import. "
                             + toolchainFailure.getMessage()
                         );
                         new McoolToHictConverter().convert(options, conversionLogger);

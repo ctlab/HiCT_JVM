@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class HictToMcoolConverterTest {
   @TempDir
@@ -103,6 +104,11 @@ class HictToMcoolConverterTest {
         exportedReader.int32().readArray("/resolutions/1000/bins/chrom")
       );
       assertArrayEquals(
+        sourceReader.float64().readArray("/resolutions/1000/bins/weight"),
+        exportedReader.float64().readArray("/resolutions/1000/bins/weight"),
+        1.0e-12
+      );
+      assertArrayEquals(
         sourceReader.int64().readArray("/resolutions/1000/indexes/chrom_offset"),
         exportedReader.int64().readArray("/resolutions/1000/indexes/chrom_offset")
       );
@@ -117,6 +123,100 @@ class HictToMcoolConverterTest {
       assertArrayEquals(
         toIntArray(sourceReader.int64().readArray("/chroms/length")),
         exportedReader.int32().readArray("/chroms/length")
+      );
+    }
+  }
+
+  @Test
+  void internalExporterWritesSingleResolutionCoolerAtRoot() throws Exception {
+    final var sourceMcool = tempDir.resolve("single-source.mcool");
+    final var intermediateHict = tempDir.resolve("single-source.hict.hdf5");
+    final var exportedCool = tempDir.resolve("exported.cool");
+
+    writeSyntheticMcool(sourceMcool);
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        sourceMcool,
+        intermediateHict,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    new HictToMcoolConverter().convert(
+      new ConversionOptions(
+        intermediateHict,
+        exportedCool,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.INTERNAL
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var sourceReader = HDF5Factory.openForReading(sourceMcool.toFile());
+         final var exportedReader = HDF5Factory.openForReading(exportedCool.toFile())) {
+      assertFalse(exportedReader.object().isGroup("/resolutions"));
+      assertArrayEquals(
+        sourceReader.string().readArray("/resolutions/1000/chroms/name"),
+        exportedReader.string().readArray("/chroms/name")
+      );
+      assertArrayEquals(
+        toIntArray(sourceReader.int64().readArray("/resolutions/1000/chroms/length")),
+        exportedReader.int32().readArray("/chroms/length")
+      );
+      assertArrayEquals(
+        sourceReader.int64().readArray("/resolutions/1000/pixels/bin1_id"),
+        exportedReader.int64().readArray("/pixels/bin1_id")
+      );
+      assertArrayEquals(
+        sourceReader.int64().readArray("/resolutions/1000/pixels/bin2_id"),
+        exportedReader.int64().readArray("/pixels/bin2_id")
+      );
+      assertArrayEquals(
+        toIntArray(sourceReader.int64().readArray("/resolutions/1000/pixels/count")),
+        exportedReader.int32().readArray("/pixels/count")
+      );
+      assertArrayEquals(
+        sourceReader.int64().readArray("/resolutions/1000/indexes/bin1_offset"),
+        exportedReader.int64().readArray("/indexes/bin1_offset")
+      );
+      assertArrayEquals(
+        sourceReader.int64().readArray("/resolutions/1000/indexes/chrom_offset"),
+        exportedReader.int64().readArray("/indexes/chrom_offset")
+      );
+      assertArrayEquals(
+        toIntArray(sourceReader.int64().readArray("/resolutions/1000/bins/start")),
+        exportedReader.int32().readArray("/bins/start")
+      );
+      assertArrayEquals(
+        toIntArray(sourceReader.int64().readArray("/resolutions/1000/bins/end")),
+        exportedReader.int32().readArray("/bins/end")
+      );
+      assertArrayEquals(
+        toIntArray(sourceReader.int64().readArray("/resolutions/1000/bins/chrom")),
+        exportedReader.int32().readArray("/bins/chrom")
+      );
+      assertArrayEquals(
+        sourceReader.float64().readArray("/resolutions/1000/bins/weight"),
+        exportedReader.float64().readArray("/bins/weight"),
+        1.0e-12
       );
     }
   }
@@ -142,6 +242,7 @@ class HictToMcoolConverterTest {
       writer.int64().writeArray("/resolutions/1000/bins/chrom", new long[]{0L, 0L, 1L, 1L});
       writer.int64().writeArray("/resolutions/1000/bins/start", new long[]{0L, 1_000L, 0L, 1_000L});
       writer.int64().writeArray("/resolutions/1000/bins/end", new long[]{1_000L, 2_000L, 1_000L, 2_000L});
+      writer.float64().writeArray("/resolutions/1000/bins/weight", new double[]{0.25d, 2.0d, 1.5d, 0.75d});
       writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 0L, 0L, 1L, 1L, 2L, 3L});
       writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 3L, 1L, 2L, 3L, 3L});
       writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{11L, 5L, 2L, 9L, 4L, 3L, 7L});

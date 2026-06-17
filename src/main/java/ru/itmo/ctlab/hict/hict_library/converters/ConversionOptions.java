@@ -17,6 +17,8 @@ public record ConversionOptions(
   int parallelism,
   boolean exportAllResolutions,
   boolean buildResolutionPyramid,
+  boolean balanceInputCoolers,
+  boolean balanceExportedCoolers,
   @NotNull ExportMode exportMode
 ) {
   public static final String NO_AGP = "";
@@ -46,6 +48,40 @@ public record ConversionOptions(
       parallelism,
       exportAllResolutions,
       defaultBuildResolutionPyramid(),
+      defaultBalanceInputCoolers(),
+      defaultBalanceExportedCoolers(),
+      exportMode
+    );
+  }
+
+  public ConversionOptions(
+    final @NotNull Path inputPath,
+    final @NotNull Path outputPath,
+    final @NotNull List<@NotNull Long> resolutions,
+    final int chunkSize,
+    final int compressionLevel,
+    final @NotNull CompressionAlgorithm compressionAlgorithm,
+    final @NotNull String agpPath,
+    final boolean applyAgpBeforeExport,
+    final int parallelism,
+    final boolean exportAllResolutions,
+    final boolean buildResolutionPyramid,
+    final @NotNull ExportMode exportMode
+  ) {
+    this(
+      inputPath,
+      outputPath,
+      resolutions,
+      chunkSize,
+      compressionLevel,
+      compressionAlgorithm,
+      agpPath,
+      applyAgpBeforeExport,
+      parallelism,
+      exportAllResolutions,
+      buildResolutionPyramid,
+      defaultBalanceInputCoolers(),
+      defaultBalanceExportedCoolers(),
       exportMode
     );
   }
@@ -76,6 +112,24 @@ public record ConversionOptions(
       System.getProperty("hict.buildResolutionPyramid"),
       System.getenv("HICT_BUILD_RESOLUTION_PYRAMID"),
       System.getenv("HICT_IMPORT_BUILD_RESOLUTION_PYRAMID")
+    );
+    return value == null || isTruthy(value);
+  }
+
+  public static boolean defaultBalanceInputCoolers() {
+    final var value = firstNonBlank(
+      System.getProperty("hict.balanceInputCoolers"),
+      System.getenv("HICT_BALANCE_INPUT_COOLERS"),
+      System.getenv("HICT_IMPORT_BALANCE_COOLERS")
+    );
+    return value == null || isTruthy(value);
+  }
+
+  public static boolean defaultBalanceExportedCoolers() {
+    final var value = firstNonBlank(
+      System.getProperty("hict.balanceExportedCoolers"),
+      System.getenv("HICT_BALANCE_EXPORTED_COOLERS"),
+      System.getenv("HICT_EXPORT_BALANCE_COOLERS")
     );
     return value == null || isTruthy(value);
   }

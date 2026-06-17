@@ -26,6 +26,8 @@ class ConversionOptionsTest {
     );
 
     assertTrue(options.buildResolutionPyramid());
+    assertTrue(options.balanceInputCoolers());
+    assertTrue(options.balanceExportedCoolers());
   }
 
   @Test
@@ -42,9 +44,13 @@ class ConversionOptionsTest {
       1,
       false,
       false,
+      false,
+      false,
       ConversionOptions.ExportMode.AUTO
     );
 
     assertFalse(options.buildResolutionPyramid());
+    assertFalse(options.balanceInputCoolers());
+    assertFalse(options.balanceExportedCoolers());
   }
 }
