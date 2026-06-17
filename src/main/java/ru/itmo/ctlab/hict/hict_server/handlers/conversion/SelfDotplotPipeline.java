@@ -120,7 +120,9 @@ public final class SelfDotplotPipeline {
           ConversionOptions.CompressionAlgorithm.DEFLATE,
           ConversionOptions.NO_AGP,
           false,
-          options.conversionThreads()
+          options.conversionThreads(),
+          true,
+          ConversionOptions.ExportMode.AUTO
         ),
         line -> {
           logger.accept(line);

@@ -7,12 +7,12 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
-import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictToMcoolExportPipeline;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 import ru.itmo.ctlab.hict.hict_server.MainVerticle;
 import ru.itmo.ctlab.hict.hict_server.launcher.HictLauncherGui;
@@ -389,6 +389,20 @@ public class HictCli implements Runnable {
     )
     int parallelism;
 
+    @Option(
+      names = "--all-resolutions",
+      defaultValue = "false",
+      description = "Export all available resolutions (default: only finest resolution)."
+    )
+    boolean exportAllResolutions;
+
+    @Option(
+      names = "--export-mode",
+      defaultValue = "AUTO",
+      description = "Export mode for .hict.hdf5 -> .mcool: ${COMPLETION-CANDIDATES} (default: ${DEFAULT-VALUE})."
+    )
+    ConversionOptions.ExportMode exportMode;
+
     ConversionOptions toOptions(String agpPath, boolean applyAgp) {
       return new ConversionOptions(
         input,
@@ -399,7 +413,9 @@ public class HictCli implements Runnable {
         compressionAlgorithm,
         agpPath,
         applyAgp,
-        parallelism
+        parallelism,
+        exportAllResolutions,
+        exportMode
       );
     }
 
@@ -448,7 +464,8 @@ public class HictCli implements Runnable {
     @Override
     public Integer call() throws Exception {
       initializeHdf5();
-      new HictToMcoolConverter().convert(toOptions(agpPath, applyAgp), stdoutLogger());
+      new HictToMcoolExportPipeline(new ExternalToolchainManager())
+        .convert(toOptions(agpPath, applyAgp), stdoutLogger());
       return 0;
     }
   }

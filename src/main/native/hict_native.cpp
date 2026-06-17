@@ -25,6 +25,7 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -32,7 +33,7 @@
 #include <new>
 #include <vector>
 
-#if defined(HICT_NATIVE_AVX512) && defined(__AVX512F__)
+#if defined(__AVX2__) || defined(__AVX512F__)
 #include <immintrin.h>
 #endif
 
@@ -73,6 +74,44 @@ jboolean native_result(const jlong session_handle, const bool ok) {
 jboolean native_failure(const jlong session_handle) {
   return native_result(session_handle, false);
 }
+
+template <typename Element, typename Array>
+class CriticalArray {
+public:
+  CriticalArray(JNIEnv* env, Array array, jint release_mode)
+    : env_(env),
+      array_(array),
+      release_mode_(release_mode),
+      pointer_(array == nullptr ? nullptr : static_cast<Element*>(env->GetPrimitiveArrayCritical(array, nullptr))) {
+  }
+
+  ~CriticalArray() {
+    if (pointer_ != nullptr) {
+      env_->ReleasePrimitiveArrayCritical(array_, pointer_, release_mode_);
+    }
+  }
+
+  CriticalArray(const CriticalArray&) = delete;
+  CriticalArray& operator=(const CriticalArray&) = delete;
+
+  bool acquired() const {
+    return array_ == nullptr || pointer_ != nullptr;
+  }
+
+  Element* get() const {
+    return pointer_;
+  }
+
+  void set_release_mode(const jint release_mode) {
+    release_mode_ = release_mode;
+  }
+
+private:
+  JNIEnv* env_;
+  Array array_;
+  jint release_mode_;
+  Element* pointer_;
+};
 
 bool valid_extent(const jint rows, const jint columns, const jsize element_count) {
   if (rows < 0 || columns < 0) {
@@ -121,6 +160,74 @@ double transform_signal(double signal,
   return std::isfinite(signal) ? signal : 0.0;
 }
 
+template <bool ApplyPreLog,
+          bool ApplyResolutionScaling,
+          bool ApplyResolutionLinearScaling,
+          bool ApplyCoolerWeights,
+          typename InputElement>
+double transform_signal_kernel(double signal,
+                               const double row_weight,
+                               const double column_weight,
+                               const double ln_pre_log_base,
+                               const double resolution_scaling_coeff,
+                               const double resolution_linear_scaling_coeff) {
+  signal = sanitize_signal(signal);
+  if constexpr (ApplyPreLog) {
+    signal = std::log1p(signal) / ln_pre_log_base;
+  }
+  if constexpr (ApplyResolutionScaling) {
+    signal *= resolution_scaling_coeff;
+  }
+  if constexpr (ApplyResolutionLinearScaling) {
+    signal *= resolution_linear_scaling_coeff;
+  }
+  if constexpr (ApplyCoolerWeights) {
+    signal *= row_weight * column_weight;
+  }
+  return std::isfinite(signal) ? signal : 0.0;
+}
+
+template <bool ApplyPreLog,
+          bool ApplyResolutionScaling,
+          bool ApplyResolutionLinearScaling,
+          bool ApplyCoolerWeights,
+          typename InputElement>
+bool compute_base_signal_kernel(const InputElement* input,
+                                const double* row_weights,
+                                const double* column_weights,
+                                const jint rows,
+                                const jint columns,
+                                const double ln_pre_log_base,
+                                const double resolution_scaling_coeff,
+                                const double resolution_linear_scaling_coeff,
+                                double* output) {
+#pragma omp parallel for schedule(static) if(static_cast<std::int64_t>(rows) * columns >= PARALLEL_THRESHOLD)
+  for (jint row = 0; row < rows; ++row) {
+    const auto row_weight = ApplyCoolerWeights ? row_weights[row] : 1.0;
+    const auto row_offset = static_cast<std::int64_t>(row) * columns;
+#pragma omp simd
+    for (jint column = 0; column < columns; ++column) {
+      const auto column_weight = ApplyCoolerWeights ? column_weights[column] : 1.0;
+      const auto offset = row_offset + column;
+      output[offset] = transform_signal_kernel<
+        ApplyPreLog,
+        ApplyResolutionScaling,
+        ApplyResolutionLinearScaling,
+        ApplyCoolerWeights,
+        InputElement
+      >(
+        static_cast<double>(input[offset]),
+        row_weight,
+        column_weight,
+        ln_pre_log_base,
+        resolution_scaling_coeff,
+        resolution_linear_scaling_coeff
+      );
+    }
+  }
+  return true;
+}
+
 template <typename InputElement>
 bool compute_base_signal(const InputElement* input,
                          const double* row_weights,
@@ -134,27 +241,42 @@ bool compute_base_signal(const InputElement* input,
                          const bool apply_resolution_linear_scaling,
                          const bool apply_cooler_weights,
                          double* output) {
-#pragma omp parallel for schedule(static) if(static_cast<std::int64_t>(rows) * columns >= PARALLEL_THRESHOLD)
-  for (jint row = 0; row < rows; ++row) {
-    const auto row_weight = row_weights == nullptr ? 1.0 : row_weights[row];
-    const auto row_offset = static_cast<std::int64_t>(row) * columns;
-    for (jint column = 0; column < columns; ++column) {
-      const auto column_weight = column_weights == nullptr ? 1.0 : column_weights[column];
-      const auto offset = row_offset + column;
-      output[offset] = transform_signal(
-        static_cast<double>(input[offset]),
-        row_weight,
-        column_weight,
-        ln_pre_log_base,
-        resolution_scaling_coeff,
-        resolution_linear_scaling_coeff,
-        apply_resolution_scaling,
-        apply_resolution_linear_scaling,
-        apply_cooler_weights
-      );
-    }
+  const bool apply_pre_log = std::isfinite(ln_pre_log_base) && ln_pre_log_base > 0.0;
+  const bool apply_weights = apply_cooler_weights && row_weights != nullptr && column_weights != nullptr;
+  const int mask = (apply_pre_log ? 1 : 0)
+    | (apply_resolution_scaling ? 2 : 0)
+    | (apply_resolution_linear_scaling ? 4 : 0)
+    | (apply_weights ? 8 : 0);
+
+#define HICT_COMPUTE_BASE_SIGNAL_CASE(mask_value, pre_log, resolution_scaling, linear_scaling, weights) \
+  case mask_value: \
+    return compute_base_signal_kernel<pre_log, resolution_scaling, linear_scaling, weights>( \
+      input, row_weights, column_weights, rows, columns, ln_pre_log_base, resolution_scaling_coeff, \
+      resolution_linear_scaling_coeff, output \
+    )
+
+  switch (mask) {
+    HICT_COMPUTE_BASE_SIGNAL_CASE(0, false, false, false, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(1, true, false, false, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(2, false, true, false, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(3, true, true, false, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(4, false, false, true, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(5, true, false, true, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(6, false, true, true, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(7, true, true, true, false);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(8, false, false, false, true);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(9, true, false, false, true);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(10, false, true, false, true);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(11, true, true, false, true);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(12, false, false, true, true);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(13, true, false, true, true);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(14, false, true, true, true);
+    HICT_COMPUTE_BASE_SIGNAL_CASE(15, true, true, true, true);
+    default:
+      return false;
   }
-  return true;
+
+#undef HICT_COMPUTE_BASE_SIGNAL_CASE
 }
 
 bool apply_post_log(double* values, const jsize length, const double ln_post_log_base) {
@@ -218,6 +340,50 @@ bool map_linear_gradient_rgba_avx512(const double* signal,
 }
 #endif
 
+#if defined(__AVX2__)
+bool map_linear_gradient_rgba_avx2(const double* signal,
+                                   const std::int64_t element_count,
+                                   const float* start_rgba,
+                                   const double* delta,
+                                   const double min_signal,
+                                   const double signal_range,
+                                   jbyte* output_rgba) {
+  const auto min_v = _mm256_set1_pd(min_signal);
+  const auto inv_range_v = _mm256_set1_pd(1.0 / signal_range);
+  const auto zero_v = _mm256_setzero_pd();
+  const auto one_v = _mm256_set1_pd(1.0);
+  const auto block_count = element_count / 4;
+
+#pragma omp parallel for schedule(static) if(element_count >= PARALLEL_THRESHOLD)
+  for (std::int64_t block = 0; block < block_count; ++block) {
+    const auto offset = block * 4;
+    auto standardized_v = _mm256_mul_pd(_mm256_sub_pd(_mm256_loadu_pd(signal + offset), min_v), inv_range_v);
+    standardized_v = _mm256_min_pd(_mm256_max_pd(standardized_v, zero_v), one_v);
+
+    alignas(32) double standardized[4];
+    _mm256_store_pd(standardized, standardized_v);
+    for (int lane = 0; lane < 4; ++lane) {
+      const auto output_offset = (offset + lane) * 4;
+      const auto t = standardized[lane];
+      for (int component = 0; component < 4; ++component) {
+        const auto value = static_cast<double>(start_rgba[component]) + delta[component] * t;
+        output_rgba[output_offset + component] = static_cast<jbyte>(to_u8(value));
+      }
+    }
+  }
+
+  for (std::int64_t offset = block_count * 4; offset < element_count; ++offset) {
+    const auto standardized = std::clamp((signal[offset] - min_signal) / signal_range, 0.0, 1.0);
+    const auto output_offset = offset * 4;
+    for (int component = 0; component < 4; ++component) {
+      const auto value = static_cast<double>(start_rgba[component]) + delta[component] * standardized;
+      output_rgba[output_offset + component] = static_cast<jbyte>(to_u8(value));
+    }
+  }
+  return true;
+}
+#endif
+
 bool map_linear_gradient_rgba(const double* signal,
                               const jint rows,
                               const jint columns,
@@ -240,6 +406,11 @@ bool map_linear_gradient_rgba(const double* signal,
 #if defined(HICT_NATIVE_AVX512) && defined(__AVX512F__)
   if (element_count >= 8) {
     return map_linear_gradient_rgba_avx512(signal, element_count, start_rgba, delta, min_signal, signal_range, output_rgba);
+  }
+#endif
+#if defined(__AVX2__)
+  if (element_count >= 4) {
+    return map_linear_gradient_rgba_avx2(signal, element_count, start_rgba, delta, min_signal, signal_range, output_rgba);
   }
 #endif
 #pragma omp parallel for schedule(static) if(element_count >= PARALLEL_THRESHOLD)
@@ -470,56 +641,48 @@ bool aggregate_intervals(const jlong* starts,
   return true;
 }
 
-std::uint8_t complement_ascii(const std::uint8_t base) {
-  switch (base) {
-    case 'A':
-    case 'a':
-      return 'T';
-    case 'T':
-    case 't':
-      return 'A';
-    case 'C':
-    case 'c':
-      return 'G';
-    case 'G':
-    case 'g':
-      return 'C';
-    case 'N':
-    case 'n':
-      return 'N';
-    case 'R':
-    case 'r':
-      return 'Y';
-    case 'Y':
-    case 'y':
-      return 'R';
-    case 'S':
-    case 's':
-      return 'S';
-    case 'W':
-    case 'w':
-      return 'W';
-    case 'K':
-    case 'k':
-      return 'M';
-    case 'M':
-    case 'm':
-      return 'K';
-    case 'B':
-    case 'b':
-      return 'V';
-    case 'D':
-    case 'd':
-      return 'H';
-    case 'H':
-    case 'h':
-      return 'D';
-    case 'V':
-    case 'v':
-      return 'B';
-    default:
-      return 'N';
+constexpr std::array<std::uint8_t, 256> build_complement_lut() {
+  std::array<std::uint8_t, 256> lut{};
+  for (auto& value : lut) {
+    value = 'N';
   }
+  lut[static_cast<std::uint8_t>('A')] = 'T';
+  lut[static_cast<std::uint8_t>('a')] = 'T';
+  lut[static_cast<std::uint8_t>('T')] = 'A';
+  lut[static_cast<std::uint8_t>('t')] = 'A';
+  lut[static_cast<std::uint8_t>('C')] = 'G';
+  lut[static_cast<std::uint8_t>('c')] = 'G';
+  lut[static_cast<std::uint8_t>('G')] = 'C';
+  lut[static_cast<std::uint8_t>('g')] = 'C';
+  lut[static_cast<std::uint8_t>('N')] = 'N';
+  lut[static_cast<std::uint8_t>('n')] = 'N';
+  lut[static_cast<std::uint8_t>('R')] = 'Y';
+  lut[static_cast<std::uint8_t>('r')] = 'Y';
+  lut[static_cast<std::uint8_t>('Y')] = 'R';
+  lut[static_cast<std::uint8_t>('y')] = 'R';
+  lut[static_cast<std::uint8_t>('S')] = 'S';
+  lut[static_cast<std::uint8_t>('s')] = 'S';
+  lut[static_cast<std::uint8_t>('W')] = 'W';
+  lut[static_cast<std::uint8_t>('w')] = 'W';
+  lut[static_cast<std::uint8_t>('K')] = 'M';
+  lut[static_cast<std::uint8_t>('k')] = 'M';
+  lut[static_cast<std::uint8_t>('M')] = 'K';
+  lut[static_cast<std::uint8_t>('m')] = 'K';
+  lut[static_cast<std::uint8_t>('B')] = 'V';
+  lut[static_cast<std::uint8_t>('b')] = 'V';
+  lut[static_cast<std::uint8_t>('D')] = 'H';
+  lut[static_cast<std::uint8_t>('d')] = 'H';
+  lut[static_cast<std::uint8_t>('H')] = 'D';
+  lut[static_cast<std::uint8_t>('h')] = 'D';
+  lut[static_cast<std::uint8_t>('V')] = 'B';
+  lut[static_cast<std::uint8_t>('v')] = 'B';
+  return lut;
+}
+
+constexpr auto COMPLEMENT_LUT = build_complement_lut();
+
+std::uint8_t complement_ascii(const std::uint8_t base) {
+  return COMPLEMENT_LUT[base];
 }
 
 bool reverse_complement_ascii(const jbyte* input, const jsize length, jbyte* output) {
@@ -583,6 +746,49 @@ bool sort_sparse_block_row_major(jlong* rows,
   std::copy(sorted_rows.begin(), sorted_rows.end(), rows);
   std::copy(sorted_columns.begin(), sorted_columns.end(), columns);
   std::copy(sorted_values.begin(), sorted_values.end(), values);
+  return true;
+}
+
+struct CoolerLongRecord {
+  jlong row;
+  jlong column;
+  jlong value;
+};
+
+bool sort_cooler_records_row_major(jlong* rows,
+                                   jlong* columns,
+                                   jlong* values,
+                                   const jsize length) {
+  if (rows == nullptr || columns == nullptr || values == nullptr || length < 0) {
+    return false;
+  }
+  if (length <= 1) {
+    return true;
+  }
+
+  std::vector<CoolerLongRecord> records(static_cast<std::size_t>(length));
+#pragma omp parallel for schedule(static) if(length >= PARALLEL_THRESHOLD)
+  for (jsize i = 0; i < length; ++i) {
+    records[static_cast<std::size_t>(i)] = CoolerLongRecord{rows[i], columns[i], values[i]};
+  }
+
+  std::sort(records.begin(), records.end(), [](const CoolerLongRecord& lhs, const CoolerLongRecord& rhs) {
+    if (lhs.row != rhs.row) {
+      return lhs.row < rhs.row;
+    }
+    if (lhs.column != rhs.column) {
+      return lhs.column < rhs.column;
+    }
+    return lhs.value < rhs.value;
+  });
+
+#pragma omp parallel for schedule(static) if(length >= PARALLEL_THRESHOLD)
+  for (jsize i = 0; i < length; ++i) {
+    const auto& record = records[static_cast<std::size_t>(i)];
+    rows[i] = record.row;
+    columns[i] = record.column;
+    values[i] = record.value;
+  }
   return true;
 }
 
@@ -708,30 +914,18 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     return native_failure(session_handle);
   }
 
-  auto* input = env->GetDoubleArrayElements(input_array, nullptr);
-  auto* row_weights = row_weights_array == nullptr ? nullptr : env->GetDoubleArrayElements(row_weights_array, nullptr);
-  auto* column_weights = column_weights_array == nullptr ? nullptr : env->GetDoubleArrayElements(column_weights_array, nullptr);
-  auto* output = env->GetDoubleArrayElements(output_array, nullptr);
-  if (input == nullptr || output == nullptr) {
-    if (input != nullptr) {
-      env->ReleaseDoubleArrayElements(input_array, input, JNI_ABORT);
-    }
-    if (row_weights != nullptr) {
-      env->ReleaseDoubleArrayElements(row_weights_array, row_weights, JNI_ABORT);
-    }
-    if (column_weights != nullptr) {
-      env->ReleaseDoubleArrayElements(column_weights_array, column_weights, JNI_ABORT);
-    }
-    if (output != nullptr) {
-      env->ReleaseDoubleArrayElements(output_array, output, JNI_ABORT);
-    }
+  CriticalArray<jdouble, jdoubleArray> input(env, input_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> row_weights(env, row_weights_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> column_weights(env, column_weights_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> output(env, output_array, JNI_ABORT);
+  if (!input.acquired() || !row_weights.acquired() || !column_weights.acquired() || !output.acquired()) {
     return native_failure(session_handle);
   }
 
   const auto ok = compute_base_signal(
-    input,
-    row_weights,
-    column_weights,
+    input.get(),
+    row_weights.get(),
+    column_weights.get(),
     rows,
     columns,
     ln_pre_log_base,
@@ -740,17 +934,12 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     apply_resolution_scaling == JNI_TRUE,
     apply_resolution_linear_scaling == JNI_TRUE,
     apply_cooler_weights == JNI_TRUE,
-    output
+    output.get()
   );
 
-  env->ReleaseDoubleArrayElements(input_array, input, JNI_ABORT);
-  if (row_weights != nullptr) {
-    env->ReleaseDoubleArrayElements(row_weights_array, row_weights, JNI_ABORT);
+  if (ok) {
+    output.set_release_mode(0);
   }
-  if (column_weights != nullptr) {
-    env->ReleaseDoubleArrayElements(column_weights_array, column_weights, JNI_ABORT);
-  }
-  env->ReleaseDoubleArrayElements(output_array, output, ok ? 0 : JNI_ABORT);
   return native_result(session_handle, ok);
 }
 
@@ -790,30 +979,18 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     return native_failure(session_handle);
   }
 
-  auto* input = env->GetLongArrayElements(input_array, nullptr);
-  auto* row_weights = row_weights_array == nullptr ? nullptr : env->GetDoubleArrayElements(row_weights_array, nullptr);
-  auto* column_weights = column_weights_array == nullptr ? nullptr : env->GetDoubleArrayElements(column_weights_array, nullptr);
-  auto* output = env->GetDoubleArrayElements(output_array, nullptr);
-  if (input == nullptr || output == nullptr) {
-    if (input != nullptr) {
-      env->ReleaseLongArrayElements(input_array, input, JNI_ABORT);
-    }
-    if (row_weights != nullptr) {
-      env->ReleaseDoubleArrayElements(row_weights_array, row_weights, JNI_ABORT);
-    }
-    if (column_weights != nullptr) {
-      env->ReleaseDoubleArrayElements(column_weights_array, column_weights, JNI_ABORT);
-    }
-    if (output != nullptr) {
-      env->ReleaseDoubleArrayElements(output_array, output, JNI_ABORT);
-    }
+  CriticalArray<jlong, jlongArray> input(env, input_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> row_weights(env, row_weights_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> column_weights(env, column_weights_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> output(env, output_array, JNI_ABORT);
+  if (!input.acquired() || !row_weights.acquired() || !column_weights.acquired() || !output.acquired()) {
     return native_failure(session_handle);
   }
 
   const auto ok = compute_base_signal(
-    input,
-    row_weights,
-    column_weights,
+    input.get(),
+    row_weights.get(),
+    column_weights.get(),
     rows,
     columns,
     ln_pre_log_base,
@@ -822,17 +999,12 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     apply_resolution_scaling == JNI_TRUE,
     apply_resolution_linear_scaling == JNI_TRUE,
     apply_cooler_weights == JNI_TRUE,
-    output
+    output.get()
   );
 
-  env->ReleaseLongArrayElements(input_array, input, JNI_ABORT);
-  if (row_weights != nullptr) {
-    env->ReleaseDoubleArrayElements(row_weights_array, row_weights, JNI_ABORT);
+  if (ok) {
+    output.set_release_mode(0);
   }
-  if (column_weights != nullptr) {
-    env->ReleaseDoubleArrayElements(column_weights_array, column_weights, JNI_ABORT);
-  }
-  env->ReleaseDoubleArrayElements(output_array, output, ok ? 0 : JNI_ABORT);
   return native_result(session_handle, ok);
 }
 
@@ -866,32 +1038,28 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     return native_failure(session_handle);
   }
 
-  auto* signal = env->GetDoubleArrayElements(signal_array, nullptr);
-  auto* start_rgba = env->GetFloatArrayElements(start_rgba_array, nullptr);
-  auto* end_rgba = env->GetFloatArrayElements(end_rgba_array, nullptr);
-  auto* output_rgba = env->GetByteArrayElements(output_rgba_array, nullptr);
-  if (signal == nullptr || start_rgba == nullptr || end_rgba == nullptr || output_rgba == nullptr) {
-    if (signal != nullptr) {
-      env->ReleaseDoubleArrayElements(signal_array, signal, JNI_ABORT);
-    }
-    if (start_rgba != nullptr) {
-      env->ReleaseFloatArrayElements(start_rgba_array, start_rgba, JNI_ABORT);
-    }
-    if (end_rgba != nullptr) {
-      env->ReleaseFloatArrayElements(end_rgba_array, end_rgba, JNI_ABORT);
-    }
-    if (output_rgba != nullptr) {
-      env->ReleaseByteArrayElements(output_rgba_array, output_rgba, JNI_ABORT);
-    }
+  CriticalArray<jdouble, jdoubleArray> signal(env, signal_array, JNI_ABORT);
+  CriticalArray<jfloat, jfloatArray> start_rgba(env, start_rgba_array, JNI_ABORT);
+  CriticalArray<jfloat, jfloatArray> end_rgba(env, end_rgba_array, JNI_ABORT);
+  CriticalArray<jbyte, jbyteArray> output_rgba(env, output_rgba_array, JNI_ABORT);
+  if (!signal.acquired() || !start_rgba.acquired() || !end_rgba.acquired() || !output_rgba.acquired()) {
     return native_failure(session_handle);
   }
 
-  const auto ok = map_linear_gradient_rgba(signal, rows, columns, start_rgba, end_rgba, min_signal, max_signal, output_rgba);
+  const auto ok = map_linear_gradient_rgba(
+    signal.get(),
+    rows,
+    columns,
+    start_rgba.get(),
+    end_rgba.get(),
+    min_signal,
+    max_signal,
+    output_rgba.get()
+  );
 
-  env->ReleaseDoubleArrayElements(signal_array, signal, JNI_ABORT);
-  env->ReleaseFloatArrayElements(start_rgba_array, start_rgba, JNI_ABORT);
-  env->ReleaseFloatArrayElements(end_rgba_array, end_rgba, JNI_ABORT);
-  env->ReleaseByteArrayElements(output_rgba_array, output_rgba, ok ? 0 : JNI_ABORT);
+  if (ok) {
+    output_rgba.set_release_mode(0);
+  }
   return native_result(session_handle, ok);
 }
 
@@ -940,29 +1108,24 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
   }
 
   const auto column_count = env->GetArrayLength(column_bins_array);
-  auto* column_bins = env->GetLongArrayElements(column_bins_array, nullptr);
-  auto* output_sparse_dense_counts = env->GetLongArrayElements(output_sparse_dense_counts_array, nullptr);
-  if (column_bins == nullptr || output_sparse_dense_counts == nullptr) {
-    if (column_bins != nullptr) {
-      env->ReleaseLongArrayElements(column_bins_array, column_bins, JNI_ABORT);
-    }
-    if (output_sparse_dense_counts != nullptr) {
-      env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, JNI_ABORT);
-    }
+  CriticalArray<jlong, jlongArray> column_bins(env, column_bins_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> output_sparse_dense_counts(env, output_sparse_dense_counts_array, JNI_ABORT);
+  if (!column_bins.acquired() || !output_sparse_dense_counts.acquired()) {
     return native_failure(session_handle);
   }
 
   const auto ok = count_stripe_blocks(
-    column_bins,
+    column_bins.get(),
     column_count,
     stripe_count,
     submatrix_size,
     dense_threshold,
-    output_sparse_dense_counts
+    output_sparse_dense_counts.get()
   );
 
-  env->ReleaseLongArrayElements(column_bins_array, column_bins, JNI_ABORT);
-  env->ReleaseLongArrayElements(output_sparse_dense_counts_array, output_sparse_dense_counts, ok ? 0 : JNI_ABORT);
+  if (ok) {
+    output_sparse_dense_counts.set_release_mode(0);
+  }
   return native_result(session_handle, ok);
 }
 
@@ -993,42 +1156,30 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     return native_failure(session_handle);
   }
 
-  auto* values = env->GetDoubleArrayElements(values_array, nullptr);
-  auto* support = env->GetLongArrayElements(support_array, nullptr);
-  auto* output_values = env->GetDoubleArrayElements(output_values_array, nullptr);
-  auto* output_support = env->GetLongArrayElements(output_support_array, nullptr);
-  if (values == nullptr || support == nullptr || output_values == nullptr || output_support == nullptr) {
-    if (values != nullptr) {
-      env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
-    }
-    if (support != nullptr) {
-      env->ReleaseLongArrayElements(support_array, support, JNI_ABORT);
-    }
-    if (output_values != nullptr) {
-      env->ReleaseDoubleArrayElements(output_values_array, output_values, JNI_ABORT);
-    }
-    if (output_support != nullptr) {
-      env->ReleaseLongArrayElements(output_support_array, output_support, JNI_ABORT);
-    }
+  CriticalArray<jdouble, jdoubleArray> values(env, values_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> support(env, support_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> output_values(env, output_values_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> output_support(env, output_support_array, JNI_ABORT);
+  if (!values.acquired() || !support.acquired() || !output_values.acquired() || !output_support.acquired()) {
     return native_failure(session_handle);
   }
 
   const auto ok = aggregate_precomputed_series(
-    values,
-    support,
+    values.get(),
+    support.get(),
     series_length,
     query_start_px,
     query_end_px,
     bucket_count,
     strategy_code,
-    output_values,
-    output_support
+    output_values.get(),
+    output_support.get()
   );
 
-  env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
-  env->ReleaseLongArrayElements(support_array, support, JNI_ABORT);
-  env->ReleaseDoubleArrayElements(output_values_array, output_values, ok ? 0 : JNI_ABORT);
-  env->ReleaseLongArrayElements(output_support_array, output_support, ok ? 0 : JNI_ABORT);
+  if (ok) {
+    output_values.set_release_mode(0);
+    output_support.set_release_mode(0);
+  }
   return native_result(session_handle, ok);
 }
 
@@ -1061,50 +1212,32 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     return native_failure(session_handle);
   }
 
-  auto* starts = env->GetLongArrayElements(starts_array, nullptr);
-  auto* ends = env->GetLongArrayElements(ends_array, nullptr);
-  auto* values = values_array == nullptr ? nullptr : env->GetDoubleArrayElements(values_array, nullptr);
-  auto* output_values = env->GetDoubleArrayElements(output_values_array, nullptr);
-  auto* output_counts = env->GetLongArrayElements(output_counts_array, nullptr);
-  if (starts == nullptr || ends == nullptr || output_values == nullptr || output_counts == nullptr || (values_array != nullptr && values == nullptr)) {
-    if (starts != nullptr) {
-      env->ReleaseLongArrayElements(starts_array, starts, JNI_ABORT);
-    }
-    if (ends != nullptr) {
-      env->ReleaseLongArrayElements(ends_array, ends, JNI_ABORT);
-    }
-    if (values != nullptr) {
-      env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
-    }
-    if (output_values != nullptr) {
-      env->ReleaseDoubleArrayElements(output_values_array, output_values, JNI_ABORT);
-    }
-    if (output_counts != nullptr) {
-      env->ReleaseLongArrayElements(output_counts_array, output_counts, JNI_ABORT);
-    }
+  CriticalArray<jlong, jlongArray> starts(env, starts_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> ends(env, ends_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> values(env, values_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> output_values(env, output_values_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> output_counts(env, output_counts_array, JNI_ABORT);
+  if (!starts.acquired() || !ends.acquired() || !values.acquired() || !output_values.acquired() || !output_counts.acquired()) {
     return native_failure(session_handle);
   }
 
   const auto ok = aggregate_intervals(
-    starts,
-    ends,
-    values,
+    starts.get(),
+    ends.get(),
+    values.get(),
     feature_count,
     query_start_px,
     query_end_px,
     bucket_count,
     mode_code,
-    output_values,
-    output_counts
+    output_values.get(),
+    output_counts.get()
   );
 
-  env->ReleaseLongArrayElements(starts_array, starts, JNI_ABORT);
-  env->ReleaseLongArrayElements(ends_array, ends, JNI_ABORT);
-  if (values != nullptr) {
-    env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
+  if (ok) {
+    output_values.set_release_mode(0);
+    output_counts.set_release_mode(0);
   }
-  env->ReleaseDoubleArrayElements(output_values_array, output_values, ok ? 0 : JNI_ABORT);
-  env->ReleaseLongArrayElements(output_counts_array, output_counts, ok ? 0 : JNI_ABORT);
   return native_result(session_handle, ok);
 }
 
@@ -1165,26 +1298,19 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     return native_failure(session_handle);
   }
 
-  auto* rows = env->GetLongArrayElements(rows_array, nullptr);
-  auto* columns = env->GetLongArrayElements(columns_array, nullptr);
-  auto* values = env->GetDoubleArrayElements(values_array, nullptr);
-  if (rows == nullptr || columns == nullptr || values == nullptr) {
-    if (rows != nullptr) {
-      env->ReleaseLongArrayElements(rows_array, rows, JNI_ABORT);
-    }
-    if (columns != nullptr) {
-      env->ReleaseLongArrayElements(columns_array, columns, JNI_ABORT);
-    }
-    if (values != nullptr) {
-      env->ReleaseDoubleArrayElements(values_array, values, JNI_ABORT);
-    }
+  CriticalArray<jlong, jlongArray> rows(env, rows_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> columns(env, columns_array, JNI_ABORT);
+  CriticalArray<jdouble, jdoubleArray> values(env, values_array, JNI_ABORT);
+  if (!rows.acquired() || !columns.acquired() || !values.acquired()) {
     return native_failure(session_handle);
   }
 
-  const auto ok = sort_sparse_block_row_major(rows, columns, values, length, submatrix_size);
-  env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
-  env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
-  env->ReleaseDoubleArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
+  const auto ok = sort_sparse_block_row_major(rows.get(), columns.get(), values.get(), length, submatrix_size);
+  if (ok) {
+    rows.set_release_mode(0);
+    columns.set_release_mode(0);
+    values.set_release_mode(0);
+  }
   return native_result(session_handle, ok);
 }
 
@@ -1209,26 +1335,60 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     return native_failure(session_handle);
   }
 
-  auto* rows = env->GetLongArrayElements(rows_array, nullptr);
-  auto* columns = env->GetLongArrayElements(columns_array, nullptr);
-  auto* values = env->GetLongArrayElements(values_array, nullptr);
-  if (rows == nullptr || columns == nullptr || values == nullptr) {
-    if (rows != nullptr) {
-      env->ReleaseLongArrayElements(rows_array, rows, JNI_ABORT);
-    }
-    if (columns != nullptr) {
-      env->ReleaseLongArrayElements(columns_array, columns, JNI_ABORT);
-    }
-    if (values != nullptr) {
-      env->ReleaseLongArrayElements(values_array, values, JNI_ABORT);
-    }
+  CriticalArray<jlong, jlongArray> rows(env, rows_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> columns(env, columns_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> values(env, values_array, JNI_ABORT);
+  if (!rows.acquired() || !columns.acquired() || !values.acquired()) {
     return native_failure(session_handle);
   }
 
-  const auto ok = sort_sparse_block_row_major(rows, columns, values, length, submatrix_size);
-  env->ReleaseLongArrayElements(rows_array, rows, ok ? 0 : JNI_ABORT);
-  env->ReleaseLongArrayElements(columns_array, columns, ok ? 0 : JNI_ABORT);
-  env->ReleaseLongArrayElements(values_array, values, ok ? 0 : JNI_ABORT);
+  const auto ok = sort_sparse_block_row_major(rows.get(), columns.get(), values.get(), length, submatrix_size);
+  if (ok) {
+    rows.set_release_mode(0);
+    columns.set_release_mode(0);
+    values.set_release_mode(0);
+  }
+  return native_result(session_handle, ok);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSortCoolerRecordsLong(
+  JNIEnv* env,
+  jclass,
+  jlong session_handle,
+  jlongArray rows_array,
+  jlongArray columns_array,
+  jlongArray values_array
+) {
+  if (session_from_handle(session_handle) == nullptr) {
+    return JNI_FALSE;
+  }
+  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+    return native_failure(session_handle);
+  }
+  const auto length = env->GetArrayLength(rows_array);
+  if (env->GetArrayLength(columns_array) != length || env->GetArrayLength(values_array) != length) {
+    return native_failure(session_handle);
+  }
+
+  CriticalArray<jlong, jlongArray> rows(env, rows_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> columns(env, columns_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> values(env, values_array, JNI_ABORT);
+  if (!rows.acquired() || !columns.acquired() || !values.acquired()) {
+    return native_failure(session_handle);
+  }
+
+  bool ok = false;
+  try {
+    ok = sort_cooler_records_row_major(rows.get(), columns.get(), values.get(), length);
+  } catch (...) {
+    ok = false;
+  }
+  if (ok) {
+    rows.set_release_mode(0);
+    columns.set_release_mode(0);
+    values.set_release_mode(0);
+  }
   return native_result(session_handle, ok);
 }
 

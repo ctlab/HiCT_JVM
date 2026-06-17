@@ -259,6 +259,14 @@ class NativeProcessingServiceTest {
       assertArrayEquals(new long[]{1L, 2L, 1L, 0L}, sparseColumnsLong);
       assertArrayEquals(new long[]{1L, 2L, 11L, 20L}, sparseLongValues);
 
+      final var coolerRowsLong = new long[]{2L, 0L, 1L, 0L, 1L, 0L};
+      final var coolerColumnsLong = new long[]{2L, 3L, 1L, 1L, 1L, 1L};
+      final var coolerLongValues = new long[]{9L, 4L, 5L, 7L, 3L, 2L};
+      assertTrue(processor.sortCoolerRecordsLong(coolerRowsLong, coolerColumnsLong, coolerLongValues));
+      assertArrayEquals(new long[]{0L, 0L, 0L, 1L, 1L, 2L}, coolerRowsLong);
+      assertArrayEquals(new long[]{1L, 1L, 3L, 1L, 1L, 2L}, coolerColumnsLong);
+      assertArrayEquals(new long[]{2L, 7L, 4L, 3L, 5L, 9L}, coolerLongValues);
+
       final double[][] expectedTransformInput = {
         {0.0d, 2.0d, 4.0d},
         {-1.0d, Double.NaN, 10.0d}
@@ -318,7 +326,7 @@ class NativeProcessingServiceTest {
       );
       final var finalSessionReport = processor.sessionReport();
       assertTrue(finalSessionReport.active());
-      assertTrue(finalSessionReport.operationCount() >= firstSessionReport.operationCount() + 13L);
+      assertTrue(finalSessionReport.operationCount() >= firstSessionReport.operationCount() + 14L);
       assertEquals(0L, finalSessionReport.failedOperationCount());
     } finally {
       if (previousPath == null) {

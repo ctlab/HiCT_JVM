@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,6 +60,8 @@ public class McoolToHictConverter {
   private static final int SUBMATRIX_SIZE = 256;
   private static final long HDF5_MAX_CHUNK_SIZE = 32L * 1024L * 1024L * 8L;
   private static final int DENSE_THRESHOLD = (SUBMATRIX_SIZE * SUBMATRIX_SIZE) / 2;
+  private static final long DEFAULT_IMPORT_MAX_MEMORY_BYTES = 16L * 1024L * 1024L * 1024L;
+  private static final long MIN_IMPORT_MAX_MEMORY_BYTES = 256L * 1024L * 1024L;
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
     HDF5LibraryInitializer.initializeHDF5Library();
@@ -75,9 +78,11 @@ public class McoolToHictConverter {
       final var progressTracker = new ConversionProgressTracker((conversionOrder.size() * 2) + 1, synchronizedLogConsumer);
 
       final var requestedWorkers = resolveRequestedWorkers(options.parallelism());
+      final var importMaxMemoryBytes = resolveImportMaxMemoryBytes();
       synchronizedLogConsumer.accept(
         "Converting .mcool -> .hict.hdf5, workers=" + requestedWorkers + ", resolutions=" + conversionOrder +
-          ", compressionAlgorithm=" + options.compressionAlgorithm() + ", compressionLevel=" + options.compressionLevel()
+          ", compressionAlgorithm=" + options.compressionAlgorithm() + ", compressionLevel=" + options.compressionLevel() +
+          ", importMemoryBudget=" + formatByteSize(importMaxMemoryBytes)
       );
 
       Files.deleteIfExists(options.outputPath());
@@ -99,6 +104,7 @@ public class McoolToHictConverter {
             intStorageFeatures,
             floatStorageFeatures,
             requestedWorkers,
+            importMaxMemoryBytes,
             synchronizedLogConsumer
           );
           progressTracker.markStep("Wrote resolution " + resolution);
@@ -519,6 +525,7 @@ public class McoolToHictConverter {
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
     final int stripeWorkersRequested,
+    final long importMaxMemoryBytes,
     final @NotNull Consumer<String> logConsumer
   ) {
     final long startedNanos = System.nanoTime();
@@ -553,7 +560,7 @@ public class McoolToHictConverter {
       logConsumer
     );
     final int stripeWorkers = Math.max(1, Math.min(stripeWorkersRequested, Math.max(1, stripeCount)));
-    final var counts = countDenseAndSparse(inputPath, resolution, stripeCount, allRowsStartIndices, stripeWorkers, floatingPointSignal, countingProgress::report);
+    final var counts = countDenseAndSparse(inputPath, resolution, stripeCount, allRowsStartIndices, stripeWorkers, floatingPointSignal, importMaxMemoryBytes, countingProgress::report);
     countingProgress.finish();
     final var denseBlockCount = counts.denseTotal();
     logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
@@ -613,8 +620,15 @@ public class McoolToHictConverter {
       readers.add(reader);
       return reader;
     });
-    final int batchSize = resolveBatchSize(stripeWorkers);
-    final var queue = new java.util.concurrent.ArrayBlockingQueue<StripeWriteTask>(Math.max(4, stripeWorkers * 2));
+    final int batchSize = resolveBatchSize(stripeWorkers, stripeCount, nonzeroPixelCount, importMaxMemoryBytes);
+    final int queueCapacity = resolveWriteQueueCapacity(stripeWorkers, importMaxMemoryBytes);
+    logConsumer.accept(
+      "Resolution " + resolution + ": workers=" + stripeWorkers +
+        ", stripeBatchSize=" + batchSize +
+        ", writeQueueCapacity=" + queueCapacity +
+        ", nonzeroPixels=" + nonzeroPixelCount
+    );
+    final var queue = new java.util.concurrent.ArrayBlockingQueue<StripeWriteTask>(queueCapacity);
     final var writerThread = new Thread(() -> {
       long written = 0L;
       try {
@@ -853,6 +867,7 @@ public class McoolToHictConverter {
     final long @NotNull [] allRowsStartIndices,
     final int stripeWorkers,
     final boolean floatingPointSignal,
+    final long importMaxMemoryBytes,
     final @NotNull java.util.function.IntConsumer countingProgressReporter
   ) {
     if (stripeCount <= 0) {
@@ -870,7 +885,8 @@ public class McoolToHictConverter {
     try {
       final long[] sparseCounts = new long[stripeCount];
       final long[] denseCounts = new long[stripeCount];
-      final int batchSize = resolveBatchSize(stripeWorkers);
+      final long nonzeroPixelCount = allRowsStartIndices.length == 0 ? 0L : allRowsStartIndices[allRowsStartIndices.length - 1];
+      final int batchSize = resolveBatchSize(stripeWorkers, stripeCount, nonzeroPixelCount, importMaxMemoryBytes);
       if (stripeExecutor == null) {
         for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
           checkInterrupted();
@@ -947,23 +963,27 @@ public class McoolToHictConverter {
     final int stripeCount
   ) {
     final var cols = block.cols();
-    final var nativeCounts = NativeProcessingService.getInstance().tryCountStripeBlocks(
-      cols,
-      stripeCount,
-      SUBMATRIX_SIZE,
-      DENSE_THRESHOLD
-    );
-    if (nativeCounts != null) {
-      return new StripeCounts(nativeCounts[0], nativeCounts[1]);
+    final int offset = block.offset();
+    final int n = block.length();
+    if (offset == 0 && n == cols.length) {
+      final var nativeCounts = NativeProcessingService.getInstance().tryCountStripeBlocks(
+        cols,
+        stripeCount,
+        SUBMATRIX_SIZE,
+        DENSE_THRESHOLD
+      );
+      if (nativeCounts != null) {
+        return new StripeCounts(nativeCounts[0], nativeCounts[1]);
+      }
     }
-    final int maxTouched = Math.min(stripeCount, cols.length);
+    final int maxTouched = Math.min(stripeCount, n);
     final var buffer = acquireCountBuffer(stripeCount, maxTouched);
     final int[] counts = buffer.counts();
     final int[] touched = buffer.touched();
     int touchedCount = 0;
 
-    for (int i = 0; i < cols.length; i++) {
-      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+    for (int i = 0; i < n; i++) {
+      final int colStripe = (int) (cols[offset + i] / SUBMATRIX_SIZE);
       if (counts[colStripe]++ == 0) {
         touched[touchedCount++] = colStripe;
       }
@@ -1032,26 +1052,37 @@ public class McoolToHictConverter {
           : new LongPixelBlock(new long[0], new long[0], new long[0]);
       } else {
         blocks[i] = floatingPointSignal
-          ? new DoublePixelBlock(
-          Arrays.copyOfRange(rows, stripeStart, stripeEnd),
-          Arrays.copyOfRange(cols, stripeStart, stripeEnd),
-          Arrays.copyOfRange(doubleVals, stripeStart, stripeEnd)
-        )
-          : new LongPixelBlock(
-          Arrays.copyOfRange(rows, stripeStart, stripeEnd),
-          Arrays.copyOfRange(cols, stripeStart, stripeEnd),
-          Arrays.copyOfRange(longVals, stripeStart, stripeEnd)
-        );
+          ? new DoublePixelBlock(rows, cols, doubleVals, stripeStart, stripeLen)
+          : new LongPixelBlock(rows, cols, longVals, stripeStart, stripeLen);
       }
     }
     return blocks;
   }
 
-  private static int resolveBatchSize(final int stripeWorkers) {
-    if (stripeWorkers <= 1) {
-      return 4;
+  private static int resolveBatchSize(
+    final int stripeWorkers,
+    final int stripeCount,
+    final long nonzeroPixelCount,
+    final long importMaxMemoryBytes
+  ) {
+    if (stripeCount <= 1) {
+      return 1;
     }
-    return Math.min(32, Math.max(4, stripeWorkers));
+    final long avgPixelsPerStripe = Math.max(1L, (nonzeroPixelCount + stripeCount - 1L) / stripeCount);
+    final long workerCount = Math.max(1L, stripeWorkers);
+    final long usableBytesPerWorker = Math.max(MIN_IMPORT_MAX_MEMORY_BYTES / 4L, importMaxMemoryBytes / Math.max(2L, workerCount + 1L));
+    final long conservativeBytesPerPixel = 96L;
+    final long targetPixelsPerBatch = Math.max(1L, usableBytesPerWorker / conservativeBytesPerPixel);
+    final long memoryBoundBatch = Math.max(1L, targetPixelsPerBatch / avgPixelsPerStripe);
+    final int workerFloor = stripeWorkers <= 1 ? 1 : 4;
+    final int adaptive = (int) Math.min(256L, memoryBoundBatch);
+    return Math.max(1, Math.min(stripeCount, Math.max(workerFloor, adaptive)));
+  }
+
+  private static int resolveWriteQueueCapacity(final int stripeWorkers, final long importMaxMemoryBytes) {
+    final long gib = 1024L * 1024L * 1024L;
+    final int memoryBound = importMaxMemoryBytes < 2L * gib ? 2 : importMaxMemoryBytes < 8L * gib ? 4 : 8;
+    return Math.max(2, Math.min(Math.max(2, stripeWorkers * 2), memoryBound));
   }
 
   private static @NotNull StripeBlocks buildStripeBlocks(
@@ -1074,7 +1105,8 @@ public class McoolToHictConverter {
     final var rows = block.rows();
     final var cols = block.cols();
     final var values = block.values();
-    final int n = rows.length;
+    final int offset = block.offset();
+    final int n = block.length();
 
     final int maxTouched = Math.min(stripeCount, n);
     final var buffer = acquireCountBuffer(stripeCount, maxTouched);
@@ -1083,7 +1115,8 @@ public class McoolToHictConverter {
     int touchedCount = 0;
 
     for (int i = 0; i < n; i++) {
-      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      final int sourceIndex = offset + i;
+      final int colStripe = (int) (cols[sourceIndex] / SUBMATRIX_SIZE);
       if (counts[colStripe]++ == 0) {
         touched[touchedCount++] = colStripe;
       }
@@ -1128,17 +1161,18 @@ public class McoolToHictConverter {
 
     final int[] sparsePositions = new int[nonEmptyBlocks];
     for (int i = 0; i < n; i++) {
-      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      final int sourceIndex = offset + i;
+      final int colStripe = (int) (cols[sourceIndex] / SUBMATRIX_SIZE);
       final int idx = colStripeToIndex[colStripe];
-      final int intraRow = (int) (rows[i] % SUBMATRIX_SIZE);
-      final int intraCol = (int) (cols[i] % SUBMATRIX_SIZE);
+      final int intraRow = (int) (rows[sourceIndex] % SUBMATRIX_SIZE);
+      final int intraCol = (int) (cols[sourceIndex] % SUBMATRIX_SIZE);
       if (denseFlags[idx]) {
-        denseFlats[idx][intraRow * SUBMATRIX_SIZE + intraCol] += values[i];
+        denseFlats[idx][intraRow * SUBMATRIX_SIZE + intraCol] += values[sourceIndex];
       } else {
         final int pos = sparsePositions[idx]++;
         sparseRows[idx][pos] = intraRow;
         sparseCols[idx][pos] = intraCol;
-        sparseVals[idx][pos] = values[i];
+        sparseVals[idx][pos] = values[sourceIndex];
       }
     }
 
@@ -1158,7 +1192,8 @@ public class McoolToHictConverter {
     final var rows = block.rows();
     final var cols = block.cols();
     final var values = block.values();
-    final int n = rows.length;
+    final int offset = block.offset();
+    final int n = block.length();
 
     final int maxTouched = Math.min(stripeCount, n);
     final var buffer = acquireCountBuffer(stripeCount, maxTouched);
@@ -1167,7 +1202,8 @@ public class McoolToHictConverter {
     int touchedCount = 0;
 
     for (int i = 0; i < n; i++) {
-      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      final int sourceIndex = offset + i;
+      final int colStripe = (int) (cols[sourceIndex] / SUBMATRIX_SIZE);
       if (counts[colStripe]++ == 0) {
         touched[touchedCount++] = colStripe;
       }
@@ -1212,17 +1248,18 @@ public class McoolToHictConverter {
 
     final int[] sparsePositions = new int[nonEmptyBlocks];
     for (int i = 0; i < n; i++) {
-      final int colStripe = (int) (cols[i] / SUBMATRIX_SIZE);
+      final int sourceIndex = offset + i;
+      final int colStripe = (int) (cols[sourceIndex] / SUBMATRIX_SIZE);
       final int idx = colStripeToIndex[colStripe];
-      final int intraRow = (int) (rows[i] % SUBMATRIX_SIZE);
-      final int intraCol = (int) (cols[i] % SUBMATRIX_SIZE);
+      final int intraRow = (int) (rows[sourceIndex] % SUBMATRIX_SIZE);
+      final int intraCol = (int) (cols[sourceIndex] % SUBMATRIX_SIZE);
       if (denseFlags[idx]) {
-        denseFlats[idx][intraRow * SUBMATRIX_SIZE + intraCol] += values[i];
+        denseFlats[idx][intraRow * SUBMATRIX_SIZE + intraCol] += values[sourceIndex];
       } else {
         final int pos = sparsePositions[idx]++;
         sparseRows[idx][pos] = intraRow;
         sparseCols[idx][pos] = intraCol;
-        sparseVals[idx][pos] = values[i];
+        sparseVals[idx][pos] = values[sourceIndex];
       }
     }
 
@@ -1342,8 +1379,8 @@ public class McoolToHictConverter {
         final var block = blocks[i];
         if (block.length() > 0) {
           sortedBatch[i] = block instanceof DoublePixelBlock doubleBlock
-            ? sortStripePixels(doubleBlock.rows(), doubleBlock.cols(), doubleBlock.values())
-            : sortStripePixels(((LongPixelBlock) block).rows(), ((LongPixelBlock) block).cols(), toDoubleArray(((LongPixelBlock) block).values()));
+            ? sortStripePixels(slice(doubleBlock.rows(), doubleBlock.offset(), doubleBlock.length()), slice(doubleBlock.cols(), doubleBlock.offset(), doubleBlock.length()), slice(doubleBlock.values(), doubleBlock.offset(), doubleBlock.length()))
+            : sortStripePixels(slice(((LongPixelBlock) block).rows(), block.offset(), block.length()), slice(((LongPixelBlock) block).cols(), block.offset(), block.length()), toDoubleArray(slice(((LongPixelBlock) block).values(), block.offset(), block.length())));
         }
       }
       return sortedBatch;
@@ -1357,8 +1394,8 @@ public class McoolToHictConverter {
         final var block = blocks[idx];
         if (block.length() > 0) {
           sortedBatch[idx] = block instanceof DoublePixelBlock doubleBlock
-            ? sortStripePixels(doubleBlock.rows(), doubleBlock.cols(), doubleBlock.values())
-            : sortStripePixels(((LongPixelBlock) block).rows(), ((LongPixelBlock) block).cols(), toDoubleArray(((LongPixelBlock) block).values()));
+            ? sortStripePixels(slice(doubleBlock.rows(), doubleBlock.offset(), doubleBlock.length()), slice(doubleBlock.cols(), doubleBlock.offset(), doubleBlock.length()), slice(doubleBlock.values(), doubleBlock.offset(), doubleBlock.length()))
+            : sortStripePixels(slice(((LongPixelBlock) block).rows(), block.offset(), block.length()), slice(((LongPixelBlock) block).cols(), block.offset(), block.length()), toDoubleArray(slice(((LongPixelBlock) block).values(), block.offset(), block.length())));
         }
       }));
     }
@@ -1389,6 +1426,66 @@ public class McoolToHictConverter {
       return Math.max(1, Runtime.getRuntime().availableProcessors());
     }
     return parallelismOption;
+  }
+
+  private static long resolveImportMaxMemoryBytes() {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.import.maxMemoryBytes"),
+      System.getenv("HICT_IMPORT_MAX_MEMORY_BYTES"),
+      System.getenv("HICT_CONVERSION_MAX_MEMORY_BYTES")
+    );
+    if (configured == null) {
+      return DEFAULT_IMPORT_MAX_MEMORY_BYTES;
+    }
+    try {
+      return Math.max(MIN_IMPORT_MAX_MEMORY_BYTES, parseByteSize(configured));
+    } catch (IllegalArgumentException ignored) {
+      return DEFAULT_IMPORT_MAX_MEMORY_BYTES;
+    }
+  }
+
+  private static long parseByteSize(final @NotNull String rawValue) {
+    final var value = rawValue.trim().toLowerCase();
+    if (value.isBlank()) {
+      throw new IllegalArgumentException("Blank byte size");
+    }
+    int suffixStart = value.length();
+    while (suffixStart > 0 && Character.isLetter(value.charAt(suffixStart - 1))) {
+      suffixStart--;
+    }
+    final var numberPart = value.substring(0, suffixStart).trim();
+    final var suffix = value.substring(suffixStart).trim();
+    final double number = Double.parseDouble(numberPart);
+    final long multiplier = switch (suffix) {
+      case "", "b", "bytes" -> 1L;
+      case "k", "kb", "kib" -> 1024L;
+      case "m", "mb", "mib" -> 1024L * 1024L;
+      case "g", "gb", "gib" -> 1024L * 1024L * 1024L;
+      case "t", "tb", "tib" -> 1024L * 1024L * 1024L * 1024L;
+      default -> throw new IllegalArgumentException("Unknown byte-size suffix: " + suffix);
+    };
+    if (!Double.isFinite(number) || number <= 0.0d) {
+      throw new IllegalArgumentException("Invalid byte size: " + rawValue);
+    }
+    return Math.max(1L, (long) Math.floor(number * multiplier));
+  }
+
+  private static String firstNonBlank(final String... values) {
+    for (final var value : values) {
+      if (value != null && !value.isBlank()) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  private static @NotNull String formatByteSize(final long bytes) {
+    final double gib = bytes / (1024.0d * 1024.0d * 1024.0d);
+    if (gib >= 1.0d) {
+      return String.format(java.util.Locale.ROOT, "%.1f GiB", gib);
+    }
+    final double mib = bytes / (1024.0d * 1024.0d);
+    return String.format(java.util.Locale.ROOT, "%.1f MiB", mib);
   }
 
   private static @NotNull String formatDuration(final long millis) {
@@ -1471,6 +1568,14 @@ public class McoolToHictConverter {
     return new SortedStripePixels(sortedColStripes, sortedIntraRows, sortedIntraCols, sortedValues);
   }
 
+  private static long @NotNull [] slice(final long @NotNull [] values, final int offset, final int length) {
+    return offset == 0 && length == values.length ? values : Arrays.copyOfRange(values, offset, offset + length);
+  }
+
+  private static double @NotNull [] slice(final double @NotNull [] values, final int offset, final int length) {
+    return offset == 0 && length == values.length ? values : Arrays.copyOfRange(values, offset, offset + length);
+  }
+
   private static @NotNull List<StripeDescriptor> dumpStripeData(
     final @NotNull IHDF5Reader src,
     final @NotNull IHDF5Writer dst,
@@ -1543,19 +1648,6 @@ public class McoolToHictConverter {
     final int contigCount = contigNames.length;
     dst.string().writeArray(getContigNameDatasetPath(), contigNames);
 
-    final long[] contigDirections = new long[contigCount];
-    Arrays.fill(contigDirections, ContigDirection.FORWARD.ordinal());
-    dst.int64().writeArray(getContigDirectionDatasetPath(), contigDirections, intStorageFeatures);
-
-    final long[] orderedContigIds = new long[contigCount];
-    final long[] contigScaffoldIds = new long[contigCount];
-    Arrays.fill(contigScaffoldIds, -1L);
-    for (int i = 0; i < contigCount; i++) {
-      orderedContigIds[i] = i;
-    }
-    dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
-    dst.int64().writeArray("/contig_info/contig_scaffold_id", contigScaffoldIds, intStorageFeatures);
-
     final long[] contigLengthBp;
     if (src.object().isDataSet(nameLengthPath + "/length")) {
       contigLengthBp = src.int64().readArray(nameLengthPath + "/length");
@@ -1570,6 +1662,21 @@ public class McoolToHictConverter {
     }
     dst.int64().writeArray(getContigLengthBpDatasetPath(), contigLengthBp, intStorageFeatures);
 
+    final var hictMetadata = readHictAssemblyMetadata(src, contigNames, contigLengthBp);
+    final long[] contigDirections = hictMetadata
+      .map(HictAssemblyMetadata::directions)
+      .orElseGet(() -> defaultDirections(contigCount));
+    dst.int64().writeArray(getContigDirectionDatasetPath(), contigDirections, intStorageFeatures);
+
+    final long[] orderedContigIds = hictMetadata
+      .map(HictAssemblyMetadata::orderedContigIds)
+      .orElseGet(() -> defaultOrderedContigIds(contigCount));
+    final long[] contigScaffoldIds = hictMetadata
+      .map(HictAssemblyMetadata::scaffoldIds)
+      .orElseGet(() -> defaultScaffoldIds(contigCount));
+    dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
+    dst.int64().writeArray("/contig_info/contig_scaffold_id", contigScaffoldIds, intStorageFeatures);
+
     final Map<Long, long[]> contigStartBinsByResolution = new HashMap<>();
     final Map<Long, long[]> contigLengthBinsByResolution = new HashMap<>();
     final Map<Long, List<StripeDescriptor>> stripesByResolution = new HashMap<>();
@@ -1579,8 +1686,8 @@ public class McoolToHictConverter {
       final var lengthBins = new long[chromOffsets.length - 1];
       for (int i = 0; i < lengthBins.length; i++) {
         lengthBins[i] = chromOffsets[i + 1] - chromOffsets[i];
-        if (lengthBins[i] <= 0) {
-          throw new IllegalStateException("Zero-length contig found at resolution " + resolution + " contig=" + i);
+        if (lengthBins[i] < 0) {
+          throw new IllegalStateException("Negative-length contig found at resolution " + resolution + " contig=" + i);
         }
       }
 
@@ -1646,6 +1753,90 @@ public class McoolToHictConverter {
     }
   }
 
+  private static @NotNull Optional<HictAssemblyMetadata> readHictAssemblyMetadata(
+    final @NotNull IHDF5Reader src,
+    final String @NotNull [] contigNames,
+    final long @NotNull [] contigLengthBp
+  ) {
+    if (!src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_NAME_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_LENGTH_BP_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_DIRECTION_PATH)) {
+      return Optional.empty();
+    }
+
+    final var metadataNames = src.string().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_NAME_PATH);
+    final var metadataLengths = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_LENGTH_BP_PATH);
+    if (!Arrays.equals(metadataNames, contigNames) || !Arrays.equals(metadataLengths, contigLengthBp)) {
+      return Optional.empty();
+    }
+
+    final var directions = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_DIRECTION_PATH);
+    if (directions.length != contigNames.length) {
+      return Optional.empty();
+    }
+    for (final long direction : directions) {
+      if (direction < 0L || direction >= ContigDirection.values().length) {
+        return Optional.empty();
+      }
+    }
+
+    final long[] orderedContigIds;
+    if (src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_ORDER_PATH)) {
+      final var candidate = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_ORDER_PATH);
+      orderedContigIds = isValidContigOrder(candidate, contigNames.length)
+        ? candidate
+        : defaultOrderedContigIds(contigNames.length);
+    } else {
+      orderedContigIds = defaultOrderedContigIds(contigNames.length);
+    }
+
+    final long[] scaffoldIds;
+    if (src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH)) {
+      final var candidate = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH);
+      scaffoldIds = candidate.length == contigNames.length
+        ? candidate
+        : defaultScaffoldIds(contigNames.length);
+    } else {
+      scaffoldIds = defaultScaffoldIds(contigNames.length);
+    }
+
+    return Optional.of(new HictAssemblyMetadata(directions, orderedContigIds, scaffoldIds));
+  }
+
+  private static long @NotNull [] defaultDirections(final int contigCount) {
+    final var directions = new long[contigCount];
+    Arrays.fill(directions, ContigDirection.FORWARD.ordinal());
+    return directions;
+  }
+
+  private static long @NotNull [] defaultOrderedContigIds(final int contigCount) {
+    final var orderedContigIds = new long[contigCount];
+    for (int i = 0; i < contigCount; i++) {
+      orderedContigIds[i] = i;
+    }
+    return orderedContigIds;
+  }
+
+  private static long @NotNull [] defaultScaffoldIds(final int contigCount) {
+    final var scaffoldIds = new long[contigCount];
+    Arrays.fill(scaffoldIds, -1L);
+    return scaffoldIds;
+  }
+
+  private static boolean isValidContigOrder(final long @NotNull [] orderedContigIds, final int contigCount) {
+    if (orderedContigIds.length != contigCount) {
+      return false;
+    }
+    final var seen = new boolean[contigCount];
+    for (final long orderedContigId : orderedContigIds) {
+      if (orderedContigId < 0L || orderedContigId >= contigCount || seen[(int) orderedContigId]) {
+        return false;
+      }
+      seen[(int) orderedContigId] = true;
+    }
+    return true;
+  }
+
   private static @NotNull List<ATUDescriptor> generateAtusForContig(
     final int contigId,
     final long resolution,
@@ -1655,6 +1846,9 @@ public class McoolToHictConverter {
   ) {
     long startBin = contigStartBinsByResolution.get(resolution)[contigId];
     final long endBin = startBin + contigLengthBinsByResolution.get(resolution)[contigId];
+    if (endBin <= startBin) {
+      return List.of();
+    }
     final long startStripeId = startBin / SUBMATRIX_SIZE;
 
     final var stripes = stripesByResolution.get(resolution);
@@ -1963,20 +2157,44 @@ public class McoolToHictConverter {
 
     long @NotNull [] cols();
 
+    int offset();
+
     int length();
   }
 
-  private record LongPixelBlock(long @NotNull [] rows, long @NotNull [] cols, long @NotNull [] values) implements PixelBlock {
-    @Override
-    public int length() {
-      return rows.length;
+  private record LongPixelBlock(
+    long @NotNull [] rows,
+    long @NotNull [] cols,
+    long @NotNull [] values,
+    int offset,
+    int length
+  ) implements PixelBlock {
+    private LongPixelBlock(final long @NotNull [] rows, final long @NotNull [] cols, final long @NotNull [] values) {
+      this(rows, cols, values, 0, rows.length);
+    }
+
+    private LongPixelBlock {
+      if (offset < 0 || length < 0 || offset + length > rows.length || offset + length > cols.length || offset + length > values.length) {
+        throw new IllegalArgumentException("Invalid long pixel block slice");
+      }
     }
   }
 
-  private record DoublePixelBlock(long @NotNull [] rows, long @NotNull [] cols, double @NotNull [] values) implements PixelBlock {
-    @Override
-    public int length() {
-      return rows.length;
+  private record DoublePixelBlock(
+    long @NotNull [] rows,
+    long @NotNull [] cols,
+    double @NotNull [] values,
+    int offset,
+    int length
+  ) implements PixelBlock {
+    private DoublePixelBlock(final long @NotNull [] rows, final long @NotNull [] cols, final double @NotNull [] values) {
+      this(rows, cols, values, 0, rows.length);
+    }
+
+    private DoublePixelBlock {
+      if (offset < 0 || length < 0 || offset + length > rows.length || offset + length > cols.length || offset + length > values.length) {
+        throw new IllegalArgumentException("Invalid double pixel block slice");
+      }
     }
   }
 
@@ -2056,5 +2274,12 @@ public class McoolToHictConverter {
   }
 
   private record SaveBlockResult(long sparseOffset, long denseOffset) {
+  }
+
+  private record HictAssemblyMetadata(
+    long @NotNull [] directions,
+    long @NotNull [] orderedContigIds,
+    long @NotNull [] scaffoldIds
+  ) {
   }
 }

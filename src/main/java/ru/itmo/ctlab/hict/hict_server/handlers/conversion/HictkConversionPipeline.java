@@ -243,7 +243,9 @@ public final class HictkConversionPipeline {
           options.compressionAlgorithm(),
           options.agpPath(),
           false,
-          options.parallelism()
+          options.parallelism(),
+          true,
+          ConversionOptions.ExportMode.AUTO
         ),
         wrappedLogger
       );
@@ -383,7 +385,9 @@ public final class HictkConversionPipeline {
           options.compressionAlgorithm(),
           ConversionOptions.NO_AGP,
           false,
-          options.parallelism()
+          options.parallelism(),
+          true,
+          ConversionOptions.ExportMode.AUTO
         ),
         createWrappedImportLogger(logger, stagePlan, "import_hict")
       );
@@ -392,6 +396,198 @@ public final class HictkConversionPipeline {
       processSink.accept(null);
       deleteRecursively(tmpDirectory);
     }
+  }
+
+  public void convertCoolerToHictWithPyramid(final @NotNull ConversionOptions options,
+                                             final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
+                                             final @NotNull Consumer<String> logger,
+                                             final @NotNull Consumer<Process> processSink,
+                                             final @NotNull BooleanSupplier cancellationRequested) throws Exception {
+    if (toolchain.hictkCommand() == null) {
+      throw new IllegalStateException("hictk command is not available");
+    }
+    final var stagePlan = List.of(
+      new StageDefinition("metadata", "Inspect input Cooler metadata", 0.08d),
+      new StageDefinition("extract_base", "Prepare finest .cool base", 0.12d),
+      new StageDefinition("zoomify", "Build .mcool pyramid", 0.25d),
+      new StageDefinition("balance", "Balance generated .mcool resolutions", 0.15d),
+      new StageDefinition("import_hict", "Import .mcool into HiCT", 0.40d)
+    );
+
+    logger.accept("HICT_TOOLCHAIN source=" + toolchain.source() + " platform=" + toolchain.platform());
+    final var tmpDirectory = Files.createTempDirectory("hict-mcool-pyramid-pipeline-");
+    try {
+      emitStage(logger, stagePlan, "metadata", 0.0d, "Reading Cooler metadata");
+      final var metadata = readMetadata(options.inputPath(), toolchain, processSink, cancellationRequested);
+      final var baseResolution = metadata.resolutions().stream().mapToLong(Long::longValue).min()
+        .orElseThrow(() -> new IllegalStateException("No input resolutions were resolved for " + options.inputPath().getFileName()));
+      final var requestedPyramidResolutions = resolvePyramidTargetResolutions(options.resolutions(), metadata.resolutions());
+      emitStage(
+        logger,
+        stagePlan,
+        "metadata",
+        1.0d,
+        "Resolved finest resolution " + baseResolution + " from " + metadata.resolutions().size() + " input resolution(s)"
+      );
+
+      emitStage(logger, stagePlan, "extract_base", 0.0d, "Preparing base .cool at resolution " + baseResolution);
+      final Path baseCoolPath;
+      if (isSingleResolutionCooler(options.inputPath())) {
+        baseCoolPath = options.inputPath();
+        emitStage(logger, stagePlan, "extract_base", 1.0d, "Using input .cool as base resolution");
+      } else {
+        baseCoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + "." + baseResolution + ".base.cool");
+        convertMcoolResolutionToCool(options, toolchain, baseResolution, baseCoolPath, tmpDirectory, logger, processSink, cancellationRequested);
+        emitStage(logger, stagePlan, "extract_base", 1.0d, "Extracted base resolution to " + baseCoolPath.getFileName());
+      }
+
+      final var generatedMcoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".pyramid.mcool");
+      emitStage(logger, stagePlan, "zoomify", 0.0d, "Zoomifying base .cool to .mcool");
+      final var zoomifyState = new ZoomifyProgressState(requestedPyramidResolutions);
+      final var zoomifyCommand = new ArrayList<String>();
+      zoomifyCommand.add(Objects.requireNonNull(toolchain.hictkCommand()).toString());
+      zoomifyCommand.add("zoomify");
+      zoomifyCommand.add(baseCoolPath.toString());
+      zoomifyCommand.add(generatedMcoolPath.toString());
+      zoomifyCommand.add("--force");
+      zoomifyCommand.add("--threads");
+      zoomifyCommand.add(Integer.toString(normalizeParallelism(options.parallelism())));
+      zoomifyCommand.add("--compression-lvl");
+      zoomifyCommand.add(Integer.toString(normalizeHictkCompressionLevel(options.compressionLevel())));
+      if (options.resolutions() == null || options.resolutions().isEmpty()) {
+        zoomifyCommand.add("--nice-steps");
+        zoomifyCommand.add("--copy-base-resolution");
+      } else {
+        zoomifyCommand.add("--resolutions");
+        requestedPyramidResolutions.stream().map(String::valueOf).forEach(zoomifyCommand::add);
+      }
+      runStreamingCommand(
+        zoomifyCommand,
+        tmpDirectory,
+        logger,
+        line -> {
+          logger.accept(line);
+          zoomifyState.onLogLine(line).ifPresent(detail -> emitStage(
+            logger,
+            stagePlan,
+            "zoomify",
+            zoomifyState.progress(),
+            detail
+          ));
+        },
+        processSink,
+        cancellationRequested
+      );
+      final var generatedResolutions = readMetadata(generatedMcoolPath, toolchain, processSink, cancellationRequested).resolutions();
+      emitStage(logger, stagePlan, "zoomify", 1.0d, "Generated " + generatedResolutions.size() + " resolution(s)");
+
+      emitStage(logger, stagePlan, "balance", 0.0d, "Balancing " + generatedResolutions.size() + " generated resolution(s)");
+      for (int i = 0; i < generatedResolutions.size(); i++) {
+        checkCancelled(cancellationRequested);
+        final var resolution = generatedResolutions.get(i);
+        emitStage(logger, stagePlan, "balance", i / (double) generatedResolutions.size(), "Balancing resolution " + resolution);
+        try {
+          runStreamingCommand(
+            List.of(
+              Objects.requireNonNull(toolchain.hictkCommand()).toString(),
+              "balance",
+              "ice",
+              "--force",
+              "--threads",
+              Integer.toString(normalizeParallelism(options.parallelism())),
+              "--tmpdir",
+              tmpDirectory.toString(),
+              "--ignore-diags",
+              "2",
+              generatedMcoolPath + "::/resolutions/" + resolution
+            ),
+            tmpDirectory,
+            logger,
+            logger::accept,
+            processSink,
+            cancellationRequested
+          );
+        } catch (IllegalStateException balanceFailure) {
+          logger.accept("WARNING: hictk balance failed for resolution " + resolution + "; keeping unbalanced generated pixels. " + balanceFailure.getMessage());
+        }
+        emitStage(logger, stagePlan, "balance", (i + 1) / (double) generatedResolutions.size(), "Processed balance for resolution " + resolution);
+      }
+
+      emitStage(logger, stagePlan, "import_hict", 0.0d, "Importing generated .mcool into HiCT");
+      new McoolToHictConverter().convert(
+        new ConversionOptions(
+          generatedMcoolPath,
+          options.outputPath(),
+          generatedResolutions,
+          options.chunkSize(),
+          options.compressionLevel(),
+          options.compressionAlgorithm(),
+          options.agpPath(),
+          false,
+          options.parallelism(),
+          true,
+          false,
+          ConversionOptions.ExportMode.AUTO
+        ),
+        createWrappedImportLogger(logger, stagePlan, "import_hict")
+      );
+      emitStage(logger, stagePlan, "import_hict", 1.0d, "Created " + options.outputPath().getFileName());
+    } finally {
+      processSink.accept(null);
+      deleteRecursively(tmpDirectory);
+    }
+  }
+
+  private void convertMcoolResolutionToCool(final @NotNull ConversionOptions options,
+                                            final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
+                                            final long baseResolution,
+                                            final @NotNull Path baseCoolPath,
+                                            final @NotNull Path tmpDirectory,
+                                            final @NotNull Consumer<String> logger,
+                                            final @NotNull Consumer<Process> processSink,
+                                            final @NotNull BooleanSupplier cancellationRequested) throws Exception {
+    final var hictk = Objects.requireNonNull(toolchain.hictkCommand()).toString();
+    final var uriCommand = List.of(
+      hictk,
+      "convert",
+      options.inputPath() + "::/resolutions/" + baseResolution,
+      baseCoolPath.toString(),
+      "--output-fmt",
+      "cool",
+      "--threads",
+      Integer.toString(normalizeParallelism(options.parallelism())),
+      "--compression-lvl",
+      Integer.toString(normalizeHictkCompressionLevel(options.compressionLevel())),
+      "--force"
+    );
+    try {
+      runStreamingCommand(uriCommand, tmpDirectory, logger, logger::accept, processSink, cancellationRequested);
+      return;
+    } catch (IllegalStateException uriFailure) {
+      logger.accept("WARNING: hictk could not extract " + options.inputPath().getFileName() + "::/resolutions/" + baseResolution + "; retrying with --resolutions. " + uriFailure.getMessage());
+    }
+    runStreamingCommand(
+      List.of(
+        hictk,
+        "convert",
+        options.inputPath().toString(),
+        baseCoolPath.toString(),
+        "--output-fmt",
+        "cool",
+        "--resolutions",
+        Long.toString(baseResolution),
+        "--threads",
+        Integer.toString(normalizeParallelism(options.parallelism())),
+        "--compression-lvl",
+        Integer.toString(normalizeHictkCompressionLevel(options.compressionLevel())),
+        "--force"
+      ),
+      tmpDirectory,
+      logger,
+      logger::accept,
+      processSink,
+      cancellationRequested
+    );
   }
 
   private @NotNull HicMetadata readMetadata(final @NotNull Path inputPath,
@@ -755,6 +951,33 @@ public final class HictkConversionPipeline {
     final var minResolution = targetResolutions.stream().mapToLong(Long::longValue).min().orElse(0L);
     final var maxResolution = targetResolutions.stream().mapToLong(Long::longValue).max().orElse(0L);
     return minResolution > 0L && maxResolution < minResolution * 10L;
+  }
+
+  static @NotNull List<Long> resolvePyramidTargetResolutions(final @NotNull List<Long> requested,
+                                                             final @NotNull List<Long> available) {
+    final var baseResolution = available.stream().mapToLong(Long::longValue).min()
+      .orElseThrow(() -> new IllegalStateException("Input Cooler does not contain any resolutions"));
+    if (requested == null || requested.isEmpty()) {
+      return List.of(baseResolution);
+    }
+    final var out = new ArrayList<Long>();
+    out.add(baseResolution);
+    requested.stream()
+      .filter(value -> value != null && value >= baseResolution)
+      .sorted()
+      .distinct()
+      .forEach(value -> {
+        if (!out.contains(value)) {
+          out.add(value);
+        }
+      });
+    out.sort(Comparator.naturalOrder());
+    return List.copyOf(out);
+  }
+
+  private static boolean isSingleResolutionCooler(final @NotNull Path inputPath) {
+    final var lowered = inputPath.getFileName().toString().toLowerCase(Locale.ROOT);
+    return lowered.endsWith(".cool") && !lowered.endsWith(".mcool");
   }
 
   private @NotNull Consumer<String> createWrappedImportLogger(final @NotNull Consumer<String> logger,

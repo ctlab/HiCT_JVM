@@ -130,8 +130,91 @@ resolve_jhdf5_for_portable_release() {
   esac
 }
 
+darwin_jhdf5_platform_dir() {
+  if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
+    printf '%s\n' "x86_64-Mac OS X"
+  else
+    printf '%s\n' "aarch64-Mac OS X"
+  fi
+}
+
+darwin_jhdf5_archive_name() {
+  printf '%s\n' "${HICT_JHDF5_NATIVES_ARCHIVE_NAME:-sis-jhdf5-19.04.1-natives.tar.gz}"
+}
+
+resolve_darwin_jhdf5_archive_source() {
+  local archive_name
+  archive_name="$(darwin_jhdf5_archive_name)"
+  local candidates=(
+    "${PROJECT_DIR}/build/jhdf5-runtime/${archive_name}"
+    "${PROJECT_DIR}/build/resources/main/libs/${archive_name}"
+    "${HICT_JHDF5_NATIVES_ARCHIVE:-}"
+    "${PROJECT_DIR}/${HICT_JHDF5_NATIVES_ARCHIVE:-}"
+    "${PROJECT_DIR}/src/main/resources/libs/${archive_name}"
+    "${PROJECT_DIR}/.gradle/jhdf5/${archive_name}"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -n "${candidate}" && -f "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+archive_contains_darwin_jhdf5_payload() {
+  local archive="$1"
+  local platform_dir
+  platform_dir="$(darwin_jhdf5_platform_dir)"
+  tar -tzf "${archive}" | grep -E -qx "native/jhdf5/${platform_dir}/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib" &&
+    tar -tzf "${archive}" | grep -qx "native/jhdf5/${platform_dir}/libjhdf5.jnilib"
+}
+
+fat_jar_contains_darwin_jhdf5_payload() {
+  if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
+    "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'
+  else
+    "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_arm64|macos_arm64|darwin_arm64)/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'
+  fi
+}
+
+prepare_darwin_jhdf5_sidecar_archive() {
+  local source_archive
+  source_archive="$(resolve_darwin_jhdf5_archive_source || true)"
+  if [[ -z "${source_archive}" ]]; then
+    if fat_jar_contains_darwin_jhdf5_payload; then
+      return 0
+    fi
+    echo "Cannot find JHDF5 native archive for macOS ${DARWIN_ARCH}; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
+    exit 1
+  fi
+  if ! archive_contains_darwin_jhdf5_payload "${source_archive}"; then
+    echo "JHDF5 native archive ${source_archive} does not contain the required macOS ${DARWIN_ARCH} HDF5/JHDF5 dylibs." >&2
+    exit 1
+  fi
+
+  local platform_dir
+  platform_dir="$(darwin_jhdf5_platform_dir)"
+  local archive_name
+  archive_name="$(darwin_jhdf5_archive_name)"
+  local tmp
+  tmp="$(mktemp -d)"
+  tar -xzf "${source_archive}" -C "${tmp}" "native/jhdf5/${platform_dir}"
+  tar -czf "${APP_DIR}/lib/${archive_name}" -C "${tmp}" "native/jhdf5/${platform_dir}"
+  rm -rf "${tmp}"
+  echo "[darwin/portable] Bundled platform JHDF5 native archive: lib/${archive_name} (${platform_dir})"
+}
+
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   resolve_jhdf5_for_portable_release
+  # macOS portable packages intentionally embed only the target platform's
+  # JHDF5/HDF5 runtime sidecar.  The separately published fat JAR remains
+  # universal and is validated by the Linux release build.
+  export HICT_DARWIN_ARCH="${DARWIN_ARCH}"
+  export HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}"
+  export HICT_JHDF5_RUNTIME_PLATFORMS="${HICT_JHDF5_RUNTIME_PLATFORMS:-$(darwin_jhdf5_platform_dir)}"
+  export HICT_VERIFY_BUNDLED_JHDF5_SCOPE="${HICT_VERIFY_BUNDLED_JHDF5_SCOPE:-runtime}"
   (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true verifyBundledJhdf5Payload shadowJar)
 fi
 
@@ -142,25 +225,14 @@ if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
   echo "Fat JAR was not found under ${PROJECT_DIR}/build/libs" >&2
   exit 1
 fi
-JHDF5_NATIVES_ARCHIVE="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name 'sis-jhdf5-*-natives.tar.gz' | sort | tail -n 1)"
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
   echo "Fat JAR does not contain webui/index.html; portable packages require a baked-in HiCT_WebUI build." >&2
   exit 1
 fi
-OSX_RESOURCE_PLATFORM="osx_arm64"
-if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
-  OSX_RESOURCE_PLATFORM="osx_64"
-fi
-if [[ "${DARWIN_ARCH}" == "x86_64" ]]; then
-  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx 'resources/libs/(osx_64|macos_64|darwin_x86_64)/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib' &&
-     { [[ -z "${JHDF5_NATIVES_ARCHIVE}" || ! -f "${JHDF5_NATIVES_ARCHIVE}" ]] || ! tar -tzf "${JHDF5_NATIVES_ARCHIVE}" | grep -E -qx 'native/jhdf5/x86_64-Mac OS X/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'; }; then
-    echo "Fat JAR does not contain a supported x86_64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
-    exit 1
-  fi
-else
-  if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -E -qx "resources/libs/(${OSX_RESOURCE_PLATFORM}|darwin_${DARWIN_ARCH})/libhdf5(\\.[0-9]+(\\.[0-9]+)*)?\\.dylib" &&
-     { [[ -z "${JHDF5_NATIVES_ARCHIVE}" || ! -f "${JHDF5_NATIVES_ARCHIVE}" ]] || ! tar -tzf "${JHDF5_NATIVES_ARCHIVE}" | grep -E -qx 'native/jhdf5/aarch64-Mac OS X/libhdf5(\.[0-9]+(\.[0-9]+)*)?\.dylib'; }; then
-    echo "Fat JAR does not contain a supported arm64 macOS HDF5 dylib in resources/libs/; macOS portable packages require the JHDF5/HDF5 dylib tree." >&2
+DARWIN_JHDF5_ARCHIVE_SOURCE="$(resolve_darwin_jhdf5_archive_source || true)"
+if ! fat_jar_contains_darwin_jhdf5_payload; then
+  if [[ -z "${DARWIN_JHDF5_ARCHIVE_SOURCE}" ]] || ! archive_contains_darwin_jhdf5_payload "${DARWIN_JHDF5_ARCHIVE_SOURCE}"; then
+    echo "Neither the fat JAR nor the split JHDF5 native archive contains a supported macOS ${DARWIN_ARCH} HDF5/JHDF5 dylib tree." >&2
     exit 1
   fi
 fi
@@ -175,9 +247,7 @@ mkdir -p \
   "${ARTIFACT_DIR}"
 
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
-if [[ -n "${JHDF5_NATIVES_ARCHIVE}" && -f "${JHDF5_NATIVES_ARCHIVE}" ]]; then
-  cp "${JHDF5_NATIVES_ARCHIVE}" "${APP_DIR}/lib/$(basename "${JHDF5_NATIVES_ARCHIVE}")"
-fi
+prepare_darwin_jhdf5_sidecar_archive
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"

@@ -47,6 +47,11 @@ public class InfoHandlersHolder extends HandlersHolder {
         )));
     });
 
+    router.get("/changelog").handler(ctx -> ctx.response()
+      .putHeader("content-type", "application/json")
+      .setStatusCode(200)
+      .end(Json.encode(Map.of("text", readChangelog()))));
+
     router.post("/diagnostics/workers").handler(ctx -> {
       final @NotNull LocalMap<String, Object> map = this.vertx.sharedData().getLocalMap("hict_server");
       final var schedulerWrapper =
@@ -134,6 +139,32 @@ public class InfoHandlersHolder extends HandlersHolder {
       // ignore
     }
     return "unknown";
+  }
+
+  private @NotNull String readChangelog() {
+    final var fallback = "Changelog for this build was not detected";
+    try {
+      final var changelogPath = Path.of("CHANGELOG.md");
+      if (Files.exists(changelogPath)) {
+        final var text = Files.readString(changelogPath, StandardCharsets.UTF_8).trim();
+        if (!text.isBlank()) {
+          return text;
+        }
+      }
+    } catch (final Exception ignored) {
+      // ignore
+    }
+    try (final InputStream stream = getClass().getResourceAsStream("/CHANGELOG.md")) {
+      if (stream != null) {
+        final var text = new String(stream.readAllBytes(), StandardCharsets.UTF_8).trim();
+        if (!text.isBlank()) {
+          return text;
+        }
+      }
+    } catch (final Exception ignored) {
+      // ignore
+    }
+    return fallback;
   }
 
   private @NotNull String readWebUiVersion() {
