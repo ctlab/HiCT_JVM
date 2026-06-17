@@ -16,6 +16,7 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Added an export workflow for converting `.hict.hdf5` matrices to `.mcool`, with current or custom AGP assembly state.
 - Added native-assisted sorting and chunked direct export improvements for HiCT-to-Cooler conversion, reducing memory pressure while preserving the existing `.hict.hdf5` layout and Cooler contracts.
 - Added default-on hictk zoomify and balancing controls for opening `.cool` and `.mcool` inputs, so single-resolution Cooler files can be expanded into an optimized resolution pyramid before import.
+- Fixed Open Wizard Cooler import preparation so hictk zoomify/balance options invalidate stale direct-import caches and no longer silently open a single-resolution map when pyramid generation was requested.
 - Added editable Cooler export filenames, with `.cool` used by default for finest-resolution exports and `.mcool` used by default for all-resolution exports.
 - Added default-on balancing for exported Cooler files in hictk-assisted export mode, and made automatic export mode prefer hictk when it is available.
 - Added real single-resolution `.cool` export support through both direct internal and hictk-assisted export, while keeping multi-resolution `.mcool` export for all-resolution workflows.

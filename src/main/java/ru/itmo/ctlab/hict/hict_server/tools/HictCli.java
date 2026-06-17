@@ -503,7 +503,21 @@ public class HictCli implements Runnable {
     @Override
     public Integer call() throws Exception {
       initializeHdf5();
-      new McoolToHictConverter().convert(toOptions(ConversionOptions.NO_AGP, false), stdoutLogger());
+      final var options = toOptions(ConversionOptions.NO_AGP, false);
+      if (options.buildResolutionPyramid() || options.balanceInputCoolers()) {
+        final var pipeline = hictkPipeline();
+        final var toolchain = pipeline.requireToolchain();
+        pipeline.convertCoolerToHictWithPyramid(
+          options,
+          toolchain,
+          stdoutLogger(),
+          process -> {
+          },
+          () -> false
+        );
+      } else {
+        new McoolToHictConverter().convert(options, stdoutLogger());
+      }
       return 0;
     }
   }

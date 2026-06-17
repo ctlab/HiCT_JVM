@@ -219,7 +219,9 @@ public class FSHandlersHolder extends HandlersHolder {
           if (filename == null || filename.isBlank()) {
             throw new IllegalArgumentException("filename is required");
           }
-          return cacheManager().resolveOpenPath(filename).toJson();
+          final var requireResolutionPyramid = request.getBoolean("buildResolutionPyramid", false);
+          final var requireBalancedInputCooler = request.getBoolean("balanceInputCoolers", false);
+          return cacheManager().resolveOpenPath(filename, requireResolutionPyramid, requireBalancedInputCooler).toJson();
         },
         response -> ctx.response().putHeader("content-type", "application/json").end(response.encode())
       );

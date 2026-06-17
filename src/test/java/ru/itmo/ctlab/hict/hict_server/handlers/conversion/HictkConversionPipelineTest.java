@@ -101,6 +101,27 @@ class HictkConversionPipelineTest {
   }
 
   @Test
+  void requestedPyramidGuardRejectsSingleResolutionOutputForSingleResolutionInput() {
+    assertThrows(
+      IllegalStateException.class,
+      () -> HictkConversionPipeline.ensureRequestedPyramidWasGenerated(
+        List.of(1_000L),
+        List.of(1_000L),
+        Path.of("single.mcool")
+      )
+    );
+  }
+
+  @Test
+  void requestedPyramidGuardAcceptsGeneratedMultiResolutionOutput() {
+    HictkConversionPipeline.ensureRequestedPyramidWasGenerated(
+      List.of(1_000L),
+      List.of(1_000L, 2_000L, 5_000L),
+      Path.of("single.mcool")
+    );
+  }
+
+  @Test
   void syntheticCooChromSizesUseObservedZeroBasedBinRange() throws Exception {
     final var coo = tempDir.resolve("sample.coo");
     Files.writeString(

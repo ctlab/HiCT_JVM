@@ -56,6 +56,12 @@ public final class MatrixConversionCacheManager {
   }
 
   public @NotNull MatrixOpenResolution resolveOpenPath(final @NotNull String relativeFilename) {
+    return resolveOpenPath(relativeFilename, false, false);
+  }
+
+  public @NotNull MatrixOpenResolution resolveOpenPath(final @NotNull String relativeFilename,
+                                                       final boolean requireResolutionPyramid,
+                                                       final boolean requireBalancedInputCooler) {
     final var sourcePath = this.dataDirectory.resolve(relativeFilename).normalize().toAbsolutePath();
     if (!sourcePath.startsWith(this.dataDirectory)) {
       throw new IllegalArgumentException("Invalid filename");
@@ -142,6 +148,7 @@ public final class MatrixConversionCacheManager {
     final var sourceCurrent = metadata.sourceFingerprint().matches(currentSourceFingerprint);
     final var currentDependencyFingerprints = fingerprintDependencies(sourcePath, direction);
     final var dependenciesCurrent = metadata.dependenciesMatch(currentDependencyFingerprints);
+    final var optionsCurrent = metadata.satisfiesImportPreparation(requireResolutionPyramid, requireBalancedInputCooler);
     final boolean outputCurrent;
     final FileFingerprint currentOutputFingerprint;
     if (outputExists) {
@@ -152,7 +159,7 @@ public final class MatrixConversionCacheManager {
       outputCurrent = false;
     }
 
-    if (sourceCurrent && dependenciesCurrent && outputCurrent) {
+    if (sourceCurrent && dependenciesCurrent && optionsCurrent && outputCurrent) {
       return new MatrixOpenResolution(
         relativeFilename,
         kindForFilename(relativeFilename),
@@ -173,6 +180,9 @@ public final class MatrixConversionCacheManager {
     }
     if (!dependenciesCurrent) {
       warnings.add("One or more conversion sidecar files changed or were added/removed. A fresh conversion is required.");
+    }
+    if (!optionsCurrent) {
+      warnings.add("Cached conversion was created without the requested Cooler preparation options. A fresh conversion is required.");
     }
     if (!outputCurrent) {
       warnings.add("Converted output changed since the cache metadata was written. Re-convert to ensure consistency.");
@@ -202,6 +212,15 @@ public final class MatrixConversionCacheManager {
                                          final @NotNull Path outputPath,
                                          final @NotNull ConversionDirection direction,
                                          final @NotNull List<Path> dependencyPaths) {
+    recordSuccessfulConversion(sourcePath, outputPath, direction, dependencyPaths, false, false);
+  }
+
+  public void recordSuccessfulConversion(final @NotNull Path sourcePath,
+                                         final @NotNull Path outputPath,
+                                         final @NotNull ConversionDirection direction,
+                                         final @NotNull List<Path> dependencyPaths,
+                                         final boolean buildResolutionPyramid,
+                                         final boolean balanceInputCoolers) {
     final var absoluteSource = sourcePath.normalize().toAbsolutePath();
     final var absoluteOutput = outputPath.normalize().toAbsolutePath();
     if (!absoluteSource.startsWith(this.dataDirectory) || !absoluteOutput.startsWith(this.dataDirectory)) {
@@ -216,6 +235,8 @@ public final class MatrixConversionCacheManager {
       this.fingerprintService.fingerprint(absoluteSource),
       this.fingerprintService.fingerprint(absoluteOutput),
       dependencies,
+      buildResolutionPyramid,
+      balanceInputCoolers,
       System.currentTimeMillis()
     );
     final var metadataPath = metadataPath(absoluteSource, direction);
@@ -420,6 +441,8 @@ public final class MatrixConversionCacheManager {
                                           @NotNull FileFingerprint sourceFingerprint,
                                           FileFingerprint outputFingerprint,
                                           @NotNull List<DependencyFingerprint> dependencies,
+                                          boolean buildResolutionPyramid,
+                                          boolean balanceInputCoolers,
                                           long createdAtMs) {
     private @NotNull JsonObject toJson() {
       return new JsonObject()
@@ -430,7 +453,15 @@ public final class MatrixConversionCacheManager {
         .put("sourceFingerprint", this.sourceFingerprint.toJson())
         .put("outputFingerprint", this.outputFingerprint != null ? this.outputFingerprint.toJson() : null)
         .put("dependencies", new JsonArray(this.dependencies.stream().map(DependencyFingerprint::toJson).toList()))
+        .put("buildResolutionPyramid", this.buildResolutionPyramid)
+        .put("balanceInputCoolers", this.balanceInputCoolers)
         .put("createdAtMs", this.createdAtMs);
+    }
+
+    private boolean satisfiesImportPreparation(final boolean requireResolutionPyramid,
+                                               final boolean requireBalancedInputCooler) {
+      return (!requireResolutionPyramid || this.buildResolutionPyramid)
+        && (!requireBalancedInputCooler || this.balanceInputCoolers);
     }
 
     private boolean dependenciesMatch(final @NotNull List<DependencyFingerprint> currentDependencies) {
@@ -463,6 +494,8 @@ public final class MatrixConversionCacheManager {
           ? FileFingerprint.fromJson(json.getJsonObject("outputFingerprint"))
           : null,
         dependencies,
+        json.getBoolean("buildResolutionPyramid", false),
+        json.getBoolean("balanceInputCoolers", false),
         json.getLong("createdAtMs", 0L)
       );
     }
