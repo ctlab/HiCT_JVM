@@ -20,7 +20,10 @@ import ru.itmo.ctlab.hict.hict_server.launcher.HictLauncherGui;
 import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
@@ -36,11 +39,28 @@ import java.util.regex.Pattern;
     HictCli.StartApiServer.class,
     HictCli.LauncherGui.class,
     HictCli.Convert.class,
-    HictCli.CheckToolchains.class
+    HictCli.CheckToolchains.class,
+    HictCli.Toolbox.class
   }
 )
 public class HictCli implements Runnable {
-  @Option(names = {"-v", "--verbose"}, description = "Enable verbose output.")
+  private static final Set<String> BOOLEAN_OPTIONS_WITH_OPTIONAL_VALUE = Set.of(
+    "--verbose",
+    "-v",
+    "--serve-webui",
+    "--require-hictk",
+    "--require-dotplot",
+    "--require-hdf5-native",
+    "--check-available-natives",
+    "--quiet",
+    "--all-resolutions",
+    "--build-resolution-pyramid",
+    "--balance-input-coolers",
+    "--balance-exported-coolers",
+    "--apply-agp"
+  );
+
+  @Option(names = {"-v", "--verbose"}, arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Enable verbose output.")
   boolean verbose;
 
   @Override
@@ -50,7 +70,9 @@ public class HictCli implements Runnable {
 
   public static void main(final String[] args) {
     final CommandLine commandLine = new CommandLine(new HictCli())
-      .setCaseInsensitiveEnumValuesAllowed(true);
+      .setCaseInsensitiveEnumValuesAllowed(true)
+      .setParameterExceptionHandler(HictCli::handleParameterException)
+      .setExecutionExceptionHandler(HictCli::handleExecutionException);
 
     if (args.length == 0) {
       if (shouldUseLauncherGui()) {
@@ -67,18 +89,143 @@ public class HictCli implements Runnable {
       return;
     }
 
-    final CommandLine.ParseResult parseResult = commandLine.parseArgs(args);
-    if (parseResult.hasMatchedOption("verbose")) {
+    if (isVerboseRequested(args)) {
       System.setProperty("HICT_VERBOSE", "true");
     }
-    final var subcommand = parseResult.subcommand();
-    final String subcommandName = subcommand != null ? subcommand.commandSpec().name() : "";
+    if ("toolbox".equals(args[0])) {
+      System.exit(runToolbox(Arrays.copyOfRange(args, 1, args.length)));
+      return;
+    }
+    if (isToolLikeCommand(args[0])) {
+      System.err.println("HiCT does not run external tool names as top-level commands.");
+      System.err.println("Did you mean: hict toolbox " + args[0] + " ...");
+      System.err.println();
+      printToolboxUsage(System.err);
+      System.exit(CommandLine.ExitCode.USAGE);
+      return;
+    }
 
-    final int exitCode = commandLine.execute(args);
+    final int exitCode = commandLine.execute(normalizeBooleanOptionArgs(args));
+    final var parseResult = commandLine.getParseResult();
+    final var subcommand = parseResult == null ? null : parseResult.subcommand();
+    final String subcommandName = subcommand != null ? subcommand.commandSpec().name() : "";
     if ("start-server".equals(subcommandName) || "start-api-server".equals(subcommandName)) {
       return;
     }
     System.exit(exitCode);
+  }
+
+  private static int handleParameterException(final CommandLine.ParameterException ex,
+                                              final String[] args) {
+    final var commandLine = ex.getCommandLine();
+    System.err.println("HiCT could not parse the command line:");
+    System.err.println("  " + ex.getMessage());
+    printLikelyIntent(args);
+    System.err.println();
+    System.err.println("Boolean options accept true/false, yes/no, y/n, or 1/0.");
+    System.err.println("For negatable options you can also use --no-build-resolution-pyramid, --no-balance-input-coolers, or --no-balance-exported-coolers.");
+    System.err.println();
+    commandLine.usage(System.err);
+    return CommandLine.ExitCode.USAGE;
+  }
+
+  private static int handleExecutionException(final Exception ex,
+                                              final CommandLine commandLine,
+                                              final CommandLine.ParseResult parseResult) {
+    System.err.println("HiCT command failed:");
+    System.err.println("  " + userFacingMessage(ex));
+    if (Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"))) {
+      ex.printStackTrace(System.err);
+    } else {
+      System.err.println("Run again with --verbose for a stack trace.");
+    }
+    return 1;
+  }
+
+  private static void printLikelyIntent(final String[] args) {
+    if (args == null || args.length == 0) {
+      return;
+    }
+    if (isToolLikeCommand(args[0])) {
+      System.err.println("  Did you mean: hict toolbox " + args[0] + " ...");
+    }
+  }
+
+  private static boolean isToolLikeCommand(final String raw) {
+    final var value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+    return value.equals("hictk")
+      || value.equals("minimap2")
+      || value.equals("mm2plus")
+      || value.equals("mm2-plus")
+      || value.equals("mm2plus-avx2")
+      || value.equals("mm2-plus-avx2")
+      || value.equals("mm2plus-avx512")
+      || value.equals("mm2-plus-avx512");
+  }
+
+  private static String userFacingMessage(final Throwable ex) {
+    final var message = ex.getMessage();
+    if (message != null && !message.isBlank()) {
+      return message;
+    }
+    return ex.getClass().getSimpleName();
+  }
+
+  private static boolean isVerboseRequested(final String[] args) {
+    for (int i = 0; i < args.length; i++) {
+      final var arg = args[i];
+      if ("--verbose".equals(arg) || "-v".equals(arg)) {
+        if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+          return parseBooleanOption(args[i + 1]);
+        }
+        return true;
+      }
+      if (arg.startsWith("--verbose=")) {
+        return parseBooleanOption(arg.substring("--verbose=".length()));
+      }
+    }
+    return false;
+  }
+
+  private static String[] normalizeBooleanOptionArgs(final String[] args) {
+    final var normalized = new ArrayList<String>(args.length);
+    for (int i = 0; i < args.length; i++) {
+      final var arg = args[i];
+      if (BOOLEAN_OPTIONS_WITH_OPTIONAL_VALUE.contains(arg)
+        && i + 1 < args.length
+        && !args[i + 1].startsWith("-")) {
+        try {
+          parseBooleanOption(args[i + 1]);
+          normalized.add(arg + "=" + args[i + 1]);
+          i++;
+          continue;
+        } catch (final CommandLine.TypeConversionException ignored) {
+          // Leave invalid values untouched so picocli reports the exact bad token.
+        }
+      }
+      normalized.add(arg);
+    }
+    return normalized.toArray(String[]::new);
+  }
+
+  private static boolean parseBooleanOption(final String raw) {
+    if (raw == null || raw.isBlank()) {
+      return true;
+    }
+    return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+      case "true", "yes", "y", "1", "on" -> true;
+      case "false", "no", "n", "0", "off" -> false;
+      default -> throw new CommandLine.TypeConversionException(
+        "Expected one of true/false, yes/no, y/n, or 1/0, but got '" + raw + "'"
+      );
+    };
+  }
+
+  static class BooleanOptionConverter implements CommandLine.ITypeConverter<Boolean> {
+    @Override
+    public Boolean convert(final String value) {
+      return parseBooleanOption(value);
+    }
   }
 
   private static boolean shouldUseLauncherGui() {
@@ -111,7 +258,7 @@ public class HictCli implements Runnable {
     description = "Start API server with WebUI."
   )
   static class StartServer implements Callable<Integer> {
-    @Option(names = "--serve-webui", description = "Whether to serve WebUI (default: true).", defaultValue = "true")
+    @Option(names = "--serve-webui", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Whether to serve WebUI (default: true).", defaultValue = "true")
     boolean serveWebUi;
 
     @Override
@@ -158,19 +305,19 @@ public class HictCli implements Runnable {
     description = "Verify bundled or configured external conversion and dotplot tools."
   )
   static class CheckToolchains implements Callable<Integer> {
-    @Option(names = "--require-hictk", description = "Fail if hictk is not available.")
+    @Option(names = "--require-hictk", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if hictk is not available.")
     boolean requireHictk;
 
-    @Option(names = "--require-dotplot", description = "Fail if no selected dotplot aligner is available.")
+    @Option(names = "--require-dotplot", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if no selected dotplot aligner is available.")
     boolean requireDotplot;
 
-    @Option(names = "--require-hdf5-native", description = "Fail if bundled JHDF5/HDF5 native libraries cannot be initialized.")
+    @Option(names = "--require-hdf5-native", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if bundled JHDF5/HDF5 native libraries cannot be initialized.")
     boolean requireHdf5Native;
 
-    @Option(names = "--check-available-natives", description = "Smoke-test available native components without failing for absent or CPU-unsupported optional variants.")
+    @Option(names = "--check-available-natives", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Smoke-test available native components without failing for absent or CPU-unsupported optional variants.")
     boolean checkAvailableNatives;
 
-    @Option(names = "--quiet", description = "Only print errors.")
+    @Option(names = "--quiet", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Only print errors.")
     boolean quiet;
 
     @Override
@@ -334,6 +481,128 @@ public class HictCli implements Runnable {
   }
 
   @Command(
+    name = "toolbox",
+    mixinStandardHelpOptions = true,
+    description = {
+      "Run bundled or configured external tools without manually extracting the portable package.",
+      "Examples:",
+      "  hict toolbox hictk --help",
+      "  hict toolbox minimap2 --help",
+      "  hict toolbox mm2-plus --help"
+    }
+  )
+  static class Toolbox implements Callable<Integer> {
+    @Override
+    public Integer call() {
+      printToolboxUsage(System.out);
+      return 0;
+    }
+  }
+
+  private static int runToolbox(final String[] args) {
+    if (args.length == 0 || isHelpArgument(args[0])) {
+      printToolboxUsage(System.out);
+      return 0;
+    }
+    final var rawTool = args[0];
+    final var tool = normalizeToolName(rawTool);
+    final var manager = new ExternalToolchainManager();
+    final var status = manager.inspect();
+    final String command = switch (tool) {
+      case "hictk" -> status.hictkCommand();
+      case "minimap2" -> status.minimap2Command();
+      case "mm2plus" -> {
+        if (NativeCpuFeatures.supportsAvx512Core() && status.mm2PlusAvx512Command() != null && !status.mm2PlusAvx512Command().isBlank()) {
+          yield status.mm2PlusAvx512Command();
+        }
+        if (status.mm2PlusAvx2Command() != null && !status.mm2PlusAvx2Command().isBlank()) {
+          yield status.mm2PlusAvx2Command();
+        }
+        yield status.selectedDotplotAlignerCommand();
+      }
+      case "mm2plus-avx2" -> status.mm2PlusAvx2Command();
+      case "mm2plus-avx512" -> status.mm2PlusAvx512Command();
+      default -> null;
+    };
+    if (command == null || command.isBlank()) {
+      System.err.println("HiCT toolbox could not find a bundled or configured executable for '" + rawTool + "'.");
+      System.err.println(status.summary());
+      if (!status.limitations().isEmpty()) {
+        System.err.println("Limitations: " + String.join("; ", status.limitations()));
+      }
+      printToolboxUsage(System.err);
+      return 1;
+    }
+    printToolNotice(tool, command);
+    final var commandLine = new ArrayList<String>(args.length);
+    commandLine.add(command);
+    commandLine.addAll(Arrays.asList(args).subList(1, args.length));
+    try {
+      final var process = new ProcessBuilder(commandLine)
+        .inheritIO()
+        .start();
+      return process.waitFor();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      System.err.println("HiCT toolbox command was interrupted.");
+      return 130;
+    } catch (final Exception e) {
+      System.err.println("HiCT toolbox could not run '" + rawTool + "': " + userFacingMessage(e));
+      return 1;
+    }
+  }
+
+  private static boolean isHelpArgument(final String arg) {
+    return "-h".equals(arg) || "--help".equals(arg) || "help".equalsIgnoreCase(arg);
+  }
+
+  private static String normalizeToolName(final String raw) {
+    final var value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+    return switch (value) {
+      case "mm2-plus", "mm2plus", "mm2-plus-auto" -> "mm2plus";
+      case "mm2plus-avx2", "mm2-plus-avx2" -> "mm2plus-avx2";
+      case "mm2plus-avx512", "mm2-plus-avx512" -> "mm2plus-avx512";
+      default -> value;
+    };
+  }
+
+  private static void printToolboxUsage(final java.io.PrintStream out) {
+    out.println("HiCT toolbox");
+    out.println();
+    out.println("Usage:");
+    out.println("  hict toolbox hictk <hictk arguments...>");
+    out.println("  hict toolbox minimap2 <minimap2 arguments...>");
+    out.println("  hict toolbox mm2-plus <mm2-plus arguments...>");
+    out.println("  hict toolbox mm2-plus-avx2 <mm2-plus arguments...>");
+    out.println("  hict toolbox mm2-plus-avx512 <mm2-plus arguments...>");
+    out.println();
+    out.println("The command forwards all remaining arguments to the selected executable.");
+  }
+
+  private static void printToolNotice(final String tool, final String command) {
+    System.err.println("HiCT toolbox is launching " + command);
+    switch (tool) {
+      case "hictk" -> {
+        System.err.println("hictk is bundled/configured as an optional .hic/.cool tool and is provided by its upstream authors under its own license.");
+        System.err.println("Project: https://github.com/paulsengroup/hictk");
+        System.err.println("Citation: Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.");
+      }
+      case "minimap2" -> {
+        System.err.println("minimap2 is bundled/configured as an optional alignment tool and is provided by its upstream authors under its own license.");
+        System.err.println("Project: https://github.com/lh3/minimap2");
+        System.err.println("Citation: Li H. Bioinformatics 2018;34(18):3094-3100.");
+      }
+      default -> {
+        System.err.println("mm2-plus is bundled/configured as an optional alignment tool and is provided by its upstream authors under its own license.");
+        System.err.println("Project: https://github.com/at-cg/mm2-plus");
+        System.err.println("Citation: Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra and Chirag Jain. bioRxiv 2024. doi:10.1101/2024.11.25.625328.");
+      }
+    }
+    System.err.println("Bundled license files, when available, are kept under toolchains/<platform>/share inside the portable package.");
+    System.err.println();
+  }
+
+  @Command(
     name = "convert",
     mixinStandardHelpOptions = true,
     description = "Run file converters.",
@@ -391,6 +660,9 @@ public class HictCli implements Runnable {
 
     @Option(
       names = "--all-resolutions",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "false",
       description = "Export all available resolutions (default: only finest resolution)."
     )
@@ -398,6 +670,9 @@ public class HictCli implements Runnable {
 
     @Option(
       names = "--build-resolution-pyramid",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "true",
       negatable = true,
       description = "Build a hictk nice-step resolution pyramid when importing Cooler files (default: ${DEFAULT-VALUE})."
@@ -406,6 +681,9 @@ public class HictCli implements Runnable {
 
     @Option(
       names = "--balance-input-coolers",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "true",
       negatable = true,
       description = "Balance .cool/.mcool inputs with hictk before importing (default: ${DEFAULT-VALUE})."
@@ -414,6 +692,9 @@ public class HictCli implements Runnable {
 
     @Option(
       names = "--balance-exported-coolers",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "true",
       negatable = true,
       description = "Balance hictk-assisted Cooler exports (default: ${DEFAULT-VALUE})."
@@ -485,7 +766,7 @@ public class HictCli implements Runnable {
     @Option(names = "--agp", description = "AGP file path (optional).")
     String agpPath = ConversionOptions.NO_AGP;
 
-    @Option(names = "--apply-agp", description = "Apply AGP before export.")
+    @Option(names = "--apply-agp", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Apply AGP before export.")
     boolean applyAgp;
 
     @Override

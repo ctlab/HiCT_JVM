@@ -1014,12 +1014,7 @@ public final class HictkConversionPipeline {
     if (requested != null && !requested.isEmpty()) {
       return false;
     }
-    if (targetResolutions.size() < 2) {
-      return true;
-    }
-    final var minResolution = targetResolutions.stream().mapToLong(Long::longValue).min().orElse(0L);
-    final var maxResolution = targetResolutions.stream().mapToLong(Long::longValue).max().orElse(0L);
-    return minResolution > 0L && maxResolution < minResolution * 10L;
+    return true;
   }
 
   static @NotNull List<Long> resolvePyramidTargetResolutions(final @NotNull List<Long> requested,

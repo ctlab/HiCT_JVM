@@ -30,3 +30,8 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Reduced WebUI freezes caused by large contig/scaffold style updates.
 - Updated the About window with correspondence contacts and this changelog.
 - Rendered the About window changelog as Markdown for readable headings, lists, links, and inline code.
+- Added a portable `toolbox` CLI entry point for launching bundled hictk, minimap2, and mm2-plus with upstream project, license, and citation notices.
+- Improved CLI boolean option parsing with optional true/false values and paired `--no-*` forms, plus concise parse errors instead of stack traces.
+- Changed sealed `.hic`/Cooler imports without external assembly files to place each imported chromosome/contig into its own scaffold.
+- Changed default `.hic` conversion to rebuild a hictk resolution pyramid unless exact source resolutions are explicitly requested, reducing bad/empty coarse-level imports from problematic `.hic` files.
+- Improved BED/GFF/GTF feature tracks at coarse zooms with bounded density rendering, clearer strand arrows, and safer rendering caps for dense annotation files.

@@ -262,6 +262,37 @@ class McoolToHictConverterTest {
     }
   }
 
+  @Test
+  void noAssemblyImportCreatesIndividualScaffoldsForSourceChromosomes() throws Exception {
+    final var mcool = tempDir.resolve("sealed-source.mcool");
+    final var output = tempDir.resolve("sealed-output.hict.hdf5");
+
+    writeSyntheticMcool(mcool);
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray(getContigNameDatasetPath()));
+      assertArrayEquals(new long[]{0L, 1L}, reader.int64().readArray("/contig_info/contig_scaffold_id"));
+    }
+  }
+
   private static void writeSyntheticMcool(final Path path) {
     HDF5LibraryInitializer.initializeHDF5Library();
     try (final var writer = HDF5Factory.open(path.toFile())) {

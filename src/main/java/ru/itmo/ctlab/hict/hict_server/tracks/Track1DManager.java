@@ -91,6 +91,7 @@ public class Track1DManager {
   private static final int FEATURE_DIRECT_RENDER_MAX_FEATURES = 12_000;
   private static final int FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL = 6;
   private static final int FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL = 2;
+  private static final int FEATURE_DENSITY_MAX_BINS = 2_500;
   private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_PRIMARY = "__internal__/cooler_weights/PRIMARY";
@@ -3407,6 +3408,7 @@ public class Track1DManager {
       if (this.renderStyle() == RenderStyle.FEATURE) {
         return queryFeatureBins(
           sourceToAssemblySegments,
+          orderedSegments,
           queryStartPx,
           queryEndPx,
           widthPx,
@@ -3482,6 +3484,7 @@ public class Track1DManager {
     }
 
     private @NotNull List<TrackBin> queryFeatureBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                     final @NotNull List<AssemblySegment> orderedSegments,
                                                      final long queryStartPx,
                                                      final long queryEndPx,
                                                      final int widthPx,
@@ -3510,7 +3513,42 @@ public class Track1DManager {
       if (projected.size() <= maxDirectFeatures) {
         return toBins(projected);
       }
-      return downsampleFeatureBins(projected, queryStartPx, queryEndPx, safeWidth);
+      final int structuredFeatureLimit = Math.min(MAX_FEATURES_PER_QUERY, FEATURE_DIRECT_RENDER_MAX_FEATURES);
+      if (maxDirectFeatures < structuredFeatureLimit) {
+        final var structuredProjected = new ArrayList<ProjectedFeature>(Math.min(structuredFeatureLimit, 16_384));
+        forEachProjectedFeature(
+          sourceToAssemblySegments,
+          queryStartPx,
+          queryEndPx,
+          bpResolution,
+          structuredProjected::add,
+          structuredFeatureLimit + 1
+        );
+        structuredProjected.sort(
+          Comparator.comparingLong(ProjectedFeature::startPx)
+            .thenComparingLong(ProjectedFeature::endPx)
+        );
+        if (structuredProjected.size() <= structuredFeatureLimit) {
+          return downsampleFeatureBins(structuredProjected, queryStartPx, queryEndPx, safeWidth);
+        }
+      }
+      final var densityProjected = new ArrayList<ProjectedFeature>(Math.min(MAX_FEATURES_PER_QUERY, 65_536));
+      forEachProjectedFeature(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        bpResolution,
+        densityProjected::add,
+        MAX_FEATURES_PER_QUERY
+      );
+      return aggregateFeatures(
+        densityProjected,
+        queryStartPx,
+        queryEndPx,
+        Math.min(safeWidth, FEATURE_DENSITY_MAX_BINS),
+        orderedSegments,
+        bpResolution
+      );
     }
 
     private static @NotNull List<TrackBin> downsampleFeatureBins(final @NotNull List<ProjectedFeature> projected,

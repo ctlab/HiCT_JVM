@@ -594,11 +594,16 @@ HiCT portable launcher
 
 Usage:
   ./HiCT-<version>-${PLATFORM}.run [HiCT CLI args...]
+  ./HiCT-<version>-${PLATFORM}.run toolbox hictk <hictk arguments...>
+  ./HiCT-<version>-${PLATFORM}.run toolbox minimap2 <minimap2 arguments...>
+  ./HiCT-<version>-${PLATFORM}.run toolbox mm2-plus <mm2-plus arguments...>
   ./HiCT-<version>-${PLATFORM}.run --help
   ./HiCT-<version>-${PLATFORM}.run --hict-extract-only <directory>
 
 DATA_DIR defaults to the directory containing this .run file. Set DATA_DIR
 explicitly to use a different data directory.
+The toolbox command forwards arguments to bundled/configured third-party tools
+and prints their project, license, and citation notes before launching them.
 EOU
 }
 

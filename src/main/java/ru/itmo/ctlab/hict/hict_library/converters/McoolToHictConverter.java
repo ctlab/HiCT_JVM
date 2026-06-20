@@ -1819,7 +1819,9 @@ public class McoolToHictConverter {
 
   private static long @NotNull [] defaultScaffoldIds(final int contigCount) {
     final var scaffoldIds = new long[contigCount];
-    Arrays.fill(scaffoldIds, -1L);
+    for (int i = 0; i < contigCount; i++) {
+      scaffoldIds[i] = i;
+    }
     return scaffoldIds;
   }
 

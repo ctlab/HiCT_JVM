@@ -50,10 +50,10 @@ class HictkConversionPipelineTest {
   }
 
   @Test
-  void automaticZoomifyPyramidIsUsedForSparseCoarseMetadataOnly() {
+  void automaticZoomifyPyramidIsUsedUnlessExplicitResolutionsWereRequested() {
     assertTrue(HictkConversionPipeline.shouldUseAutomaticZoomifyPyramid(List.of(), List.of(50_000L)));
     assertTrue(HictkConversionPipeline.shouldUseAutomaticZoomifyPyramid(List.of(), List.of(50_000L, 100_000L)));
-    assertFalse(
+    assertTrue(
       HictkConversionPipeline.shouldUseAutomaticZoomifyPyramid(
         List.of(),
         List.of(50_000L, 100_000L, 250_000L, 500_000L)
