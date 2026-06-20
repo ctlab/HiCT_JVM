@@ -7,10 +7,14 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigNameDatasetPath;
 
 class HictToMcoolConverterTest {
@@ -28,6 +32,46 @@ class HictToMcoolConverterTest {
     assertArrayEquals(new long[]{0L, 0L, 0L, 1L, 1L, 2L}, rows);
     assertArrayEquals(new long[]{1L, 1L, 3L, 1L, 1L, 2L}, cols);
     assertArrayEquals(new long[]{2L, 7L, 4L, 3L, 5L, 9L}, counts);
+  }
+
+  @Test
+  void coolOutputAutomaticallyUsesFinestSelectedResolution() {
+    final var messages = new ArrayList<String>();
+
+    final var selected = HictToMcoolConverter.normalizeSelectedResolutionsForOutput(
+      Path.of("export.cool"),
+      List.of(10_000L, 250L, 1_000L),
+      messages::add
+    );
+
+    assertEquals(List.of(250L), selected);
+    assertTrue(messages.stream().anyMatch(message -> message.contains(".cool files contain exactly one resolution")));
+    assertEquals(
+      List.of(10_000L, 250L, 1_000L),
+      HictToMcoolConverter.normalizeSelectedResolutionsForOutput(
+        Path.of("export.mcool"),
+        List.of(10_000L, 250L, 1_000L),
+        ignored -> {
+        }
+      )
+    );
+  }
+
+  @Test
+  void missingRequestedResolutionReportsAvailableValues() {
+    final var exception = assertThrows(
+      IllegalArgumentException.class,
+      () -> HictToMcoolConverter.requireUsableSelectedResolutions(
+        Path.of("example.hict.hdf5"),
+        List.of(),
+        new long[]{0L, 1_000L, 5_000L},
+        List.of(250L),
+        false
+      )
+    );
+
+    assertTrue(exception.getMessage().contains("Available resolutions are [1000, 5000]"));
+    assertTrue(exception.getMessage().contains("requested [250]"));
   }
 
   @Test

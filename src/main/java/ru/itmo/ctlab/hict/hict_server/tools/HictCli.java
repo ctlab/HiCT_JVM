@@ -364,7 +364,7 @@ public class HictCli implements Runnable {
     @Option(
       names = "--resolutions",
       split = ",",
-      description = "Comma-separated list of resolutions to export (default: all in input)."
+      description = "Comma-separated list of resolutions to export. Export defaults to the finest available resolution unless --all-resolutions is set."
     )
     List<Long> resolutions = new ArrayList<>();
 
@@ -399,6 +399,7 @@ public class HictCli implements Runnable {
     @Option(
       names = "--build-resolution-pyramid",
       defaultValue = "true",
+      negatable = true,
       description = "Build a hictk nice-step resolution pyramid when importing Cooler files (default: ${DEFAULT-VALUE})."
     )
     boolean buildResolutionPyramid;
@@ -406,6 +407,7 @@ public class HictCli implements Runnable {
     @Option(
       names = "--balance-input-coolers",
       defaultValue = "true",
+      negatable = true,
       description = "Balance .cool/.mcool inputs with hictk before importing (default: ${DEFAULT-VALUE})."
     )
     boolean balanceInputCoolers;
@@ -413,6 +415,7 @@ public class HictCli implements Runnable {
     @Option(
       names = "--balance-exported-coolers",
       defaultValue = "true",
+      negatable = true,
       description = "Balance hictk-assisted Cooler exports (default: ${DEFAULT-VALUE})."
     )
     boolean balanceExportedCoolers;
@@ -476,7 +479,7 @@ public class HictCli implements Runnable {
   @Command(
     name = "hict-to-mcool",
     mixinStandardHelpOptions = true,
-    description = "Convert .hict.hdf5 to .mcool."
+    description = "Convert .hict.hdf5 to multi-resolution .mcool or single-resolution .cool."
   )
   static class HictToMcool extends BaseConvert {
     @Option(names = "--agp", description = "AGP file path (optional).")

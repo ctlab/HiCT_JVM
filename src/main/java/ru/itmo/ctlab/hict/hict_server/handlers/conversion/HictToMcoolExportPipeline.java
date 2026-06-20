@@ -123,7 +123,17 @@ public final class HictToMcoolExportPipeline {
         synchronizedLogger.accept("Applied AGP before export: " + agpPath);
       }
 
-      final var selectedResolutions = resolveResolutions(chunkedFile, options);
+      final var selectedResolutions = HictToMcoolConverter.normalizeSelectedResolutionsForOutput(
+        options.outputPath(),
+        HictToMcoolConverter.requireUsableSelectedResolutions(
+          options.inputPath(),
+          resolveResolutions(chunkedFile, options),
+          chunkedFile.getResolutions(),
+          options.resolutions(),
+          options.exportAllResolutions()
+        ),
+        synchronizedLogger
+      );
       final var assemblyLayout = HictToMcoolConverter.buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
       final var overallTracker = new OverallProgressTracker(
@@ -131,9 +141,6 @@ public final class HictToMcoolExportPipeline {
         synchronizedLogger
       );
       if (isSingleCoolerOutput(options.outputPath())) {
-        if (selectedResolutions.size() != 1) {
-          throw new IllegalArgumentException("Single-resolution .cool export requires exactly one selected resolution. Enable finest-only export or use .mcool output.");
-        }
         exportSingleCoolerViaHictk(
           options,
           toolchain,

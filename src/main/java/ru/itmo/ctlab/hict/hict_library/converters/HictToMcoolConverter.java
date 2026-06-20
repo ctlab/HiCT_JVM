@@ -79,7 +79,17 @@ public class HictToMcoolConverter {
         synchronizedLogConsumer.accept("Applied AGP before export: " + resolvedAgpPath);
       }
 
-      final var selectedResolutions = resolveResolutions(chunkedFile.getResolutions(), options.resolutions(), options.exportAllResolutions());
+      final var selectedResolutions = normalizeSelectedResolutionsForOutput(
+        options.outputPath(),
+        requireUsableSelectedResolutions(
+          options.inputPath(),
+          resolveResolutions(chunkedFile.getResolutions(), options.resolutions(), options.exportAllResolutions()),
+          chunkedFile.getResolutions(),
+          options.resolutions(),
+          options.exportAllResolutions()
+        ),
+        synchronizedLogConsumer
+      );
       final var assemblyLayout = buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
       final var floatCompression = resolveFloatStorageFeatures(options, synchronizedLogConsumer);
@@ -91,9 +101,6 @@ public class HictToMcoolConverter {
       );
       final int sortBatchSize = resolveSortBatchSize(options.chunkSize(), options.parallelism(), synchronizedLogConsumer);
       final boolean singleCoolerOutput = isSingleCoolerOutput(options.outputPath());
-      if (singleCoolerOutput && selectedResolutions.size() != 1) {
-        throw new IllegalArgumentException("Direct .cool export requires exactly one selected resolution. Use .mcool output for all-resolution export.");
-      }
 
       synchronizedLogConsumer.accept(
         "Converting internally with chunkSize=" + options.chunkSize() +
@@ -167,6 +174,51 @@ public class HictToMcoolConverter {
     } finally {
       chunkedFile.close();
     }
+  }
+
+  public static @NotNull List<Long> normalizeSelectedResolutionsForOutput(
+    final @NotNull Path outputPath,
+    final @NotNull List<Long> selectedResolutions,
+    final @NotNull Consumer<String> logConsumer
+  ) {
+    if (!isSingleCoolerOutput(outputPath) || selectedResolutions.size() <= 1) {
+      return selectedResolutions;
+    }
+
+    final var finestResolution = selectedResolutions.stream().min(Long::compareTo).orElseThrow();
+    logConsumer.accept(
+      "Requested .cool output with " + selectedResolutions.size() + " selected resolutions. " +
+        "Cooler .cool files contain exactly one resolution, so HiCT will export only the finest selected resolution " +
+        finestResolution + ". Use an .mcool output path to export multiple resolutions."
+    );
+    return List.of(finestResolution);
+  }
+
+  public static @NotNull List<Long> requireUsableSelectedResolutions(
+    final @NotNull Path inputPath,
+    final @NotNull List<Long> selectedResolutions,
+    final long @NotNull [] availableResolutions,
+    final @NotNull List<Long> requestedResolutions,
+    final boolean exportAllResolutions
+  ) {
+    if (!selectedResolutions.isEmpty()) {
+      return selectedResolutions;
+    }
+
+    final var available = new ArrayList<Long>();
+    for (int i = 1; i < availableResolutions.length; i++) {
+      available.add(availableResolutions[i]);
+    }
+    final var inputName = inputPath.getFileName() == null ? inputPath.toString() : inputPath.getFileName().toString();
+    final String requested = requestedResolutions.isEmpty()
+      ? (exportAllResolutions ? "all available resolutions" : "finest available resolution")
+      : requestedResolutions.toString();
+    throw new IllegalArgumentException(
+      "No matching resolutions were selected for " + inputName + ". " +
+        "Available resolutions are " + available + "; requested " + requested + ". " +
+        "Use --resolutions with one of the available values, omit --resolutions for the finest resolution, " +
+        "or use --all-resolutions for multi-resolution .mcool export."
+    );
   }
 
   private static @NotNull List<StagedResolutionFile> convertResolutionsInParallel(
