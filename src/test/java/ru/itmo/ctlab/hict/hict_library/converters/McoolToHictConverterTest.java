@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigDirectionDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigHideTypeDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigLengthBinsDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigNameDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigOrderDatasetPath;
@@ -293,6 +294,38 @@ class McoolToHictConverterTest {
     }
   }
 
+  @Test
+  void subResolutionContigsAreHiddenAtCoarseResolution() throws Exception {
+    final var mcool = tempDir.resolve("sub-resolution-source.mcool");
+    final var output = tempDir.resolve("sub-resolution-output.hict.hdf5");
+
+    writeSyntheticSubResolutionMcool(mcool);
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertArrayEquals(new String[]{"tiny", "visible"}, reader.string().readArray(getContigNameDatasetPath()));
+      assertArrayEquals(new long[]{1L, 2L}, reader.int64().readArray(getContigLengthBinsDatasetPath(1_000L)));
+      assertArrayEquals(new byte[]{0, 1}, reader.int8().readArray(getContigHideTypeDatasetPath(1_000L)));
+    }
+  }
+
   private static void writeSyntheticMcool(final Path path) {
     HDF5LibraryInitializer.initializeHDF5Library();
     try (final var writer = HDF5Factory.open(path.toFile())) {
@@ -314,6 +347,30 @@ class McoolToHictConverterTest {
       writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 1L, 2L, 3L, 4L, 5L, 6L});
       writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 2L, 3L, 4L, 5L, 6L});
       writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{1L, 1L, 1L, 1L, 1L, 1L, 1L});
+    }
+  }
+
+  private static void writeSyntheticSubResolutionMcool(final Path path) {
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (final var writer = HDF5Factory.open(path.toFile())) {
+      writer.object().createGroup("/chroms");
+      writer.string().writeArray("/chroms/name", new String[]{"tiny", "visible"});
+      writer.int64().writeArray("/chroms/length", new long[]{500L, 1_500L});
+
+      writer.object().createGroup("/resolutions");
+      writer.object().createGroup("/resolutions/1000");
+      writer.object().createGroup("/resolutions/1000/indexes");
+      writer.object().createGroup("/resolutions/1000/bins");
+      writer.object().createGroup("/resolutions/1000/pixels");
+
+      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset", new long[]{0L, 1L, 3L});
+      writer.int64().writeArray("/resolutions/1000/indexes/bin1_offset", new long[]{0L, 1L, 2L, 3L});
+      writer.int64().writeArray("/resolutions/1000/bins/chrom", new long[]{0L, 1L, 1L});
+      writer.int64().writeArray("/resolutions/1000/bins/start", new long[]{0L, 0L, 1_000L});
+      writer.int64().writeArray("/resolutions/1000/bins/end", new long[]{500L, 1_000L, 1_500L});
+      writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 1L, 2L});
+      writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 2L});
+      writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{1L, 1L, 1L});
     }
   }
 

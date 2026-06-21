@@ -1,6 +1,6 @@
 # HiCT Changelog
 
-## 1.0.182-49a01f0-webui_9129e8b
+## 1.0.184-52f486a-webui_bea71e6
 
 Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 
@@ -34,4 +34,9 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Improved CLI boolean option parsing with optional true/false values and paired `--no-*` forms, plus concise parse errors instead of stack traces.
 - Changed sealed `.hic`/Cooler imports without external assembly files to place each imported chromosome/contig into its own scaffold.
 - Changed default `.hic` conversion to rebuild a hictk resolution pyramid unless exact source resolutions are explicitly requested, reducing bad/empty coarse-level imports from problematic `.hic` files.
+- Fixed sealed `.hic` imports so converted files synthesize singleton scaffolds during conversion when no external `.assembly` file is available.
+- Fixed coarse-resolution contig display by hiding contigs whose bp length is smaller than the active resolution bin, while keeping them available at finer zoom levels.
+- Fixed hidden-contig projection across zoom levels so contact-map tiles, contig borders, contig labels, and cursor coordinates use the same per-resolution visible-contig layout instead of copying visibility from nearby resolutions.
+- Improved initial map visibility by computing a one-time opening upper threshold from the 0.9 signal quantile of the coarsest safe full-map resolution, so coarse maps no longer open as blank white because of an overly high default threshold.
+- Improved contig and scaffold border visibility with a contrast outline behind the configured border color.
 - Improved BED/GFF/GTF feature tracks at coarse zooms with bounded density rendering, clearer strand arrows, and safer rendering caps for dense annotation files.

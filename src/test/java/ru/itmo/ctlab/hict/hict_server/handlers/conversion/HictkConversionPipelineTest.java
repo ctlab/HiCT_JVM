@@ -142,4 +142,21 @@ class HictkConversionPipelineTest {
     );
     assertEquals(1L, geometry.binSize());
   }
+
+  @Test
+  void singletonScaffoldAgpKeepsSealedHicChromosomesAsScaffolds() throws Exception {
+    final var agp = HictkConversionPipeline.writeSingletonScaffoldAgp(
+      tempDir.resolve("sealed-singleton.agp"),
+      new String[]{"CM029348", "CM029349"},
+      new long[]{273_000_000L, 42_000_000L}
+    );
+
+    assertEquals(
+      List.of(
+        "CM029348\t1\t273000000\t1\tW\tCM029348\t1\t273000000\t+",
+        "CM029349\t1\t42000000\t1\tW\tCM029349\t1\t42000000\t+"
+      ),
+      Files.readAllLines(agp)
+    );
+  }
 }

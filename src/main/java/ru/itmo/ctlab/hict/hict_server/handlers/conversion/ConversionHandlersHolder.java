@@ -24,7 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -45,6 +47,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
     private final Vertx vertx;
     private static final long MAX_UPLOAD_BYTES = 2L * 1024 * 1024 * 1024;
     private static final long JOB_TTL_MS = 60 * 60 * 1000;
+    private static final int MAX_CONVERSION_LOG_LINES = 1_000;
     private static final Pattern STAGE_PROGRESS_PATTERN = Pattern.compile(
       "HICT_STAGE stage=(\\S+) progress=([0-9.]+) overall=([0-9.]+) detail=(.*)"
     );
@@ -752,7 +755,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             synchronized (System.out) {
                 System.out.println(message);
             }
-            job.logs.add(message);
+            job.appendLog(message);
             parseProgress(job, message);
             job.updateOutputSize();
         };
@@ -827,7 +830,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             } else {
                 job.status = "failed";
                 job.error = e.getMessage() == null ? e.toString() : e.getMessage();
-                job.logs.add("ERROR: " + job.error);
+                job.appendLog("ERROR: " + job.error);
             }
         } finally {
             job.activeProcess = null;
@@ -1020,7 +1023,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
         private final HictkLoadOptions loadOptions;
         private volatile String status = "queued";
         private volatile String error = "";
-        private final CopyOnWriteArrayList<String> logs = new CopyOnWriteArrayList<>();
+        private final Deque<String> logs = new ArrayDeque<>();
+        private long omittedLogLines = 0L;
         private volatile String currentStage = "";
         private volatile String currentStageLabel = "";
         private volatile String stageDetail = "";
@@ -1066,6 +1070,29 @@ public class ConversionHandlersHolder extends HandlersHolder {
             }
         }
 
+        private synchronized void appendLog(final @NotNull String message) {
+            while (logs.size() >= MAX_CONVERSION_LOG_LINES) {
+                logs.removeFirst();
+                omittedLogLines++;
+            }
+            logs.addLast(message);
+        }
+
+        private synchronized List<String> snapshotLogs() {
+            if (logs.isEmpty()) {
+                return List.of();
+            }
+            final var snapshot = new ArrayList<String>(logs.size() + (omittedLogLines > 0 ? 1 : 0));
+            if (omittedLogLines > 0) {
+                snapshot.add(
+                  "... omitted " + omittedLogLines + " older conversion log line(s); showing the last "
+                    + MAX_CONVERSION_LOG_LINES + " ..."
+                );
+            }
+            snapshot.addAll(logs);
+            return snapshot;
+        }
+
         private void requestCancel() {
             cancelRequested.set(true);
             if (activeProcess != null) {
@@ -1100,7 +1127,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     toolchainSummary == null ? "" : toolchainSummary,
                     List.copyOf(toolchainNotices),
                     List.copyOf(toolchainCitations),
-                    List.copyOf(logs),
+                    snapshotLogs(),
                     error == null ? "" : error
             );
         }

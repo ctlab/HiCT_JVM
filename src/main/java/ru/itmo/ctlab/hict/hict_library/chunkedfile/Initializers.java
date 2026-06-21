@@ -69,6 +69,21 @@ public class Initializers {
     }
   }
 
+  private static long syntheticLengthBins(final long lengthBp, final long resolution) {
+    if (lengthBp <= 0L || resolution <= 0L) {
+      return 0L;
+    }
+    return Math.max(1L, (lengthBp + resolution - 1L) / resolution);
+  }
+
+  private static @NotNull ContigHideType inferHideType(final long lengthBins,
+                                                       final long lengthBp,
+                                                       final long resolution) {
+    return lengthBins > 0L && lengthBp >= resolution
+      ? ContigHideType.SHOWN
+      : ContigHideType.HIDDEN;
+  }
+
   public static @NotNull List<@NotNull StripeDescriptor> readStripeDescriptors(final long resolution, final @NotNull IHDF5Reader reader) {
     final List<StripeDescriptor> result = new ArrayList<>();
     final long[] stripeLengthBins;
@@ -233,9 +248,9 @@ public class Initializers {
         final List<List<ATUDescriptor>> syntheticAtus = new ArrayList<>(Math.max(0, resolutions.length - 1));
         for (int resolutionIdx = 1; resolutionIdx < resolutions.length; resolutionIdx++) {
           final long resolution = resolutions[resolutionIdx];
-          final long bins = Math.max(1L, (contigLengthBp[cid] + resolution - 1L) / resolution);
+          final long bins = syntheticLengthBins(contigLengthBp[cid], resolution);
           syntheticLengthBins.add(bins);
-          syntheticPresence.add(bins > 1L ? ContigHideType.SHOWN : ContigHideType.HIDDEN);
+          syntheticPresence.add(inferHideType(bins, contigLengthBp[cid], resolution));
           syntheticAtus.add(List.of());
         }
         contigDescriptor = new ContigDescriptor(

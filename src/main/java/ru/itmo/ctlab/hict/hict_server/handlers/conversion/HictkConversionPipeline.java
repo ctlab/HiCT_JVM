@@ -1,8 +1,11 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
+import ch.systemsx.cisd.hdf5.HDF5Factory;
+import ch.systemsx.cisd.hdf5.IHDF5Reader;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 
@@ -233,6 +236,13 @@ public final class HictkConversionPipeline {
       final var importStage = stagePlan.get(4);
       emitStage(logger, stagePlan, importStage.id(), 0.0d, "Importing generated .mcool into HiCT");
       final var wrappedLogger = createWrappedImportLogger(logger, stagePlan, importStage.id());
+      final var importAgpPath = resolveHicImportAgpPath(
+        options,
+        mcoolOutputPath,
+        generatedResolutions,
+        tmpDirectory,
+        logger
+      );
       new McoolToHictConverter().convert(
         new ConversionOptions(
           mcoolOutputPath,
@@ -241,7 +251,7 @@ public final class HictkConversionPipeline {
           options.chunkSize(),
           options.compressionLevel(),
           options.compressionAlgorithm(),
-          options.agpPath(),
+          importAgpPath,
           false,
           options.parallelism(),
           true,
@@ -599,6 +609,77 @@ public final class HictkConversionPipeline {
       ),
       createWrappedImportLogger(logger, stagePlan, "import_hict")
     );
+  }
+
+  private static @NotNull String resolveHicImportAgpPath(final @NotNull ConversionOptions options,
+                                                         final @NotNull Path mcoolPath,
+                                                         final @NotNull List<Long> resolutions,
+                                                         final @NotNull Path tmpDirectory,
+                                                         final @NotNull Consumer<String> logger) throws IOException {
+    if (!ConversionOptions.NO_AGP.equals(options.agpPath())) {
+      return options.agpPath();
+    }
+    final var syntheticAgp = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".sealed-singleton.agp");
+    createSingletonScaffoldAgpFromCooler(mcoolPath, resolutions, syntheticAgp, logger);
+    return syntheticAgp.toString();
+  }
+
+  private static void createSingletonScaffoldAgpFromCooler(final @NotNull Path coolerPath,
+                                                           final @NotNull List<Long> resolutions,
+                                                           final @NotNull Path outputPath,
+                                                           final @NotNull Consumer<String> logger) throws IOException {
+    final var finestResolution = resolutions.stream()
+      .mapToLong(Long::longValue)
+      .min()
+      .orElseThrow(() -> new IllegalArgumentException("No resolutions available for sealed .hic assembly synthesis"));
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (final var reader = HDF5Factory.openForReading(coolerPath.toFile())) {
+      final var chromsRoot = resolveCoolerChromsRoot(reader, finestResolution);
+      writeSingletonScaffoldAgp(
+        outputPath,
+        reader.string().readArray(chromsRoot + "/name"),
+        reader.int64().readArray(chromsRoot + "/length")
+      );
+    }
+    logger.accept("HICT_ASSEMBLY synthesized singleton scaffolds for sealed .hic import: " + outputPath);
+  }
+
+  private static @NotNull String resolveCoolerChromsRoot(final @NotNull IHDF5Reader reader, final long resolution) {
+    final var perResolution = "/resolutions/" + resolution + "/chroms";
+    if (reader.object().isGroup(perResolution)
+      && reader.object().isDataSet(perResolution + "/name")
+      && reader.object().isDataSet(perResolution + "/length")) {
+      return perResolution;
+    }
+    final var global = "/chroms";
+    if (reader.object().isGroup(global)
+      && reader.object().isDataSet(global + "/name")
+      && reader.object().isDataSet(global + "/length")) {
+      return global;
+    }
+    throw new IllegalStateException("Cannot resolve Cooler chromosome metadata for resolution " + resolution);
+  }
+
+  static @NotNull Path writeSingletonScaffoldAgp(final @NotNull Path outputPath,
+                                                 final String @NotNull [] chromNames,
+                                                 final long @NotNull [] chromLengths) throws IOException {
+    if (chromNames.length != chromLengths.length) {
+      throw new IllegalArgumentException("Chromosome names and lengths have different sizes");
+    }
+    final var lines = new ArrayList<String>(chromNames.length);
+    for (int i = 0; i < chromNames.length; i++) {
+      final var name = chromNames[i] == null ? "" : chromNames[i].trim();
+      final var length = chromLengths[i];
+      if (name.isBlank() || length <= 0L) {
+        continue;
+      }
+      lines.add(name + "\t1\t" + length + "\t1\tW\t" + name + "\t1\t" + length + "\t+");
+    }
+    if (lines.isEmpty()) {
+      throw new IllegalArgumentException("Cannot synthesize AGP from empty chromosome metadata");
+    }
+    Files.write(outputPath, lines, StandardCharsets.UTF_8);
+    return outputPath;
   }
 
   private static @NotNull String coolerUriForResolution(final @NotNull Path coolerPath, final long resolution) {

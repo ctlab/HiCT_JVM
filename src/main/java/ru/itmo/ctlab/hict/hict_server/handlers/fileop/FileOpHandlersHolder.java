@@ -1147,36 +1147,42 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }
 
       for (int targetOrder = 1; targetOrder < targetResolutions.length; targetOrder++) {
-        final var sourceOrder = nearestResolutionOrder(sourceResolutions, targetResolutions[targetOrder]);
-        if (
-          sourceOrder <= 0 ||
-            sourceOrder >= sourceDescriptor.getPresenceAtResolution().size() ||
-            targetOrder >= targetDescriptor.getPresenceAtResolution().size()
-        ) {
+        if (targetOrder >= targetDescriptor.getPresenceAtResolution().size()) {
           continue;
         }
-        targetDescriptor.getPresenceAtResolution().set(
-          targetOrder,
-          sourceDescriptor.getPresenceAtResolution().get(sourceOrder)
-        );
+        final var sourceOrder = exactResolutionOrder(sourceResolutions, targetResolutions[targetOrder]);
+        final var presence = sourceOrder > 0 && sourceOrder < sourceDescriptor.getPresenceAtResolution().size()
+          ? sourceDescriptor.getPresenceAtResolution().get(sourceOrder)
+          : inferVisibilityForResolution(targetDescriptor, targetResolutions[targetOrder], targetOrder);
+        targetDescriptor.getPresenceAtResolution().set(targetOrder, presence);
       }
     });
   }
 
-  private static int nearestResolutionOrder(final long @NotNull [] resolutions, final long targetResolution) {
-    int bestOrder = resolutions.length > 1 ? 1 : 0;
-    double bestDelta = Double.POSITIVE_INFINITY;
+  private static int exactResolutionOrder(final long @NotNull [] resolutions, final long targetResolution) {
     for (int order = 1; order < resolutions.length; order++) {
-      if (resolutions[order] <= 0L || targetResolution <= 0L) {
-        continue;
-      }
-      final var delta = Math.abs(Math.log((double) resolutions[order] / (double) targetResolution));
-      if (delta < bestDelta || (delta == bestDelta && resolutions[order] < resolutions[bestOrder])) {
-        bestOrder = order;
-        bestDelta = delta;
+      if (resolutions[order] == targetResolution) {
+        return order;
       }
     }
-    return bestOrder;
+    return -1;
+  }
+
+  private static @NotNull ContigHideType inferVisibilityForResolution(final @NotNull ContigDescriptor descriptor,
+                                                                      final long resolution,
+                                                                      final int resolutionOrder) {
+    final long[] lengthBinsAtResolution = descriptor.getLengthBinsAtResolution();
+    final long lengthBins;
+    if (resolutionOrder >= 0 && resolutionOrder < lengthBinsAtResolution.length) {
+      lengthBins = lengthBinsAtResolution[resolutionOrder];
+    } else if (descriptor.getLengthBp() <= 0L || resolution <= 0L) {
+      lengthBins = 0L;
+    } else {
+      lengthBins = Math.max(1L, (descriptor.getLengthBp() + resolution - 1L) / resolution);
+    }
+    return lengthBins > 0L && descriptor.getLengthBp() >= resolution
+      ? ContigHideType.SHOWN
+      : ContigHideType.HIDDEN;
   }
 
   private static ShareableWrappers.PathWrapper resolveFastaPathWrapperBySource(final @NotNull LocalMap<String, Object> map,

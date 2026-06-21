@@ -321,7 +321,7 @@ public class McoolToHictConverter {
       final long[] contigLengthBins = contigLengthBinsByResolution.get(resolution);
       final byte[] hideTypes = new byte[contigRecords.size()];
       for (int i = 0; i < contigRecords.size(); i++) {
-        hideTypes[i] = (byte) ((contigLengthBins[i] > 0L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
+        hideTypes[i] = autoHideType(contigLengthBins[i], contigLengthBp[i], resolution);
       }
 
       dst.int64().writeArray(getContigLengthBinsDatasetPath(resolution), contigLengthBins, intStorageFeatures);
@@ -1705,7 +1705,7 @@ public class McoolToHictConverter {
       final var contigLengthBins = contigLengthBinsByResolution.get(resolution);
       final var hideTypes = new byte[contigCount];
       for (int i = 0; i < contigCount; i++) {
-        hideTypes[i] = (byte) ((contigLengthBins[i] > 0L) ? ContigHideType.SHOWN.ordinal() : ContigHideType.HIDDEN.ordinal());
+        hideTypes[i] = autoHideType(contigLengthBins[i], contigLengthBp[i], resolution);
       }
 
       dst.int64().writeArray(getContigLengthBinsDatasetPath(resolution), contigLengthBins, intStorageFeatures);
@@ -1837,6 +1837,12 @@ public class McoolToHictConverter {
       seen[(int) orderedContigId] = true;
     }
     return true;
+  }
+
+  private static byte autoHideType(final long lengthBins, final long lengthBp, final long resolution) {
+    return (byte) ((lengthBins > 0L && lengthBp >= resolution)
+      ? ContigHideType.SHOWN.ordinal()
+      : ContigHideType.HIDDEN.ordinal());
   }
 
   private static @NotNull List<ATUDescriptor> generateAtusForContig(
