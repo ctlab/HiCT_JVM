@@ -38,8 +38,10 @@ import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
 import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
+import ru.itmo.ctlab.hict.hict_library.visualization.TileVisualizationProcessor;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.symmetric.visualization.VisualizationOptionsDTO;
@@ -889,7 +891,12 @@ public class TileHandlersHolder extends HandlersHolder {
     final double[][] signalMatrix;
     switch (signalMode) {
       case RAW_COUNTS -> signalMatrix = null;
-      case COOLER_WEIGHTED -> signalMatrix = computeCoolerWeightedSignal(rawMatrix, matrixWithWeights.rowWeights(), matrixWithWeights.colWeights());
+      case COOLER_WEIGHTED -> signalMatrix = computeCoolerWeightedSignal(
+        rawMatrix,
+        matrixWithWeights.rowWeights(),
+        matrixWithWeights.colWeights(),
+        options.getCoolerWeightsNaNPolicy()
+      );
       case TRADITIONAL_NORMALIZED ->
         signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options, expectedProfile).values();
       case PIPELINE_SIGNAL -> {
@@ -994,15 +1001,23 @@ public class TileHandlersHolder extends HandlersHolder {
 
   private static double[][] computeCoolerWeightedSignal(final ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.RawMatrix rawMatrix,
                                                         final double[] rowWeights,
-                                                        final double[] colWeights) {
+                                                        final double[] colWeights,
+                                                        final @NotNull CoolerWeightsNaNPolicy coolerWeightsNaNPolicy) {
     final var rowCount = rawMatrix.rows();
     final var columnCount = rawMatrix.cols();
     final var result = new double[rowCount][columnCount];
     for (int row = 0; row < rowCount; row++) {
-      final var rowWeight = rowWeights != null && row < rowWeights.length ? rowWeights[row] : 1.0d;
+      final var rowWeight = TileVisualizationProcessor.sanitizeCoolerWeight(
+        rowWeights != null && row < rowWeights.length ? rowWeights[row] : 1.0d,
+        coolerWeightsNaNPolicy
+      );
       for (int col = 0; col < columnCount; col++) {
-        final var colWeight = colWeights != null && col < colWeights.length ? colWeights[col] : 1.0d;
-        result[row][col] = rawMatrix.getAsDouble(row, col) * rowWeight * colWeight;
+        final var colWeight = TileVisualizationProcessor.sanitizeCoolerWeight(
+          colWeights != null && col < colWeights.length ? colWeights[col] : 1.0d,
+          coolerWeightsNaNPolicy
+        );
+        final var signal = rawMatrix.getAsDouble(row, col) * rowWeight * colWeight;
+        result[row][col] = Double.isFinite(signal) ? signal : 0.0d;
       }
     }
     return result;

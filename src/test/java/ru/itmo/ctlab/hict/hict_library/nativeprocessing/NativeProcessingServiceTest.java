@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
+import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
 import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 
@@ -66,7 +67,8 @@ class NativeProcessingServiceTest {
       1.0d,
       false,
       false,
-      true
+      true,
+      CoolerWeightsNaNPolicy.REPLACE_NANS_WITH_ONE
     ));
     final var status = service.status();
     assertFalse(status.requested());

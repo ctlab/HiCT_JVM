@@ -1,6 +1,6 @@
 # HiCT Changelog
 
-## 1.0.184-52f486a-webui_bea71e6
+## 1.0.185-52f486a-webui_bea71e6
 
 Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 
@@ -40,3 +40,5 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Improved initial map visibility by computing a one-time opening upper threshold from the 0.9 signal quantile of the coarsest safe full-map resolution, so coarse maps no longer open as blank white because of an overly high default threshold.
 - Improved contig and scaffold border visibility with a contrast outline behind the configured border color.
 - Improved BED/GFF/GTF feature tracks at coarse zooms with bounded density rendering, clearer strand arrows, and safer rendering caps for dense annotation files.
+- Fixed Visualization Settings requests with blank numeric fields, so disabling auto-threshold and other toggles no longer causes a backend cast error.
+- Added detection and user-facing handling for invalid `NaN` Cooler balancing weights, including a warning dialog, red sidebar warning, and configurable rendering policy.

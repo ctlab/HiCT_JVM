@@ -45,6 +45,7 @@ public final class SimpleVisualizationOptions {
   private final boolean autoThresholdEnabled;
   private final double autoThresholdQuantile;
   private final @NotNull SignalDisplayMode signalDisplayMode;
+  private final @NotNull CoolerWeightsNaNPolicy coolerWeightsNaNPolicy;
   private final @NotNull Colormap colormap;
 
 
@@ -57,6 +58,7 @@ public final class SimpleVisualizationOptions {
     final boolean autoThresholdEnabled,
     final double autoThresholdQuantile,
     final @NotNull SignalDisplayMode signalDisplayMode,
+    final @NotNull CoolerWeightsNaNPolicy coolerWeightsNaNPolicy,
     @NotNull Colormap colormap) {
     this.preLogBase = preLogBase;
     this.postLogBase = postLogBase;
@@ -69,6 +71,31 @@ public final class SimpleVisualizationOptions {
     this.autoThresholdEnabled = autoThresholdEnabled;
     this.autoThresholdQuantile = autoThresholdQuantile;
     this.signalDisplayMode = signalDisplayMode;
+    this.coolerWeightsNaNPolicy = coolerWeightsNaNPolicy;
+  }
+
+  public SimpleVisualizationOptions(
+    double preLogBase,
+    double postLogBase,
+    boolean applyCoolerWeights,
+    final boolean resolutionScaling,
+    final boolean resolutionLinearScaling,
+    final boolean autoThresholdEnabled,
+    final double autoThresholdQuantile,
+    final @NotNull SignalDisplayMode signalDisplayMode,
+    @NotNull Colormap colormap) {
+    this(
+      preLogBase,
+      postLogBase,
+      applyCoolerWeights,
+      resolutionScaling,
+      resolutionLinearScaling,
+      autoThresholdEnabled,
+      autoThresholdQuantile,
+      signalDisplayMode,
+      CoolerWeightsNaNPolicy.REPLACE_NANS_WITH_ONE,
+      colormap
+    );
   }
 
   public SimpleVisualizationOptions(

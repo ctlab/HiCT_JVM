@@ -155,6 +155,18 @@ public class Initializers {
     return result;
   }
 
+  private static long countNonFiniteWeights(final @NotNull List<@NotNull StripeDescriptor> stripes) {
+    long count = 0L;
+    for (final var stripe : stripes) {
+      for (final var weight : stripe.bin_weights()) {
+        if (!Double.isFinite(weight)) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
   public static @NotNull List<ContigTree.@NotNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
     final var resolutions = chunkedFile.getResolutions();
     final List<List<StripeDescriptor>> resolutionOrderToStripes = new ArrayList<>(resolutions.length);
@@ -185,6 +197,16 @@ public class Initializers {
       for (int i = 1; i < resolutions.length; ++i) {
         final var stripes = readStripeDescriptors(resolutions[i], reader);
         resolutionOrderToStripes.set(i, stripes);
+        final var nonFiniteWeights = countNonFiniteWeights(stripes);
+        if (nonFiniteWeights > 0L) {
+          chunkedFile.addCoolerWeightsNaNCount(nonFiniteWeights);
+          log.warn(
+            "Detected {} non-finite Cooler weights while opening {} at resolution {}",
+            nonFiniteWeights,
+            chunkedFile.getHdfFilePath().getFileName(),
+            resolutions[i]
+          );
+        }
         chunkedFile.getStripeCount()[i] = stripes.size();
         final var atus = readATL(resolutions[i], reader, stripes);
         resolutionOrderToBasisATUs.set(i, atus);

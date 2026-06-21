@@ -58,6 +58,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.LongStream;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
@@ -97,6 +98,7 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull Object nameOverrideLock = new Object();
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
   private final @NotNull FASTAProcessor fastaProcessor;
+  private final @NotNull AtomicLong coolerWeightsNaNCount = new AtomicLong(0L);
   @Getter
   private final AtomicInteger parallelThreadCount = new AtomicInteger(4);
 
@@ -196,6 +198,12 @@ public class ChunkedFile implements AutoCloseable {
 
   private void loadNameOverrides() {
     // Name overrides are session-only and should not be loaded from the HDF5 file.
+  }
+
+  public void addCoolerWeightsNaNCount(final long count) {
+    if (count > 0L) {
+      this.coolerWeightsNaNCount.addAndGet(count);
+    }
   }
 
   private static <K> void readOverrideMap(final @NotNull String encoded, final @NotNull Map<K, String> target, final @NotNull java.util.function.Function<String, K> keyParser) {

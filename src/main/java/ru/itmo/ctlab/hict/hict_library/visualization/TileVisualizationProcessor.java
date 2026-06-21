@@ -123,14 +123,18 @@ public class TileVisualizationProcessor {
       resolutionLinearScalingCoeff,
       visualizationOptions.isResolutionScaling(),
       visualizationOptions.isResolutionLinearScaling(),
-      visualizationOptions.isApplyCoolerWeights()
+      visualizationOptions.isApplyCoolerWeights(),
+      visualizationOptions.getCoolerWeightsNaNPolicy()
     );
     if (nativeBaseSignal != null) {
       return nativeBaseSignal;
     }
 
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-      final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
+      final var rowWeight = sanitizeCoolerWeight(
+        (rowWeights != null) ? rowWeights[rowIndex] : 1.0d,
+        visualizationOptions.getCoolerWeightsNaNPolicy()
+      );
       final var resultRow = baseSignal[rowIndex];
       for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
         var signal = input.getAsDouble(rowIndex, colIndex);
@@ -147,13 +151,21 @@ public class TileVisualizationProcessor {
           signal *= resolutionLinearScalingCoeff;
         }
         if (visualizationOptions.isApplyCoolerWeights()) {
-          final var columnWeight = (columnWeights != null && colIndex < columnWeights.length) ? columnWeights[colIndex] : 1.0d;
+          final var columnWeight = sanitizeCoolerWeight(
+            (columnWeights != null && colIndex < columnWeights.length) ? columnWeights[colIndex] : 1.0d,
+            visualizationOptions.getCoolerWeightsNaNPolicy()
+          );
           signal *= rowWeight * columnWeight;
         }
         resultRow[colIndex] = Double.isFinite(signal) ? signal : 0.0d;
       }
     }
     return baseSignal;
+  }
+
+  public static double sanitizeCoolerWeight(final double weight,
+                                            final @NotNull CoolerWeightsNaNPolicy policy) {
+    return policy.sanitize(weight);
   }
 
   public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,

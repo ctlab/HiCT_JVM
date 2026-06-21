@@ -28,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
+import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
 import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
@@ -101,7 +102,8 @@ public final class NativeProcessingService {
                                                           final double resolutionLinearScalingCoeff,
                                                           final boolean applyResolutionScaling,
                                                           final boolean applyResolutionLinearScaling,
-                                                          final boolean applyCoolerWeights) {
+                                                          final boolean applyCoolerWeights,
+                                                          final @NotNull CoolerWeightsNaNPolicy coolerWeightsNaNPolicy) {
     if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
       return null;
     }
@@ -126,8 +128,8 @@ public final class NativeProcessingService {
       if (matrix instanceof MatrixQueries.DoubleMatrix doubleMatrix) {
         computed = this.nativeTileProcessor.computeBaseSignalDouble(
           flattenDoubleMatrix(doubleMatrix.values(), rows, columns),
-          safeWeights(rawTile.rowWeights(), rows),
-          safeWeights(rawTile.colWeights(), columns),
+          safeWeights(rawTile.rowWeights(), rows, coolerWeightsNaNPolicy),
+          safeWeights(rawTile.colWeights(), columns, coolerWeightsNaNPolicy),
           rows,
           columns,
           lnPreLogBase,
@@ -141,8 +143,8 @@ public final class NativeProcessingService {
       } else if (matrix instanceof MatrixQueries.LongMatrix longMatrix) {
         computed = this.nativeTileProcessor.computeBaseSignalLong(
           flattenLongMatrix(longMatrix.values(), rows, columns),
-          safeWeights(rawTile.rowWeights(), rows),
-          safeWeights(rawTile.colWeights(), columns),
+          safeWeights(rawTile.rowWeights(), rows, coolerWeightsNaNPolicy),
+          safeWeights(rawTile.colWeights(), columns, coolerWeightsNaNPolicy),
           rows,
           columns,
           lnPreLogBase,
@@ -559,9 +561,26 @@ public final class NativeProcessingService {
   }
 
   private static double @NotNull [] safeWeights(final double @Nullable [] weights,
-                                                final int expectedLength) {
+                                                final int expectedLength,
+                                                final @NotNull CoolerWeightsNaNPolicy coolerWeightsNaNPolicy) {
     if (weights != null && weights.length >= expectedLength) {
-      return weights;
+      if (coolerWeightsNaNPolicy != CoolerWeightsNaNPolicy.DISABLE_WEIGHTS) {
+        boolean hasNonFinite = false;
+        for (int i = 0; i < expectedLength; i++) {
+          if (!Double.isFinite(weights[i])) {
+            hasNonFinite = true;
+            break;
+          }
+        }
+        if (!hasNonFinite) {
+          return weights;
+        }
+      }
+      final var sanitized = new double[expectedLength];
+      for (int i = 0; i < expectedLength; i++) {
+        sanitized[i] = coolerWeightsNaNPolicy.sanitize(weights[i]);
+      }
+      return sanitized;
     }
     final var fallback = new double[expectedLength];
     Arrays.fill(fallback, 1.0d);
