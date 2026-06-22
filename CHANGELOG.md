@@ -1,6 +1,6 @@
 # HiCT Changelog
 
-## 1.0.185-52f486a-webui_bea71e6
+## 1.0.190-a5f9213-webui_040c1a1
 
 Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 
@@ -12,6 +12,9 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Added metadata-preserving internal `.mcool` export as the default automatic export path, while keeping explicit hictk-assisted export available.
 - Added resolution restriction controls so users can keep the map at selected bin sizes while zooming.
 - Added ruler modes for global, intra-contig, and intra-scaffold coordinates.
+- Added row/column contig and scaffold isolation controls with searchable dropdowns, all-options browsing, and a row-to-column copy button.
+- Made rulers respect isolated row/column extents, so horizontal and vertical rulers span only the selected contig/scaffold scope.
+- Improved global ruler labels: the main label stays global, while the secondary label now shows intra-scaffold offsets when scaffolded and intra-contig offsets for unscaffolded regions.
 - Added configurable OSD overlay settings, including field visibility, order, and position.
 - Added an export workflow for converting `.hict.hdf5` matrices to `.mcool`, with current or custom AGP assembly state.
 - Added native-assisted sorting and chunked direct export improvements for HiCT-to-Cooler conversion, reducing memory pressure while preserving the existing `.hict.hdf5` layout and Cooler contracts.
@@ -30,6 +33,8 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Reduced WebUI freezes caused by large contig/scaffold style updates.
 - Updated the About window with correspondence contacts and this changelog.
 - Rendered the About window changelog as Markdown for readable headings, lists, links, and inline code.
+- Added multi-select 1D track picking in Open Wizard, with persistent selections while browsing directories and duplicate-track avoidance.
+- Fixed workspace exports so PNG/SVG/PDF export follows the interactive view, including current row/column isolation, overlays, visible tracks, names, and visualization settings.
 - Added a portable `toolbox` CLI entry point for launching bundled hictk, minimap2, and mm2-plus with upstream project, license, and citation notices.
 - Improved CLI boolean option parsing with optional true/false values and paired `--no-*` forms, plus concise parse errors instead of stack traces.
 - Changed sealed `.hic`/Cooler imports without external assembly files to place each imported chromosome/contig into its own scaffold.
@@ -42,3 +47,6 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Improved BED/GFF/GTF feature tracks at coarse zooms with bounded density rendering, clearer strand arrows, and safer rendering caps for dense annotation files.
 - Fixed Visualization Settings requests with blank numeric fields, so disabling auto-threshold and other toggles no longer causes a backend cast error.
 - Added detection and user-facing handling for invalid `NaN` Cooler balancing weights, including a warning dialog, red sidebar warning, and configurable rendering policy.
+- Added post-open control for invalid Cooler weight handling, so users can change the selected `NaN` weight policy after a map is already loaded.
+- Fixed first render after opening maps with invalid Cooler weights and delayed track initialization by refreshing OpenLayers, rulers, minimap viewport, and 1D tracks after the workspace grid changes, so the map no longer stays blank until minimap interaction.
+- Fixed first render after opening Hi-C plus dotplot overlay maps by applying overlay presentation before rendering, rebuilding secondary compatibility after assembly synchronization, then refreshing the workspace once more after the wizard closes.
