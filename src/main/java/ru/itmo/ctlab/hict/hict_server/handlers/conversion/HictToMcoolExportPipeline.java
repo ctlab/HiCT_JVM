@@ -53,6 +53,9 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.ge
 public final class HictToMcoolExportPipeline {
   private static final String DEFAULT_ASSEMBLY_NAME = "HiCT current assembly";
   private static final int DENSE_BLOCK_SIZE = 256;
+  private static final int DEFAULT_COO_MERGE_FAN_IN = 64;
+  private static final int MIN_COO_MERGE_FAN_IN = 2;
+  private static final int MAX_COO_MERGE_FAN_IN = 512;
   private final @NotNull ExternalToolchainManager toolchainManager;
 
   public HictToMcoolExportPipeline(final @NotNull ExternalToolchainManager toolchainManager) {
@@ -111,7 +114,7 @@ public final class HictToMcoolExportPipeline {
                                final @NotNull BooleanSupplier cancellationRequested) throws Exception {
     HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogger = synchronizedLogger(logger);
-    final var tmpDirectory = Files.createTempDirectory("hict-hict-to-mcool-");
+    final var tmpDirectory = createExportTempDirectory();
     synchronizedLogger.accept("Preparing hictk-assisted .mcool export in " + tmpDirectory);
 
     try (final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8))) {
@@ -590,6 +593,106 @@ public final class HictToMcoolExportPipeline {
       return;
     }
 
+    final int mergeFanIn = resolveCooMergeFanIn(logger);
+    logger.accept("Merging " + chunkPaths.size() + " sorted COO chunks with fan-in " + mergeFanIn);
+    final var liveChunks = new ArrayList<Path>(chunkPaths);
+    var current = new ArrayList<Path>(chunkPaths);
+    var pass = 0;
+    try {
+      while (current.size() > mergeFanIn) {
+        checkCancelled(cancellationRequested);
+        pass++;
+        final int mergedChunkCount = (current.size() + mergeFanIn - 1) / mergeFanIn;
+        logger.accept(
+          "COO merge pass " + pass + ": " + current.size() + " chunks -> " + mergedChunkCount + " chunks"
+        );
+        final var next = new ArrayList<Path>(mergedChunkCount);
+        for (int start = 0; start < current.size(); start += mergeFanIn) {
+          checkCancelled(cancellationRequested);
+          final int end = Math.min(current.size(), start + mergeFanIn);
+          final var group = new ArrayList<>(current.subList(start, end));
+          final var mergedPath = outputPath.getParent().resolve(String.format("pixels-merge-p%02d-%05d.bin", pass, next.size()));
+          final var stats = mergeChunkGroupToBinary(group, mergedPath, logger, cancellationRequested);
+          liveChunks.add(mergedPath);
+          deleteChunkFiles(group);
+          liveChunks.removeAll(group);
+          next.add(mergedPath);
+          logger.accept(
+            "COO merge pass " + pass + ": wrote " + mergedPath.getFileName() + " from " + group.size()
+              + " chunks, raw=" + stats.rawRecords() + ", unique=" + stats.uniqueRecords()
+          );
+        }
+        current = next;
+      }
+      mergeChunkGroupToGzipText(current, outputPath, logger, cancellationRequested);
+      deleteChunkFiles(current);
+      liveChunks.removeAll(current);
+    } finally {
+      deleteChunkFiles(liveChunks);
+    }
+  }
+
+  private static @NotNull MergeStats mergeChunkGroupToBinary(final @NotNull List<Path> chunkPaths,
+                                                             final @NotNull Path outputPath,
+                                                             final @NotNull Consumer<String> logger,
+                                                             final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    Files.deleteIfExists(outputPath);
+    try (final var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(outputPath)))) {
+      return mergeChunkGroup(
+        chunkPaths,
+        logger,
+        cancellationRequested,
+        (row, col, count) -> {
+          out.writeLong(row);
+          out.writeLong(col);
+          out.writeLong(count);
+        }
+      );
+    } catch (IOException | RuntimeException e) {
+      try {
+        Files.deleteIfExists(outputPath);
+      } catch (IOException deleteFailure) {
+        e.addSuppressed(deleteFailure);
+      }
+      throw e;
+    }
+  }
+
+  private static @NotNull MergeStats mergeChunkGroupToGzipText(final @NotNull List<Path> chunkPaths,
+                                                               final @NotNull Path outputPath,
+                                                               final @NotNull Consumer<String> logger,
+                                                               final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    Files.deleteIfExists(outputPath);
+    try (final var rawOut = Files.newOutputStream(outputPath);
+         final var gzipOut = new GZIPOutputStream(rawOut);
+         final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
+      return mergeChunkGroup(
+        chunkPaths,
+        logger,
+        cancellationRequested,
+        (row, col, count) -> {
+          writer.write(Long.toString(row));
+          writer.write('\t');
+          writer.write(Long.toString(col));
+          writer.write('\t');
+          writer.write(Long.toString(count));
+          writer.newLine();
+        }
+      );
+    } catch (IOException | RuntimeException e) {
+      try {
+        Files.deleteIfExists(outputPath);
+      } catch (IOException deleteFailure) {
+        e.addSuppressed(deleteFailure);
+      }
+      throw e;
+    }
+  }
+
+  private static @NotNull MergeStats mergeChunkGroup(final @NotNull List<Path> chunkPaths,
+                                                     final @NotNull Consumer<String> logger,
+                                                     final @NotNull BooleanSupplier cancellationRequested,
+                                                     final @NotNull MergedRecordSink sink) throws IOException {
     final var cursors = new ArrayList<ChunkCursor>(chunkPaths.size());
     final var queue = new PriorityQueue<ChunkCursor>(Comparator
       .comparingLong((ChunkCursor cursor) -> cursor.record().row())
@@ -605,57 +708,44 @@ public final class HictToMcoolExportPipeline {
           cursor.close();
         }
       }
-      try (final var rawOut = Files.newOutputStream(outputPath);
-           final var gzipOut = new GZIPOutputStream(rawOut);
-           final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
-        long rawRecords = 0L;
-        long written = 0L;
-        boolean hasPending = false;
-        long pendingRow = 0L;
-        long pendingCol = 0L;
-        long pendingCount = 0L;
-        while (!queue.isEmpty()) {
-          checkCancelled(cancellationRequested);
-          final var cursor = queue.poll();
-          final var record = cursor.record();
-          if (!hasPending) {
-            pendingRow = record.row();
-            pendingCol = record.col();
-            pendingCount = record.count();
-            hasPending = true;
-          } else if (pendingRow == record.row() && pendingCol == record.col()) {
-            pendingCount += record.count();
-          } else {
-            writer.write(Long.toString(pendingRow));
-            writer.write('\t');
-            writer.write(Long.toString(pendingCol));
-            writer.write('\t');
-            writer.write(Long.toString(pendingCount));
-            writer.newLine();
-            written++;
-            pendingRow = record.row();
-            pendingCol = record.col();
-            pendingCount = record.count();
-          }
-          rawRecords++;
-          if (cursor.advance()) {
-            queue.add(cursor);
-          }
-          if (rawRecords % 1_000_000L == 0L) {
-            logger.accept("Merged sorted COO records: raw=" + rawRecords + ", unique=" + written);
-          }
-        }
-        if (hasPending) {
-          writer.write(Long.toString(pendingRow));
-          writer.write('\t');
-          writer.write(Long.toString(pendingCol));
-          writer.write('\t');
-          writer.write(Long.toString(pendingCount));
-          writer.newLine();
+      long rawRecords = 0L;
+      long written = 0L;
+      boolean hasPending = false;
+      long pendingRow = 0L;
+      long pendingCol = 0L;
+      long pendingCount = 0L;
+      while (!queue.isEmpty()) {
+        checkCancelled(cancellationRequested);
+        final var cursor = queue.poll();
+        final var record = cursor.record();
+        if (!hasPending) {
+          pendingRow = record.row();
+          pendingCol = record.col();
+          pendingCount = record.count();
+          hasPending = true;
+        } else if (pendingRow == record.row() && pendingCol == record.col()) {
+          pendingCount += record.count();
+        } else {
+          sink.write(pendingRow, pendingCol, pendingCount);
           written++;
+          pendingRow = record.row();
+          pendingCol = record.col();
+          pendingCount = record.count();
         }
-        logger.accept("Merged sorted COO records complete: raw=" + rawRecords + ", unique=" + written);
+        rawRecords++;
+        if (cursor.advance()) {
+          queue.add(cursor);
+        }
+        if (rawRecords % 1_000_000L == 0L) {
+          logger.accept("Merged sorted COO records: raw=" + rawRecords + ", unique=" + written);
+        }
       }
+      if (hasPending) {
+        sink.write(pendingRow, pendingCol, pendingCount);
+        written++;
+      }
+      logger.accept("Merged sorted COO records complete: raw=" + rawRecords + ", unique=" + written);
+      return new MergeStats(rawRecords, written);
     } finally {
       IOException closeFailure = null;
       for (final var cursor : cursors) {
@@ -669,23 +759,8 @@ public final class HictToMcoolExportPipeline {
           }
         }
       }
-      IOException deleteFailure = null;
-      for (final var chunkPath : chunkPaths) {
-        try {
-          Files.deleteIfExists(chunkPath);
-        } catch (IOException e) {
-          if (deleteFailure == null) {
-            deleteFailure = e;
-          } else {
-            deleteFailure.addSuppressed(e);
-          }
-        }
-      }
       if (closeFailure != null) {
         throw closeFailure;
-      }
-      if (deleteFailure != null) {
-        throw deleteFailure;
       }
     }
   }
@@ -1065,6 +1140,63 @@ public final class HictToMcoolExportPipeline {
     };
   }
 
+  private static @NotNull Path createExportTempDirectory() throws IOException {
+    final var configuredRoot = firstNonBlank(
+      System.getProperty("hict.export.tmpDir"),
+      System.getenv("HICT_EXPORT_TMPDIR"),
+      System.getenv("TMPDIR")
+    );
+    if (configuredRoot == null) {
+      return Files.createTempDirectory("hict-hict-to-mcool-");
+    }
+    final var root = Files.createDirectories(Path.of(configuredRoot));
+    return Files.createTempDirectory(root, "hict-hict-to-mcool-");
+  }
+
+  private static int resolveCooMergeFanIn(final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.mergeFanIn"),
+      System.getenv("HICT_EXPORT_MERGE_FAN_IN")
+    );
+    if (configured == null) {
+      return DEFAULT_COO_MERGE_FAN_IN;
+    }
+    try {
+      final int requested = Integer.parseInt(configured);
+      return Math.max(MIN_COO_MERGE_FAN_IN, Math.min(MAX_COO_MERGE_FAN_IN, requested));
+    } catch (NumberFormatException ignored) {
+      logger.accept("WARNING: Ignoring invalid HICT_EXPORT_MERGE_FAN_IN/hict.export.mergeFanIn value: " + configured);
+      return DEFAULT_COO_MERGE_FAN_IN;
+    }
+  }
+
+  private static String firstNonBlank(final String... values) {
+    for (final var value : values) {
+      if (value != null && !value.isBlank()) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  private static void deleteChunkFiles(final @NotNull List<Path> paths) throws IOException {
+    IOException deleteFailure = null;
+    for (final var path : paths) {
+      try {
+        Files.deleteIfExists(path);
+      } catch (IOException e) {
+        if (deleteFailure == null) {
+          deleteFailure = e;
+        } else {
+          deleteFailure.addSuppressed(e);
+        }
+      }
+    }
+    if (deleteFailure != null) {
+      throw deleteFailure;
+    }
+  }
+
   private static void deleteRecursively(final @NotNull Path path) {
     if (!Files.exists(path)) {
       return;
@@ -1111,6 +1243,14 @@ public final class HictToMcoolExportPipeline {
   }
 
   private record CooRecord(long row, long col, long count) {
+  }
+
+  private record MergeStats(long rawRecords, long uniqueRecords) {
+  }
+
+  @FunctionalInterface
+  private interface MergedRecordSink {
+    void write(long row, long col, long count) throws IOException;
   }
 
   private static final class ChunkCursor implements AutoCloseable {

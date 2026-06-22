@@ -107,12 +107,21 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final @Nullable var fastaFilename = requestJSON.getString("fastaFilename");
 
           log.debug("Got filename: {} and FASTA filename: {}", filename, fastaFilename);
-          if (filename == null) {
-            throw new RuntimeException("Filename must be specified to open the file");
+          if (filename == null || filename.isBlank()) {
+            throw new IllegalArgumentException("Filename must be specified to open the file");
+          }
+          final var requestedFilename = filename.trim();
+          final var dataRoot = dataDirectory.normalize().toAbsolutePath();
+          final var requestedFilePath = dataRoot.resolve(requestedFilename).normalize().toAbsolutePath();
+          if (!requestedFilePath.startsWith(dataRoot)) {
+            throw new IllegalArgumentException("File path must stay inside the configured data directory: " + requestedFilename);
+          }
+          if (!Files.isRegularFile(requestedFilePath)) {
+            throw new IllegalArgumentException("Path is not a regular HiCT file: " + requestedFilename);
           }
           final boolean verbose = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
           if (verbose) {
-            log.info("Opening file {}", filename);
+            log.info("Opening file {}", requestedFilename);
           }
 
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
@@ -150,7 +159,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
             }
           }, () -> new ChunkedFile(
             new ChunkedFile.ChunkedFileOptions(
-              Path.of(dataDirectory.toString(), filename),
+              requestedFilePath,
               (int) map.getOrDefault("MIN_DS_POOL", 4),
               (int) map.getOrDefault("MAX_DS_POOL", 16)
             )
@@ -158,7 +167,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
           log.info("Putting chunkedFile into the local map");
           map.put(PRIMARY_CHUNKED_FILE_KEY, chunkedFileWrapper);
-          map.put("openedFilename", filename);
+          map.put("openedFilename", requestedFilename);
           map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
 
           final var processedDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
