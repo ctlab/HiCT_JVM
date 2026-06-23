@@ -176,7 +176,11 @@ public class HictCli implements Runnable {
       final var arg = args[i];
       if ("--verbose".equals(arg) || "-v".equals(arg)) {
         if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
-          return parseBooleanOption(args[i + 1]);
+          try {
+            return parseBooleanOption(args[i + 1]);
+          } catch (final CommandLine.TypeConversionException ignored) {
+            return true;
+          }
         }
         return true;
       }
@@ -200,7 +204,9 @@ public class HictCli implements Runnable {
           i++;
           continue;
         } catch (final CommandLine.TypeConversionException ignored) {
-          // Leave invalid values untouched so picocli reports the exact bad token.
+          normalized.add(arg);
+          normalized.add("true");
+          continue;
         }
       }
       normalized.add(arg);
