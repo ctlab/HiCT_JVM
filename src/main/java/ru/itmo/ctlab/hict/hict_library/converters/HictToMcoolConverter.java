@@ -102,6 +102,7 @@ public class HictToMcoolConverter {
       final int sortBatchSize = resolveSortBatchSize(options.chunkSize(), options.parallelism(), synchronizedLogConsumer);
       final boolean singleCoolerOutput = isSingleCoolerOutput(options.outputPath());
 
+      synchronizedLogConsumer.accept("HiCT native processing: " + NativeProcessingService.getInstance().status().summary());
       synchronizedLogConsumer.accept(
         "Converting internally with chunkSize=" + options.chunkSize() +
           ", sortBatchSize=" + sortBatchSize +
@@ -1322,9 +1323,9 @@ public class HictToMcoolConverter {
     return chunkPath;
   }
 
-  static void sortCoolerRecordsJava(final long @NotNull [] rows,
-                                    final long @NotNull [] cols,
-                                    final long @NotNull [] counts) {
+  public static void sortCoolerRecordsJava(final long @NotNull [] rows,
+                                           final long @NotNull [] cols,
+                                           final long @NotNull [] counts) {
     if (rows.length != cols.length || rows.length != counts.length) {
       throw new IllegalArgumentException("COO arrays must have identical lengths");
     }
@@ -1816,6 +1817,9 @@ public class HictToMcoolConverter {
       return DEFAULT_EXPORT_MEMORY_LIMIT_BYTES;
     }
     try {
+      if (isUnlimitedMemoryValue(configured)) {
+        return Long.MAX_VALUE;
+      }
       final long parsed = parseByteSize(configured);
       if (parsed <= 0L) {
         throw new IllegalArgumentException("must be positive");
@@ -1825,6 +1829,17 @@ public class HictToMcoolConverter {
       logger.accept("Ignoring invalid HiCT export memory limit '" + configured + "': " + err.getMessage());
       return DEFAULT_EXPORT_MEMORY_LIMIT_BYTES;
     }
+  }
+
+  private static boolean isUnlimitedMemoryValue(final @NotNull String rawValue) {
+    final var value = rawValue.trim().toLowerCase(Locale.ROOT);
+    return value.equals("0")
+      || value.equals("-1")
+      || value.equals("false")
+      || value.equals("no")
+      || value.equals("none")
+      || value.equals("off")
+      || value.equals("unlimited");
   }
 
   private static long parseByteSize(final @NotNull String rawValue) {
@@ -1858,6 +1873,9 @@ public class HictToMcoolConverter {
   }
 
   private static @NotNull String formatByteSize(final long bytes) {
+    if (bytes == Long.MAX_VALUE) {
+      return "unlimited";
+    }
     final double gib = bytes / (1024.0d * 1024.0d * 1024.0d);
     if (gib >= 1.0d) {
       return String.format(java.util.Locale.ROOT, "%.1f GiB", gib);

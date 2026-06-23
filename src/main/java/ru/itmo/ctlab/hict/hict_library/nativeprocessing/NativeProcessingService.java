@@ -667,5 +667,30 @@ public final class NativeProcessingService {
                                        long nativeOperationCount,
                                        long nativeFailedOperationCount,
                                        boolean nativeHdf5BackendAvailable) {
+    public @NotNull String summary() {
+      final var mode = available ? "available" : enabled ? "enabled-unavailable" : "disabled";
+      final var builder = new StringBuilder()
+        .append("mode=").append(mode)
+        .append(", requested=").append(requested)
+        .append(", enabled=").append(enabled)
+        .append(", available=").append(available)
+        .append(", version=").append(display(version))
+        .append(", source=").append(display(source))
+        .append(", hdf5Backend=").append(nativeHdf5BackendAvailable)
+        .append(", nativeSessionActive=").append(nativeSessionActive)
+        .append(", operations=").append(nativeOperationCount)
+        .append(", failedOperations=").append(nativeFailedOperationCount);
+      if (!reason.isBlank()) {
+        builder.append(", reason=").append(reason);
+      }
+      if (!lastFailure.isBlank()) {
+        builder.append(", lastFailure=").append(lastFailure);
+      }
+      return builder.toString();
+    }
+
+    private static @NotNull String display(final @NotNull String value) {
+      return value.isBlank() ? "n/a" : value;
+    }
   }
 }

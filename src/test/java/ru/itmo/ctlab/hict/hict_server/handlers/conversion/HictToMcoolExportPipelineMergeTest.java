@@ -78,12 +78,13 @@ class HictToMcoolExportPipelineMergeTest {
       "mergeSortedChunks",
       List.class,
       Path.class,
+      HictToMcoolExportPipeline.CooTextCompression.class,
       Consumer.class,
       BooleanSupplier.class
     );
     method.setAccessible(true);
     try {
-      method.invoke(null, chunks, output, logger, cancellationRequested);
+      method.invoke(null, chunks, output, HictToMcoolExportPipeline.CooTextCompression.GZIP, logger, cancellationRequested);
     } catch (InvocationTargetException e) {
       final var cause = e.getCause();
       if (cause instanceof Exception exception) {

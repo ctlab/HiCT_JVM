@@ -62,6 +62,9 @@ public class McoolToHictConverter {
   private static final int DENSE_THRESHOLD = (SUBMATRIX_SIZE * SUBMATRIX_SIZE) / 2;
   private static final long DEFAULT_IMPORT_MAX_MEMORY_BYTES = 16L * 1024L * 1024L * 1024L;
   private static final long MIN_IMPORT_MAX_MEMORY_BYTES = 256L * 1024L * 1024L;
+  private static final int DEFAULT_MAX_STRIPE_BATCH_SIZE = 2048;
+  private static final int MAX_STRIPE_BATCH_SIZE_LIMIT = 16384;
+  private static final int DEFAULT_MAX_WRITE_QUEUE_CAPACITY = 64;
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
     HDF5LibraryInitializer.initializeHDF5Library();
@@ -84,6 +87,7 @@ public class McoolToHictConverter {
           ", compressionAlgorithm=" + options.compressionAlgorithm() + ", compressionLevel=" + options.compressionLevel() +
           ", importMemoryBudget=" + formatByteSize(importMaxMemoryBytes)
       );
+      synchronizedLogConsumer.accept("HiCT native processing: " + NativeProcessingService.getInstance().status().summary());
 
       Files.deleteIfExists(options.outputPath());
       try (final var dst = HDF5Factory.open(options.outputPath().toFile());
@@ -656,21 +660,6 @@ public class McoolToHictConverter {
           }
           written++;
           writeProgress.report((int) written);
-
-          final int percent = (int) (written * 100L / stripeCount);
-          final var elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
-          final var etaMillis = estimateEtaMillis(written, stripeCount, elapsedMillis);
-          logConsumer.accept(
-            String.format(
-              "Resolution %d write: %d%% (%d/%d stripes), elapsed=%s, eta=%s",
-              resolution,
-              percent,
-              written,
-              stripeCount,
-              formatDuration(elapsedMillis),
-              formatDuration(etaMillis)
-            )
-          );
         }
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
@@ -1068,20 +1057,45 @@ public class McoolToHictConverter {
     if (stripeCount <= 1) {
       return 1;
     }
+    final int configuredCap = resolveConfiguredInt(
+      "hict.import.maxStripeBatchSize",
+      "HICT_IMPORT_MAX_STRIPE_BATCH_SIZE",
+      DEFAULT_MAX_STRIPE_BATCH_SIZE,
+      16,
+      MAX_STRIPE_BATCH_SIZE_LIMIT
+    );
     final long avgPixelsPerStripe = Math.max(1L, (nonzeroPixelCount + stripeCount - 1L) / stripeCount);
     final long workerCount = Math.max(1L, stripeWorkers);
-    final long usableBytesPerWorker = Math.max(MIN_IMPORT_MAX_MEMORY_BYTES / 4L, importMaxMemoryBytes / Math.max(2L, workerCount + 1L));
+    final long usableBytesPerWorker = importMaxMemoryBytes == Long.MAX_VALUE
+      ? Long.MAX_VALUE / Math.max(2L, workerCount + 1L)
+      : Math.max(MIN_IMPORT_MAX_MEMORY_BYTES / 4L, importMaxMemoryBytes / Math.max(2L, workerCount + 1L));
     final long conservativeBytesPerPixel = 96L;
     final long targetPixelsPerBatch = Math.max(1L, usableBytesPerWorker / conservativeBytesPerPixel);
     final long memoryBoundBatch = Math.max(1L, targetPixelsPerBatch / avgPixelsPerStripe);
     final int workerFloor = stripeWorkers <= 1 ? 1 : 4;
-    final int adaptive = (int) Math.min(256L, memoryBoundBatch);
+    final int adaptive = (int) Math.min(configuredCap, memoryBoundBatch);
     return Math.max(1, Math.min(stripeCount, Math.max(workerFloor, adaptive)));
   }
 
   private static int resolveWriteQueueCapacity(final int stripeWorkers, final long importMaxMemoryBytes) {
     final long gib = 1024L * 1024L * 1024L;
-    final int memoryBound = importMaxMemoryBytes < 2L * gib ? 2 : importMaxMemoryBytes < 8L * gib ? 4 : 8;
+    final int configured = resolveConfiguredInt(
+      "hict.import.writeQueueCapacity",
+      "HICT_IMPORT_WRITE_QUEUE_CAPACITY",
+      -1,
+      2,
+      256
+    );
+    if (configured > 0) {
+      return configured;
+    }
+    final int memoryBound = importMaxMemoryBytes == Long.MAX_VALUE
+      ? 128
+      : importMaxMemoryBytes < 2L * gib ? 4
+      : importMaxMemoryBytes < 8L * gib ? 8
+      : importMaxMemoryBytes < 16L * gib ? 16
+      : importMaxMemoryBytes < 64L * gib ? 32
+      : DEFAULT_MAX_WRITE_QUEUE_CAPACITY;
     return Math.max(2, Math.min(Math.max(2, stripeWorkers * 2), memoryBound));
   }
 
@@ -1438,9 +1452,40 @@ public class McoolToHictConverter {
       return DEFAULT_IMPORT_MAX_MEMORY_BYTES;
     }
     try {
+      if (isUnlimitedMemoryValue(configured)) {
+        return Long.MAX_VALUE;
+      }
       return Math.max(MIN_IMPORT_MAX_MEMORY_BYTES, parseByteSize(configured));
     } catch (IllegalArgumentException ignored) {
       return DEFAULT_IMPORT_MAX_MEMORY_BYTES;
+    }
+  }
+
+  private static boolean isUnlimitedMemoryValue(final @NotNull String rawValue) {
+    final var value = rawValue.trim().toLowerCase(java.util.Locale.ROOT);
+    return value.equals("0")
+      || value.equals("-1")
+      || value.equals("false")
+      || value.equals("no")
+      || value.equals("none")
+      || value.equals("off")
+      || value.equals("unlimited");
+  }
+
+  private static int resolveConfiguredInt(final @NotNull String propertyName,
+                                          final @NotNull String environmentName,
+                                          final int defaultValue,
+                                          final int minValue,
+                                          final int maxValue) {
+    final var configured = firstNonBlank(System.getProperty(propertyName), System.getenv(environmentName));
+    if (configured == null) {
+      return defaultValue;
+    }
+    try {
+      final int parsed = Integer.parseInt(configured.trim());
+      return Math.max(minValue, Math.min(maxValue, parsed));
+    } catch (NumberFormatException ignored) {
+      return defaultValue;
     }
   }
 
@@ -1480,6 +1525,9 @@ public class McoolToHictConverter {
   }
 
   private static @NotNull String formatByteSize(final long bytes) {
+    if (bytes == Long.MAX_VALUE) {
+      return "unlimited";
+    }
     final double gib = bytes / (1024.0d * 1024.0d * 1024.0d);
     if (gib >= 1.0d) {
       return String.format(java.util.Locale.ROOT, "%.1f GiB", gib);
@@ -2113,6 +2161,7 @@ public class McoolToHictConverter {
     private final @NotNull Consumer<String> logger;
     private final long startedNanos = System.nanoTime();
     private int lastLoggedPercent = -1;
+    private long lastLoggedNanos = 0L;
 
     private PhaseProgressTracker(
       final @NotNull String label,
@@ -2133,11 +2182,16 @@ public class McoolToHictConverter {
       }
       final int clampedDone = Math.max(0, Math.min(doneItems, totalItems));
       final int percent = (int) ((clampedDone * 100L) / totalItems);
-      if (lastLoggedPercent >= 0 && percent < 100 && percent - lastLoggedPercent < 5) {
+      final long now = System.nanoTime();
+      final boolean finish = clampedDone >= totalItems;
+      final boolean percentMilestone = lastLoggedPercent < 0 || percent - lastLoggedPercent >= 5;
+      final boolean timeMilestone = lastLoggedNanos > 0L && now - lastLoggedNanos >= 30_000_000_000L;
+      if (!finish && !percentMilestone && !timeMilestone) {
         return;
       }
       lastLoggedPercent = percent;
-      final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+      lastLoggedNanos = now;
+      final long elapsedMillis = (now - startedNanos) / 1_000_000L;
       final long etaMillis = estimateEtaMillis(clampedDone, totalItems, elapsedMillis);
       logger.accept(
         String.format(

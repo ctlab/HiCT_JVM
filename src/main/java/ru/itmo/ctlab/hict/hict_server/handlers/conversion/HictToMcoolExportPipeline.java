@@ -14,6 +14,7 @@ import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
+import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 
 import java.io.BufferedReader;
@@ -35,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.PriorityQueue;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
@@ -56,6 +58,11 @@ public final class HictToMcoolExportPipeline {
   private static final int DEFAULT_COO_MERGE_FAN_IN = 64;
   private static final int MIN_COO_MERGE_FAN_IN = 2;
   private static final int MAX_COO_MERGE_FAN_IN = 512;
+  private static final long DEFAULT_EXPORT_MAX_MEMORY_BYTES = 16L * 1024L * 1024L * 1024L;
+  private static final long MIN_EXPORT_MAX_MEMORY_BYTES = 256L * 1024L * 1024L;
+  private static final int MIN_COO_SORT_BATCH_SIZE = 250_000;
+  private static final int MAX_COO_SORT_BATCH_SIZE = 4_000_000;
+  private static final long ESTIMATED_COO_RECORD_BYTES = 128L;
   private final @NotNull ExternalToolchainManager toolchainManager;
 
   public HictToMcoolExportPipeline(final @NotNull ExternalToolchainManager toolchainManager) {
@@ -115,7 +122,16 @@ public final class HictToMcoolExportPipeline {
     HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogger = synchronizedLogger(logger);
     final var tmpDirectory = createExportTempDirectory();
+    final var cooCompression = resolveCooTextCompression(synchronizedLogger);
+    final long exportMaxMemoryBytes = resolveExportMaxMemoryBytes(synchronizedLogger);
+    final int hictkThreads = resolveToolThreads(options.parallelism());
     synchronizedLogger.accept("Preparing hictk-assisted .mcool export in " + tmpDirectory);
+    synchronizedLogger.accept("HiCT native processing: " + NativeProcessingService.getInstance().status().summary());
+    synchronizedLogger.accept(
+      "hictk-assisted export resources: hictkThreads=" + hictkThreads +
+        ", cooCompression=" + cooCompression.logName() +
+        ", exportMemoryBudget=" + formatByteSize(exportMaxMemoryBytes)
+    );
 
     try (final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8))) {
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
@@ -151,6 +167,8 @@ public final class HictToMcoolExportPipeline {
           assemblyLayout,
           selectedResolutions.get(0),
           tmpDirectory,
+          cooCompression,
+          exportMaxMemoryBytes,
           overallTracker,
           synchronizedLogger,
           processSink,
@@ -181,7 +199,7 @@ public final class HictToMcoolExportPipeline {
 
           final var resolutionTmpDir = Files.createDirectories(tmpDirectory.resolve("r" + resolution));
           final var chromSizesPath = resolutionTmpDir.resolve("chrom.sizes");
-          final var cooPath = resolutionTmpDir.resolve("pixels.coo.gz");
+          final var cooPath = cooCompression.resolvePath(resolutionTmpDir, "pixels");
           final var coolPath = resolutionTmpDir.resolve("pixels.cool");
 
           writeChromSizesFile(assemblyLayout, chromSizesPath);
@@ -192,6 +210,8 @@ public final class HictToMcoolExportPipeline {
             cooPath,
             mapper,
             options.chunkSize(),
+            exportMaxMemoryBytes,
+            cooCompression,
             overallTracker,
             synchronizedLogger,
             cancellationRequested
@@ -267,7 +287,7 @@ public final class HictToMcoolExportPipeline {
       Long.toString(resolution),
       "--assume-sorted",
       "--threads",
-      Integer.toString(Math.max(2, Math.min(Math.max(2, parallelism), 24))),
+      Integer.toString(resolveToolThreads(parallelism)),
       "--tmpdir",
       workDirectory.toString(),
       "--force",
@@ -283,6 +303,8 @@ public final class HictToMcoolExportPipeline {
                                           final @NotNull HictToMcoolConverter.CoolerAssemblyLayout assemblyLayout,
                                           final long resolution,
                                           final @NotNull Path tmpDirectory,
+                                          final @NotNull CooTextCompression cooCompression,
+                                          final long exportMaxMemoryBytes,
                                           final @NotNull OverallProgressTracker overallTracker,
                                           final @NotNull Consumer<String> logger,
                                           final @NotNull Consumer<Process> processSink,
@@ -299,7 +321,7 @@ public final class HictToMcoolExportPipeline {
     Files.deleteIfExists(options.outputPath());
     final var resolutionTmpDir = Files.createDirectories(tmpDirectory.resolve("single-r" + resolution));
     final var chromSizesPath = resolutionTmpDir.resolve("chrom.sizes");
-    final var cooPath = resolutionTmpDir.resolve("pixels.coo.gz");
+    final var cooPath = cooCompression.resolvePath(resolutionTmpDir, "pixels");
 
     writeChromSizesFile(assemblyLayout, chromSizesPath);
     final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
@@ -309,6 +331,8 @@ public final class HictToMcoolExportPipeline {
       cooPath,
       mapper,
       options.chunkSize(),
+      exportMaxMemoryBytes,
+      cooCompression,
       overallTracker,
       logger,
       cancellationRequested
@@ -355,7 +379,7 @@ public final class HictToMcoolExportPipeline {
           "ice",
           "--force",
           "--threads",
-          Integer.toString(Math.max(2, Math.min(Math.max(2, parallelism), 24))),
+          Integer.toString(resolveToolThreads(parallelism)),
           "--tmpdir",
           workDirectory.toString(),
           "--ignore-diags",
@@ -433,12 +457,14 @@ public final class HictToMcoolExportPipeline {
                                            final @NotNull Path outputPath,
                                            final @NotNull SourceToAssemblyMapper mapper,
                                            final int chunkSize,
+                                           final long exportMaxMemoryBytes,
+                                           final @NotNull CooTextCompression cooCompression,
                                            final @NotNull OverallProgressTracker overallTracker,
                                            final @NotNull Consumer<String> logger,
                                            final @NotNull BooleanSupplier cancellationRequested) throws IOException {
     final var workDir = Files.createDirectories(outputPath.getParent());
     final var chunkPaths = new ArrayList<Path>();
-    final int sortBatchSize = Math.max(50_000, Math.min(Math.max(50_000, chunkSize), 250_000));
+    final int sortBatchSize = resolveCooSortBatchSize(chunkSize, exportMaxMemoryBytes, logger);
     final var batch = new ArrayList<CooRecord>(sortBatchSize);
     try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
       final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
@@ -558,23 +584,31 @@ public final class HictToMcoolExportPipeline {
       chunkPaths.add(chunkPath);
       batch.clear();
     }
-    mergeSortedChunks(chunkPaths, outputPath, logger, cancellationRequested);
+    mergeSortedChunks(chunkPaths, outputPath, cooCompression, logger, cancellationRequested);
   }
 
   private static @NotNull Path flushSortedChunk(final @NotNull Path workDir,
                                                 final long resolution,
                                                 final int chunkIndex,
                                                 final @NotNull List<CooRecord> records) throws IOException {
-    records.sort(Comparator
-      .comparingLong(CooRecord::row)
-      .thenComparingLong(CooRecord::col)
-      .thenComparingLong(CooRecord::count));
+    final var rows = new long[records.size()];
+    final var cols = new long[records.size()];
+    final var counts = new long[records.size()];
+    for (int i = 0; i < records.size(); i++) {
+      final var record = records.get(i);
+      rows[i] = record.row();
+      cols[i] = record.col();
+      counts[i] = record.count();
+    }
+    if (!NativeProcessingService.getInstance().trySortCoolerRecordsRowMajor(rows, cols, counts)) {
+      HictToMcoolConverter.sortCoolerRecordsJava(rows, cols, counts);
+    }
     final var chunkPath = workDir.resolve(String.format("pixels-r%d-%05d.bin", resolution, chunkIndex));
     try (final var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(chunkPath)))) {
-      for (final var record : records) {
-        out.writeLong(record.row());
-        out.writeLong(record.col());
-        out.writeLong(record.count());
+      for (int i = 0; i < rows.length; i++) {
+        out.writeLong(rows[i]);
+        out.writeLong(cols[i]);
+        out.writeLong(counts[i]);
       }
     }
     return chunkPath;
@@ -582,14 +616,11 @@ public final class HictToMcoolExportPipeline {
 
   private static void mergeSortedChunks(final @NotNull List<Path> chunkPaths,
                                         final @NotNull Path outputPath,
+                                        final @NotNull CooTextCompression cooCompression,
                                         final @NotNull Consumer<String> logger,
                                         final @NotNull BooleanSupplier cancellationRequested) throws IOException {
     if (chunkPaths.isEmpty()) {
-      try (final var rawOut = Files.newOutputStream(outputPath);
-           final var gzipOut = new GZIPOutputStream(rawOut);
-           final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
-        writer.flush();
-      }
+      writeEmptyCoo(outputPath, cooCompression);
       return;
     }
 
@@ -624,7 +655,7 @@ public final class HictToMcoolExportPipeline {
         }
         current = next;
       }
-      mergeChunkGroupToGzipText(current, outputPath, logger, cancellationRequested);
+      mergeChunkGroupToText(current, outputPath, cooCompression, logger, cancellationRequested);
       deleteChunkFiles(current);
       liveChunks.removeAll(current);
     } finally {
@@ -658,14 +689,20 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
-  private static @NotNull MergeStats mergeChunkGroupToGzipText(final @NotNull List<Path> chunkPaths,
-                                                               final @NotNull Path outputPath,
-                                                               final @NotNull Consumer<String> logger,
-                                                               final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+  private static void writeEmptyCoo(final @NotNull Path outputPath,
+                                    final @NotNull CooTextCompression cooCompression) throws IOException {
+    try (final var writer = cooCompression.openWriter(outputPath)) {
+      writer.flush();
+    }
+  }
+
+  private static @NotNull MergeStats mergeChunkGroupToText(final @NotNull List<Path> chunkPaths,
+                                                           final @NotNull Path outputPath,
+                                                           final @NotNull CooTextCompression cooCompression,
+                                                           final @NotNull Consumer<String> logger,
+                                                           final @NotNull BooleanSupplier cancellationRequested) throws IOException {
     Files.deleteIfExists(outputPath);
-    try (final var rawOut = Files.newOutputStream(outputPath);
-         final var gzipOut = new GZIPOutputStream(rawOut);
-         final var writer = new BufferedWriter(new OutputStreamWriter(gzipOut, StandardCharsets.UTF_8))) {
+    try (final var writer = cooCompression.openWriter(outputPath)) {
       return mergeChunkGroup(
         chunkPaths,
         logger,
@@ -1153,6 +1190,131 @@ public final class HictToMcoolExportPipeline {
     return Files.createTempDirectory(root, "hict-hict-to-mcool-");
   }
 
+  private static int resolveToolThreads(final int parallelism) {
+    if (parallelism <= 0) {
+      return Math.max(1, Runtime.getRuntime().availableProcessors());
+    }
+    return Math.max(1, parallelism);
+  }
+
+  private static int resolveCooSortBatchSize(final int chunkSize,
+                                             final long exportMaxMemoryBytes,
+                                             final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.cooSortBatchSize"),
+      System.getenv("HICT_EXPORT_COO_SORT_BATCH_SIZE")
+    );
+    if (configured != null) {
+      try {
+        final int requested = Integer.parseInt(configured);
+        final int clamped = Math.max(MIN_COO_SORT_BATCH_SIZE, Math.min(MAX_COO_SORT_BATCH_SIZE, requested));
+        logger.accept("COO sort batch size=" + clamped + " records (configured)");
+        return clamped;
+      } catch (NumberFormatException ignored) {
+        logger.accept("WARNING: Ignoring invalid HICT_EXPORT_COO_SORT_BATCH_SIZE/hict.export.cooSortBatchSize value: " + configured);
+      }
+    }
+    final long memoryBoundRecords = exportMaxMemoryBytes == Long.MAX_VALUE
+      ? MAX_COO_SORT_BATCH_SIZE
+      : Math.max(MIN_COO_SORT_BATCH_SIZE, exportMaxMemoryBytes / 8L / ESTIMATED_COO_RECORD_BYTES);
+    final int batchSize = (int) Math.max(
+      MIN_COO_SORT_BATCH_SIZE,
+      Math.min(MAX_COO_SORT_BATCH_SIZE, Math.max((long) chunkSize, memoryBoundRecords))
+    );
+    logger.accept("COO sort batch size=" + batchSize + " records");
+    return batchSize;
+  }
+
+  private static long resolveExportMaxMemoryBytes(final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.maxMemoryBytes"),
+      System.getenv("HICT_EXPORT_MAX_MEMORY_BYTES"),
+      System.getenv("HICT_CONVERSION_MAX_MEMORY_BYTES")
+    );
+    if (configured == null) {
+      return DEFAULT_EXPORT_MAX_MEMORY_BYTES;
+    }
+    try {
+      if (isUnlimitedMemoryValue(configured)) {
+        return Long.MAX_VALUE;
+      }
+      return Math.max(MIN_EXPORT_MAX_MEMORY_BYTES, parseByteSize(configured));
+    } catch (RuntimeException e) {
+      logger.accept("WARNING: Ignoring invalid HiCT export memory limit '" + configured + "': " + e.getMessage());
+      return DEFAULT_EXPORT_MAX_MEMORY_BYTES;
+    }
+  }
+
+  private static long parseByteSize(final @NotNull String rawValue) {
+    final var value = rawValue.trim().toLowerCase(Locale.ROOT);
+    if (value.isBlank()) {
+      throw new IllegalArgumentException("blank byte size");
+    }
+    int suffixStart = value.length();
+    while (suffixStart > 0 && Character.isLetter(value.charAt(suffixStart - 1))) {
+      suffixStart--;
+    }
+    final var numberPart = value.substring(0, suffixStart).trim();
+    final var suffix = value.substring(suffixStart).trim();
+    final double number = Double.parseDouble(numberPart);
+    if (!Double.isFinite(number) || number <= 0.0d) {
+      throw new IllegalArgumentException("invalid byte size");
+    }
+    final long multiplier = switch (suffix) {
+      case "", "b", "bytes" -> 1L;
+      case "k", "kb", "kib" -> 1024L;
+      case "m", "mb", "mib" -> 1024L * 1024L;
+      case "g", "gb", "gib" -> 1024L * 1024L * 1024L;
+      case "t", "tb", "tib" -> 1024L * 1024L * 1024L * 1024L;
+      default -> throw new IllegalArgumentException("unknown byte-size suffix: " + suffix);
+    };
+    return Math.max(1L, (long) Math.floor(number * multiplier));
+  }
+
+  private static boolean isUnlimitedMemoryValue(final @NotNull String rawValue) {
+    final var value = rawValue.trim().toLowerCase(Locale.ROOT);
+    return value.equals("0")
+      || value.equals("-1")
+      || value.equals("false")
+      || value.equals("no")
+      || value.equals("none")
+      || value.equals("off")
+      || value.equals("unlimited");
+  }
+
+  private static @NotNull String formatByteSize(final long bytes) {
+    if (bytes == Long.MAX_VALUE) {
+      return "unlimited";
+    }
+    final double gib = bytes / (1024.0d * 1024.0d * 1024.0d);
+    if (gib >= 1.0d) {
+      return String.format(Locale.ROOT, "%.1f GiB", gib);
+    }
+    final double mib = bytes / (1024.0d * 1024.0d);
+    if (mib >= 1.0d) {
+      return String.format(Locale.ROOT, "%.1f MiB", mib);
+    }
+    return bytes + " B";
+  }
+
+  private static @NotNull CooTextCompression resolveCooTextCompression(final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.cooCompression"),
+      System.getenv("HICT_EXPORT_COO_COMPRESSION")
+    );
+    if (configured == null) {
+      return CooTextCompression.NONE;
+    }
+    return switch (configured.trim().toLowerCase(Locale.ROOT)) {
+      case "none", "plain", "text", "false", "no", "off", "0" -> CooTextCompression.NONE;
+      case "gzip", "gz", "true", "yes", "on", "1" -> CooTextCompression.GZIP;
+      default -> {
+        logger.accept("WARNING: Ignoring invalid HICT_EXPORT_COO_COMPRESSION/hict.export.cooCompression value: " + configured);
+        yield CooTextCompression.NONE;
+      }
+    };
+  }
+
   private static int resolveCooMergeFanIn(final @NotNull Consumer<String> logger) {
     final var configured = firstNonBlank(
       System.getProperty("hict.export.mergeFanIn"),
@@ -1239,6 +1401,39 @@ public final class HictToMcoolExportPipeline {
         }
       }
       throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+    }
+  }
+
+  enum CooTextCompression {
+    NONE("none", ".coo"),
+    GZIP("gzip", ".coo.gz");
+
+    private final @NotNull String logName;
+    private final @NotNull String suffix;
+
+    CooTextCompression(final @NotNull String logName, final @NotNull String suffix) {
+      this.logName = logName;
+      this.suffix = suffix;
+    }
+
+    private @NotNull String logName() {
+      return logName;
+    }
+
+    private @NotNull Path resolvePath(final @NotNull Path directory, final @NotNull String basename) {
+      return directory.resolve(basename + suffix);
+    }
+
+    private @NotNull BufferedWriter openWriter(final @NotNull Path path) throws IOException {
+      return switch (this) {
+        case NONE -> Files.newBufferedWriter(path, StandardCharsets.UTF_8);
+        case GZIP -> new BufferedWriter(
+          new OutputStreamWriter(
+            new GZIPOutputStream(Files.newOutputStream(path)),
+            StandardCharsets.UTF_8
+          )
+        );
+      };
     }
   }
 

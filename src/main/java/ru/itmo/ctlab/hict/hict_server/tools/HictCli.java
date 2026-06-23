@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_server.tools;
 
 import io.vertx.core.Launcher;
 import hdf.hdf5lib.H5;
+import org.jetbrains.annotations.NotNull;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -21,8 +22,10 @@ import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Callable;
@@ -735,23 +738,77 @@ public class HictCli implements Runnable {
 
     Consumer<String> stdoutLogger() {
       final boolean verboseEnabled = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
+      final Map<String, Integer> lastLocalProgressByPhase = new HashMap<>();
+      final Map<String, Integer> lastOverallProgressByPhase = new HashMap<>();
       return message -> {
-        if (!verboseEnabled) {
-          return;
-        }
         synchronized (System.out) {
           final var overall = OVERALL_PROGRESS_PATTERN.matcher(message);
           final var local = LOCAL_PROGRESS_PATTERN.matcher(message);
-          if (overall.find()) {
+          if (verboseEnabled && overall.find()) {
             System.out.println("[TOTAL " + overall.group(1) + "%] " + message);
-          } else if (local.find()) {
+          } else if (verboseEnabled && local.find()) {
             System.out.println("[LOCAL " + local.group(1) + "%] " + message);
-          } else {
+          } else if (verboseEnabled) {
             System.out.println(message);
+          } else {
+            final var overallForDefault = OVERALL_PROGRESS_PATTERN.matcher(message);
+            final var localForDefault = LOCAL_PROGRESS_PATTERN.matcher(message);
+            if (overallForDefault.find()) {
+              final int percent = Integer.parseInt(overallForDefault.group(1));
+              final int previous = lastOverallProgressByPhase.getOrDefault("overall", -1);
+              if (percent != previous) {
+                lastOverallProgressByPhase.put("overall", percent);
+                System.out.println("[TOTAL " + percent + "%] " + message);
+              } else {
+                return;
+              }
+            } else if (localForDefault.find()) {
+              final int percent = Integer.parseInt(localForDefault.group(1));
+              final var phase = progressPhaseKey(message);
+              final int previous = lastLocalProgressByPhase.getOrDefault(phase, -1);
+              if (percent != previous) {
+                lastLocalProgressByPhase.put(phase, percent);
+                System.out.println("[LOCAL " + percent + "%] " + message);
+              } else {
+                return;
+              }
+            } else if (isImportantConversionMessage(message)) {
+              System.out.println(message);
+            } else {
+              return;
+            }
           }
           System.out.flush();
         }
       };
+    }
+
+    private static @NotNull String progressPhaseKey(final @NotNull String message) {
+      final int colonIndex = message.indexOf(':');
+      return colonIndex > 0 ? message.substring(0, colonIndex) : message;
+    }
+
+    private static boolean isImportantConversionMessage(final @NotNull String message) {
+      return message.startsWith("HICT_")
+        || message.startsWith("WARNING:")
+        || message.startsWith("ERROR:")
+        || message.startsWith("Converting ")
+        || message.startsWith("Preparing ")
+        || message.startsWith("Applied AGP ")
+        || message.startsWith("Applied assembly ")
+        || message.startsWith("HiCT native processing:")
+        || message.startsWith("hictk-assisted export resources:")
+        || message.startsWith("COO sort batch size=")
+        || message.startsWith("Merging ")
+        || message.startsWith("COO merge pass ")
+        || message.startsWith("Merged sorted COO records complete:")
+        || message.startsWith("Running hictk")
+        || message.startsWith("Skipping hictk")
+        || message.startsWith("Finished ")
+        || message.startsWith("Created ")
+        || message.contains("memory budget=")
+        || message.contains("workers=")
+        || message.contains("sortBatchSize=");
     }
 
     void initializeHdf5() {
