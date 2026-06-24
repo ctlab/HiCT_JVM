@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.PriorityQueue;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -61,8 +62,10 @@ public final class HictToMcoolExportPipeline {
   private static final long DEFAULT_EXPORT_MAX_MEMORY_BYTES = 16L * 1024L * 1024L * 1024L;
   private static final long MIN_EXPORT_MAX_MEMORY_BYTES = 256L * 1024L * 1024L;
   private static final int MIN_COO_SORT_BATCH_SIZE = 250_000;
-  private static final int MAX_COO_SORT_BATCH_SIZE = 4_000_000;
+  private static final int MAX_COO_SORT_BATCH_SIZE = 8_000_000;
   private static final long ESTIMATED_COO_RECORD_BYTES = 128L;
+  private static final long PROGRESS_LOG_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(30L);
+  private static final long ETA_WARMUP_MIN_ITEMS = 1_000_000L;
   private final @NotNull ExternalToolchainManager toolchainManager;
 
   public HictToMcoolExportPipeline(final @NotNull ExternalToolchainManager toolchainManager) {
@@ -465,7 +468,7 @@ public final class HictToMcoolExportPipeline {
     final var workDir = Files.createDirectories(outputPath.getParent());
     final var chunkPaths = new ArrayList<Path>();
     final int sortBatchSize = resolveCooSortBatchSize(chunkSize, exportMaxMemoryBytes, logger);
-    final var batch = new ArrayList<CooRecord>(sortBatchSize);
+    final var batch = new CooRecordBatch(sortBatchSize);
     try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
       final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
       final var blockOffsetsPath = getBlockOffsetDatasetPath(resolution);
@@ -495,7 +498,15 @@ public final class HictToMcoolExportPipeline {
         }
       }
       final long startedNanos = System.nanoTime();
+      long lastLoggedNanos = startedNanos;
       int lastLoggedPercent = -1;
+      logger.accept(
+        "Resolution " + resolution + " COO export started: source entries=" + total +
+          ", sortBatchSize=" + sortBatchSize +
+          ", chunkSize=" + chunkSize +
+          ", tempCompression=" + cooCompression.logName() +
+          ". This stage streams, remaps and sorts the selected HiCT pixels before hictk loads them."
+      );
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
         checkCancelled(cancellationRequested);
         final long rowBase = (long) rowStripe * stripeCount;
@@ -559,19 +570,22 @@ public final class HictToMcoolExportPipeline {
           overallTracker.add(blockLen, "Resolution " + resolution + " COO export");
           if (total > 0) {
             final int percent = (int) ((processedPixels * 100L) / total);
-            if (percent >= 100 || percent - lastLoggedPercent >= 10) {
+            final long nowNanos = System.nanoTime();
+            if (percent >= 100 || percent > lastLoggedPercent || nowNanos - lastLoggedNanos >= PROGRESS_LOG_INTERVAL_NANOS) {
               lastLoggedPercent = percent;
-              final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+              lastLoggedNanos = nowNanos;
+              final long elapsedMillis = (nowNanos - startedNanos) / 1_000_000L;
               final long etaMillis = estimateEtaMillis(processedPixels, total, elapsedMillis);
               logger.accept(
                 String.format(
-                  "Resolution %d COO export: %d%% (%d/%d), elapsed=%s, eta=%s",
+                  "Resolution %d COO export: %d%% (%d/%d), elapsed=%s, eta=%s, rate=%s",
                   resolution,
                   percent,
                   processedPixels,
                   total,
                   formatDuration(elapsedMillis),
-                  formatDuration(etaMillis)
+                  formatEta(processedPixels, total, elapsedMillis, etaMillis),
+                  formatItemsPerSecond(processedPixels, elapsedMillis)
                 )
               );
             }
@@ -590,16 +604,10 @@ public final class HictToMcoolExportPipeline {
   private static @NotNull Path flushSortedChunk(final @NotNull Path workDir,
                                                 final long resolution,
                                                 final int chunkIndex,
-                                                final @NotNull List<CooRecord> records) throws IOException {
-    final var rows = new long[records.size()];
-    final var cols = new long[records.size()];
-    final var counts = new long[records.size()];
-    for (int i = 0; i < records.size(); i++) {
-      final var record = records.get(i);
-      rows[i] = record.row();
-      cols[i] = record.col();
-      counts[i] = record.count();
-    }
+                                                final @NotNull CooRecordBatch records) throws IOException {
+    final var rows = records.copyRows();
+    final var cols = records.copyCols();
+    final var counts = records.copyCounts();
     if (!NativeProcessingService.getInstance().trySortCoolerRecordsRowMajor(rows, cols, counts)) {
       HictToMcoolConverter.sortCoolerRecordsJava(rows, cols, counts);
     }
@@ -872,7 +880,7 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
-  private static void appendMappedRecord(final @NotNull List<CooRecord> batch,
+  private static void appendMappedRecord(final @NotNull CooRecordBatch batch,
                                          final @NotNull SourceToAssemblyMapper mapper,
                                          final long sourceRow,
                                          final long sourceCol,
@@ -884,7 +892,7 @@ public final class HictToMcoolExportPipeline {
       mappedRow = mappedCol;
       mappedCol = tmp;
     }
-    batch.add(new CooRecord(mappedRow, mappedCol, count));
+    batch.add(mappedRow, mappedCol, count);
   }
 
   private static boolean isFloatingPointDataset(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
@@ -1152,6 +1160,37 @@ public final class HictToMcoolExportPipeline {
       return 0L;
     }
     return (elapsedMillis * (total - done)) / done;
+  }
+
+  private static @NotNull String formatEta(final long done,
+                                           final long total,
+                                           final long elapsedMillis,
+                                           final long etaMillis) {
+    if (done <= 0L || total <= 0L || done >= total) {
+      return "00:00";
+    }
+    final long warmupThreshold = Math.min(ETA_WARMUP_MIN_ITEMS, Math.max(1L, total / 1_000L));
+    if (done < warmupThreshold || elapsedMillis < 5_000L) {
+      return "warming-up";
+    }
+    return formatDuration(etaMillis);
+  }
+
+  private static @NotNull String formatItemsPerSecond(final long done, final long elapsedMillis) {
+    if (done <= 0L || elapsedMillis <= 0L) {
+      return "0/s";
+    }
+    final double rate = (done * 1000.0d) / elapsedMillis;
+    if (rate >= 1_000_000_000.0d) {
+      return String.format(Locale.ROOT, "%.2fG/s", rate / 1_000_000_000.0d);
+    }
+    if (rate >= 1_000_000.0d) {
+      return String.format(Locale.ROOT, "%.2fM/s", rate / 1_000_000.0d);
+    }
+    if (rate >= 1_000.0d) {
+      return String.format(Locale.ROOT, "%.2fk/s", rate / 1_000.0d);
+    }
+    return String.format(Locale.ROOT, "%.0f/s", rate);
   }
 
   private static @NotNull String formatDuration(final long millis) {
@@ -1440,6 +1479,56 @@ public final class HictToMcoolExportPipeline {
   private record CooRecord(long row, long col, long count) {
   }
 
+  private static final class CooRecordBatch {
+    private final long[] rows;
+    private final long[] cols;
+    private final long[] counts;
+    private int size;
+
+    private CooRecordBatch(final int capacity) {
+      if (capacity <= 0) {
+        throw new IllegalArgumentException("COO batch capacity must be positive");
+      }
+      this.rows = new long[capacity];
+      this.cols = new long[capacity];
+      this.counts = new long[capacity];
+    }
+
+    private void add(final long row, final long col, final long count) {
+      if (size >= rows.length) {
+        throw new IllegalStateException("COO batch is full");
+      }
+      rows[size] = row;
+      cols[size] = col;
+      counts[size] = count;
+      size++;
+    }
+
+    private int size() {
+      return size;
+    }
+
+    private boolean isEmpty() {
+      return size == 0;
+    }
+
+    private void clear() {
+      size = 0;
+    }
+
+    private long @NotNull [] copyRows() {
+      return Arrays.copyOf(rows, size);
+    }
+
+    private long @NotNull [] copyCols() {
+      return Arrays.copyOf(cols, size);
+    }
+
+    private long @NotNull [] copyCounts() {
+      return Arrays.copyOf(counts, size);
+    }
+  }
+
   private record MergeStats(long rawRecords, long uniqueRecords) {
   }
 
@@ -1484,6 +1573,7 @@ public final class HictToMcoolExportPipeline {
     private final long startedNanos = System.nanoTime();
     private final Consumer<String> logger;
     private final AtomicLong doneItems = new AtomicLong(0L);
+    private final AtomicLong lastLoggedNanos = new AtomicLong(startedNanos);
     private volatile int lastPercent = -1;
 
     private OverallProgressTracker(final long totalItems, final @NotNull Consumer<String> logger) {
@@ -1494,20 +1584,23 @@ public final class HictToMcoolExportPipeline {
     private void add(final long items, final @NotNull String detail) {
       final long done = Math.min(totalItems, doneItems.addAndGet(items));
       final int percent = (int) ((done * 100L) / Math.max(1L, totalItems));
-      if (percent < 100 && percent == lastPercent) {
+      final long nowNanos = System.nanoTime();
+      if (percent < 100 && percent == lastPercent && nowNanos - lastLoggedNanos.get() < PROGRESS_LOG_INTERVAL_NANOS) {
         return;
       }
+      lastLoggedNanos.set(nowNanos);
       lastPercent = percent;
-      final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+      final long elapsedMillis = (nowNanos - startedNanos) / 1_000_000L;
       final long etaMillis = estimateEtaMillis(done, totalItems, elapsedMillis);
       logger.accept(
         String.format(
-          "Overall progress: %d%% (%d/%d), elapsed=%s, eta=%s - %s",
+          "Overall progress: %d%% (%d/%d), elapsed=%s, eta=%s, rate=%s - %s",
           percent,
           done,
           totalItems,
           formatDuration(elapsedMillis),
-          formatDuration(etaMillis),
+          formatEta(done, totalItems, elapsedMillis, etaMillis),
+          formatItemsPerSecond(done, elapsedMillis),
           detail
         )
       );

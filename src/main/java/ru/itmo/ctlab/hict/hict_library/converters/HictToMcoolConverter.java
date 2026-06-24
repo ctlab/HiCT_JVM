@@ -54,9 +54,14 @@ public class HictToMcoolConverter {
   public static final String HICT_METADATA_CONTIG_ORDER_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/ordered_contig_ids";
   public static final String HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/contig_scaffold_id";
   private static final long DEFAULT_EXPORT_MEMORY_LIMIT_BYTES = 16L * 1024L * 1024L * 1024L;
+  private static final int DEFAULT_COO_MERGE_FAN_IN = 64;
+  private static final int MIN_COO_MERGE_FAN_IN = 2;
+  private static final int MAX_COO_MERGE_FAN_IN = 512;
   private static final int MIN_SORT_BATCH_SIZE = 50_000;
   private static final int MAX_SORT_BATCH_SIZE = 8_000_000;
   private static final int ESTIMATED_SORT_BYTES_PER_RECORD = 112;
+  private static final long PROGRESS_LOG_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(30L);
+  private static final long ETA_WARMUP_MIN_ITEMS = 1_000_000L;
   private static final List<DatasetCopySpec> MCOOL_PIXEL_DATASETS = List.of(
     new DatasetCopySpec("pixels/bin1_id", HictToMcoolConverter::blockRowsPath, "pixels/bin1_id"),
     new DatasetCopySpec("pixels/bin2_id", HictToMcoolConverter::blockColsPath, "pixels/bin2_id"),
@@ -127,17 +132,20 @@ public class HictToMcoolConverter {
           if (resolutionOrder == null) {
             throw new IllegalStateException("Resolution " + resolution + " is not present in " + options.inputPath().getFileName());
           }
-          final var resolutionTmpDir = Files.createTempDirectory("hict-to-mcool-r" + resolution + "-");
+          final var resolutionTmpDir = createResolutionTempDirectory(resolution, synchronizedLogConsumer);
           try {
             final var cooPath = resolutionTmpDir.resolve("pixels.coo.bin");
             final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
-            exportTransformedCoo(
+            final var resolutionLayout = assemblyLayout.resolutionLayout(resolution);
+            final var summary = exportTransformedCoo(
               options.inputPath(),
               resolution,
               cooPath,
               mapper,
+              resolutionLayout.binsCount(),
               options.chunkSize(),
               sortBatchSize,
+              resolveRequestedWorkers(options.parallelism()),
               progressTracker,
               synchronizedLogConsumer
             );
@@ -145,7 +153,8 @@ public class HictToMcoolConverter {
               mergeSingleResolutionFromSortedCoo(
                 cooPath,
                 dst,
-                assemblyLayout.resolutionLayout(resolution),
+                resolutionLayout,
+                summary,
                 options.chunkSize(),
                 compression,
                 floatCompression,
@@ -157,7 +166,8 @@ public class HictToMcoolConverter {
               mergeResolutionFromSortedCoo(
                 cooPath,
                 dst,
-                assemblyLayout.resolutionLayout(resolution),
+                resolutionLayout,
+                summary,
                 options.chunkSize(),
                 compression,
                 floatCompression,
@@ -935,130 +945,159 @@ public class HictToMcoolConverter {
     );
   }
 
-  private static void exportTransformedCoo(
+  private static @NotNull SortedCooSummary exportTransformedCoo(
     final @NotNull Path inputPath,
     final long resolution,
     final @NotNull Path outputPath,
     final @NotNull SourceToAssemblyMapper mapper,
+    final long binsCount,
     final int chunkSize,
     final int sortBatchSize,
+    final int sortParallelism,
     final @NotNull ExportProgressTracker overallTracker,
     final @NotNull Consumer<String> logger
   ) throws IOException {
     final var workDir = Files.createDirectories(outputPath.getParent());
     final var chunkPaths = new ArrayList<Path>();
+    final var chunkFutures = new ArrayList<Future<Path>>();
     final var batch = new CooRecordBatch(sortBatchSize);
-    try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
-      final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
-      final var blockOffsetsPath = getBlockOffsetDatasetPath(resolution);
-      final var rowsPath = getBlockRowsDatasetPath(resolution);
-      final var colsPath = getBlockColsDatasetPath(resolution);
-      final var valuesPath = getBlockValuesDatasetPath(resolution);
-      final var denseBlocksPath = getDenseBlockDatasetPath(resolution);
-      final long[] stripeLengths = src.int64().readArray(getStripeLengthsBinsDatasetPath(resolution));
-      final long[] stripeOffsets = new long[stripeLengths.length];
-      long stripeCursor = 0L;
-      for (int i = 0; i < stripeLengths.length; i++) {
-        stripeOffsets[i] = stripeCursor;
-        stripeCursor += stripeLengths[i];
-      }
-      final int stripeCount = stripeLengths.length;
-      if (isFloatingPointDataset(src, valuesPath)) {
-        throw new IllegalStateException("Internal .mcool export currently supports integer HiCT matrices only");
-      }
-      long processedPixels = 0L;
-      long total = 0L;
-      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
-        final long rowBase = (long) rowStripe * stripeCount;
-        final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
-        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
-          total += rowBlockLengths[colStripe];
+    final int sortWorkers = Math.max(1, sortParallelism);
+    final int maxPendingSortChunks = Math.max(1, sortWorkers * 2);
+    final ExecutorService sortExecutor = Executors.newFixedThreadPool(sortWorkers, runnable -> {
+      final var thread = new Thread(runnable, "hict-to-cool-sort-r" + resolution);
+      thread.setDaemon(true);
+      return thread;
+    });
+    try {
+      try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
+        final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
+        final var blockOffsetsPath = getBlockOffsetDatasetPath(resolution);
+        final var rowsPath = getBlockRowsDatasetPath(resolution);
+        final var colsPath = getBlockColsDatasetPath(resolution);
+        final var valuesPath = getBlockValuesDatasetPath(resolution);
+        final var denseBlocksPath = getDenseBlockDatasetPath(resolution);
+        final long[] stripeLengths = src.int64().readArray(getStripeLengthsBinsDatasetPath(resolution));
+        final long[] stripeOffsets = new long[stripeLengths.length];
+        long stripeCursor = 0L;
+        for (int i = 0; i < stripeLengths.length; i++) {
+          stripeOffsets[i] = stripeCursor;
+          stripeCursor += stripeLengths[i];
         }
-      }
-      final long startedNanos = System.nanoTime();
-      int lastLoggedPercent = -1;
-      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
-        final long rowBase = (long) rowStripe * stripeCount;
-        final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
-        final long[] rowBlockOffsets = src.int64().readArrayBlockWithOffset(blockOffsetsPath, stripeCount, rowBase);
-        final long rowStripeOffset = stripeOffsets[rowStripe];
-        final int rowStripeLength = Math.toIntExact(stripeLengths[rowStripe]);
-        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
-          final long blockLen = rowBlockLengths[colStripe];
-          if (blockLen <= 0L) {
-            continue;
+        final int stripeCount = stripeLengths.length;
+        if (isFloatingPointDataset(src, valuesPath)) {
+          throw new IllegalStateException("Internal .mcool export currently supports integer HiCT matrices only");
+        }
+        long processedPixels = 0L;
+        long total = 0L;
+        for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+          final long rowBase = (long) rowStripe * stripeCount;
+          final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
+          for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+            total += rowBlockLengths[colStripe];
           }
-          final long blockOffset = rowBlockOffsets[colStripe];
-          final long colStripeOffset = stripeOffsets[colStripe];
-          final int colStripeLength = Math.toIntExact(stripeLengths[colStripe]);
-          if (blockOffset >= 0L) {
-            final int actualBlockLen = Math.toIntExact(blockLen);
-            final var rows = src.int64().readArrayBlockWithOffset(rowsPath, actualBlockLen, blockOffset);
-            final var cols = src.int64().readArrayBlockWithOffset(colsPath, actualBlockLen, blockOffset);
-            final var vals = src.int64().readArrayBlockWithOffset(valuesPath, actualBlockLen, blockOffset);
-            for (int i = 0; i < actualBlockLen; i++) {
-              appendMappedRecord(batch, mapper, rowStripeOffset + rows[i], colStripeOffset + cols[i], vals[i]);
-              if (batch.size() >= sortBatchSize) {
-                final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
-                chunkPaths.add(chunkPath);
-                batch.clear();
-              }
+        }
+        final long startedNanos = System.nanoTime();
+        long lastLoggedNanos = startedNanos;
+        int lastLoggedPercent = -1;
+        logger.accept(
+          "Resolution " + resolution + " COO export started: source entries=" + total +
+            ", sortBatchSize=" + sortBatchSize +
+            ", chunkSize=" + chunkSize +
+            ", sortWorkers=" + sortWorkers +
+            ". This stage streams, remaps and sorts the selected HiCT pixels before writing Cooler."
+        );
+        int chunkIndex = 0;
+        final var rowMapperCursor = mapper.cursor();
+        final var colMapperCursor = mapper.cursor();
+        for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+          final long rowBase = (long) rowStripe * stripeCount;
+          final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
+          final long[] rowBlockOffsets = src.int64().readArrayBlockWithOffset(blockOffsetsPath, stripeCount, rowBase);
+          final long rowStripeOffset = stripeOffsets[rowStripe];
+          final int rowStripeLength = Math.toIntExact(stripeLengths[rowStripe]);
+          for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+            final long blockLen = rowBlockLengths[colStripe];
+            if (blockLen <= 0L) {
+              continue;
             }
-          } else {
-            final long denseIndex = -(blockOffset + 1L);
-            final var denseValues = readDenseLongBlock(src, denseBlocksPath, denseIndex);
-            for (int row = 0; row < rowStripeLength; row++) {
-              final int colStart = (rowStripe == colStripe) ? row : 0;
-              for (int col = colStart; col < colStripeLength; col++) {
-                final long value = denseValues[(row * 256) + col];
-                if (value == 0L) {
-                  continue;
-                }
-                appendMappedRecord(batch, mapper, rowStripeOffset + row, colStripeOffset + col, value);
+            final long blockOffset = rowBlockOffsets[colStripe];
+            final long colStripeOffset = stripeOffsets[colStripe];
+            final int colStripeLength = Math.toIntExact(stripeLengths[colStripe]);
+            if (blockOffset >= 0L) {
+              final int actualBlockLen = Math.toIntExact(blockLen);
+              final var rows = src.int64().readArrayBlockWithOffset(rowsPath, actualBlockLen, blockOffset);
+              final var cols = src.int64().readArrayBlockWithOffset(colsPath, actualBlockLen, blockOffset);
+              final var vals = src.int64().readArrayBlockWithOffset(valuesPath, actualBlockLen, blockOffset);
+              for (int i = 0; i < actualBlockLen; i++) {
+                appendMappedRecord(batch, rowMapperCursor, colMapperCursor, rowStripeOffset + rows[i], colStripeOffset + cols[i], vals[i]);
                 if (batch.size() >= sortBatchSize) {
-                  final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
-                  chunkPaths.add(chunkPath);
+                  chunkFutures.add(submitSortedChunk(sortExecutor, workDir, resolution, chunkIndex++, batch));
                   batch.clear();
+                  collectReadySortedChunks(chunkFutures, chunkPaths, maxPendingSortChunks);
+                }
+              }
+            } else {
+              final long denseIndex = -(blockOffset + 1L);
+              final var denseValues = readDenseLongBlock(src, denseBlocksPath, denseIndex);
+              for (int row = 0; row < rowStripeLength; row++) {
+                final int colStart = (rowStripe == colStripe) ? row : 0;
+                for (int col = colStart; col < colStripeLength; col++) {
+                  final long value = denseValues[(row * 256) + col];
+                  if (value == 0L) {
+                    continue;
+                  }
+                  appendMappedRecord(batch, rowMapperCursor, colMapperCursor, rowStripeOffset + row, colStripeOffset + col, value);
+                  if (batch.size() >= sortBatchSize) {
+                    chunkFutures.add(submitSortedChunk(sortExecutor, workDir, resolution, chunkIndex++, batch));
+                    batch.clear();
+                    collectReadySortedChunks(chunkFutures, chunkPaths, maxPendingSortChunks);
+                  }
                 }
               }
             }
-          }
-          processedPixels += blockLen;
-          overallTracker.add(blockLen, "Resolution " + resolution + " COO export");
-          if (total > 0) {
-            final int percent = (int) ((processedPixels * 100L) / total);
-            if (percent >= 100 || percent - lastLoggedPercent >= 10) {
-              lastLoggedPercent = percent;
-              final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
-              final long etaMillis = estimateEtaMillis(processedPixels, total, elapsedMillis);
-              logger.accept(
-                String.format(
-                  "Resolution %d COO export: %d%% (%d/%d), elapsed=%s, eta=%s",
-                  resolution,
-                  percent,
-                  processedPixels,
-                  total,
-                  formatDuration(elapsedMillis),
-                  formatDuration(etaMillis)
-                )
-              );
+            processedPixels += blockLen;
+            overallTracker.add(blockLen, "Resolution " + resolution + " COO export");
+            if (total > 0) {
+              final int percent = (int) ((processedPixels * 100L) / total);
+              final long nowNanos = System.nanoTime();
+              if (percent >= 100 || percent > lastLoggedPercent || nowNanos - lastLoggedNanos >= PROGRESS_LOG_INTERVAL_NANOS) {
+                lastLoggedPercent = percent;
+                lastLoggedNanos = nowNanos;
+                final long elapsedMillis = (nowNanos - startedNanos) / 1_000_000L;
+                final long etaMillis = estimateEtaMillis(processedPixels, total, elapsedMillis);
+                logger.accept(
+                  String.format(
+                    "Resolution %d COO export: %d%% (%d/%d), elapsed=%s, eta=%s, rate=%s",
+                    resolution,
+                    percent,
+                    processedPixels,
+                    total,
+                    formatDuration(elapsedMillis),
+                    formatEta(processedPixels, total, elapsedMillis, etaMillis),
+                    formatItemsPerSecond(processedPixels, elapsedMillis)
+                  )
+                );
+              }
             }
           }
         }
       }
+      if (!batch.isEmpty()) {
+        chunkFutures.add(submitSortedChunk(sortExecutor, workDir, resolution, chunkPaths.size() + chunkFutures.size(), batch));
+        batch.clear();
+      }
+      collectAllSortedChunks(sortExecutor, chunkFutures, chunkPaths);
+      return mergeSortedChunks(chunkPaths, outputPath, binsCount, logger);
+    } finally {
+      sortExecutor.shutdownNow();
     }
-    if (!batch.isEmpty()) {
-      final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
-      chunkPaths.add(chunkPath);
-      batch.clear();
-    }
-    mergeSortedChunks(chunkPaths, outputPath, logger);
   }
 
   private static void mergeResolutionFromSortedCoo(
     final @NotNull Path cooPath,
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
     final @NotNull ResolutionLayout layout,
+    final @NotNull SortedCooSummary summary,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
     final @NotNull HDF5FloatStorageFeatures floatCompression,
@@ -1069,6 +1108,7 @@ public class HictToMcoolConverter {
       cooPath,
       dst,
       layout,
+      summary,
       "/resolutions/" + layout.resolution(),
       chunkSize,
       compression,
@@ -1082,6 +1122,7 @@ public class HictToMcoolConverter {
     final @NotNull Path cooPath,
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
     final @NotNull ResolutionLayout layout,
+    final @NotNull SortedCooSummary summary,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
     final @NotNull HDF5FloatStorageFeatures floatCompression,
@@ -1092,6 +1133,7 @@ public class HictToMcoolConverter {
       cooPath,
       dst,
       layout,
+      summary,
       "/",
       chunkSize,
       compression,
@@ -1105,6 +1147,7 @@ public class HictToMcoolConverter {
     final @NotNull Path cooPath,
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
     final @NotNull ResolutionLayout layout,
+    final @NotNull SortedCooSummary summary,
     final @NotNull String root,
     final int chunkSize,
     final @NotNull HDF5IntStorageFeatures compression,
@@ -1113,8 +1156,6 @@ public class HictToMcoolConverter {
     final @NotNull Consumer<String> logger
   ) throws IOException {
     final long resolution = layout.resolution();
-    final long binsCount = layout.binsCount();
-    final var summary = summarizeSortedCoo(cooPath, binsCount);
     if (!"/".equals(root)) {
       dst.object().createGroup(root);
     }
@@ -1128,11 +1169,15 @@ public class HictToMcoolConverter {
     writePixelsFromSortedCoo(cooPath, dst, root, summary.nonzeroPixelCount(), chunkSize, compression, progressTracker, logger, resolution);
     dst.int64().writeArray(coolerChildPath(root, "indexes/bin1_offset"), summary.bin1Offset(), compression);
     dst.int64().writeArray(coolerChildPath(root, "indexes/chrom_offset"), layout.chromOffsets(), compression);
-    writeResolutionMetadata(dst, root, resolution, binsCount, layout.chroms().size(), summary.nonzeroPixelCount(), summary.totalCounts());
+    writeResolutionMetadata(dst, root, resolution, layout.binsCount(), layout.chroms().size(), summary.nonzeroPixelCount(), summary.totalCounts());
   }
 
   private static @NotNull String coolerChildPath(final @NotNull String root, final @NotNull String relativePath) {
     return "/".equals(root) ? "/" + relativePath : root + "/" + relativePath;
+  }
+
+  private static @NotNull SortedCooSummary emptySortedCooSummary(final long binsCount) {
+    return new SortedCooSummary(0L, 0L, new long[Math.toIntExact(binsCount + 1L)]);
   }
 
   private static @NotNull SortedCooSummary summarizeSortedCoo(
@@ -1213,6 +1258,7 @@ public class HictToMcoolConverter {
 
     final long startedNanos = System.nanoTime();
     long offset = 0L;
+    long lastLoggedNanos = startedNanos;
     int lastLoggedPercent = -1;
     final var rows = new long[datasetChunk];
     final var cols = new long[datasetChunk];
@@ -1242,19 +1288,22 @@ public class HictToMcoolConverter {
           progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
           if (nonzeroPixelCount > 0L) {
             final int percent = (int) ((offset * 100L) / nonzeroPixelCount);
-            if (percent >= 100 || percent - lastLoggedPercent >= 10) {
+            final long nowNanos = System.nanoTime();
+            if (percent >= 100 || percent > lastLoggedPercent || nowNanos - lastLoggedNanos >= PROGRESS_LOG_INTERVAL_NANOS) {
               lastLoggedPercent = percent;
-              final long elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000L;
+              lastLoggedNanos = nowNanos;
+              final long elapsedMillis = (nowNanos - startedNanos) / 1_000_000L;
               final long etaMillis = estimateEtaMillis(offset, nonzeroPixelCount, elapsedMillis);
               logger.accept(
                 String.format(
-                  "Resolution %d pixels write: %d%% (%d/%d), elapsed=%s, eta=%s",
+                  "Resolution %d pixels write: %d%% (%d/%d), elapsed=%s, eta=%s, rate=%s",
                   resolution,
                   percent,
                   offset,
                   nonzeroPixelCount,
                   formatDuration(elapsedMillis),
-                  formatDuration(etaMillis)
+                  formatEta(offset, nonzeroPixelCount, elapsedMillis, etaMillis),
+                  formatItemsPerSecond(offset, elapsedMillis)
                 )
               );
             }
@@ -1285,19 +1334,69 @@ public class HictToMcoolConverter {
 
   private static void appendMappedRecord(
     final @NotNull CooRecordBatch batch,
-    final @NotNull SourceToAssemblyMapper mapper,
+    final @NotNull SourceToAssemblyMapper.Cursor rowMapper,
+    final @NotNull SourceToAssemblyMapper.Cursor colMapper,
     final long sourceRow,
     final long sourceCol,
     final long count
   ) {
-    long mappedRow = mapper.map(sourceRow);
-    long mappedCol = mapper.map(sourceCol);
+    long mappedRow = rowMapper.map(sourceRow);
+    long mappedCol = colMapper.map(sourceCol);
     if (mappedRow > mappedCol) {
       final long tmp = mappedRow;
       mappedRow = mappedCol;
       mappedCol = tmp;
     }
     batch.add(mappedRow, mappedCol, count);
+  }
+
+  private static @NotNull Future<Path> submitSortedChunk(final @NotNull ExecutorService sortExecutor,
+                                                         final @NotNull Path workDir,
+                                                         final long resolution,
+                                                         final int chunkIndex,
+                                                         final @NotNull CooRecordBatch batch) {
+    final var rows = batch.copyRows();
+    final var cols = batch.copyCols();
+    final var counts = batch.copyCounts();
+    return sortExecutor.submit(() -> flushSortedChunk(workDir, resolution, chunkIndex, rows, cols, counts));
+  }
+
+  private static void collectReadySortedChunks(final @NotNull List<Future<Path>> futures,
+                                               final @NotNull List<Path> chunkPaths,
+                                               final int maxPendingSortChunks) throws IOException {
+    while (futures.size() >= maxPendingSortChunks) {
+      chunkPaths.add(awaitSortedChunk(futures.remove(0)));
+    }
+  }
+
+  private static void collectAllSortedChunks(final @NotNull ExecutorService sortExecutor,
+                                             final @NotNull List<Future<Path>> futures,
+                                             final @NotNull List<Path> chunkPaths) throws IOException {
+    sortExecutor.shutdown();
+    try {
+      for (final var future : futures) {
+        chunkPaths.add(awaitSortedChunk(future));
+      }
+    } finally {
+      if (!sortExecutor.isTerminated()) {
+        sortExecutor.shutdownNow();
+      }
+    }
+  }
+
+  private static @NotNull Path awaitSortedChunk(final @NotNull Future<Path> future) throws IOException {
+    try {
+      return future.get();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException("Interrupted while waiting for a sorted COO chunk", e);
+    } catch (final ExecutionException e) {
+      final var cause = e.getCause();
+      if (cause instanceof IOException ioException) {
+        throw ioException;
+      }
+      throw new IOException("Failed to sort a transformed COO chunk", cause);
+    }
   }
 
   private static @NotNull Path flushSortedChunk(
@@ -1309,6 +1408,17 @@ public class HictToMcoolConverter {
     final var rows = batch.copyRows();
     final var cols = batch.copyCols();
     final var counts = batch.copyCounts();
+    return flushSortedChunk(workDir, resolution, chunkIndex, rows, cols, counts);
+  }
+
+  private static @NotNull Path flushSortedChunk(
+    final @NotNull Path workDir,
+    final long resolution,
+    final int chunkIndex,
+    final long @NotNull [] rows,
+    final long @NotNull [] cols,
+    final long @NotNull [] counts
+  ) throws IOException {
     if (!NativeProcessingService.getInstance().trySortCoolerRecordsRowMajor(rows, cols, counts)) {
       sortCoolerRecordsJava(rows, cols, counts);
     }
@@ -1439,16 +1549,86 @@ public class HictToMcoolConverter {
     counts[second] = tmp;
   }
 
-  private static void mergeSortedChunks(
+  private static @NotNull SortedCooSummary mergeSortedChunks(
     final @NotNull List<Path> chunkPaths,
     final @NotNull Path outputPath,
+    final long binsCount,
     final @NotNull Consumer<String> logger
   ) throws IOException {
     if (chunkPaths.isEmpty()) {
       Files.write(outputPath, new byte[0]);
-      return;
+      return emptySortedCooSummary(binsCount);
     }
 
+    final int mergeFanIn = resolveCooMergeFanIn(logger);
+    logger.accept("Merging " + chunkPaths.size() + " sorted COO chunks with fan-in " + mergeFanIn);
+    final var liveChunks = new ArrayList<Path>(chunkPaths);
+    var current = new ArrayList<Path>(chunkPaths);
+    var pass = 0;
+    try {
+      while (current.size() > mergeFanIn) {
+        pass++;
+        final int mergedChunkCount = (current.size() + mergeFanIn - 1) / mergeFanIn;
+        logger.accept("COO merge pass " + pass + ": " + current.size() + " chunks -> " + mergedChunkCount + " chunks");
+        final var next = new ArrayList<Path>(mergedChunkCount);
+        for (int start = 0; start < current.size(); start += mergeFanIn) {
+          final int end = Math.min(current.size(), start + mergeFanIn);
+          final var group = new ArrayList<>(current.subList(start, end));
+          final var mergedPath = outputPath.getParent().resolve(String.format("pixels-merge-p%02d-%05d.bin", pass, next.size()));
+          final var stats = mergeChunkGroupToBinary(group, mergedPath, null, logger);
+          liveChunks.add(mergedPath);
+          deleteChunkFiles(group);
+          liveChunks.removeAll(group);
+          next.add(mergedPath);
+          logger.accept(
+            "COO merge pass " + pass + ": wrote " + mergedPath.getFileName() + " from " + group.size()
+              + " chunks, raw=" + stats.rawRecords() + ", unique=" + stats.uniqueRecords()
+          );
+        }
+        current = next;
+      }
+      final var summaryBuilder = new SortedCooSummaryBuilder(binsCount);
+      final var stats = mergeChunkGroupToBinary(current, outputPath, summaryBuilder, logger);
+      deleteChunkFiles(current);
+      liveChunks.removeAll(current);
+      logger.accept("Merged sorted COO records complete: raw=" + stats.rawRecords() + ", unique=" + stats.uniqueRecords());
+      return summaryBuilder.finish();
+    } finally {
+      deleteChunkFiles(liveChunks);
+    }
+  }
+
+  private static @NotNull MergeStats mergeChunkGroupToBinary(final @NotNull List<Path> chunkPaths,
+                                                             final @NotNull Path outputPath,
+                                                             final @Nullable SortedCooSummaryBuilder summaryBuilder,
+                                                             final @NotNull Consumer<String> logger) throws IOException {
+    Files.deleteIfExists(outputPath);
+    try (final var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(outputPath)))) {
+      return mergeChunkGroup(
+        chunkPaths,
+        logger,
+        (row, col, count) -> {
+          if (summaryBuilder != null) {
+            summaryBuilder.accept(row, col, count);
+          }
+          out.writeLong(row);
+          out.writeLong(col);
+          out.writeLong(count);
+        }
+      );
+    } catch (IOException | RuntimeException e) {
+      try {
+        Files.deleteIfExists(outputPath);
+      } catch (IOException deleteFailure) {
+        e.addSuppressed(deleteFailure);
+      }
+      throw e;
+    }
+  }
+
+  private static @NotNull MergeStats mergeChunkGroup(final @NotNull List<Path> chunkPaths,
+                                                     final @NotNull Consumer<String> logger,
+                                                     final @NotNull MergedRecordSink sink) throws IOException {
     final var cursors = new ArrayList<ChunkCursor>(chunkPaths.size());
     final var queue = new PriorityQueue<ChunkCursor>(Comparator
       .comparingLong((ChunkCursor cursor) -> cursor.record().row())
@@ -1464,48 +1644,42 @@ public class HictToMcoolConverter {
           cursor.close();
         }
       }
-      try (final var writer = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(outputPath)))) {
-        long rawRecords = 0L;
-        long written = 0L;
-        boolean hasPending = false;
-        long pendingRow = 0L;
-        long pendingCol = 0L;
-        long pendingCount = 0L;
-        while (!queue.isEmpty()) {
-          final var cursor = queue.poll();
-          final var record = cursor.record();
-          if (!hasPending) {
-            pendingRow = record.row();
-            pendingCol = record.col();
-            pendingCount = record.count();
-            hasPending = true;
-          } else if (pendingRow == record.row() && pendingCol == record.col()) {
-            pendingCount += record.count();
-          } else {
-            writer.writeLong(pendingRow);
-            writer.writeLong(pendingCol);
-            writer.writeLong(pendingCount);
-            written++;
-            pendingRow = record.row();
-            pendingCol = record.col();
-            pendingCount = record.count();
-          }
-          rawRecords++;
-          if (cursor.advance()) {
-            queue.add(cursor);
-          }
-          if (rawRecords % 1_000_000L == 0L) {
-            logger.accept("Merged sorted COO records: raw=" + rawRecords + ", unique=" + written);
-          }
-        }
-        if (hasPending) {
-          writer.writeLong(pendingRow);
-          writer.writeLong(pendingCol);
-          writer.writeLong(pendingCount);
+      long rawRecords = 0L;
+      long written = 0L;
+      boolean hasPending = false;
+      long pendingRow = 0L;
+      long pendingCol = 0L;
+      long pendingCount = 0L;
+      while (!queue.isEmpty()) {
+        final var cursor = queue.poll();
+        final var record = cursor.record();
+        if (!hasPending) {
+          pendingRow = record.row();
+          pendingCol = record.col();
+          pendingCount = record.count();
+          hasPending = true;
+        } else if (pendingRow == record.row() && pendingCol == record.col()) {
+          pendingCount += record.count();
+        } else {
+          sink.write(pendingRow, pendingCol, pendingCount);
           written++;
+          pendingRow = record.row();
+          pendingCol = record.col();
+          pendingCount = record.count();
         }
-        logger.accept("Merged sorted COO records complete: raw=" + rawRecords + ", unique=" + written);
+        rawRecords++;
+        if (cursor.advance()) {
+          queue.add(cursor);
+        }
+        if (rawRecords % 1_000_000L == 0L) {
+          logger.accept("Merged sorted COO records: raw=" + rawRecords + ", unique=" + written);
+        }
       }
+      if (hasPending) {
+        sink.write(pendingRow, pendingCol, pendingCount);
+        written++;
+      }
+      return new MergeStats(rawRecords, written);
     } finally {
       IOException closeFailure = null;
       for (final var cursor : cursors) {
@@ -1519,24 +1693,27 @@ public class HictToMcoolConverter {
           }
         }
       }
-      IOException deleteFailure = null;
-      for (final var chunkPath : chunkPaths) {
-        try {
-          Files.deleteIfExists(chunkPath);
-        } catch (IOException e) {
-          if (deleteFailure == null) {
-            deleteFailure = e;
-          } else {
-            deleteFailure.addSuppressed(e);
-          }
-        }
-      }
       if (closeFailure != null) {
         throw closeFailure;
       }
-      if (deleteFailure != null) {
-        throw deleteFailure;
+    }
+  }
+
+  private static void deleteChunkFiles(final @NotNull List<Path> chunkPaths) throws IOException {
+    IOException deleteFailure = null;
+    for (final var chunkPath : chunkPaths) {
+      try {
+        Files.deleteIfExists(chunkPath);
+      } catch (IOException e) {
+        if (deleteFailure == null) {
+          deleteFailure = e;
+        } else {
+          deleteFailure.addSuppressed(e);
+        }
       }
+    }
+    if (deleteFailure != null) {
+      throw deleteFailure;
     }
   }
 
@@ -1666,6 +1843,7 @@ public class HictToMcoolConverter {
     private final Consumer<String> logConsumer;
     private final AtomicLong copiedItems = new AtomicLong(0L);
     private final AtomicInteger lastLoggedPercent = new AtomicInteger(-1);
+    private final AtomicLong lastLoggedNanos;
 
     private ExportProgressTracker(
       final long totalItems,
@@ -1675,6 +1853,7 @@ public class HictToMcoolConverter {
       this.totalItems = totalItems;
       this.startedNanos = startedNanos;
       this.logConsumer = logConsumer;
+      this.lastLoggedNanos = new AtomicLong(startedNanos);
     }
 
     private void add(final long copied, final @NotNull String detail) {
@@ -1683,13 +1862,15 @@ public class HictToMcoolConverter {
       }
       final long done = Math.min(totalItems, copiedItems.addAndGet(copied));
       final int percent = (int) ((done * 100L) / totalItems);
+      final long nowNanos = System.nanoTime();
       int previous;
       do {
         previous = lastLoggedPercent.get();
-        if (percent < 100 && percent - previous < 1) {
+        if (percent < 100 && percent - previous < 1 && nowNanos - lastLoggedNanos.get() < PROGRESS_LOG_INTERVAL_NANOS) {
           return;
         }
       } while (!lastLoggedPercent.compareAndSet(previous, percent));
+      lastLoggedNanos.set(nowNanos);
       logOverall(done, detail);
     }
 
@@ -1708,12 +1889,13 @@ public class HictToMcoolConverter {
       final long etaMillis = estimateEtaMillis(done, totalItems, elapsedMillis);
       logConsumer.accept(
         String.format(
-          "Overall progress: %d%% (%d/%d), elapsed=%s, eta=%s - %s",
+          "Overall progress: %d%% (%d/%d), elapsed=%s, eta=%s, rate=%s - %s",
           (int) ((done * 100L) / totalItems),
           done,
           totalItems,
           formatDuration(elapsedMillis),
-          formatDuration(etaMillis),
+          formatEta(done, totalItems, elapsedMillis, etaMillis),
+          formatItemsPerSecond(done, elapsedMillis),
           detail
         )
       );
@@ -1759,6 +1941,37 @@ public class HictToMcoolConverter {
     return (elapsedMillis * (total - done)) / done;
   }
 
+  private static @NotNull String formatEta(final long done,
+                                           final long total,
+                                           final long elapsedMillis,
+                                           final long etaMillis) {
+    if (done <= 0L || total <= 0L || done >= total) {
+      return "00:00";
+    }
+    final long warmupThreshold = Math.min(ETA_WARMUP_MIN_ITEMS, Math.max(1L, total / 1_000L));
+    if (done < warmupThreshold || elapsedMillis < 5_000L) {
+      return "warming-up";
+    }
+    return formatDuration(etaMillis);
+  }
+
+  private static @NotNull String formatItemsPerSecond(final long done, final long elapsedMillis) {
+    if (done <= 0L || elapsedMillis <= 0L) {
+      return "0/s";
+    }
+    final double rate = (done * 1000.0d) / elapsedMillis;
+    if (rate >= 1_000_000_000.0d) {
+      return String.format(Locale.ROOT, "%.2fG/s", rate / 1_000_000_000.0d);
+    }
+    if (rate >= 1_000_000.0d) {
+      return String.format(Locale.ROOT, "%.2fM/s", rate / 1_000_000.0d);
+    }
+    if (rate >= 1_000.0d) {
+      return String.format(Locale.ROOT, "%.2fk/s", rate / 1_000.0d);
+    }
+    return String.format(Locale.ROOT, "%.0f/s", rate);
+  }
+
   private static @NotNull String formatDuration(final long millis) {
     if (millis <= 0) {
       return "00:00";
@@ -1792,10 +2005,32 @@ public class HictToMcoolConverter {
   private static int resolveSortBatchSize(final int chunkSize,
                                           final int parallelism,
                                           final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.cooSortBatchSize"),
+      System.getenv("HICT_EXPORT_COO_SORT_BATCH_SIZE")
+    );
+    if (configured != null) {
+      try {
+        final int parsed = Integer.parseInt(configured.trim());
+        final int clamped = Math.max(MIN_SORT_BATCH_SIZE, Math.min(MAX_SORT_BATCH_SIZE, parsed));
+        if (clamped != parsed) {
+          logger.accept(
+            "Clamped HiCT export COO sort batch size from " + parsed + " to " + clamped +
+              " (supported range " + MIN_SORT_BATCH_SIZE + ".." + MAX_SORT_BATCH_SIZE + ")"
+          );
+        } else {
+          logger.accept("HiCT export COO sort batch size=" + clamped + " records (configured)");
+        }
+        return clamped;
+      } catch (final RuntimeException err) {
+        logger.accept("Ignoring invalid HiCT export COO sort batch size '" + configured + "': " + err.getMessage());
+      }
+    }
+
     final long memoryLimitBytes = resolveExportMemoryLimitBytes(logger);
     final long perWorkerBudget = Math.max(64L * 1024L * 1024L, memoryLimitBytes / Math.max(1, parallelism));
     final long memoryLimitedRecords = perWorkerBudget / ESTIMATED_SORT_BYTES_PER_RECORD;
-    final long requestedRecords = Math.max((long) MIN_SORT_BATCH_SIZE, memoryLimitedRecords);
+    final long requestedRecords = Math.max((long) Math.max(MIN_SORT_BATCH_SIZE, chunkSize), memoryLimitedRecords);
     logger.accept(
       "HiCT -> Cooler export memory budget=" + formatByteSize(memoryLimitBytes) +
         ", per-worker sort budget=" + formatByteSize(perWorkerBudget) +
@@ -1805,6 +2040,24 @@ public class HictToMcoolConverter {
       MIN_SORT_BATCH_SIZE,
       Math.min((long) MAX_SORT_BATCH_SIZE, Math.min(requestedRecords, Integer.MAX_VALUE - 8L))
     );
+  }
+
+  private static @NotNull Path createResolutionTempDirectory(final long resolution,
+                                                             final @NotNull Consumer<String> logger) throws IOException {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.tmpdir"),
+      System.getenv("HICT_EXPORT_TMPDIR"),
+      System.getenv("TMPDIR")
+    );
+    if (configured != null) {
+      final var parent = Files.createDirectories(Path.of(configured));
+      final var path = Files.createTempDirectory(parent, "hict-to-mcool-r" + resolution + "-");
+      logger.accept("Using HiCT -> Cooler temporary directory: " + path);
+      return path;
+    }
+    final var path = Files.createTempDirectory("hict-to-mcool-r" + resolution + "-");
+    logger.accept("Using HiCT -> Cooler temporary directory: " + path);
+    return path;
   }
 
   private static long resolveExportMemoryLimitBytes(final @NotNull Consumer<String> logger) {
@@ -1828,6 +2081,31 @@ public class HictToMcoolConverter {
     } catch (final RuntimeException err) {
       logger.accept("Ignoring invalid HiCT export memory limit '" + configured + "': " + err.getMessage());
       return DEFAULT_EXPORT_MEMORY_LIMIT_BYTES;
+    }
+  }
+
+  private static int resolveCooMergeFanIn(final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.mergeFanIn"),
+      System.getenv("HICT_EXPORT_MERGE_FAN_IN")
+    );
+    if (configured == null) {
+      return DEFAULT_COO_MERGE_FAN_IN;
+    }
+    try {
+      final int parsed = Integer.parseInt(configured.trim());
+      if (parsed < MIN_COO_MERGE_FAN_IN || parsed > MAX_COO_MERGE_FAN_IN) {
+        final int clamped = Math.max(MIN_COO_MERGE_FAN_IN, Math.min(MAX_COO_MERGE_FAN_IN, parsed));
+        logger.accept(
+          "Clamped HiCT export COO merge fan-in from " + parsed + " to " + clamped +
+            " (supported range " + MIN_COO_MERGE_FAN_IN + ".." + MAX_COO_MERGE_FAN_IN + ")"
+        );
+        return clamped;
+      }
+      return parsed;
+    } catch (final RuntimeException err) {
+      logger.accept("Ignoring invalid HiCT export COO merge fan-in '" + configured + "': " + err.getMessage());
+      return DEFAULT_COO_MERGE_FAN_IN;
     }
   }
 
@@ -1901,6 +2179,66 @@ public class HictToMcoolConverter {
   }
 
   private record SortedCooSummary(long nonzeroPixelCount, long totalCounts, long @NotNull [] bin1Offset) {
+  }
+
+  private record MergeStats(long rawRecords, long uniqueRecords) {
+  }
+
+  private static final class SortedCooSummaryBuilder {
+    private final long binsCount;
+    private final long @NotNull [] bin1Offset;
+    private long nonzeroPixelCount = 0L;
+    private long totalCounts = 0L;
+    private long lastRow = -1L;
+    private long lastCol = -1L;
+    private boolean seenAnyPixel = false;
+
+    private SortedCooSummaryBuilder(final long binsCount) {
+      this.binsCount = binsCount;
+      this.bin1Offset = new long[Math.toIntExact(binsCount + 1L)];
+    }
+
+    private void accept(final long row, final long col, final long count) {
+      if (row < 0L || row >= binsCount || col < row || col >= binsCount) {
+        throw new IllegalStateException("Sorted COO record is out of Cooler bounds: " + row + "\t" + col + "\t" + count);
+      }
+      if (!seenAnyPixel) {
+        for (long emptyBin = 1L; emptyBin <= row; emptyBin++) {
+          bin1Offset[(int) emptyBin] = 0L;
+        }
+        lastRow = row;
+        lastCol = col;
+        seenAnyPixel = true;
+      } else {
+        if (row < lastRow || (row == lastRow && col < lastCol)) {
+          throw new IllegalStateException("Sorted COO stream is not row-major sorted at record: " + row + "\t" + col + "\t" + count);
+        }
+        if (row != lastRow) {
+          for (long nextBin = lastRow + 1L; nextBin <= row; nextBin++) {
+            bin1Offset[(int) nextBin] = nonzeroPixelCount;
+          }
+          lastRow = row;
+        }
+        lastCol = col;
+      }
+      nonzeroPixelCount++;
+      totalCounts += count;
+    }
+
+    private @NotNull SortedCooSummary finish() {
+      if (!seenAnyPixel) {
+        return new SortedCooSummary(0L, 0L, bin1Offset);
+      }
+      for (long nextBin = Math.max(0L, lastRow + 1L); nextBin <= binsCount; nextBin++) {
+        bin1Offset[(int) nextBin] = nonzeroPixelCount;
+      }
+      return new SortedCooSummary(nonzeroPixelCount, totalCounts, bin1Offset);
+    }
+  }
+
+  @FunctionalInterface
+  private interface MergedRecordSink {
+    void write(long row, long col, long count) throws IOException;
   }
 
   public record CoolerAssemblyLayout(
@@ -2000,22 +2338,73 @@ public class HictToMcoolConverter {
     }
   }
 
-  private record SourceToAssemblyMapper(@NotNull List<SourceSegment> segments) {
+  private static final class SourceToAssemblyMapper {
+    private final long[] sourceStarts;
+    private final long[] sourceEnds;
+    private final long[] targetStarts;
+    private final long[] targetEnds;
+    private final boolean[] reversed;
+
+    private SourceToAssemblyMapper(final @NotNull List<SourceSegment> segments) {
+      this.sourceStarts = new long[segments.size()];
+      this.sourceEnds = new long[segments.size()];
+      this.targetStarts = new long[segments.size()];
+      this.targetEnds = new long[segments.size()];
+      this.reversed = new boolean[segments.size()];
+      for (int i = 0; i < segments.size(); i++) {
+        final var segment = segments.get(i);
+        sourceStarts[i] = segment.sourceStart();
+        sourceEnds[i] = segment.sourceEnd();
+        targetStarts[i] = segment.targetStart();
+        targetEnds[i] = segment.targetEnd();
+        reversed[i] = segment.direction() == ATUDirection.REVERSED;
+      }
+    }
+
+    private @NotNull Cursor cursor() {
+      return new Cursor();
+    }
+
     private long map(final long sourceBin) {
+      return mapAt(findSegment(sourceBin), sourceBin);
+    }
+
+    private int findSegment(final long sourceBin) {
       int left = 0;
-      int right = segments.size() - 1;
+      int right = sourceStarts.length - 1;
       while (left <= right) {
         final int mid = (left + right) >>> 1;
-        final var segment = segments.get(mid);
-        if (sourceBin < segment.sourceStart()) {
+        if (sourceBin < sourceStarts[mid]) {
           right = mid - 1;
-        } else if (sourceBin >= segment.sourceEnd()) {
+        } else if (sourceBin >= sourceEnds[mid]) {
           left = mid + 1;
         } else {
-          return segment.map(sourceBin);
+          return mid;
         }
       }
       throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+    }
+
+    private long mapAt(final int index, final long sourceBin) {
+      final long local = sourceBin - sourceStarts[index];
+      if (reversed[index]) {
+        return targetEnds[index] - 1L - local;
+      }
+      return targetStarts[index] + local;
+    }
+
+    private final class Cursor {
+      private int segmentIndex = -1;
+
+      private long map(final long sourceBin) {
+        final int current = segmentIndex;
+        if (current >= 0 && current < sourceStarts.length && sourceBin >= sourceStarts[current] && sourceBin < sourceEnds[current]) {
+          return mapAt(current, sourceBin);
+        }
+        final int found = findSegment(sourceBin);
+        segmentIndex = found;
+        return mapAt(found, sourceBin);
+      }
     }
   }
 
