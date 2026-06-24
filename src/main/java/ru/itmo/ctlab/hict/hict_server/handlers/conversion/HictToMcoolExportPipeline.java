@@ -507,6 +507,8 @@ public final class HictToMcoolExportPipeline {
           ", tempCompression=" + cooCompression.logName() +
           ". This stage streams, remaps and sorts the selected HiCT pixels before hictk loads them."
       );
+      final var rowMapperCursor = mapper.cursor();
+      final var colMapperCursor = mapper.cursor();
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
         checkCancelled(cancellationRequested);
         final long rowBase = (long) rowStripe * stripeCount;
@@ -530,7 +532,8 @@ public final class HictToMcoolExportPipeline {
             for (int i = 0; i < actualBlockLen; i++) {
               appendMappedRecord(
                 batch,
-                mapper,
+                rowMapperCursor,
+                colMapperCursor,
                 rowStripeOffset + rows[i],
                 colStripeOffset + cols[i],
                 vals[i]
@@ -553,7 +556,8 @@ public final class HictToMcoolExportPipeline {
                 }
                 appendMappedRecord(
                   batch,
-                  mapper,
+                  rowMapperCursor,
+                  colMapperCursor,
                   rowStripeOffset + row,
                   colStripeOffset + col,
                   value
@@ -608,12 +612,10 @@ public final class HictToMcoolExportPipeline {
     final var rows = records.copyRows();
     final var cols = records.copyCols();
     final var counts = records.copyCounts();
-    if (!NativeProcessingService.getInstance().trySortCoolerRecordsRowMajor(rows, cols, counts)) {
-      HictToMcoolConverter.sortCoolerRecordsJava(rows, cols, counts);
-    }
+    final int compactedLength = HictToMcoolConverter.sortAndCompactCoolerRecordsRowMajor(rows, cols, counts);
     final var chunkPath = workDir.resolve(String.format("pixels-r%d-%05d.bin", resolution, chunkIndex));
     try (final var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(chunkPath)))) {
-      for (int i = 0; i < rows.length; i++) {
+      for (int i = 0; i < compactedLength; i++) {
         out.writeLong(rows[i]);
         out.writeLong(cols[i]);
         out.writeLong(counts[i]);
@@ -881,12 +883,13 @@ public final class HictToMcoolExportPipeline {
   }
 
   private static void appendMappedRecord(final @NotNull CooRecordBatch batch,
-                                         final @NotNull SourceToAssemblyMapper mapper,
+                                         final @NotNull SourceToAssemblyMapper.Cursor rowMapperCursor,
+                                         final @NotNull SourceToAssemblyMapper.Cursor colMapperCursor,
                                          final long sourceRow,
                                          final long sourceCol,
                                          final long count) {
-    long mappedRow = mapper.map(sourceRow);
-    long mappedCol = mapper.map(sourceCol);
+    long mappedRow = rowMapperCursor.map(sourceRow);
+    long mappedCol = colMapperCursor.map(sourceCol);
     if (mappedRow > mappedCol) {
       final long tmp = mappedRow;
       mappedRow = mappedCol;
@@ -1424,22 +1427,69 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
-  private record SourceToAssemblyMapper(@NotNull List<SourceSegment> segments) {
-    private long map(final long sourceBin) {
+  private static final class SourceToAssemblyMapper {
+    private final long[] sourceStarts;
+    private final long[] sourceEnds;
+    private final long[] targetStarts;
+    private final long[] targetEnds;
+    private final boolean[] reversed;
+
+    private SourceToAssemblyMapper(final @NotNull List<SourceSegment> segments) {
+      this.sourceStarts = new long[segments.size()];
+      this.sourceEnds = new long[segments.size()];
+      this.targetStarts = new long[segments.size()];
+      this.targetEnds = new long[segments.size()];
+      this.reversed = new boolean[segments.size()];
+      for (int i = 0; i < segments.size(); i++) {
+        final var segment = segments.get(i);
+        sourceStarts[i] = segment.sourceStart();
+        sourceEnds[i] = segment.sourceEnd();
+        targetStarts[i] = segment.targetStart();
+        targetEnds[i] = segment.targetEnd();
+        reversed[i] = segment.direction() == ATUDirection.REVERSED;
+      }
+    }
+
+    private @NotNull Cursor cursor() {
+      return new Cursor();
+    }
+
+    private int findSegment(final long sourceBin) {
       int left = 0;
-      int right = segments.size() - 1;
+      int right = sourceStarts.length - 1;
       while (left <= right) {
         final int mid = (left + right) >>> 1;
-        final var segment = segments.get(mid);
-        if (sourceBin < segment.sourceStart()) {
+        if (sourceBin < sourceStarts[mid]) {
           right = mid - 1;
-        } else if (sourceBin >= segment.sourceEnd()) {
+        } else if (sourceBin >= sourceEnds[mid]) {
           left = mid + 1;
         } else {
-          return segment.map(sourceBin);
+          return mid;
         }
       }
       throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+    }
+
+    private long mapAt(final int index, final long sourceBin) {
+      final long local = sourceBin - sourceStarts[index];
+      if (reversed[index]) {
+        return targetEnds[index] - 1L - local;
+      }
+      return targetStarts[index] + local;
+    }
+
+    private final class Cursor {
+      private int segmentIndex = -1;
+
+      private long map(final long sourceBin) {
+        final int current = segmentIndex;
+        if (current >= 0 && current < sourceStarts.length && sourceBin >= sourceStarts[current] && sourceBin < sourceEnds[current]) {
+          return mapAt(current, sourceBin);
+        }
+        final int found = findSegment(sourceBin);
+        segmentIndex = found;
+        return mapAt(found, sourceBin);
+      }
     }
   }
 

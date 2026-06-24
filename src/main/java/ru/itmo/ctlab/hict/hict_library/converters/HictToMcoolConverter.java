@@ -1419,18 +1419,34 @@ public class HictToMcoolConverter {
     final long @NotNull [] cols,
     final long @NotNull [] counts
   ) throws IOException {
-    if (!NativeProcessingService.getInstance().trySortCoolerRecordsRowMajor(rows, cols, counts)) {
-      sortCoolerRecordsJava(rows, cols, counts);
-    }
+    final int compactedLength = sortAndCompactCoolerRecordsRowMajor(rows, cols, counts);
     final var chunkPath = workDir.resolve(String.format("pixels-r%d-%05d.bin", resolution, chunkIndex));
     try (final var out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(chunkPath)))) {
-      for (int i = 0; i < rows.length; i++) {
+      for (int i = 0; i < compactedLength; i++) {
         out.writeLong(rows[i]);
         out.writeLong(cols[i]);
         out.writeLong(counts[i]);
       }
     }
     return chunkPath;
+  }
+
+  public static int sortAndCompactCoolerRecordsRowMajor(final long @NotNull [] rows,
+                                                        final long @NotNull [] cols,
+                                                        final long @NotNull [] counts) {
+    if (rows.length != cols.length || rows.length != counts.length) {
+      throw new IllegalArgumentException("COO arrays must have identical lengths");
+    }
+    if (rows.length <= 1) {
+      return rows.length;
+    }
+    final int nativeCompactedLength = NativeProcessingService.getInstance()
+      .trySortAndCompactCoolerRecordsRowMajor(rows, cols, counts);
+    if (nativeCompactedLength >= 0) {
+      return nativeCompactedLength;
+    }
+    sortCoolerRecordsJava(rows, cols, counts);
+    return compactSortedCoolerRecords(rows, cols, counts);
   }
 
   public static void sortCoolerRecordsJava(final long @NotNull [] rows,
@@ -1443,6 +1459,38 @@ public class HictToMcoolConverter {
       return;
     }
     quickSortCoolerRecords(rows, cols, counts, 0, rows.length - 1);
+  }
+
+  private static int compactSortedCoolerRecords(final long @NotNull [] rows,
+                                                final long @NotNull [] cols,
+                                                final long @NotNull [] counts) {
+    if (rows.length <= 1) {
+      return rows.length;
+    }
+    int write = 0;
+    long pendingRow = rows[0];
+    long pendingCol = cols[0];
+    long pendingCount = counts[0];
+    for (int read = 1; read < rows.length; read++) {
+      final long row = rows[read];
+      final long col = cols[read];
+      final long count = counts[read];
+      if (row == pendingRow && col == pendingCol) {
+        pendingCount += count;
+      } else {
+        rows[write] = pendingRow;
+        cols[write] = pendingCol;
+        counts[write] = pendingCount;
+        write++;
+        pendingRow = row;
+        pendingCol = col;
+        pendingCount = count;
+      }
+    }
+    rows[write] = pendingRow;
+    cols[write] = pendingCol;
+    counts[write] = pendingCount;
+    return write + 1;
   }
 
   private static void quickSortCoolerRecords(final long @NotNull [] rows,

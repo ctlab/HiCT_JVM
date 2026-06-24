@@ -43,7 +43,7 @@ namespace {
 #define HICT_NATIVE_VARIANT "avx2"
 #endif
 
-constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.4-" HICT_NATIVE_VARIANT;
+constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.5-" HICT_NATIVE_VARIANT;
 constexpr std::int64_t PARALLEL_THRESHOLD = 131072;
 
 struct NativeBackendSession {
@@ -73,6 +73,18 @@ jboolean native_result(const jlong session_handle, const bool ok) {
 
 jboolean native_failure(const jlong session_handle) {
   return native_result(session_handle, false);
+}
+
+jint native_int_result(const jlong session_handle, const jint value) {
+  auto* session = session_from_handle(session_handle);
+  if (session == nullptr) {
+    return -1;
+  }
+  session->operation_count.fetch_add(1, std::memory_order_relaxed);
+  if (value < 0) {
+    session->failed_operation_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  return value;
 }
 
 template <typename Element, typename Array>
@@ -792,6 +804,44 @@ bool sort_cooler_records_row_major(jlong* rows,
   return true;
 }
 
+jint sort_and_compact_cooler_records_row_major(jlong* rows,
+                                               jlong* columns,
+                                               jlong* values,
+                                               const jsize length) {
+  if (!sort_cooler_records_row_major(rows, columns, values, length)) {
+    return -1;
+  }
+  if (length <= 1) {
+    return length;
+  }
+
+  jsize write = 0;
+  jlong pending_row = rows[0];
+  jlong pending_column = columns[0];
+  jlong pending_value = values[0];
+  for (jsize read = 1; read < length; ++read) {
+    const auto row = rows[read];
+    const auto column = columns[read];
+    const auto value = values[read];
+    if (row == pending_row && column == pending_column) {
+      pending_value += value;
+    } else {
+      rows[write] = pending_row;
+      columns[write] = pending_column;
+      values[write] = pending_value;
+      ++write;
+      pending_row = row;
+      pending_column = column;
+      pending_value = value;
+    }
+  }
+  rows[write] = pending_row;
+  columns[write] = pending_column;
+  values[write] = pending_value;
+  ++write;
+  return write;
+}
+
 bool transform_expected_signal(const double* signal,
                                const jint rows,
                                const jint columns,
@@ -1390,6 +1440,47 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     values.set_release_mode(0);
   }
   return native_result(session_handle, ok);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeSortAndCompactCoolerRecordsLong(
+  JNIEnv* env,
+  jclass,
+  jlong session_handle,
+  jlongArray rows_array,
+  jlongArray columns_array,
+  jlongArray values_array
+) {
+  if (session_from_handle(session_handle) == nullptr) {
+    return -1;
+  }
+  if (rows_array == nullptr || columns_array == nullptr || values_array == nullptr) {
+    return native_int_result(session_handle, -1);
+  }
+  const auto length = env->GetArrayLength(rows_array);
+  if (env->GetArrayLength(columns_array) != length || env->GetArrayLength(values_array) != length) {
+    return native_int_result(session_handle, -1);
+  }
+
+  CriticalArray<jlong, jlongArray> rows(env, rows_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> columns(env, columns_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> values(env, values_array, JNI_ABORT);
+  if (!rows.acquired() || !columns.acquired() || !values.acquired()) {
+    return native_int_result(session_handle, -1);
+  }
+
+  jint compacted_length = -1;
+  try {
+    compacted_length = sort_and_compact_cooler_records_row_major(rows.get(), columns.get(), values.get(), length);
+  } catch (...) {
+    compacted_length = -1;
+  }
+  if (compacted_length >= 0) {
+    rows.set_release_mode(0);
+    columns.set_release_mode(0);
+    values.set_release_mode(0);
+  }
+  return native_int_result(session_handle, compacted_length);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

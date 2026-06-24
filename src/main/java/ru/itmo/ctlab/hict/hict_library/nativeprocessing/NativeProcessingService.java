@@ -467,6 +467,32 @@ public final class NativeProcessingService {
     }
   }
 
+  public int trySortAndCompactCoolerRecordsRowMajor(final long @NotNull [] rows,
+                                                    final long @NotNull [] columns,
+                                                    final long @NotNull [] values) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return -1;
+    }
+    if (!isNativeProcessingActive()) {
+      return -1;
+    }
+    if (rows.length != columns.length || rows.length != values.length) {
+      return -1;
+    }
+    try {
+      final var compactedLength = this.nativeTileProcessor.sortAndCompactCoolerRecordsLong(rows, columns, values);
+      if (compactedLength < 0 || compactedLength > rows.length) {
+        log.debug("Native Cooler record sort/compact rejected the input; falling back to Java implementation");
+        return -1;
+      }
+      return compactedLength;
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native Cooler record sort/compact failed: " + err.getMessage());
+      log.warn("Native Cooler record sort/compact failed; falling back to Java implementation", err);
+      return -1;
+    }
+  }
+
   public double @Nullable [][] tryTransformExpectedSignal(final double @NotNull [][] signal,
                                                           final long startRowPx,
                                                           final long startColPx,

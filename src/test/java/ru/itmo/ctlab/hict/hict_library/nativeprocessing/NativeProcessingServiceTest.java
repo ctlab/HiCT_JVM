@@ -269,6 +269,14 @@ class NativeProcessingServiceTest {
       assertArrayEquals(new long[]{1L, 1L, 3L, 1L, 1L, 2L}, coolerColumnsLong);
       assertArrayEquals(new long[]{2L, 7L, 4L, 3L, 5L, 9L}, coolerLongValues);
 
+      final var compactRowsLong = new long[]{3L, 0L, 1L, 0L, 1L, 0L, 3L};
+      final var compactColumnsLong = new long[]{1L, 3L, 1L, 1L, 1L, 1L, 1L};
+      final var compactLongValues = new long[]{4L, 9L, 5L, 7L, 3L, 2L, 6L};
+      assertEquals(4, processor.sortAndCompactCoolerRecordsLong(compactRowsLong, compactColumnsLong, compactLongValues));
+      assertArrayEquals(new long[]{0L, 0L, 1L, 3L}, java.util.Arrays.copyOf(compactRowsLong, 4));
+      assertArrayEquals(new long[]{1L, 3L, 1L, 1L}, java.util.Arrays.copyOf(compactColumnsLong, 4));
+      assertArrayEquals(new long[]{9L, 9L, 8L, 10L}, java.util.Arrays.copyOf(compactLongValues, 4));
+
       final double[][] expectedTransformInput = {
         {0.0d, 2.0d, 4.0d},
         {-1.0d, Double.NaN, 10.0d}
@@ -328,7 +336,7 @@ class NativeProcessingServiceTest {
       );
       final var finalSessionReport = processor.sessionReport();
       assertTrue(finalSessionReport.active());
-      assertTrue(finalSessionReport.operationCount() >= firstSessionReport.operationCount() + 14L);
+      assertTrue(finalSessionReport.operationCount() >= firstSessionReport.operationCount() + 15L);
       assertEquals(0L, finalSessionReport.failedOperationCount());
     } finally {
       if (previousPath == null) {
