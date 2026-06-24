@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConversionOptionsTest {
@@ -52,5 +53,28 @@ class ConversionOptionsTest {
     assertFalse(options.buildResolutionPyramid());
     assertFalse(options.balanceInputCoolers());
     assertFalse(options.balanceExportedCoolers());
+  }
+
+  @Test
+  void invalidCompressionLevelFailsFastInsteadOfDisablingCompression() {
+    assertThrows(
+      IllegalArgumentException.class,
+      () -> new ConversionOptions(
+        Path.of("input.mcool"),
+        Path.of("output.hict.hdf5"),
+        List.of(),
+        8192,
+        99,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        false,
+        false,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      )
+    );
   }
 }

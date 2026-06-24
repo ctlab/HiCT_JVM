@@ -91,7 +91,10 @@ public record ConversionOptions(
       chunkSize = 8_192;
     }
     if (compressionLevel < 0 || compressionLevel > 9) {
-      compressionLevel = 0;
+      throw new IllegalArgumentException(
+        "Compression level must be between 0 and 9 for HiCT HDF5/Cooler writing, got " + compressionLevel +
+          ". Use --compression=6 for normal compressed output or --compression=0 only for explicit uncompressed debugging."
+      );
     }
     if (compressionAlgorithm == null) {
       compressionAlgorithm = CompressionAlgorithm.DEFLATE;
