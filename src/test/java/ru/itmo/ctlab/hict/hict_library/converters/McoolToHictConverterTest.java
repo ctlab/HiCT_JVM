@@ -13,12 +13,16 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockColsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockRowsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockValuesDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigDirectionDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigHideTypeDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigLengthBinsDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigNameDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigOrderDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigsATLDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getDenseBlockDatasetPath;
 
 class McoolToHictConverterTest {
   @TempDir
@@ -326,6 +330,42 @@ class McoolToHictConverterTest {
     }
   }
 
+  @Test
+  void denseBlocksDoNotAllocateSparseDatasetsForAllNonzeroPixels() throws Exception {
+    final var mcool = tempDir.resolve("dense-block-source.mcool");
+    final var output = tempDir.resolve("dense-block-output.hict.hdf5");
+
+    writeDenseBlockMcool(mcool);
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertEquals(1L, reader.object().getDataSetInformation(getBlockRowsDatasetPath(1_000L)).getDimensions()[0]);
+      assertEquals(1L, reader.object().getDataSetInformation(getBlockColsDatasetPath(1_000L)).getDimensions()[0]);
+      assertEquals(1L, reader.object().getDataSetInformation(getBlockValuesDatasetPath(1_000L)).getDimensions()[0]);
+      assertArrayEquals(
+        new long[]{1L, 1L, 256L, 256L},
+        reader.object().getDataSetInformation(getDenseBlockDatasetPath(1_000L)).getDimensions()
+      );
+    }
+  }
+
   private static void writeSyntheticMcool(final Path path) {
     HDF5LibraryInitializer.initializeHDF5Library();
     try (final var writer = HDF5Factory.open(path.toFile())) {
@@ -395,6 +435,56 @@ class McoolToHictConverterTest {
       writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 1L, 2L, 3L, 4L, 5L, 6L});
       writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 2L, 3L, 4L, 5L, 6L});
       writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{1L, 1L, 1L, 1L, 1L, 1L, 1L});
+    }
+  }
+
+  private static void writeDenseBlockMcool(final Path path) {
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (final var writer = HDF5Factory.open(path.toFile())) {
+      final int bins = 256;
+      final int pixels = bins * bins;
+      final var rows = new long[pixels];
+      final var cols = new long[pixels];
+      final var counts = new long[pixels];
+      final var rowOffsets = new long[bins + 1];
+      int cursor = 0;
+      for (int row = 0; row < bins; row++) {
+        rowOffsets[row] = cursor;
+        for (int col = 0; col < bins; col++) {
+          rows[cursor] = row;
+          cols[cursor] = col;
+          counts[cursor] = 1L;
+          cursor++;
+        }
+      }
+      rowOffsets[bins] = cursor;
+
+      final var chrom = new long[bins];
+      final var starts = new long[bins];
+      final var ends = new long[bins];
+      for (int i = 0; i < bins; i++) {
+        starts[i] = i * 1_000L;
+        ends[i] = (i + 1L) * 1_000L;
+      }
+
+      writer.object().createGroup("/chroms");
+      writer.string().writeArray("/chroms/name", new String[]{"dense"});
+      writer.int64().writeArray("/chroms/length", new long[]{bins * 1_000L});
+
+      writer.object().createGroup("/resolutions");
+      writer.object().createGroup("/resolutions/1000");
+      writer.object().createGroup("/resolutions/1000/indexes");
+      writer.object().createGroup("/resolutions/1000/bins");
+      writer.object().createGroup("/resolutions/1000/pixels");
+
+      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset", new long[]{0L, bins});
+      writer.int64().writeArray("/resolutions/1000/indexes/bin1_offset", rowOffsets);
+      writer.int64().writeArray("/resolutions/1000/bins/chrom", chrom);
+      writer.int64().writeArray("/resolutions/1000/bins/start", starts);
+      writer.int64().writeArray("/resolutions/1000/bins/end", ends);
+      writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", rows);
+      writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", cols);
+      writer.int64().writeArray("/resolutions/1000/pixels/count", counts);
     }
   }
 }

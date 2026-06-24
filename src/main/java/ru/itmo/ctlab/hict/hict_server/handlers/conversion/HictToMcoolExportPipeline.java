@@ -1303,14 +1303,14 @@ public final class HictToMcoolExportPipeline {
       System.getenv("HICT_EXPORT_COO_COMPRESSION")
     );
     if (configured == null) {
-      return CooTextCompression.NONE;
+      return CooTextCompression.GZIP;
     }
     return switch (configured.trim().toLowerCase(Locale.ROOT)) {
       case "none", "plain", "text", "false", "no", "off", "0" -> CooTextCompression.NONE;
       case "gzip", "gz", "true", "yes", "on", "1" -> CooTextCompression.GZIP;
       default -> {
         logger.accept("WARNING: Ignoring invalid HICT_EXPORT_COO_COMPRESSION/hict.export.cooCompression value: " + configured);
-        yield CooTextCompression.NONE;
+        yield CooTextCompression.GZIP;
       }
     };
   }

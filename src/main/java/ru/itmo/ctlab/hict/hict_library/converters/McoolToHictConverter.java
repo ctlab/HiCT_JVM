@@ -109,6 +109,7 @@ public class McoolToHictConverter {
             floatStorageFeatures,
             requestedWorkers,
             importMaxMemoryBytes,
+            options.compressionLevel(),
             synchronizedLogConsumer
           );
           progressTracker.markStep("Wrote resolution " + resolution);
@@ -133,9 +134,10 @@ public class McoolToHictConverter {
       case ZSTD, LZF -> {
         logConsumer.accept(
           "Compression algorithm " + options.compressionAlgorithm() +
-            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to uncompressed chunked datasets."
+            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to deflate level " +
+            options.compressionLevel() + "."
         );
-        yield HDF5IntStorageFeatures.INT_CHUNKED;
+        yield HDF5IntStorageFeatures.createDeflation(options.compressionLevel());
       }
     };
   }
@@ -149,9 +151,10 @@ public class McoolToHictConverter {
       case ZSTD, LZF -> {
         logConsumer.accept(
           "Compression algorithm " + options.compressionAlgorithm() +
-            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to uncompressed chunked datasets."
+            " requested, but current JHDF5 high-level writer path supports deflate features only. Falling back to deflate level " +
+            options.compressionLevel() + "."
         );
-        yield HDF5FloatStorageFeatures.FLOAT_CHUNKED;
+        yield HDF5FloatStorageFeatures.createDeflation(options.compressionLevel());
       }
     };
   }
@@ -530,6 +533,7 @@ public class McoolToHictConverter {
     final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
     final int stripeWorkersRequested,
     final long importMaxMemoryBytes,
+    final int compressionLevel,
     final @NotNull Consumer<String> logConsumer
   ) {
     final long startedNanos = System.nanoTime();
@@ -567,7 +571,11 @@ public class McoolToHictConverter {
     final var counts = countDenseAndSparse(inputPath, resolution, stripeCount, allRowsStartIndices, stripeWorkers, floatingPointSignal, importMaxMemoryBytes, countingProgress::report);
     countingProgress.finish();
     final var denseBlockCount = counts.denseTotal();
-    logConsumer.accept("Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount);
+    final var sparsePixelCount = counts.sparseTotal();
+    logConsumer.accept(
+      "Resolution " + resolution + ": finished counting blocks, denseBlocks=" + denseBlockCount +
+        ", sparsePixels=" + sparsePixelCount
+    );
 
     final var blockRowsPath = getBlockRowsDatasetPath(resolution);
     final var blockColsPath = getBlockColsDatasetPath(resolution);
@@ -576,11 +584,21 @@ public class McoolToHictConverter {
     final var blockLengthPath = getBlockLengthDatasetPath(resolution);
     final var denseBlocksPath = getDenseBlockDatasetPath(resolution);
 
-    dst.int64().createArray(blockRowsPath, nonzeroPixelCount, safeChunkLen(nonzeroPixelCount, chunkSize), intStorageFeatures);
-    dst.int64().createArray(blockColsPath, nonzeroPixelCount, safeChunkLen(nonzeroPixelCount, chunkSize), intStorageFeatures);
-    createNumericArray(dst, blockValsPath, nonzeroPixelCount, chunkSize, floatingPointSignal, intStorageFeatures, floatStorageFeatures);
-
     final var totalBlockCount = (long) stripeCount * stripeCount;
+    final var sparseDatasetSize = Math.max(1L, sparsePixelCount);
+    final var estimatedRawTreapBytes = estimateRawTreapBytes(sparsePixelCount, denseBlockCount, totalBlockCount);
+    if (compressionLevel <= 0 && estimatedRawTreapBytes > 8L * 1024L * 1024L * 1024L) {
+      logConsumer.accept(
+        "WARNING: HiCT import compression is disabled for resolution " + resolution +
+          "; estimated raw treap storage is " + formatByteSize(estimatedRawTreapBytes) +
+          ". Use --compression=6 or IMPORT_COMPRESSION=6 for release-size files."
+      );
+    }
+
+    dst.int64().createArray(blockRowsPath, sparseDatasetSize, safeChunkLen(sparseDatasetSize, chunkSize), intStorageFeatures);
+    dst.int64().createArray(blockColsPath, sparseDatasetSize, safeChunkLen(sparseDatasetSize, chunkSize), intStorageFeatures);
+    createNumericArray(dst, blockValsPath, sparseDatasetSize, chunkSize, floatingPointSignal, intStorageFeatures, floatStorageFeatures);
+
     dst.int64().createArray(blockOffsetPath, totalBlockCount, safeChunkLen(totalBlockCount, chunkSize), intStorageFeatures);
     dst.int64().createArray(blockLengthPath, totalBlockCount, safeChunkLen(totalBlockCount, chunkSize), intStorageFeatures);
 
@@ -630,7 +648,10 @@ public class McoolToHictConverter {
       "Resolution " + resolution + ": workers=" + stripeWorkers +
         ", stripeBatchSize=" + batchSize +
         ", writeQueueCapacity=" + queueCapacity +
-        ", nonzeroPixels=" + nonzeroPixelCount
+        ", nonzeroPixels=" + nonzeroPixelCount +
+        ", sparsePixels=" + sparsePixelCount +
+        ", denseBlocks=" + denseBlockCount +
+        ", estimatedRawTreapStorage=" + formatByteSize(estimatedRawTreapBytes)
     );
     final var queue = new java.util.concurrent.ArrayBlockingQueue<StripeWriteTask>(queueCapacity);
     final var writerThread = new Thread(() -> {
@@ -1534,6 +1555,37 @@ public class McoolToHictConverter {
     }
     final double mib = bytes / (1024.0d * 1024.0d);
     return String.format(java.util.Locale.ROOT, "%.1f MiB", mib);
+  }
+
+  private static long estimateRawTreapBytes(
+    final long sparsePixelCount,
+    final long denseBlockCount,
+    final long totalBlockCount
+  ) {
+    return saturatingAdd(
+      saturatingAdd(
+        saturatingMultiply(sparsePixelCount, 3L * Long.BYTES),
+        saturatingMultiply(denseBlockCount, (long) SUBMATRIX_SIZE * SUBMATRIX_SIZE * Long.BYTES)
+      ),
+      saturatingMultiply(totalBlockCount, 2L * Long.BYTES)
+    );
+  }
+
+  private static long saturatingMultiply(final long left, final long right) {
+    if (left <= 0L || right <= 0L) {
+      return 0L;
+    }
+    if (left > Long.MAX_VALUE / right) {
+      return Long.MAX_VALUE;
+    }
+    return left * right;
+  }
+
+  private static long saturatingAdd(final long left, final long right) {
+    if (right > 0L && left > Long.MAX_VALUE - right) {
+      return Long.MAX_VALUE;
+    }
+    return left + right;
   }
 
   private static @NotNull String formatDuration(final long millis) {
