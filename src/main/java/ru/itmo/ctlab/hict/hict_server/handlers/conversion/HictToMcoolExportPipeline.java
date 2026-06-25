@@ -357,9 +357,10 @@ public final class HictToMcoolExportPipeline {
     streamThread.setDaemon(true);
     streamThread.start();
 
+    long streamedRecords = 0L;
     Throwable writeFailure = null;
     try (final var writer = new FastCooTextWriter(process.getOutputStream())) {
-      streamTransformedCooToWriter(
+      streamedRecords = streamTransformedCooToWriter(
         inputPath,
         resolution,
         writer,
@@ -375,8 +376,20 @@ public final class HictToMcoolExportPipeline {
     }
 
     if (writeFailure == null) {
+      final long waitStartedNanos = System.nanoTime();
+      long nextWaitLogNanos = waitStartedNanos;
       while (process.isAlive()) {
         checkCancelled(cancellationRequested);
+        final long nowNanos = System.nanoTime();
+        if (nowNanos >= nextWaitLogNanos) {
+          logger.accept(
+            "Resolution " + resolution + " COO stream finished; waiting for hictk load to finalize " +
+              coolPath.getFileName() +
+              " (elapsed=" + formatDuration((nowNanos - waitStartedNanos) / 1_000_000L) +
+              ", currentSize=" + describeFileSize(coolPath) + ")"
+          );
+          nextWaitLogNanos = nowNanos + TimeUnit.SECONDS.toNanos(30L);
+        }
         Thread.sleep(200L);
       }
     } else {
@@ -394,6 +407,11 @@ public final class HictToMcoolExportPipeline {
     if (exitCode != 0) {
       throw new IllegalStateException(String.join(" ", command) + " failed with exit code " + exitCode);
     }
+    overallTracker.add(streamedRecords, "Resolution " + resolution + " hictk load finalized");
+    logger.accept(
+      "Resolution " + resolution + " hictk load finalized " + coolPath.getFileName() +
+        " (size=" + describeFileSize(coolPath) + ")"
+    );
   }
 
   private void exportSingleCoolerViaHictk(final @NotNull ConversionOptions options,
@@ -542,16 +560,17 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
-  private static void streamTransformedCooToWriter(final @NotNull Path inputPath,
-                                                   final long resolution,
-                                                   final @NotNull FastCooTextWriter writer,
-                                                   final @NotNull SourceToAssemblyMapper mapper,
-                                                   final int chunkSize,
-                                                   final @NotNull OverallProgressTracker overallTracker,
-                                                   final @NotNull Consumer<String> logger,
-                                                   final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+  private static long streamTransformedCooToWriter(final @NotNull Path inputPath,
+                                                  final long resolution,
+                                                  final @NotNull FastCooTextWriter writer,
+                                                  final @NotNull SourceToAssemblyMapper mapper,
+                                                  final int chunkSize,
+                                                  final @NotNull OverallProgressTracker overallTracker,
+                                                  final @NotNull Consumer<String> logger,
+                                                  final @NotNull BooleanSupplier cancellationRequested) throws IOException {
     final int sourceReadBatchSize = resolveCooSourceReadBatchSize(logger);
     final var batch = new CooRecordBatch(sourceReadBatchSize);
+    long total = 0L;
     try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
       final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
       final var blockOffsetsPath = getBlockOffsetDatasetPath(resolution);
@@ -571,7 +590,6 @@ public final class HictToMcoolExportPipeline {
       if (floatingPointSignal) {
         throw new IllegalStateException("hictk-assisted .mcool export currently supports integer HiCT matrices only");
       }
-      long total = 0L;
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
         final long rowBase = (long) rowStripe * stripeCount;
         final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
@@ -722,6 +740,7 @@ public final class HictToMcoolExportPipeline {
     }
     writeCooBatch(writer, batch);
     writer.flush();
+    return total;
   }
 
   private static void exportTransformedCoo(final @NotNull Path inputPath,
@@ -1882,6 +1901,17 @@ public final class HictToMcoolExportPipeline {
       return String.format(Locale.ROOT, "%.1f MiB", mib);
     }
     return bytes + " B";
+  }
+
+  private static @NotNull String describeFileSize(final @NotNull Path path) {
+    try {
+      if (!Files.exists(path)) {
+        return "not-created";
+      }
+      return formatByteSize(Files.size(path));
+    } catch (IOException e) {
+      return "unknown";
+    }
   }
 
   private static @NotNull CooTextCompression resolveCooTextCompression(final @NotNull Consumer<String> logger) {
