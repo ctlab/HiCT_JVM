@@ -47,6 +47,7 @@ import java.util.regex.Pattern;
   }
 )
 public class HictCli implements Runnable {
+  private static final long PROGRESS_REPEAT_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(30L);
   private static final Set<String> BOOLEAN_OPTIONS_WITH_OPTIONAL_VALUE = Set.of(
     "--verbose",
     "-v",
@@ -740,6 +741,8 @@ public class HictCli implements Runnable {
       final boolean verboseEnabled = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
       final Map<String, Integer> lastLocalProgressByPhase = new HashMap<>();
       final Map<String, Integer> lastOverallProgressByPhase = new HashMap<>();
+      final Map<String, Long> lastLocalProgressLogNanosByPhase = new HashMap<>();
+      final Map<String, Long> lastOverallProgressLogNanosByPhase = new HashMap<>();
       return message -> {
         synchronized (System.out) {
           final var overall = OVERALL_PROGRESS_PATTERN.matcher(message);
@@ -755,9 +758,13 @@ public class HictCli implements Runnable {
             final var localForDefault = LOCAL_PROGRESS_PATTERN.matcher(message);
             if (overallForDefault.find()) {
               final int percent = Integer.parseInt(overallForDefault.group(1));
-              final int previous = lastOverallProgressByPhase.getOrDefault("overall", -1);
-              if (percent != previous) {
-                lastOverallProgressByPhase.put("overall", percent);
+              final var phase = progressPhaseKey(message);
+              final int previous = lastOverallProgressByPhase.getOrDefault(phase, -1);
+              final long nowNanos = System.nanoTime();
+              final long lastPrinted = lastOverallProgressLogNanosByPhase.getOrDefault(phase, 0L);
+              if (percent != previous || nowNanos - lastPrinted >= PROGRESS_REPEAT_INTERVAL_NANOS) {
+                lastOverallProgressByPhase.put(phase, percent);
+                lastOverallProgressLogNanosByPhase.put(phase, nowNanos);
                 System.out.println("[TOTAL " + percent + "%] " + message);
               } else {
                 return;
@@ -766,8 +773,11 @@ public class HictCli implements Runnable {
               final int percent = Integer.parseInt(localForDefault.group(1));
               final var phase = progressPhaseKey(message);
               final int previous = lastLocalProgressByPhase.getOrDefault(phase, -1);
-              if (percent != previous) {
+              final long nowNanos = System.nanoTime();
+              final long lastPrinted = lastLocalProgressLogNanosByPhase.getOrDefault(phase, 0L);
+              if (percent != previous || nowNanos - lastPrinted >= PROGRESS_REPEAT_INTERVAL_NANOS) {
                 lastLocalProgressByPhase.put(phase, percent);
+                lastLocalProgressLogNanosByPhase.put(phase, nowNanos);
                 System.out.println("[LOCAL " + percent + "%] " + message);
               } else {
                 return;

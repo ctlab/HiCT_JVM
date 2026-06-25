@@ -25,6 +25,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -63,6 +64,12 @@ public final class HictToMcoolExportPipeline {
   private static final long MIN_EXPORT_MAX_MEMORY_BYTES = 256L * 1024L * 1024L;
   private static final int MIN_COO_SORT_BATCH_SIZE = 250_000;
   private static final int MAX_COO_SORT_BATCH_SIZE = 8_000_000;
+  private static final int MIN_COO_SOURCE_READ_BATCH_SIZE = 16_384;
+  private static final int MAX_COO_SOURCE_READ_BATCH_SIZE = 4_000_000;
+  private static final int DEFAULT_COO_SOURCE_READ_BATCH_SIZE = 1_048_576;
+  private static final int MIN_HICTK_LOAD_CHUNK_SIZE = 1_000_000;
+  private static final int MAX_HICTK_LOAD_CHUNK_SIZE = 100_000_000;
+  private static final int DEFAULT_HICTK_LOAD_CHUNK_SIZE = 20_000_000;
   private static final long ESTIMATED_COO_RECORD_BYTES = 128L;
   private static final long PROGRESS_LOG_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(30L);
   private static final long ETA_WARMUP_MIN_ITEMS = 1_000_000L;
@@ -133,6 +140,7 @@ public final class HictToMcoolExportPipeline {
     synchronizedLogger.accept(
       "hictk-assisted export resources: hictkThreads=" + hictkThreads +
         ", cooCompression=" + cooCompression.logName() +
+        " (legacy sorted-temp path only; hictk-assisted export streams COO directly)" +
         ", exportMemoryBudget=" + formatByteSize(exportMaxMemoryBytes)
     );
 
@@ -202,32 +210,21 @@ public final class HictToMcoolExportPipeline {
 
           final var resolutionTmpDir = Files.createDirectories(tmpDirectory.resolve("r" + resolution));
           final var chromSizesPath = resolutionTmpDir.resolve("chrom.sizes");
-          final var cooPath = cooCompression.resolvePath(resolutionTmpDir, "pixels");
           final var coolPath = resolutionTmpDir.resolve("pixels.cool");
 
           writeChromSizesFile(assemblyLayout, chromSizesPath);
           final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
-          exportTransformedCoo(
+          runHictkLoadFromTransformedCoo(
+            toolchain,
             options.inputPath(),
             resolution,
-            cooPath,
             mapper,
-            options.chunkSize(),
-            exportMaxMemoryBytes,
-            cooCompression,
-            overallTracker,
-            synchronizedLogger,
-            cancellationRequested
-          );
-
-          runHictkLoad(
-            toolchain,
-            cooPath,
             chromSizesPath,
-            resolution,
             coolPath,
             options.parallelism(),
             resolutionTmpDir,
+            options.chunkSize(),
+            overallTracker,
             synchronizedLogger,
             processSink,
             cancellationRequested
@@ -300,6 +297,105 @@ public final class HictToMcoolExportPipeline {
     runStreamingCommand(command, workDirectory, logger, processSink, cancellationRequested);
   }
 
+  private static void runHictkLoadFromTransformedCoo(final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
+                                                     final @NotNull Path inputPath,
+                                                     final long resolution,
+                                                     final @NotNull SourceToAssemblyMapper mapper,
+                                                     final @NotNull Path chromSizesPath,
+                                                     final @NotNull Path coolPath,
+                                                     final int parallelism,
+                                                     final @NotNull Path workDirectory,
+                                                     final int chunkSize,
+                                                     final @NotNull OverallProgressTracker overallTracker,
+                                                     final @NotNull Consumer<String> logger,
+                                                     final @NotNull Consumer<Process> processSink,
+                                                     final @NotNull BooleanSupplier cancellationRequested) throws Exception {
+    final int hictkThreads = resolveToolThreads(parallelism);
+    final int hictkChunkSize = resolveHictkLoadChunkSize(logger);
+    final var command = List.of(
+      Objects.requireNonNull(toolchain.hictkCommand()).toString(),
+      "load",
+      "--format",
+      "coo",
+      "--chrom-sizes",
+      chromSizesPath.toString(),
+      "--bin-size",
+      Long.toString(resolution),
+      "--assume-unsorted",
+      "--transpose-lower-triangular-pixels",
+      "--threads",
+      Integer.toString(hictkThreads),
+      "--chunk-size",
+      Integer.toString(hictkChunkSize),
+      "--tmpdir",
+      workDirectory.toString(),
+      "--force",
+      "-",
+      coolPath.toString()
+    );
+    logger.accept(
+      "Starting hictk streaming load for resolution " + resolution +
+        ": threads=" + hictkThreads +
+        ", hictkChunkSize=" + hictkChunkSize +
+        ", output=" + coolPath.getFileName()
+    );
+    final var process = new ProcessBuilder(command)
+      .directory(workDirectory.toFile())
+      .redirectErrorStream(true)
+      .start();
+    processSink.accept(process);
+    final var streamThread = new Thread(() -> {
+      try (final var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+          logger.accept(line);
+        }
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
+    }, "hictk-streaming-load-log");
+    streamThread.setDaemon(true);
+    streamThread.start();
+
+    Throwable writeFailure = null;
+    try (final var writer = new FastCooTextWriter(process.getOutputStream())) {
+      streamTransformedCooToWriter(
+        inputPath,
+        resolution,
+        writer,
+        mapper,
+        chunkSize,
+        overallTracker,
+        logger,
+        cancellationRequested
+      );
+    } catch (IOException | RuntimeException e) {
+      writeFailure = e;
+      process.destroy();
+    }
+
+    if (writeFailure == null) {
+      while (process.isAlive()) {
+        checkCancelled(cancellationRequested);
+        Thread.sleep(200L);
+      }
+    } else {
+      process.waitFor(10L, TimeUnit.SECONDS);
+      if (process.isAlive()) {
+        process.destroyForcibly();
+      }
+    }
+    streamThread.join();
+    final int exitCode = process.waitFor();
+    processSink.accept(null);
+    if (writeFailure != null) {
+      throw new IllegalStateException("Failed while streaming transformed COO records into hictk load", writeFailure);
+    }
+    if (exitCode != 0) {
+      throw new IllegalStateException(String.join(" ", command) + " failed with exit code " + exitCode);
+    }
+  }
+
   private void exportSingleCoolerViaHictk(final @NotNull ConversionOptions options,
                                           final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
                                           final @NotNull ChunkedFile chunkedFile,
@@ -324,30 +420,21 @@ public final class HictToMcoolExportPipeline {
     Files.deleteIfExists(options.outputPath());
     final var resolutionTmpDir = Files.createDirectories(tmpDirectory.resolve("single-r" + resolution));
     final var chromSizesPath = resolutionTmpDir.resolve("chrom.sizes");
-    final var cooPath = cooCompression.resolvePath(resolutionTmpDir, "pixels");
 
     writeChromSizesFile(assemblyLayout, chromSizesPath);
     final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
-    exportTransformedCoo(
+    logger.accept("hictk-assisted single-resolution export streams transformed COO directly to hictk; no HiCT sorted COO temp file is created.");
+    runHictkLoadFromTransformedCoo(
+      toolchain,
       options.inputPath(),
       resolution,
-      cooPath,
       mapper,
-      options.chunkSize(),
-      exportMaxMemoryBytes,
-      cooCompression,
-      overallTracker,
-      logger,
-      cancellationRequested
-    );
-    runHictkLoad(
-      toolchain,
-      cooPath,
       chromSizesPath,
-      resolution,
       options.outputPath(),
       options.parallelism(),
       resolutionTmpDir,
+      options.chunkSize(),
+      overallTracker,
       logger,
       processSink,
       cancellationRequested
@@ -455,6 +542,188 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
+  private static void streamTransformedCooToWriter(final @NotNull Path inputPath,
+                                                   final long resolution,
+                                                   final @NotNull FastCooTextWriter writer,
+                                                   final @NotNull SourceToAssemblyMapper mapper,
+                                                   final int chunkSize,
+                                                   final @NotNull OverallProgressTracker overallTracker,
+                                                   final @NotNull Consumer<String> logger,
+                                                   final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    final int sourceReadBatchSize = resolveCooSourceReadBatchSize(logger);
+    final var batch = new CooRecordBatch(sourceReadBatchSize);
+    try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
+      final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
+      final var blockOffsetsPath = getBlockOffsetDatasetPath(resolution);
+      final var rowsPath = getBlockRowsDatasetPath(resolution);
+      final var colsPath = getBlockColsDatasetPath(resolution);
+      final var valuesPath = getBlockValuesDatasetPath(resolution);
+      final var denseBlocksPath = getDenseBlockDatasetPath(resolution);
+      final long[] stripeLengths = src.int64().readArray(getStripeLengthsBinsDatasetPath(resolution));
+      final long[] stripeOffsets = new long[stripeLengths.length];
+      long stripeCursor = 0L;
+      for (int i = 0; i < stripeLengths.length; i++) {
+        stripeOffsets[i] = stripeCursor;
+        stripeCursor += stripeLengths[i];
+      }
+      final int stripeCount = stripeLengths.length;
+      final boolean floatingPointSignal = isFloatingPointDataset(src, valuesPath);
+      if (floatingPointSignal) {
+        throw new IllegalStateException("hictk-assisted .mcool export currently supports integer HiCT matrices only");
+      }
+      long total = 0L;
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        final long rowBase = (long) rowStripe * stripeCount;
+        final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
+        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+          total += rowBlockLengths[colStripe];
+        }
+      }
+      final long startedNanos = System.nanoTime();
+      logger.accept(
+        "Resolution " + resolution + " streaming COO export started: source entries=" + total +
+          ", sourceReadBatchSize=" + sourceReadBatchSize +
+          ", chunkSize=" + chunkSize +
+          ". This stage streams transformed HiCT pixels directly into hictk load; HiCT does not create sorted COO temp chunks."
+      );
+      final var progress = new CooExportProgressTracker(resolution, total, startedNanos, overallTracker, logger);
+      final var rowMapperCursor = mapper.cursor();
+      final var colMapperCursor = mapper.cursor();
+      final var nativeProcessingService = NativeProcessingService.getInstance();
+      final var sparseRun = new ArrayList<SparseBlockRef>();
+      long sparseRunStartOffset = -1L;
+      long sparseRunLength = 0L;
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        checkCancelled(cancellationRequested);
+        final long rowBase = (long) rowStripe * stripeCount;
+        final long[] rowBlockLengths = src.int64().readArrayBlockWithOffset(blockLengthsPath, stripeCount, rowBase);
+        final long[] rowBlockOffsets = src.int64().readArrayBlockWithOffset(blockOffsetsPath, stripeCount, rowBase);
+        final long rowStripeOffset = stripeOffsets[rowStripe];
+        final int rowStripeLength = Math.toIntExact(stripeLengths[rowStripe]);
+        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+          final long blockLen = rowBlockLengths[colStripe];
+          if (blockLen <= 0L) {
+            continue;
+          }
+          final long blockOffset = rowBlockOffsets[colStripe];
+          final long colStripeOffset = stripeOffsets[colStripe];
+          final int colStripeLength = Math.toIntExact(stripeLengths[colStripe]);
+          if (blockOffset >= 0L) {
+            long localOffset = 0L;
+            while (localOffset < blockLen) {
+              checkCancelled(cancellationRequested);
+              final long remainingInBlock = blockLen - localOffset;
+              final long sourceOffset = blockOffset + localOffset;
+              final boolean startsNewRun = sparseRun.isEmpty();
+              final boolean contiguous = startsNewRun || sourceOffset == sparseRunStartOffset + sparseRunLength;
+              final long availableRunCapacity = sourceReadBatchSize - sparseRunLength;
+              if (!startsNewRun && (!contiguous || availableRunCapacity <= 0L)) {
+                flushSparseRunToWriter(
+                  src,
+                  rowsPath,
+                  colsPath,
+                  valuesPath,
+                  sparseRun,
+                  sparseRunStartOffset,
+                  sparseRunLength,
+                  batch,
+                  writer,
+                  mapper,
+                  rowMapperCursor,
+                  colMapperCursor,
+                  nativeProcessingService,
+                  cancellationRequested
+                );
+                progress.add(sparseRunLength);
+                sparseRun.clear();
+                sparseRunStartOffset = -1L;
+                sparseRunLength = 0L;
+              }
+
+              final long runAppendLength = Math.min(remainingInBlock, Math.max(1L, sourceReadBatchSize - sparseRunLength));
+              if (sparseRun.isEmpty()) {
+                sparseRunStartOffset = sourceOffset;
+              }
+              sparseRun.add(new SparseBlockRef(sourceOffset, runAppendLength, rowStripeOffset, colStripeOffset));
+              sparseRunLength += runAppendLength;
+              localOffset += runAppendLength;
+            }
+          } else {
+            if (!sparseRun.isEmpty()) {
+              flushSparseRunToWriter(
+                src,
+                rowsPath,
+                colsPath,
+                valuesPath,
+                sparseRun,
+                sparseRunStartOffset,
+                sparseRunLength,
+                batch,
+                writer,
+                mapper,
+                rowMapperCursor,
+                colMapperCursor,
+                nativeProcessingService,
+                cancellationRequested
+              );
+              progress.add(sparseRunLength);
+              sparseRun.clear();
+              sparseRunStartOffset = -1L;
+              sparseRunLength = 0L;
+            }
+            final long denseIndex = -(blockOffset + 1L);
+            final var denseValues = readDenseLongBlock(src, denseBlocksPath, denseIndex);
+            for (int row = 0; row < rowStripeLength; row++) {
+              final int colStart = (rowStripe == colStripe) ? row : 0;
+              for (int col = colStart; col < colStripeLength; col++) {
+                final long value = denseValues[(row * DENSE_BLOCK_SIZE) + col];
+                if (value == 0L) {
+                  continue;
+                }
+                appendMappedRecord(
+                  batch,
+                  rowMapperCursor,
+                  colMapperCursor,
+                  rowStripeOffset + row,
+                  colStripeOffset + col,
+                  value
+                );
+                if (batch.remainingCapacity() == 0) {
+                  writeCooBatch(writer, batch);
+                }
+              }
+            }
+            progress.add(blockLen);
+          }
+        }
+        if (!sparseRun.isEmpty()) {
+          flushSparseRunToWriter(
+            src,
+            rowsPath,
+            colsPath,
+            valuesPath,
+            sparseRun,
+            sparseRunStartOffset,
+            sparseRunLength,
+            batch,
+            writer,
+            mapper,
+            rowMapperCursor,
+            colMapperCursor,
+            nativeProcessingService,
+            cancellationRequested
+          );
+          progress.add(sparseRunLength);
+          sparseRun.clear();
+          sparseRunStartOffset = -1L;
+          sparseRunLength = 0L;
+        }
+      }
+    }
+    writeCooBatch(writer, batch);
+    writer.flush();
+  }
+
   private static void exportTransformedCoo(final @NotNull Path inputPath,
                                            final long resolution,
                                            final @NotNull Path outputPath,
@@ -468,6 +737,7 @@ public final class HictToMcoolExportPipeline {
     final var workDir = Files.createDirectories(outputPath.getParent());
     final var chunkPaths = new ArrayList<Path>();
     final int sortBatchSize = resolveCooSortBatchSize(chunkSize, exportMaxMemoryBytes, logger);
+    final int sourceReadBatchSize = Math.min(sortBatchSize, resolveCooSourceReadBatchSize(logger));
     final var batch = new CooRecordBatch(sortBatchSize);
     try (final var src = HDF5Factory.openForReading(inputPath.toFile())) {
       final var blockLengthsPath = getBlockLengthDatasetPath(resolution);
@@ -488,7 +758,6 @@ public final class HictToMcoolExportPipeline {
       if (floatingPointSignal) {
         throw new IllegalStateException("hictk-assisted .mcool export currently supports integer HiCT matrices only");
       }
-      long processedPixels = 0L;
       long total = 0L;
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
         final long rowBase = (long) rowStripe * stripeCount;
@@ -498,17 +767,21 @@ public final class HictToMcoolExportPipeline {
         }
       }
       final long startedNanos = System.nanoTime();
-      long lastLoggedNanos = startedNanos;
-      int lastLoggedPercent = -1;
       logger.accept(
         "Resolution " + resolution + " COO export started: source entries=" + total +
           ", sortBatchSize=" + sortBatchSize +
+          ", sourceReadBatchSize=" + sourceReadBatchSize +
           ", chunkSize=" + chunkSize +
           ", tempCompression=" + cooCompression.logName() +
           ". This stage streams, remaps and sorts the selected HiCT pixels before hictk loads them."
       );
+      final var progress = new CooExportProgressTracker(resolution, total, startedNanos, overallTracker, logger);
       final var rowMapperCursor = mapper.cursor();
       final var colMapperCursor = mapper.cursor();
+      final var nativeProcessingService = NativeProcessingService.getInstance();
+      final var sparseRun = new ArrayList<SparseBlockRef>();
+      long sparseRunStartOffset = -1L;
+      long sparseRunLength = 0L;
       for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
         checkCancelled(cancellationRequested);
         final long rowBase = (long) rowStripe * stripeCount;
@@ -525,26 +798,74 @@ public final class HictToMcoolExportPipeline {
           final long colStripeOffset = stripeOffsets[colStripe];
           final int colStripeLength = Math.toIntExact(stripeLengths[colStripe]);
           if (blockOffset >= 0L) {
-            final int actualBlockLen = Math.toIntExact(blockLen);
-            final var rows = src.int64().readArrayBlockWithOffset(rowsPath, actualBlockLen, blockOffset);
-            final var cols = src.int64().readArrayBlockWithOffset(colsPath, actualBlockLen, blockOffset);
-            final var vals = src.int64().readArrayBlockWithOffset(valuesPath, actualBlockLen, blockOffset);
-            for (int i = 0; i < actualBlockLen; i++) {
-              appendMappedRecord(
-                batch,
-                rowMapperCursor,
-                colMapperCursor,
-                rowStripeOffset + rows[i],
-                colStripeOffset + cols[i],
-                vals[i]
-              );
-              if (batch.size() >= sortBatchSize) {
-                final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
-                chunkPaths.add(chunkPath);
-                batch.clear();
+            long localOffset = 0L;
+            while (localOffset < blockLen) {
+              checkCancelled(cancellationRequested);
+              final long remainingInBlock = blockLen - localOffset;
+              final long sourceOffset = blockOffset + localOffset;
+              final boolean startsNewRun = sparseRun.isEmpty();
+              final boolean contiguous = startsNewRun || sourceOffset == sparseRunStartOffset + sparseRunLength;
+              final long availableRunCapacity = sourceReadBatchSize - sparseRunLength;
+              if (!startsNewRun && (!contiguous || availableRunCapacity <= 0L)) {
+                flushSparseRun(
+                  src,
+                  rowsPath,
+                  colsPath,
+                  valuesPath,
+                  sparseRun,
+                  sparseRunStartOffset,
+                  sparseRunLength,
+                  batch,
+                  mapper,
+                  rowMapperCursor,
+                  colMapperCursor,
+                  nativeProcessingService,
+                  workDir,
+                  resolution,
+                  sortBatchSize,
+                  chunkPaths,
+                  cancellationRequested
+                );
+                progress.add(sparseRunLength);
+                sparseRun.clear();
+                sparseRunStartOffset = -1L;
+                sparseRunLength = 0L;
               }
+
+              final long runAppendLength = Math.min(remainingInBlock, Math.max(1L, sourceReadBatchSize - sparseRunLength));
+              if (sparseRun.isEmpty()) {
+                sparseRunStartOffset = sourceOffset;
+              }
+              sparseRun.add(new SparseBlockRef(sourceOffset, runAppendLength, rowStripeOffset, colStripeOffset));
+              sparseRunLength += runAppendLength;
+              localOffset += runAppendLength;
             }
           } else {
+            if (!sparseRun.isEmpty()) {
+              flushSparseRun(
+                src,
+                rowsPath,
+                colsPath,
+                valuesPath,
+                sparseRun,
+                sparseRunStartOffset,
+                sparseRunLength,
+                batch,
+                mapper,
+                rowMapperCursor,
+                colMapperCursor,
+                nativeProcessingService,
+                workDir,
+                resolution,
+                sortBatchSize,
+                chunkPaths,
+                cancellationRequested
+              );
+              progress.add(sparseRunLength);
+              sparseRun.clear();
+              sparseRunStartOffset = -1L;
+              sparseRunLength = 0L;
+            }
             final long denseIndex = -(blockOffset + 1L);
             final var denseValues = readDenseLongBlock(src, denseBlocksPath, denseIndex);
             for (int row = 0; row < rowStripeLength; row++) {
@@ -569,31 +890,33 @@ public final class HictToMcoolExportPipeline {
                 }
               }
             }
+            progress.add(blockLen);
           }
-          processedPixels += blockLen;
-          overallTracker.add(blockLen, "Resolution " + resolution + " COO export");
-          if (total > 0) {
-            final int percent = (int) ((processedPixels * 100L) / total);
-            final long nowNanos = System.nanoTime();
-            if (percent >= 100 || percent > lastLoggedPercent || nowNanos - lastLoggedNanos >= PROGRESS_LOG_INTERVAL_NANOS) {
-              lastLoggedPercent = percent;
-              lastLoggedNanos = nowNanos;
-              final long elapsedMillis = (nowNanos - startedNanos) / 1_000_000L;
-              final long etaMillis = estimateEtaMillis(processedPixels, total, elapsedMillis);
-              logger.accept(
-                String.format(
-                  "Resolution %d COO export: %d%% (%d/%d), elapsed=%s, eta=%s, rate=%s",
-                  resolution,
-                  percent,
-                  processedPixels,
-                  total,
-                  formatDuration(elapsedMillis),
-                  formatEta(processedPixels, total, elapsedMillis, etaMillis),
-                  formatItemsPerSecond(processedPixels, elapsedMillis)
-                )
-              );
-            }
-          }
+        }
+        if (!sparseRun.isEmpty()) {
+          flushSparseRun(
+            src,
+            rowsPath,
+            colsPath,
+            valuesPath,
+            sparseRun,
+            sparseRunStartOffset,
+            sparseRunLength,
+            batch,
+            mapper,
+            rowMapperCursor,
+            colMapperCursor,
+            nativeProcessingService,
+            workDir,
+            resolution,
+            sortBatchSize,
+            chunkPaths,
+            cancellationRequested
+          );
+          progress.add(sparseRunLength);
+          sparseRun.clear();
+          sparseRunStartOffset = -1L;
+          sparseRunLength = 0L;
         }
       }
     }
@@ -896,6 +1219,190 @@ public final class HictToMcoolExportPipeline {
       mappedCol = tmp;
     }
     batch.add(mappedRow, mappedCol, count);
+  }
+
+  private static int appendMappedRecords(final @NotNull CooRecordBatch batch,
+                                         final @NotNull SourceToAssemblyMapper mapper,
+                                         final @NotNull SourceToAssemblyMapper.Cursor rowMapperCursor,
+                                         final @NotNull SourceToAssemblyMapper.Cursor colMapperCursor,
+                                         final long rowStripeOffset,
+                                         final long colStripeOffset,
+                                         final long @NotNull [] sourceRows,
+                                         final long @NotNull [] sourceColumns,
+                                         final long @NotNull [] sourceValues,
+                                         final int sourceOffset,
+                                         final int length,
+                                         final @NotNull NativeProcessingService nativeProcessingService) {
+    final int toAppend = Math.min(length, batch.remainingCapacity());
+    if (toAppend <= 0) {
+      return 0;
+    }
+
+    final int nativeMapped = nativeProcessingService.tryMapCoolerRecordsToBatch(
+      sourceRows,
+      sourceColumns,
+      sourceValues,
+      sourceOffset,
+      toAppend,
+      rowStripeOffset,
+      colStripeOffset,
+      batch.rows,
+      batch.cols,
+      batch.counts,
+      batch.size(),
+      mapper.sourceStarts,
+      mapper.sourceEnds,
+      mapper.targetStarts,
+      mapper.targetEnds,
+      mapper.reversedBytes
+    );
+    if (nativeMapped == toAppend) {
+      batch.advanceSize(nativeMapped);
+      return nativeMapped;
+    }
+
+    for (int i = 0; i < toAppend; i++) {
+      final int sourceIndex = sourceOffset + i;
+      appendMappedRecord(
+        batch,
+        rowMapperCursor,
+        colMapperCursor,
+        rowStripeOffset + sourceRows[sourceIndex],
+        colStripeOffset + sourceColumns[sourceIndex],
+        sourceValues[sourceIndex]
+      );
+    }
+    return toAppend;
+  }
+
+  private static void flushSparseRun(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
+                                     final @NotNull String rowsPath,
+                                     final @NotNull String colsPath,
+                                     final @NotNull String valuesPath,
+                                     final @NotNull List<SparseBlockRef> sparseRun,
+                                     final long sparseRunStartOffset,
+                                     final long sparseRunLength,
+                                     final @NotNull CooRecordBatch batch,
+                                     final @NotNull SourceToAssemblyMapper mapper,
+                                     final @NotNull SourceToAssemblyMapper.Cursor rowMapperCursor,
+                                     final @NotNull SourceToAssemblyMapper.Cursor colMapperCursor,
+                                     final @NotNull NativeProcessingService nativeProcessingService,
+                                     final @NotNull Path workDir,
+                                     final long resolution,
+                                     final int sortBatchSize,
+                                     final @NotNull List<Path> chunkPaths,
+                                     final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    if (sparseRun.isEmpty() || sparseRunLength <= 0L) {
+      return;
+    }
+    if (sparseRunStartOffset < 0L) {
+      throw new IllegalStateException("Sparse COO run has no source offset");
+    }
+
+    final int runLength = Math.toIntExact(sparseRunLength);
+    final var sourceRows = src.int64().readArrayBlockWithOffset(rowsPath, runLength, sparseRunStartOffset);
+    final var sourceColumns = src.int64().readArrayBlockWithOffset(colsPath, runLength, sparseRunStartOffset);
+    final var sourceValues = src.int64().readArrayBlockWithOffset(valuesPath, runLength, sparseRunStartOffset);
+
+    for (final var block : sparseRun) {
+      checkCancelled(cancellationRequested);
+      int consumed = 0;
+      final int blockLength = Math.toIntExact(block.length());
+      final int blockSourceOffset = Math.toIntExact(block.blockOffset() - sparseRunStartOffset);
+      while (consumed < blockLength) {
+        if (batch.size() >= sortBatchSize) {
+          final var chunkPath = flushSortedChunk(workDir, resolution, chunkPaths.size(), batch);
+          chunkPaths.add(chunkPath);
+          batch.clear();
+        }
+
+        final int appended = appendMappedRecords(
+          batch,
+          mapper,
+          rowMapperCursor,
+          colMapperCursor,
+          block.rowStripeOffset(),
+          block.colStripeOffset(),
+          sourceRows,
+          sourceColumns,
+          sourceValues,
+          blockSourceOffset + consumed,
+          blockLength - consumed,
+          nativeProcessingService
+        );
+        if (appended <= 0) {
+          throw new IllegalStateException("Failed to append transformed COO records to the export sort batch");
+        }
+        consumed += appended;
+      }
+    }
+  }
+
+  private static void flushSparseRunToWriter(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
+                                             final @NotNull String rowsPath,
+                                             final @NotNull String colsPath,
+                                             final @NotNull String valuesPath,
+                                             final @NotNull List<SparseBlockRef> sparseRun,
+                                             final long sparseRunStartOffset,
+                                             final long sparseRunLength,
+                                             final @NotNull CooRecordBatch batch,
+                                             final @NotNull FastCooTextWriter writer,
+                                             final @NotNull SourceToAssemblyMapper mapper,
+                                             final @NotNull SourceToAssemblyMapper.Cursor rowMapperCursor,
+                                             final @NotNull SourceToAssemblyMapper.Cursor colMapperCursor,
+                                             final @NotNull NativeProcessingService nativeProcessingService,
+                                             final @NotNull BooleanSupplier cancellationRequested) throws IOException {
+    if (sparseRun.isEmpty() || sparseRunLength <= 0L) {
+      return;
+    }
+    if (sparseRunStartOffset < 0L) {
+      throw new IllegalStateException("Sparse COO run has no source offset");
+    }
+
+    final int runLength = Math.toIntExact(sparseRunLength);
+    final var sourceRows = src.int64().readArrayBlockWithOffset(rowsPath, runLength, sparseRunStartOffset);
+    final var sourceColumns = src.int64().readArrayBlockWithOffset(colsPath, runLength, sparseRunStartOffset);
+    final var sourceValues = src.int64().readArrayBlockWithOffset(valuesPath, runLength, sparseRunStartOffset);
+
+    for (final var block : sparseRun) {
+      checkCancelled(cancellationRequested);
+      int consumed = 0;
+      final int blockLength = Math.toIntExact(block.length());
+      final int blockSourceOffset = Math.toIntExact(block.blockOffset() - sparseRunStartOffset);
+      while (consumed < blockLength) {
+        if (batch.remainingCapacity() == 0) {
+          writeCooBatch(writer, batch);
+        }
+
+        final int appended = appendMappedRecords(
+          batch,
+          mapper,
+          rowMapperCursor,
+          colMapperCursor,
+          block.rowStripeOffset(),
+          block.colStripeOffset(),
+          sourceRows,
+          sourceColumns,
+          sourceValues,
+          blockSourceOffset + consumed,
+          blockLength - consumed,
+          nativeProcessingService
+        );
+        if (appended <= 0) {
+          throw new IllegalStateException("Failed to append transformed COO records to the streaming export batch");
+        }
+        consumed += appended;
+      }
+    }
+  }
+
+  private static void writeCooBatch(final @NotNull FastCooTextWriter writer,
+                                    final @NotNull CooRecordBatch batch) throws IOException {
+    if (batch.isEmpty()) {
+      return;
+    }
+    writer.writeBatch(batch);
+    batch.clear();
   }
 
   private static boolean isFloatingPointDataset(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader,
@@ -1267,6 +1774,44 @@ public final class HictToMcoolExportPipeline {
     return batchSize;
   }
 
+  private static int resolveCooSourceReadBatchSize(final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.cooReadBatchSize"),
+      System.getenv("HICT_EXPORT_COO_READ_BATCH_SIZE")
+    );
+    if (configured != null) {
+      try {
+        final int requested = Integer.parseInt(configured);
+        final int clamped = Math.max(MIN_COO_SOURCE_READ_BATCH_SIZE, Math.min(MAX_COO_SOURCE_READ_BATCH_SIZE, requested));
+        logger.accept("COO source read batch size=" + clamped + " records (configured)");
+        return clamped;
+      } catch (NumberFormatException ignored) {
+        logger.accept("WARNING: Ignoring invalid HICT_EXPORT_COO_READ_BATCH_SIZE/hict.export.cooReadBatchSize value: " + configured);
+      }
+    }
+    logger.accept("COO source read batch size=" + DEFAULT_COO_SOURCE_READ_BATCH_SIZE + " records");
+    return DEFAULT_COO_SOURCE_READ_BATCH_SIZE;
+  }
+
+  private static int resolveHictkLoadChunkSize(final @NotNull Consumer<String> logger) {
+    final var configured = firstNonBlank(
+      System.getProperty("hict.export.hictkLoadChunkSize"),
+      System.getenv("HICT_EXPORT_HICTK_LOAD_CHUNK_SIZE")
+    );
+    if (configured != null) {
+      try {
+        final int requested = Integer.parseInt(configured);
+        final int clamped = Math.max(MIN_HICTK_LOAD_CHUNK_SIZE, Math.min(MAX_HICTK_LOAD_CHUNK_SIZE, requested));
+        logger.accept("hictk load chunk size=" + clamped + " records (configured)");
+        return clamped;
+      } catch (NumberFormatException ignored) {
+        logger.accept("WARNING: Ignoring invalid HICT_EXPORT_HICTK_LOAD_CHUNK_SIZE/hict.export.hictkLoadChunkSize value: " + configured);
+      }
+    }
+    logger.accept("hictk load chunk size=" + DEFAULT_HICTK_LOAD_CHUNK_SIZE + " records");
+    return DEFAULT_HICTK_LOAD_CHUNK_SIZE;
+  }
+
   private static long resolveExportMaxMemoryBytes(final @NotNull Consumer<String> logger) {
     final var configured = firstNonBlank(
       System.getProperty("hict.export.maxMemoryBytes"),
@@ -1427,12 +1972,16 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
+  private record SparseBlockRef(long blockOffset, long length, long rowStripeOffset, long colStripeOffset) {
+  }
+
   private static final class SourceToAssemblyMapper {
     private final long[] sourceStarts;
     private final long[] sourceEnds;
     private final long[] targetStarts;
     private final long[] targetEnds;
     private final boolean[] reversed;
+    private final byte[] reversedBytes;
 
     private SourceToAssemblyMapper(final @NotNull List<SourceSegment> segments) {
       this.sourceStarts = new long[segments.size()];
@@ -1440,6 +1989,7 @@ public final class HictToMcoolExportPipeline {
       this.targetStarts = new long[segments.size()];
       this.targetEnds = new long[segments.size()];
       this.reversed = new boolean[segments.size()];
+      this.reversedBytes = new byte[segments.size()];
       for (int i = 0; i < segments.size(); i++) {
         final var segment = segments.get(i);
         sourceStarts[i] = segment.sourceStart();
@@ -1447,6 +1997,7 @@ public final class HictToMcoolExportPipeline {
         targetStarts[i] = segment.targetStart();
         targetEnds[i] = segment.targetEnd();
         reversed[i] = segment.direction() == ATUDirection.REVERSED;
+        reversedBytes[i] = (byte) (reversed[i] ? 1 : 0);
       }
     }
 
@@ -1526,6 +2077,59 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
+  private static final class FastCooTextWriter implements AutoCloseable {
+    private final BufferedOutputStream output;
+    private final byte[] digits = new byte[20];
+
+    private FastCooTextWriter(final @NotNull OutputStream output) {
+      this.output = new BufferedOutputStream(output, 1 << 20);
+    }
+
+    private void writeBatch(final @NotNull CooRecordBatch batch) throws IOException {
+      for (int i = 0; i < batch.size(); i++) {
+        writeLong(batch.rows[i]);
+        output.write('\t');
+        writeLong(batch.cols[i]);
+        output.write('\t');
+        writeLong(batch.counts[i]);
+        output.write('\n');
+      }
+    }
+
+    private void flush() throws IOException {
+      output.flush();
+    }
+
+    private void writeLong(final long value) throws IOException {
+      if (value == 0L) {
+        output.write('0');
+        return;
+      }
+      if (value == Long.MIN_VALUE) {
+        final var text = Long.toString(value);
+        output.write(text.getBytes(StandardCharsets.US_ASCII));
+        return;
+      }
+
+      long current = value;
+      if (current < 0L) {
+        output.write('-');
+        current = -current;
+      }
+      int offset = digits.length;
+      while (current > 0L) {
+        digits[--offset] = (byte) ('0' + (current % 10L));
+        current /= 10L;
+      }
+      output.write(digits, offset, digits.length - offset);
+    }
+
+    @Override
+    public void close() throws IOException {
+      output.close();
+    }
+  }
+
   private record CooRecord(long row, long col, long count) {
   }
 
@@ -1552,6 +2156,17 @@ public final class HictToMcoolExportPipeline {
       cols[size] = col;
       counts[size] = count;
       size++;
+    }
+
+    private int remainingCapacity() {
+      return rows.length - size;
+    }
+
+    private void advanceSize(final int count) {
+      if (count < 0 || count > remainingCapacity()) {
+        throw new IllegalArgumentException("Invalid COO batch size increment: " + count);
+      }
+      size += count;
     }
 
     private int size() {
@@ -1615,6 +2230,64 @@ public final class HictToMcoolExportPipeline {
     @Override
     public void close() throws IOException {
       input.close();
+    }
+  }
+
+  private static final class CooExportProgressTracker {
+    private final long resolution;
+    private final long totalItems;
+    private final long startedNanos;
+    private final OverallProgressTracker overallTracker;
+    private final Consumer<String> logger;
+    private long doneItems;
+    private long lastLoggedNanos;
+    private int lastLoggedPercent = -1;
+
+    private CooExportProgressTracker(final long resolution,
+                                     final long totalItems,
+                                     final long startedNanos,
+                                     final @NotNull OverallProgressTracker overallTracker,
+                                     final @NotNull Consumer<String> logger) {
+      this.resolution = resolution;
+      this.totalItems = totalItems;
+      this.startedNanos = startedNanos;
+      this.overallTracker = overallTracker;
+      this.logger = logger;
+      this.lastLoggedNanos = startedNanos;
+    }
+
+    private void add(final long items) {
+      if (items <= 0L || totalItems <= 0L) {
+        return;
+      }
+      final long remaining = Math.max(0L, totalItems - doneItems);
+      final long actualItems = Math.min(items, remaining);
+      if (actualItems <= 0L) {
+        return;
+      }
+      doneItems += actualItems;
+      overallTracker.add(actualItems, "Resolution " + resolution + " COO export");
+      final int percent = (int) ((doneItems * 100L) / totalItems);
+      final long nowNanos = System.nanoTime();
+      if (percent < 100 && percent == lastLoggedPercent && nowNanos - lastLoggedNanos < PROGRESS_LOG_INTERVAL_NANOS) {
+        return;
+      }
+      lastLoggedPercent = percent;
+      lastLoggedNanos = nowNanos;
+      final long elapsedMillis = (nowNanos - startedNanos) / 1_000_000L;
+      final long etaMillis = estimateEtaMillis(doneItems, totalItems, elapsedMillis);
+      logger.accept(
+        String.format(
+          "Resolution %d COO export: %d%% (%d/%d), elapsed=%s, eta=%s, rate=%s",
+          resolution,
+          percent,
+          doneItems,
+          totalItems,
+          formatDuration(elapsedMillis),
+          formatEta(doneItems, totalItems, elapsedMillis, etaMillis),
+          formatItemsPerSecond(doneItems, elapsedMillis)
+        )
+      );
     }
   }
 

@@ -43,7 +43,7 @@ namespace {
 #define HICT_NATIVE_VARIANT "avx2"
 #endif
 
-constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.5-" HICT_NATIVE_VARIANT;
+constexpr const char* HICT_NATIVE_VERSION = "hict-native-processing/0.6-" HICT_NATIVE_VARIANT;
 constexpr std::int64_t PARALLEL_THRESHOLD = 131072;
 
 struct NativeBackendSession {
@@ -842,6 +842,94 @@ jint sort_and_compact_cooler_records_row_major(jlong* rows,
   return write;
 }
 
+int find_mapping_segment(const jlong* source_starts,
+                         const jlong* source_ends,
+                         const jsize segment_count,
+                         const jlong source_bin,
+                         const int hint) {
+  if (hint >= 0 && hint < segment_count && source_bin >= source_starts[hint] && source_bin < source_ends[hint]) {
+    return hint;
+  }
+
+  int left = 0;
+  int right = static_cast<int>(segment_count) - 1;
+  while (left <= right) {
+    const int mid = (left + right) >> 1;
+    if (source_bin < source_starts[mid]) {
+      right = mid - 1;
+    } else if (source_bin >= source_ends[mid]) {
+      left = mid + 1;
+    } else {
+      return mid;
+    }
+  }
+  return -1;
+}
+
+inline jlong map_source_bin(const jlong source_bin,
+                            const int segment,
+                            const jlong* source_starts,
+                            const jlong* target_starts,
+                            const jlong* target_ends,
+                            const jbyte* reversed) {
+  const jlong local = source_bin - source_starts[segment];
+  if (reversed[segment] != 0) {
+    return target_ends[segment] - 1 - local;
+  }
+  return target_starts[segment] + local;
+}
+
+jint map_cooler_records_to_batch(const jlong* source_rows,
+                                 const jlong* source_columns,
+                                 const jlong* source_values,
+                                 const jint source_offset,
+                                 const jint length,
+                                 const jlong row_stripe_offset,
+                                 const jlong col_stripe_offset,
+                                 jlong* target_rows,
+                                 jlong* target_columns,
+                                 jlong* target_values,
+                                 const jint target_offset,
+                                 const jlong* source_starts,
+                                 const jlong* source_ends,
+                                 const jlong* target_starts,
+                                 const jlong* target_ends,
+                                 const jbyte* reversed,
+                                 const jsize segment_count) {
+  if (source_rows == nullptr || source_columns == nullptr || source_values == nullptr ||
+      target_rows == nullptr || target_columns == nullptr || target_values == nullptr ||
+      source_starts == nullptr || source_ends == nullptr || target_starts == nullptr ||
+      target_ends == nullptr || reversed == nullptr || length < 0 || segment_count <= 0) {
+    return -1;
+  }
+
+  int row_segment = -1;
+  int column_segment = -1;
+  for (jint i = 0; i < length; ++i) {
+    const jint source_index = source_offset + i;
+    const jlong source_row = row_stripe_offset + source_rows[source_index];
+    const jlong source_column = col_stripe_offset + source_columns[source_index];
+
+    row_segment = find_mapping_segment(source_starts, source_ends, segment_count, source_row, row_segment);
+    column_segment = find_mapping_segment(source_starts, source_ends, segment_count, source_column, column_segment);
+    if (row_segment < 0 || column_segment < 0) {
+      return -1;
+    }
+
+    jlong mapped_row = map_source_bin(source_row, row_segment, source_starts, target_starts, target_ends, reversed);
+    jlong mapped_column = map_source_bin(source_column, column_segment, source_starts, target_starts, target_ends, reversed);
+    if (mapped_row > mapped_column) {
+      std::swap(mapped_row, mapped_column);
+    }
+
+    const jint target_index = target_offset + i;
+    target_rows[target_index] = mapped_row;
+    target_columns[target_index] = mapped_column;
+    target_values[target_index] = source_values[source_index];
+  }
+  return length;
+}
+
 bool transform_expected_signal(const double* signal,
                                const jint rows,
                                const jint columns,
@@ -1481,6 +1569,108 @@ Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativ
     values.set_release_mode(0);
   }
   return native_int_result(session_handle, compacted_length);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_ru_itmo_ctlab_hict_hict_1library_nativeprocessing_NativeTileProcessor_nativeMapCoolerRecordsToBatch(
+  JNIEnv* env,
+  jclass,
+  jlong session_handle,
+  jlongArray source_rows_array,
+  jlongArray source_columns_array,
+  jlongArray source_values_array,
+  jint source_offset,
+  jint length,
+  jlong row_stripe_offset,
+  jlong col_stripe_offset,
+  jlongArray target_rows_array,
+  jlongArray target_columns_array,
+  jlongArray target_values_array,
+  jint target_offset,
+  jlongArray source_starts_array,
+  jlongArray source_ends_array,
+  jlongArray target_starts_array,
+  jlongArray target_ends_array,
+  jbyteArray reversed_array
+) {
+  if (session_from_handle(session_handle) == nullptr) {
+    return -1;
+  }
+  if (source_rows_array == nullptr || source_columns_array == nullptr || source_values_array == nullptr ||
+      target_rows_array == nullptr || target_columns_array == nullptr || target_values_array == nullptr ||
+      source_starts_array == nullptr || source_ends_array == nullptr || target_starts_array == nullptr ||
+      target_ends_array == nullptr || reversed_array == nullptr) {
+    return native_int_result(session_handle, -1);
+  }
+  if (source_offset < 0 || length < 0 || target_offset < 0) {
+    return native_int_result(session_handle, -1);
+  }
+
+  const auto source_length = env->GetArrayLength(source_rows_array);
+  const auto target_length = env->GetArrayLength(target_rows_array);
+  const auto segment_count = env->GetArrayLength(source_starts_array);
+  if (env->GetArrayLength(source_columns_array) != source_length ||
+      env->GetArrayLength(source_values_array) != source_length ||
+      env->GetArrayLength(target_columns_array) != target_length ||
+      env->GetArrayLength(target_values_array) != target_length ||
+      env->GetArrayLength(source_ends_array) != segment_count ||
+      env->GetArrayLength(target_starts_array) != segment_count ||
+      env->GetArrayLength(target_ends_array) != segment_count ||
+      env->GetArrayLength(reversed_array) != segment_count ||
+      source_offset > source_length - length ||
+      target_offset > target_length - length ||
+      segment_count <= 0) {
+    return native_int_result(session_handle, -1);
+  }
+
+  CriticalArray<jlong, jlongArray> source_rows(env, source_rows_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> source_columns(env, source_columns_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> source_values(env, source_values_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> target_rows(env, target_rows_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> target_columns(env, target_columns_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> target_values(env, target_values_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> source_starts(env, source_starts_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> source_ends(env, source_ends_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> target_starts(env, target_starts_array, JNI_ABORT);
+  CriticalArray<jlong, jlongArray> target_ends(env, target_ends_array, JNI_ABORT);
+  CriticalArray<jbyte, jbyteArray> reversed(env, reversed_array, JNI_ABORT);
+  if (!source_rows.acquired() || !source_columns.acquired() || !source_values.acquired() ||
+      !target_rows.acquired() || !target_columns.acquired() || !target_values.acquired() ||
+      !source_starts.acquired() || !source_ends.acquired() || !target_starts.acquired() ||
+      !target_ends.acquired() || !reversed.acquired()) {
+    return native_int_result(session_handle, -1);
+  }
+
+  jint mapped = -1;
+  try {
+    mapped = map_cooler_records_to_batch(
+      source_rows.get(),
+      source_columns.get(),
+      source_values.get(),
+      source_offset,
+      length,
+      row_stripe_offset,
+      col_stripe_offset,
+      target_rows.get(),
+      target_columns.get(),
+      target_values.get(),
+      target_offset,
+      source_starts.get(),
+      source_ends.get(),
+      target_starts.get(),
+      target_ends.get(),
+      reversed.get(),
+      segment_count
+    );
+  } catch (...) {
+    mapped = -1;
+  }
+  if (mapped >= 0) {
+    target_rows.set_release_mode(0);
+    target_columns.set_release_mode(0);
+    target_values.set_release_mode(0);
+  }
+  return native_int_result(session_handle, mapped);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

@@ -493,6 +493,76 @@ public final class NativeProcessingService {
     }
   }
 
+  public int tryMapCoolerRecordsToBatch(final long @NotNull [] sourceRows,
+                                        final long @NotNull [] sourceColumns,
+                                        final long @NotNull [] sourceValues,
+                                        final int sourceOffset,
+                                        final int length,
+                                        final long rowStripeOffset,
+                                        final long colStripeOffset,
+                                        final long @NotNull [] targetRows,
+                                        final long @NotNull [] targetColumns,
+                                        final long @NotNull [] targetValues,
+                                        final int targetOffset,
+                                        final long @NotNull [] sourceStarts,
+                                        final long @NotNull [] sourceEnds,
+                                        final long @NotNull [] targetStarts,
+                                        final long @NotNull [] targetEnds,
+                                        final byte @NotNull [] reversed) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return -1;
+    }
+    if (!isNativeProcessingActive()) {
+      return -1;
+    }
+    if (sourceRows.length != sourceColumns.length || sourceRows.length != sourceValues.length) {
+      return -1;
+    }
+    if (targetRows.length != targetColumns.length || targetRows.length != targetValues.length) {
+      return -1;
+    }
+    if (sourceStarts.length != sourceEnds.length
+      || sourceStarts.length != targetStarts.length
+      || sourceStarts.length != targetEnds.length
+      || sourceStarts.length != reversed.length) {
+      return -1;
+    }
+    if (sourceOffset < 0 || length < 0 || targetOffset < 0) {
+      return -1;
+    }
+    if (sourceOffset > sourceRows.length - length || targetOffset > targetRows.length - length) {
+      return -1;
+    }
+    try {
+      final var mapped = this.nativeTileProcessor.mapCoolerRecordsToBatch(
+        sourceRows,
+        sourceColumns,
+        sourceValues,
+        sourceOffset,
+        length,
+        rowStripeOffset,
+        colStripeOffset,
+        targetRows,
+        targetColumns,
+        targetValues,
+        targetOffset,
+        sourceStarts,
+        sourceEnds,
+        targetStarts,
+        targetEnds,
+        reversed
+      );
+      if (mapped < 0 || mapped > length) {
+        log.debug("Native Cooler record mapper rejected the input; falling back to Java implementation");
+        return -1;
+      }
+      return mapped;
+    } catch (final Throwable err) {
+      log.warn("Native Cooler record mapper failed; falling back to Java implementation", err);
+      return -1;
+    }
+  }
+
   public double @Nullable [][] tryTransformExpectedSignal(final double @NotNull [][] signal,
                                                           final long startRowPx,
                                                           final long startColPx,

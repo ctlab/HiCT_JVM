@@ -10,14 +10,18 @@ import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipelin
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 public class ConversionCliLauncher {
   private static final Pattern OVERALL_PROGRESS_PATTERN = Pattern.compile("Overall progress:\\s*(\\d+)%");
   private static final Pattern LOCAL_PROGRESS_PATTERN = Pattern.compile("^[^\\n]*:\\s*(\\d+)%\\s*\\(");
+  private static final long PROGRESS_REPEAT_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(30L);
 
   static {
     HDF5LibraryInitializer.initializeHDF5Library();
@@ -96,23 +100,83 @@ public class ConversionCliLauncher {
   }
 
   private static Consumer<String> stdoutLogger(final boolean verbose) {
+    final Map<String, Integer> lastLocalProgressByPhase = new HashMap<>();
+    final Map<String, Integer> lastOverallProgressByPhase = new HashMap<>();
+    final Map<String, Long> lastLocalProgressLogNanosByPhase = new HashMap<>();
+    final Map<String, Long> lastOverallProgressLogNanosByPhase = new HashMap<>();
     return message -> {
-      if (!verbose) {
-        return;
-      }
       synchronized (System.out) {
         final var overall = OVERALL_PROGRESS_PATTERN.matcher(message);
         final var local = LOCAL_PROGRESS_PATTERN.matcher(message);
-        if (overall.find()) {
-          System.out.println("[TOTAL " + overall.group(1) + "%] " + message);
+        if (verbose) {
+          if (overall.find()) {
+            System.out.println("[TOTAL " + overall.group(1) + "%] " + message);
+          } else if (local.find()) {
+            System.out.println("[LOCAL " + local.group(1) + "%] " + message);
+          } else {
+            System.out.println(message);
+          }
+        } else if (overall.find()) {
+          final int percent = Integer.parseInt(overall.group(1));
+          final var phase = progressPhaseKey(message);
+          final int previous = lastOverallProgressByPhase.getOrDefault(phase, -1);
+          final long nowNanos = System.nanoTime();
+          final long lastPrinted = lastOverallProgressLogNanosByPhase.getOrDefault(phase, 0L);
+          if (percent != previous || nowNanos - lastPrinted >= PROGRESS_REPEAT_INTERVAL_NANOS) {
+            lastOverallProgressByPhase.put(phase, percent);
+            lastOverallProgressLogNanosByPhase.put(phase, nowNanos);
+            System.out.println("[TOTAL " + percent + "%] " + message);
+          } else {
+            return;
+          }
         } else if (local.find()) {
-          System.out.println("[LOCAL " + local.group(1) + "%] " + message);
-        } else {
+          final int percent = Integer.parseInt(local.group(1));
+          final var phase = progressPhaseKey(message);
+          final int previous = lastLocalProgressByPhase.getOrDefault(phase, -1);
+          final long nowNanos = System.nanoTime();
+          final long lastPrinted = lastLocalProgressLogNanosByPhase.getOrDefault(phase, 0L);
+          if (percent != previous || nowNanos - lastPrinted >= PROGRESS_REPEAT_INTERVAL_NANOS) {
+            lastLocalProgressByPhase.put(phase, percent);
+            lastLocalProgressLogNanosByPhase.put(phase, nowNanos);
+            System.out.println("[LOCAL " + percent + "%] " + message);
+          } else {
+            return;
+          }
+        } else if (isImportantConversionMessage(message)) {
           System.out.println(message);
+        } else {
+          return;
         }
         System.out.flush();
       }
     };
+  }
+
+  private static String progressPhaseKey(final String message) {
+    final int colonIndex = message.indexOf(':');
+    return colonIndex > 0 ? message.substring(0, colonIndex) : message;
+  }
+
+  private static boolean isImportantConversionMessage(final String message) {
+    return message.startsWith("HICT_")
+      || message.startsWith("WARNING:")
+      || message.startsWith("ERROR:")
+      || message.startsWith("Converting ")
+      || message.startsWith("Preparing ")
+      || message.startsWith("Applied AGP ")
+      || message.startsWith("HiCT native processing:")
+      || message.startsWith("Using HiCT -> Cooler temporary directory:")
+      || message.startsWith("HiCT export COO")
+      || message.startsWith("COO sort batch size=")
+      || message.startsWith("Merging ")
+      || message.startsWith("COO merge pass ")
+      || message.startsWith("Merged sorted COO records complete:")
+      || message.startsWith("Running hictk")
+      || message.startsWith("Finished ")
+      || message.startsWith("Created ")
+      || message.contains("memory budget=")
+      || message.contains("workers=")
+      || message.contains("sortBatchSize=");
   }
 
   private static void printHelp() {
