@@ -74,7 +74,19 @@ public class HictToMcoolConverter {
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) throws IOException, NoSuchFieldException {
     HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
-    final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8));
+    final var availableResolutions = readAvailableResolutions(options.inputPath());
+    final var selectedResolutions = normalizeSelectedResolutionsForOutput(
+      options.outputPath(),
+      requireUsableSelectedResolutions(
+        options.inputPath(),
+        resolveSelectedResolutions(availableResolutions, options.resolutions(), options.exportAllResolutions()),
+        availableResolutions,
+        options.resolutions(),
+        options.exportAllResolutions()
+      ),
+      synchronizedLogConsumer
+    );
+    final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8, selectedResolutions));
     try {
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
         final var requestedAgpPath = Path.of(options.agpPath());
@@ -87,17 +99,6 @@ public class HictToMcoolConverter {
         synchronizedLogConsumer.accept("Applied AGP before export: " + resolvedAgpPath);
       }
 
-      final var selectedResolutions = normalizeSelectedResolutionsForOutput(
-        options.outputPath(),
-        requireUsableSelectedResolutions(
-          options.inputPath(),
-          resolveResolutions(chunkedFile.getResolutions(), options.resolutions(), options.exportAllResolutions()),
-          chunkedFile.getResolutions(),
-          options.resolutions(),
-          options.exportAllResolutions()
-        ),
-        synchronizedLogConsumer
-      );
       final var assemblyLayout = buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
       final var floatCompression = resolveFloatStorageFeatures(options, synchronizedLogConsumer);
@@ -206,6 +207,48 @@ public class HictToMcoolConverter {
         finestResolution + ". Use an .mcool output path to export multiple resolutions."
     );
     return List.of(finestResolution);
+  }
+
+  public static long @NotNull [] readAvailableResolutions(final @NotNull Path inputPath) {
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (final var reader = HDF5Factory.openForReading(inputPath.toFile())) {
+      final var validResolutions = reader.object().getAllGroupMembers("/resolutions").stream()
+        .flatMap(name -> {
+          try {
+            return java.util.stream.Stream.of(Long.parseLong(name));
+          } catch (NumberFormatException ignored) {
+            return java.util.stream.Stream.<Long>empty();
+          }
+        })
+        .filter(resolution -> ChunkedFile.isResolutionComplete(reader, resolution))
+        .sorted()
+        .toList();
+      if (validResolutions.isEmpty()) {
+        throw new IllegalStateException("No complete resolutions found in " + inputPath);
+      }
+      final var resolutions = new long[validResolutions.size() + 1];
+      resolutions[0] = 0L;
+      for (int i = 0; i < validResolutions.size(); i++) {
+        resolutions[i + 1] = validResolutions.get(i);
+      }
+      return resolutions;
+    }
+  }
+
+  public static @NotNull List<Long> resolveSelectedResolutions(final long @NotNull [] availableResolutions,
+                                                               final @NotNull List<Long> requested,
+                                                               final boolean exportAllResolutions) {
+    final var available = new ArrayList<Long>();
+    for (int i = 1; i < availableResolutions.length; i++) {
+      available.add(availableResolutions[i]);
+    }
+    if (requested == null || requested.isEmpty()) {
+      if (exportAllResolutions) {
+        return available;
+      }
+      return available.stream().min(Long::compareTo).map(List::of).orElse(List.of());
+    }
+    return available.stream().filter(requested::contains).toList();
   }
 
   public static @NotNull List<Long> requireUsableSelectedResolutions(
@@ -2030,22 +2073,6 @@ public class HictToMcoolConverter {
   private static int safeChunkLen(final long length, final int preferred) {
     final long base = Math.max(1L, Math.min(Math.max(1L, (long) preferred), Math.max(1L, length)));
     return (int) Math.min(base, Integer.MAX_VALUE);
-  }
-
-  private @NotNull List<Long> resolveResolutions(final long @NotNull [] availableResolutions,
-                                                 final @NotNull List<Long> requested,
-                                                 final boolean exportAllResolutions) {
-    final var available = new ArrayList<Long>();
-    for (int i = 1; i < availableResolutions.length; i++) {
-      available.add(availableResolutions[i]);
-    }
-    if (requested == null || requested.isEmpty()) {
-      if (exportAllResolutions) {
-        return available;
-      }
-      return available.stream().min(Long::compareTo).map(List::of).orElse(List.of());
-    }
-    return available.stream().filter(requested::contains).toList();
   }
 
   private record StagedResolutionFile(long resolution, @NotNull Path path) {

@@ -130,9 +130,33 @@ public class ChunkedFile implements AutoCloseable {
         throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
       }
 
-      this.resolutions = LongStream.concat(LongStream.of(0L), validResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+      final var requestedResolutions = options.selectedResolutions().stream()
+        .filter(resolution -> resolution != null && resolution > 0L)
+        .distinct()
+        .sorted()
+        .toList();
+      final var effectiveResolutions = requestedResolutions.isEmpty()
+        ? validResolutions
+        : validResolutions.stream().filter(requestedResolutions::contains).sorted().toList();
+      if (effectiveResolutions.isEmpty()) {
+        throw new IllegalArgumentException(
+          "No requested complete resolutions are present in " + this.hdfFilePath +
+            ". Requested " + requestedResolutions + ", available " + validResolutions
+        );
+      }
+      if (!requestedResolutions.isEmpty() && effectiveResolutions.size() != requestedResolutions.size()) {
+        final var missing = requestedResolutions.stream()
+          .filter(resolution -> !validResolutions.contains(resolution))
+          .toList();
+        throw new IllegalArgumentException(
+          "Some requested resolutions are not present or incomplete in " + this.hdfFilePath +
+            ": " + missing + ". Available complete resolutions are " + validResolutions
+        );
+      }
 
-      this.denseBlockSize = (int) validResolutions.stream()
+      this.resolutions = LongStream.concat(LongStream.of(0L), effectiveResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+
+      this.denseBlockSize = (int) effectiveResolutions.stream()
         .mapToLong(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size"))
         .max()
         .orElse(256L);
@@ -321,7 +345,7 @@ public class ChunkedFile implements AutoCloseable {
     throw new IllegalArgumentException("Unknown contig name " + contigName);
   }
 
-  private static boolean isResolutionComplete(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader, final long resolution) {
+  public static boolean isResolutionComplete(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader, final long resolution) {
     final String base = "/resolutions/" + resolution;
     try {
       if (!reader.object().isGroup(base + "/treap_coo")) {
@@ -427,7 +451,20 @@ public class ChunkedFile implements AutoCloseable {
     }
   }
 
-  public record ChunkedFileOptions(@NotNull Path hdfFilePath, int minDatasetPoolSize, int maxDatasetPoolSize) {
+  public record ChunkedFileOptions(
+    @NotNull Path hdfFilePath,
+    int minDatasetPoolSize,
+    int maxDatasetPoolSize,
+    @NotNull List<Long> selectedResolutions
+  ) {
+    public ChunkedFileOptions(final @NotNull Path hdfFilePath,
+                              final int minDatasetPoolSize,
+                              final int maxDatasetPoolSize) {
+      this(hdfFilePath, minDatasetPoolSize, maxDatasetPoolSize, List.of());
+    }
 
+    public ChunkedFileOptions {
+      selectedResolutions = selectedResolutions == null ? List.of() : List.copyOf(selectedResolutions);
+    }
   }
 }

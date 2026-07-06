@@ -144,7 +144,24 @@ public final class HictToMcoolExportPipeline {
         ", exportMemoryBudget=" + formatByteSize(exportMaxMemoryBytes)
     );
 
-    try (final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8))) {
+    final var availableResolutions = HictToMcoolConverter.readAvailableResolutions(options.inputPath());
+    final var selectedResolutions = HictToMcoolConverter.normalizeSelectedResolutionsForOutput(
+      options.outputPath(),
+      HictToMcoolConverter.requireUsableSelectedResolutions(
+        options.inputPath(),
+        HictToMcoolConverter.resolveSelectedResolutions(
+          availableResolutions,
+          options.resolutions(),
+          options.exportAllResolutions()
+        ),
+        availableResolutions,
+        options.resolutions(),
+        options.exportAllResolutions()
+      ),
+      synchronizedLogger
+    );
+
+    try (final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8, selectedResolutions))) {
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
         final var agpPath = Path.of(options.agpPath());
         try (final var reader = Files.newBufferedReader(agpPath, StandardCharsets.UTF_8)) {
@@ -153,17 +170,6 @@ public final class HictToMcoolExportPipeline {
         synchronizedLogger.accept("Applied AGP before export: " + agpPath);
       }
 
-      final var selectedResolutions = HictToMcoolConverter.normalizeSelectedResolutionsForOutput(
-        options.outputPath(),
-        HictToMcoolConverter.requireUsableSelectedResolutions(
-          options.inputPath(),
-          resolveResolutions(chunkedFile, options),
-          chunkedFile.getResolutions(),
-          options.resolutions(),
-          options.exportAllResolutions()
-        ),
-        synchronizedLogger
-      );
       final var assemblyLayout = HictToMcoolConverter.buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
       final var overallTracker = new OverallProgressTracker(
@@ -1187,21 +1193,6 @@ public final class HictToMcoolExportPipeline {
       segments.sort(Comparator.comparingLong(SourceSegment::sourceStart));
       return new SourceToAssemblyMapper(segments);
     }
-  }
-
-  private static @NotNull List<Long> resolveResolutions(final @NotNull ChunkedFile chunkedFile,
-                                                        final @NotNull ConversionOptions options) {
-    final var available = new ArrayList<Long>();
-    for (int i = 1; i < chunkedFile.getResolutions().length; i++) {
-      available.add(chunkedFile.getResolutions()[i]);
-    }
-    if (!options.resolutions().isEmpty()) {
-      return available.stream().filter(options.resolutions()::contains).toList();
-    }
-    if (options.exportAllResolutions()) {
-      return available;
-    }
-    return available.stream().min(Long::compareTo).map(List::of).orElse(List.of());
   }
 
   private static long countSourcePixels(final @NotNull Path inputPath,

@@ -388,6 +388,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var assemblyPathForOptions = assemblyPath == null
                           ? ConversionOptions.NO_AGP
                           : assemblyPath.toString();
+                        final var applyAgpBeforeExport = direction == ConversionDirection.HICT_TO_MCOOL && assemblyPath != null;
                         final var loadOptions = parseHictkLoadOptions(dataDirectory, requestJson);
                         final var options = new ConversionOptions(
                             sourcePath,
@@ -397,7 +398,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             compression,
                             compressionAlgorithm,
                             assemblyPathForOptions,
-                            false,
+                            applyAgpBeforeExport,
                             parallelism,
                             exportAllResolutions,
                             buildResolutionPyramid,

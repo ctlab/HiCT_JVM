@@ -14,14 +14,18 @@ import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictToMcoolExportPipeline;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkLoadOptions;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 import ru.itmo.ctlab.hict.hict_server.MainVerticle;
 import ru.itmo.ctlab.hict.hict_server.launcher.HictLauncherGui;
 
 import java.awt.GraphicsEnvironment;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,7 +65,10 @@ public class HictCli implements Runnable {
     "--build-resolution-pyramid",
     "--balance-input-coolers",
     "--balance-exported-coolers",
-    "--apply-agp"
+    "--apply-agp",
+    "--one-based",
+    "--count-as-float",
+    "--keep-intermediate"
   );
 
   @Option(names = {"-v", "--verbose"}, arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Enable verbose output.")
@@ -620,7 +627,8 @@ public class HictCli implements Runnable {
       HictCli.HictToMcool.class,
       HictCli.McoolToHict.class,
       HictCli.HicToMcool.class,
-      HictCli.HicToHict.class
+      HictCli.HicToHict.class,
+      HictCli.ScaffoldConvert.class
     }
   )
   static class Convert implements Runnable {
@@ -719,9 +727,16 @@ public class HictCli implements Runnable {
     ConversionOptions.ExportMode exportMode;
 
     ConversionOptions toOptions(String agpPath, boolean applyAgp) {
+      return toOptions(input, output, agpPath, applyAgp);
+    }
+
+    ConversionOptions toOptions(final @NotNull Path inputPath,
+                                final @NotNull Path outputPath,
+                                final String agpPath,
+                                final boolean applyAgp) {
       return new ConversionOptions(
-        input,
-        output,
+        inputPath,
+        outputPath,
         resolutions,
         chunkSize,
         compression,
@@ -834,6 +849,244 @@ public class HictCli implements Runnable {
 
     HictkConversionPipeline hictkPipeline() {
       return new HictkConversionPipeline(new ExternalToolchainManager());
+    }
+  }
+
+  @Command(
+    name = "scaffold",
+    mixinStandardHelpOptions = true,
+    description = "Convert supported Hi-C formats while applying an optional AGP/.assembly scaffolding layout."
+  )
+  static class ScaffoldConvert extends BaseConvert {
+    @Option(names = {"--assembly", "--agp"}, description = "Optional AGP or Juicebox .assembly layout to apply.")
+    Path assemblyPath;
+
+    @Option(names = "--fasta", description = "Optional source FASTA. Accepted for workflow compatibility; used by formats that need it in future extensions.")
+    Path fastaPath;
+
+    @Option(names = "--bin-table", description = "Bin table for Hi-C Pro .matrix or generic COO hictk load inputs.")
+    Path binTablePath;
+
+    @Option(names = "--chrom-sizes", description = "Chrom sizes file for BEDPE/bedGraph2/validPairs hictk load inputs.")
+    Path chromSizesPath;
+
+    @Option(names = "--bin-size", description = "Bin size for BEDPE/bedGraph2/validPairs hictk load inputs.")
+    Long binSize;
+
+    @Option(names = "--one-based", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Treat hictk-load input coordinates as 1-based.")
+    boolean oneBased;
+
+    @Option(names = "--count-as-float", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Load hictk text counts as floating-point values.")
+    boolean countAsFloat;
+
+    @Option(names = "--keep-intermediate", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, defaultValue = "false", description = "Keep temporary staged files for debugging.")
+    boolean keepIntermediate;
+
+    @Override
+    public Integer call() throws Exception {
+      initializeHdf5();
+      final var logger = stdoutLogger();
+      if (fastaPath != null) {
+        logger.accept("FASTA was provided for scaffold conversion: " + fastaPath + " (currently only formats requiring FASTA consume it directly).");
+      }
+      if (ConversionDirection.isHictFilename(input)) {
+        convertFromHict(input, output, logger);
+      } else if (ConversionDirection.isCoolerFilename(input)) {
+        convertFromCooler(input, output, logger);
+      } else if (ConversionDirection.isHicFilename(input)) {
+        convertFromHic(input, output, logger);
+      } else if (ConversionDirection.isHictkLoadFilename(input)) {
+        convertFromHictkLoad(input, output, logger);
+      } else {
+        throw new IllegalArgumentException("Unsupported scaffold conversion input format: " + input.getFileName());
+      }
+      return 0;
+    }
+
+    private void convertFromHict(final @NotNull Path source,
+                                 final @NotNull Path target,
+                                 final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isCoolerFilename(target)) {
+        exportHictToCooler(source, target, assemblyPath, assemblyPath != null, logger);
+        return;
+      }
+      if (ConversionDirection.isHictFilename(target)) {
+        if (assemblyPath == null) {
+          Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+          logger.accept("Copied HiCT file without assembly transform: " + target);
+          return;
+        }
+        withTempDirectory(target, tempDir -> {
+          final var stagedCooler = tempDir.resolve("scaffolded.mcool");
+          exportHictToCooler(source, stagedCooler, assemblyPath, true, logger);
+          importCoolerToHict(stagedCooler, target, null, logger);
+        });
+        return;
+      }
+      throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+    }
+
+    private void convertFromCooler(final @NotNull Path source,
+                                   final @NotNull Path target,
+                                   final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isHictFilename(target)) {
+        importCoolerToHict(source, target, assemblyPath, logger);
+        return;
+      }
+      if (ConversionDirection.isCoolerFilename(target)) {
+        withTempDirectory(target, tempDir -> {
+          final var stagedHict = tempDir.resolve("scaffolded.hict.hdf5");
+          importCoolerToHict(source, stagedHict, assemblyPath, logger);
+          exportHictToCooler(stagedHict, target, null, false, logger);
+        });
+        return;
+      }
+      throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+    }
+
+    private void convertFromHic(final @NotNull Path source,
+                                final @NotNull Path target,
+                                final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isHictFilename(target)) {
+        convertHicToHict(source, target, logger);
+        return;
+      }
+      if (ConversionDirection.isCoolerFilename(target)) {
+        withTempDirectory(target, tempDir -> {
+          final var stagedHict = tempDir.resolve("scaffolded.hict.hdf5");
+          convertHicToHict(source, stagedHict, logger);
+          exportHictToCooler(stagedHict, target, null, false, logger);
+        });
+        return;
+      }
+      throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+    }
+
+    private void convertFromHictkLoad(final @NotNull Path source,
+                                      final @NotNull Path target,
+                                      final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isHictFilename(target) && assemblyPath == null) {
+        loadTextToHict(source, target, logger);
+        return;
+      }
+      if (!ConversionDirection.isHictFilename(target) && !ConversionDirection.isCoolerFilename(target)) {
+        throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+      }
+      withTempDirectory(target, tempDir -> {
+        final var stagedHict = tempDir.resolve("loaded.hict.hdf5");
+        loadTextToHict(source, stagedHict, logger);
+        if (ConversionDirection.isHictFilename(target)) {
+          final var stagedCooler = tempDir.resolve("scaffolded.mcool");
+          exportHictToCooler(stagedHict, stagedCooler, assemblyPath, assemblyPath != null, logger);
+          importCoolerToHict(stagedCooler, target, null, logger);
+        } else {
+          exportHictToCooler(stagedHict, target, assemblyPath, assemblyPath != null, logger);
+        }
+      });
+    }
+
+    private void importCoolerToHict(final @NotNull Path source,
+                                    final @NotNull Path target,
+                                    final Path layoutPath,
+                                    final @NotNull Consumer<String> logger) throws Exception {
+      final var importOptions = toOptions(
+        source,
+        target,
+        layoutPath == null ? ConversionOptions.NO_AGP : layoutPath.toString(),
+        false
+      );
+      if (importOptions.buildResolutionPyramid() || importOptions.balanceInputCoolers()) {
+        final var pipeline = hictkPipeline();
+        final var toolchain = pipeline.requireToolchain();
+        pipeline.convertCoolerToHictWithPyramid(importOptions, toolchain, logger, process -> {
+        }, () -> false);
+      } else {
+        new McoolToHictConverter().convert(importOptions, logger);
+      }
+    }
+
+    private void exportHictToCooler(final @NotNull Path source,
+                                    final @NotNull Path target,
+                                    final Path layoutPath,
+                                    final boolean applyLayout,
+                                    final @NotNull Consumer<String> logger) throws Exception {
+      final var exportOptions = toOptions(
+        source,
+        target,
+        layoutPath == null ? ConversionOptions.NO_AGP : layoutPath.toString(),
+        applyLayout
+      );
+      new HictToMcoolExportPipeline(new ExternalToolchainManager()).convert(exportOptions, logger);
+    }
+
+    private void convertHicToHict(final @NotNull Path source,
+                                  final @NotNull Path target,
+                                  final @NotNull Consumer<String> logger) throws Exception {
+      final var pipeline = hictkPipeline();
+      final var toolchain = pipeline.requireToolchain();
+      pipeline.convert(
+        ConversionDirection.HIC_TO_HICT,
+        toOptions(source, target, assemblyPath == null ? ConversionOptions.NO_AGP : assemblyPath.toString(), false),
+        toolchain,
+        logger,
+        process -> {
+        },
+        () -> false
+      );
+    }
+
+    private void loadTextToHict(final @NotNull Path source,
+                                final @NotNull Path target,
+                                final @NotNull Consumer<String> logger) throws Exception {
+      final var direction = ConversionDirection.defaultForSource(source);
+      if (!direction.requiresHictkLoadToolchain()) {
+        throw new IllegalArgumentException("Input is not a hictk-loadable text matrix: " + source.getFileName());
+      }
+      final var pipeline = hictkPipeline();
+      final var toolchain = pipeline.requireToolchain();
+      pipeline.convert(
+        direction,
+        toOptions(source, target, ConversionOptions.NO_AGP, false),
+        toolchain,
+        logger,
+        process -> {
+        },
+        () -> false,
+        new HictkLoadOptions(binTablePath, chromSizesPath, binSize, oneBased, countAsFloat)
+      );
+    }
+
+    private void withTempDirectory(final @NotNull Path target,
+                                   final @NotNull TempDirectoryAction action) throws Exception {
+      final var parent = target.toAbsolutePath().getParent();
+      final var tempParent = parent == null ? Path.of(".").toAbsolutePath() : parent;
+      final var tempDir = Files.createTempDirectory(tempParent, ".hict-scaffold-");
+      try {
+        action.run(tempDir);
+      } finally {
+        if (keepIntermediate) {
+          System.out.println("Kept scaffold conversion temporary directory: " + tempDir);
+        } else {
+          deleteRecursively(tempDir);
+        }
+      }
+    }
+
+    private static void deleteRecursively(final @NotNull Path path) throws IOException {
+      if (!Files.exists(path)) {
+        return;
+      }
+      try (final var paths = Files.walk(path)) {
+        final var toDelete = paths.sorted(Comparator.reverseOrder()).toList();
+        for (final var item : toDelete) {
+          Files.deleteIfExists(item);
+        }
+      }
+    }
+
+    @FunctionalInterface
+    private interface TempDirectoryAction {
+      void run(@NotNull Path tempDir) throws Exception;
     }
   }
 
