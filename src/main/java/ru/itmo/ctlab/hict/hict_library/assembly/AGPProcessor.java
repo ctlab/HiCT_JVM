@@ -68,15 +68,22 @@ public class AGPProcessor {
       br.lines().sequential()
         .map(String::trim)
         .filter(line -> !line.isBlank() && !line.startsWith("#"))
-        .map(line -> line.split("\t", -1))
+        .map(line -> line.split("\\s+"))
         .filter(e -> e.length > 0)
-        .forEachOrdered(sp -> recordRows.add(Arrays.stream(sp).toList()));
+        .forEachOrdered(sp -> recordRows.add(new ArrayList<>(Arrays.asList(sp))));
     }
 //    final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.getRecords().size());
     final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.size());
     int rowNumber = 0;
     for (final var row : recordRows) {
       ++rowNumber;
+      if (row.size() == 8 && switch (row.get(4)) {
+        case "W", "A", "D", "F", "G", "O", "P" -> true;
+        default -> false;
+      }) {
+        log.warn("AGP line " + rowNumber + " has 8 columns and omits sequence orientation; assuming '+': " + row);
+        row.add("+");
+      }
       if (row.size() < 9) {
         log.error("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row);
         throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row);

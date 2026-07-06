@@ -6,6 +6,7 @@ import ch.systemsx.cisd.hdf5.HDF5FloatStorageFeatures;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
@@ -13,6 +14,7 @@ import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
+import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
@@ -36,8 +38,10 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -162,15 +166,43 @@ public final class HictToMcoolExportPipeline {
     );
 
     try (final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8, selectedResolutions))) {
+      Path agpPath = null;
+      List<AGPProcessor.AGPFileRecord> agpRecords = List.of();
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
-        final var agpPath = Path.of(options.agpPath());
+        agpPath = resolveAgpPath(options.inputPath(), options.agpPath());
+        agpRecords = readAgpRecords(agpPath);
         try (final var reader = Files.newBufferedReader(agpPath, StandardCharsets.UTF_8)) {
           chunkedFile.importAGP(reader);
         }
         synchronizedLogger.accept("Applied AGP before export: " + agpPath);
       }
 
-      final var assemblyLayout = HictToMcoolConverter.buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
+      final boolean useAgpCoolerLayout = agpPath != null && !agpRecords.isEmpty();
+      final var assemblyLayout = useAgpCoolerLayout
+        ? buildAgpCoolerAssemblyLayout(chunkedFile, agpRecords, selectedResolutions, synchronizedLogger)
+        : HictToMcoolConverter.buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
+
+      if (useAgpCoolerLayout && hasChromsBeyondHictkLoadLimit(assemblyLayout)) {
+        synchronizedLogger.accept(
+          "WARNING: AGP layout contains scaffold/object lengths above the current hictk load " +
+            "signed-32-bit chromosome-size limit. Falling back to HiCT internal int64 Cooler writer " +
+            "so the selected AGP is still applied correctly."
+        );
+        final var explicitMappings = buildAgpMappingSegmentsByResolution(
+          chunkedFile,
+          options.inputPath(),
+          agpRecords,
+          selectedResolutions
+        );
+        new HictToMcoolConverter().convertWithExplicitLayout(
+          options,
+          assemblyLayout,
+          explicitMappings,
+          synchronizedLogger
+        );
+        return;
+      }
+
       final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
       final var overallTracker = new OverallProgressTracker(
         Math.max(1L, totalSourcePixels * 2L),
@@ -182,6 +214,8 @@ public final class HictToMcoolExportPipeline {
           toolchain,
           chunkedFile,
           assemblyLayout,
+          agpRecords,
+          useAgpCoolerLayout,
           selectedResolutions.get(0),
           tmpDirectory,
           cooCompression,
@@ -219,7 +253,9 @@ public final class HictToMcoolExportPipeline {
           final var coolPath = resolutionTmpDir.resolve("pixels.cool");
 
           writeChromSizesFile(assemblyLayout, chromSizesPath);
-          final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
+          final var mapper = useAgpCoolerLayout
+            ? buildAgpMapper(chunkedFile, options.inputPath(), agpRecords, resolutionOrder)
+            : buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
           runHictkLoadFromTransformedCoo(
             toolchain,
             options.inputPath(),
@@ -424,6 +460,8 @@ public final class HictToMcoolExportPipeline {
                                           final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
                                           final @NotNull ChunkedFile chunkedFile,
                                           final @NotNull HictToMcoolConverter.CoolerAssemblyLayout assemblyLayout,
+                                          final @NotNull List<AGPProcessor.AGPFileRecord> agpRecords,
+                                          final boolean useAgpCoolerLayout,
                                           final long resolution,
                                           final @NotNull Path tmpDirectory,
                                           final @NotNull CooTextCompression cooCompression,
@@ -446,7 +484,9 @@ public final class HictToMcoolExportPipeline {
     final var chromSizesPath = resolutionTmpDir.resolve("chrom.sizes");
 
     writeChromSizesFile(assemblyLayout, chromSizesPath);
-    final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
+    final var mapper = useAgpCoolerLayout
+      ? buildAgpMapper(chunkedFile, options.inputPath(), agpRecords, resolutionOrder)
+      : buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
     logger.accept("hictk-assisted single-resolution export streams transformed COO directly to hictk; no HiCT sorted COO temp file is created.");
     runHictkLoadFromTransformedCoo(
       toolchain,
@@ -531,10 +571,10 @@ public final class HictToMcoolExportPipeline {
     dst.object().createGroup(root + "/indexes");
 
     copyStringArray(src, dst, "/chroms/name", root + "/chroms/name");
-    copyIntArrayChunked(src, dst, "/chroms/length", root + "/chroms/length", chunkSize, compression);
+    copyIntegerArrayToLongChunked(src, dst, "/chroms/length", root + "/chroms/length", chunkSize, compression);
     copyIntArrayChunked(src, dst, "/bins/chrom", root + "/bins/chrom", chunkSize, compression);
-    copyIntArrayChunked(src, dst, "/bins/start", root + "/bins/start", chunkSize, compression);
-    copyIntArrayChunked(src, dst, "/bins/end", root + "/bins/end", chunkSize, compression);
+    copyIntegerArrayToLongChunked(src, dst, "/bins/start", root + "/bins/start", chunkSize, compression);
+    copyIntegerArrayToLongChunked(src, dst, "/bins/end", root + "/bins/end", chunkSize, compression);
     if (src.object().isDataSet("/bins/weight")) {
       copyDoubleArrayChunked(src, dst, "/bins/weight", root + "/bins/weight", chunkSize, floatCompression);
     } else {
@@ -564,6 +604,304 @@ public final class HictToMcoolExportPipeline {
         writer.newLine();
       }
     }
+  }
+
+  private static @NotNull Path resolveAgpPath(final @NotNull Path inputPath, final @NotNull String rawAgpPath) {
+    final var parsed = Path.of(rawAgpPath);
+    if (parsed.isAbsolute() || Files.exists(parsed)) {
+      return parsed;
+    }
+    final var parent = inputPath.getParent();
+    return parent == null ? parsed : parent.resolve(parsed);
+  }
+
+  private static @NotNull List<AGPProcessor.AGPFileRecord> readAgpRecords(final @NotNull Path agpPath)
+    throws IOException, NoSuchFieldException {
+    try (final var reader = Files.newBufferedReader(agpPath, StandardCharsets.UTF_8)) {
+      return AGPProcessor.parseRecordsFromReader(reader);
+    }
+  }
+
+  private static @NotNull HictToMcoolConverter.CoolerAssemblyLayout buildAgpCoolerAssemblyLayout(
+    final @NotNull ChunkedFile chunkedFile,
+    final @NotNull List<AGPProcessor.AGPFileRecord> agpRecords,
+    final @NotNull List<Long> selectedResolutions,
+    final @NotNull Consumer<String> logger
+  ) {
+    final var scaffoldSizes = new LinkedHashMap<String, Long>();
+    for (final var record : agpRecords) {
+      scaffoldSizes.merge(record.getScaffoldName(), record.getInterScaffoldEndIncl(), Math::max);
+    }
+    if (scaffoldSizes.isEmpty()) {
+      throw new IllegalStateException("AGP export requested, but AGP did not define any scaffold/object records");
+    }
+
+    final var chroms = new ArrayList<HictToMcoolConverter.CoolerChrom>(scaffoldSizes.size());
+    final var chromIndexByName = new LinkedHashMap<String, Integer>();
+    int chromIndex = 0;
+    for (final var entry : scaffoldSizes.entrySet()) {
+      final long lengthBp = entry.getValue();
+      if (lengthBp <= 0L) {
+        throw new IllegalStateException("AGP scaffold " + entry.getKey() + " has non-positive length " + lengthBp);
+      }
+      chromIndexByName.put(entry.getKey(), chromIndex);
+      chroms.add(new HictToMcoolConverter.CoolerChrom(entry.getKey(), lengthBp, ContigDirection.FORWARD.ordinal(), chromIndex));
+      chromIndex++;
+    }
+
+    final var resolutionLayouts = new ArrayList<HictToMcoolConverter.ResolutionLayout>(selectedResolutions.size());
+    for (final var resolution : selectedResolutions) {
+      final Integer resolutionOrder = chunkedFile.getResolutionToIndex().get(resolution);
+      if (resolutionOrder == null) {
+        throw new IllegalStateException("Resolution " + resolution + " is not present in the input HiCT file");
+      }
+      final var chromOffsets = new long[chroms.size() + 1];
+      long binCursor = 0L;
+      for (int i = 0; i < chroms.size(); i++) {
+        chromOffsets[i] = binCursor;
+        binCursor += ceilDiv(chroms.get(i).lengthBp(), resolution);
+      }
+      chromOffsets[chroms.size()] = binCursor;
+
+      final var spans = new ArrayList<HictToMcoolConverter.ContigBinSpan>();
+      long skippedRecords = 0L;
+      for (final var record : agpRecords) {
+        if (!(record instanceof AGPProcessor.ContigAGPRecord contigRecord)) {
+          continue;
+        }
+        final Integer scaffoldIndex = chromIndexByName.get(record.getScaffoldName());
+        if (scaffoldIndex == null) {
+          throw new IllegalStateException("Internal error: AGP scaffold " + record.getScaffoldName() + " has no Cooler chrom index");
+        }
+        final var descriptor = chunkedFile.resolveContigDescriptorByName(contigRecord.getContigName());
+        validateFullLengthAgpComponent(contigRecord, descriptor.getLengthBp());
+        final var atus = orientedAtus(
+          descriptor.getAtus().get(resolutionOrder),
+          directionFromAgp(contigRecord.getContigOrientation())
+        );
+        final long binCount = atus.stream().mapToLong(ATUDescriptor::getLength).sum();
+        if (binCount <= 0L) {
+          skippedRecords++;
+          continue;
+        }
+        final long targetStart = chromOffsets[scaffoldIndex] + Math.floorDiv(record.getInterScaffoldStartIncl() - 1L, resolution);
+        final long targetEnd = targetStart + binCount;
+        if (targetStart < chromOffsets[scaffoldIndex] || targetEnd > chromOffsets[scaffoldIndex + 1]) {
+          throw new IllegalStateException(
+            "AGP component " + contigRecord.getContigName() + " in scaffold " + record.getScaffoldName() +
+              " maps outside Cooler bins at resolution " + resolution +
+              ": target=[" + targetStart + "," + targetEnd + "), chromBins=[" +
+              chromOffsets[scaffoldIndex] + "," + chromOffsets[scaffoldIndex + 1] + ")"
+          );
+        }
+        spans.add(new HictToMcoolConverter.ContigBinSpan(
+          scaffoldIndex,
+          chroms.get(scaffoldIndex),
+          targetStart,
+          targetEnd,
+          atus
+        ));
+      }
+      if (spans.isEmpty()) {
+        throw new IllegalStateException("AGP export requested, but no AGP components have visible bins at resolution " + resolution);
+      }
+      if (skippedRecords > 0L) {
+        logger.accept("AGP Cooler layout skipped " + skippedRecords + " component(s) hidden at resolution " + resolution);
+      }
+      spans.sort(Comparator
+        .comparingInt(HictToMcoolConverter.ContigBinSpan::chromIndex)
+        .thenComparingLong(HictToMcoolConverter.ContigBinSpan::globalBinStart));
+      resolutionLayouts.add(new HictToMcoolConverter.ResolutionLayout(
+        resolution,
+        List.copyOf(chroms),
+        List.copyOf(spans),
+        chromOffsets,
+        binCursor
+      ));
+    }
+    logger.accept(
+      "Built AGP Cooler layout: scaffolds=" + chroms.size() +
+        ", components=" + agpRecords.stream().filter(record -> record instanceof AGPProcessor.ContigAGPRecord).count() +
+        ", resolutions=" + selectedResolutions
+    );
+    return new HictToMcoolConverter.CoolerAssemblyLayout(List.copyOf(chroms), List.copyOf(resolutionLayouts));
+  }
+
+  private static @NotNull SourceToAssemblyMapper buildAgpMapper(final @NotNull ChunkedFile chunkedFile,
+                                                                final @NotNull Path inputPath,
+                                                                final @NotNull List<AGPProcessor.AGPFileRecord> agpRecords,
+                                                                final int resolutionOrder) throws IOException {
+    try (final var reader = HDF5Factory.openForReading(inputPath.toFile())) {
+      final var resolution = chunkedFile.getResolutions()[resolutionOrder];
+      final var stripeOffsets = readStripeOffsets(resolution, reader);
+      final var chromOffsets = buildAgpChromOffsets(agpRecords, resolution);
+
+      final var segments = new ArrayList<SourceSegment>();
+      for (final var record : agpRecords) {
+        if (!(record instanceof AGPProcessor.ContigAGPRecord contigRecord)) {
+          continue;
+        }
+        final var descriptor = chunkedFile.resolveContigDescriptorByName(contigRecord.getContigName());
+        validateFullLengthAgpComponent(contigRecord, descriptor.getLengthBp());
+        final var atus = orientedAtus(
+          descriptor.getAtus().get(resolutionOrder),
+          directionFromAgp(contigRecord.getContigOrientation())
+        );
+        long targetCursor = chromOffsets.get(record.getScaffoldName())
+          + Math.floorDiv(record.getInterScaffoldStartIncl() - 1L, resolution);
+        for (final ATUDescriptor atu : atus) {
+          final var stripe = atu.getStripeDescriptor();
+          final long sourceStart = stripeOffsets[stripe.stripeId()] + atu.getStartIndexInStripeIncl();
+          final long sourceEnd = stripeOffsets[stripe.stripeId()] + atu.getEndIndexInStripeExcl();
+          final long targetStart = targetCursor;
+          final long targetEnd = targetStart + atu.getLength();
+          segments.add(new SourceSegment(sourceStart, sourceEnd, targetStart, targetEnd, atu.getDirection()));
+          targetCursor = targetEnd;
+        }
+      }
+
+      if (segments.isEmpty()) {
+        throw new IllegalStateException("AGP export requested, but no AGP components have visible bins at resolution " + resolution);
+      }
+      segments.sort(Comparator.comparingLong(SourceSegment::sourceStart));
+      return new SourceToAssemblyMapper(segments);
+    }
+  }
+
+  private static boolean hasChromsBeyondHictkLoadLimit(
+    final @NotNull HictToMcoolConverter.CoolerAssemblyLayout assemblyLayout
+  ) {
+    return assemblyLayout.chroms().stream()
+      .anyMatch(chrom -> chrom.lengthBp() > Integer.MAX_VALUE);
+  }
+
+  private static @NotNull Map<Long, List<HictToMcoolConverter.MappingSegment>> buildAgpMappingSegmentsByResolution(
+    final @NotNull ChunkedFile chunkedFile,
+    final @NotNull Path inputPath,
+    final @NotNull List<AGPProcessor.AGPFileRecord> agpRecords,
+    final @NotNull List<Long> selectedResolutions
+  ) throws IOException {
+    final var mappings = new LinkedHashMap<Long, List<HictToMcoolConverter.MappingSegment>>();
+    try (final var reader = HDF5Factory.openForReading(inputPath.toFile())) {
+      for (final var resolution : selectedResolutions) {
+        final Integer resolutionOrder = chunkedFile.getResolutionToIndex().get(resolution);
+        if (resolutionOrder == null) {
+          throw new IllegalStateException("Resolution " + resolution + " is not present in the input HiCT file");
+        }
+        final var stripeOffsets = readStripeOffsets(resolution, reader);
+        final var chromOffsets = buildAgpChromOffsets(agpRecords, resolution);
+
+        final var segments = new ArrayList<HictToMcoolConverter.MappingSegment>();
+        for (final var record : agpRecords) {
+          if (!(record instanceof AGPProcessor.ContigAGPRecord contigRecord)) {
+            continue;
+          }
+          final var descriptor = chunkedFile.resolveContigDescriptorByName(contigRecord.getContigName());
+          validateFullLengthAgpComponent(contigRecord, descriptor.getLengthBp());
+          final var atus = orientedAtus(
+            descriptor.getAtus().get(resolutionOrder),
+            directionFromAgp(contigRecord.getContigOrientation())
+          );
+          long targetCursor = chromOffsets.get(record.getScaffoldName())
+            + Math.floorDiv(record.getInterScaffoldStartIncl() - 1L, resolution);
+          for (final ATUDescriptor atu : atus) {
+            final var stripe = atu.getStripeDescriptor();
+            final long sourceStart = stripeOffsets[stripe.stripeId()] + atu.getStartIndexInStripeIncl();
+            final long sourceEnd = stripeOffsets[stripe.stripeId()] + atu.getEndIndexInStripeExcl();
+            final long targetStart = targetCursor;
+            final long targetEnd = targetStart + atu.getLength();
+            segments.add(new HictToMcoolConverter.MappingSegment(
+              sourceStart,
+              sourceEnd,
+              targetStart,
+              targetEnd,
+              atu.getDirection()
+            ));
+            targetCursor = targetEnd;
+          }
+        }
+        if (segments.isEmpty()) {
+          throw new IllegalStateException("AGP export requested, but no AGP components have visible bins at resolution " + resolution);
+        }
+        segments.sort(Comparator.comparingLong(HictToMcoolConverter.MappingSegment::sourceStart));
+        mappings.put(resolution, List.copyOf(segments));
+      }
+    }
+    return mappings;
+  }
+
+  private static @NotNull LinkedHashMap<String, Long> buildAgpChromOffsets(
+    final @NotNull List<AGPProcessor.AGPFileRecord> agpRecords,
+    final long resolution
+  ) {
+    final var sizes = new LinkedHashMap<String, Long>();
+    for (final var record : agpRecords) {
+      sizes.merge(record.getScaffoldName(), record.getInterScaffoldEndIncl(), Math::max);
+    }
+    final var offsets = new LinkedHashMap<String, Long>();
+    long cursor = 0L;
+    for (final var entry : sizes.entrySet()) {
+      offsets.put(entry.getKey(), cursor);
+      cursor += ceilDiv(entry.getValue(), resolution);
+    }
+    return offsets;
+  }
+
+  private static long @NotNull [] readStripeOffsets(final long resolution,
+                                                    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader) {
+    final var stripes = Initializers.readStripeDescriptors(resolution, reader);
+    final long[] stripeOffsets = new long[stripes.size()];
+    long stripeCursor = 0L;
+    for (int i = 0; i < stripes.size(); i++) {
+      stripeOffsets[i] = stripeCursor;
+      stripeCursor += stripes.get(i).stripeLengthBins();
+    }
+    return stripeOffsets;
+  }
+
+  private static void validateFullLengthAgpComponent(final @NotNull AGPProcessor.ContigAGPRecord record,
+                                                     final long contigLengthBp) {
+    final long componentLength = record.getIntraContigEndBpIncl() - record.getIntraContigStartBpIncl() + 1L;
+    final long scaffoldComponentLength = record.getInterScaffoldEndIncl() - record.getInterScaffoldStartIncl() + 1L;
+    if (componentLength != scaffoldComponentLength) {
+      throw new IllegalStateException(
+        "AGP component " + record.getContigName() + " has inconsistent source/scaffold lengths: source=" +
+          componentLength + ", scaffold=" + scaffoldComponentLength
+      );
+    }
+    if (record.getIntraContigStartBpIncl() != 1L || componentLength != contigLengthBp) {
+      throw new IllegalStateException(
+        "AGP component splitting is not supported for Cooler export yet: " + record.getContigName() +
+          " uses " + record.getIntraContigStartBpIncl() + "-" + record.getIntraContigEndBpIncl() +
+          " of source length " + contigLengthBp
+      );
+    }
+  }
+
+  private static @NotNull ContigDirection directionFromAgp(final @NotNull AGPProcessor.AGPContigOrientation orientation) {
+    return switch (orientation) {
+      case PLUS, UNKNOWN, IRRELEVANT -> ContigDirection.FORWARD;
+      case MINUS -> ContigDirection.REVERSED;
+    };
+  }
+
+  private static @NotNull List<ATUDescriptor> orientedAtus(final @NotNull List<ATUDescriptor> sourceAtus,
+                                                           final @NotNull ContigDirection direction) {
+    if (direction == ContigDirection.FORWARD) {
+      return List.copyOf(sourceAtus);
+    }
+    final var atus = new ArrayList<ATUDescriptor>(sourceAtus.size());
+    for (int i = sourceAtus.size() - 1; i >= 0; i--) {
+      atus.add(sourceAtus.get(i).reversed());
+    }
+    return List.copyOf(atus);
+  }
+
+  private static long ceilDiv(final long value, final long divisor) {
+    if (divisor <= 0L) {
+      throw new IllegalArgumentException("Divisor must be positive");
+    }
+    return value <= 0L ? 0L : 1L + Math.floorDiv(value - 1L, divisor);
   }
 
   private static long streamTransformedCooToWriter(final @NotNull Path inputPath,
@@ -1166,19 +1504,13 @@ public final class HictToMcoolExportPipeline {
     final var currentContigs = chunkedFile.getAssemblyInfo().contigs();
     try (final var reader = HDF5Factory.openForReading(inputPath.toFile())) {
       final var resolution = chunkedFile.getResolutions()[resolutionOrder];
-      final var stripes = Initializers.readStripeDescriptors(resolution, reader);
-      final long[] stripeOffsets = new long[stripes.size()];
-      long stripeCursor = 0L;
-      for (int i = 0; i < stripes.size(); i++) {
-        stripeOffsets[i] = stripeCursor;
-        stripeCursor += stripes.get(i).stripeLengthBins();
-      }
+      final var stripeOffsets = readStripeOffsets(resolution, reader);
 
       final var segments = new ArrayList<SourceSegment>();
       long targetCursor = 0L;
       for (final ContigTree.ContigTuple tuple : currentContigs) {
         final var descriptor = tuple.descriptor();
-        final var contigAtus = descriptor.getAtus().get(resolutionOrder);
+        final var contigAtus = orientedAtus(descriptor.getAtus().get(resolutionOrder), tuple.direction());
         for (final ATUDescriptor atu : contigAtus) {
           final var stripe = atu.getStripeDescriptor();
           final long sourceStart = stripeOffsets[stripe.stripeId()] + atu.getStartIndexInStripeIncl();
@@ -1215,20 +1547,24 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
-  private static void appendMappedRecord(final @NotNull CooRecordBatch batch,
-                                         final @NotNull SourceToAssemblyMapper.Cursor rowMapperCursor,
-                                         final @NotNull SourceToAssemblyMapper.Cursor colMapperCursor,
-                                         final long sourceRow,
-                                         final long sourceCol,
-                                         final long count) {
-    long mappedRow = rowMapperCursor.map(sourceRow);
-    long mappedCol = colMapperCursor.map(sourceCol);
+  private static boolean appendMappedRecord(final @NotNull CooRecordBatch batch,
+                                            final @NotNull SourceToAssemblyMapper.Cursor rowMapperCursor,
+                                            final @NotNull SourceToAssemblyMapper.Cursor colMapperCursor,
+                                            final long sourceRow,
+                                            final long sourceCol,
+                                            final long count) {
+    long mappedRow = rowMapperCursor.mapOrMissing(sourceRow);
+    long mappedCol = colMapperCursor.mapOrMissing(sourceCol);
+    if (mappedRow < 0L || mappedCol < 0L) {
+      return false;
+    }
     if (mappedRow > mappedCol) {
       final long tmp = mappedRow;
       mappedRow = mappedCol;
       mappedCol = tmp;
     }
     batch.add(mappedRow, mappedCol, count);
+    return true;
   }
 
   private static int appendMappedRecords(final @NotNull CooRecordBatch batch,
@@ -1248,27 +1584,29 @@ public final class HictToMcoolExportPipeline {
       return 0;
     }
 
-    final int nativeMapped = nativeProcessingService.tryMapCoolerRecordsToBatch(
-      sourceRows,
-      sourceColumns,
-      sourceValues,
-      sourceOffset,
-      toAppend,
-      rowStripeOffset,
-      colStripeOffset,
-      batch.rows,
-      batch.cols,
-      batch.counts,
-      batch.size(),
-      mapper.sourceStarts,
-      mapper.sourceEnds,
-      mapper.targetStarts,
-      mapper.targetEnds,
-      mapper.reversedBytes
-    );
-    if (nativeMapped == toAppend) {
-      batch.advanceSize(nativeMapped);
-      return nativeMapped;
+    if (!mapper.hasSourceGaps) {
+      final int nativeMapped = nativeProcessingService.tryMapCoolerRecordsToBatch(
+        sourceRows,
+        sourceColumns,
+        sourceValues,
+        sourceOffset,
+        toAppend,
+        rowStripeOffset,
+        colStripeOffset,
+        batch.rows,
+        batch.cols,
+        batch.counts,
+        batch.size(),
+        mapper.sourceStarts,
+        mapper.sourceEnds,
+        mapper.targetStarts,
+        mapper.targetEnds,
+        mapper.reversedBytes
+      );
+      if (nativeMapped == toAppend) {
+        batch.advanceSize(nativeMapped);
+        return nativeMapped;
+      }
     }
 
     for (int i = 0; i < toAppend; i++) {
@@ -1512,6 +1850,45 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
+  private static void copyIntegerArrayToLongChunked(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
+                                                    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+                                                    final @NotNull String srcPath,
+                                                    final @NotNull String dstPath,
+                                                    final int chunkSize,
+                                                    final @NotNull HDF5IntStorageFeatures compression) {
+    final long length = datasetLength(src, srcPath);
+    dst.int64().createArray(dstPath, length, safeChunkLen(length, chunkSize), compression);
+    long offset = 0L;
+    while (offset < length) {
+      final int blockLen = (int) Math.min(chunkSize, length - offset);
+      final var block = readIntegerArrayBlockAsLong(src, srcPath, blockLen, offset);
+      dst.int64().writeArrayBlockWithOffset(dstPath, block, blockLen, offset);
+      offset += blockLen;
+    }
+  }
+
+  private static long @NotNull [] readIntegerArrayBlockAsLong(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
+    final @NotNull String path,
+    final int blockLen,
+    final long offset
+  ) {
+    final var typeInformation = src.object().getDataSetInformation(path).getTypeInformation();
+    if (typeInformation.getDataClass() != HDF5DataClass.INTEGER) {
+      throw new IllegalStateException(path + " must be an integer HDF5 dataset, got " + typeInformation.getDataClass());
+    }
+    if (typeInformation.getElementSize() <= Integer.BYTES) {
+      final var block = src.int32().readArrayBlockWithOffset(path, blockLen, offset);
+      final var converted = new long[block.length];
+      final boolean signed = typeInformation.isSigned();
+      for (int i = 0; i < block.length; i++) {
+        converted[i] = signed ? block[i] : Integer.toUnsignedLong(block[i]);
+      }
+      return converted;
+    }
+    return src.int64().readArrayBlockWithOffset(path, blockLen, offset);
+  }
+
   private static void copyDoubleArrayChunked(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader src,
                                              final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
                                              final @NotNull String srcPath,
@@ -1542,17 +1919,28 @@ public final class HictToMcoolExportPipeline {
 
     @SuppressWarnings("unchecked") final List<HictToMcoolConverter.ContigBinSpan>[] spansByChrom = new List[layout.chroms().size()];
     for (final var span : layout.spans()) {
-      spansByChrom[span.chromIndex()] = List.of(span);
+      final var spans = spansByChrom[span.chromIndex()] == null
+        ? new ArrayList<HictToMcoolConverter.ContigBinSpan>()
+        : new ArrayList<>(spansByChrom[span.chromIndex()]);
+      spans.add(span);
+      spansByChrom[span.chromIndex()] = spans;
+    }
+    for (int i = 0; i < spansByChrom.length; i++) {
+      if (spansByChrom[i] != null) {
+        spansByChrom[i] = spansByChrom[i].stream()
+          .sorted(Comparator.comparingLong(HictToMcoolConverter.ContigBinSpan::globalBinStart))
+          .toList();
+      }
     }
 
     long offset = 0L;
     while (offset < length) {
       final int blockLen = (int) Math.min(safeChunkSize, length - offset);
       final var chroms = src.int32().readArrayBlockWithOffset("/bins/chrom", blockLen, offset);
-      final var starts = src.int32().readArrayBlockWithOffset("/bins/start", blockLen, offset);
+      final var starts = readIntegerArrayBlockAsLong(src, "/bins/start", blockLen, offset);
       final var weights = new double[blockLen];
       for (int i = 0; i < blockLen; i++) {
-        weights[i] = weightForCopiedCoolerBin(spansByChrom, chroms[i], Math.floorDiv((long) starts[i], resolution));
+        weights[i] = weightForCopiedCoolerBin(spansByChrom, layout.chromOffsets(), chroms[i], Math.floorDiv(starts[i], resolution));
       }
       dst.float64().writeArrayBlockWithOffset(dstPath, weights, blockLen, offset);
       offset += blockLen;
@@ -1561,22 +1949,34 @@ public final class HictToMcoolExportPipeline {
 
   private static double weightForCopiedCoolerBin(
     final @NotNull List<HictToMcoolConverter.ContigBinSpan> @NotNull [] spansByChrom,
+    final long @NotNull [] chromOffsets,
     final int chromIndex,
     final long localBin
   ) {
-    if (chromIndex < 0 || chromIndex >= spansByChrom.length || localBin < 0) {
+    if (chromIndex < 0 || chromIndex >= spansByChrom.length || chromIndex >= chromOffsets.length || localBin < 0) {
       return 1.0d;
     }
     final var spans = spansByChrom[chromIndex];
     if (spans == null || spans.isEmpty()) {
       return 1.0d;
     }
-    final var span = spans.get(0);
+    HictToMcoolConverter.ContigBinSpan span = null;
+    final long globalBin = chromOffsets[chromIndex] + localBin;
+    for (final var candidate : spans) {
+      if (globalBin >= candidate.globalBinStart() && globalBin < candidate.globalBinEnd()) {
+        span = candidate;
+        break;
+      }
+    }
+    if (span == null) {
+      return 1.0d;
+    }
+    final long spanLocalBin = globalBin - span.globalBinStart();
     long atuLocalStart = 0L;
     for (final var atu : span.atus()) {
       final long atuEnd = atuLocalStart + atu.getLength();
-      if (localBin < atuEnd) {
-        return weightFromAtu(atu, (int) (localBin - atuLocalStart));
+      if (spanLocalBin < atuEnd) {
+        return weightFromAtu(atu, (int) (spanLocalBin - atuLocalStart));
       }
       atuLocalStart = atuEnd;
     }
@@ -1623,13 +2023,13 @@ public final class HictToMcoolExportPipeline {
                                        final @NotNull List<HictToMcoolConverter.CoolerChrom> chroms,
                                        final @NotNull HDF5IntStorageFeatures compression) {
     final var names = new String[chroms.size()];
-    final var lengths = new int[chroms.size()];
+    final var lengths = new long[chroms.size()];
     for (int i = 0; i < chroms.size(); i++) {
       names[i] = chroms.get(i).name();
-      lengths[i] = Math.toIntExact(chroms.get(i).lengthBp());
+      lengths[i] = chroms.get(i).lengthBp();
     }
     dst.string().writeArray(groupPath + "/name", names);
-    dst.int32().writeArray(groupPath + "/length", lengths, compression);
+    dst.int64().writeArray(groupPath + "/length", lengths, compression);
   }
 
   private static void writeResolutionMetadata(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
@@ -2003,6 +2403,7 @@ public final class HictToMcoolExportPipeline {
     private final long[] targetEnds;
     private final boolean[] reversed;
     private final byte[] reversedBytes;
+    private final boolean hasSourceGaps;
 
     private SourceToAssemblyMapper(final @NotNull List<SourceSegment> segments) {
       this.sourceStarts = new long[segments.size()];
@@ -2011,8 +2412,14 @@ public final class HictToMcoolExportPipeline {
       this.targetEnds = new long[segments.size()];
       this.reversed = new boolean[segments.size()];
       this.reversedBytes = new byte[segments.size()];
+      boolean sourceGaps = false;
+      long expectedSourceStart = 0L;
       for (int i = 0; i < segments.size(); i++) {
         final var segment = segments.get(i);
+        if (segment.sourceStart() > expectedSourceStart) {
+          sourceGaps = true;
+        }
+        expectedSourceStart = Math.max(expectedSourceStart, segment.sourceEnd());
         sourceStarts[i] = segment.sourceStart();
         sourceEnds[i] = segment.sourceEnd();
         targetStarts[i] = segment.targetStart();
@@ -2020,6 +2427,7 @@ public final class HictToMcoolExportPipeline {
         reversed[i] = segment.direction() == ATUDirection.REVERSED;
         reversedBytes[i] = (byte) (reversed[i] ? 1 : 0);
       }
+      this.hasSourceGaps = sourceGaps;
     }
 
     private @NotNull Cursor cursor() {
@@ -2039,7 +2447,7 @@ public final class HictToMcoolExportPipeline {
           return mid;
         }
       }
-      throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+      return -1;
     }
 
     private long mapAt(final int index, final long sourceBin) {
@@ -2053,12 +2461,15 @@ public final class HictToMcoolExportPipeline {
     private final class Cursor {
       private int segmentIndex = -1;
 
-      private long map(final long sourceBin) {
+      private long mapOrMissing(final long sourceBin) {
         final int current = segmentIndex;
         if (current >= 0 && current < sourceStarts.length && sourceBin >= sourceStarts[current] && sourceBin < sourceEnds[current]) {
           return mapAt(current, sourceBin);
         }
         final int found = findSegment(sourceBin);
+        if (found < 0) {
+          return -1L;
+        }
         segmentIndex = found;
         return mapAt(found, sourceBin);
       }

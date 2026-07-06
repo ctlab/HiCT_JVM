@@ -191,6 +191,126 @@ public class HictToMcoolConverter {
     }
   }
 
+  public void convertWithExplicitLayout(
+    final @NotNull ConversionOptions options,
+    final @NotNull CoolerAssemblyLayout assemblyLayout,
+    final @NotNull java.util.Map<Long, List<MappingSegment>> mappingSegmentsByResolution,
+    final @NotNull Consumer<String> logConsumer
+  ) throws IOException {
+    HDF5LibraryInitializer.initializeHDF5Library();
+    final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
+    final var selectedResolutions = normalizeSelectedResolutionsForOutput(
+      options.outputPath(),
+      assemblyLayout.resolutionLayouts().stream()
+        .map(ResolutionLayout::resolution)
+        .sorted()
+        .toList(),
+      synchronizedLogConsumer
+    );
+    final var normalizedLayouts = selectedResolutions.stream()
+      .map(assemblyLayout::resolutionLayout)
+      .toList();
+    final var normalizedAssemblyLayout = new CoolerAssemblyLayout(assemblyLayout.chroms(), normalizedLayouts);
+    final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
+    final var floatCompression = resolveFloatStorageFeatures(options, synchronizedLogConsumer);
+    final var totalSourcePixels = countSourcePixels(options.inputPath(), selectedResolutions);
+    final var progressTracker = new ExportProgressTracker(
+      Math.max(1L, (totalSourcePixels * 4L) + countBins(normalizedAssemblyLayout)),
+      System.nanoTime(),
+      synchronizedLogConsumer
+    );
+    final int sortBatchSize = resolveSortBatchSize(options.chunkSize(), options.parallelism(), synchronizedLogConsumer);
+    final boolean singleCoolerOutput = isSingleCoolerOutput(options.outputPath());
+
+    if (options.balanceExportedCoolers()) {
+      synchronizedLogConsumer.accept("WARNING: Direct internal Cooler exporter cannot run Cooler balancing; output will be unbalanced.");
+    }
+    synchronizedLogConsumer.accept("HiCT native processing: " + NativeProcessingService.getInstance().status().summary());
+    synchronizedLogConsumer.accept(
+      "Converting internally with explicit Cooler layout, chunkSize=" + options.chunkSize() +
+        ", sortBatchSize=" + sortBatchSize +
+        ", parallelism=" + options.parallelism()
+    );
+
+    Files.deleteIfExists(options.outputPath());
+    try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
+      if (!singleCoolerOutput) {
+        dst.object().createGroup("/resolutions");
+        dst.string().setAttrVL("/", "format", "HDF5::MCOOL");
+        dst.int64().setAttr("/", "format-version", 2L);
+        dst.object().createGroup(ROOT_CHROMS_GROUP);
+        writeChromsGroup(dst, ROOT_CHROMS_GROUP, normalizedAssemblyLayout.chroms(), compression);
+      }
+      writeHictAssemblyMetadata(dst, normalizedAssemblyLayout, compression);
+      dst.string().write("/source_format", "hict");
+      dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
+
+      for (final var resolution : selectedResolutions) {
+        final var segments = mappingSegmentsByResolution.get(resolution);
+        if (segments == null || segments.isEmpty()) {
+          throw new IllegalStateException("No explicit export mapper was provided for resolution " + resolution);
+        }
+        final var resolutionTmpDir = createResolutionTempDirectory(resolution, synchronizedLogConsumer);
+        try {
+          final var cooPath = resolutionTmpDir.resolve("pixels.coo.bin");
+          final var mapper = new SourceToAssemblyMapper(segments.stream()
+            .map(segment -> new SourceSegment(
+              segment.sourceStart(),
+              segment.sourceEnd(),
+              segment.targetStart(),
+              segment.targetEnd(),
+              segment.direction()
+            ))
+            .sorted(Comparator.comparingLong(SourceSegment::sourceStart))
+            .toList());
+          final var resolutionLayout = normalizedAssemblyLayout.resolutionLayout(resolution);
+          final var summary = exportTransformedCoo(
+            options.inputPath(),
+            resolution,
+            cooPath,
+            mapper,
+            resolutionLayout.binsCount(),
+            options.chunkSize(),
+            sortBatchSize,
+            resolveRequestedWorkers(options.parallelism()),
+            progressTracker,
+            synchronizedLogConsumer
+          );
+          if (singleCoolerOutput) {
+            mergeSingleResolutionFromSortedCoo(
+              cooPath,
+              dst,
+              resolutionLayout,
+              summary,
+              options.chunkSize(),
+              compression,
+              floatCompression,
+              progressTracker,
+              synchronizedLogConsumer
+            );
+            synchronizedLogConsumer.accept("Merged resolution " + resolution + " to root Cooler output");
+          } else {
+            mergeResolutionFromSortedCoo(
+              cooPath,
+              dst,
+              resolutionLayout,
+              summary,
+              options.chunkSize(),
+              compression,
+              floatCompression,
+              progressTracker,
+              synchronizedLogConsumer
+            );
+            synchronizedLogConsumer.accept("Merged resolution " + resolution + " to final output");
+          }
+        } finally {
+          deleteRecursively(resolutionTmpDir, synchronizedLogConsumer);
+        }
+      }
+    }
+    progressTracker.finish();
+  }
+
   public static @NotNull List<Long> normalizeSelectedResolutionsForOutput(
     final @NotNull Path outputPath,
     final @NotNull List<Long> selectedResolutions,
@@ -476,13 +596,13 @@ public class HictToMcoolConverter {
     final @NotNull HDF5IntStorageFeatures compression
   ) {
     final var names = new String[chroms.size()];
-    final var lengths = new int[chroms.size()];
+    final var lengths = new long[chroms.size()];
     for (int i = 0; i < chroms.size(); i++) {
       names[i] = chroms.get(i).name();
-      lengths[i] = Math.toIntExact(chroms.get(i).lengthBp());
+      lengths[i] = chroms.get(i).lengthBp();
     }
     dst.string().writeArray(groupPath + "/name", names);
-    dst.int32().writeArray(groupPath + "/length", lengths, compression);
+    dst.int64().writeArray(groupPath + "/length", lengths, compression);
   }
 
   public static void writeHictAssemblyMetadata(
@@ -537,36 +657,36 @@ public class HictToMcoolConverter {
     final int chunkLength = safeChunkLen(binsCount, 8192);
     final int compressionChunkLength = Math.max(1, chunkLength);
     dst.int32().createArray(groupPath + "/chrom", binsCount, compressionChunkLength, compression);
-    dst.int32().createArray(groupPath + "/start", binsCount, compressionChunkLength, compression);
-    dst.int32().createArray(groupPath + "/end", binsCount, compressionChunkLength, compression);
+    dst.int64().createArray(groupPath + "/start", binsCount, compressionChunkLength, compression);
+    dst.int64().createArray(groupPath + "/end", binsCount, compressionChunkLength, compression);
     dst.float64().createArray(groupPath + "/weight", binsCount, compressionChunkLength, floatCompression);
 
     long written = 0L;
-    int spanIndex = 0;
+    int chromIndex = 0;
     final var weightCursor = new BinWeightCursor(layout);
     int lastLoggedPercent = -1;
     while (written < binsCount) {
       final int blockLen = (int) Math.min(chunkLength, binsCount - written);
       final var chrom = new int[blockLen];
-      final var starts = new int[blockLen];
-      final var ends = new int[blockLen];
+      final var starts = new long[blockLen];
+      final var ends = new long[blockLen];
       final var weights = new double[blockLen];
       for (int i = 0; i < blockLen; i++) {
         final long binIndex = written + i;
-        while (spanIndex + 1 < layout.spans().size() && binIndex >= layout.spans().get(spanIndex).globalBinEnd()) {
-          spanIndex++;
+        while (chromIndex + 1 < layout.chromOffsets().length - 1 && binIndex >= layout.chromOffsets()[chromIndex + 1]) {
+          chromIndex++;
         }
-        final var span = layout.spans().get(spanIndex);
-        final long localBin = binIndex - span.globalBinStart();
+        final var coolerChrom = layout.chroms().get(chromIndex);
+        final long localBin = binIndex - layout.chromOffsets()[chromIndex];
         final long startBp = localBin * resolution;
-        chrom[i] = span.chromIndex();
-        starts[i] = Math.toIntExact(startBp);
-        ends[i] = Math.toIntExact(Math.min(span.chrom().lengthBp(), startBp + resolution));
+        chrom[i] = chromIndex;
+        starts[i] = startBp;
+        ends[i] = Math.min(coolerChrom.lengthBp(), startBp + resolution);
         weights[i] = weightCursor.weightAt(binIndex);
       }
       dst.int32().writeArrayBlockWithOffset(groupPath + "/chrom", chrom, blockLen, written);
-      dst.int32().writeArrayBlockWithOffset(groupPath + "/start", starts, blockLen, written);
-      dst.int32().writeArrayBlockWithOffset(groupPath + "/end", ends, blockLen, written);
+      dst.int64().writeArrayBlockWithOffset(groupPath + "/start", starts, blockLen, written);
+      dst.int64().writeArrayBlockWithOffset(groupPath + "/end", ends, blockLen, written);
       dst.float64().writeArrayBlockWithOffset(groupPath + "/weight", weights, blockLen, written);
       written += blockLen;
       progressTracker.add(blockLen * 4L, progressLabel);
@@ -1447,7 +1567,7 @@ public class HictToMcoolConverter {
     return lowered.endsWith(".cool") && !lowered.endsWith(".mcool");
   }
 
-  private static void appendMappedRecord(
+  private static boolean appendMappedRecord(
     final @NotNull CooRecordBatch batch,
     final @NotNull SourceToAssemblyMapper.Cursor rowMapper,
     final @NotNull SourceToAssemblyMapper.Cursor colMapper,
@@ -1455,14 +1575,18 @@ public class HictToMcoolConverter {
     final long sourceCol,
     final long count
   ) {
-    long mappedRow = rowMapper.map(sourceRow);
-    long mappedCol = colMapper.map(sourceCol);
+    long mappedRow = rowMapper.mapOrMissing(sourceRow);
+    long mappedCol = colMapper.mapOrMissing(sourceCol);
+    if (mappedRow < 0L || mappedCol < 0L) {
+      return false;
+    }
     if (mappedRow > mappedCol) {
       final long tmp = mappedRow;
       mappedRow = mappedCol;
       mappedCol = tmp;
     }
     batch.add(mappedRow, mappedCol, count);
+    return true;
   }
 
   private static int appendMappedRecords(
@@ -1484,27 +1608,29 @@ public class HictToMcoolConverter {
       return 0;
     }
 
-    final int nativeMapped = nativeProcessingService.tryMapCoolerRecordsToBatch(
-      sourceRows,
-      sourceColumns,
-      sourceValues,
-      sourceOffset,
-      toAppend,
-      rowStripeOffset,
-      colStripeOffset,
-      batch.rows,
-      batch.cols,
-      batch.counts,
-      batch.size(),
-      mapper.sourceStarts,
-      mapper.sourceEnds,
-      mapper.targetStarts,
-      mapper.targetEnds,
-      mapper.reversedBytes
-    );
-    if (nativeMapped == toAppend) {
-      batch.advanceSize(nativeMapped);
-      return nativeMapped;
+    if (!mapper.hasSourceGaps) {
+      final int nativeMapped = nativeProcessingService.tryMapCoolerRecordsToBatch(
+        sourceRows,
+        sourceColumns,
+        sourceValues,
+        sourceOffset,
+        toAppend,
+        rowStripeOffset,
+        colStripeOffset,
+        batch.rows,
+        batch.cols,
+        batch.counts,
+        batch.size(),
+        mapper.sourceStarts,
+        mapper.sourceEnds,
+        mapper.targetStarts,
+        mapper.targetEnds,
+        mapper.reversedBytes
+      );
+      if (nativeMapped == toAppend) {
+        batch.advanceSize(nativeMapped);
+        return nativeMapped;
+      }
     }
 
     for (int i = 0; i < toAppend; i++) {
@@ -2025,7 +2151,7 @@ public class HictToMcoolConverter {
       long targetCursor = 0L;
       for (final ContigTree.ContigTuple tuple : currentContigs) {
         final var descriptor = tuple.descriptor();
-        final var contigAtus = descriptor.getAtus().get(resolutionOrder);
+        final var contigAtus = orientedAtus(descriptor.getAtus().get(resolutionOrder), tuple.direction());
         for (final ATUDescriptor atu : contigAtus) {
           final var stripe = atu.getStripeDescriptor();
           final long sourceStart = stripeOffsets[stripe.stripeId()] + atu.getStartIndexInStripeIncl();
@@ -2040,6 +2166,18 @@ public class HictToMcoolConverter {
       segments.sort(Comparator.comparingLong(SourceSegment::sourceStart));
       return new SourceToAssemblyMapper(segments);
     }
+  }
+
+  private static @NotNull List<ATUDescriptor> orientedAtus(final @NotNull List<ATUDescriptor> sourceAtus,
+                                                           final @NotNull ContigDirection direction) {
+    if (direction == ContigDirection.FORWARD) {
+      return List.copyOf(sourceAtus);
+    }
+    final var atus = new ArrayList<ATUDescriptor>(sourceAtus.size());
+    for (int i = sourceAtus.size() - 1; i >= 0; i--) {
+      atus.add(sourceAtus.get(i).reversed());
+    }
+    return List.copyOf(atus);
   }
 
   private static boolean isFloatingPointDataset(
@@ -2682,6 +2820,10 @@ public class HictToMcoolConverter {
     }
   }
 
+  public record MappingSegment(long sourceStart, long sourceEnd, long targetStart, long targetEnd,
+                               @NotNull ATUDirection direction) {
+  }
+
   private record SourceSegment(long sourceStart, long sourceEnd, long targetStart, long targetEnd,
                                @NotNull ATUDirection direction) {
     private long map(final long sourceBin) {
@@ -2703,6 +2845,7 @@ public class HictToMcoolConverter {
     private final long[] targetEnds;
     private final boolean[] reversed;
     private final byte[] reversedBytes;
+    private final boolean hasSourceGaps;
 
     private SourceToAssemblyMapper(final @NotNull List<SourceSegment> segments) {
       this.sourceStarts = new long[segments.size()];
@@ -2711,8 +2854,14 @@ public class HictToMcoolConverter {
       this.targetEnds = new long[segments.size()];
       this.reversed = new boolean[segments.size()];
       this.reversedBytes = new byte[segments.size()];
+      boolean sourceGaps = false;
+      long expectedSourceStart = 0L;
       for (int i = 0; i < segments.size(); i++) {
         final var segment = segments.get(i);
+        if (segment.sourceStart() > expectedSourceStart) {
+          sourceGaps = true;
+        }
+        expectedSourceStart = Math.max(expectedSourceStart, segment.sourceEnd());
         sourceStarts[i] = segment.sourceStart();
         sourceEnds[i] = segment.sourceEnd();
         targetStarts[i] = segment.targetStart();
@@ -2720,6 +2869,7 @@ public class HictToMcoolConverter {
         reversed[i] = segment.direction() == ATUDirection.REVERSED;
         reversedBytes[i] = (byte) (reversed[i] ? 1 : 0);
       }
+      this.hasSourceGaps = sourceGaps;
     }
 
     private @NotNull Cursor cursor() {
@@ -2727,7 +2877,11 @@ public class HictToMcoolConverter {
     }
 
     private long map(final long sourceBin) {
-      return mapAt(findSegment(sourceBin), sourceBin);
+      final int segment = findSegment(sourceBin);
+      if (segment < 0) {
+        throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+      }
+      return mapAt(segment, sourceBin);
     }
 
     private int findSegment(final long sourceBin) {
@@ -2743,7 +2897,7 @@ public class HictToMcoolConverter {
           return mid;
         }
       }
-      throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
+      return -1;
     }
 
     private long mapAt(final int index, final long sourceBin) {
@@ -2757,12 +2911,15 @@ public class HictToMcoolConverter {
     private final class Cursor {
       private int segmentIndex = -1;
 
-      private long map(final long sourceBin) {
+      private long mapOrMissing(final long sourceBin) {
         final int current = segmentIndex;
         if (current >= 0 && current < sourceStarts.length && sourceBin >= sourceStarts[current] && sourceBin < sourceEnds[current]) {
           return mapAt(current, sourceBin);
         }
         final int found = findSegment(sourceBin);
+        if (found < 0) {
+          return -1L;
+        }
         segmentIndex = found;
         return mapAt(found, sourceBin);
       }
