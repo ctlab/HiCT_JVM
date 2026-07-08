@@ -1114,7 +1114,7 @@ public class McoolToHictConverter {
       ? 128
       : importMaxMemoryBytes < 2L * gib ? 4
       : importMaxMemoryBytes < 8L * gib ? 8
-      : importMaxMemoryBytes < 16L * gib ? 16
+      : importMaxMemoryBytes <= 16L * gib ? 16
       : importMaxMemoryBytes < 64L * gib ? 32
       : DEFAULT_MAX_WRITE_QUEUE_CAPACITY;
     return Math.max(2, Math.min(Math.max(2, stripeWorkers * 2), memoryBound));
