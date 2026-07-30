@@ -369,6 +369,74 @@ public class Initializers {
   }
 
   public static void initializeScaffoldTree(final ChunkedFile chunkedFile) {
+    final var scaffoldIdPath = "/contig_info/contig_scaffold_id";
+    try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
+      if (!reader.object().isDataSet(scaffoldIdPath)) {
+        return;
+      }
+      final var contigScaffoldIds = reader.int64().readArray(scaffoldIdPath);
+      final var scaffoldNames = reader.object().isDataSet("/contig_info/scaffold_name")
+        ? reader.string().readArray("/contig_info/scaffold_name")
+        : new String[0];
+      final var scaffoldSpacerBp = reader.object().isDataSet("/contig_info/scaffold_spacer_bp")
+        ? reader.int64().readArray("/contig_info/scaffold_spacer_bp")
+        : new long[0];
+
+      final var orderedContigs = chunkedFile.getContigTree().getOrderedContigList();
+      if (orderedContigs.isEmpty()) {
+        return;
+      }
+
+      final var tree = chunkedFile.getScaffoldTree();
+      tree.unscaffold(0L, 1L + chunkedFile.getMatrixSizeBins()[0]);
+
+      long positionBp = 0L;
+      int groupStartIndex = 0;
+      while (groupStartIndex < orderedContigs.size()) {
+        final var firstDescriptor = orderedContigs.get(groupStartIndex).descriptor();
+        final int firstContigId = firstDescriptor.getContigId();
+        final long scaffoldId = firstContigId >= 0 && firstContigId < contigScaffoldIds.length
+          ? contigScaffoldIds[firstContigId]
+          : -1L;
+        final long groupStartBp = positionBp;
+        long groupLengthBp = 0L;
+        int groupEndIndex = groupStartIndex;
+        while (groupEndIndex < orderedContigs.size()) {
+          final var descriptor = orderedContigs.get(groupEndIndex).descriptor();
+          final int contigId = descriptor.getContigId();
+          final long currentScaffoldId = contigId >= 0 && contigId < contigScaffoldIds.length
+            ? contigScaffoldIds[contigId]
+            : -1L;
+          if (groupEndIndex > groupStartIndex && currentScaffoldId != scaffoldId) {
+            break;
+          }
+          groupLengthBp += descriptor.getLengthBp();
+          groupEndIndex++;
+        }
+
+        if (scaffoldId >= 0L) {
+          final var scaffoldName = scaffoldId < scaffoldNames.length && scaffoldNames[(int) scaffoldId] != null && !scaffoldNames[(int) scaffoldId].isBlank()
+            ? scaffoldNames[(int) scaffoldId]
+            : "scaffold_" + scaffoldId;
+          final long spacerBp = scaffoldId < scaffoldSpacerBp.length && scaffoldSpacerBp[(int) scaffoldId] > 0L
+            ? scaffoldSpacerBp[(int) scaffoldId]
+            : 1000L;
+          final int groupSize = groupEndIndex - groupStartIndex;
+          if (groupSize > 1 || !scaffoldName.startsWith("unscaffolded")) {
+            tree.rescaffold(
+              groupStartBp,
+              groupStartBp + groupLengthBp,
+              id -> new ScaffoldDescriptor(scaffoldId, scaffoldName, spacerBp)
+            );
+          }
+        }
+
+        positionBp += groupLengthBp;
+        groupStartIndex = groupEndIndex;
+      }
+    } catch (Exception e) {
+      log.warn("Failed to initialize scaffold tree from stored contig scaffold metadata in {}", chunkedFile.getHdfFilePath(), e);
+    }
   }
 
   private record ContigDescriptorDataBundle(

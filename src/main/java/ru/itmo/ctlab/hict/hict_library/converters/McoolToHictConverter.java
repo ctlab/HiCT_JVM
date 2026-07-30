@@ -315,6 +315,24 @@ public class McoolToHictConverter {
     dst.int64().writeArray(getContigOrderDatasetPath(), orderedContigIds, intStorageFeatures);
     dst.int64().writeArray("/contig_info/contig_scaffold_id", contigScaffoldIds, intStorageFeatures);
     dst.int64().writeArray(getContigLengthBpDatasetPath(), contigLengthBp, intStorageFeatures);
+    final String[] scaffoldNames = scaffoldIds.keySet().toArray(String[]::new);
+    final long[] scaffoldLengthsBp = new long[scaffoldNames.length];
+    final long[] scaffoldSpacerBp = new long[scaffoldNames.length];
+    Arrays.fill(scaffoldSpacerBp, 1000L);
+    for (final var record : agpRecords) {
+      final var scaffoldId = scaffoldIds.get(record.getScaffoldName());
+      if (scaffoldId == null) {
+        continue;
+      }
+      final int sid = Math.toIntExact(scaffoldId);
+      scaffoldLengthsBp[sid] = Math.max(scaffoldLengthsBp[sid], record.getInterScaffoldEndIncl());
+      if (record instanceof AGPProcessor.GapAGPRecord gapRecord) {
+        scaffoldSpacerBp[sid] = Math.max(scaffoldSpacerBp[sid], gapRecord.getGapLength());
+      }
+    }
+    dst.string().writeArray("/contig_info/scaffold_name", scaffoldNames);
+    dst.int64().writeArray("/contig_info/scaffold_length_bp", scaffoldLengthsBp, intStorageFeatures);
+    dst.int64().writeArray("/contig_info/scaffold_spacer_bp", scaffoldSpacerBp, intStorageFeatures);
 
     for (final var resolution : selectedResolutions) {
       final var resolutionRoot = "/resolutions/" + resolution;
@@ -1740,6 +1758,12 @@ public class McoolToHictConverter {
     final @NotNull HDF5IntStorageFeatures intStorageFeatures,
     final @NotNull HDF5FloatStorageFeatures floatStorageFeatures
   ) {
+    final var embeddedAgpMetadata = readEmbeddedAgpAssemblyMetadata(src);
+    if (embeddedAgpMetadata.isPresent()) {
+      dumpEmbeddedAgpContigData(src, dst, resolutions, parallelism, intStorageFeatures, floatStorageFeatures, embeddedAgpMetadata.get());
+      return;
+    }
+
     final long anyResolution = resolutions.get(0);
     final String nameLengthPath = resolveNameLengthPath(src, anyResolution);
 
@@ -1853,6 +1877,137 @@ public class McoolToHictConverter {
     }
   }
 
+  private static void dumpEmbeddedAgpContigData(
+    final @NotNull IHDF5Reader src,
+    final @NotNull IHDF5Writer dst,
+    final @NotNull List<Long> resolutions,
+    final int parallelism,
+    final @NotNull HDF5IntStorageFeatures intStorageFeatures,
+    final @NotNull HDF5FloatStorageFeatures floatStorageFeatures,
+    final @NotNull EmbeddedAgpAssemblyMetadata metadata
+  ) {
+    final int contigCount = metadata.contigNames().length;
+    dst.object().createGroup("/contig_info");
+    dst.string().writeArray(getContigNameDatasetPath(), metadata.contigNames());
+    dst.int64().writeArray(getContigLengthBpDatasetPath(), metadata.contigLengthBp(), intStorageFeatures);
+    dst.int64().writeArray(getContigDirectionDatasetPath(), metadata.directions(), intStorageFeatures);
+    dst.int64().writeArray(getContigOrderDatasetPath(), metadata.orderedContigIds(), intStorageFeatures);
+    dst.int64().writeArray("/contig_info/contig_scaffold_id", metadata.scaffoldIds(), intStorageFeatures);
+    dst.string().writeArray("/contig_info/scaffold_name", metadata.scaffoldNames());
+    dst.int64().writeArray("/contig_info/scaffold_length_bp", metadata.scaffoldLengthsBp(), intStorageFeatures);
+    dst.int64().writeArray("/contig_info/scaffold_spacer_bp", metadata.scaffoldSpacerBp(), intStorageFeatures);
+
+    final Map<Long, long[]> contigStartBinsByResolution = new HashMap<>();
+    final Map<Long, long[]> contigLengthBinsByResolution = new HashMap<>();
+    final Map<Long, List<StripeDescriptor>> stripesByResolution = new HashMap<>();
+
+    for (final var resolution : resolutions) {
+      final var sourceChromLayout = readSourceChromLayout(src, resolution);
+      final long[] chromOffsets = src.int64().readArray("/resolutions/" + resolution + "/indexes/chrom_offset");
+      if (chromOffsets.length != sourceChromLayout.lengthsBp().length + 1) {
+        throw new IllegalStateException(
+          "Resolution " + resolution + " has " + chromOffsets.length +
+            " chromosome offset entries, but source chromosome metadata has " + sourceChromLayout.lengthsBp().length + " chromosomes"
+        );
+      }
+      final long[] sourceBinStarts = src.int64().readArray("/resolutions/" + resolution + "/bins/start");
+      final long[] sourceBinEnds = src.int64().readArray("/resolutions/" + resolution + "/bins/end");
+      final long[] startBins = new long[contigCount];
+      final long[] lengthBins = new long[contigCount];
+      for (int i = 0; i < contigCount; i++) {
+        final int scaffoldId = Math.toIntExact(metadata.scaffoldIds()[i]);
+        if (scaffoldId < 0 || scaffoldId >= metadata.scaffoldNames().length) {
+          throw new IllegalStateException("Embedded HiCT AGP metadata has invalid scaffold id " + scaffoldId + " for contig " + metadata.contigNames()[i]);
+        }
+        Integer sourceChromId = sourceChromLayout.chromIdsByName().get(metadata.scaffoldNames()[scaffoldId]);
+        if (sourceChromId == null) {
+          sourceChromId = sourceChromLayout.chromIdsByName().get(metadata.contigNames()[i]);
+        }
+        if (sourceChromId == null) {
+          throw new IllegalStateException(
+            "Embedded HiCT AGP metadata references scaffold '" + metadata.scaffoldNames()[scaffoldId] +
+              "' and contig '" + metadata.contigNames()[i] + "', but neither exists in Cooler chromosome metadata"
+          );
+        }
+        final long sourceChromLengthBp = sourceChromLayout.lengthsBp()[sourceChromId];
+        final long startBp0 = metadata.scaffoldStartBp0()[i];
+        final long endBpExclusive = metadata.scaffoldEndBpExclusive()[i];
+        if (startBp0 < 0L || endBpExclusive <= startBp0 || endBpExclusive > sourceChromLengthBp) {
+          throw new IllegalStateException(
+            "Embedded HiCT AGP metadata maps contig '" + metadata.contigNames()[i] +
+              "' outside Cooler chromosome '" + metadata.scaffoldNames()[scaffoldId] + "': [" +
+              startBp0 + "," + endBpExclusive + "), chromosome length=" + sourceChromLengthBp
+          );
+        }
+        final var range = resolveSourceBinRange(
+          resolution,
+          sourceChromId,
+          startBp0,
+          endBpExclusive,
+          chromOffsets,
+          sourceBinStarts,
+          sourceBinEnds
+        );
+        startBins[i] = range.startBin();
+        lengthBins[i] = range.lengthBins();
+      }
+      contigStartBinsByResolution.put(resolution, startBins);
+      contigLengthBinsByResolution.put(resolution, lengthBins);
+      stripesByResolution.put(resolution, buildStripeDescriptorsOnly(src, resolution, resolveNameLengthPath(src, resolution)));
+    }
+
+    for (final var resolution : resolutions) {
+      final var resolutionRoot = "/resolutions/" + resolution;
+      dst.object().createGroup(resolutionRoot + "/contigs");
+      dst.object().createGroup(resolutionRoot + "/atl");
+
+      final var contigLengthBins = contigLengthBinsByResolution.get(resolution);
+      final var hideTypes = new byte[contigCount];
+      for (int i = 0; i < contigCount; i++) {
+        hideTypes[i] = autoHideType(contigLengthBins[i], metadata.contigLengthBp()[i], resolution);
+      }
+
+      dst.int64().writeArray(getContigLengthBinsDatasetPath(resolution), contigLengthBins, intStorageFeatures);
+      dst.int8().writeArray(getContigHideTypeDatasetPath(resolution), hideTypes);
+
+      final AtomicReferenceArray<List<ATUDescriptor>> atusByContig = new AtomicReferenceArray<>(contigCount);
+      runParallelFor(parallelism, contigCount, contigId -> {
+        final var atus = generateAtusForContig(
+          contigId,
+          resolution,
+          contigStartBinsByResolution,
+          contigLengthBinsByResolution,
+          stripesByResolution
+        );
+        atusByContig.set(contigId, atus);
+      });
+
+      long totalAtuCount = 0L;
+      for (int i = 0; i < contigCount; i++) {
+        totalAtuCount += Objects.requireNonNull(atusByContig.get(i)).size();
+      }
+
+      final long[][] basisAtu = new long[(int) totalAtuCount][4];
+      final long[][] contigsAtl = new long[(int) totalAtuCount][2];
+      int atuCursor = 0;
+      for (int contigId = 0; contigId < contigCount; contigId++) {
+        final var atus = atusByContig.get(contigId);
+        for (final var atu : atus) {
+          contigsAtl[atuCursor][0] = contigId;
+          contigsAtl[atuCursor][1] = atuCursor;
+          basisAtu[atuCursor][0] = atu.getStripeDescriptor().stripeId();
+          basisAtu[atuCursor][1] = atu.getStartIndexInStripeIncl();
+          basisAtu[atuCursor][2] = atu.getEndIndexInStripeExcl();
+          basisAtu[atuCursor][3] = atu.getDirection().ordinal();
+          atuCursor++;
+        }
+      }
+
+      dst.int64().writeMatrix(getContigsATLDatasetPath(resolution), contigsAtl);
+      dst.int64().writeMatrix(getBasisATUDatasetPath(resolution), basisAtu);
+    }
+  }
+
   private static @NotNull Optional<HictAssemblyMetadata> readHictAssemblyMetadata(
     final @NotNull IHDF5Reader src,
     final String @NotNull [] contigNames,
@@ -1901,6 +2056,86 @@ public class McoolToHictConverter {
     }
 
     return Optional.of(new HictAssemblyMetadata(directions, orderedContigIds, scaffoldIds));
+  }
+
+  private static @NotNull Optional<EmbeddedAgpAssemblyMetadata> readEmbeddedAgpAssemblyMetadata(final @NotNull IHDF5Reader src) {
+    if (!src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_NAME_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_LENGTH_BP_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_DIRECTION_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_SCAFFOLD_ID_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_SCAFFOLD_START_BP_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_SCAFFOLD_END_BP_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_SCAFFOLD_NAME_PATH)
+      || !src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_SCAFFOLD_LENGTH_BP_PATH)) {
+      return Optional.empty();
+    }
+
+    final var contigNames = src.string().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_NAME_PATH);
+    final var contigLengthBp = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_LENGTH_BP_PATH);
+    final var directions = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_DIRECTION_PATH);
+    final var scaffoldIds = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_SCAFFOLD_ID_PATH);
+    final var scaffoldStartBp0 = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_SCAFFOLD_START_BP_PATH);
+    final var scaffoldEndBpExclusive = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_SCAFFOLD_END_BP_PATH);
+    final var scaffoldNames = src.string().readArray(HictToMcoolConverter.HICT_METADATA_AGP_SCAFFOLD_NAME_PATH);
+    final var scaffoldLengthsBp = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_SCAFFOLD_LENGTH_BP_PATH);
+    final var scaffoldSpacerBp = src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_SCAFFOLD_SPACER_BP_PATH)
+      ? src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_SCAFFOLD_SPACER_BP_PATH)
+      : defaultScaffoldSpacerBp(scaffoldNames.length);
+    final long[] orderedContigIds;
+    if (src.object().isDataSet(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_ORDER_PATH)) {
+      final var candidate = src.int64().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_ORDER_PATH);
+      orderedContigIds = isValidContigOrder(candidate, contigNames.length)
+        ? candidate
+        : defaultOrderedContigIds(contigNames.length);
+    } else {
+      orderedContigIds = defaultOrderedContigIds(contigNames.length);
+    }
+
+    final int contigCount = contigNames.length;
+    if (contigCount == 0 || scaffoldNames.length == 0
+      || contigLengthBp.length != contigCount
+      || directions.length != contigCount
+      || scaffoldIds.length != contigCount
+      || scaffoldStartBp0.length != contigCount
+      || scaffoldEndBpExclusive.length != contigCount
+      || scaffoldLengthsBp.length != scaffoldNames.length
+      || scaffoldSpacerBp.length != scaffoldNames.length) {
+      return Optional.empty();
+    }
+    for (int i = 0; i < contigCount; i++) {
+      if (contigNames[i] == null || contigNames[i].isBlank()
+        || contigLengthBp[i] <= 0L
+        || directions[i] < 0L || directions[i] >= ContigDirection.values().length
+        || scaffoldIds[i] < 0L || scaffoldIds[i] >= scaffoldNames.length
+        || scaffoldStartBp0[i] < 0L
+        || scaffoldEndBpExclusive[i] <= scaffoldStartBp0[i]) {
+        return Optional.empty();
+      }
+    }
+    for (int i = 0; i < scaffoldNames.length; i++) {
+      if (scaffoldNames[i] == null || scaffoldNames[i].isBlank() || scaffoldLengthsBp[i] <= 0L || scaffoldSpacerBp[i] < 0L) {
+        return Optional.empty();
+      }
+    }
+
+    return Optional.of(new EmbeddedAgpAssemblyMetadata(
+      contigNames,
+      contigLengthBp,
+      directions,
+      orderedContigIds,
+      scaffoldIds,
+      scaffoldStartBp0,
+      scaffoldEndBpExclusive,
+      scaffoldNames,
+      scaffoldLengthsBp,
+      scaffoldSpacerBp
+    ));
+  }
+
+  private static long @NotNull [] defaultScaffoldSpacerBp(final int scaffoldCount) {
+    final var spacerBp = new long[scaffoldCount];
+    Arrays.fill(spacerBp, 1000L);
+    return spacerBp;
   }
 
   private static long @NotNull [] defaultDirections(final int contigCount) {
@@ -2394,6 +2629,20 @@ public class McoolToHictConverter {
     long @NotNull [] directions,
     long @NotNull [] orderedContigIds,
     long @NotNull [] scaffoldIds
+  ) {
+  }
+
+  private record EmbeddedAgpAssemblyMetadata(
+    String @NotNull [] contigNames,
+    long @NotNull [] contigLengthBp,
+    long @NotNull [] directions,
+    long @NotNull [] orderedContigIds,
+    long @NotNull [] scaffoldIds,
+    long @NotNull [] scaffoldStartBp0,
+    long @NotNull [] scaffoldEndBpExclusive,
+    String @NotNull [] scaffoldNames,
+    long @NotNull [] scaffoldLengthsBp,
+    long @NotNull [] scaffoldSpacerBp
   ) {
   }
 }

@@ -7,6 +7,7 @@ import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import io.vertx.core.json.JsonArray;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.Initializers;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
@@ -32,6 +33,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.PriorityQueue;
@@ -53,6 +55,16 @@ public class HictToMcoolConverter {
   public static final String HICT_METADATA_CONTIG_DIRECTION_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/contig_direction";
   public static final String HICT_METADATA_CONTIG_ORDER_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/ordered_contig_ids";
   public static final String HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/contig_scaffold_id";
+  public static final String HICT_METADATA_AGP_COMPONENT_NAME_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_component_name";
+  public static final String HICT_METADATA_AGP_COMPONENT_LENGTH_BP_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_component_length_bp";
+  public static final String HICT_METADATA_AGP_COMPONENT_DIRECTION_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_component_direction";
+  public static final String HICT_METADATA_AGP_COMPONENT_ORDER_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_component_order";
+  public static final String HICT_METADATA_AGP_COMPONENT_SCAFFOLD_ID_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_component_scaffold_id";
+  public static final String HICT_METADATA_AGP_COMPONENT_SCAFFOLD_START_BP_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_component_scaffold_start_bp";
+  public static final String HICT_METADATA_AGP_COMPONENT_SCAFFOLD_END_BP_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_component_scaffold_end_bp";
+  public static final String HICT_METADATA_AGP_SCAFFOLD_NAME_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_scaffold_name";
+  public static final String HICT_METADATA_AGP_SCAFFOLD_LENGTH_BP_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_scaffold_length_bp";
+  public static final String HICT_METADATA_AGP_SCAFFOLD_SPACER_BP_PATH = HICT_ASSEMBLY_METADATA_GROUP + "/agp_scaffold_spacer_bp";
   private static final long DEFAULT_EXPORT_MEMORY_LIMIT_BYTES = 16L * 1024L * 1024L * 1024L;
   private static final int DEFAULT_COO_MERGE_FAN_IN = 64;
   private static final int MIN_COO_MERGE_FAN_IN = 2;
@@ -88,11 +100,17 @@ public class HictToMcoolConverter {
     );
     final var chunkedFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 2, 8, selectedResolutions));
     try {
+      List<AGPProcessor.AGPFileRecord> appliedAgpRecords = List.of();
       if (options.applyAgpBeforeExport() && !options.agpPath().isBlank()) {
         final var requestedAgpPath = Path.of(options.agpPath());
         final var resolvedAgpPath = requestedAgpPath.isAbsolute()
           ? requestedAgpPath
           : options.inputPath().resolveSibling(requestedAgpPath).normalize();
+        try (final var reader = Files.newBufferedReader(resolvedAgpPath, StandardCharsets.UTF_8)) {
+          appliedAgpRecords = AGPProcessor.parseRecordsFromReader(reader);
+        } catch (NoSuchFieldException e) {
+          throw new IOException("Failed to parse AGP layout " + resolvedAgpPath.getFileName(), e);
+        }
         try (final var reader = Files.newBufferedReader(resolvedAgpPath, StandardCharsets.UTF_8)) {
           chunkedFile.importAGP(reader);
         }
@@ -128,6 +146,9 @@ public class HictToMcoolConverter {
           writeChromsGroup(dst, ROOT_CHROMS_GROUP, assemblyLayout.chroms(), compression);
         }
         writeHictAssemblyMetadata(dst, assemblyLayout, compression);
+        if (!appliedAgpRecords.isEmpty()) {
+          writeHictAgpComponentMetadata(dst, appliedAgpRecords, compression);
+        }
         dst.string().write("/source_format", "hict");
         dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
 
@@ -640,6 +661,83 @@ public class HictToMcoolConverter {
     dst.int64().writeArray(HICT_METADATA_CONTIG_DIRECTION_PATH, directions, compression);
     dst.int64().writeArray(HICT_METADATA_CONTIG_ORDER_PATH, orderedIds, compression);
     dst.int64().writeArray(HICT_METADATA_CONTIG_SCAFFOLD_ID_PATH, scaffoldIds, compression);
+  }
+
+  public static void writeHictAgpComponentMetadata(
+    final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
+    final @NotNull List<AGPProcessor.AGPFileRecord> agpRecords,
+    final @NotNull HDF5IntStorageFeatures compression
+  ) {
+    if (!dst.object().isGroup(HICT_METADATA_GROUP)) {
+      dst.object().createGroup(HICT_METADATA_GROUP);
+    }
+    if (!dst.object().isGroup(HICT_ASSEMBLY_METADATA_GROUP)) {
+      dst.object().createGroup(HICT_ASSEMBLY_METADATA_GROUP);
+    }
+
+    final var scaffoldIds = new LinkedHashMap<String, Integer>();
+    final var scaffoldLengths = new ArrayList<Long>();
+    final var scaffoldSpacers = new ArrayList<Long>();
+    for (final var record : agpRecords) {
+      final int scaffoldId = scaffoldIds.computeIfAbsent(record.getScaffoldName(), ignored -> {
+        scaffoldLengths.add(0L);
+        scaffoldSpacers.add(0L);
+        return scaffoldIds.size();
+      });
+      scaffoldLengths.set(scaffoldId, Math.max(scaffoldLengths.get(scaffoldId), record.getInterScaffoldEndIncl()));
+      if (record instanceof AGPProcessor.GapAGPRecord gapRecord) {
+        scaffoldSpacers.set(scaffoldId, Math.max(scaffoldSpacers.get(scaffoldId), gapRecord.getGapLength()));
+      }
+    }
+
+    final var contigRecords = agpRecords.stream()
+      .filter(AGPProcessor.ContigAGPRecord.class::isInstance)
+      .map(AGPProcessor.ContigAGPRecord.class::cast)
+      .toList();
+    final int contigCount = contigRecords.size();
+    if (contigCount == 0 || scaffoldIds.isEmpty()) {
+      return;
+    }
+
+    final var componentNames = new String[contigCount];
+    final var componentLengths = new long[contigCount];
+    final var componentDirections = new long[contigCount];
+    final var componentOrder = new long[contigCount];
+    final var componentScaffoldIds = new long[contigCount];
+    final var componentScaffoldStarts = new long[contigCount];
+    final var componentScaffoldEnds = new long[contigCount];
+    for (int i = 0; i < contigCount; i++) {
+      final var record = contigRecords.get(i);
+      componentNames[i] = record.getContigName();
+      componentLengths[i] = record.getIntraContigEndBpIncl() - record.getIntraContigStartBpIncl() + 1L;
+      componentDirections[i] = switch (record.getContigOrientation()) {
+        case PLUS, UNKNOWN, IRRELEVANT -> ContigDirection.FORWARD.ordinal();
+        case MINUS -> ContigDirection.REVERSED.ordinal();
+      };
+      componentOrder[i] = i;
+      componentScaffoldIds[i] = scaffoldIds.get(record.getScaffoldName());
+      componentScaffoldStarts[i] = record.getInterScaffoldStartIncl() - 1L;
+      componentScaffoldEnds[i] = record.getInterScaffoldEndIncl();
+    }
+
+    final var scaffoldNames = scaffoldIds.keySet().toArray(String[]::new);
+    final var scaffoldLengthsArray = new long[scaffoldNames.length];
+    final var scaffoldSpacersArray = new long[scaffoldNames.length];
+    for (int i = 0; i < scaffoldNames.length; i++) {
+      scaffoldLengthsArray[i] = scaffoldLengths.get(i);
+      scaffoldSpacersArray[i] = scaffoldSpacers.get(i) > 0L ? scaffoldSpacers.get(i) : 1000L;
+    }
+
+    dst.string().writeArray(HICT_METADATA_AGP_COMPONENT_NAME_PATH, componentNames);
+    dst.int64().writeArray(HICT_METADATA_AGP_COMPONENT_LENGTH_BP_PATH, componentLengths, compression);
+    dst.int64().writeArray(HICT_METADATA_AGP_COMPONENT_DIRECTION_PATH, componentDirections, compression);
+    dst.int64().writeArray(HICT_METADATA_AGP_COMPONENT_ORDER_PATH, componentOrder, compression);
+    dst.int64().writeArray(HICT_METADATA_AGP_COMPONENT_SCAFFOLD_ID_PATH, componentScaffoldIds, compression);
+    dst.int64().writeArray(HICT_METADATA_AGP_COMPONENT_SCAFFOLD_START_BP_PATH, componentScaffoldStarts, compression);
+    dst.int64().writeArray(HICT_METADATA_AGP_COMPONENT_SCAFFOLD_END_BP_PATH, componentScaffoldEnds, compression);
+    dst.string().writeArray(HICT_METADATA_AGP_SCAFFOLD_NAME_PATH, scaffoldNames);
+    dst.int64().writeArray(HICT_METADATA_AGP_SCAFFOLD_LENGTH_BP_PATH, scaffoldLengthsArray, compression);
+    dst.int64().writeArray(HICT_METADATA_AGP_SCAFFOLD_SPACER_BP_PATH, scaffoldSpacersArray, compression);
   }
 
   private static void writeBinsGroup(

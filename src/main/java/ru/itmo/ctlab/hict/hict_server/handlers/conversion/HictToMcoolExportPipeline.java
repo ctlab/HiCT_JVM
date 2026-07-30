@@ -200,6 +200,7 @@ public final class HictToMcoolExportPipeline {
           explicitMappings,
           synchronizedLogger
         );
+        appendAgpComponentMetadata(options.outputPath(), agpRecords, options, synchronizedLogger);
         return;
       }
 
@@ -240,6 +241,9 @@ public final class HictToMcoolExportPipeline {
 
         writeChromsGroup(dst, "/chroms", assemblyLayout.chroms(), resolveIntStorageFeatures(options));
         HictToMcoolConverter.writeHictAssemblyMetadata(dst, assemblyLayout, resolveIntStorageFeatures(options));
+        if (useAgpCoolerLayout) {
+          HictToMcoolConverter.writeHictAgpComponentMetadata(dst, agpRecords, resolveIntStorageFeatures(options));
+        }
 
         for (final var resolution : selectedResolutions.stream().sorted().toList()) {
           checkCancelled(cancellationRequested);
@@ -515,6 +519,24 @@ public final class HictToMcoolExportPipeline {
       );
     } else {
       logger.accept("Skipping hictk balance for exported .cool");
+    }
+    if (useAgpCoolerLayout) {
+      appendAgpComponentMetadata(options.outputPath(), agpRecords, options, logger);
+    }
+  }
+
+  private static void appendAgpComponentMetadata(
+    final @NotNull Path outputPath,
+    final @NotNull List<AGPProcessor.AGPFileRecord> agpRecords,
+    final @NotNull ConversionOptions options,
+    final @NotNull Consumer<String> logger
+  ) {
+    if (agpRecords.isEmpty()) {
+      return;
+    }
+    try (final var writer = HDF5Factory.open(outputPath.toFile())) {
+      HictToMcoolConverter.writeHictAgpComponentMetadata(writer, agpRecords, resolveIntStorageFeatures(options));
+      logger.accept("Embedded HiCT AGP component metadata for round-trip reopening: " + outputPath.getFileName());
     }
   }
 
