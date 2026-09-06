@@ -1,12 +1,16 @@
 package ru.itmo.ctlab.hict.hict_server.tools;
 
 import io.vertx.core.Launcher;
+import ch.systemsx.cisd.hdf5.HDF5Factory;
+import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import hdf.hdf5lib.H5;
 import org.jetbrains.annotations.NotNull;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
+import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
@@ -28,6 +32,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -628,13 +633,67 @@ public class HictCli implements Runnable {
       HictCli.McoolToHict.class,
       HictCli.HicToMcool.class,
       HictCli.HicToHict.class,
-      HictCli.ScaffoldConvert.class
+      HictCli.ScaffoldConvert.class,
+      HictCli.ValidateAgp.class,
+      HictCli.AnnotateAgp.class
     }
   )
   static class Convert implements Runnable {
     @Override
     public void run() {
       CommandLine.usage(this, System.out);
+    }
+  }
+
+  @Command(name = "validate-agp", mixinStandardHelpOptions = true,
+    description = "Validate AGP object coordinates before starting a conversion.")
+  static class ValidateAgp implements Callable<Integer> {
+    @Option(names = "--agp", required = true) Path agp;
+
+    @Override public Integer call() throws Exception {
+      try (final var reader = Files.newBufferedReader(agp)) {
+        final var records = AGPProcessor.parseRecordsFromReader(reader);
+        if (records.isEmpty()) throw new IllegalArgumentException("AGP contains no records: " + agp);
+        System.out.println("Validated AGP: " + records.size() + " records, " + agp);
+      }
+      return 0;
+    }
+  }
+
+  @Command(name = "annotate-agp", mixinStandardHelpOptions = true,
+    description = "Restore HiCT component metadata after zoomify, verifying every Cooler chromosome layout first. Does not move pixels.")
+  static class AnnotateAgp implements Callable<Integer> {
+    @Option(names = "--agp", required = true) Path agp;
+    @Option(names = "--input", required = true) Path input;
+
+    @Override public Integer call() throws Exception {
+      final List<AGPProcessor.AGPFileRecord> records;
+      try (final var reader = Files.newBufferedReader(agp)) {
+        records = AGPProcessor.parseRecordsFromReader(reader);
+      }
+      final var sizes = new LinkedHashMap<String, Long>();
+      for (final var record : records) sizes.put(record.getScaffoldName(), record.getInterScaffoldEndIncl());
+      if (sizes.isEmpty()) throw new IllegalArgumentException("AGP contains no records: " + agp);
+      if (!Files.isRegularFile(input)) throw new IllegalArgumentException("Cooler file not found: " + input);
+      HDF5LibraryInitializer.initializeHDF5Library();
+      try (final var reader = HDF5Factory.openForReading(input.toFile())) {
+        final var roots = reader.object().isGroup("/resolutions")
+          ? reader.object().getGroupMembers("/resolutions").stream().map(r -> "/resolutions/" + r).toList()
+          : List.of("");
+        if (roots.isEmpty()) throw new IllegalArgumentException("Cooler contains no resolutions");
+        for (final var root : roots) {
+          if (!Arrays.equals(sizes.keySet().toArray(String[]::new), reader.string().readArray(root + "/chroms/name"))
+            || !Arrays.equals(sizes.values().stream().mapToLong(Long::longValue).toArray(), reader.int64().readArray(root + "/chroms/length"))) {
+            throw new IllegalArgumentException("Cooler chromosome order or lengths do not match AGP at " + root + "; refusing to attach misleading metadata.");
+          }
+        }
+      }
+      try (final var writer = HDF5Factory.open(input.toFile())) {
+        HictToMcoolConverter.writeHictAgpComponentMetadata(
+          writer, records, HDF5IntStorageFeatures.createDeflation(6));
+      }
+      System.out.println("Verified AGP chromosome layout and restored component metadata: " + input);
+      return 0;
     }
   }
 

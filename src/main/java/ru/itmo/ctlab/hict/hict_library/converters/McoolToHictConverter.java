@@ -1910,8 +1910,6 @@ public class McoolToHictConverter {
             " chromosome offset entries, but source chromosome metadata has " + sourceChromLayout.lengthsBp().length + " chromosomes"
         );
       }
-      final long[] sourceBinStarts = src.int64().readArray("/resolutions/" + resolution + "/bins/start");
-      final long[] sourceBinEnds = src.int64().readArray("/resolutions/" + resolution + "/bins/end");
       final long[] startBins = new long[contigCount];
       final long[] lengthBins = new long[contigCount];
       for (int i = 0; i < contigCount; i++) {
@@ -1920,6 +1918,7 @@ public class McoolToHictConverter {
           throw new IllegalStateException("Embedded HiCT AGP metadata has invalid scaffold id " + scaffoldId + " for contig " + metadata.contigNames()[i]);
         }
         Integer sourceChromId = sourceChromLayout.chromIdsByName().get(metadata.scaffoldNames()[scaffoldId]);
+        final boolean componentChromosome = sourceChromId == null;
         if (sourceChromId == null) {
           sourceChromId = sourceChromLayout.chromIdsByName().get(metadata.contigNames()[i]);
         }
@@ -1930,8 +1929,8 @@ public class McoolToHictConverter {
           );
         }
         final long sourceChromLengthBp = sourceChromLayout.lengthsBp()[sourceChromId];
-        final long startBp0 = metadata.scaffoldStartBp0()[i];
-        final long endBpExclusive = metadata.scaffoldEndBpExclusive()[i];
+        final long startBp0 = componentChromosome ? 0L : metadata.scaffoldStartBp0()[i];
+        final long endBpExclusive = componentChromosome ? metadata.contigLengthBp()[i] : metadata.scaffoldEndBpExclusive()[i];
         if (startBp0 < 0L || endBpExclusive <= startBp0 || endBpExclusive > sourceChromLengthBp) {
           throw new IllegalStateException(
             "Embedded HiCT AGP metadata maps contig '" + metadata.contigNames()[i] +
@@ -1939,17 +1938,13 @@ public class McoolToHictConverter {
               startBp0 + "," + endBpExclusive + "), chromosome length=" + sourceChromLengthBp
           );
         }
-        final var range = resolveSourceBinRange(
-          resolution,
-          sourceChromId,
-          startBp0,
-          endBpExclusive,
-          chromOffsets,
-          sourceBinStarts,
-          sourceBinEnds
-        );
-        startBins[i] = range.startBin();
-        lengthBins[i] = range.lengthBins();
+        // Match the exporter: floor(object start / resolution) plus the
+        // component's bins. Selecting by bin start >= object start skips the
+        // first bin whenever the AGP boundary is not aligned to resolution.
+        startBins[i] = chromOffsets[sourceChromId] + startBp0 / resolution;
+        lengthBins[i] = Math.min(
+          1L + (metadata.contigLengthBp()[i] - 1L) / resolution,
+          chromOffsets[sourceChromId + 1] - startBins[i]);
       }
       contigStartBinsByResolution.put(resolution, startBins);
       contigLengthBinsByResolution.put(resolution, lengthBins);
@@ -1979,7 +1974,10 @@ public class McoolToHictConverter {
           contigLengthBinsByResolution,
           stripesByResolution
         );
-        atusByContig.set(contigId, atus);
+        // Cooler pixels already contain the AGP orientation. Store basis ATUs
+        // in source orientation so the runtime contig direction applies once.
+        atusByContig.set(contigId, AgpCoolerLayout.orientedAtus(
+          atus, ContigDirection.values()[Math.toIntExact(metadata.directions()[contigId])]));
       });
 
       long totalAtuCount = 0L;

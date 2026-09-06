@@ -117,6 +117,18 @@ public class HictToMcoolConverter {
         synchronizedLogConsumer.accept("Applied AGP before export: " + resolvedAgpPath);
       }
 
+      if (!appliedAgpRecords.isEmpty()) {
+        final var layout = AgpCoolerLayout.buildAgpCoolerAssemblyLayout(
+          chunkedFile, appliedAgpRecords, selectedResolutions, synchronizedLogConsumer);
+        final var mappings = AgpCoolerLayout.buildAgpMappingSegmentsByResolution(
+          chunkedFile, options.inputPath(), appliedAgpRecords, selectedResolutions);
+        convertWithExplicitLayout(options, layout, mappings, synchronizedLogConsumer);
+        try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
+          writeHictAgpComponentMetadata(dst, appliedAgpRecords, resolveIntStorageFeatures(options, synchronizedLogConsumer));
+        }
+        return;
+      }
+
       final var assemblyLayout = buildCoolerAssemblyLayout(chunkedFile, selectedResolutions);
       final var compression = resolveIntStorageFeatures(options, synchronizedLogConsumer);
       final var floatCompression = resolveFloatStorageFeatures(options, synchronizedLogConsumer);
@@ -146,9 +158,6 @@ public class HictToMcoolConverter {
           writeChromsGroup(dst, ROOT_CHROMS_GROUP, assemblyLayout.chroms(), compression);
         }
         writeHictAssemblyMetadata(dst, assemblyLayout, compression);
-        if (!appliedAgpRecords.isEmpty()) {
-          writeHictAgpComponentMetadata(dst, appliedAgpRecords, compression);
-        }
         dst.string().write("/source_format", "hict");
         dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
 

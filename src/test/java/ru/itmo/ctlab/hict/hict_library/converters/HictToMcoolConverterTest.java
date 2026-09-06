@@ -1,6 +1,11 @@
 package ru.itmo.ctlab.hict.hict_library.converters;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import java.io.StringReader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
@@ -398,6 +403,120 @@ class HictToMcoolConverterTest {
       writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 3L, 1L, 2L, 3L, 3L});
       writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{11L, 5L, 2L, 9L, 4L, 3L, 7L});
     }
+  }
+
+  @Test
+  void agpRoundTripPreservesScaffoldOrderReversalAndUnalignedBoundaryBins() throws Exception {
+    final var source = tempDir.resolve("agp-source.mcool");
+    final var hict = tempDir.resolve("agp-source.hict.hdf5");
+    final var exported = tempDir.resolve("agp-export.mcool");
+    final var reopened = tempDir.resolve("agp-reopened.hict.hdf5");
+    final var agp = tempDir.resolve("layout.agp");
+    writeSyntheticMcool(source);
+    Files.writeString(agp, "scf\t1\t2000\t1\tW\tctgB\t1\t2000\t-\n"
+      + "scf\t2001\t2250\t2\tN\t250\tscaffold\tyes\tproximity_ligation\n"
+      + "scf\t2251\t4250\t3\tW\tctgA\t1\t2000\t+\n");
+    new McoolToHictConverter().convert(roundTripOptions(source, hict, null), ignored -> {});
+    new HictToMcoolConverter().convert(roundTripOptions(hict, exported, agp), ignored -> {});
+    try (final var reader = HDF5Factory.openForReading(exported.toFile())) {
+      assertArrayEquals(new String[]{"scf"}, reader.string().readArray("/resolutions/1000/chroms/name"));
+      assertArrayEquals(new long[]{4250}, reader.int64().readArray("/resolutions/1000/chroms/length"));
+      final var expected = new long[][]{{7,3,2,0,0}, {3,0,0,4,0}, {2,0,11,5,0}, {0,4,5,9,0}, {0,0,0,0,0}};
+      final var observed = new long[5][5];
+      final var rows = reader.int64().readArray("/resolutions/1000/pixels/bin1_id");
+      final var cols = reader.int64().readArray("/resolutions/1000/pixels/bin2_id");
+      final var counts = reader.int64().readArray("/resolutions/1000/pixels/count");
+      for (int i = 0; i < rows.length; i++) {
+        observed[(int) rows[i]][(int) cols[i]] = counts[i];
+        observed[(int) cols[i]][(int) rows[i]] = counts[i];
+      }
+      assertArrayEquals(expected, observed);
+    }
+    // Simulate an external pyramid builder dropping non-standard metadata.
+    try (final var writer = HDF5Factory.open(exported.toFile())) {
+      writer.object().delete("/hict_metadata");
+    }
+    assertEquals(0, new picocli.CommandLine(new ru.itmo.ctlab.hict.hict_server.tools.HictCli()).execute(
+      "convert", "annotate-agp", "--agp=" + agp, "--input=" + exported));
+    new McoolToHictConverter().convert(roundTripOptions(exported, reopened, null), ignored -> {});
+    try (final var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(reopened, 1, 2))) {
+      final var contigs = file.getAssemblyInfo().contigs();
+      assertEquals(List.of("ctgB", "ctgA"), contigs.stream().map(c -> c.descriptor().getContigName()).toList());
+      assertEquals("scf", file.getAssemblyInfo().scaffolds().get(0).scaffoldDescriptor().scaffoldName());
+      final var matrix = (MatrixQueries.LongMatrix) file.getMatrixQueries().getSubmatrix(
+        ResolutionDescriptor.fromBpResolution(1000L, file), 0, 0, 4, 4, false).matrix();
+      assertArrayEquals(new long[][]{{7,3,2,0}, {3,0,0,4}, {2,0,11,5}, {0,4,5,9}}, matrix.values());
+    }
+  }
+
+  @Test
+  void agpExportExcludesUnlistedContigs() throws Exception {
+    final var source = tempDir.resolve("subset.mcool");
+    final var hict = tempDir.resolve("subset.hict.hdf5");
+    final var exported = tempDir.resolve("subset-export.mcool");
+    final var agp = tempDir.resolve("subset.agp");
+    writeSyntheticMcool(source);
+    Files.writeString(agp, "onlyB\t1\t2000\t1\tW\tctgB\t1\t2000\t+\n");
+    new McoolToHictConverter().convert(roundTripOptions(source, hict, null), ignored -> {});
+    new HictToMcoolConverter().convert(roundTripOptions(hict, exported, agp), ignored -> {});
+    try (final var reader = HDF5Factory.openForReading(exported.toFile())) {
+      assertArrayEquals(new String[]{"onlyB"}, reader.string().readArray("/resolutions/1000/chroms/name"));
+      assertArrayEquals(new String[]{"ctgB"}, reader.string().readArray(HictToMcoolConverter.HICT_METADATA_AGP_COMPONENT_NAME_PATH));
+      assertArrayEquals(new long[]{3,7}, reader.int64().readArray("/resolutions/1000/pixels/count"));
+    }
+  }
+
+  @Test
+  void overlappingAgpFailsWithActionableCoordinates() {
+    final var error = assertThrows(IllegalArgumentException.class, () -> AGPProcessor.parseRecordsFromReader(new StringReader(
+      "debris\t1\t2000\t1\tW\tctgA\t1\t2000\t+\n"
+        + "debris\t1\t2000\t1\tW\tctgB\t1\t2000\t+\n")));
+    assertTrue(error.getMessage().contains("expected start 2001 and part 2"));
+  }
+
+  @Test
+  void annotationRejectsUnreorderedCoolerWithoutChangingMetadata() throws Exception {
+    final var source = tempDir.resolve("unreordered.mcool");
+    final var agp = tempDir.resolve("different.agp");
+    writeSyntheticMcool(source);
+    Files.writeString(agp, "other\t1\t2000\t1\tW\tctgB\t1\t2000\t+\n");
+    assertEquals(1, new picocli.CommandLine(new ru.itmo.ctlab.hict.hict_server.tools.HictCli()).execute(
+      "convert", "annotate-agp", "--agp=" + agp, "--input=" + source));
+    try (final var reader = HDF5Factory.openForReading(source.toFile())) {
+      assertFalse(reader.object().isGroup("/hict_metadata"));
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray("/chroms/name"));
+    }
+  }
+
+  @Test
+  void rawQueriesIncludeHiddenContigsBetweenVisibleContigs() throws Exception {
+    final var source = tempDir.resolve("hidden-middle.mcool");
+    final var hict = tempDir.resolve("hidden-middle.hict.hdf5");
+    writeSyntheticMcool(source);
+    try (final var writer = HDF5Factory.open(source.toFile())) {
+      for (final var root : List.of("", "/resolutions/1000")) {
+        writer.string().writeArray(root + "/chroms/name", new String[]{"a", "tiny", "b"});
+        writer.int64().writeArray(root + "/chroms/length", new long[]{1000,500,2000});
+      }
+      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset", new long[]{0,1,2,4});
+      writer.int64().writeArray("/resolutions/1000/bins/chrom", new long[]{0,1,2,2});
+      writer.int64().writeArray("/resolutions/1000/bins/start", new long[]{0,0,0,1000});
+      writer.int64().writeArray("/resolutions/1000/bins/end", new long[]{1000,500,1000,2000});
+    }
+    new McoolToHictConverter().convert(roundTripOptions(source, hict, null), ignored -> {});
+    try (final var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(hict, 1, 2))) {
+      final var resolution = ResolutionDescriptor.fromBpResolution(1000, file);
+      final var raw = (MatrixQueries.LongMatrix) file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 4, 4, false).matrix();
+      assertArrayEquals(new long[][]{{11,5,0,2},{5,9,4,0},{0,4,0,3},{2,0,3,7}}, raw.values());
+      final var visible = (MatrixQueries.LongMatrix) file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 3, 3, true).matrix();
+      assertArrayEquals(new long[][]{{11,0,2},{0,0,3},{2,3,7}}, visible.values());
+    }
+  }
+
+  private static ConversionOptions roundTripOptions(Path input, Path output, Path agp) {
+    return new ConversionOptions(input, output, List.of(1000L), 64, 1,
+      ConversionOptions.CompressionAlgorithm.DEFLATE, agp == null ? ConversionOptions.NO_AGP : agp.toString(),
+      agp != null, 2, false, ConversionOptions.ExportMode.INTERNAL);
   }
 
   private static int[] toIntArray(final long[] values) {

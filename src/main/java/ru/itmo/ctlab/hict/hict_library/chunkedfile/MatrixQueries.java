@@ -298,7 +298,11 @@ public class MatrixQueries {
     final List<ContigTree.Node> debugContigNodes;
     if (ASSERTIONS_ENABLED) {
       debugContigNodes = new ArrayList<>();
-      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+      if (excludeHiddenContigs) {
+        ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+      } else {
+        ContigTree.Node.traverseNode(es.segment(), debugContigNodes::add);
+      }
     } else {
       debugContigNodes = List.of();
     }
@@ -449,7 +453,7 @@ public class MatrixQueries {
       atus.addAll(firstContigRestATUs);
 
 
-      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
+      final java.util.function.Consumer<ContigTree.Node> collectIntermediateAtus = node -> {
         final var nodeContigId = node.getContigDescriptor().getContigId();
         if (nodeContigId != firstContigId && nodeContigId != lastContigId) {
           final var contigDirection = node.getTrueDirection();
@@ -466,7 +470,12 @@ public class MatrixQueries {
           };
           atus.addAll(processedATUs);
         }
-      });
+      };
+      if (excludeHiddenContigs) {
+        ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, collectIntermediateAtus);
+      } else {
+        ContigTree.Node.traverseNode(es.segment(), collectIntermediateAtus);
+      }
 
       final List<@NotNull ATUDescriptor> lastContigBeginningATUs = switch (lastContigDirection) {
         case FORWARD -> lastContigATUs.subList(0, indexOfATUContainingEndPx);

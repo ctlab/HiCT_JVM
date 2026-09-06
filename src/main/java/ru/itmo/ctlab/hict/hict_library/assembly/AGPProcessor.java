@@ -192,7 +192,47 @@ public class AGPProcessor {
       };
       parsedRecords.add(agpFileRecord);
     }
-    return parsedRecords.stream().sequential().toList();
+    validateLayout(parsedRecords);
+    return List.copyOf(parsedRecords);
+  }
+
+  /** Reject ambiguous coordinates before they can reorder a tree or mix contact bins. */
+  public static void validateLayout(final List<AGPFileRecord> records) {
+    final var completedObjects = new HashSet<String>();
+    String object = null;
+    long previousEnd = 0L;
+    int previousPart = 0;
+    for (int i = 0; i < records.size(); i++) {
+      final var record = records.get(i);
+      if (!record.getScaffoldName().equals(object)) {
+        if (object != null) completedObjects.add(object);
+        object = record.getScaffoldName();
+        if (completedObjects.contains(object)) {
+          throw new IllegalArgumentException("AGP record " + (i + 1) + ": object '" + object + "' occurs in multiple non-contiguous groups.");
+        }
+        previousEnd = 0L;
+        previousPart = 0;
+      }
+      if (record.getInterScaffoldStartIncl() != previousEnd + 1L
+        || record.getInterScaffoldEndIncl() < record.getInterScaffoldStartIncl()
+        || record.getPartNumber() != previousPart + 1) {
+        throw new IllegalArgumentException("AGP record " + (i + 1) + " for object '" + object
+          + "': expected start " + (previousEnd + 1L) + " and part " + (previousPart + 1)
+          + ", found start " + record.getInterScaffoldStartIncl() + " and part " + record.getPartNumber()
+          + ". Object coordinates must be contiguous and non-overlapping; correct the AGP before conversion.");
+      }
+      final long length = record.getInterScaffoldEndIncl() - record.getInterScaffoldStartIncl() + 1L;
+      if (record instanceof ContigAGPRecord contig
+        && (contig.getIntraContigStartBpIncl() < 1L
+          || contig.getIntraContigEndBpIncl() - contig.getIntraContigStartBpIncl() + 1L != length)) {
+        throw new IllegalArgumentException("AGP record " + (i + 1) + ": component and object lengths differ.");
+      }
+      if (record instanceof GapAGPRecord gap && gap.getGapLength() != length) {
+        throw new IllegalArgumentException("AGP record " + (i + 1) + ": gap and object lengths differ.");
+      }
+      previousEnd = record.getInterScaffoldEndIncl();
+      previousPart = record.getPartNumber();
+    }
   }
 
   public static void writeRecordsAsAgp(final @NotNull List<@NotNull AGPFileRecord> records,

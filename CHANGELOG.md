@@ -1,5 +1,14 @@
 # HiCT Changelog
 
+## Unreleased
+
+- Use the same AGP scaffold coordinates in internal and hictk-assisted Cooler exports, including scaffold order and omission of unlisted contigs.
+- Reject overlapping, discontinuous, or out-of-order AGP object records with actionable coordinates before applying the assembly.
+- Correct component boundary-bin selection and reversed component ATUs when reopening Cooler files with embedded AGP metadata.
+- Include hidden contigs in raw-bin matrix queries when requested, fixing shifted and zero-filled queries across small-contig boundaries.
+- Add `convert validate-agp` and `convert annotate-agp`. The bash/Slurm workflow validates the AGP before import and restores component metadata after hictk zoomify only after verifying all output chromosome orders and lengths.
+- Add synthetic matrix regression tests and reproducible GSE286495 runtime-versus-Cooler validation probes. See `docs/gse286495-agp-roundtrip-2026-09-06.md` for results and the malformed input AGP limitation.
+
 ## 1.0.190-a5f9213-webui_040c1a1
 
 Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
