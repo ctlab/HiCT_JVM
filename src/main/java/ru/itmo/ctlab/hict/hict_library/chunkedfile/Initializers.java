@@ -418,7 +418,7 @@ public class Initializers {
           final var scaffoldName = scaffoldId < scaffoldNames.length && scaffoldNames[(int) scaffoldId] != null && !scaffoldNames[(int) scaffoldId].isBlank()
             ? scaffoldNames[(int) scaffoldId]
             : "scaffold_" + scaffoldId;
-          final long spacerBp = scaffoldId < scaffoldSpacerBp.length && scaffoldSpacerBp[(int) scaffoldId] > 0L
+          final long spacerBp = scaffoldId < scaffoldSpacerBp.length && scaffoldSpacerBp[(int) scaffoldId] >= 0L
             ? scaffoldSpacerBp[(int) scaffoldId]
             : 1000L;
           final int groupSize = groupEndIndex - groupStartIndex;

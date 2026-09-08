@@ -230,6 +230,7 @@ public final class HictLauncherGui {
       new ConfigSpec("HICT_IMPORT_MAX_MEMORY_BYTES", "Import memory budget", "16g", PathKind.NONE),
       new ConfigSpec("HICT_EXPORT_MAX_MEMORY_BYTES", "Export memory budget", "16g", PathKind.NONE),
       new ConfigSpec("HICT_BUILD_RESOLUTION_PYRAMID", "Build resolution pyramid by default", "true", PathKind.NONE),
+      new ConfigSpec("HICT_EXPORT_GAP_LENGTH_BP", "AGP / FASTA output gap length, bp", "1000", PathKind.NONE),
       new ConfigSpec("HICT_TRACK_PRECOMPUTE_JOB_THREADS", "Track precompute job threads", "", PathKind.NONE),
       new ConfigSpec("HICT_TRACK_PRECOMPUTE_WORKER_THREADS", "Track precompute worker threads", "", PathKind.NONE),
       new ConfigSpec("HICT_MATRIX_QUERY_MAX_ELEMENTS", "Max matrix query elements", "", PathKind.NONE),
@@ -853,6 +854,14 @@ public final class HictLauncherGui {
         return;
       }
       showLogPanel();
+      try {
+        final var gap = getFieldValue("HICT_EXPORT_GAP_LENGTH_BP");
+        ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.requireGapLength(
+          gap.isBlank() ? 1000L : Long.parseLong(gap.trim()));
+      } catch (IllegalArgumentException ex) {
+        showError("AGP / FASTA output gap length must be a non-negative integer in base pairs", ex);
+        return;
+      }
       saveSettings();
 
       final Path dataDir;

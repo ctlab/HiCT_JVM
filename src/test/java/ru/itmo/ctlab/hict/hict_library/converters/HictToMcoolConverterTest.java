@@ -519,6 +519,61 @@ class HictToMcoolConverterTest {
       agp != null, 2, false, ConversionOptions.ExportMode.INTERNAL);
   }
 
+  @Test
+  void exportedAgpAndFastaUseIdenticalConfiguredGapsAndInclusiveEnds() throws Exception {
+    final var source = tempDir.resolve("gap-source.mcool");
+    final var hict = tempDir.resolve("gap-source.hict.hdf5");
+    final var fasta = tempDir.resolve("gap-source.fa");
+    writeSyntheticMcool(source);
+    Files.writeString(fasta, ">ctgA\n" + "A".repeat(2000) + "\n>ctgB\n" + "C".repeat(2000) + "\n");
+    new McoolToHictConverter().convert(roundTripOptions(source, hict, null), ignored -> {});
+    try (final var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(hict, 1, 2))) {
+      file.importAGP(new StringReader("scf\t1\t2000\t1\tW\tctgB\t1\t2000\t-\n"
+        + "scf\t2001\t2500\t2\tN\t500\tscaffold\tyes\tproximity_ligation\n"
+        + "scf\t2501\t4500\t3\tW\tctgA\t1\t2000\t+\n"));
+      assertEquals(500, file.getAssemblyInfo().scaffolds().get(0).scaffoldDescriptor().spacerLength());
+      final var assemblyBefore = file.getAssemblyInfo().contigs();
+      assertThrows(IllegalArgumentException.class, () -> file.importAGP(new StringReader(
+        "scf\t1\t2000\t1\tW\tctgA\t1\t2000\t+\n"
+          + "scf\t2001\t3000\t2\tW\tctgB\t1\t1000\t+\n")));
+      assertEquals(assemblyBefore, file.getAssemblyInfo().contigs());
+      assertThrows(IllegalArgumentException.class, () -> file.importAGP(new StringReader(
+        "scf\t1\t2000\t1\tW\tctgA\t2\t2001\t+\n")));
+      assertEquals(assemblyBefore, file.getAssemblyInfo().contigs());
+      for (long gap : new long[]{0, 1, 500, 1000, 2345}) {
+        final var records = file.getAgpProcessor().getAGPRecords(gap);
+        assertEquals(gap == 0 ? 2 : 3, records.size());
+        final var first = (AGPProcessor.ContigAGPRecord) records.get(0);
+        final var last = (AGPProcessor.ContigAGPRecord) records.get(records.size() - 1);
+        assertEquals(1, first.getInterScaffoldStartIncl());
+        assertEquals(2000, first.getInterScaffoldEndIncl());
+        assertEquals(2000, first.getIntraContigEndBpIncl());
+        assertEquals(2001 + gap, last.getInterScaffoldStartIncl());
+        assertEquals(4000 + gap, last.getInterScaffoldEndIncl());
+        final var sequence = file.getFastaProcessor().exportAssembly(fasta, gap).lines()
+          .filter(line -> !line.startsWith(">"))
+          .collect(java.util.stream.Collectors.joining());
+        assertEquals("G".repeat(2000) + "N".repeat((int) gap) + "A".repeat(2000), sequence);
+        assertEquals(sequence.length(), last.getInterScaffoldEndIncl());
+        final var text = records.stream().map(Object::toString).collect(java.util.stream.Collectors.joining("\n"));
+        assertEquals(records, AGPProcessor.parseRecordsFromReader(new StringReader(text)));
+      }
+      assertEquals(500, ((AGPProcessor.GapAGPRecord) file.getAgpProcessor().getAssemblyAGPRecords().get(1)).getGapLength());
+      final var key = ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.GAP_LENGTH_KEY;
+      final var previous = System.getProperty(key);
+      try {
+        System.setProperty(key, "1234");
+        final var text = file.getAgpProcessor().getAGPStream().collect(java.util.stream.Collectors.joining());
+        assertTrue(text.contains("\tN\t1234\t"));
+        assertTrue(file.getFastaProcessor().exportAssembly(fasta).lines()
+          .filter(line -> !line.startsWith(">"))
+          .collect(java.util.stream.Collectors.joining()).contains("N".repeat(1234)));
+      } finally {
+        if (previous == null) System.clearProperty(key); else System.setProperty(key, previous);
+      }
+    }
+  }
+
   private static int[] toIntArray(final long[] values) {
     final var out = new int[values.length];
     for (int i = 0; i < values.length; i++) {

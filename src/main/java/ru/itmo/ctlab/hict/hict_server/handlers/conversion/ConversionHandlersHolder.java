@@ -689,7 +689,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
         }
         final var chunkedFile = chunkedFileWrapper.getChunkedFile();
         final var builder = new StringBuilder();
-        chunkedFile.getAgpProcessor().getAGPStream(1000L).sequential().forEach(builder::append);
+        chunkedFile.getAgpProcessor().getAGPStream().forEach(builder::append);
         try {
             final var path = Files.createTempFile("hict-current-assembly-", ".agp");
             Files.writeString(path, builder.toString(), StandardCharsets.UTF_8);

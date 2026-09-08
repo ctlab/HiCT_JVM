@@ -1758,6 +1758,11 @@ components:
     GetFastaForAssemblyRequest:
       type: object
       properties:
+        defaultSpacerLength:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Output gap length in bp. Defaults to HICT_EXPORT_GAP_LENGTH_BP (1000 if unset). Zero joins components without gaps.
         source:
           type: string
           enum: [PRIMARY, SECONDARY]
@@ -1778,7 +1783,11 @@ components:
     GetAgpRequest:
       type: object
       properties:
-        defaultSpacerLength: { type: integer, format: int64, default: 1000 }
+        defaultSpacerLength:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Output gap length in bp. Defaults to HICT_EXPORT_GAP_LENGTH_BP (1000 if unset). Zero omits gap rows.
     LoadAgpRequest:
       type: object
       properties:

@@ -318,7 +318,6 @@ public class McoolToHictConverter {
     final String[] scaffoldNames = scaffoldIds.keySet().toArray(String[]::new);
     final long[] scaffoldLengthsBp = new long[scaffoldNames.length];
     final long[] scaffoldSpacerBp = new long[scaffoldNames.length];
-    Arrays.fill(scaffoldSpacerBp, 1000L);
     for (final var record : agpRecords) {
       final var scaffoldId = scaffoldIds.get(record.getScaffoldName());
       if (scaffoldId == null) {

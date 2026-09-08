@@ -583,7 +583,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw new IllegalStateException("Link a FASTA file before exporting FASTA");
           }
           log.info("Exporting assembly FASTA for {} from {}", source, fastaPathWrapper.getPath());
-          return chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath());
+          final var request = ctx.body() == null ? null : ctx.body().asJsonObject();
+          final long gapLength = request == null
+            ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()
+            : request.getLong("defaultSpacerLength", ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
+          return chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath(), gapLength);
         },
         fasta -> ctx.response()
           .setChunked(true)
@@ -707,7 +711,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }
       final @NotNull var requestBody = ctx.body();
       final @NotNull var requestJSON = requestBody.asJsonObject();
-      final long defaultSpacerLength = requestJSON.getLong("defaultSpacerLength", 1000L);
+      final long defaultSpacerLength = requestJSON.getLong("defaultSpacerLength",
+        ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.EXPORT,
@@ -1010,7 +1015,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final var recordsByScaffold = new LinkedHashMap<String, List<AGPProcessor.ContigAGPRecord>>();
     int skippedVisibleRecords = 0;
 
-    for (final var record : source.getAgpProcessor().getAGPRecords(1000L)) {
+    for (final var record : source.getAgpProcessor().getAssemblyAGPRecords()) {
       if (!(record instanceof AGPProcessor.ContigAGPRecord sourceRecord)) {
         continue;
       }

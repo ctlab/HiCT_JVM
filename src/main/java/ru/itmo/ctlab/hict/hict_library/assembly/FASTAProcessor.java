@@ -179,6 +179,11 @@ public class FASTAProcessor {
   }
 
   public @NotNull String exportAssembly(final @NotNull Path fastaPath) {
+    return exportAssembly(fastaPath, AssemblyExportSettings.gapLengthBp());
+  }
+
+  public @NotNull String exportAssembly(final @NotNull Path fastaPath, final long gapLengthBp) {
+    AssemblyExportSettings.requireGapLength(gapLengthBp);
     final var sequences = readSequenceContents(fastaPath);
     final var sequenceNameAliases = buildSourceNameAliases(sequences);
     final var records = new ArrayList<FASTARecord>();
@@ -225,11 +230,11 @@ public class FASTAProcessor {
           }
           currentScaffoldName = scaffoldName;
           currentScaffoldEnd = coveringScaffold.scaffoldBordersBP().endBP();
-          currentSpacerLength = scaffoldDescriptor.spacerLength();
+          currentSpacerLength = gapLengthBp;
           scaffoldHasContent = false;
         }
         if (scaffoldHasContent && currentSpacerLength > 0) {
-          currentScaffold.append("N".repeat((int) Math.min(Integer.MAX_VALUE, currentSpacerLength)));
+          currentScaffold.append("N".repeat(Math.toIntExact(currentSpacerLength)));
         }
         currentScaffold.append(sequence);
         scaffoldHasContent = true;

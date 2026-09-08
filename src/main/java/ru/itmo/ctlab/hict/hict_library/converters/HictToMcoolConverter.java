@@ -734,7 +734,7 @@ public class HictToMcoolConverter {
     final var scaffoldSpacersArray = new long[scaffoldNames.length];
     for (int i = 0; i < scaffoldNames.length; i++) {
       scaffoldLengthsArray[i] = scaffoldLengths.get(i);
-      scaffoldSpacersArray[i] = scaffoldSpacers.get(i) > 0L ? scaffoldSpacers.get(i) : 1000L;
+      scaffoldSpacersArray[i] = scaffoldSpacers.get(i);
     }
 
     dst.string().writeArray(HICT_METADATA_AGP_COMPONENT_NAME_PATH, componentNames);

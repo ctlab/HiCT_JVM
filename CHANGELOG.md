@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Share AGP and assembly FASTA output gap configuration through `HICT_EXPORT_GAP_LENGTH_BP` and the Launcher (default 1000 bp); explicit API overrides use `defaultSpacerLength`. Preserve smaller imported gaps in Cooler metadata.
+- Preserve AGP component types, unknown-size gaps and multiple linkage evidence values, validate inclusive coordinates and gap/linkage rules, and reject unsupported component slices before mutating the assembly.
+- Verify full atroparvus AGP/FASTA exports against original ENA contigs at 500, 1000 and 2345 bp gaps, including native-disabled export. The supplied legacy FASTA has one missing base per component; current Java exports retain all bases. See `docs/agp-fasta-validation-2026-09-09.md` for evidence and compatibility limits.
 - Use the same AGP scaffold coordinates in internal and hictk-assisted Cooler exports, including scaffold order and omission of unlisted contigs.
 - Reject overlapping, discontinuous, or out-of-order AGP object records with actionable coordinates before applying the assembly.
 - Correct component boundary-bin selection and reversed component ATUs when reopening Cooler files with embedded AGP metadata.
