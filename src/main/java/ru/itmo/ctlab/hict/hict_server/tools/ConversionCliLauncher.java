@@ -47,7 +47,7 @@ public class ConversionCliLauncher {
         ConversionOptions.CompressionAlgorithm.parse(parser.value("compression-algorithm", "deflate")),
         parser.value("agp", ConversionOptions.NO_AGP),
         parser.booleanOption("apply-agp", false),
-        parser.integer("parallelism", Runtime.getRuntime().availableProcessors()),
+        parser.integer("parallelism", -1),
         parser.booleanOption("all-resolutions", false),
         parser.booleanOption("build-resolution-pyramid", true),
         parser.booleanOption("balance-input-coolers", true),
@@ -165,6 +165,9 @@ public class ConversionCliLauncher {
       || message.startsWith("Preparing ")
       || message.startsWith("Applied AGP ")
       || message.startsWith("HiCT native processing:")
+      || message.startsWith("HiCT tool threads:")
+      || message.startsWith("HiCT tool command:")
+      || message.startsWith("HiCT tool limitation:")
       || message.startsWith("Using HiCT -> Cooler temporary directory:")
       || message.startsWith("HiCT export COO")
       || message.startsWith("COO sort batch size=")

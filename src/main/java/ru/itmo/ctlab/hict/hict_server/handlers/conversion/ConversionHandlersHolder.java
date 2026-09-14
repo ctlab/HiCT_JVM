@@ -567,21 +567,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
     }
 
     private static int defaultConversionParallelism() {
-        final var configured = firstNonBlank(
-          System.getProperty("hict.conversion.threads"),
-          System.getenv("HICT_CONVERSION_THREADS"),
-          System.getenv("HICT_CONVERSION_PARALLELISM")
-        );
-        if (configured != null) {
-            try {
-                final var parsed = Integer.parseInt(configured.trim());
-                if (parsed > 0) {
-                    return parsed;
-                }
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return Runtime.getRuntime().availableProcessors();
+        return ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(-1, "HICT_CONVERSION_THREADS");
     }
 
     private static String firstNonBlank(final String... values) {

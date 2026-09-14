@@ -225,7 +225,9 @@ public final class HictLauncherGui {
       new ConfigSpec("HICT_WORKERS_TRACK_MAX", "Track workers max", "", PathKind.NONE),
       new ConfigSpec("HICT_WORKERS_EXPORT_MIN", "Export workers min", "", PathKind.NONE),
       new ConfigSpec("HICT_WORKERS_EXPORT_MAX", "Export workers max", "", PathKind.NONE),
-      new ConfigSpec("HICT_CONVERSION_THREADS", "Conversion threads", "", PathKind.NONE),
+      new ConfigSpec("HICT_CONVERSION_THREADS", "Conversion threads (-1 = auto)", "-1", PathKind.NONE),
+      new ConfigSpec("HICT_HICTK_THREADS", "hictk threads (-1 = auto)", "-1", PathKind.NONE),
+      new ConfigSpec("HICT_ALIGNMENT_THREADS", "minimap2 / mm2-plus threads (-1 = auto)", "-1", PathKind.NONE),
       new ConfigSpec("HICT_CONVERSION_MAX_MEMORY_BYTES", "Shared conversion memory budget", "16g", PathKind.NONE),
       new ConfigSpec("HICT_IMPORT_MAX_MEMORY_BYTES", "Import memory budget", "16g", PathKind.NONE),
       new ConfigSpec("HICT_EXPORT_MAX_MEMORY_BYTES", "Export memory budget", "16g", PathKind.NONE),
@@ -854,6 +856,14 @@ public final class HictLauncherGui {
         return;
       }
       showLogPanel();
+      try {
+        for (final String key : List.of("HICT_CONVERSION_THREADS", "HICT_HICTK_THREADS", "HICT_ALIGNMENT_THREADS")) {
+          ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.parse(getFieldValue(key), key);
+        }
+      } catch (IllegalArgumentException ex) {
+        showError("Invalid thread count: use -1 for automatic CPU allocation or a positive integer", ex);
+        return;
+      }
       try {
         final var gap = getFieldValue("HICT_EXPORT_GAP_LENGTH_BP");
         ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.requireGapLength(

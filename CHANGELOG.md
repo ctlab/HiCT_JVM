@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Default bundled hictk, minimap2 and mm2-plus threading to the server CPU budget, capped by Slurm CPUs per task and JVM-visible CPUs. Add validated Launcher settings `HICT_HICTK_THREADS` and `HICT_ALIGNMENT_THREADS`, and make conversion auto-threading honor `HICT_CONVERSION_THREADS` consistently (all default to -1).
+- Apply supported thread flags to toolbox commands as well as conversion/dotplot pipelines, remove arbitrary dotplot thread caps, and retain explicit toolbox overrides. Log the effective command, CPU budget, and upstream serial/two-thread Cooler limitations.
+- Default WebUI conversion and alignment requests to server-side auto-detection instead of the browser CPU count. Keep Bash/Slurm script aliases identical, use allocation-aware defaults outside and inside Slurm, retain import memory safety limits, and include balancing iterations in progress logs.
+- Include the base resolution explicitly in dotplot hictk zoomify requests so copying the base does not displace the first requested coarse resolution.
 - Share AGP and assembly FASTA output gap configuration through `HICT_EXPORT_GAP_LENGTH_BP` and the Launcher (default 1000 bp); explicit API overrides use `defaultSpacerLength`. Preserve smaller imported gaps in Cooler metadata.
 - Preserve AGP component types, unknown-size gaps and multiple linkage evidence values, validate inclusive coordinates and gap/linkage rules, and reject unsupported component slices before mutating the assembly.
 - Verify full atroparvus AGP/FASTA exports against original ENA contigs at 500, 1000 and 2345 bp gaps, including native-disabled export. The supplied legacy FASTA has one missing base per component; current Java exports retain all bases. See `docs/agp-fasta-validation-2026-09-09.md` for evidence and compatibility limits.

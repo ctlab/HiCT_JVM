@@ -102,9 +102,7 @@ public record ConversionOptions(
     if (agpPath == null) {
       agpPath = NO_AGP;
     }
-    if (parallelism <= 0) {
-      parallelism = Math.max(1, Runtime.getRuntime().availableProcessors());
-    }
+    parallelism = ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(parallelism, "HICT_CONVERSION_THREADS");
     if (exportMode == null) {
       exportMode = ExportMode.AUTO;
     }

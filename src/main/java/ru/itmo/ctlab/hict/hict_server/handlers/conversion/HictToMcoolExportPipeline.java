@@ -389,7 +389,7 @@ public final class HictToMcoolExportPipeline {
         ", hictkChunkSize=" + hictkChunkSize +
         ", output=" + coolPath.getFileName()
     );
-    final var process = new ProcessBuilder(command)
+    final var process = new ProcessBuilder(BundledToolThreads.hictk(command, logger))
       .directory(workDirectory.toFile())
       .redirectErrorStream(true)
       .start();
@@ -1536,7 +1536,7 @@ public final class HictToMcoolExportPipeline {
                                           final @NotNull Consumer<String> logger,
                                           final @NotNull Consumer<Process> processSink,
                                           final @NotNull BooleanSupplier cancellationRequested) throws Exception {
-    final var process = new ProcessBuilder(command)
+    final var process = new ProcessBuilder(BundledToolThreads.hictk(command, logger))
       .directory(workDirectory.toFile())
       .redirectErrorStream(true)
       .start();
@@ -1912,10 +1912,7 @@ public final class HictToMcoolExportPipeline {
   }
 
   private static int resolveToolThreads(final int parallelism) {
-    if (parallelism <= 0) {
-      return Math.max(1, Runtime.getRuntime().availableProcessors());
-    }
-    return Math.max(1, parallelism);
+    return ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(parallelism, "HICT_CONVERSION_THREADS");
   }
 
   private static int resolveCooSortBatchSize(final int chunkSize,

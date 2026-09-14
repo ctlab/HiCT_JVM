@@ -1167,7 +1167,7 @@ public final class HictkConversionPipeline {
                                           final @NotNull BooleanSupplier cancellationRequested) throws Exception {
     checkCancelled(cancellationRequested);
     logger.accept("Executing external command: " + String.join(" ", command));
-    final var process = new ProcessBuilder(command)
+    final var process = new ProcessBuilder(BundledToolThreads.hictk(command, logger))
       .directory(workingDirectory.toFile())
       .redirectErrorStream(true)
       .start();
@@ -1278,11 +1278,7 @@ public final class HictkConversionPipeline {
   }
 
   private static int normalizeParallelism(final int parallelism) {
-    final var availableProcessors = Math.max(1, Runtime.getRuntime().availableProcessors());
-    if (parallelism <= 0) {
-      return availableProcessors;
-    }
-    return Math.max(1, Math.min(parallelism, availableProcessors));
+    return ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(parallelism, "HICT_CONVERSION_THREADS");
   }
 
   private static int normalizeHictkCompressionLevel(final int compressionLevel) {

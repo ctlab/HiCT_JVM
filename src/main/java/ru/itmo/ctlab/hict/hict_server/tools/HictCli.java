@@ -560,7 +560,7 @@ public class HictCli implements Runnable {
     commandLine.add(command);
     commandLine.addAll(Arrays.asList(args).subList(1, args.length));
     try {
-      final var process = new ProcessBuilder(commandLine)
+      final var process = new ProcessBuilder(ru.itmo.ctlab.hict.hict_server.handlers.conversion.BundledToolThreads.toolbox(commandLine, tool, System.err::println))
         .inheritIO()
         .start();
       return process.waitFor();
@@ -599,6 +599,8 @@ public class HictCli implements Runnable {
     out.println("  hict toolbox mm2-plus-avx512 <mm2-plus arguments...>");
     out.println();
     out.println("The command forwards all remaining arguments to the selected executable.");
+    out.println("Supported commands default to allocated CPUs; HICT_HICTK_THREADS / HICT_ALIGNMENT_THREADS override auto (-1).");
+    out.println("Explicit -t/--threads overrides the environment, bounded by the CPU/Slurm allocation.");
   }
 
   private static void printToolNotice(final String tool, final String command) {
@@ -730,8 +732,8 @@ public class HictCli implements Runnable {
 
     @Option(
       names = "--parallelism",
-      defaultValue = "0",
-      description = "Number of worker threads (0 or -1 = auto)."
+      defaultValue = "-1",
+      description = "Worker threads (-1 or 0 = HICT_CONVERSION_THREADS or automatic CPU/Slurm allocation)."
     )
     int parallelism;
 
@@ -881,6 +883,9 @@ public class HictCli implements Runnable {
         || message.startsWith("Applied AGP ")
         || message.startsWith("Applied assembly ")
         || message.startsWith("HiCT native processing:")
+        || message.startsWith("HiCT tool threads:")
+        || message.startsWith("HiCT tool command:")
+        || message.startsWith("HiCT tool limitation:")
         || message.startsWith("hictk-assisted export resources:")
         || message.startsWith("Using HiCT -> Cooler temporary directory:")
         || message.startsWith("HiCT export COO sort batch size=")

@@ -1980,7 +1980,7 @@ components:
         balanceExportedCoolers:
           type: boolean
           default: true
-        parallelism: { type: integer }
+        parallelism: { type: integer, default: -1, minimum: -1, description: "-1 or 0 uses server CPU/Slurm allocation and HICT_CONVERSION_THREADS." }
       required: [filename]
     StartBatchConversionRequest:
       type: object
@@ -1989,7 +1989,7 @@ components:
           type: array
           items: { type: string }
         parallelJobs: { type: integer, default: 1 }
-        parallelism: { type: integer }
+        parallelism: { type: integer, default: -1, minimum: -1, description: "-1 or 0 uses server CPU/Slurm allocation and HICT_CONVERSION_THREADS." }
         overwrite: { type: boolean, default: false }
         resolutions: { type: string }
         compression: { type: integer, default: 6 }
@@ -2068,8 +2068,14 @@ components:
           default: 0
         alignmentThreads:
           type: integer
+          default: -1
+          minimum: -1
+          description: "-1 or 0 uses server CPU/Slurm allocation and HICT_ALIGNMENT_THREADS."
         conversionThreads:
           type: integer
+          default: -1
+          minimum: -1
+          description: "-1 or 0 uses server CPU/Slurm allocation and HICT_CONVERSION_THREADS."
         overwrite:
           type: boolean
           default: false

@@ -253,6 +253,8 @@ public final class SelfDotplotPipeline {
       command.add("--nice-steps");
     } else {
       command.add("--resolutions");
+      // hictk copy-base-resolution replaces the first requested level with the base.
+      command.add(Integer.toString(options.binSize()));
       zoomResolutions.stream().map(String::valueOf).forEach(command::add);
     }
     command.add(cool.toString());
@@ -268,7 +270,7 @@ public final class SelfDotplotPipeline {
                                  final @NotNull Consumer<Process> processSink,
                                  final @NotNull BooleanSupplier cancellationRequested) throws IOException, InterruptedException {
     logger.accept("Executing: " + String.join(" ", command) + " > " + outputPaf);
-    final var process = new ProcessBuilder(command)
+    final var process = new ProcessBuilder(BundledToolThreads.aligner(command, logger))
       .directory(workingDirectory.toFile())
       .redirectOutput(outputPaf.toFile())
       .redirectErrorStream(false)
@@ -319,7 +321,7 @@ public final class SelfDotplotPipeline {
                                  final @NotNull Consumer<Process> processSink,
                                  final @NotNull BooleanSupplier cancellationRequested) throws IOException, InterruptedException {
     logger.accept("Executing: " + String.join(" ", command));
-    final var process = new ProcessBuilder(command)
+    final var process = new ProcessBuilder(BundledToolThreads.hictk(command, logger))
       .directory(workingDirectory.toFile())
       .redirectErrorStream(true)
       .start();
@@ -961,11 +963,11 @@ public final class SelfDotplotPipeline {
   }
 
   private static int normalizeThreads(final int threads) {
-    return Math.max(1, Math.min(64, threads));
+    return ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(threads, "HICT_ALIGNMENT_THREADS");
   }
 
   private static int normalizeHictkLoadThreads(final int threads) {
-    return Math.max(2, Math.min(24, threads));
+    return Math.max(2, ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(threads, "HICT_HICTK_THREADS"));
   }
 
   private static long safeSize(final @NotNull Path path) {
@@ -1051,6 +1053,8 @@ public final class SelfDotplotPipeline {
     @NotNull String alignerPreference
   ) {
     public Options {
+      alignmentThreads = ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(alignmentThreads, "HICT_ALIGNMENT_THREADS");
+      conversionThreads = ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(conversionThreads, "HICT_CONVERSION_THREADS");
       if (binSize <= 0) {
         throw new IllegalArgumentException("binSize must be positive");
       }
