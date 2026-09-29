@@ -168,41 +168,25 @@ public class ContigTree implements Iterable<ContigTree.Node> {
 
 
     public static @Nullable Node leftmost(final @Nullable Node t) {
-      if (t == null) {
-        return null;
-      }
-      var node = t;
-      while (true) {
-        final @Nullable Node candidate;
-        if (node.needsChangingDirection) {
-          candidate = node.right;
-        } else {
-          candidate = node.left;
-        }
-        if (candidate == null) {
-          return node;
-        }
-        node = candidate;
-      }
+      return extremeNode(t, false);
     }
 
     public static @Nullable Node rightmost(final @Nullable Node t) {
-      if (t == null) {
-        return null;
-      }
+      return extremeNode(t, true);
+    }
+
+    private static @Nullable Node extremeNode(final @Nullable Node t, final boolean rightmost) {
       var node = t;
-      while (true) {
-        final @Nullable Node candidate;
-        if (!node.needsChangingDirection) {
-          candidate = node.right;
-        } else {
-          candidate = node.left;
-        }
+      while (node != null) {
+        // Propagate ancestor reversals before choosing a child or reading its direction.
+        node = node.push();
+        final var candidate = rightmost ? node.right : node.left;
         if (candidate == null) {
           return node;
         }
         node = candidate;
       }
+      return null;
     }
 
     public static Node createNodeFromDescriptor(final ContigDescriptor contigDescriptor, final ContigDirection contigDirection) {
@@ -350,37 +334,26 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     }
 
     public static @Nullable Node leftmostVisibleNode(final Node node, final ResolutionDescriptor resolutionDescriptor) {
-      if (node != null) {
-        final @Nullable var leftSonVisibleNode = leftmostVisibleNode(node.needsChangingDirection ? node.right : node.left, resolutionDescriptor);
-        if (leftSonVisibleNode == null) {
-          if (ContigHideType.SHOWN.equals(node.getContigDescriptor().getPresenceAtResolution().get(resolutionDescriptor.getResolutionOrderInArray()))) {
-            return node;
-          } else {
-            return leftmostVisibleNode(node.needsChangingDirection ? node.left : node.right, resolutionDescriptor);
-          }
-        } else {
-          return leftSonVisibleNode;
-        }
-      } else {
-        return null;
-      }
+      return extremeVisibleNode(node, resolutionDescriptor, false);
     }
 
     public static @Nullable Node rightmostVisibleNode(final Node node, final ResolutionDescriptor resolutionDescriptor) {
-      if (node != null) {
-        final @Nullable var rightSonVisibleNode = rightmostVisibleNode(node.needsChangingDirection ? node.left : node.right, resolutionDescriptor);
-        if (rightSonVisibleNode == null) {
-          if (ContigHideType.SHOWN.equals(node.getContigDescriptor().getPresenceAtResolution().get(resolutionDescriptor.getResolutionOrderInArray()))) {
-            return node;
-          } else {
-            return rightmostVisibleNode(node.needsChangingDirection ? node.right : node.left, resolutionDescriptor);
-          }
-        } else {
-          return rightSonVisibleNode;
-        }
-      } else {
+      return extremeVisibleNode(node, resolutionDescriptor, true);
+    }
+
+    private static @Nullable Node extremeVisibleNode(final Node node, final ResolutionDescriptor resolutionDescriptor, final boolean rightmost) {
+      if (node == null) {
         return null;
       }
+      final var current = node.push();
+      final var candidate = extremeVisibleNode(rightmost ? current.right : current.left, resolutionDescriptor, rightmost);
+      if (candidate != null) {
+        return candidate;
+      }
+      if (ContigHideType.SHOWN.equals(current.contigDescriptor.getPresenceAtResolution().get(resolutionDescriptor.getResolutionOrderInArray()))) {
+        return current;
+      }
+      return extremeVisibleNode(rightmost ? current.left : current.right, resolutionDescriptor, rightmost);
     }
 
     public @NotNull Node leftmostVisibleNode(final @NotNull ResolutionDescriptor resolutionDescriptor) {
