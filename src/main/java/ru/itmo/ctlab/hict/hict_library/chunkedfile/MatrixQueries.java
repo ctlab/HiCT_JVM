@@ -270,6 +270,25 @@ public class MatrixQueries {
     return result;
   }
 
+  // Endpoints must contribute bins in the queried coordinate system. Short
+  // contigs may have zero bins at this resolution, even in an exposed segment.
+  static ContigTree.Node nonEmptyEndpoint(final ContigTree.Node segment,
+      final ResolutionDescriptor resolution, final QueryLengthUnit units, final boolean last) {
+    var node = segment;
+    while (node != null) {
+      node = node.push();
+      final var preferred = last ? node.getRight() : node.getLeft();
+      if (preferred != null && preferred.getSubtreeLengthInUnits(units, resolution) > 0) {
+        node = preferred;
+      } else if (node.getContigDescriptor().getLengthInUnits(units, resolution) > 0) {
+        return node;
+      } else {
+        node = last ? node.getLeft() : node.getRight();
+      }
+    }
+    throw new IllegalArgumentException("No non-empty contig in query segment");
+  }
+
   // TODO: Implement
   public List<ATUDescriptor> getATUsForRange(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
@@ -309,7 +328,7 @@ public class MatrixQueries {
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
-    final var firstContigNode = excludeHiddenContigs ? es.segment().leftmostVisibleNode(resolutionDescriptor) : es.segment().leftmost();
+    final var firstContigNode = nonEmptyEndpoint(es.segment(), resolutionDescriptor, units, false);
     final var firstContigDescriptor = firstContigNode.getContigDescriptor();
     final var firstContigATUs = firstContigDescriptor.getAtus().get(resolutionOrder);
     final var firstContigATUPrefixSum = firstContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
@@ -317,7 +336,7 @@ public class MatrixQueries {
     final var firstContigId = firstContigDescriptor.getContigId();
 
     final var deltaBetweenRightPxAndExposedSegment = (lessSize + segmentSize) - endPx;
-    final var lastContigNode = excludeHiddenContigs ? es.segment().rightmostVisibleNode(resolutionDescriptor) : es.segment().rightmost();
+    final var lastContigNode = nonEmptyEndpoint(es.segment(), resolutionDescriptor, units, true);
     final var lastContigDescriptor = lastContigNode.getContigDescriptor();
     final var lastContigATUs = lastContigDescriptor.getAtus().get(resolutionOrder);
     final var lastContigATUPrefixSum = lastContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
