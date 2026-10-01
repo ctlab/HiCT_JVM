@@ -1,0 +1,3054 @@
+{
+  "Before": [
+    {
+      "input": "/mnt/Models/HiCT/data/4DNFIM351CAA_HomoSapiens_HiC_1kb.hict.hdf5",
+      "openSeconds": 9.153499655,
+      "resolutions": 13,
+      "contigs": 24,
+      "nonFiniteWeights": 729222,
+      "queries": 156,
+      "sha256": "9b0f9b4aa091e9ba353381d162564fe0e5314e45d030529b77578a0a27f31b9e",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.258947204
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002052356
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 3.81606215
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000246794
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.824778311
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000254515
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.118601817
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000237754
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.030252582
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000159663
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003167185
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000166993
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001787941
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000140882
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001034128
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000138112
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000638121
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000138093
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000477408
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000135932
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000396527
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000132822
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000353546
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000118133
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000324805
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000129732
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000329046
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002399031
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.089901352
+        }
+      ],
+      "dataset": "human",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/4DNFIM351CAA_HomoSapiens_HiC_1kb.hict.hdf5",
+      "openSeconds": 9.342262833,
+      "resolutions": 13,
+      "contigs": 24,
+      "nonFiniteWeights": 729222,
+      "queries": 156,
+      "sha256": "9b0f9b4aa091e9ba353381d162564fe0e5314e45d030529b77578a0a27f31b9e",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.259802931
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002155916
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 3.94182355
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000294035
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.868874398
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000287135
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.127826157
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000251014
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.03171463
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000195643
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00311734
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000150513
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001704427
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000134872
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001007266
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000143783
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000693361
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000147792
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000675241
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000262624
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000534729
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000187793
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000362546
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000122842
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000362526
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000135612
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000303135
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002729274
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.096270858
+        }
+      ],
+      "dataset": "human",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/4DNFIM351CAA_HomoSapiens_HiC_1kb.hict.hdf5",
+      "openSeconds": 9.242093967,
+      "resolutions": 13,
+      "contigs": 24,
+      "nonFiniteWeights": 729222,
+      "queries": 156,
+      "sha256": "9b0f9b4aa091e9ba353381d162564fe0e5314e45d030529b77578a0a27f31b9e",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.27356346
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001842439
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 3.868098289
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000247564
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.837903547
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000219813
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.122145683
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000251214
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.032126122
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000198813
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003108337
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000152402
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001691785
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000139802
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001020386
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000133272
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000610929
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000146022
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000536008
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000161173
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000454536
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000143423
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000356565
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000119732
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000444626
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000186913
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000437047
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002809352
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.092847473
+        }
+      ],
+      "dataset": "human",
+      "run": 3
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/RHINO_1k.mcool.hict.hdf5",
+      "openSeconds": 5.031265421,
+      "resolutions": 12,
+      "contigs": 1075,
+      "nonFiniteWeights": 1106129,
+      "queries": 144,
+      "sha256": "893d2740023157858087527d9742b70ac7ee502ff36d84b7bd16be82e5ea8eae",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.755283581
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003520031
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.066049308
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000307804
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.026723807
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000331705
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.011062571
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000236693
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.006981971
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000326725
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00342069
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000181982
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002133181
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000178243
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.004771859
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000344355
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001242838
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000351065
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001033145
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000166602
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000971404
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000265514
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000911253
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000145883
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000812841
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003563782
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.139951299
+        }
+      ],
+      "dataset": "rhino",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/RHINO_1k.mcool.hict.hdf5",
+      "openSeconds": 4.459902208,
+      "resolutions": 12,
+      "contigs": 1075,
+      "nonFiniteWeights": 1106129,
+      "queries": 144,
+      "sha256": "893d2740023157858087527d9742b70ac7ee502ff36d84b7bd16be82e5ea8eae",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.206042923
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003316617
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.059739306
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000325295
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.025569978
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000252893
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.008927665
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000196323
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.004911989
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000228443
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003039382
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000166893
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002002778
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000178052
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00143606
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000181033
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001056895
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000247373
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00355166
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000196683
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000984824
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000233263
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000969463
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000132732
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000823682
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003165924
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.132029729
+        }
+      ],
+      "dataset": "rhino",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/RHINO_1k.mcool.hict.hdf5",
+      "openSeconds": 4.43976497,
+      "resolutions": 12,
+      "contigs": 1075,
+      "nonFiniteWeights": 1106129,
+      "queries": 144,
+      "sha256": "893d2740023157858087527d9742b70ac7ee502ff36d84b7bd16be82e5ea8eae",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.182008542
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003328815
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.060674091
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000339985
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.02363909
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000275453
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.009437198
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000213633
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.004896186
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000179613
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00295805
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000187492
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002100089
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000195092
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001739924
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000275424
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001158075
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000241934
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003200963
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000277894
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001305747
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000195703
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001065564
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000249564
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000819291
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003352805
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.135452373
+        }
+      ],
+      "dataset": "rhino",
+      "run": 3
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.hict.hdf5",
+      "openSeconds": 4.66630671,
+      "resolutions": 9,
+      "contigs": 2310,
+      "nonFiniteWeights": 27344,
+      "queries": 108,
+      "sha256": "d78c0166bcf1f9cfba87aa6c746affde0b674890af66b3cf624d0ada134c7139",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.455937125
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002199199
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.034243977
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000431546
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.006061699
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000340485
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002875667
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000257744
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00228263
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000313164
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001407228
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000386445
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001057114
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000176792
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000972263
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000179672
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000769721
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000159282
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.0008227
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003341344
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.152097693
+        }
+      ],
+      "dataset": "aedes",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.hict.hdf5",
+      "openSeconds": 4.476165919,
+      "resolutions": 9,
+      "contigs": 2310,
+      "nonFiniteWeights": 27344,
+      "queries": 108,
+      "sha256": "d78c0166bcf1f9cfba87aa6c746affde0b674890af66b3cf624d0ada134c7139",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.254089162
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002027195
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.033438463
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000291944
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00475411
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000209822
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002550373
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000160032
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001484238
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000163772
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001279807
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000276213
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000876601
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000150082
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000666978
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000195053
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000650838
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000147212
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000673878
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002854307
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.169233259
+        }
+      ],
+      "dataset": "aedes",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.hict.hdf5",
+      "openSeconds": 4.40822662,
+      "resolutions": 9,
+      "contigs": 2310,
+      "nonFiniteWeights": 27344,
+      "queries": 108,
+      "sha256": "d78c0166bcf1f9cfba87aa6c746affde0b674890af66b3cf624d0ada134c7139",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.191097897
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001828262
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.03598398
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000321814
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005158143
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000417215
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00250948
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000169932
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001481768
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000218373
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001459738
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000228253
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001002512
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000205523
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000897041
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000331114
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.0008045
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000170412
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00081588
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003068597
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.160062036
+        }
+      ],
+      "dataset": "aedes",
+      "run": 3
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5",
+      "openSeconds": 62.77562568,
+      "resolutions": 15,
+      "contigs": 61,
+      "nonFiniteWeights": 2507992,
+      "queries": 180,
+      "sha256": "417f0486aff929798beb3a9cf964a7ea3a3da28c99b74021679b0fb4a30b03c7",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.75150303
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002036714
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 43.597852723
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000314713
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 11.013983976
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000411863
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 2.556894787
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000248462
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.584254154
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000241442
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.104499179
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000220062
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.030223655
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000320563
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.01351102
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000326772
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001957116
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000148381
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000957828
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000138741
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000633635
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000182282
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000443643
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000122051
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000335603
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000107731
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000347943
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000115621
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000298372
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000112011
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000272452
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002603362
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.110012403
+        }
+      ],
+      "dataset": "micro",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5",
+      "openSeconds": 62.689263865,
+      "resolutions": 15,
+      "contigs": 61,
+      "nonFiniteWeights": 2507992,
+      "queries": 180,
+      "sha256": "417f0486aff929798beb3a9cf964a7ea3a3da28c99b74021679b0fb4a30b03c7",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.761091952
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002198458
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 43.410679794
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000282162
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 11.132020483
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000286631
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 2.559780926
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000245111
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.568550831
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000207791
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.09771788
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000183721
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.032182661
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000255822
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.008749079
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000156281
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001579569
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00013155
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000969946
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.0001273
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000679774
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000156301
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000449083
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00011451
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000359092
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000117091
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000317442
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00010748
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000385422
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000105961
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000306232
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002593824
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.106182555
+        }
+      ],
+      "dataset": "micro",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5",
+      "openSeconds": 63.479125838,
+      "resolutions": 15,
+      "contigs": 61,
+      "nonFiniteWeights": 2507992,
+      "queries": 180,
+      "sha256": "417f0486aff929798beb3a9cf964a7ea3a3da28c99b74021679b0fb4a30b03c7",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.675740475
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002278672
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 43.857775368
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000430122
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 11.438524907
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000298191
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 2.658218172
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000255101
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.583089902
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000251841
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.10812115
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000207671
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.028153105
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000246831
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.009399948
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00016381
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001706937
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000135871
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001085684
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000153251
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000634782
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000125891
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000425252
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00011588
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000328582
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00011019
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000303291
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000103421
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000291801
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.0001127
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000285821
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002696591
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.107360227
+        }
+      ],
+      "dataset": "micro",
+      "run": 3
+    }
+  ],
+  "After": [
+    {
+      "input": "/mnt/Models/HiCT/data/4DNFIM351CAA_HomoSapiens_HiC_1kb.hict.hdf5",
+      "openSeconds": 4.611929028,
+      "resolutions": 13,
+      "contigs": 24,
+      "nonFiniteWeights": 729222,
+      "queries": 156,
+      "sha256": "9b0f9b4aa091e9ba353381d162564fe0e5314e45d030529b77578a0a27f31b9e",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.267509597
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.015317098
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001389966
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.120127907
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000336591
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.066976735
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000290251
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.014839577
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000204751
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.007334697
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000180541
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003387443
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000157281
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001854787
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00017111
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001171465
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000190831
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000640042
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000145781
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000934643
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000175671
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000492292
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00012582
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000468712
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000144601
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000425681
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000166831
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000433242
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003045081
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.025614968
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.077679095
+        }
+      ],
+      "dataset": "human",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/4DNFIM351CAA_HomoSapiens_HiC_1kb.hict.hdf5",
+      "openSeconds": 4.531971659,
+      "resolutions": 13,
+      "contigs": 24,
+      "nonFiniteWeights": 729222,
+      "queries": 156,
+      "sha256": "9b0f9b4aa091e9ba353381d162564fe0e5314e45d030529b77578a0a27f31b9e",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.21275272
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.013650041
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001439035
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.112983411
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000332742
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.065385423
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000249961
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.014760655
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000198301
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.007638528
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000214631
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003437443
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000155211
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001807956
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000150231
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001278835
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00018373
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000629913
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00015039
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000533032
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000133301
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000419011
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000163151
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000390041
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000125961
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000407451
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000153951
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000484672
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00267132
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.022108052
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.066984999
+        }
+      ],
+      "dataset": "human",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/4DNFIM351CAA_HomoSapiens_HiC_1kb.hict.hdf5",
+      "openSeconds": 4.529488644,
+      "resolutions": 13,
+      "contigs": 24,
+      "nonFiniteWeights": 729222,
+      "queries": 156,
+      "sha256": "9b0f9b4aa091e9ba353381d162564fe0e5314e45d030529b77578a0a27f31b9e",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.205928493
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.013026788
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001323475
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.113831795
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000494042
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.064932347
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000327101
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.014997415
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000235101
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.007896049
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000206601
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003256801
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000159341
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001859057
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00017027
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001190605
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00015809
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000707303
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00013292
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000540822
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000128551
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000403591
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000138131
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000607102
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000234621
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000496642
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00017486
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000335652
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.0027571
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.021815849
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.071025229
+        }
+      ],
+      "dataset": "human",
+      "run": 3
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/RHINO_1k.mcool.hict.hdf5",
+      "openSeconds": 4.482370494,
+      "resolutions": 12,
+      "contigs": 1075,
+      "nonFiniteWeights": 1106129,
+      "queries": 144,
+      "sha256": "893d2740023157858087527d9742b70ac7ee502ff36d84b7bd16be82e5ea8eae",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.188554204
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.013077657
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002718919
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.065493185
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000345991
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.035085505
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000318481
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.010178597
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00020567
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005177089
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000287871
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002907771
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00017396
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001960207
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000166701
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001465635
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000185561
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001277664
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000211361
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001016764
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00014434
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000873633
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000141891
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000757962
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000131651
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000821463
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.004020604
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.06140502
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.083269017
+        }
+      ],
+      "dataset": "rhino",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/RHINO_1k.mcool.hict.hdf5",
+      "openSeconds": 4.538163203,
+      "resolutions": 12,
+      "contigs": 1075,
+      "nonFiniteWeights": 1106129,
+      "queries": 144,
+      "sha256": "893d2740023157858087527d9742b70ac7ee502ff36d84b7bd16be82e5ea8eae",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.187995077
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.016082337
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00299837
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.094884143
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000486601
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.047486197
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000319011
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.0115691
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000272801
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00570621
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000320591
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003201432
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00016434
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002206788
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000362021
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001815377
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.0002423
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001418385
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000269641
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001100784
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000179571
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000874433
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000156561
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000786872
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000149711
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000872273
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003736703
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.068284519
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.084223154
+        }
+      ],
+      "dataset": "rhino",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/RHINO_1k.mcool.hict.hdf5",
+      "openSeconds": 4.449681977,
+      "resolutions": 12,
+      "contigs": 1075,
+      "nonFiniteWeights": 1106129,
+      "queries": 144,
+      "sha256": "893d2740023157858087527d9742b70ac7ee502ff36d84b7bd16be82e5ea8eae",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.146187226
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.012970494
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00273665
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.068412905
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000376311
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.035998754
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000405881
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.010276085
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000215111
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005055937
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000345162
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003566762
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000312721
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002254288
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000197371
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002287907
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000353872
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001313714
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000271641
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001320894
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000197231
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000909353
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000152101
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000780922
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000143051
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000848313
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.004354995
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.063857349
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.083581036
+        }
+      ],
+      "dataset": "rhino",
+      "run": 3
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.hict.hdf5",
+      "openSeconds": 4.405075527,
+      "resolutions": 9,
+      "contigs": 2310,
+      "nonFiniteWeights": 27344,
+      "queries": 108,
+      "sha256": "d78c0166bcf1f9cfba87aa6c746affde0b674890af66b3cf624d0ada134c7139",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.20082722
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.010838807
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001340494
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.017051008
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000259121
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005495068
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000161051
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002324188
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00015464
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001414185
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00014354
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001188234
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000153071
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000816383
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00014627
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000739493
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00018591
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000726423
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00017543
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000649183
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00315724
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.057619684
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.099516774
+        }
+      ],
+      "dataset": "aedes",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.hict.hdf5",
+      "openSeconds": 4.391981017,
+      "resolutions": 9,
+      "contigs": 2310,
+      "nonFiniteWeights": 27344,
+      "queries": 108,
+      "sha256": "d78c0166bcf1f9cfba87aa6c746affde0b674890af66b3cf624d0ada134c7139",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.170258884
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.011137227
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001263334
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.018754802
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00024238
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005467439
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00018942
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002266698
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00015355
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001401385
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00018162
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001111784
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000157921
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000832532
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000143581
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001199074
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000335671
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000762392
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000151881
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000676322
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.003649282
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.074395006
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.097250602
+        }
+      ],
+      "dataset": "aedes",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/DNAZoo/AedesAegypti/AaegL5.0.hict.hdf5",
+      "openSeconds": 4.360800947,
+      "resolutions": 9,
+      "contigs": 2310,
+      "nonFiniteWeights": 27344,
+      "queries": 108,
+      "sha256": "d78c0166bcf1f9cfba87aa6c746affde0b674890af66b3cf624d0ada134c7139",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.163875658
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.012125059
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001376605
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.017007925
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000256951
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005458358
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00019989
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.002291988
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.0001482
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001415735
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00017177
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001097964
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000155241
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000756882
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000138381
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000741862
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000189911
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000589372
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00014256
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000609672
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002811679
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.04929577
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.099945174
+        }
+      ],
+      "dataset": "aedes",
+      "run": 3
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5",
+      "openSeconds": 5.029753356,
+      "resolutions": 15,
+      "contigs": 61,
+      "nonFiniteWeights": 2507992,
+      "queries": 180,
+      "sha256": "417f0486aff929798beb3a9cf964a7ea3a3da28c99b74021679b0fb4a30b03c7",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.187357502
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.01274598
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001832486
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.382258968
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000536392
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.173297432
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000267211
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.087279148
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000324702
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.041325611
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000234731
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.013077192
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00020792
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.006448451
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00015267
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003642132
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000238801
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005699648
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00018305
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001086724
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00012309
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000718532
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000145291
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000474561
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000151431
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000435851
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000166841
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000367441
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000152381
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000347471
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00011572
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000353761
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002526238
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.033994248
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.071491188
+        }
+      ],
+      "dataset": "micro",
+      "run": 1
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5",
+      "openSeconds": 5.045527594,
+      "resolutions": 15,
+      "contigs": 61,
+      "nonFiniteWeights": 2507992,
+      "queries": 180,
+      "sha256": "417f0486aff929798beb3a9cf964a7ea3a3da28c99b74021679b0fb4a30b03c7",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.181852197
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.013941524
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.001567364
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.377756641
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000401411
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.175804529
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000293431
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.086901301
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000434081
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.039919555
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00021775
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.013033761
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000223431
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.006665791
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00018188
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003531771
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000166081
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001621655
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00014269
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003889832
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000256751
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000868413
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000266911
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000573061
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000147671
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000448381
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000168801
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000458111
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000192251
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000444621
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00013958
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000427332
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002701378
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.043774647
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.086121299
+        }
+      ],
+      "dataset": "micro",
+      "run": 2
+    },
+    {
+      "input": "/mnt/Models/HiCT/data/micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5",
+      "openSeconds": 4.991584487,
+      "resolutions": 15,
+      "contigs": 61,
+      "nonFiniteWeights": 2507992,
+      "queries": 180,
+      "sha256": "417f0486aff929798beb3a9cf964a7ea3a3da28c99b74021679b0fb4a30b03c7",
+      "stages": [
+        {
+          "stage": "Starting",
+          "seconds": 4.134872655
+        },
+        {
+          "stage": "Validating resolution metadata",
+          "seconds": 0.013732532
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002027826
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.385785113
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000344991
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.174120753
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000322641
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.085501771
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000282851
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.040758814
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000213631
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.0133023
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000264761
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.00640696
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00015045
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.003494281
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000150061
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.005266426
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00017286
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.001069093
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000122741
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000765292
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000209571
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000669982
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00016695
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000570682
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000247501
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000558681
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.000393552
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000608332
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.00021385
+        },
+        {
+          "stage": "Reading stripe weights",
+          "seconds": 0.000418952
+        },
+        {
+          "stage": "Reading resolution metadata",
+          "seconds": 0.002996099
+        },
+        {
+          "stage": "Building contig descriptors",
+          "seconds": 0.036377881
+        },
+        {
+          "stage": "Building contig tree",
+          "seconds": 0.079029131
+        }
+      ],
+      "dataset": "micro",
+      "run": 3
+    }
+  ]
+}
