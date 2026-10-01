@@ -62,7 +62,7 @@ public class Initializers {
     }
   }
 
-  private static void reportProgress(final @NotNull String stage, final double progress) {
+  static void reportProgress(final @NotNull String stage, final double progress) {
     final var reporter = PROGRESS.get();
     if (reporter != null) {
       reporter.report(stage, progress);
@@ -85,6 +85,7 @@ public class Initializers {
   }
 
   public static @NotNull List<@NotNull StripeDescriptor> readStripeDescriptors(final long resolution, final @NotNull IHDF5Reader reader) {
+    final long started = System.nanoTime();
     final List<StripeDescriptor> result = new ArrayList<>();
     final long[] stripeLengthBins;
     try (final var stripeLengthsBinsDataset = reader.object().openDataSet(getStripeLengthsBinsDatasetPath(resolution))) {
@@ -93,18 +94,22 @@ public class Initializers {
 
     try (final var stripeBinWeightsDataset = reader.object().openDataSet(getStripeBinWeightsDatasetPath(resolution))) {
       reportProgress("Reading stripe weights", 0.0);
-      final long[] dims = reader.object().getDataSetInformation(stripeBinWeightsDataset.getDataSetPath()).getDimensions();
-      final int rowLen = dims.length > 1 ? (int) dims[1] : 0;
+      final var information = reader.object().getDataSetInformation(stripeBinWeightsDataset.getDataSetPath());
+      final long[] dims = information.getDimensions();
       final int stripeCount = stripeLengthBins.length;
-      final int bytesPerRow = Math.max(1, rowLen) * Double.BYTES;
-      final int targetBlockBytes = 16 * 1024 * 1024;
-      final int maxRowsPerBlock = Math.max(1, targetBlockBytes / bytesPerRow);
-      final int blockSize = Math.min(256, Math.min(maxRowsPerBlock, stripeCount));
+      if (dims.length != 2 || dims[0] != stripeCount || dims[1] < 1 || dims[1] > Integer.MAX_VALUE) {
+        throw new IllegalArgumentException("Invalid stripe weight dimensions at resolution " + resolution + ": " + Arrays.toString(dims));
+      }
+      final int rowLen = (int) dims[1];
+      final int[] chunkSizes = information.tryGetChunkSizes();
+      final int chunkRows = chunkSizes == null ? 1 : chunkSizes[0];
+      final int blockSize = stripeWeightBlockRows(stripeCount, rowLen, chunkRows, Runtime.getRuntime().maxMemory());
+      log.debug("Reading weights at resolution {}: {} stripes, {} rows/chunk, {} rows/read", resolution, stripeCount, chunkRows, blockSize);
 
       for (int start = 0; start < stripeCount; start += blockSize) {
         final int count = Math.min(blockSize, stripeCount - start);
         final var block = reader.float64().readMDArrayBlockWithOffset(
-          stripeBinWeightsDataset.getDataSetPath(),
+          stripeBinWeightsDataset,
           new int[]{count, rowLen},
           new long[]{start, 0}
         );
@@ -123,8 +128,25 @@ public class Initializers {
       }
       reportProgress("Reading stripe weights", 1.0);
     }
-
+    log.info("Loaded stripe weights at resolution {}: {} stripes in {} ms", resolution, result.size(),
+      (System.nanoTime() - started) / 1_000_000);
     return result;
+  }
+
+  static int stripeWeightBlockRows(final int stripeCount, final int rowLength, final int chunkRows, final long maxHeap) {
+    if (stripeCount < 0 || rowLength < 1 || chunkRows < 1 || maxHeap < 1) {
+      throw new IllegalArgumentException("Invalid stripe weight read dimensions or heap size");
+    }
+    final long rowBytes = (long) rowLength * Double.BYTES;
+    // Old files may store all weights in one compressed chunk. Avoid decompressing
+    // that chunk once per 256 rows, while bounding temporary Java read buffers.
+    final long capBytes = Math.max(rowBytes, Math.min(128L << 20, maxHeap / 16));
+    final long capRows = Math.min(Integer.MAX_VALUE / (long) rowLength, capBytes / rowBytes);
+    final long targetRows = Math.max(1, Math.min(16L << 20, capBytes) / rowBytes);
+    final long alignedRows = chunkRows <= capRows
+      ? Math.max(chunkRows, targetRows / chunkRows * chunkRows)
+      : capRows;
+    return (int) Math.max(1, Math.min(stripeCount, alignedRows));
   }
 
   public static @NotNull List<@NotNull ATUDescriptor> readATL(final long resolution, final @NotNull IHDF5Reader reader, final List<StripeDescriptor> stripeDescriptors) {
@@ -357,7 +379,8 @@ public class Initializers {
     }
 
     final var contigTree = chunkedFile.getContigTree();
-
+    reportProgress("Building contig tree", 0.0);
+    final long treeStarted = System.nanoTime();
     for (final var orderLong : contigOrder) {
       final var order = (int) orderLong;
       if (order < 0 || order >= contigs.size()) {
@@ -366,6 +389,8 @@ public class Initializers {
       }
       contigTree.appendContig(contigs.get(order).descriptor(), contigs.get(order).direction());
     }
+    reportProgress("Building contig tree", 1.0);
+    log.info("Built contig tree: {} contigs in {} ms", contigOrder.length, (System.nanoTime() - treeStarted) / 1_000_000);
   }
 
   public static void initializeScaffoldTree(final ChunkedFile chunkedFile) {

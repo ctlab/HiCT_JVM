@@ -104,12 +104,13 @@ public class ChunkedFile implements AutoCloseable {
 
 
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
+    final long openingStarted = System.nanoTime();
     this.hdfFilePath = options.hdfFilePath;
 
     HDF5LibraryInitializer.initializeHDF5Library();
 
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
-      final var parsedResolutions = reader.object().getAllGroupMembers("/resolutions").parallelStream().flatMap(s -> {
+      final var parsedResolutions = reader.object().getAllGroupMembers("/resolutions").stream().flatMap(s -> {
         try {
           log.debug("Trying to parse " + s + " as a resolution");
           final var parsed = Long.parseLong(s);
@@ -121,36 +122,33 @@ public class ChunkedFile implements AutoCloseable {
         }
       }).sorted().toList();
 
-      final var validResolutions = parsedResolutions.stream()
-        .filter(resolution -> isResolutionComplete(reader, resolution))
-        .sorted()
-        .toList();
-
-      if (validResolutions.isEmpty()) {
-        throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
-      }
-
       final var requestedResolutions = options.selectedResolutions().stream()
         .filter(resolution -> resolution != null && resolution > 0L)
         .distinct()
         .sorted()
         .toList();
-      final var effectiveResolutions = requestedResolutions.isEmpty()
-        ? validResolutions
-        : validResolutions.stream().filter(requestedResolutions::contains).sorted().toList();
+      Initializers.reportProgress("Validating resolution metadata", 0.0);
+      final var effectiveResolutions = parsedResolutions.stream()
+        .filter(resolution -> requestedResolutions.isEmpty() || requestedResolutions.contains(resolution))
+        .filter(resolution -> isResolutionComplete(reader, resolution))
+        .toList();
+      Initializers.reportProgress("Validating resolution metadata", 1.0);
+      if (effectiveResolutions.isEmpty() && requestedResolutions.isEmpty()) {
+        throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
+      }
       if (effectiveResolutions.isEmpty()) {
         throw new IllegalArgumentException(
           "No requested complete resolutions are present in " + this.hdfFilePath +
-            ". Requested " + requestedResolutions + ", available " + validResolutions
+            ". Requested " + requestedResolutions + ", resolution groups " + parsedResolutions
         );
       }
       if (!requestedResolutions.isEmpty() && effectiveResolutions.size() != requestedResolutions.size()) {
         final var missing = requestedResolutions.stream()
-          .filter(resolution -> !validResolutions.contains(resolution))
+          .filter(resolution -> !effectiveResolutions.contains(resolution))
           .toList();
         throw new IllegalArgumentException(
           "Some requested resolutions are not present or incomplete in " + this.hdfFilePath +
-            ": " + missing + ". Available complete resolutions are " + validResolutions
+            ": " + missing + ". Resolution groups are " + parsedResolutions
         );
       }
 
@@ -218,6 +216,9 @@ public class ChunkedFile implements AutoCloseable {
       this.resolutionScalingCoefficient[i] = 1.0d / ((double) (ratio * ratio));
       this.resolutionLinearScalingCoefficient[i] = 1.0d / ((double) ratio);
     }
+    log.info("Opened {}: {} resolutions, {} contigs in {} ms", this.hdfFilePath.getFileName(),
+      this.resolutions.length - 1, this.contigTree.getContigDescriptors().size(),
+      (System.nanoTime() - openingStarted) / 1_000_000);
   }
 
   private void loadNameOverrides() {
@@ -346,24 +347,20 @@ public class ChunkedFile implements AutoCloseable {
   }
 
   public static boolean isResolutionComplete(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader, final long resolution) {
-    final String base = "/resolutions/" + resolution;
     try {
-      if (!reader.object().isGroup(base + "/treap_coo")) {
-        log.warn("Skipping resolution {}: missing treap_coo group", resolution);
-        return false;
+      // isDataSet() uses H5O_INFO_ALL in JHDF5 and scans potentially millions of
+      // chunk-index entries. Opening the dataspace verifies the same dataset
+      // requirement (including link targets), without reading storage statistics.
+      for (final var path : List.of(
+        getBlockLengthDatasetPath(resolution), getBlockOffsetDatasetPath(resolution),
+        getBlockRowsDatasetPath(resolution), getBlockColsDatasetPath(resolution),
+        getBlockValuesDatasetPath(resolution), getDenseBlockDatasetPath(resolution),
+        getStripeLengthsBinsDatasetPath(resolution), getStripeBinWeightsDatasetPath(resolution),
+        getContigLengthBinsDatasetPath(resolution), getContigHideTypeDatasetPath(resolution),
+        getContigsATLDatasetPath(resolution), getBasisATUDatasetPath(resolution)
+      )) {
+        reader.object().getSpaceDimensions(path);
       }
-      if (!reader.object().isDataSet(getBlockLengthDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockOffsetDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockRowsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockColsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockValuesDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getDenseBlockDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getStripeLengthsBinsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getStripeBinWeightsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getContigLengthBinsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getContigHideTypeDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getContigsATLDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBasisATUDatasetPath(resolution))) return false;
       return true;
     } catch (Exception e) {
       log.warn("Skipping resolution {} due to validation error: {}", resolution, e.getMessage());

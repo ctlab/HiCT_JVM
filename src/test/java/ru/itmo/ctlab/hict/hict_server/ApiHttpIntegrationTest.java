@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_server;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
@@ -35,6 +36,10 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.files.FSHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
+import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
+import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.ApiDocsHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.info.InfoHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
@@ -83,6 +88,15 @@ class ApiHttpIntegrationTest {
       closeFuture.get(10, TimeUnit.SECONDS);
       server = null;
     }
+    if (vertx != null) {
+      final var map = vertx.sharedData().getLocalMap("hict_server");
+      if (map.get("Track1DManager") instanceof ShareableWrappers.Track1DManagerWrapper wrapper) {
+        wrapper.getTrack1DManager().close();
+      }
+      if (map.get("chunkedFile") instanceof ShareableWrappers.ChunkedFileWrapper wrapper) {
+        wrapper.getChunkedFile().close();
+      }
+    }
     if (scheduler != null) {
       scheduler.close();
       scheduler = null;
@@ -98,6 +112,49 @@ class ApiHttpIntegrationTest {
       });
       closeFuture.get(10, TimeUnit.SECONDS);
       vertx = null;
+    }
+  }
+
+  @Test
+  void optionalLargeMapsOpenAndQueryOverHttpWithoutWritingSourceData() throws Exception {
+    final var configuredRoot = System.getenv("HICT_OPENING_DATA_DIR");
+    assumeTrue(configuredRoot != null, "Set HICT_OPENING_DATA_DIR for the large-map HTTP checks");
+    final var dataRoot = Path.of(configuredRoot).toAbsolutePath().normalize();
+    final var inputs = java.util.List.of(
+      "4DNFIM351CAA_HomoSapiens_HiC_1kb.hict.hdf5",
+      "RHINO_1k.mcool.hict.hdf5",
+      "DNAZoo/AedesAegypti/AaegL5.0.hict.hdf5",
+      "micro-c/GSE286495/GSE286495_mESC_merged_15.6B_mm39.mcool.local.hict.hdf5"
+    );
+    for (final var input : inputs) assertTrue(Files.isRegularFile(dataRoot.resolve(input)), input);
+    startServerWithInfoAndFileHandlers();
+    final var map = vertx.sharedData().getLocalMap("hict_server");
+    map.put("dataDirectory", new ShareableWrappers.PathWrapper(dataRoot));
+    map.put("processedDirectory", new ShareableWrappers.PathWrapper(tempDataDir.resolve("processed")));
+    map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(
+      new SimpleVisualizationOptions(0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    for (final var input : inputs) {
+      long start = System.nanoTime();
+      final var response = post("/open", new JsonObject().put("filename", input).encode());
+      assertEquals(200, response.statusCode(), response.body());
+      final var opened = new JsonObject(response.body());
+      assertEquals("Opened", opened.getString("status"));
+      assertTrue(!opened.getJsonArray("resolutions").isEmpty());
+      final var progress = post("/open_progress", "{}");
+      assertEquals("done", new JsonObject(progress.body()).getString("stage"));
+      System.out.printf("HTTP_OPEN %s %.3f seconds%n", input, (System.nanoTime() - start) / 1e9);
+      for (final var resolution : opened.getJsonArray("resolutions")) {
+        final var matrix = post("/matrix/query", new JsonObject().put("bpResolution", resolution)
+          .put("rows", 4).put("cols", 4).put("unit", "PIXELS")
+          .put("signalMode", "RAW_COUNTS").put("format", "JSON").encode());
+        assertEquals(200, matrix.statusCode(), matrix.body());
+        assertEquals(16, new JsonObject(matrix.body()).getJsonArray("values").size());
+      }
+      final var tile = get("/get_tile?bpResolution=" + opened.getJsonArray("resolutions").getValue(0)
+        + "&row=0&col=0&format=JSON_PNG_WITH_RANGES");
+      assertEquals(200, tile.statusCode(), tile.body());
+      assertTrue(tile.body().contains("data:image/png;base64,"), "A rendered tile must be returned");
     }
   }
 
@@ -249,6 +306,8 @@ class ApiHttpIntegrationTest {
     new InfoHandlersHolder(vertx).addHandlersToRouter(router);
     new FSHandlersHolder(vertx).addHandlersToRouter(router);
     new ConversionHandlersHolder(vertx).addHandlersToRouter(router);
+    new FileOpHandlersHolder(vertx).addHandlersToRouter(router);
+    new TileHandlersHolder(vertx).addHandlersToRouter(router);
     new ApiDocsHandlersHolder().addHandlersToRouter(router);
 
     server = vertx.createHttpServer();
@@ -281,6 +340,7 @@ class ApiHttpIntegrationTest {
                                    final @NotNull Map<String, String> headers) throws IOException, InterruptedException {
     var builder = HttpRequest.newBuilder()
       .uri(URI.create("http://127.0.0.1:" + port + path))
+      .timeout(java.time.Duration.ofMinutes(2))
       .GET();
     for (final var entry : headers.entrySet()) {
       builder = builder.header(entry.getKey(), entry.getValue());
@@ -292,6 +352,7 @@ class ApiHttpIntegrationTest {
                                     final @NotNull String body) throws IOException, InterruptedException {
     final var request = HttpRequest.newBuilder()
       .uri(URI.create("http://127.0.0.1:" + port + path))
+      .timeout(java.time.Duration.ofMinutes(2))
       .header("content-type", "application/json")
       .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
       .build();
