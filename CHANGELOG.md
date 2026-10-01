@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Regenerate translocation insertion arrows when zooming between resolutions. Keep cleared, hidden arrow sources dirty, avoid redundant clears/rebuilds, and preserve the selected segment while choosing an insertion point at another zoom level.
+- Preserve the main map center, zoom and rotation when refreshing assembly constraints after contig reversal or translocation. Prevent the blank viewport that previously required minimap interaction to recover; retain intentional isolation fitting and overlay coordinate rescaling, with viewport regression checks in the WebUI build.
+- Fix slow large-map opening by reading Cooler weights in heap-bounded, HDF5-chunk-aligned blocks instead of repeatedly decompressing whole legacy chunks. Retain the open dataset handle, weight values and NaN diagnostics.
+- Validate required resolution datasets using dataspaces rather than expensive HDF5 storage statistics; filter requested resolutions before validation. Add per-resolution weight, treap construction and total opening timings, regression tests, and reproducible four-dataset profiling results.
 - Default bundled hictk, minimap2 and mm2-plus threading to the server CPU budget, capped by Slurm CPUs per task and JVM-visible CPUs. Add validated Launcher settings `HICT_HICTK_THREADS` and `HICT_ALIGNMENT_THREADS`, and make conversion auto-threading honor `HICT_CONVERSION_THREADS` consistently (all default to -1).
 - Apply supported thread flags to toolbox commands as well as conversion/dotplot pipelines, remove arbitrary dotplot thread caps, and retain explicit toolbox overrides. Log the effective command, CPU budget, and upstream serial/two-thread Cooler limitations.
 - Default WebUI conversion and alignment requests to server-side auto-detection instead of the browser CPU count. Keep Bash/Slurm script aliases identical, use allocation-aware defaults outside and inside Slurm, retain import memory safety limits, and include balancing iterations in progress logs.
