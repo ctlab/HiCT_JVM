@@ -38,12 +38,14 @@ import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 @Slf4j
@@ -220,8 +222,8 @@ public final class RequestTaskScheduler implements AutoCloseable {
       return;
     }
     final long generationSnapshot = domain != null ? this.currentGeneration(domain) : -1L;
-    final var selfRef = new java.util.concurrent.atomic.AtomicReference<FutureTask<?>>();
-    final FutureTask<Void> futureTask = new FutureTask<>(() -> {
+    final var responseScheduled = new AtomicBoolean();
+    final FutureTask<T> futureTask = new FutureTask<>(() -> {
       final var activeWorkers = this.activeWorkersByPriority.get(priority);
       final int minWorkers = this.poolSizing.get(priority).getMinWorkers();
       boolean elasticPermitAcquired = false;
@@ -237,13 +239,7 @@ public final class RequestTaskScheduler implements AutoCloseable {
         this.ensureNotCancelled(domain, generationSnapshot);
         final var value = supplier.get();
         this.ensureNotCancelled(domain, generationSnapshot);
-        dispatchSuccess(ctx, value, onSuccess);
-      } catch (final Throwable t) {
-        if (isCancellation(t)) {
-          dispatchCancelled(ctx, onCancelled);
-        } else {
-          dispatchFailure(ctx, t);
-        }
+        return value;
       } finally {
         if (elasticPermitAcquired) {
           this.globalElasticPermits.release();
@@ -251,28 +247,46 @@ public final class RequestTaskScheduler implements AutoCloseable {
         if (workerRegistered) {
           activeWorkers.decrementAndGet();
         }
-        final var task = selfRef.get();
-        if (domain != null && task != null) {
-          unregisterTask(domain, generationSnapshot, task);
+      }
+    }) {
+      @Override
+      protected void done() {
+        // A queued FutureTask cancelled before run() never enters its callable.
+        // Complete its HTTP response here, including cancellation while running,
+        // without waiting for a supplier that ignores interruption to return.
+        if (domain != null) unregisterTask(domain, generationSnapshot, this);
+        if (!responseScheduled.compareAndSet(false, true)) return;
+        try {
+          dispatchSuccess(ctx, get(), onSuccess);
+        } catch (final CancellationException cancelled) {
+          dispatchCancelled(ctx, onCancelled);
+        } catch (final ExecutionException failed) {
+          if (isCancellation(failed.getCause())) dispatchCancelled(ctx, onCancelled);
+          else dispatchFailure(ctx, failed.getCause());
+        } catch (final InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          dispatchCancelled(ctx, onCancelled);
         }
       }
-      return null;
-    });
-    selfRef.set(futureTask);
+    };
 
     if (domain != null) {
       registerTask(domain, generationSnapshot, futureTask);
+      // Registration can race with bumpGeneration's scan of older tasks.
+      if (generationSnapshot != currentGeneration(domain)) futureTask.cancel(true);
     }
 
     try {
-      pool.execute(futureTask);
+      if (!futureTask.isCancelled()) pool.execute(futureTask);
     } catch (final java.util.concurrent.RejectedExecutionException rejection) {
       if (domain != null) {
         unregisterTask(domain, generationSnapshot, futureTask);
       }
-      dispatchFailure(ctx, new IllegalStateException(
-        "Request queue is saturated for priority " + priority + ". Please retry.", rejection
-      ));
+      if (responseScheduled.compareAndSet(false, true)) {
+        dispatchFailure(ctx, new IllegalStateException(
+          "Request queue is saturated for priority " + priority + ". Please retry.", rejection
+        ));
+      }
     }
   }
 
@@ -353,24 +367,20 @@ public final class RequestTaskScheduler implements AutoCloseable {
   private void registerTask(final @NotNull CancellationDomain domain,
                             final long generation,
                             final @NotNull FutureTask<?> task) {
-    this.trackedTasks
-      .get(domain)
-      .computeIfAbsent(generation, g -> ConcurrentHashMap.newKeySet())
-      .add(task);
+    this.trackedTasks.get(domain).compute(generation, (g, tasks) -> {
+      final Set<FutureTask<?>> result = tasks != null ? tasks : ConcurrentHashMap.newKeySet();
+      result.add(task);
+      return result;
+    });
   }
 
   private void unregisterTask(final @NotNull CancellationDomain domain,
                               final long generation,
                               final @NotNull FutureTask<?> task) {
-    final var mapForDomain = this.trackedTasks.get(domain);
-    final var tasksForGeneration = mapForDomain.get(generation);
-    if (tasksForGeneration == null) {
-      return;
-    }
-    tasksForGeneration.remove(task);
-    if (tasksForGeneration.isEmpty()) {
-      mapForDomain.remove(generation, tasksForGeneration);
-    }
+    this.trackedTasks.get(domain).computeIfPresent(generation, (g, tasks) -> {
+      tasks.remove(task);
+      return tasks.isEmpty() ? null : tasks;
+    });
   }
 
   private void ensureNotCancelled(final @Nullable CancellationDomain domain,
