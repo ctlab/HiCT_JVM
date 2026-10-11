@@ -178,6 +178,28 @@ public class FASTAProcessor {
     return aliases;
   }
 
+  /** Uses exactly the same source intervals, orientations and gaps as lossless AGP export. */
+  public @NotNull String exportAssemblyPreservingGaps(final @NotNull Path fastaPath) {
+    final var sequences = readSequenceContents(fastaPath);
+    final var aliases = buildSourceNameAliases(sequences);
+    final var objects = new LinkedHashMap<String, StringBuilder>();
+    for (var record : chunkedFile.getAgpProcessor().getAssemblyAGPRecords()) {
+      var builder = objects.computeIfAbsent(record.getScaffoldName(), k -> new StringBuilder());
+      if (record instanceof AGPProcessor.GapAGPRecord gap) {
+        builder.append("N".repeat(Math.toIntExact(gap.getGapLength())));
+      } else if (record instanceof AGPProcessor.ContigAGPRecord contig) {
+        var sourceName = aliases.getOrDefault(contig.getContigName(), contig.getContigName());
+        var source = sequences.get(sourceName);
+        if (source == null) throw new IllegalArgumentException("Linked FASTA does not contain sequence '" + sourceName + "'");
+        long length = contig.getIntraContigEndBpIncl() - contig.getIntraContigStartBpIncl() + 1;
+        builder.append(extractContigSliceFromSource(source, sourceName, Math.toIntExact(contig.getIntraContigStartBpIncl() - 1),
+          length, contig.getContigOrientation() == AGPProcessor.AGPContigOrientation.MINUS ? ContigDirection.REVERSED : ContigDirection.FORWARD,
+          0, length));
+      }
+    }
+    return renderRecords(objects.entrySet().stream().map(e -> new FASTARecord(e.getKey(), e.getValue().toString())).toList());
+  }
+
   public @NotNull String exportAssembly(final @NotNull Path fastaPath) {
     return exportAssembly(fastaPath, AssemblyExportSettings.gapLengthBp());
   }

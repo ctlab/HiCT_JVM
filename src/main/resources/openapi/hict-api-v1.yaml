@@ -809,6 +809,12 @@ paths:
     post:
       tags: [Files]
       summary: Apply AGP to opened assembly
+      description: >-
+        Supports exact source intervals, including partial contigs. Contact bins are
+        preserved and assigned to the piece containing the bin start in the original
+        component. Import reports splitting and unknown orientations. If sequence is
+        omitted and no policy was supplied, returns requiresMissingComponentsChoice
+        and importReport without changing the assembly; retry with an explicit policy.
       operationId: loadAgp
       requestBody:
         required: true
@@ -1615,6 +1621,7 @@ components:
           type: string
           enum: [PIXELS, BINS, BP]
           default: PIXELS
+          description: BINS includes hidden contigs and retains the requested rectangle shape. PIXELS excludes hidden contigs; BP is projected into visible pixels.
         units:
           type: string
           enum: [PIXELS, BINS, BP]
@@ -1758,6 +1765,10 @@ components:
     GetFastaForAssemblyRequest:
       type: object
       properties:
+        preserveImportedGaps:
+          type: boolean
+          default: false
+          description: Preserve imported gap types, lengths and evidence at unchanged oriented adjacencies. Overrides defaultSpacerLength; enabled by the WebUI.
         defaultSpacerLength:
           type: integer
           format: int64
@@ -1783,6 +1794,10 @@ components:
     GetAgpRequest:
       type: object
       properties:
+        preserveImportedGaps:
+          type: boolean
+          default: false
+          description: Preserve imported gap types, lengths and evidence at unchanged oriented adjacencies. Overrides defaultSpacerLength; enabled by the WebUI.
         defaultSpacerLength:
           type: integer
           format: int64
@@ -1791,6 +1806,11 @@ components:
     LoadAgpRequest:
       type: object
       properties:
+        missingComponentsPolicy:
+          type: string
+          enum: [REQUIRE_CHOICE, APPEND_UNPLACED, EXCLUDE]
+          default: REQUIRE_CHOICE
+          description: Append uncovered source intervals as unplaced FASTA records, exclude them, or request a user choice without mutation.
         agpFilename:
           type: string
           description: Optional AGP filename relative to DATA_DIR.

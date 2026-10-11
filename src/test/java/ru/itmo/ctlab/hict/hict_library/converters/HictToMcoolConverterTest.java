@@ -535,7 +535,7 @@ class HictToMcoolConverterTest {
       final var assemblyBefore = file.getAssemblyInfo().contigs();
       assertThrows(IllegalArgumentException.class, () -> file.importAGP(new StringReader(
         "scf\t1\t2000\t1\tW\tctgA\t1\t2000\t+\n"
-          + "scf\t2001\t3000\t2\tW\tctgB\t1\t1000\t+\n")));
+          + "scf\t2001\t3000\t2\tW\tctgA\t1\t1000\t+\n")));
       assertEquals(assemblyBefore, file.getAssemblyInfo().contigs());
       assertThrows(IllegalArgumentException.class, () -> file.importAGP(new StringReader(
         "scf\t1\t2000\t1\tW\tctgA\t2\t2001\t+\n")));
@@ -571,6 +571,50 @@ class HictToMcoolConverterTest {
       } finally {
         if (previous == null) System.clearProperty(key); else System.setProperty(key, previous);
       }
+    }
+  }
+
+  @Test
+  void partialAgpImportPreservesContactsFastaGapsAndExplicitOmissionPolicy() throws Exception {
+    final var source = tempDir.resolve("partial.mcool");
+    final var hict = tempDir.resolve("partial.hict.hdf5");
+    final var fasta = tempDir.resolve("partial.fa");
+    writeSyntheticMcool(source);
+    Files.writeString(fasta, ">ctgA\n" + "ACGT".repeat(500) + "\n>ctgB\n" + "C".repeat(2000) + "\n");
+    new McoolToHictConverter().convert(roundTripOptions(source, hict, null), ignored -> {});
+    final var text = "s1 1 550 1 W ctgA 1 550 +\n"
+      + "s1 551 650 2 U 100 scaffold yes paired-ends\n"
+      + "s1 651 2650 3 W ctgB 1 2000 -\n"
+      + "s2 1 1450 1 W ctgA 551 2000 -\n";
+    try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(hict, 1, 2))) {
+      var resolution = ResolutionDescriptor.fromBpResolution(1000, file);
+      var raw = file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 4, 4, false).matrix();
+      var report = file.importAGP(new StringReader(text), ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.REQUIRE_CHOICE);
+      assertEquals(1, report.splitSourceContigs()); assertFalse(report.requiresChoice());
+      assertEquals(AGPProcessor.parseRecordsFromReader(new StringReader(text)), file.getAgpProcessor().getAssemblyAGPRecords());
+      var changed = file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 4, 4, false).matrix();
+      int[] permutation = {0, 3, 2, 1};
+      for(int i=0;i<4;i++) for(int j=0;j<4;j++) assertEquals(raw.getAsDouble(permutation[i],permutation[j]),changed.getAsDouble(i,j));
+      var exported = file.getFastaProcessor().exportAssemblyPreservingGaps(fasta);
+      var seq = exported.lines().filter(l->!l.startsWith(">")).collect(java.util.stream.Collectors.joining());
+      var original = "ACGT".repeat(500);
+      var reverse = new StringBuilder(original.substring(550)).reverse().toString().chars()
+        .mapToObj(c->String.valueOf("TGCA".charAt("ACGT".indexOf(c)))).collect(java.util.stream.Collectors.joining());
+      assertEquals(original.substring(0,550)+"N".repeat(100)+"G".repeat(2000)+reverse,seq);
+      final var before = file.getAssemblyInfo().contigs();
+      final var subset = "only 1 550 1 W ctgA 1 550 +";
+      var preview = file.importAGP(new StringReader(subset), ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.REQUIRE_CHOICE);
+      assertTrue(preview.requiresChoice()); assertEquals(before,file.getAssemblyInfo().contigs());
+      for(var policy:List.of(ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.EXCLUDE,
+          ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.APPEND_UNPLACED)) {
+        file.importAGP(new StringReader(subset),policy);
+        int expected = policy == ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.EXCLUDE ? 550 : 4000;
+        assertEquals(expected,file.getAssemblyInfo().contigs().stream().mapToLong(c->c.descriptor().getLengthBp()).sum());
+        assertEquals(expected,file.getFastaProcessor().exportAssemblyPreservingGaps(fasta).lines().filter(l->!l.startsWith(">")).mapToInt(String::length).sum());
+      }
+      var stable = file.getAssemblyInfo().contigs();
+      assertThrows(IllegalArgumentException.class,()->file.importAGP(new StringReader("bad 1 2001 1 W ctgA 1 2001 +")));
+      assertEquals(stable,file.getAssemblyInfo().contigs());
     }
   }
 

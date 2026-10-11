@@ -67,7 +67,9 @@ public class ContigDescriptor {
     this.contigName = contigName;
     this.lengthBp = lengthBp;
 
-    assert (lengthBinsAtResolution.get(0) != lengthBp) : "Length bp should not be added at zero position of lengthBinsAtResolutions for constructor";
+    // A one-base AGP component can legitimately own one contact bin.
+    if (lengthBp <= 0 || lengthBinsAtResolution.size() != atus.size()
+      || presenceAtResolution.size() != atus.size()) throw new IllegalArgumentException("Invalid contig dimensions");
     this.lengthBinsAtResolution = Stream.concat(Stream.of(this.lengthBp), lengthBinsAtResolution.stream()).mapToLong(lng -> lng).toArray();
     if (contigNameInSourceFASTA != null) {
       this.contigNameInSourceFASTA = contigNameInSourceFASTA;

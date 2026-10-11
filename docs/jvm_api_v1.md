@@ -115,3 +115,32 @@ Typically:
 - Scaffolding operations update assembly state and bump tile generations.
 - `PIXELS` are visible pixels (hidden contigs excluded) at selected resolution.
 - For throughput-sensitive region fetches use `GET /get_tile?format=PNG_BY_PIXELS` with persistent HTTP client reuse.
+
+
+### AGP partial components and omitted sequence
+
+`POST /load_agp` accepts exact inclusive source intervals (AGP 2.1 columns 7–8).
+The importer prepares and validates the complete layout before committing it.
+It does not call the interactive scissors operation: no finest-resolution contact
+bin is deleted. A crossing bin belongs to the interval containing its start in the
+original source contig. Sequence coordinates remain exact; matrix boundaries can
+be approximate by one bin at each resolution. `importReport.warnings` describes
+splits and forward treatment of unknown orientations.
+
+When source sequence is not covered, the default `REQUIRE_CHOICE` returns
+`requiresMissingComponentsChoice: true` and an `importReport` without mutating
+state. Repeat the request with `missingComponentsPolicy: "APPEND_UNPLACED"`
+(or `"EXCLUDE"`). This choice governs the assembly and subsequent FASTA exports.
+
+AGP and assembly FASTA exports accept `preserveImportedGaps: true` (the WebUI
+sends it). This retains N/U gap annotations at surviving oriented adjacencies,
+including reversed scaffold order. New adjacencies use the scaffold gap setting.
+API clients can continue to request uniform `defaultSpacerLength` by leaving
+`preserveImportedGaps` false. AGP component names refer to source FASTA components,
+so exported split intervals can be imported into a fresh copy of the map.
+
+`POST /matrix/query` with `unit: "BINS"` includes hidden contigs; it no longer
+projects bin coordinates into a smaller visible-pixel rectangle. Response unit
+and coordinate fields/headers identify BINS (`startRowBin`, `x-hict-start-row-bin`,
+and analogous columns/ends) or PIXELS (`startRowPx`, `x-hict-start-row-px`).
+Oversized windows are rejected before matrix allocation.

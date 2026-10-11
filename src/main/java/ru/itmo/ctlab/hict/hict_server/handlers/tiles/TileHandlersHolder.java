@@ -848,29 +848,20 @@ public class TileHandlersHolder extends HandlersHolder {
       throw new IllegalArgumentException("End coordinates must be greater than or equal to start coordinates");
     }
 
-    final var startRowPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startRowInUnits);
-    final var startColPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startColInUnits);
-    final var endRowPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endRowInUnits);
-    final var endColPx = convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endColInUnits);
-
-    final var matrixWithWeights =
-      "SECONDARY".equals(requestedSource)
-        ? querySourceSubmatrix(
-          requestedChunkedFile,
-          resolutionDescriptor,
-          startRowPx,
-          startColPx,
-          endRowPx,
-          endColPx
-        )
-        : primaryChunkedFile.matrixQueries().getSubmatrix(
-          resolutionDescriptor,
-          startRowPx,
-          startColPx,
-          endRowPx,
-          endColPx,
-          true
-        );
+    // BINS includes hidden contigs. Converting it to PIXELS silently changes the
+    // query's shape and drops contact rows at coarse resolutions.
+    final boolean visibleOnly = units != QueryLengthUnit.BINS;
+    final var startRowPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startRowInUnits) : startRowInUnits;
+    final var startColPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startColInUnits) : startColInUnits;
+    final var endRowPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endRowInUnits) : endRowInUnits;
+    final var endColPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endColInUnits) : endColInUnits;
+    final long requestedRows = Math.subtractExact(endRowPx, startRowPx);
+    final long requestedCols = Math.subtractExact(endColPx, startColPx);
+    if (requestedRows > Integer.MAX_VALUE || requestedCols > Integer.MAX_VALUE
+      || (requestedRows > 0 && requestedCols > MAX_MATRIX_QUERY_ELEMENTS / requestedRows))
+      throw new IllegalArgumentException("Requested matrix window exceeds " + MAX_MATRIX_QUERY_ELEMENTS + " elements");
+    final var matrixWithWeights = requestedChunkedFile.matrixQueries().getSubmatrix(
+      resolutionDescriptor, startRowPx, startColPx, endRowPx, endColPx, visibleOnly);
     if (matrixWithWeights == null) {
       throw new IllegalArgumentException("Requested matrix window is outside the available extent for the selected source");
     }
@@ -903,14 +894,13 @@ public class TileHandlersHolder extends HandlersHolder {
         if ("SECONDARY".equals(requestedSource)) {
           throw new IllegalArgumentException("PIPELINE_SIGNAL queries are supported only for the primary source");
         }
-        final var secondaryMatrixWithWeights = querySecondarySubmatrix(
-          secondaryChunkedFile,
-          resolutionDescriptor,
-          matrixWithWeights.startRowIncl(),
-          matrixWithWeights.startColIncl(),
-          matrixWithWeights.startRowIncl() + rowCount,
-          matrixWithWeights.startColIncl() + columnCount
-        );
+        final var secondaryMatrixWithWeights = !visibleOnly && secondaryChunkedFile != null
+          ? secondaryChunkedFile.matrixQueries().getSubmatrix(
+            ResolutionDescriptor.fromBpResolution(bpResolution, secondaryChunkedFile),
+            startRowPx, startColPx, endRowPx, endColPx, false)
+          : querySecondarySubmatrix(secondaryChunkedFile, resolutionDescriptor,
+            matrixWithWeights.startRowIncl(), matrixWithWeights.startColIncl(),
+            matrixWithWeights.startRowIncl() + rowCount, matrixWithWeights.startColIncl() + columnCount);
         signalMatrix = computePipelineSignalMatrix(
           primaryChunkedFile,
           secondaryChunkedFile,
@@ -924,27 +914,29 @@ public class TileHandlersHolder extends HandlersHolder {
       default -> throw new IllegalStateException("Unsupported matrix signal mode: " + signalMode);
     }
 
+    final String headerCoordinateSuffix = visibleOnly ? "px" : "bin";
+    final String jsonCoordinateSuffix = visibleOnly ? "Px" : "Bin";
     final var headers = new HashMap<String, String>();
     headers.put("x-hict-rows", Integer.toString(rowCount));
     headers.put("x-hict-cols", Integer.toString(columnCount));
     headers.put("x-hict-signal-mode", signalMode.name());
     headers.put("x-hict-source", requestedSource);
-    headers.put("x-hict-unit", "PIXELS");
-    headers.put("x-hict-start-row-px", Long.toString(matrixWithWeights.startRowIncl()));
-    headers.put("x-hict-end-row-px", Long.toString(matrixWithWeights.startRowIncl() + rowCount));
-    headers.put("x-hict-start-col-px", Long.toString(matrixWithWeights.startColIncl()));
-    headers.put("x-hict-end-col-px", Long.toString(matrixWithWeights.startColIncl() + columnCount));
+    headers.put("x-hict-unit", visibleOnly ? "PIXELS" : "BINS");
+    headers.put("x-hict-start-row-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startRowIncl()));
+    headers.put("x-hict-end-row-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startRowIncl() + rowCount));
+    headers.put("x-hict-start-col-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startColIncl()));
+    headers.put("x-hict-end-col-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startColIncl() + columnCount));
 
     if (format == MatrixResponseFormat.JSON) {
       final var payload = new JsonObject()
         .put("rows", rowCount)
         .put("cols", columnCount)
         .put("signalMode", signalMode.name())
-        .put("unit", "PIXELS")
-        .put("startRowPx", matrixWithWeights.startRowIncl())
-        .put("endRowPx", matrixWithWeights.startRowIncl() + rowCount)
-        .put("startColPx", matrixWithWeights.startColIncl())
-        .put("endColPx", matrixWithWeights.startColIncl() + columnCount);
+        .put("unit", visibleOnly ? "PIXELS" : "BINS")
+        .put("startRow" + jsonCoordinateSuffix, matrixWithWeights.startRowIncl())
+        .put("endRow" + jsonCoordinateSuffix, matrixWithWeights.startRowIncl() + rowCount)
+        .put("startCol" + jsonCoordinateSuffix, matrixWithWeights.startColIncl())
+        .put("endCol" + jsonCoordinateSuffix, matrixWithWeights.startColIncl() + columnCount);
       if (signalMode == MatrixSignalMode.RAW_COUNTS) {
         if (rawMatrix instanceof ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.DoubleMatrix doubleMatrix) {
           payload.put("dtype", "float64");

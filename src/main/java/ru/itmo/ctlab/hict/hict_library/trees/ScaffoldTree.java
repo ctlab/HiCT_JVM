@@ -92,6 +92,15 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
+  /** Commit an already prepared layout while the owner holds both assembly write locks. */
+  public void replaceWith(final ScaffoldTree prepared) {
+    this.rootLock.writeLock().lock();
+    try {
+      this.root = prepared.root;
+      this.rootScaffoldIdCounter = prepared.rootScaffoldIdCounter;
+    } finally { this.rootLock.writeLock().unlock(); }
+  }
+
 //  public void commitRoot(final @No Node newRoot) {
 //    try {
 //      this.rootLock.writeLock().lock();

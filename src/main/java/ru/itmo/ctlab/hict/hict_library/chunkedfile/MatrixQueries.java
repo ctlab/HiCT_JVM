@@ -55,7 +55,7 @@ public class MatrixQueries {
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
-    final var totalAssemblyLength = excludeHiddenContigs ? (this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor)) : (this.chunkedFile.getMatrixSizeBins()[resolutionOrder]);
+    final var totalAssemblyLength = this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor);
     final var startRow = CommonUtils.clamp(startRowIncl, 0L, totalAssemblyLength);
     final var endRow = CommonUtils.clamp(endRowExcl, 0L, totalAssemblyLength);
     final var startCol = CommonUtils.clamp(startColIncl, 0L, totalAssemblyLength);
@@ -293,7 +293,7 @@ public class MatrixQueries {
   public List<ATUDescriptor> getATUsForRange(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
-    final var totalAssemblyLength = excludeHiddenContigs ? (this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor)) : (this.chunkedFile.getMatrixSizeBins()[resolutionOrder]);
+    final var totalAssemblyLength = this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor);
     final var startPx = CommonUtils.clamp(startPxIncl, 0L, totalAssemblyLength);
     final var endPx = CommonUtils.clamp(endPxExcl, 0L, totalAssemblyLength);
 

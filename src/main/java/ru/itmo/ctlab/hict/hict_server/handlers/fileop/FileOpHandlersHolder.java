@@ -587,7 +587,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final long gapLength = request == null
             ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()
             : request.getLong("defaultSpacerLength", ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
-          return chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath(), gapLength);
+          return request != null && request.getBoolean("preserveImportedGaps", false)
+            ? chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssemblyPreservingGaps(fastaPathWrapper.getPath())
+            : chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath(), gapLength);
         },
         fasta -> ctx.response()
           .setChunked(true)
@@ -726,7 +728,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
 
           final var buffer = Buffer.buffer();
-          chunkedFile.getAgpProcessor().getAGPStream(defaultSpacerLength).sequential().forEach(s -> buffer.appendBytes(s.getBytes(StandardCharsets.UTF_8)));
+          final var records = requestJSON.getBoolean("preserveImportedGaps", false)
+            ? chunkedFile.getAgpProcessor().getAssemblyAGPRecords()
+            : chunkedFile.getAgpProcessor().getAGPRecords(defaultSpacerLength);
+          records.forEach(record -> buffer.appendString(record + "\n"));
           return buffer;
         },
         buffer -> ctx.response().setChunked(true).putHeader("Content-Type", "text/plain").end(buffer),
@@ -773,11 +778,16 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var dataDirectory = dataDirectoryWrapper.getPath();
           final var sourceLayoutFile = resolveAssemblyLayoutFile(dataDirectory, agpFilename);
           final var agpFile = materializeAgpLayoutFile(sourceLayoutFile);
+          final var policy = ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.valueOf(
+            requestJSON.getString("missingComponentsPolicy", "REQUIRE_CHOICE"));
+          final ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importReport;
           try (final var reader = Files.newBufferedReader(agpFile, StandardCharsets.UTF_8)) {
-            targetChunkedFile.importAGP(reader);
+            importReport = targetChunkedFile.importAGP(reader, policy);
           } catch (IOException | NoSuchFieldException e) {
             throw new RuntimeException(e);
           }
+          if (importReport.requiresChoice()) return new io.vertx.core.json.JsonObject()
+            .put("requiresMissingComponentsChoice", true).put("importReport", io.vertx.core.json.JsonObject.mapFrom(importReport));
           final var activeAssemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
           if (requestedSource.equalsIgnoreCase(activeAssemblySource)) {
             synchronizeOverlayAssembly(map, requestedSource);
@@ -792,7 +802,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (trackManagerWrapper != null) {
             trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
           }
-          return AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile);
+          return io.vertx.core.json.JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile))
+            .put("importReport", io.vertx.core.json.JsonObject.mapFrom(importReport))
+            .put("warning", String.join(" ", importReport.warnings()));
         },
         response -> ctx.response().end(Json.encode(response))
       );

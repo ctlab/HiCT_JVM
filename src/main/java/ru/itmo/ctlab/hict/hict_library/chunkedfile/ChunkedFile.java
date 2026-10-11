@@ -343,6 +343,9 @@ public class ChunkedFile implements AutoCloseable {
         }
       }
     }
+    for (final var descriptor : this.contigTree.getContigDescriptors().values()) {
+      if (contigName.equals(descriptor.getContigName())) return descriptor;
+    }
     throw new IllegalArgumentException("Unknown contig name " + contigName);
   }
 
@@ -433,19 +436,18 @@ public class ChunkedFile implements AutoCloseable {
   }
 
   public void importAGP(final @NotNull Reader tsvReader) throws IOException, NoSuchFieldException {
-    final var agpFileRecords = this.agpProcessor.parseRecords(tsvReader);
-    final var contigTreeLock = this.contigTree.getRootLock().writeLock();
-    final var scaffoldTreeLock = this.scaffoldTree.getRootLock().writeLock();
-    try {
-      contigTreeLock.lock();
-      scaffoldTreeLock.lock();
+    importAGP(tsvReader, ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.EXCLUDE);
+  }
 
-      this.agpProcessor.initializeContigTreeFromAGP(agpFileRecords);
-      this.agpProcessor.initializeScaffoldTreeFromAGP(agpFileRecords);
-    } finally {
-      contigTreeLock.unlock();
-      scaffoldTreeLock.unlock();
-    }
+  public ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGP(final @NotNull Reader tsvReader,
+      final ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy policy) throws IOException, NoSuchFieldException {
+    final var records = this.agpProcessor.parseRecords(tsvReader);
+    final var contigLock = this.contigTree.getRootLock().writeLock();
+    final var scaffoldLock = this.scaffoldTree.getRootLock().writeLock();
+    contigLock.lock();
+    scaffoldLock.lock();
+    try { return this.agpProcessor.importRecords(records, policy); }
+    finally { scaffoldLock.unlock(); contigLock.unlock(); }
   }
 
   public record ChunkedFileOptions(
