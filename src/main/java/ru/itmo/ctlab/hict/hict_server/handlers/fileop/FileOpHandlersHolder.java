@@ -802,8 +802,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
           if (trackManagerWrapper != null) {
             trackManagerWrapper.getTrack1DManager().invalidateInMemoryCache();
           }
-          return io.vertx.core.json.JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile))
-            .put("importReport", io.vertx.core.json.JsonObject.mapFrom(importReport))
+          // Retain the DTO lists until the one final HTTP serialization. mapFrom
+          // recursively materializes the entire assembly as generic maps first.
+          final var assembly = AssemblyInfoDTO.generateFromChunkedFile(targetChunkedFile);
+          return new io.vertx.core.json.JsonObject()
+            .put("contigDescriptors", assembly.contigDescriptors())
+            .put("scaffoldDescriptors", assembly.scaffoldDescriptors())
+            .put("importReport", importReport)
             .put("warning", String.join(" ", importReport.warnings()));
         },
         response -> ctx.response().end(Json.encode(response))
