@@ -18,8 +18,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
-      # These platform-neutral regressions do not need the release JNI payload.
-      HICT_JHDF5_SOURCE_MODE: maven
+      # shadowJar/processResources require the split JHDF5 native archive even
+      # though these tests do not load JNI. Let Gradle resolve both release assets.
+      HICT_JHDF5_SOURCE_MODE: release
+      HICT_REQUIRE_BUNDLED_JHDF5: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
