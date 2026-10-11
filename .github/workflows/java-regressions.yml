@@ -1,0 +1,45 @@
+name: Java build and edit/render regressions
+
+on:
+  push:
+    branches: [jvm-sfx-native]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  java:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      # These platform-neutral regressions do not need the release JNI payload.
+      HICT_JHDF5_SOURCE_MODE: maven
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Compile full JVM, build fat JAR, and check edit/render contracts
+        shell: bash
+        run: >-
+          bash ./gradlew test
+          --tests '*ScaffoldDescriptorDTOTest'
+          --tests '*RequestTaskSchedulerTest'
+          --tests '*TileVisualizationProcessorRgbaTest'
+          shadowJar -x copyWebUI --no-daemon
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: java-regressions-${{ matrix.os }}
+          path: |
+            build/reports/tests/test
+            build/test-results/test
