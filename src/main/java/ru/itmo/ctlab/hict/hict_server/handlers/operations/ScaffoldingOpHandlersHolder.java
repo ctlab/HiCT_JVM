@@ -38,8 +38,7 @@ import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding.*;
-import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
-import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoWithVersionDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.CompactAssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
@@ -80,7 +79,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().reverseSelectionRangeBp(request.startBP(), request.endBP());
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
         dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
@@ -110,7 +109,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
         dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
@@ -141,7 +140,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().splitContigAtBin(splitPositionBp, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
         dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
@@ -171,7 +170,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().scaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
         dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
@@ -201,7 +200,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().unscaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
         dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
@@ -231,7 +230,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
         dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
