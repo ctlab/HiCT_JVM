@@ -82,7 +82,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/move_selection_range").handler(ctx -> {
@@ -112,7 +112,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/split_contig_at_bin").handler(ctx -> {
@@ -143,7 +143,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/group_contigs_into_scaffold").handler(ctx -> {
@@ -173,7 +173,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/ungroup_contigs_from_scaffold").handler(ctx -> {
@@ -203,7 +203,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/move_selection_to_debris").handler(ctx -> {
@@ -233,7 +233,7 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
           return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
   }

@@ -320,7 +320,9 @@ public class TileVisualizationProcessor {
 
     final WritableRaster raster = Raster.createInterleavedRaster(buffer, columnCount, rowCount, 4 * columnCount, 4, new int[]{0, 1, 2, 3}, null);
     final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), true, false, Transparency.TRANSLUCENT, DataBuffer.TYPE_BYTE);
-    //final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, true, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-    return new BufferedImage(cm, raster, true, null);
+    // Both colormap paths emit straight (not alpha-premultiplied) RGBA.
+    // A mismatched flag makes BufferedImage unpremultiply every pixel, which
+    // both changes translucent colours and adds a full raster conversion.
+    return new BufferedImage(cm, raster, false, null);
   }
 }
