@@ -28,6 +28,7 @@ import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.ByteArrayOutputStream
 import java.net.URI
+import java.security.MessageDigest
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -46,9 +47,6 @@ repositories {
   mavenCentral()
   maven {
     url = uri("https://maven.scijava.org/content/repositories/public/")
-  }
-  maven {
-    url = uri("https://nexus.bioviz.org/repository/maven-releases/")
   }
 }
 
@@ -582,7 +580,16 @@ dependencies {
   implementation("org.scijava:native-lib-loader:2.4.0")
   implementation("info.picocli:picocli:4.7.6")
   implementation("com.github.samtools:htsjdk:4.1.3")
-  implementation("org.broad.igv:bigwig:2.0.1")
+  // The publisher's sole Maven repository is unavailable. Retain the exact
+  // already-shipped library, with its source/license, on every release platform.
+  val bigwigJar = file("third_party/bigwig/bigwig-2.0.1.jar")
+  require(bigwigJar.isFile) { "Missing checked-in BigWig dependency: $bigwigJar" }
+  val bigwigSha256 = MessageDigest.getInstance("SHA-256")
+    .digest(bigwigJar.readBytes()).joinToString("") { "%02x".format(it) }
+  require(bigwigSha256 == "1cf8cdf2746d4160a24aa0d609343189a0d7da9ce7e9ad94caacb8cbaff5f447") {
+    "BigWig dependency checksum mismatch; restore the reviewed artifact."
+  }
+  implementation(files(bigwigJar))
 
 
 }
@@ -1537,5 +1544,13 @@ tasks.named<ShadowJar>("shadowJar") {
 if (requireBundledJhdf5) {
   tasks.named("build") {
     dependsOn("verifyBundledJhdf5Payload")
+  }
+}
+
+// Keep the LGPL notice and corresponding dependency source in portable JARs.
+tasks.named<ProcessResources>("processResources") {
+  from("third_party/bigwig") {
+    exclude("*.jar")
+    into("META-INF/third-party/bigwig")
   }
 }
