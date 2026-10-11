@@ -36,6 +36,7 @@ jobs:
           --tests '*ScaffoldDescriptorDTOTest'
           --tests '*RequestTaskSchedulerTest'
           --tests '*TileVisualizationProcessorRgbaTest'
+          --tests '*ScaffoldTreeSequentialScaffoldsTest'
           shadowJar -x copyWebUI --no-daemon
       - name: Preserve test evidence
         if: always()

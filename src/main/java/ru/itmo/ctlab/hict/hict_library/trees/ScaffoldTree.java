@@ -202,7 +202,9 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       final @NotNull var newScaffoldNode = new ScaffoldTree.Node(
         newScaffoldDescriptor,
         es.segment().subtreeLengthBp,
-        es.segment().yPriority,
+        // A collapsed/replaced segment is a new treap node. Reusing the
+        // exposed maximum biases priorities and degenerates sequential loads.
+        rnd.nextLong(),
         null,
         null,
         1,
@@ -236,7 +238,9 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       final @NotNull var emptyNode = new ScaffoldTree.Node(
         null,
         es.segment().subtreeLengthBp,
-        es.segment().yPriority,
+        // A collapsed/replaced segment is a new treap node. Reusing the
+        // exposed maximum biases priorities and degenerates sequential loads.
+        rnd.nextLong(),
         null,
         null,
         1,
@@ -399,16 +403,14 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
               return new Node.SplitResult(newTree.left, new_t);
             }
           } else {
-            final var t1 = newTree.cloneBuilder().nodeLengthBp(expectedLeftSize - leftSubtreeLength).right(null).build().updateSizes();
-            final var rightPartLengthBp = newTree.subtreeLengthBp - t1.subtreeLengthBp;
-            final Node t2;
-            if (rightPartLengthBp > 0) {
-              t2 = newTree.cloneBuilder().nodeLengthBp(rightPartLengthBp).left(null).yPriority(rnd.nextLong(Long.min(1L + newTree.yPriority, Long.MAX_VALUE - 1), Long.MAX_VALUE)).build().updateSizes();
-            } else {
-              t2 = newTree.right;
-            }
-            final var t1u = t1.updateSizes();
-            final var t2u = t2.updateSizes();
+            final long leftPartLengthBp = expectedLeftSize - leftSubtreeLength;
+            // Divide this node's gap only; the right subtree remains attached
+            // and must not be counted a second time in the right gap length.
+            final var t1u = newTree.cloneBuilder().nodeLengthBp(leftPartLengthBp)
+              .right(null).build().updateSizes();
+            // Keep the parent's priority bound in both resulting treaps.
+            final var t2u = newTree.cloneBuilder().nodeLengthBp(nodeLength - leftPartLengthBp)
+              .left(null).build().updateSizes();
             assert (newTree.subtreeLengthBp == (Optional.ofNullable(t1u).map(n -> n.subtreeLengthBp).orElse(0L) + Optional.ofNullable(t2u).map(n -> n.subtreeLengthBp).orElse(0L))) : "In second-non-scaffold split case subtree length has changed??";
             return new Node.SplitResult(t1u, t2u);
           }
@@ -516,41 +518,23 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
 
     public static @Nullable Node leftmost(final @Nullable Node t) {
-      if (t == null) {
-        return null;
-      }
-      var node = t;
-      while (true) {
-        final @Nullable Node candidate;
-        if (node.needsChangingDirection) {
-          candidate = node.right;
-        } else {
-          candidate = node.left;
-        }
-        if (candidate == null) {
-          return node;
-        }
-        node = candidate;
-      }
+      return extremeNode(t, false);
     }
 
     public static @Nullable Node rightmost(final @Nullable Node t) {
-      if (t == null) {
-        return null;
-      }
+      return extremeNode(t, true);
+    }
+
+    private static @Nullable Node extremeNode(final @Nullable Node t, final boolean rightmost) {
       var node = t;
-      while (true) {
-        final @Nullable Node candidate;
-        if (!node.needsChangingDirection) {
-          candidate = node.right;
-        } else {
-          candidate = node.left;
-        }
-        if (candidate == null) {
-          return node;
-        }
+      while (node != null) {
+        // Ancestor reversal must reach the child before choosing its endpoint.
+        node = node.push();
+        final var candidate = rightmost ? node.right : node.left;
+        if (candidate == null) return node;
         node = candidate;
       }
+      return null;
     }
 
     public @NotNull Node leftmost() {
@@ -612,13 +596,13 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
         final Node newLeft;
         final Node newRight;
         if (this.left != null) {
-          newRight = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection).left(this.left.right).right(this.left.left).build();
+          newRight = this.left.cloneBuilder().needsChangingDirection(!this.left.needsChangingDirection).build();
         } else {
           newRight = null;
         }
 
         if (this.right != null) {
-          newLeft = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection).left(this.right.right).right(this.right.left).build();
+          newLeft = this.right.cloneBuilder().needsChangingDirection(!this.right.needsChangingDirection).build();
         } else {
           newLeft = null;
         }
