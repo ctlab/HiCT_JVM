@@ -1159,7 +1159,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
       sourceDescriptorsByName.put(descriptor.getContigNameInSourceFASTA(), descriptor);
     });
 
-    target.getContigTree().getContigDescriptors().forEach((contigId, targetDescriptor) -> {
+    target.getContigTree().mapDescriptors(targetDescriptor -> {
+      final var contigId = targetDescriptor.getContigId();
+      final var visibility = new ArrayList<>(targetDescriptor.getPresenceAtResolution());
       var sourceDescriptor = sourceDescriptorsByName.get(target.getContigDisplayName(contigId));
       if (sourceDescriptor == null) {
         sourceDescriptor = sourceDescriptorsByName.get(target.getContigOriginalName(contigId));
@@ -1172,11 +1174,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }
       if (sourceDescriptor == null) {
         for (int targetOrder = 1; targetOrder < targetResolutions.length && targetOrder < targetDescriptor.getPresenceAtResolution().size(); targetOrder++) {
-          targetDescriptor.getPresenceAtResolution().set(targetOrder, ContigHideType.HIDDEN);
+          visibility.set(targetOrder, ContigHideType.HIDDEN);
         }
-        return;
-      }
-
+      } else {
       for (int targetOrder = 1; targetOrder < targetResolutions.length; targetOrder++) {
         if (targetOrder >= targetDescriptor.getPresenceAtResolution().size()) {
           continue;
@@ -1185,8 +1185,15 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var presence = sourceOrder > 0 && sourceOrder < sourceDescriptor.getPresenceAtResolution().size()
           ? sourceDescriptor.getPresenceAtResolution().get(sourceOrder)
           : inferVisibilityForResolution(targetDescriptor, targetResolutions[targetOrder], targetOrder);
-        targetDescriptor.getPresenceAtResolution().set(targetOrder, presence);
+        visibility.set(targetOrder, presence);
       }
+      }
+      if (visibility.equals(targetDescriptor.getPresenceAtResolution())) return targetDescriptor;
+      return new ContigDescriptor(contigId, targetDescriptor.getContigName(), targetDescriptor.getLengthBp(),
+        java.util.Arrays.stream(targetDescriptor.getLengthBinsAtResolution()).skip(1).boxed().toList(),
+        visibility.subList(1, visibility.size()),
+        targetDescriptor.getAtus().subList(1, targetDescriptor.getAtus().size()),
+        targetDescriptor.getContigNameInSourceFASTA(), targetDescriptor.getOffsetInSourceFASTA());
     });
   }
 
@@ -1244,7 +1251,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     );
   }
 
-  private static @Nullable SecondaryCompatibility refreshSecondaryCompatibility(final @NotNull LocalMap<String, Object> map) {
+  public static @Nullable SecondaryCompatibility refreshSecondaryCompatibility(final @NotNull LocalMap<String, Object> map) {
     final var primaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
     final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
     if (primaryWrapper == null || secondaryWrapper == null) {

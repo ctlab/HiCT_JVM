@@ -60,6 +60,12 @@ public class AGPProcessor {
   }
   private Map<Edge, List<GapAGPRecord>> importedGaps = Map.of();
   private Map<Integer, ContigAGPRecord> importedComponents = Map.of();
+  public record Annotations(Map<Edge, List<GapAGPRecord>> gaps, Map<Integer, ContigAGPRecord> components) {}
+  public Annotations snapshotAnnotations() { return new Annotations(importedGaps, importedComponents); }
+  public void restoreAnnotations(Annotations state) {
+    importedGaps = state.gaps(); importedComponents = state.components();
+  }
+
   private static Edge edge(ContigTree.ContigTuple left, ContigTree.ContigTuple right) {
     return new Edge(left == null ? -1 : left.descriptor().getContigId(), left == null ? ContigDirection.FORWARD : left.direction(),
       right == null ? -1 : right.descriptor().getContigId(), right == null ? ContigDirection.FORWARD : right.direction());

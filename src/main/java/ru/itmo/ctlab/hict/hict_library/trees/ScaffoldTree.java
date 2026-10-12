@@ -92,6 +92,19 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
     }
   }
 
+  /** Persistent root plus the allocator, including scaffold IDs after a split/group. */
+  public record Snapshot(Node root, long idCounter) {}
+  public Snapshot snapshot() {
+    rootLock.readLock().lock();
+    try { return new Snapshot(root, rootScaffoldIdCounter); }
+    finally { rootLock.readLock().unlock(); }
+  }
+  public void restore(Snapshot state) {
+    rootLock.writeLock().lock();
+    try { root = state.root(); rootScaffoldIdCounter = state.idCounter(); }
+    finally { rootLock.writeLock().unlock(); }
+  }
+
   /** Commit an already prepared layout while the owner holds both assembly write locks. */
   public void replaceWith(final ScaffoldTree prepared) {
     this.rootLock.writeLock().lock();

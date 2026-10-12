@@ -354,7 +354,10 @@ public class MainVerticle extends AbstractVerticle {
       .allowedHeader("Access-Control-Allow-Credentials")
       .allowedHeader("Access-Control-Allow-Origin")
       .allowedHeader("Access-Control-Allow-Headers")
-      .allowedHeader("Content-Type"));
+      .allowedHeader("Content-Type")
+      .allowedHeader("X-HiCT-History-Session")
+      .allowedHeader("X-HiCT-History-Revision")
+      .exposedHeader("X-HiCT-History"));
     router.route().handler(ctx -> {
       requestStatistics.recordStarted(ctx.normalizedPath());
       ctx.addBodyEndHandler(ignored -> requestStatistics.recordFinished());
@@ -374,6 +377,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new TileHandlersHolder(vertx));
     handlersHolders.add(new FileOpHandlersHolder(vertx));
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
+    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
     handlersHolders.add(new DotplotHandlersHolder(vertx));

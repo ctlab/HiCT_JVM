@@ -78,6 +78,25 @@ class RequestTaskSchedulerTest {
   }
 
   @Test
+  void assemblyCommandsCannotOverlapAndKeepFifoOrder() throws Exception {
+    var calls = new java.util.concurrent.CopyOnWriteArrayList<String>();
+    var entered = new CountDownLatch(1);
+    var router = Router.router(vertx);
+    router.get("/:kind").handler(ctx -> scheduler.submit(ctx, RequestPriority.ASSEMBLY, null, () -> {
+      String kind = ctx.pathParam("kind"); calls.add(kind + "-start");
+      if (kind.equals("first")) { entered.countDown(); release.await(5, TimeUnit.SECONDS); }
+      calls.add(kind + "-end"); return kind;
+    }, value -> ctx.response().end(value)));
+    var server = vertx.createHttpServer().requestHandler(router).listen(0).toCompletionStage().toCompletableFuture().get(5,TimeUnit.SECONDS);
+    port=server.actualPort();
+    var first=request("first");assertTrue(entered.await(3,TimeUnit.SECONDS));var second=request("second");
+    until(()->scheduler.diagnosticsSnapshot().pools().get(RequestPriority.ASSEMBLY).queueSize()==1);
+    assertEquals(java.util.List.of("first-start"),calls);release.countDown();
+    assertEquals(200,first.get(3,TimeUnit.SECONDS).statusCode());assertEquals(200,second.get(3,TimeUnit.SECONDS).statusCode());
+    assertEquals(java.util.List.of("first-start","first-end","second-start","second-end"),calls);
+  }
+
+  @Test
   void queuedCancellationCompletesHttpWithoutRunningSupplier() throws Exception {
     start(); var first=request("block");var second=request("block");
     assertTrue(active.await(3,TimeUnit.SECONDS));

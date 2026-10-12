@@ -48,7 +48,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
   @Getter
   private @Nullable Node root;
   @Getter
-  private final @NotNull Map<Integer, ContigDescriptor> contigDescriptors = new ConcurrentHashMap<>();
+  private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Integer, ContigDescriptor> contigDescriptors = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
 
   @Override
   public Iterator<Node> iterator() {
@@ -106,6 +106,22 @@ public class ContigTree implements Iterable<ContigTree.Node> {
     } finally {
       this.rootLock.writeLock().unlock();
     }
+  }
+
+  /** Copy descriptors instead of mutating visibility shared with older roots. */
+  public void mapDescriptors(java.util.function.UnaryOperator<ContigDescriptor> transform) {
+    rootLock.writeLock().lock();
+    try { root = mapDescriptors(root, transform); }
+    finally { rootLock.writeLock().unlock(); }
+  }
+  private Node mapDescriptors(Node node, java.util.function.UnaryOperator<ContigDescriptor> transform) {
+    if (node == null) return null;
+    var left = mapDescriptors(node.left, transform);
+    var right = mapDescriptors(node.right, transform);
+    var descriptor = transform.apply(node.contigDescriptor);
+    if (left == node.left && right == node.right && descriptor == node.contigDescriptor) return node;
+    contigDescriptors.put(descriptor.getContigId(), descriptor);
+    return node.cloneBuilder().left(left).right(right).contigDescriptor(descriptor).build().updateSizes();
   }
 
   public List<ContigTuple> getOrderedContigList() {

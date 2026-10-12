@@ -20,6 +20,62 @@ tags:
   - name: Tracks
   - name: Conversion
 paths:
+  /assembly/history:
+    post:
+      tags: [Scaffolding]
+      summary: Read a page of the current session edit journal
+      description: |
+        Opening or closing a map, attaching or detaching an overlay, or switching
+        assembly source starts a new journal. Each successful assembly response
+        includes X-HiCT-History, a JSON summary containing session, revision,
+        currentId, position, size, canUndo and canRedo. No contact matrices are stored.
+      operationId: getAssemblyHistory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                offset: { type: integer, minimum: 0 }
+                limit: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Summary, offset and entries (id, label, timestamp). Summary is null when closed.
+          content:
+            application/json:
+              schema: { type: object }
+  /assembly/history/restore:
+    post:
+      tags: [Scaffolding]
+      summary: Undo, redo or restore an earlier or later journal state
+      description: |
+        Restoration retains later states; a subsequent successful new edit truncates
+        the redo branch. Failed and unchanged operations retain it. A session and
+        revision guard prevents stale clients from navigating a different history.
+        Edits can send the same guard as X-HiCT-History-Session and
+        X-HiCT-History-Revision headers. Restoration invalidates tiles and tracks.
+      operationId: restoreAssemblyHistory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session, revision, action]
+              properties:
+                session: { type: string }
+                revision: { type: integer, format: int64 }
+                action: { type: string, enum: [undo, redo, restore] }
+                id: { type: integer, format: int64, description: Required for restore }
+                assemblyFormat: { type: string, enum: [compact-v1] }
+      responses:
+        '200':
+          description: Complete assemblyInfo and tile version; current journal summary in X-HiCT-History.
+          content:
+            application/json:
+              schema: { type: object }
+        '409':
+          description: Stale session or revision. Fetch the journal and retry deliberately.
   /version:
     get:
       tags: [Info]

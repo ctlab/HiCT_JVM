@@ -93,8 +93,8 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
   private final @NotNull AGPProcessor agpProcessor;
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
-  private final @NotNull Map<Integer, String> contigNameOverrides = new ConcurrentHashMap<>();
-  private final @NotNull Map<Long, String> scaffoldNameOverrides = new ConcurrentHashMap<>();
+  private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Integer, String> contigNameOverrides = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
+  private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Long, String> scaffoldNameOverrides = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
   private final @NotNull Object nameOverrideLock = new Object();
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
   private final @NotNull FASTAProcessor fastaProcessor;
@@ -219,6 +219,40 @@ public class ChunkedFile implements AutoCloseable {
     log.info("Opened {}: {} resolutions, {} contigs in {} ms", this.hdfFilePath.getFileName(),
       this.resolutions.length - 1, this.contigTree.getContigDescriptors().size(),
       (System.nanoTime() - openingStarted) / 1_000_000);
+  }
+
+  /** No matrix data or tree traversal: checkpoints share persistent nodes. */
+  public record AssemblySnapshot(
+      ChunkedFile owner, ContigTree.Node contigs, ScaffoldTree.Snapshot scaffolds,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, ContigDescriptor> descriptors,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, String> contigNames,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Long, String> scaffoldNames,
+      AGPProcessor.Annotations annotations) {}
+
+  public AssemblySnapshot snapshotAssembly() {
+    contigTree.getRootLock().readLock().lock();
+    scaffoldTree.getRootLock().readLock().lock();
+    try {
+      return new AssemblySnapshot(this, contigTree.getRoot(), scaffoldTree.snapshot(),
+        contigTree.getContigDescriptors().snapshot(), contigNameOverrides.snapshot(),
+        scaffoldNameOverrides.snapshot(), agpProcessor.snapshotAnnotations());
+    } finally {
+      scaffoldTree.getRootLock().readLock().unlock(); contigTree.getRootLock().readLock().unlock();
+    }
+  }
+
+  public void restoreAssembly(AssemblySnapshot state) {
+    if (state.owner() != this) throw new IllegalArgumentException("Assembly checkpoint belongs to another file");
+    contigTree.getRootLock().writeLock().lock();
+    scaffoldTree.getRootLock().writeLock().lock();
+    try {
+      contigTree.getContigDescriptors().restore(state.descriptors());
+      contigNameOverrides.restore(state.contigNames()); scaffoldNameOverrides.restore(state.scaffoldNames());
+      agpProcessor.restoreAnnotations(state.annotations());
+      contigTree.commitRoot(state.contigs()); scaffoldTree.restore(state.scaffolds());
+    } finally {
+      scaffoldTree.getRootLock().writeLock().unlock(); contigTree.getRootLock().writeLock().unlock();
+    }
   }
 
   private void loadNameOverrides() {

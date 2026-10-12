@@ -3,6 +3,7 @@ package ru.itmo.ctlab.hict.hict_library.converters;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import java.io.StringReader;
@@ -616,6 +617,88 @@ class HictToMcoolConverterTest {
       assertThrows(IllegalArgumentException.class,()->file.importAGP(new StringReader("bad 1 2001 1 W ctgA 1 2001 +")));
       assertEquals(stable,file.getAssemblyInfo().contigs());
     }
+  }
+
+  @Test
+  void persistentAssemblyCheckpointsRestoreSplitDebrisNamesAgpAndFastaExactly() throws Exception {
+    var source=tempDir.resolve("history.mcool"); var hict=tempDir.resolve("history.hict.hdf5");
+    var fasta=tempDir.resolve("history.fa");
+    writeSyntheticMcool(source);
+    Files.writeString(fasta, ">ctgA\n"+"ACGT".repeat(500)+"\n>ctgB\n"+"C".repeat(2000)+"\n");
+    new McoolToHictConverter().convert(roundTripOptions(source,hict,null),ignored->{});
+    try(var file=new ChunkedFile(new ChunkedFile.ChunkedFileOptions(hict,1,2))) {
+      var states=new java.util.ArrayList<ChunkedFile.AssemblySnapshot>();
+      var layouts=new java.util.ArrayList<String>(); var fastas=new java.util.ArrayList<String>();
+      var matrices=new java.util.ArrayList<long[]>();
+      var names=new java.util.ArrayList<java.util.Map<Integer,String>>();
+      var registry=new java.util.ArrayList<java.util.Map<Integer,ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor>>();
+      var resolution=ResolutionDescriptor.fromBpResolution(1000,file);
+      Runnable remember=()->{
+        states.add(file.snapshotAssembly()); layouts.add(file.getAgpProcessor().getAssemblyAGPRecords().toString());
+        fastas.add(file.getFastaProcessor().exportAssemblyPreservingGaps(fasta));
+        var matrix=file.getMatrixQueries().getSubmatrix(resolution,0,0,4,4,false).matrix();
+        var cells=new long[16];for(int i=0;i<4;i++)for(int j=0;j<4;j++)cells[i*4+j]=(long)matrix.getAsDouble(i,j);
+        matrices.add(cells); names.add(java.util.Map.copyOf(file.getContigNameOverrides()));
+        registry.add(java.util.Map.copyOf(file.getContigTree().getContigDescriptors()));
+      };
+      remember.run();
+      file.scaffoldingOperations().reverseSelectionRangeBp(0,2000);remember.run();
+      file.scaffoldingOperations().moveSelectionRangeBp(0,2000,4000);remember.run();
+      file.scaffoldingOperations().splitContigAtBin(500,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS);remember.run();
+      file.restoreAssembly(states.get(0));
+      file.importAGP(new StringReader("s1 1 550 1 W ctgA 1 550 +\ns1 551 650 2 U 100 scaffold yes paired-ends\ns1 651 2650 3 W ctgB 1 2000 -\ns2 1 1450 1 W ctgA 551 2000 -\n"));remember.run();
+      int contigId=file.getAssemblyInfo().contigs().getFirst().descriptor().getContigId();
+      file.setContigNameOverride(contigId,"renamed piece");remember.run();
+      file.scaffoldingOperations().moveRegionToDebris(0,550,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS);remember.run();
+      for(int index:new int[]{0,3,1,5,2,6,4,0,6}) {
+        file.restoreAssembly(states.get(index));
+        assertEquals(layouts.get(index),file.getAgpProcessor().getAssemblyAGPRecords().toString());
+        assertEquals(fastas.get(index),file.getFastaProcessor().exportAssemblyPreservingGaps(fasta));
+        assertEquals(names.get(index),file.getContigNameOverrides());
+        assertEquals(registry.get(index),file.getContigTree().getContigDescriptors());
+        var matrix=file.getMatrixQueries().getSubmatrix(resolution,0,0,4,4,false).matrix();
+        for(int i=0;i<4;i++)for(int j=0;j<4;j++)assertEquals(matrices.get(index)[i*4+j],(long)matrix.getAsDouble(i,j));
+      }
+      file.restoreAssembly(states.get(0));
+      var groupingBefore=file.snapshotAssembly();
+      file.scaffoldingOperations().scaffoldRegion(0,4000,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS,null);
+      var group=file.getAssemblyInfo().scaffolds();file.restoreAssembly(groupingBefore);
+      file.scaffoldingOperations().scaffoldRegion(0,4000,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS,null);
+      assertEquals(group,file.getAssemblyInfo().scaffolds(),"Allocator must be restored with scaffold root");
+    }
+  }
+
+  @Test
+  void failingServerEditRollsBackBothRootsAndMetadataWithoutAddingHistory() throws Exception {
+    var source=tempDir.resolve("rollback.mcool"); var hict=tempDir.resolve("rollback.hict.hdf5");
+    writeSyntheticMcool(source);new McoolToHictConverter().convert(roundTripOptions(source,hict,null),ignored->{});
+    var vertx=io.vertx.core.Vertx.vertx();
+    var scheduler=new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler(vertx,
+      new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.SchedulerConfig(10,8,30,java.util.Map.of()));
+    try(var file=new ChunkedFile(new ChunkedFile.ChunkedFileOptions(hict,1,2));var client=java.net.http.HttpClient.newHttpClient()) {
+      var map=vertx.sharedData().getLocalMap("hict_server");
+      map.put("chunkedFile",new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.ChunkedFileWrapper(file));
+      var history=new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx,scheduler);
+      var router=io.vertx.ext.web.Router.router(vertx);router.route().handler(io.vertx.ext.web.handler.BodyHandler.create());
+      history.addHandlersToRouter(router);
+      router.post("/reverse_selection_range").handler(ctx->scheduler.submit(ctx,
+        ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority.ASSEMBLY,null,()->{
+          file.scaffoldingOperations().moveRegionToDebris(0,2000,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS);
+          file.setContigNameOverride(0,"changed");
+          throw new IllegalStateException("Injected failure after mutation");
+        },result->ctx.response().end("unexpected success")));
+      var server=vertx.createHttpServer().requestHandler(router).listen(0).toCompletionStage().toCompletableFuture().get();
+      var before=file.snapshotAssembly();var layout=file.getAssemblyInfo();
+      var request=java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:"+server.actualPort()+"/reverse_selection_range"))
+        .header("Content-Type","application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}")).build();
+      assertEquals(500,client.send(request,java.net.http.HttpResponse.BodyHandlers.ofString()).statusCode());
+      assertEquals(layout,file.getAssemblyInfo());assertEquals(before,file.snapshotAssembly());
+      request=java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:"+server.actualPort()+"/assembly/history"))
+        .header("Content-Type","application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}")).build();
+      var response=new io.vertx.core.json.JsonObject(client.send(request,java.net.http.HttpResponse.BodyHandlers.ofString()).body());
+      assertEquals(1,response.getJsonObject("summary").getInteger("size"));
+      server.close().toCompletionStage().toCompletableFuture().get();
+    } finally { scheduler.close();vertx.close().toCompletionStage().toCompletableFuture().get(); }
   }
 
   private static int[] toIntArray(final long[] values) {

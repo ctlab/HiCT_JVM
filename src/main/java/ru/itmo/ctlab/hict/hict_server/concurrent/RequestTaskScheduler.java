@@ -68,7 +68,7 @@ public final class RequestTaskScheduler implements AutoCloseable {
     private final int maxWorkers;
 
     public PoolSizing(final int minWorkers, final int maxWorkers) {
-      this.minWorkers = Math.max(2, minWorkers);
+      this.minWorkers = Math.max(1, minWorkers);
       this.maxWorkers = Math.max(this.minWorkers, maxWorkers);
     }
   }
@@ -159,7 +159,9 @@ public final class RequestTaskScheduler implements AutoCloseable {
     int minTotal = 0;
     for (final var priority : priorities) {
       final var sizing = config.perPrioritySizing().getOrDefault(priority, new PoolSizing(2, 2));
-      final var validated = new PoolSizing(sizing.getMinWorkers(), sizing.getMaxWorkers());
+      // Assembly commands (including open/close/history) must commit in submission order.
+      final var validated = priority == RequestPriority.ASSEMBLY ? new PoolSizing(1, 1)
+        : new PoolSizing(Math.max(2, sizing.getMinWorkers()), sizing.getMaxWorkers());
       validatedSizing.put(priority, validated);
       this.poolSizing.put(priority, validated);
       this.activeWorkersByPriority.put(priority, new AtomicInteger(0));
@@ -202,6 +204,13 @@ public final class RequestTaskScheduler implements AutoCloseable {
     );
   }
 
+  public interface AssemblyTaskInterceptor {
+    <T> T execute(RoutingContext ctx, ThrowingSupplier<T> supplier) throws Exception;
+  }
+  private AssemblyTaskInterceptor assemblyTaskInterceptor;
+  /** Installed during router initialization, before accepting requests. */
+  public void setAssemblyTaskInterceptor(AssemblyTaskInterceptor interceptor) { this.assemblyTaskInterceptor = interceptor; }
+
   public <T> void submit(final @NotNull RoutingContext ctx,
                          final @NotNull RequestPriority priority,
                          final @Nullable CancellationDomain domain,
@@ -237,7 +246,8 @@ public final class RequestTaskScheduler implements AutoCloseable {
           elasticPermitAcquired = true;
         }
         this.ensureNotCancelled(domain, generationSnapshot);
-        final var value = supplier.get();
+        final var value = priority == RequestPriority.ASSEMBLY && assemblyTaskInterceptor != null
+          ? assemblyTaskInterceptor.execute(ctx, supplier) : supplier.get();
         this.ensureNotCancelled(domain, generationSnapshot);
         return value;
       } finally {
@@ -432,7 +442,8 @@ public final class RequestTaskScheduler implements AutoCloseable {
       if (ctx.response().ended()) {
         return;
       }
-      ctx.fail(throwable);
+      if (throwable instanceof io.vertx.ext.web.handler.HttpException http) ctx.fail(http.getStatusCode(), throwable);
+      else ctx.fail(throwable);
     });
   }
 
