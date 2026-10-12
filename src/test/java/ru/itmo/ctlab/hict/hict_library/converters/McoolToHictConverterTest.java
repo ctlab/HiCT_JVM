@@ -29,6 +29,87 @@ class McoolToHictConverterTest {
   Path tempDir;
 
   @Test
+  void parallelStripesPreserveEveryPixelAndDatasetExtent() throws Exception {
+    final var input = tempDir.resolve("many-stripes.mcool");
+    final int bins = 20000;
+    final long[] ids = java.util.stream.LongStream.range(0, bins).toArray();
+    final long[] starts = java.util.stream.LongStream.range(0, bins).map(x -> 1000 * x).toArray();
+    final long[] ends = java.util.stream.LongStream.rangeClosed(1, bins).map(x -> 1000 * x).toArray();
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (var w = HDF5Factory.open(input.toFile())) {
+      w.string().writeArray("/chroms/name", new String[]{"source"});
+      w.int64().writeArray("/chroms/length", new long[]{1000L * bins});
+      String root = "/resolutions/1000/";
+      w.int64().writeArray(root + "indexes/chrom_offset", new long[]{0, bins});
+      w.int64().writeArray(root + "indexes/bin1_offset", java.util.stream.LongStream.rangeClosed(0, bins).toArray());
+      w.int64().writeArray(root + "bins/chrom", new long[bins]);
+      w.int64().writeArray(root + "bins/start", starts);
+      w.int64().writeArray(root + "bins/end", ends);
+      w.int64().writeArray(root + "pixels/bin1_id", ids);
+      w.int64().writeArray(root + "pixels/bin2_id", ids);
+      w.int64().writeArray(root + "pixels/count", java.util.stream.LongStream.rangeClosed(1, bins).toArray());
+    }
+    String old = System.getProperty("hict.import.maxStripeBatchSize");
+    System.setProperty("hict.import.maxStripeBatchSize", "16");
+    try {
+      final var output = tempDir.resolve("many-stripes.hict.hdf5");
+      new McoolToHictConverter().convert(new ConversionOptions(input, output, List.of(1000L), 128, 6,
+        ConversionOptions.CompressionAlgorithm.DEFLATE, ConversionOptions.NO_AGP, false, 4, false,
+        ConversionOptions.ExportMode.INTERNAL), ignored -> {});
+      try (var r = HDF5Factory.openForReading(output.toFile())) {
+        assertEquals(bins, r.object().getDataSetInformation(getBlockValuesDatasetPath(1000L)).getDimensions()[0]);
+        assertArrayEquals(java.util.stream.LongStream.rangeClosed(1, bins).toArray(), r.int64().readArray(getBlockValuesDatasetPath(1000L)));
+        final long[] local = java.util.stream.LongStream.range(0, bins).map(x -> x % 256).toArray();
+        assertArrayEquals(local, r.int64().readArray(getBlockRowsDatasetPath(1000L)));
+        assertArrayEquals(local, r.int64().readArray(getBlockColsDatasetPath(1000L)));
+      }
+    } finally {
+      if (old == null) System.clearProperty("hict.import.maxStripeBatchSize");
+      else System.setProperty("hict.import.maxStripeBatchSize", old);
+    }
+  }
+
+  @Test
+  void writerFailureIsReportedInsteadOfSuccessOrQueueDeadlock() throws Exception {
+    final var input = tempDir.resolve("writer-failure.mcool");
+    writeSyntheticMcool(input);
+    final var failure = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+      java.time.Duration.ofSeconds(15), () -> org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+        () -> new McoolToHictConverter().convert(new ConversionOptions(
+          input, tempDir.resolve("writer-failure.hict.hdf5"), List.of(1000L), 64, 0,
+          ConversionOptions.CompressionAlgorithm.DEFLATE, ConversionOptions.NO_AGP, false, 4, false,
+          ConversionOptions.ExportMode.INTERNAL), message -> {
+          if (Thread.currentThread().getName().startsWith("hict-writer-")) {
+            throw new IllegalStateException("Injected writer failure");
+          }
+        })));
+    org.junit.jupiter.api.Assertions.assertTrue(failure.toString().contains("Failed to write HiCT resolution"), failure.toString());
+    assertEquals("Injected writer failure", failure.getCause().getMessage());
+  }
+
+  @Test
+  void sparseBlockOrderingKeepsExactCountsAndStableDuplicates() throws Exception {
+    for (final boolean sorted : new boolean[]{true, false}) {
+      final long[] rows = sorted ? new long[]{0, 0, 0, 3} : new long[]{3, 0, 0, 0};
+      final long[] cols = sorted ? new long[]{1, 1, 7, 2} : new long[]{2, 1, 7, 1};
+      final long big = (1L << 54) + 1;
+      final long[] longs = sorted ? new long[]{big, big + 1, 7, 2} : new long[]{2, big, 7, big + 1};
+      final double[] doubles = sorted ? new double[]{.125, .25, -2.5, 8.75} : new double[]{8.75, .125, -2.5, .25};
+      for (final Object values : new Object[]{longs, doubles}) {
+        final var method = McoolToHictConverter.class.getDeclaredMethod(
+          "sortSparseBlockRowMajor", long[].class, long[].class, values.getClass());
+        method.setAccessible(true);
+        final long[] actualRows = rows.clone(), actualCols = cols.clone();
+        method.invoke(null, actualRows, actualCols, values);
+        assertArrayEquals(new long[]{0, 0, 0, 3}, actualRows);
+        assertArrayEquals(new long[]{1, 1, 7, 2}, actualCols);
+        if (values instanceof long[] result) assertArrayEquals(new long[]{big, big + 1, 7, 2}, result);
+        else assertArrayEquals(new double[]{.125, .25, -2.5, 8.75}, (double[]) values);
+      }
+    }
+  }
+
+  @Test
   void assemblyLayoutUsesExactSourceBinOffsetsInsteadOfProportionalRebinning() throws Exception {
     final var mcool = tempDir.resolve("source.mcool");
     final var assembly = tempDir.resolve("layout.agp");

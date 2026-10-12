@@ -1606,7 +1606,10 @@ public class HictToMcoolConverter {
     final var cols = new long[datasetChunk];
     final var counts = new int[datasetChunk];
     int buffered = 0;
-    try (final var reader = new DataInputStream(new BufferedInputStream(Files.newInputStream(cooPath)))) {
+    try (final var reader = new DataInputStream(new BufferedInputStream(Files.newInputStream(cooPath), 1024 * 1024));
+         final var bin1DataSet = dst.object().openDataSet(bin1IdPath);
+         final var bin2DataSet = dst.object().openDataSet(bin2IdPath);
+         final var countDataSet = dst.object().openDataSet(countPath)) {
       while (true) {
         final long row;
         final long col;
@@ -1653,7 +1656,6 @@ public class HictToMcoolConverter {
           buffered = 0;
         }
       }
-    }
     if (buffered > 0) {
       final var rowsTail = java.util.Arrays.copyOf(rows, buffered);
       final var colsTail = java.util.Arrays.copyOf(cols, buffered);
@@ -1663,6 +1665,7 @@ public class HictToMcoolConverter {
       dst.int32().writeArrayBlockWithOffset(countPath, countsTail, buffered, offset);
       offset += buffered;
       progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
+    }
     }
     logger.accept("Resolution " + resolution + " pixels write: 100% (" + offset + "/" + nonzeroPixelCount + "), elapsed=" +
       formatDuration((System.nanoTime() - startedNanos) / 1_000_000L) + ", eta=00:00");
@@ -2152,9 +2155,9 @@ public class HictToMcoolConverter {
                                                      final @NotNull MergedRecordSink sink) throws IOException {
     final var cursors = new ArrayList<ChunkCursor>(chunkPaths.size());
     final var queue = new PriorityQueue<ChunkCursor>(Comparator
-      .comparingLong((ChunkCursor cursor) -> cursor.record().row())
-      .thenComparingLong(cursor -> cursor.record().col())
-      .thenComparingLong(cursor -> cursor.record().count()));
+      .comparingLong((ChunkCursor cursor) -> cursor.row)
+      .thenComparingLong(cursor -> cursor.col)
+      .thenComparingLong(cursor -> cursor.count));
     try {
       for (final var chunkPath : chunkPaths) {
         final var cursor = new ChunkCursor(chunkPath);
@@ -2173,20 +2176,20 @@ public class HictToMcoolConverter {
       long pendingCount = 0L;
       while (!queue.isEmpty()) {
         final var cursor = queue.poll();
-        final var record = cursor.record();
+        final var record = cursor;
         if (!hasPending) {
-          pendingRow = record.row();
-          pendingCol = record.col();
-          pendingCount = record.count();
+          pendingRow = record.row;
+          pendingCol = record.col;
+          pendingCount = record.count;
           hasPending = true;
-        } else if (pendingRow == record.row() && pendingCol == record.col()) {
-          pendingCount += record.count();
+        } else if (pendingRow == record.row && pendingCol == record.col) {
+          pendingCount += record.count;
         } else {
           sink.write(pendingRow, pendingCol, pendingCount);
           written++;
-          pendingRow = record.row();
-          pendingCol = record.col();
-          pendingCount = record.count();
+          pendingRow = record.row;
+          pendingCol = record.col;
+          pendingCount = record.count;
         }
         rawRecords++;
         if (cursor.advance()) {
@@ -3094,38 +3097,32 @@ public class HictToMcoolConverter {
     }
   }
 
-  private record CooRecord(long row, long col, long count) {
-  }
-
   private static final class ChunkCursor implements AutoCloseable {
-    private final DataInputStream input;
-    private CooRecord record;
+    private final java.io.InputStream input;
+    private final java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(24 * 4096);
+    private long row, col, count;
 
     private ChunkCursor(final @NotNull Path path) throws IOException {
-      this.input = new DataInputStream(new BufferedInputStream(Files.newInputStream(path)));
+      this.input = new BufferedInputStream(Files.newInputStream(path), 256 * 1024);
+      buffer.limit(0);
     }
 
     private boolean advance() throws IOException {
-      try {
-        this.record = new CooRecord(input.readLong(), input.readLong(), input.readLong());
-        return true;
-      } catch (java.io.EOFException eof) {
-        this.record = null;
-        return false;
+      // EOF is valid only between complete records; a truncated triple is corruption.
+      if (!buffer.hasRemaining()) {
+        final int length = input.readNBytes(buffer.array(), 0, buffer.capacity());
+        if (length == 0) return false;
+        if (length % 24 != 0) throw new java.io.EOFException("Truncated COO triple");
+        buffer.position(0).limit(length);
       }
-    }
-
-    private @NotNull CooRecord record() {
-      if (record == null) {
-        throw new IllegalStateException("Chunk cursor is not positioned on a record");
-      }
-      return record;
+      row = buffer.getLong();
+      col = buffer.getLong();
+      count = buffer.getLong();
+      return true;
     }
 
     @Override
-    public void close() throws IOException {
-      input.close();
-    }
+    public void close() throws IOException { input.close(); }
   }
 
   private static void deleteRecursively(final @NotNull Path path, final @NotNull Consumer<String> logger) {

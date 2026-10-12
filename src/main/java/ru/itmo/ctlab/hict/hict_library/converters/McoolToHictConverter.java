@@ -673,9 +673,19 @@ public class McoolToHictConverter {
     final var queue = new java.util.concurrent.ArrayBlockingQueue<StripeWriteTask>(queueCapacity);
     final var writerThread = new Thread(() -> {
       long written = 0L;
-      try {
-        while (true) {
-          final var task = queue.take();
+      // Keep datasets open throughout the write phase. Closing each dataset after
+      // each stripe flushes its compressed chunk cache and repeatedly rewrites chunks.
+      // Use the PATH write overload while retaining these handles: JHDF5's handle
+      // write overload can shrink extents on an out-of-order write and lose later stripes.
+      try (final var blockRows = dst.object().openDataSet(blockRowsPath);
+           final var blockCols = dst.object().openDataSet(blockColsPath);
+           final var blockVals = dst.object().openDataSet(blockValsPath);
+           final var blockOffset = dst.object().openDataSet(blockOffsetPath);
+           final var blockLength = dst.object().openDataSet(blockLengthPath);
+           final var denseBlocks = dst.object().openDataSet(denseBlocksPath)) {
+        while (errorRef.get() == null) {
+          final var task = queue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+          if (task == null) continue;
           if (task == StripeWriteTask.POISON) {
             break;
           }
@@ -699,9 +709,9 @@ public class McoolToHictConverter {
           written++;
           writeProgress.report((int) written);
         }
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        errorRef.compareAndSet(null, e);
+      } catch (Throwable failure) {
+        if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
+        errorRef.compareAndSet(null, failure);
       }
     }, "hict-writer-" + resolution);
     writerThread.setDaemon(true);
@@ -713,13 +723,18 @@ public class McoolToHictConverter {
       final int end = Math.min(stripeCount, batchStart + batchSize);
       futures.add(stripeExecutor.submit(() -> {
         try {
+          if (errorRef.get() != null) return;
           final var batchBlocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices, floatingPointSignal);
           for (int i = 0; i < batchBlocks.length; i++) {
             checkInterrupted();
+            if (errorRef.get() != null) return;
             final int stripeIdx = start + i;
             final var block = batchBlocks[i];
             final StripeBlocks blocks = block.length() > 0 ? buildStripeBlocks(block, stripeCount) : EMPTY_BLOCKS;
-            queue.put(new StripeWriteTask(stripeIdx, blocks));
+            final var task = new StripeWriteTask(stripeIdx, blocks);
+            while (!queue.offer(task, 100, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+              if (errorRef.get() != null) return;
+            }
           }
         } catch (Throwable t) {
           errorRef.compareAndSet(null, t);
@@ -728,32 +743,34 @@ public class McoolToHictConverter {
     }
 
     try {
-      for (final var f : futures) {
-        f.get();
+      for (final var f : futures) f.get();
+      while (errorRef.get() == null && !queue.offer(StripeWriteTask.POISON, 100, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+        // A failed writer must not leave producers or the coordinator blocked on a full queue.
       }
+      writerThread.join();
+      if (errorRef.get() != null) throw new RuntimeException("Failed to write HiCT resolution " + resolution, errorRef.get());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new RuntimeException(e);
     } catch (ExecutionException e) {
       throw new RuntimeException(e.getCause());
     } finally {
-      try {
-        queue.put(StripeWriteTask.POISON);
-        writerThread.join();
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new RuntimeException(e);
-      } finally {
-        stripeExecutor.shutdown();
-        synchronized (readers) {
-          for (final var reader : readers) {
-            try {
-              reader.close();
-            } catch (Exception ignored) {
-            }
-          }
+      stripeExecutor.shutdownNow();
+      writerThread.interrupt();
+      // HDF5 readers cannot be closed while an interrupted native read still owns them.
+      boolean interrupted = Thread.interrupted();
+      while (!stripeExecutor.isTerminated() || writerThread.isAlive()) {
+        try {
+          stripeExecutor.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS);
+          writerThread.join(1000);
+        } catch (InterruptedException e) { interrupted = true; }
+      }
+      synchronized (readers) {
+        for (final var reader : readers) {
+          try { reader.close(); } catch (Exception ignored) { }
         }
       }
+      if (interrupted) Thread.currentThread().interrupt();
     }
     writeProgress.finish();
   }
@@ -918,7 +935,7 @@ public class McoolToHictConverter {
         for (int batchStart = 0; batchStart < stripeCount; batchStart += batchSize) {
           checkInterrupted();
           final int end = Math.min(stripeCount, batchStart + batchSize);
-          final var blocks = readStripeBatch(readerHolder.get(), resolution, batchStart, end, allRowsStartIndices, floatingPointSignal);
+          final var blocks = readStripeColumns(readerHolder.get(), resolution, batchStart, end, allRowsStartIndices);
           for (int i = 0; i < blocks.length; i++) {
             final int stripeIdx = batchStart + i;
             final var block = blocks[i];
@@ -937,7 +954,7 @@ public class McoolToHictConverter {
           final int end = Math.min(stripeCount, batchStart + batchSize);
           futures.add(stripeExecutor.submit(() -> {
             checkInterrupted();
-            final var blocks = readStripeBatch(readerHolder.get(), resolution, start, end, allRowsStartIndices, floatingPointSignal);
+            final var blocks = readStripeColumns(readerHolder.get(), resolution, start, end, allRowsStartIndices);
             for (int i = 0; i < blocks.length; i++) {
               final int stripeIdx = start + i;
               final var block = blocks[i];
@@ -971,9 +988,15 @@ public class McoolToHictConverter {
       }
       return new StripeCountDetails(sparseCounts, denseCounts, sparseTotal, denseTotal);
     } finally {
+      boolean interrupted = Thread.interrupted();
       if (stripeExecutor != null) {
         stripeExecutor.shutdownNow();
+        while (!stripeExecutor.isTerminated()) {
+          try { stripeExecutor.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS); }
+          catch (InterruptedException e) { interrupted = true; }
+        }
       }
+      if (interrupted) Thread.currentThread().interrupt();
       synchronized (readers) {
         for (final var reader : readers) {
           try {
@@ -986,7 +1009,7 @@ public class McoolToHictConverter {
   }
 
   private static @NotNull StripeCounts countStripeBlocks(
-    final @NotNull PixelBlock block,
+    final @NotNull StripeColumns block,
     final int stripeCount
   ) {
     final var cols = block.cols();
@@ -1032,6 +1055,27 @@ public class McoolToHictConverter {
     return new StripeCounts(sparse, dense);
   }
 
+  private record StripeColumns(long[] cols, int offset, int length) {}
+
+  private static StripeColumns[] readStripeColumns(
+    final IHDF5Reader src, final long resolution, final int startStripe,
+    final int endStripe, final long[] rowOffsets
+  ) {
+    final var blocks = new StripeColumns[endStripe - startStripe];
+    final long start = rowOffsets[startStripe * SUBMATRIX_SIZE];
+    final long end = rowOffsets[Math.min(endStripe * SUBMATRIX_SIZE, rowOffsets.length - 1)];
+    final int length = Math.toIntExact(end - start);
+    final long[] cols = length == 0 ? new long[0] : src.int64().readArrayBlockWithOffset(
+      "/resolutions/" + resolution + "/pixels/bin2_id", length, start);
+    for (int i = 0; i < blocks.length; i++) {
+      final int stripe = startStripe + i;
+      final int lo = Math.toIntExact(rowOffsets[stripe * SUBMATRIX_SIZE] - start);
+      final int hi = Math.toIntExact(rowOffsets[Math.min((stripe + 1) * SUBMATRIX_SIZE, rowOffsets.length - 1)] - start);
+      blocks[i] = new StripeColumns(cols, lo, hi - lo);
+    }
+    return blocks;
+  }
+
   private static @NotNull PixelBlock[] readStripeBatch(
     final @NotNull IHDF5Reader src,
     final long resolution,
@@ -1050,7 +1094,7 @@ public class McoolToHictConverter {
     final int endBin = Math.min(actualEnd * SUBMATRIX_SIZE, allRowsStartIndices.length - 1);
     final long startOffset = allRowsStartIndices[startBin];
     final long endOffset = allRowsStartIndices[endBin];
-    final int length = (int) (endOffset - startOffset);
+    final int length = Math.toIntExact(endOffset - startOffset);
     if (length <= 0) {
       for (int i = 0; i < count; i++) {
         blocks[i] = floatingPointSignal
@@ -1104,9 +1148,8 @@ public class McoolToHictConverter {
     );
     final long avgPixelsPerStripe = Math.max(1L, (nonzeroPixelCount + stripeCount - 1L) / stripeCount);
     final long workerCount = Math.max(1L, stripeWorkers);
-    final long usableBytesPerWorker = importMaxMemoryBytes == Long.MAX_VALUE
-      ? Long.MAX_VALUE / Math.max(2L, workerCount + 1L)
-      : Math.max(MIN_IMPORT_MAX_MEMORY_BYTES / 4L, importMaxMemoryBytes / Math.max(2L, workerCount + 1L));
+    final long effectiveBudget = Math.min(importMaxMemoryBytes, Runtime.getRuntime().maxMemory() / 2L);
+    final long usableBytesPerWorker = Math.max(1L, effectiveBudget / Math.max(2L, workerCount + 1L));
     final long conservativeBytesPerPixel = 96L;
     final long targetPixelsPerBatch = Math.max(1L, usableBytesPerWorker / conservativeBytesPerPixel);
     final long memoryBoundBatch = Math.max(1L, targetPixelsPerBatch / avgPixelsPerStripe);
@@ -1324,13 +1367,25 @@ public class McoolToHictConverter {
     return new LongStripeBlocks(blockColStripes, blockLengths, denseFlags, sparseRows, sparseCols, sparseVals, denseFlats);
   }
 
+  // Cooler pixels are normally row-major. Partitioning a stripe into blocks preserves
+  // that order; avoid a 65,536-bucket native sort (and JNI pinning) for every tiny block.
+  // Keep the fallback for unsorted input, and preserve the order of duplicate cells.
+  static boolean isRowMajor(final long[] rows, final long[] cols) {
+    for (int i = 1; i < rows.length; i++) {
+      if (rows[i] < rows[i - 1] || (rows[i] == rows[i - 1] && cols[i] < cols[i - 1])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private static void sortSparseBlockRowMajor(
     final long @NotNull [] rows,
     final long @NotNull [] cols,
     final double @NotNull [] vals
   ) {
     final int n = rows.length;
-    if (n <= 1) {
+    if (n <= 1 || isRowMajor(rows, cols)) {
       return;
     }
     if (NativeProcessingService.getInstance().trySortSparseBlockRowMajor(rows, cols, vals, SUBMATRIX_SIZE)) {
@@ -1371,7 +1426,7 @@ public class McoolToHictConverter {
     final long @NotNull [] vals
   ) {
     final int n = rows.length;
-    if (n <= 1) {
+    if (n <= 1 || isRowMajor(rows, cols)) {
       return;
     }
     if (NativeProcessingService.getInstance().trySortSparseBlockRowMajor(rows, cols, vals, SUBMATRIX_SIZE)) {
@@ -1634,7 +1689,7 @@ public class McoolToHictConverter {
     final long startOffset = allRowsStartIndices[rowStripe * SUBMATRIX_SIZE];
     final int nextBin = Math.min((rowStripe + 1) * SUBMATRIX_SIZE, allRowsStartIndices.length - 1);
     final long endOffset = allRowsStartIndices[nextBin];
-    final int length = (int) (endOffset - startOffset);
+    final int length = Math.toIntExact(endOffset - startOffset);
     final var base = "/resolutions/" + resolution + "/pixels/";
     final var floatingPointSignal = isFloatingPointDataset(src, base + "count");
 

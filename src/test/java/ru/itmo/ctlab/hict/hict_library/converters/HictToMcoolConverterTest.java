@@ -29,6 +29,29 @@ class HictToMcoolConverterTest {
   Path tempDir;
 
   @Test
+  void cooCursorRejectsTruncatedRecordsAndReadsSignedInt64Exactly() throws Exception {
+    final var type = Class.forName(HictToMcoolConverter.class.getName() + "$ChunkCursor");
+    final var constructor = type.getDeclaredConstructor(Path.class); constructor.setAccessible(true);
+    final var advance = type.getDeclaredMethod("advance"); advance.setAccessible(true);
+    final var path = tempDir.resolve("cursor.bin");
+    try (var out = new java.io.DataOutputStream(Files.newOutputStream(path))) {
+      out.writeLong(42L); out.writeLong(99L); out.writeLong((1L << 54) + 1L);
+    }
+    try (var cursor = (AutoCloseable) constructor.newInstance(path)) {
+      assertEquals(true, advance.invoke(cursor));
+      final var count = type.getDeclaredField("count"); count.setAccessible(true);
+      assertEquals((1L << 54) + 1L, count.getLong(cursor));
+      assertEquals(false, advance.invoke(cursor));
+    }
+    Files.write(path, new byte[]{1, 2, 3});
+    try (var cursor = (AutoCloseable) constructor.newInstance(path)) {
+      final var error = org.junit.jupiter.api.Assertions.assertThrows(java.lang.reflect.InvocationTargetException.class,
+        () -> advance.invoke(cursor));
+      org.junit.jupiter.api.Assertions.assertInstanceOf(java.io.EOFException.class, error.getCause());
+    }
+  }
+
+  @Test
   void javaCoolerSorterOrdersPrimitiveRecordsByRowColumnAndCount() {
     final var rows = new long[]{2L, 0L, 1L, 0L, 1L, 0L};
     final var cols = new long[]{2L, 3L, 1L, 1L, 1L, 1L};
@@ -648,7 +671,7 @@ class HictToMcoolConverterTest {
       file.restoreAssembly(states.get(0));
       file.importAGP(new StringReader("s1 1 550 1 W ctgA 1 550 +\ns1 551 650 2 U 100 scaffold yes paired-ends\ns1 651 2650 3 W ctgB 1 2000 -\ns2 1 1450 1 W ctgA 551 2000 -\n"));remember.run();
       int contigId=file.getAssemblyInfo().contigs().getFirst().descriptor().getContigId();
-      file.setContigNameOverride(contigId,"renamed piece");remember.run();
+      file.setContigNameOverride(contigId,"renamed_piece");remember.run();
       file.scaffoldingOperations().moveRegionToDebris(0,550,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS);remember.run();
       for(int index:new int[]{0,3,1,5,2,6,4,0,6}) {
         file.restoreAssembly(states.get(index));
