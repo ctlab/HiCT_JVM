@@ -15,7 +15,7 @@ class ScaffoldEditingInvariantTest {
   @TempDir Path dir;
   private ChunkedFile fixture() {
     HDF5LibraryInitializer.initializeHDF5Library();
-    var input=dir.resolve("source.mcool"); var output=dir.resolve("map.hict.hdf5");
+    var prefix=UUID.randomUUID().toString(); var input=dir.resolve(prefix+".mcool"); var output=dir.resolve(prefix+".hict.hdf5");
     try(var w=HDF5Factory.open(input.toFile())) {
       w.object().createGroup("/resolutions");
       for(long res: new long[]{1000,4000,10000}) {
@@ -62,11 +62,114 @@ class ScaffoldEditingInvariantTest {
       ops.unscaffoldAll();assertTrue(f.getScaffoldTree().getScaffoldList().isEmpty());
       f.restoreAssembly(initial);assertEquals(initial,f.snapshotAssembly());
       ops.moveRegionToDebris(10,20,bp,QueryLengthUnit.BASE_PAIRS);
-      assertEquals("A",f.getContigTree().getOrderedContigList().getLast().descriptor().getContigName());
-      for(int i=1;i<f.getResolutions().length;i++) assertEquals(ContigHideType.HIDDEN,f.getContigTree().getOrderedContigList().getLast().descriptor().getPresenceAtResolution().get(i));
+      assertEquals(List.of("B","C"),f.getContigTree().getOrderedContigList().stream().map(c -> c.descriptor().getContigName()).toList());
       f.restoreAssembly(initial);assertEquals(initial,f.snapshotAssembly());
     }
   }
+  @Test void debrisExcludesAtusMatrixAndFastaAndCanRestoreEmptyAssembly() throws Exception {
+    try (var f = fixture()) {
+      var bp = ResolutionDescriptor.fromResolutionOrder(0);
+      var ops = f.scaffoldingOperations();
+      var fasta = dir.resolve("source.fasta");
+      java.nio.file.Files.writeString(fasta, ">A\n" + "A".repeat(6000) + "\n>B\n" + "C".repeat(6000) + "\n>C\n" + "G".repeat(6000) + "\n");
+      var initial = f.snapshotAssembly();
+      ops.scaffoldRegion(0, 12000, bp, QueryLengthUnit.BASE_PAIRS, null);
+      ops.moveRegionToDebris(6010, 6020, bp, QueryLengthUnit.BASE_PAIRS);
+      assertEquals(List.of("C"), f.getAssemblyInfo().contigs().stream().map(c -> c.descriptor().getContigName()).toList());
+      assertEquals(6000, f.getContigTree().getLengthInUnits(QueryLengthUnit.BASE_PAIRS, bp));
+      assertEquals(6000, f.getScaffoldTree().getScaffoldList().getFirst().scaffoldBordersBP().endBP());
+      var processor = new ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor(f);
+      var exported = dir.resolve("debris.fasta");
+      java.nio.file.Files.writeString(exported, processor.exportAssemblyPreservingGaps(fasta));
+      assertEquals(Map.of("scf_C", "G".repeat(6000)), ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor.readSequenceContents(exported));
+      for (long res : new long[]{1000, 4000, 10000}) {
+        var r = ResolutionDescriptor.fromBpResolution(res, f);
+        int n = (int)((6000 + res - 1) / res);
+        for (boolean visible : new boolean[]{false, true}) {
+          if (visible && res == 10000) continue;
+          assertEquals(n, f.getMatrixQueries().getATUsForRange(r, 0, n + 3, visible).stream().mapToInt(ATUDescriptor::getLength).sum());
+          var matrix = f.getMatrixQueries().getSubmatrix(r, 0, 0, n + 2, n + 2, visible).matrix();
+          for (int i = 0; i < n + 2; i++) for (int j = 0; j < n + 2; j++)
+            assertEquals(i < n && j < n ? 1L + (2*n+Math.min(i,j))*100 + 2*n+Math.max(i,j) : 0,
+              matrix.getAsDouble(i,j));
+        }
+      }
+      var debris = f.snapshotAssembly();
+      ops.moveRegionToDebris(0, 6000, bp, QueryLengthUnit.BASE_PAIRS);
+      assertTrue(f.getAssemblyInfo().contigs().isEmpty());
+      assertTrue(f.getScaffoldTree().getScaffoldList().isEmpty());
+      assertEquals("", processor.exportAssemblyPreservingGaps(fasta));
+      var r = ResolutionDescriptor.fromBpResolution(1000, f);
+      assertTrue(f.getMatrixQueries().getATUsForRange(r,0,100,false).isEmpty());
+      assertEquals(0, f.getMatrixQueries().getSubmatrix(r,0,0,3,5,false).matrix().getAsDouble(1,2));
+      f.restoreAssembly(initial); assertEquals(initial, f.snapshotAssembly());
+      f.restoreAssembly(debris); assertEquals(debris, f.snapshotAssembly());
+    }
+  }
+
+  @Test void partialOverlaySynchronizesSourceIntervalsInBothDirections() throws Exception {
+    var vertx = io.vertx.core.Vertx.vertx();
+    try (var primary = fixture(); var secondary = fixture()) {
+      io.vertx.core.shareddata.LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      map.put("chunkedFile", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.ChunkedFileWrapper(primary));
+      map.put("chunkedFileSecondary", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.ChunkedFileWrapper(secondary));
+      for (String side : List.of("PRIMARY", "SECONDARY")) {
+        var source = side.equals("PRIMARY") ? primary : secondary;
+        var target = side.equals("PRIMARY") ? secondary : primary;
+        map.put("assemblyInfoSource", side);
+        source.importAGP(new java.io.StringReader("s1 1 2500 1 W A 1 2500 +\ns1 2501 5500 2 W B 3001 6000 -\ns2 1 3500 1 W A 2501 6000 -\ns2 3501 6500 2 W B 1 3000 +\nunscaffolded_C 1 6000 1 W C 1 6000 +\n"));
+        ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder.synchronizeOverlayAssemblyForSharedState(map);
+        assertOverlayMatches(source, target);
+        // Excluding the remaining unplaced sequence must shorten both sources.
+        source.importAGP(new java.io.StringReader("s1 1 2500 1 W A 1 2500 +\ns2 1 3000 1 W B 3001 6000 -\n"));
+        ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder.synchronizeOverlayAssemblyForSharedState(map);
+        assertOverlayMatches(source, target);
+        source.importAGP(new java.io.StringReader("unscaffolded_A 1 6000 1 W A 1 6000 +\n"),
+          ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.SCAFFOLDED_ONLY);
+        ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder.synchronizeOverlayAssemblyForSharedState(map);
+        assertTrue(source.getAssemblyInfo().contigs().isEmpty());
+        assertTrue(target.getAssemblyInfo().contigs().isEmpty());
+        assertOverlayMatches(source, target);
+      }
+    } finally { vertx.close().toCompletionStage().toCompletableFuture().get(); }
+  }
+
+  private void assertOverlayMatches(ChunkedFile source, ChunkedFile target) {
+    assertEquals(source.getAssemblyInfo().contigs().stream().map(c -> List.of(c.descriptor().getContigNameInSourceFASTA(), c.descriptor().getOffsetInSourceFASTA(), c.descriptor().getLengthBp(), c.direction())).toList(),
+      target.getAssemblyInfo().contigs().stream().map(c -> List.of(c.descriptor().getContigNameInSourceFASTA(), c.descriptor().getOffsetInSourceFASTA(), c.descriptor().getLengthBp(), c.direction())).toList());
+    for (long res : new long[]{1000,4000,10000}) for (boolean visible : new boolean[]{false,true}) {
+      var r = ResolutionDescriptor.fromBpResolution(res, source);
+      var units = visible ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
+      long length = source.getContigTree().getLengthInUnits(units,r);
+      assertEquals(length, target.getContigTree().getLengthInUnits(units,r));
+      var expected = source.matrixQueries().getSubmatrix(r,0,0,length+2,length+2,visible).matrix();
+      var actual = target.matrixQueries().getSubmatrix(r,0,0,length+2,length+2,visible).matrix();
+      for (int i=0;i<length+2;i++) for(int j=0;j<length+2;j++) assertEquals(expected.getAsDouble(i,j),actual.getAsDouble(i,j));
+    }
+  }
+
+  @Test void agpScopeChoiceExcludesExplicitUnscaffoldedAndOmittedRegions() throws Exception {
+    try (var f = fixture()) {
+      String agp = "s 1 2500 1 W A 1 2500 +\nunscaffolded_B 1 6000 1 W B 1 6000 -\n";
+      var before = f.snapshotAssembly();
+      var preview = f.importAGP(new java.io.StringReader(agp), ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.REQUIRE_CHOICE);
+      assertTrue(preview.requiresChoice()); assertEquals(1, preview.unscaffoldedPieces()); assertEquals(6000,preview.unscaffoldedBp());assertEquals(9500,preview.omittedBp());
+      assertEquals(before,f.snapshotAssembly());
+      f.importAGP(new java.io.StringReader(agp), ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.SCAFFOLDED_ONLY);
+      assertEquals(1,f.getAssemblyInfo().contigs().size());assertEquals(2500,f.getAssemblyInfo().contigs().getFirst().descriptor().getLengthBp());
+      assertEquals(2500,f.getScaffoldTree().getScaffoldList().getFirst().scaffoldBordersBP().endBP());
+      var fasta = dir.resolve("scope.fasta");java.nio.file.Files.writeString(fasta, ">A\n"+"A".repeat(6000)+"\n");
+      // No B/C FASTA source even exists: exporting selected A must not access them.
+      var processor = new ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor(f);
+      var exported = dir.resolve("scope-result.fasta");java.nio.file.Files.writeString(exported,processor.exportAssemblyPreservingGaps(fasta));
+      assertEquals(Map.of("s","A".repeat(2500)),ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor.readSequenceContents(exported));
+      var selected=f.snapshotAssembly();f.restoreAssembly(before);f.restoreAssembly(selected);assertEquals(selected,f.snapshotAssembly());
+      f.importAGP(new java.io.StringReader(agp), ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.APPEND_UNPLACED);
+      assertEquals(18000,f.getContigTree().getLengthInUnits(QueryLengthUnit.BASE_PAIRS,ResolutionDescriptor.fromResolutionOrder(0)));
+      assertEquals(ContigDirection.REVERSED,f.getAssemblyInfo().contigs().get(1).direction());
+    }
+  }
+
   @Test void invalidExportNamesCannotCorruptTheAssembly() {
     try (var f = fixture()) {
       var before = f.snapshotAssembly();

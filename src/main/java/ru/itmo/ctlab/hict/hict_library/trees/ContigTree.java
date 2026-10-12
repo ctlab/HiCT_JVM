@@ -141,7 +141,7 @@ public class ContigTree implements Iterable<ContigTree.Node> {
   public long getLengthInUnits(final @NotNull QueryLengthUnit units, final @NotNull ResolutionDescriptor resolution) {
     try {
       this.rootLock.readLock().lock();
-      return this.root.getSubtreeLengthInUnits(units, resolution);
+      return this.root == null ? 0L : this.root.getSubtreeLengthInUnits(units, resolution);
     } finally {
       this.rootLock.readLock().unlock();
     }

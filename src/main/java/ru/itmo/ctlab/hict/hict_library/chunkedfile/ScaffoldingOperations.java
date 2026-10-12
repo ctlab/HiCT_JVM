@@ -243,55 +243,15 @@ public class ScaffoldingOperations {
 
       final var range = resolveSelectionWithScaffolds(startBp, endBp, contigTree, scaffoldTree);
       if (range != null) {
-        final var totalAssemblyLengthBp = Optional.ofNullable(contigTree.getRoot())
-          .map(root -> root.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0)))
-          .orElse(0L);
-
-        scaffoldTree.unscaffold(range.startBp(), range.endBpExcl());
-
-        final var exposedForMove = contigTree.expose(
-          ResolutionDescriptor.fromResolutionOrder(0),
-          range.startBp(),
-          range.endBpExcl(),
-          QueryLengthUnit.BASE_PAIRS
-        );
-
-        if (exposedForMove.segment() == null) {
-          return;
-        }
-
-        final var leftSizeBp = Optional.ofNullable(exposedForMove.less())
-          .map(node -> node.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0)))
-          .orElse(0L);
-        final var segmentSizeBp = exposedForMove.segment().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
-        if (segmentSizeBp <= 0) {
-          return;
-        }
-
-        final var adjustedTargetStartBp = calculateAdjustedTargetStartBp(totalAssemblyLengthBp, totalAssemblyLengthBp, leftSizeBp, segmentSizeBp);
-        final var tmp = ContigTree.Node.mergeNodes(new ContigTree.Node.SplitResult(exposedForMove.less(), exposedForMove.greater()));
-        final var nlnr = (tmp != null)
-          ? tmp.splitByLength(ResolutionDescriptor.fromResolutionOrder(0), adjustedTargetStartBp, false, QueryLengthUnit.BASE_PAIRS)
-          : new ContigTree.Node.SplitResult(null, null);
-        contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(nlnr.left(), exposedForMove.segment(), nlnr.right()));
-        scaffoldTree.moveSelectionRange(range.startBp(), range.endBpExcl(), adjustedTargetStartBp);
-
-        final var debrisStartBpIncl = totalAssemblyLengthBp - segmentSizeBp;
-        final var debrisEndBpExcl = totalAssemblyLengthBp;
-
-        final var debrisExposed = contigTree.expose(
-          ResolutionDescriptor.fromResolutionOrder(0),
-          debrisStartBpIncl,
-          debrisEndBpExcl,
-          QueryLengthUnit.BASE_PAIRS
-        );
-        if (debrisExposed.segment() != null) {
-          final var hiddenSegment = cloneSegmentWithHiddenDescriptors(debrisExposed.segment(), contigTree);
-          contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(debrisExposed.less(), hiddenSegment, debrisExposed.greater()));
-        }
-
-        scaffoldTree.unscaffold(debrisStartBpIncl, debrisEndBpExcl);
-        scaffoldTree.rescaffold(debrisStartBpIncl, debrisEndBpExcl, id -> new ScaffoldDescriptor(id, "debris", 1000));
+        // Resolution-level HIDDEN only affects PIXELS queries. Debris must not
+        // contribute ATUs, BINS coordinates or FASTA/AGP records either. Remove
+        // it from both active roots; persistent history retains the old roots
+        // and original source descriptors for exact undo/reimport.
+        final var exposed = contigTree.expose(ResolutionDescriptor.fromResolutionOrder(0),
+          range.startBp(), range.endBpExcl(), QueryLengthUnit.BASE_PAIRS);
+        scaffoldTree.removeSegmentFromAssembly(range.startBp(), range.endBpExcl());
+        contigTree.commitRoot(ContigTree.Node.mergeNodes(
+          new ContigTree.Node.SplitResult(exposed.less(), exposed.greater())));
       }
     } finally {
       scaffoldTree.getRootLock().writeLock().unlock();
@@ -358,34 +318,6 @@ public class ScaffoldingOperations {
     final var adjustedTarget = clampedTarget - ((segmentStartBp > clampedTarget) ? 0L : segmentLengthBp);
     final var maxTarget = Math.max(0L, totalAssemblyLengthBp - segmentLengthBp);
     return Math.max(0L, Math.min(adjustedTarget, maxTarget));
-  }
-
-  private @NotNull ContigTree.Node cloneSegmentWithHiddenDescriptors(
-    final @NotNull ContigTree.Node node,
-    final @NotNull ContigTree contigTree
-  ) {
-    final var pushed = node.push();
-    final var hiddenLeft = (pushed.getLeft() != null) ? cloneSegmentWithHiddenDescriptors(pushed.getLeft(), contigTree) : null;
-    final var hiddenRight = (pushed.getRight() != null) ? cloneSegmentWithHiddenDescriptors(pushed.getRight(), contigTree) : null;
-    final var descriptor = pushed.getContigDescriptor();
-    final var resolutionCount = descriptor.getLengthBinsAtResolution().length;
-    final var hiddenDescriptor = new ContigDescriptor(
-      descriptor.getContigId(),
-      descriptor.getContigName(),
-      descriptor.getLengthBp(),
-      Arrays.stream(descriptor.getLengthBinsAtResolution()).skip(1L).boxed().toList(),
-      IntStream.range(1, resolutionCount).mapToObj(i -> ContigHideType.HIDDEN).toList(),
-      descriptor.getAtus().subList(1, resolutionCount).stream().map(ArrayList::new).map(List::copyOf).toList(),
-      descriptor.getContigNameInSourceFASTA(),
-      descriptor.getOffsetInSourceFASTA()
-    );
-    contigTree.getContigDescriptors().put(hiddenDescriptor.getContigId(), hiddenDescriptor);
-    return pushed.cloneBuilder()
-      .contigDescriptor(hiddenDescriptor)
-      .left(hiddenLeft)
-      .right(hiddenRight)
-      .build()
-      .updateSizes();
   }
 
   private record SelectionRange(long startBp, long endBpExcl, long lengthBp) {

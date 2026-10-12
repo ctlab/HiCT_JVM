@@ -889,7 +889,8 @@ paths:
         Supports exact source intervals, including partial contigs. Contact bins are
         preserved and assigned to the piece containing the bin start in the original
         component. Import reports splitting and unknown orientations. If sequence is
-        omitted and no policy was supplied, returns requiresMissingComponentsChoice
+        omitted or explicitly unscaffolded (a single component object named unscaffolded_*)
+        and no policy was supplied, returns requiresMissingComponentsChoice
         and importReport without changing the assembly; retry with an explicit policy.
       operationId: loadAgp
       requestBody:
@@ -1884,9 +1885,9 @@ components:
       properties:
         missingComponentsPolicy:
           type: string
-          enum: [REQUIRE_CHOICE, APPEND_UNPLACED, EXCLUDE]
+          enum: [REQUIRE_CHOICE, APPEND_UNPLACED, EXCLUDE, SCAFFOLDED_ONLY]
           default: REQUIRE_CHOICE
-          description: Append uncovered source intervals as unplaced FASTA records, exclude them, or request a user choice without mutation.
+          description: APPEND_UNPLACED includes every region. EXCLUDE retains every AGP component but omits uncovered source intervals (legacy behavior). SCAFFOLDED_ONLY also excludes explicit unscaffolded_* singleton objects from the active matrix and FASTA. REQUIRE_CHOICE previews these counts without mutation. Ordinary single-component scaffolds remain scaffolded.
         agpFilename:
           type: string
           description: Optional AGP filename relative to DATA_DIR.

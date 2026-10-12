@@ -330,6 +330,11 @@ public class AGPProcessor {
     final var plan = AGPImportPlan.prepare(records, chunkedFile.getOriginalDescriptors().values(),
       chunkedFile::resolveContigDescriptorByName, chunkedFile.getResolutions(), nextId, policy);
     if (plan.report().requiresChoice()) return plan.report();
+    // Validate the entire AGP above, including excluded rows. Only the chosen
+    // active records contribute contigs, scaffold coordinates or annotations.
+    final var unscaffolded = AGPImportPlan.unscaffoldedObjects(records);
+    final var activeRecords = policy == AGPImportPlan.MissingComponentsPolicy.SCAFFOLDED_ONLY
+      ? records.stream().filter(r -> !unscaffolded.contains(r.getScaffoldName())).toList() : records;
     final var preparedContigs = new ContigTree();
     for (var contig : plan.selected()) preparedContigs.appendContig(contig.descriptor(), contig.direction());
     if (policy == AGPImportPlan.MissingComponentsPolicy.APPEND_UNPLACED)
@@ -337,18 +342,18 @@ public class AGPProcessor {
     long length = preparedContigs.getOrderedContigList().stream().mapToLong(c -> c.descriptor().getLengthBp()).sum();
     final var preparedScaffolds = new ScaffoldTree(length);
     final var grouped = new LinkedHashMap<String, List<AGPFileRecord>>();
-    for (var record : records) grouped.computeIfAbsent(record.scaffoldName, k -> new ArrayList<>()).add(record);
+    for (var record : activeRecords) grouped.computeIfAbsent(record.scaffoldName, k -> new ArrayList<>()).add(record);
     long position = 0;
     for (var entry : grouped.entrySet()) {
       long span = entry.getValue().stream().filter(r -> r instanceof ContigAGPRecord)
         .mapToLong(r -> ((ContigAGPRecord)r).intraContigEndBpIncl - ((ContigAGPRecord)r).intraContigStartBpIncl + 1).sum();
-      if (span > 0 && (entry.getValue().size() > 1 || !entry.getKey().startsWith("unscaffolded"))) {
+      if (span > 0 && !unscaffolded.contains(entry.getKey())) {
         long gap = entry.getValue().stream().filter(r -> r instanceof GapAGPRecord).mapToLong(r -> ((GapAGPRecord)r).gapLength).max().orElse(0);
         preparedScaffolds.rescaffold(position, position + span, id -> new ScaffoldDescriptor(id, entry.getKey(), gap));
       }
       position += span;
     }
-    rememberAnnotations(records, plan.selected());
+    rememberAnnotations(activeRecords, plan.selected());
     tree.getContigDescriptors().putAll(preparedContigs.getContigDescriptors());
     tree.commitRoot(preparedContigs.getRoot());
     chunkedFile.getScaffoldTree().replaceWith(preparedScaffolds);

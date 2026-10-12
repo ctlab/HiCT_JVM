@@ -10,12 +10,12 @@ import static ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor.*;
 public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
                             List<ContigTree.ContigTuple> omitted,
                             ImportReport report) {
-  public enum MissingComponentsPolicy { REQUIRE_CHOICE, APPEND_UNPLACED, EXCLUDE }
+  public enum MissingComponentsPolicy { REQUIRE_CHOICE, APPEND_UNPLACED, EXCLUDE, SCAFFOLDED_ONLY }
   public record ImportReport(int splitSourceContigs, int partialComponents, int omittedPieces,
-                             long omittedBp, int unknownOrientations, String missingComponentsPolicy,
+                             long omittedBp, int unscaffoldedPieces, long unscaffoldedBp, int unknownOrientations, String missingComponentsPolicy,
                              String boundaryPolicy, List<String> warnings) {
     public boolean requiresChoice() {
-      return omittedPieces > 0 && MissingComponentsPolicy.REQUIRE_CHOICE.name().equals(missingComponentsPolicy);
+      return (omittedPieces > 0 || unscaffoldedPieces > 0) && MissingComponentsPolicy.REQUIRE_CHOICE.name().equals(missingComponentsPolicy);
     }
   }
   private record Interval(long start, long end) {}
@@ -28,6 +28,9 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
     var omitted = new ArrayList<ContigTree.ContigTuple>();
     var covered = new HashMap<String, List<Interval>>();
     var splitSources = new HashSet<String>();
+    final var unscaffoldedObjects = unscaffoldedObjects(records);
+    int unscaffoldedPieces = 0;
+    long unscaffoldedBp = 0;
     int nextId = firstNewId, partials = 0, unknown = 0;
     for (var record : records) {
       if (!(record instanceof ContigAGPRecord c)) continue;
@@ -43,10 +46,15 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
       var descriptor = partial ? slice(source, start - offset, end - offset, nextId++, resolutions) : source;
       if (partial) { partials++; splitSources.add(source.getContigNameInSourceFASTA()); }
       if (c.getContigOrientation() == AGPContigOrientation.UNKNOWN || c.getContigOrientation() == AGPContigOrientation.IRRELEVANT) unknown++;
+      if (unscaffoldedObjects.contains(c.getScaffoldName())) {
+        unscaffoldedPieces++;
+        unscaffoldedBp += end - start;
+        if (policy == MissingComponentsPolicy.SCAFFOLDED_ONLY) continue;
+      }
       selected.add(new ContigTree.ContigTuple(descriptor,
         c.getContigOrientation() == AGPContigOrientation.MINUS ? ContigDirection.REVERSED : ContigDirection.FORWARD));
     }
-    if (selected.isEmpty()) throw new IllegalArgumentException("AGP contains no sequence components.");
+    if (covered.isEmpty()) throw new IllegalArgumentException("AGP contains no sequence components.");
     for (var entry : covered.entrySet()) {
       entry.getValue().sort(Comparator.comparingLong(Interval::start));
       long previousEnd = -1;
@@ -79,12 +87,29 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
     if (unknown > 0) warnings.add(unknown + " components have unknown orientation; displayed and exported to FASTA in forward orientation.");
     if (omittedBp > 0) warnings.add(omitted.size() + " omitted sequence pieces (" + omittedBp + " bp): " + switch (policy) {
       case APPEND_UNPLACED -> "appended as unplaced; included as unscaffolded FASTA records.";
-      case EXCLUDE -> "excluded from the assembly and FASTA export.";
+      case EXCLUDE, SCAFFOLDED_ONLY -> "excluded from the active map, matrix queries and FASTA export.";
       case REQUIRE_CHOICE -> "choose whether to append them as unplaced or exclude them. The assembly has not changed.";
     });
+    if (unscaffoldedPieces > 0) warnings.add(unscaffoldedPieces + " explicitly unscaffolded sequence pieces ("
+      + unscaffoldedBp + " bp): " + switch (policy) {
+        case REQUIRE_CHOICE -> "choose scaffolded sequence only or the full map. The assembly has not changed.";
+        case SCAFFOLDED_ONLY -> "excluded from the active map, matrix queries and FASTA export.";
+        default -> "included in the map and exported as unscaffolded FASTA records.";
+      });
     return new AGPImportPlan(List.copyOf(selected), List.copyOf(omitted),
-      new ImportReport(splitSources.size(), partials, omitted.size(), omittedBp, unknown, policy.name(),
+      new ImportReport(splitSources.size(), partials, omitted.size(), omittedBp, unscaffoldedPieces, unscaffoldedBp, unknown, policy.name(),
         "SOURCE_BIN_START_OWNS_BIN", List.copyOf(warnings)));
+  }
+
+  /** HiCT export convention, not a general interpretation of singleton AGP objects. */
+  public static Set<String> unscaffoldedObjects(List<AGPFileRecord> records) {
+    var grouped = new LinkedHashMap<String, List<AGPFileRecord>>();
+    for (var record : records) grouped.computeIfAbsent(record.getScaffoldName(), k -> new ArrayList<>()).add(record);
+    var result = new HashSet<String>();
+    grouped.forEach((name, rows) -> {
+      if (name.startsWith("unscaffolded_") && rows.size() == 1 && rows.getFirst() instanceof ContigAGPRecord) result.add(name);
+    });
+    return result;
   }
 
   /** Exact sequence slice; a bin belongs to the interval containing its original start. */

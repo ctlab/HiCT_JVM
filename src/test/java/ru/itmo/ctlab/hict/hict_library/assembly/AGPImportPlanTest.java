@@ -73,4 +73,19 @@ class AGPImportPlanTest {
       assertThrows(IllegalArgumentException.class,()->AGPImportPlan.prepare(records,List.of(source),n->source,resolutions,1,EXCLUDE));
     }
   }
+  @Test void explicitUnscaffoldedSingletonsNeedAChoiceButOrdinarySingletonScaffoldsDoNot() throws Exception {
+    var source = source();
+    for (String name : List.of("scf_ctg", "unscaffolded_ctg")) {
+      var records = AGPProcessor.parseRecordsFromReader(new StringReader(name + " 1 95 1 W ctg 1 95 -"));
+      var preview = AGPImportPlan.prepare(records,List.of(source),n->source,resolutions,1,REQUIRE_CHOICE);
+      assertEquals(name.startsWith("unscaffolded_"),preview.report().requiresChoice());
+      assertEquals(0,preview.report().omittedBp());
+      var selected = AGPImportPlan.prepare(records,List.of(source),n->source,resolutions,1,SCAFFOLDED_ONLY);
+      assertEquals(name.startsWith("unscaffolded_") ? 0 : 1,selected.selected().size());
+      var full = AGPImportPlan.prepare(records,List.of(source),n->source,resolutions,1,APPEND_UNPLACED);
+      assertEquals(1,full.selected().size());assertEquals(ContigDirection.REVERSED,full.selected().getFirst().direction());
+    }
+    var invalid=AGPProcessor.parseRecordsFromReader(new StringReader("unscaffolded_a 1 95 1 W ctg 1 95 +\nunscaffolded_b 1 95 1 W ctg 1 95 +"));
+    assertThrows(IllegalArgumentException.class,()->AGPImportPlan.prepare(invalid,List.of(source),n->source,resolutions,1,SCAFFOLDED_ONLY), "Excluded records must still be validated");
+  }
 }

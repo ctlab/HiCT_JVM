@@ -1006,6 +1006,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final var target = ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? primary : secondary;
 
     try {
+      if (source.getContigTree().getRoot() == null) {
+        final long length = target.getContigTree().getLengthInUnits(QueryLengthUnit.BASE_PAIRS,
+          ResolutionDescriptor.fromResolutionOrder(0));
+        if (length > 0) target.scaffoldingOperations().moveRegionToDebris(0, length,
+          ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+        return;
+      }
       final var targetAgp = buildTargetAgpForOverlay(source, target);
       if (targetAgp.isBlank()) {
         log.warn("Skipping overlay assembly synchronization because no visible active-source contigs can be resolved in the other source");
@@ -1052,14 +1059,16 @@ public class FileOpHandlersHolder extends HandlersHolder {
         continue;
       }
 
-      final var componentLength = sourceRecord.getIntraContigEndBpIncl() - sourceRecord.getIntraContigStartBpIncl() + 1L;
-      if (componentLength != targetDescriptor.getLengthBp()) {
+      final long componentStart = sourceRecord.getIntraContigStartBpIncl();
+      final long componentEnd = sourceRecord.getIntraContigEndBpIncl();
+      final long targetStart = targetDescriptor.getOffsetInSourceFASTA() + 1L;
+      final long targetEnd = targetDescriptor.getOffsetInSourceFASTA() + targetDescriptor.getLengthBp();
+      if (componentStart < targetStart || componentEnd > targetEnd) {
         ++skippedVisibleRecords;
         log.warn(
-          "Skipping active-source contig {} while synchronizing overlay assembly; source component length {} bp differs from target contig length {} bp",
+          "Skipping active-source contig {} while synchronizing overlay assembly; source interval {}-{} is outside target interval {}-{}",
           source.getContigDisplayName(sourceDescriptor.getContigId()),
-          componentLength,
-          targetDescriptor.getLengthBp()
+          componentStart, componentEnd, targetStart, targetEnd
         );
         continue;
       }
@@ -1071,8 +1080,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
           0L,
           0,
           target.getContigDisplayName(targetDescriptor.getContigId()),
-          1L,
-          targetDescriptor.getLengthBp(),
+          componentStart,
+          componentEnd,
           sourceRecord.getContigOrientation()
         )
       );
@@ -1151,27 +1160,22 @@ public class FileOpHandlersHolder extends HandlersHolder {
       return;
     }
 
-    final var sourceDescriptorsByName = new HashMap<String, ContigDescriptor>();
-    source.getContigTree().getContigDescriptors().forEach((contigId, descriptor) -> {
-      sourceDescriptorsByName.put(source.getContigDisplayName(contigId), descriptor);
-      sourceDescriptorsByName.put(source.getContigOriginalName(contigId), descriptor);
-      sourceDescriptorsByName.put(descriptor.getContigName(), descriptor);
-      sourceDescriptorsByName.put(descriptor.getContigNameInSourceFASTA(), descriptor);
-    });
+    // Split pieces share a source name. Match active intervals, not aliases in
+    // the descriptor registry (which also retains history and original pieces).
+    record SourceInterval(String name, long start, long length) {}
+    final var sourceDescriptors = new HashMap<SourceInterval, ContigDescriptor>();
+    for (var tuple : source.getAssemblyInfo().contigs()) {
+      final var descriptor = tuple.descriptor();
+      final var equivalent = resolveEquivalentContigDescriptor(source, target, descriptor);
+      if (equivalent != null) sourceDescriptors.put(new SourceInterval(
+        equivalent.getContigNameInSourceFASTA(), descriptor.getOffsetInSourceFASTA(), descriptor.getLengthBp()), descriptor);
+    }
 
     target.getContigTree().mapDescriptors(targetDescriptor -> {
       final var contigId = targetDescriptor.getContigId();
       final var visibility = new ArrayList<>(targetDescriptor.getPresenceAtResolution());
-      var sourceDescriptor = sourceDescriptorsByName.get(target.getContigDisplayName(contigId));
-      if (sourceDescriptor == null) {
-        sourceDescriptor = sourceDescriptorsByName.get(target.getContigOriginalName(contigId));
-      }
-      if (sourceDescriptor == null) {
-        sourceDescriptor = sourceDescriptorsByName.get(targetDescriptor.getContigName());
-      }
-      if (sourceDescriptor == null) {
-        sourceDescriptor = sourceDescriptorsByName.get(targetDescriptor.getContigNameInSourceFASTA());
-      }
+      final var sourceDescriptor = sourceDescriptors.get(new SourceInterval(
+        targetDescriptor.getContigNameInSourceFASTA(), targetDescriptor.getOffsetInSourceFASTA(), targetDescriptor.getLengthBp()));
       if (sourceDescriptor == null) {
         for (int targetOrder = 1; targetOrder < targetResolutions.length && targetOrder < targetDescriptor.getPresenceAtResolution().size(); targetOrder++) {
           visibility.set(targetOrder, ContigHideType.HIDDEN);
