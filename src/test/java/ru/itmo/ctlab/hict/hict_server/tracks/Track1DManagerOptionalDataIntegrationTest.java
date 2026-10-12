@@ -67,6 +67,7 @@ class Track1DManagerOptionalDataIntegrationTest {
         .findFirst()
         .orElseThrow();
       awaitTrackOptimization(manager, chunkedFile, opened.getTrackId());
+      manager.clearPrecomputeStatus();
 
       final var byPixels = manager.queryVisibleTracks(
         chunkedFile,
@@ -79,6 +80,9 @@ class Track1DManagerOptionalDataIntegrationTest {
       assertEquals(1, byPixels.getTracks().size());
       assertEquals("COOLER_WEIGHTS", byPixels.getTracks().get(0).getType());
       assertFalse(byPixels.getTracks().get(0).getBins().isEmpty());
+      assertTrue(manager.getPrecomputeStatus().getTracks().isEmpty(),
+        "A cached viewport query must not queue another all-resolution indexing job");
+      manager.invalidateInMemoryCache();
 
       final var byBins = manager.queryVisibleTracks(
         chunkedFile,
@@ -90,6 +94,8 @@ class Track1DManagerOptionalDataIntegrationTest {
       );
       assertEquals(1, byBins.getTracks().size());
       assertFalse(byBins.getTracks().get(0).getBins().isEmpty());
+      assertTrue(manager.getPrecomputeStatus().getTracks().isEmpty(),
+        "A compatible disk cache hit must not queue another indexing job");
 
       final var byBp = manager.queryVisibleTracks(
         chunkedFile,

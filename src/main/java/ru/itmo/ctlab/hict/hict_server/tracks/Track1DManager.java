@@ -847,7 +847,6 @@ public class Track1DManager {
         .forEach(track -> {
           try {
             final var trackChunkedFile = resolveChunkedFileForTrack(primaryChunkedFile, secondaryChunkedFile, track);
-            final var precomputeRuntime = maybeScheduleTrackPrecomputeFromQuery(trackChunkedFile, track);
             final var maybePrecomputed = getPrecomputedBinsIfReady(
               trackChunkedFile,
               track,
@@ -861,7 +860,12 @@ public class Track1DManager {
             );
             if (maybePrecomputed != null) {
               trackRenders.add(maybePrecomputed);
-            } else if (precomputeRuntime != null
+              return;
+            }
+            // A cache hit already includes resolution, assembly signature and
+            // track mode. Do not enqueue another all-resolution scan per pan.
+            final var precomputeRuntime = maybeScheduleTrackPrecomputeFromQuery(trackChunkedFile, track);
+            if (precomputeRuntime != null
               && precomputeRuntime.isActive()
               && track.dataSource().renderStyle() != RenderStyle.FEATURE) {
               trackRenders.add(track.toPendingRender("Preparing 1D track index…"));
@@ -1309,7 +1313,8 @@ public class Track1DManager {
     final var valuesPath = groupPath + "/values";
     final var supportPath = groupPath + "/support";
     HDF5LibraryInitializer.initializeHDF5Library();
-    try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
+    try (final var lease = SidecarAccess.read(sidecarPath);
+         final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
       if (!sidecarMetadataMatches(reader, cacheContext)) {
         return Optional.empty();
       }
@@ -1346,7 +1351,8 @@ public class Track1DManager {
         Math.min(PRECOMPUTE_DATASET_CHUNK_SIZE, Math.max(series.values().length, series.support().length))
       );
       HDF5LibraryInitializer.initializeHDF5Library();
-      try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
+      try (final var lease = SidecarAccess.write(sidecarPath);
+           final var writer = HDF5Factory.open(sidecarPath.toFile())) {
         writePrecomputeMetadata(writer, cacheContext);
         ensureGroupPath(writer, groupPath);
         writer.string().setAttr(groupPath, "version", PRECOMPUTE_CACHE_VERSION);
@@ -1393,7 +1399,8 @@ public class Track1DManager {
     try {
       Files.createDirectories(sidecarPath.getParent());
       HDF5LibraryInitializer.initializeHDF5Library();
-      try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
+      try (final var lease = SidecarAccess.write(sidecarPath);
+           final var writer = HDF5Factory.open(sidecarPath.toFile())) {
         writePrecomputeMetadata(writer, cacheContext);
       }
     } catch (final Exception e) {
@@ -1453,7 +1460,8 @@ public class Track1DManager {
       return false;
     }
     HDF5LibraryInitializer.initializeHDF5Library();
-    try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
+    try (final var lease = SidecarAccess.read(sidecarPath);
+         final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
       return sidecarMetadataMatches(reader, cacheContext);
     } catch (final Exception e) {
       return false;
