@@ -78,10 +78,6 @@ public class MainVerticle extends AbstractVerticle {
   private RequestTaskScheduler requestTaskScheduler;
   private String bindHost = "0.0.0.0";
 
-  static {
-    HDF5LibraryInitializer.initializeHDF5Library();
-  }
-
   public static void main(final String[] args) {
     Launcher.executeCommand("run", MainVerticle.class.getName());
   }
@@ -100,6 +96,24 @@ public class MainVerticle extends AbstractVerticle {
 
     log.info("Logging initialized at {} level", rootLogLevel);
 
+    // Extracting/loading native libraries can take seconds on first startup.
+    // Keep it off the Vert.x event loop and propagate failures to deployment.
+    vertx.<Void>executeBlocking(loading -> {
+      try {
+        initializeNativeLibraries();
+        loading.complete();
+      } catch (Throwable failure) {
+        loading.fail(failure);
+      }
+    }, false).onSuccess(ignored -> configureAndStartServer(startPromise))
+      .onFailure(startPromise::fail);
+  }
+
+  protected void initializeNativeLibraries() {
+    HDF5LibraryInitializer.initializeHDF5Library();
+  }
+
+  private void configureAndStartServer(final Promise<Void> startPromise) {
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
         .setConfig(new JsonObject().put("keys",
             new JsonArray()

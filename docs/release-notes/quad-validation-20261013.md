@@ -24,3 +24,8 @@ Regression tests cover reordered equal-length FASTA contents, partial source
 intervals, invalid and duplicate identifiers, atomic name rejection, and slow
 logging sinks. The separate quad integration oracle checks all ten supplied AGPs,
 both subset policies, matrix permutations and exported FASTA bases/gaps.
+
+Native-library extraction and loading now run on a Vert.x worker before server
+readiness, rather than in a class initializer on the event loop. Initialization
+failures fail deployment. The startup regression checks worker execution, event
+loop responsiveness during a blocked loader, and propagated failures.
