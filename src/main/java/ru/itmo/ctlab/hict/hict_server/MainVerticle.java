@@ -386,11 +386,17 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new TrackHandlersHolder(vertx));
 
     router.route().failureHandler(ctx -> {
-      log.error("An exception was caught at router top-level", ctx.failure());
+      final var expected = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException httpError
+        ? httpError : null;
+      if (expected != null && expected.getStatusCode() < 500) {
+        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), expected.getStatusCode());
+      } else {
+        log.error("An exception was caught at router top-level", ctx.failure());
+      }
       final var message = ctx.failure() != null && ctx.failure().getMessage() != null
         ? ctx.failure().getMessage()
         : "Request failed";
-      final int statusCode = ctx.statusCode() > 0 ? ctx.statusCode() : 500;
+      final int statusCode = expected != null ? expected.getStatusCode() : ctx.statusCode() > 0 ? ctx.statusCode() : 500;
       ctx.response()
         .putHeader("content-type", "application/json")
         .setStatusCode(statusCode)

@@ -328,7 +328,16 @@ public class ChunkedFile implements AutoCloseable {
     return Optional.ofNullable(scaffoldNameOverrides.get(scaffoldId)).orElse(getScaffoldOriginalName(scaffoldId));
   }
 
+  /** Display names are also AGP/FASTA identifiers. An empty name resets an override. */
+  public static void validateDisplayName(final @NotNull String name) {
+    if (name.length() > 4096 || name.codePoints().anyMatch(c -> Character.isWhitespace(c)
+      || Character.isSpaceChar(c) || Character.isISOControl(c))) {
+      throw new IllegalArgumentException("Names must contain no whitespace or control characters and at most 4096 characters; use underscores between words.");
+    }
+  }
+
   public void setContigNameOverride(final int contigId, final @NotNull String newName) {
+    validateDisplayName(newName);
     if (newName.isBlank() || newName.equals(getContigOriginalName(contigId))) {
       contigNameOverrides.remove(contigId);
     } else {
@@ -338,6 +347,7 @@ public class ChunkedFile implements AutoCloseable {
   }
 
   public void setScaffoldNameOverride(final long scaffoldId, final @NotNull String newName) {
+    validateDisplayName(newName);
     if (newName.isBlank() || newName.equals(getScaffoldOriginalName(scaffoldId))) {
       scaffoldNameOverrides.remove(scaffoldId);
     } else {

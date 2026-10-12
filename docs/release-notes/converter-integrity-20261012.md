@@ -14,8 +14,10 @@ version may shrink a dataset when parallel stripes finish out of order. Regressi
 coverage checks dataset extent and every pixel across multiple parallel batches.
 
 The exporter reuses a cursor and reads packed COO triples in blocks, avoiding a
-record allocation per pixel and repeated primitive stream calls. Counts remain
-64-bit integers, including values above the exact range of double precision.
+record allocation per pixel and repeated primitive stream calls. Intermediate COO
+counts remain exact 64-bit integers, including values above the exact range of
+double precision. Final Cooler counts retain the existing int32 schema and
+checked conversion; this change does not expand its representable range.
 Truncated intermediate records fail explicitly.
 
 Local RHINO 1 kb verification compares every input pixel directly with the HiCT

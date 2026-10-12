@@ -124,6 +124,15 @@ public class FASTAProcessor {
       && fastaRecords.stream().map(FASTASequenceSummary::lengthBp).sorted().toList()
       .equals(assemblyEntries.stream().map(AssemblyContigEntry::lengthBp).sorted().toList());
 
+    // Export resolves source names and offsets, not current assembly order.
+    final var sourceLengths = new HashMap<String, Long>();
+    for (final var record : fastaRecords) sourceLengths.put(record.name(), record.lengthBp());
+    final boolean sourceIntervalsCovered = assemblyEntries.stream().allMatch(entry -> {
+      final var sourceLength = sourceLengths.get(entry.sourceName());
+      return sourceLength != null && entry.sourceOffset() >= 0
+        && entry.sourceOffset() <= sourceLength
+        && entry.lengthBp() <= sourceLength - entry.sourceOffset();
+    });
     final var warnings = new ArrayList<String>();
     if (!sameRecordCount) {
       warnings.add(String.format(
@@ -143,6 +152,9 @@ public class FASTAProcessor {
       warnings.add("FASTA sequence lengths and order match the current Hi-C assembly, but contig names differ.");
     }
 
+    if (sourceIntervalsCovered) warnings.clear();
+    else if (warnings.isEmpty()) warnings.add("FASTA does not cover all source names and intervals required by the assembly.");
+
     return new FASTALinkCompatibilityReport(
       fastaPath.getFileName().toString(),
       fastaRecords.size(),
@@ -153,6 +165,7 @@ public class FASTAProcessor {
       sameOrderLengthAndOriginalNames,
       sameOrderLengthAndSourceNames,
       sameLengthMultiset,
+      sourceIntervalsCovered,
       warnings,
       mismatches
     );
@@ -163,6 +176,10 @@ public class FASTAProcessor {
     final var sourceDescriptors = this.chunkedFile.getOriginalDescriptors().values().stream()
       .sorted(Comparator.comparingInt(ContigDescriptor::getContigId))
       .toList();
+    // Exact source identifiers always win. Positional fallback is only safe when
+    // no source identifier exists in the supplied FASTA; mixed mappings are ambiguous.
+    final var names = fastaRecords.stream().map(FASTASequenceSummary::name).collect(java.util.stream.Collectors.toSet());
+    if (sourceDescriptors.stream().anyMatch(d -> names.contains(d.getContigNameInSourceFASTA()))) return Map.of();
     if (fastaRecords.size() != sourceDescriptors.size()) {
       return Map.of();
     }
@@ -359,6 +376,7 @@ public class FASTAProcessor {
         this.chunkedFile.getContigDisplayName(descriptor.getContigId()),
         this.chunkedFile.getContigOriginalName(descriptor.getContigId()),
         descriptor.getContigNameInSourceFASTA(),
+        descriptor.getOffsetInSourceFASTA(),
         descriptor.getLengthBp()
       ));
     }
@@ -367,6 +385,7 @@ public class FASTAProcessor {
 
   public static @NotNull List<FASTASequenceSummary> readSequenceSummaries(final @NotNull Path fastaPath) {
     final var records = new ArrayList<FASTASequenceSummary>();
+    final var seenNames = new java.util.HashSet<String>();
     try (final var stream = openPossiblyGzippedStream(fastaPath);
          final var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
       String currentName = null;
@@ -378,6 +397,7 @@ public class FASTAProcessor {
             records.add(new FASTASequenceSummary(currentName, currentLength));
           }
           currentName = parseHeaderName(line);
+          if (!seenNames.add(currentName)) throw new IllegalArgumentException("Duplicate FASTA identifier: " + currentName);
           currentLength = 0L;
           continue;
         }
@@ -408,6 +428,7 @@ public class FASTAProcessor {
       while ((line = reader.readLine()) != null) {
         if (line.startsWith(">")) {
           currentName = parseHeaderName(line);
+          if (sequences.containsKey(currentName)) throw new IllegalArgumentException("Duplicate FASTA identifier: " + currentName);
           if (!sequences.containsKey(currentName)) {
             sequences.put(currentName, new StringBuilder());
             order.add(currentName);
@@ -460,6 +481,7 @@ public class FASTAProcessor {
     final var sourceDescriptors = this.chunkedFile.getOriginalDescriptors().values().stream()
       .sorted(Comparator.comparingInt(ContigDescriptor::getContigId))
       .toList();
+    if (sourceDescriptors.stream().anyMatch(d -> sequences.containsKey(d.getContigNameInSourceFASTA()))) return Map.of();
     if (sequences.size() != sourceDescriptors.size()) {
       return Map.of();
     }
@@ -598,6 +620,7 @@ public class FASTAProcessor {
     @NotNull String currentName,
     @NotNull String originalName,
     @NotNull String sourceName,
+    long sourceOffset,
     long lengthBp
   ) {
   }
@@ -618,6 +641,7 @@ public class FASTAProcessor {
     boolean sameOrderLengthAndOriginalNames,
     boolean sameOrderLengthAndSourceNames,
     boolean sameLengthMultiset,
+    boolean sourceIntervalsCovered,
     @NotNull List<@NotNull String> warnings,
     @NotNull List<@NotNull MismatchAtIndex> mismatches
   ) {

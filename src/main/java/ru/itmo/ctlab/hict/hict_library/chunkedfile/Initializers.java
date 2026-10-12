@@ -222,7 +222,7 @@ public class Initializers {
         final var nonFiniteWeights = countNonFiniteWeights(stripes);
         if (nonFiniteWeights > 0L) {
           chunkedFile.addCoolerWeightsNaNCount(nonFiniteWeights);
-          log.warn(
+          log.debug(
             "Detected {} non-finite Cooler weights while opening {} at resolution {}",
             nonFiniteWeights,
             chunkedFile.getHdfFilePath().getFileName(),
@@ -235,6 +235,11 @@ public class Initializers {
         final var dataBundles = readContigDataBundles(resolutions[i], reader, atus);
         contigDescriptorDataBundles.set(i, dataBundles);
         reportProgress("Reading resolution metadata", (double) i / Math.max(1, resolutions.length - 1));
+      }
+      final long nonFiniteTotal = chunkedFile.getCoolerWeightsNaNCount().get();
+      if (nonFiniteTotal > 0) {
+        log.info("{} contains {} non-finite Cooler weights across resolutions; visualization provides explicit masking, replacement, or disabling policies.",
+          chunkedFile.getHdfFilePath().getFileName(), nonFiniteTotal);
       }
       reportProgress("Reading resolution metadata", 1.0);
 

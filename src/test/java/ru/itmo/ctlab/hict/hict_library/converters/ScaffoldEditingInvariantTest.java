@@ -67,6 +67,46 @@ class ScaffoldEditingInvariantTest {
       f.restoreAssembly(initial);assertEquals(initial,f.snapshotAssembly());
     }
   }
+  @Test void invalidExportNamesCannotCorruptTheAssembly() {
+    try (var f = fixture()) {
+      var before = f.snapshotAssembly();
+      var id = f.getScaffoldTree().getScaffoldList().getFirst().scaffoldDescriptor().scaffoldId();
+      for (String invalid : new String[]{"two words", "tab\tname", "new\nline", "a\u00a0b", "a\u0000b"}) {
+        assertThrows(IllegalArgumentException.class, () -> f.setContigNameOverride(0, invalid));
+        assertThrows(IllegalArgumentException.class, () -> f.setScaffoldNameOverride(id, invalid));
+        assertEquals(before, f.snapshotAssembly());
+      }
+      f.setContigNameOverride(0, "контig_α");
+      assertEquals("контig_α", f.getContigDisplayName(0));
+    }
+  }
+
+  @Test void fastaCompatibilityUsesSourceIntervalsAfterReversalAndSplit() throws Exception {
+    try (var f = fixture()) {
+      var path = dir.resolve("source.fasta");
+      java.nio.file.Files.writeString(path, ">C\n" + "G".repeat(6000) + "\n>A\n" + "A".repeat(6000) + "\n>B\n" + "C".repeat(6000) + "\n");
+      var processor = new ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor(f);
+      assertFalse(processor.analyzeLinkCandidate(path).hasWarnings());
+      assertTrue(processor.buildSourceNameAliases(path).isEmpty(), "Exact names must win over same-length positional matches");
+      var exported = dir.resolve("exported.fasta");
+      java.nio.file.Files.writeString(exported, processor.exportAssemblyPreservingGaps(path));
+      var sequences = ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor.readSequenceContents(exported);
+      assertEquals("A".repeat(6000), sequences.get("scf_A"));
+      assertEquals("C".repeat(6000), sequences.get("scf_B"));
+      assertEquals("G".repeat(6000), sequences.get("scf_C"));
+      f.scaffoldingOperations().reverseSelectionRangeBp(0, 18000);
+      f.scaffoldingOperations().splitContigAtBin(1000, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      var report = processor.analyzeLinkCandidate(path);
+      assertTrue(report.sourceIntervalsCovered());
+      assertFalse(report.hasWarnings());
+      java.nio.file.Files.writeString(path, ">A\nA\n>B\nC\n>C\nG\n");
+      assertTrue(processor.analyzeLinkCandidate(path).hasWarnings());
+      java.nio.file.Files.writeString(path, ">A\nA\n>A\nC\n");
+      assertThrows(IllegalArgumentException.class, () -> processor.analyzeLinkCandidate(path));
+      assertThrows(IllegalArgumentException.class, () -> ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor.readSequenceContents(path));
+    }
+  }
+
   @Test void movementInsideTargetScaffoldSnapsBothTreesToItsStart() {
     try (var f = fixture()) {
       var ops = f.scaffoldingOperations();

@@ -1,0 +1,20 @@
+<configuration>
+  <!-- Drain queued diagnostics on normal JVM shutdown, including CLI System.exit. -->
+  <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook"/>
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.err</target>
+    <encoder>
+      <pattern>%date{ISO8601} [%thread] %-5level %logger{48} - %msg%n</pattern>
+    </encoder>
+  </appender>
+  <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+    <queueSize>8192</queueSize>
+    <discardingThreshold>0</discardingThreshold>
+    <!-- Preserve diagnostics under overload; neverBlock=true would silently drop them. -->
+    <neverBlock>false</neverBlock>
+    <includeCallerData>false</includeCallerData>
+    <maxFlushTime>5000</maxFlushTime>
+    <appender-ref ref="CONSOLE"/>
+  </appender>
+  <root level="INFO"><appender-ref ref="ASYNC"/></root>
+</configuration>

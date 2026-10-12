@@ -864,7 +864,7 @@ public class Track1DManager {
             } else if (precomputeRuntime != null
               && precomputeRuntime.isActive()
               && track.dataSource().renderStyle() != RenderStyle.FEATURE) {
-              trackRenders.add(track.toErrorRender("Optimizing 1D track index..."));
+              trackRenders.add(track.toPendingRender("Preparing 1D track index…"));
             } else {
               trackRenders.add(track.query(
                 trackChunkedFile,
@@ -4776,6 +4776,7 @@ public class Track1DManager {
     private final @NotNull List<TrackBin> bins;
     private final double maxValue;
     private final String error;
+    private String statusMessage;
   }
 
   @Getter
@@ -4953,6 +4954,13 @@ public class Track1DManager {
         safeRange.min(),
         safeRange.max()
       );
+    }
+
+    private TrackRender toPendingRender(final @NotNull String message) {
+      final var render = new TrackRender(trackId, name, type.name(), color,
+        dataSource.renderStyle().name(), List.of(), 0.0d, null);
+      render.statusMessage = message;
+      return render;
     }
 
     private TrackRender toErrorRender(final @NotNull String message) {

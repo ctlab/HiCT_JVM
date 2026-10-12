@@ -54,6 +54,7 @@ public record FastaLinkResponseDTO(
         report.sameOrderLengthAndOriginalNames(),
         report.sameOrderLengthAndSourceNames(),
         report.sameLengthMultiset(),
+        report.sourceIntervalsCovered(),
         report.mismatches().stream().map(MismatchDTO::fromReport).toList()
       )
     );
@@ -68,6 +69,7 @@ public record FastaLinkResponseDTO(
     boolean sameOrderLengthAndOriginalNames,
     boolean sameOrderLengthAndSourceNames,
     boolean sameLengthMultiset,
+    boolean sourceIntervalsCovered,
     @NotNull List<@NotNull MismatchDTO> mismatches
   ) {
   }
