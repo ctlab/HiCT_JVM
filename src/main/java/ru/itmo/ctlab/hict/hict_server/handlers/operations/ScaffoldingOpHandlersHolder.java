@@ -205,6 +205,18 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
         dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
+    router.post("/unscaffold_all").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      final var requestJSON = ctx.body().asJsonObject();
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+        final var files = extractAssemblyChunkedFiles(map);
+        for (var file : files.operationOrder()) file.scaffoldingOperations().unscaffoldAll();
+        final var version = incrementVersionAndResetTileStats(map, files.activeChunkedFile(), scheduler);
+        return CompactAssemblyInfoDTO.response(files.activeChunkedFile(), version, requestJSON.getValue("assemblyFormat"));
+      }, dto -> ctx.response().end(Json.encodeToBuffer(dto)));
+    });
     router.post("/move_selection_to_debris").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {

@@ -391,7 +391,7 @@ public class AGPProcessor {
       for (final var sc : scaffoldedContigs) {
         final var scaffold = sc.scaffoldTuple().scaffoldDescriptor();
         assert (scaffold != null || (sc.contigs().size() == 1)) : "Unscaffolded contig must always represent unique unscaffolded segment";
-        final var scaffoldName = (scaffold != null) ? chunkedFile.getScaffoldDisplayName(scaffold.scaffoldId()) : String.format(
+        final var scaffoldName = (scaffold != null) ? chunkedFile.getScaffoldNameOverrides().getOrDefault(scaffold.scaffoldId(), scaffold.scaffoldName()) : String.format(
           "unscaffolded_%s",
           chunkedFile.getContigDisplayName(sc.contigs().get(0).descriptor().getContigId())
         );

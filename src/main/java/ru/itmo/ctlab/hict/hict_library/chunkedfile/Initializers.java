@@ -396,10 +396,23 @@ public class Initializers {
   public static void initializeScaffoldTree(final ChunkedFile chunkedFile) {
     final var scaffoldIdPath = "/contig_info/contig_scaffold_id";
     try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
-      if (!reader.object().isDataSet(scaffoldIdPath)) {
+      final var contigScaffoldIds = reader.object().isDataSet(scaffoldIdPath)
+        ? reader.int64().readArray(scaffoldIdPath) : new long[0];
+      // Raw converted maps can include an all-negative placeholder column.
+      // Preserve actual saved layouts, including explicitly unplaced components.
+      if (contigScaffoldIds.length == 0 || (!reader.object().isDataSet("/contig_info/scaffold_name")
+          && Arrays.stream(contigScaffoldIds).filter(id -> id >= 0).distinct().count()
+            == Arrays.stream(contigScaffoldIds).filter(id -> id >= 0).count())) {
+        long position = 0;
+        for (var contig : chunkedFile.getContigTree().getOrderedContigList()) {
+          final var descriptor = contig.descriptor();
+          final long end = position + descriptor.getLengthBp();
+          if (end > position) chunkedFile.getScaffoldTree().rescaffold(position, end,
+            id -> new ScaffoldDescriptor(id, "scf_" + descriptor.getContigName(), 1000));
+          position = end;
+        }
         return;
       }
-      final var contigScaffoldIds = reader.int64().readArray(scaffoldIdPath);
       final var scaffoldNames = reader.object().isDataSet("/contig_info/scaffold_name")
         ? reader.string().readArray("/contig_info/scaffold_name")
         : new String[0];

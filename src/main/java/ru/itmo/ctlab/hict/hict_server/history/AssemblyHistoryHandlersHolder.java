@@ -24,7 +24,7 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
   private static final Map<String, String> EDITS = Map.ofEntries(
     Map.entry("/reverse_selection_range", "Reverse selection"), Map.entry("/move_selection_range", "Move selection"),
     Map.entry("/split_contig_at_bin", "Split contig"), Map.entry("/group_contigs_into_scaffold", "Group into scaffold"),
-    Map.entry("/ungroup_contigs_from_scaffold", "Ungroup scaffold"), Map.entry("/move_selection_to_debris", "Move to debris"),
+    Map.entry("/ungroup_contigs_from_scaffold", "Ungroup scaffold"), Map.entry("/unscaffold_all", "Unscaffold all"), Map.entry("/move_selection_to_debris", "Move to debris"),
     Map.entry("/load_agp", "Import AGP"), Map.entry("/apply_juicebox_assembly", "Import Juicebox assembly"),
     Map.entry("/names/contig", "Rename contig"), Map.entry("/names/scaffold", "Rename scaffold"),
     Map.entry("/names/import", "Import names"));

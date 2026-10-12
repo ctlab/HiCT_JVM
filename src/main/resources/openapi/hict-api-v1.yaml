@@ -761,6 +761,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /unscaffold_all:
+    post:
+      tags: [Assembly]
+      summary: Remove all scaffolds, leaving contigs unplaced
+      description: Undoable session edit. Ordinary ungrouping creates singleton scaffolds instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assemblyFormat:
+                  type: string
+                  enum: [compact-v1]
+      responses:
+        '200':
+          description: Updated assembly; history guards and response header apply.
+        '409':
+          description: Stale assembly revision.
   /ungroup_contigs_from_scaffold:
     post:
       tags: [Scaffolding]
