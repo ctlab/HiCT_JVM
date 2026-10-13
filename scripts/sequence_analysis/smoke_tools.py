@@ -36,7 +36,9 @@ def main():
         r.create_group('treap_coo').attrs.update(dense_submatrix_size=2, stripes_count=1, bins_count=2)
     sequence = 'A' * 100 + 'C' * 100
     prepared = work / 'prepared.fa'
-    prepared.write_text('>analysis\n' + '\n'.join(sequence[i:i+80] for i in range(0, 200, 80)) + '\n')
+    # Match FASTAProcessor's LF-only, 80-column prepared export on every OS.
+    # write_text's platform translation would create CRLF offsets on Windows.
+    prepared.write_bytes(('>analysis\n' + '\n'.join(sequence[i:i+80] for i in range(0, 200, 80)) + '\n').encode('ascii'))
     axis = [[0, 0, 0, 100], [0, 1, 100, 200]]
     plan = dict(template=str(template), output=str(work / 'overlay.hdf5'), input=str(prepared),
                 inputOffset=0, inputLength=200, sequenceLength=200, snapshot='fixture',
