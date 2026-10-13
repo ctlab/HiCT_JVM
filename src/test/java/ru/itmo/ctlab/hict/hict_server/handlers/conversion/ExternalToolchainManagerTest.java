@@ -28,6 +28,30 @@ class ExternalToolchainManagerTest {
   }
 
   @Test
+  void nestedPayloadCommandsBecomeExecutableAndPathsCannotEscape() throws Exception {
+    var oldTemp = System.getProperty("java.io.tmpdir");
+    try {
+      System.setProperty("java.io.tmpdir", tempDir.toString());
+      var root = tempDir.resolve("hict-toolchains/test-platform/sequence-test");
+      var executable = root.resolve("sequence/hash/bin/seqkit");
+      Files.createDirectories(executable.getParent()); Files.writeString(executable, "fixture");
+      executable.toFile().setExecutable(false, false);
+      var manifest = new io.vertx.core.json.JsonObject().put("id", "sequence-test")
+        .put("commands", new io.vertx.core.json.JsonObject().put("seqkit", "sequence/hash/bin/seqkit"))
+        .put("files", new io.vertx.core.json.JsonArray(java.util.List.of("sequence/hash/bin/seqkit")));
+      var method = ExternalToolchainManager.class.getDeclaredMethod("extractBundledPayload", String.class, io.vertx.core.json.JsonObject.class);
+      method.setAccessible(true);
+      assertEquals(root, method.invoke(new ExternalToolchainManager(), "test-platform", manifest));
+      assertTrue(Files.isExecutable(executable));
+      manifest.put("files", new io.vertx.core.json.JsonArray(java.util.List.of("../../../../escape")));
+      var error = org.junit.jupiter.api.Assertions.assertThrows(java.lang.reflect.InvocationTargetException.class,
+        () -> method.invoke(new ExternalToolchainManager(), "test-platform", manifest));
+      assertTrue(error.getCause() instanceof java.io.IOException);
+      assertTrue(error.getCause().getMessage().contains("escapes"));
+    } finally { restoreSystemProperty("java.io.tmpdir", oldTemp); }
+  }
+
+  @Test
   void detectsDarwinArm64PlatformWithoutCollapsingToX86() throws Exception {
     final var originalOsName = System.getProperty("os.name");
     final var originalOsArch = System.getProperty("os.arch");

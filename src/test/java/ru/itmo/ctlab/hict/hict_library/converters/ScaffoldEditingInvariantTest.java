@@ -13,6 +13,29 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ScaffoldEditingInvariantTest {
   @TempDir Path dir;
+  @Test void analysisWindowsKeepPhysicalBinOwnershipThroughExactAgpSplitsAndEdits() throws Exception {
+    try (var f = fixture()) {
+      var region = new ru.itmo.ctlab.hict.hict_library.assembly.AssemblyAnalysisPlan.Region(0, 18000);
+      var initial = ru.itmo.ctlab.hict.hict_library.assembly.AssemblyAnalysisPlan.capture(f, List.of(1000L, 4000L), region, region);
+      assertEquals(18, initial.levels().getFirst().rows().size());
+      assertEquals(1000, initial.levels().getFirst().rows().getFirst().end());
+      f.importAGP(new java.io.StringReader("x\t1\t2501\t1\tW\tA\t1\t2501\t-\ny\t1\t3499\t1\tW\tA\t2502\t6000\t+\nz\t1\t6000\t1\tW\tB\t1\t6000\t+\nw\t1\t6000\t1\tW\tC\t1\t6000\t+\n"));
+      var split = ru.itmo.ctlab.hict.hict_library.assembly.AssemblyAnalysisPlan.capture(f, List.of(1000L, 4000L), region, region);
+      var windows = split.levels().getFirst().rows();
+      assertEquals(List.of(2, 1, 0, 3, 4, 5), windows.subList(0, 6).stream().map(w -> w.bin()).toList());
+      assertEquals(List.of(0L, 501L, 1501L, 3000L, 4000L, 5000L), windows.subList(0, 6).stream().map(w -> w.start()).toList());
+      assertEquals(6, split.levels().get(1).rows().size());
+      // Snapshot must remain valid and retain original bin anchors after debris.
+      f.scaffoldingOperations().moveRegionToDebris(0, 2501, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      var remaining = new ru.itmo.ctlab.hict.hict_library.assembly.AssemblyAnalysisPlan.Region(0, 15499);
+      var moved = ru.itmo.ctlab.hict.hict_library.assembly.AssemblyAnalysisPlan.capture(f, List.of(1000L), remaining, remaining);
+      assertEquals(15, moved.levels().getFirst().rows().size());
+      assertEquals(3, moved.levels().getFirst().rows().getFirst().bin());
+      assertEquals(499, moved.levels().getFirst().rows().getFirst().start());
+      assertEquals(18000, split.sequence().length());
+      assertEquals(18, split.levels().getFirst().rows().size());
+    }
+  }
   @Test void nativeSearchJobRunsThroughHttpAndSavesVerifiableProvenance() throws Exception {
     var executable = System.getenv("HICT_SEQKIT_BIN");
     org.junit.jupiter.api.Assumptions.assumeTrue(executable != null && java.nio.file.Files.isExecutable(Path.of(executable)), "Set HICT_SEQKIT_BIN for native HTTP integration");
@@ -69,6 +92,81 @@ class ScaffoldEditingInvariantTest {
       var actual = java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(output.resolveSibling("assembly-chunks.fasta")));
       assertEquals(java.util.HexFormat.of().formatHex(actual), provenance.getString("preparedInputSha256"));
       assertEquals(64, provenance.getString("toolSha256").length());
+      server.close().toCompletionStage().toCompletableFuture().get();
+    } finally { scheduler.close(); vertx.close().toCompletionStage().toCompletableFuture().get(); }
+  }
+  @Test void nativeModDotPlotAccumulatesSeparateVersionsReadableByExistingMatrixEngine() throws Exception {
+    var executable = System.getenv("HICT_MODDOTPLOT_BIN");
+    org.junit.jupiter.api.Assumptions.assumeTrue(executable != null && java.nio.file.Files.isExecutable(Path.of(executable)), "Set HICT_MODDOTPLOT_BIN for native HTTP integration");
+    var vertx = io.vertx.core.Vertx.vertx();
+    var sizes = new java.util.EnumMap<ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority,
+      ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.PoolSizing>(ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority.class);
+    for (var priority : ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority.values())
+      sizes.put(priority, new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.PoolSizing(1, 1));
+    var scheduler = new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler(vertx,
+      new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.SchedulerConfig(5, 16, 10, sizes));
+    try (var f = fixture(); var handler = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder(vertx)) {
+      var fasta = dir.resolve("http.fa");
+      java.nio.file.Files.writeString(fasta, ">A\n" + "A".repeat(6000) + "\n>B\n" + "C".repeat(6000) + "\n>C\n" + "G".repeat(6000) + "\n");
+      var shared = vertx.sharedData().getLocalMap("hict_server");
+      shared.put("dataDirectory", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.PathWrapper(dir));
+      shared.put("chunkedFile", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.ChunkedFileWrapper(f));
+      shared.put("linkedFastaPrimaryPath", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.PathWrapper(fasta));
+      shared.put("requestTaskScheduler", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.RequestTaskSchedulerWrapper(scheduler));
+      var router = io.vertx.ext.web.Router.router(vertx); router.route().handler(io.vertx.ext.web.handler.BodyHandler.create());
+      handler.addHandlersToRouter(router);
+      router.route().failureHandler(ctx -> ctx.response().setStatusCode(ctx.failure() instanceof io.vertx.ext.web.handler.HttpException e ? e.getStatusCode() : 500)
+        .end(new io.vertx.core.json.JsonObject().put("error", ctx.failure().getMessage()).encode()));
+      var server = vertx.createHttpServer().requestHandler(router).listen(0, "127.0.0.1").toCompletionStage().toCompletableFuture().get();
+      var client = java.net.http.HttpClient.newHttpClient();
+      String root = "http://127.0.0.1:" + server.actualPort();
+      var invalid = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/moddotplot/jobs"))
+        .header("content-type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}" )).build();
+      assertEquals(400, client.send(invalid, java.net.http.HttpResponse.BodyHandlers.ofString()).statusCode());
+      var initialRequest = new io.vertx.core.json.JsonObject().put("scope", "selection").put("mergeCompatible", true)
+        .put("resolutions", new io.vertx.core.json.JsonArray(List.of(1000L))).put("k", 7).put("delta", 0.0)
+        .put("identity", 70.0).put("sketchSize", 1000);
+      var outputs = new ArrayList<Path>();
+      String firstDigest = null;
+      for (long offset : new long[]{0L, 6000L}) {
+        var body = initialRequest.copy().put("region", new io.vertx.core.json.JsonObject().put("rowStart", offset).put("rowEnd", offset + 2000)
+          .put("columnStart", offset).put("columnEnd", offset + 2000));
+        var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/moddotplot/jobs"))
+          .header("content-type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString(body.encode())).build();
+        var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        assertEquals(202, response.statusCode(), response.body());
+        String id = new io.vertx.core.json.JsonObject(response.body()).getString("jobId");
+        var list = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/jobs/list"))
+          .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}")).build();
+        io.vertx.core.json.JsonObject result = null;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(45);
+        while (System.nanoTime() < deadline) {
+          var rows = new io.vertx.core.json.JsonArray(client.send(list, java.net.http.HttpResponse.BodyHandlers.ofString()).body());
+          result = rows.stream().map(x -> (io.vertx.core.json.JsonObject) x).filter(x -> x.getString("jobId").equals(id)).findFirst().orElseThrow();
+          if (List.of("finished", "failed", "cancelled").contains(result.getString("status"))) break;
+          Thread.sleep(50);
+        }
+        assertNotNull(result); assertEquals("finished", result.getString("status"), result.encode());
+        assertEquals("moddotplot", result.getString("kind"));
+        var output = dir.resolve(result.getString("outputFile")); outputs.add(output);
+        assertTrue(java.nio.file.Files.isRegularFile(output));
+        try (var overlay = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(output, 1, 2))) {
+          var matrix = (ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix) overlay.matrixQueries()
+            .getSubmatrix(ResolutionDescriptor.fromBpResolution(1000, overlay), 0, 0, 18, 18, false).matrix();
+          for (int r = 0; r < 18; r++) for (int c = 0; c < 18; c++) {
+            long expected = r < 2 && c < 2 || offset > 0 && r >= 6 && r < 8 && c >= 6 && c < 8 ? 1_000_000 : 0;
+            assertEquals(expected, matrix.values()[r][c], "Source-bin score at " + r + "," + c);
+          }
+          overlay.scaffoldingOperations().reverseSelectionRangeBp(0, 6000);
+          var reversed = (ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.LongMatrix) overlay.matrixQueries()
+            .getSubmatrix(ResolutionDescriptor.fromBpResolution(1000, overlay), 0, 0, 6, 6, false).matrix();
+          assertEquals(1_000_000, reversed.values()[4][5]);
+          assertEquals(0, reversed.values()[0][0]);
+        }
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(outputs.getFirst())));
+        if (firstDigest == null) firstDigest = digest; else assertEquals(firstDigest, digest, "Accumulation must not change the prior version");
+      }
+      assertNotEquals(outputs.getFirst(), outputs.getLast());
       server.close().toCompletionStage().toCompletableFuture().get();
     } finally { scheduler.close(); vertx.close().toCompletionStage().toCompletableFuture().get(); }
   }

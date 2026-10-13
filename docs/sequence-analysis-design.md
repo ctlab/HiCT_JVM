@@ -1,6 +1,6 @@
 # Sequence analyses and assembly edits
 
-Work in progress on `feature/sequence-analysis-20261013`, based on JVM `412768ac`
+Implementation on `feature/sequence-analysis-20261013`, based on JVM `412768ac`
 and WebUI `9706538`. The running publication campaign is a different, frozen
 build; its results must not be relabelled as measurements of these features.
 
@@ -58,11 +58,10 @@ tag commit `d13b5fa388cc869de05abe1bdb07980eef5efb4e`, is MIT licensed and provi
 cross-platform exact and substitution-mismatch searches via `locate`.
 [Official search documentation](https://bioinf.shenwei.me/seqkit/usage/#locate).
 Mismatch mode does **not** support indels and must not be presented as BLAST.
-The official Linux 2.13.0 release binary used for initial integration tests reports
-build commit `f3f4fceab0f0eb7a1a5ef9c5b1930281247672ed`, Go 1.26.0, CGO disabled,
-and baseline `GOAMD64=v1`. Its release archive SHA-256 is
-`7d686de448464fada1b1988e2e07d693bec68768312da62846bc0e2b502bfc46`.
-The tag and binary build commit must not be conflated in provenance.
+The release payload builds this exact SeqKit source with Go 1.25.5,
+CGO disabled and baseline GOAMD64=v1. Linked Go dependency notices and the Go
+runtime licence are included. Initial developer tests used an upstream release
+binary; those tests are not the identity of the final source-built payload.
 Both-strand searching, exact/mismatch mode, and current-assembly/selection scope
 must be explicit controls before submission. FASTA headers and generated IDs for
 plain one-sequence-per-line input must survive into track tooltips.
@@ -85,21 +84,100 @@ appropriate where the selected upstream kernel supports and benefits from them;
 CPU-compatible baselines must remain available. CI configuration is not evidence
 that Windows/macOS execution has occurred until those jobs actually run.
 
-## Evidence accumulated so far
+## Implemented behaviour and portable builds
 
-The full JVM suite passed locally: {'tests': 236, 'failures': 0, 'errors': 0, 'skipped': 4}. Native SeqKit search and
-HTTP jobs were enabled. The coordinate oracle includes 300 seeded per-base trials.
-A real browser test opened a fixture, linked FASTA, imported a split/inverted AGP,
-searched a motif crossing the resulting join, and automatically added its track:
-4/4 checks passed with no browser warnings, errors, or failed network requests.
+The File menu provides separate ModDotPlot and active-assembly alignment dotplot
+dialogs. Both accept the whole active assembly or a selected row/column rectangle,
+with explicit parameters and streamed job logs. The primary map can remain in
+the upper triangle while the generated sidecar appears in the lower triangle.
+Search uses SeqKit exact or substitution-only matching; it does not claim BLAST
+alignment or HOMER motif discovery.
 
-Search hit tests cover both strands, exact/substitution results against an
-exhaustive oracle, reversal, changed joins, debris, undo, and viewport clipping.
-A pre-existing nested BED lookup bug was also exposed: the new regression fails
-on the original Track1DManager and passes with the prefix-maximum-end index.
-These are local checks; they are not remote performance results for these features.
+ModDotPlot stores identity percentage multiplied by 10,000 in legacy int64
+contact records. Each resolution is computed independently. Alignment dotplots
+store sampled alignment counts, following the existing PAF sampling convention;
+these are not identity scores or CIGAR-exact nucleotide alignments. Both formats
+retain original source-bin/ATU identities and add optional analysis metadata.
+No existing input contact map is overwritten. Compatible updates produce new
+immutable sidecar versions, replacing only newly computed coverage (including
+zeros), retaining prior scores elsewhere. Incompatible parameters choose a new
+overlay. Coverage metadata distinguishes computed zeros from uncomputed areas.
 
-Evidence directory (development machine):
+The sparse writer avoids allocating a dense physical block (an 8192-square
+int64 block would require 512 MiB). Per-block geometric capacity avoids quadratic
+append storage during tiled updates. Computational sketches are batched; large
+contact matrices are not materialized as a single dense array.
+
+Selection context actions include reversal, movement, debris, sequence search,
+both dotplot methods, FASTA export and PNG/SVG/PDF export. Structural edits act
+on the diagonal intersection and retain the server's whole-scaffold invariant.
+Selection exports retain vector labels/tracks and crop the captured scene;
+heatmap cells remain raster pixels. The view is restored afterwards.
+
+The sequence payload is built from pinned sources, with dependency notices,
+archive hashes, native startup tests and known-answer fixtures. The Linux build
+uses manylinux2014 with a SHA-pinned python-build-standalone CPython 3.12.12
+runtime. All 197 ELF payload files passed the GLIBC <=2.17 check and native
+execution in that container. The existing converter/minimap2/mm2-plus payload
+is separate and retains its existing build provenance; the GLIBC claim above
+applies to the new sequence payload, not those older binaries. The kernels do
+not offer justified AVX2/AVX512 variants; baseline portable builds are used.
+Existing accelerated alignment choices remain available.
+
+The reusable GitHub Actions workflow builds and executes known-answer fixtures
+on Linux, Windows, macOS ARM64 and macOS x86_64. Portable releases depend on
+these jobs and merge their verified payloads before packaging. Windows/macOS
+execution is still pending an actual CI run; local configuration is not proof
+of a successful remote build.
+
+## Validation
+
+The JVM suite has 240 tests, zero failures/errors and three skips. Native SeqKit
+and ModDotPlot HTTP tests were enabled. The coordinate oracle includes 300
+seeded per-base trials. Twelve Python regression tests cover upstream identity
+agreement, sparse replacement, bounded block storage, 200 randomized PAF cases,
+FASTA boundaries, and payload tampering. WebUI type checks, existing regression
+scripts and the production build pass.
+
+Seven real Chromium DOM scenarios passed, including split/inverted AGP import,
+a search across the resulting join, generation/accumulation, selected alignment
+dotplots and selected PNG/SVG/PDF exports. There were no unexpected browser
+warnings/errors or failed network requests. PDF rasterization versus PNG had
+mean channel difference 0.792/255, with 1.108% of pixels differing by more than
+10/255; labels remained editable text. These small rasterization differences
+are not claimed to be bit-identical exports.
+
+Search tests cover both strands, exact/substitution results against an exhaustive
+oracle, reversal, changed joins, debris, undo and viewport clipping. Two defects
+have negative controls: a nested BED lookup regression and the renderer's
+triangle-specific source routing fail on the old implementation and pass here.
+
+A real quadrimaculatus N=1 functional pilot passed five cases: a cross-join
+search, first/accumulated ModDotPlot, and first/accumulated alignment dotplots.
+Prepared sequence matched an independent original-FASTA plus AGP oracle;
+previous sidecar hashes were unchanged. This shared-host pilot ran alongside
+other checks and is not publication performance evidence. Separate N=3 HTTP/job
+measurements on both remote hosts record elapsed time and 5-ms process-tree RSS;
+the frozen full methods/application campaign remains a distinct measurement.
+
+## Limits to disclose
+
+* Cached identity follows source bins through assembly edits. It is not silently
+  recomputed at a changed join; job metadata retains its original sequence path.
+* Attaching a secondary map currently begins a new edit journal, as the existing
+  application does. The dialog warns explicitly and permits saving without
+  attaching. Once attached, the two maps follow the same assembly edits.
+* Region updates copy the prior sidecar before atomic publication; cost grows
+  with that file. Earlier versions and interrupted jobs are retained for review.
+* Jobs run through one bounded worker/queue. The current server retains the most
+  recent 32 completed jobs in memory; durable job files survive but restart-time
+  discovery in the UI is not implemented.
+* Widely separated selected axes currently export their bounding sequence span.
+  This is correct but may do unnecessary FASTA I/O between those axes.
+* Assembly search concatenates active sequence without scaffold gap characters.
+  It can find join-spanning hits; it is not the scaffold FASTA export convention.
+* External binary overrides are supported but are not authenticated as the
+  bundled upstream build. Executable hashes and job settings preserve provenance.
+
+Evidence is retained under
 `/mnt/Models/HiCT/jbat-experiments/sequence-analysis-evidence-20261013/`.
-The search UI currently requires an installed SeqKit binary via `HICT_SEQKIT_BIN`;
-portable payload integration and ModDotPlot generation remain work in progress.

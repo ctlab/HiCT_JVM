@@ -1415,6 +1415,76 @@ paths:
         '400': { description: 'Invalid query, scope or matching settings' }
         '409': { description: 'No open map or linked FASTA' }
         '429': { description: 'Analysis queue full' }
+  /sequence/moddotplot/jobs:
+    post:
+      tags: [Sequence analysis]
+      summary: Generate or accumulate a source-anchored ModDotPlot overlay
+      operationId: startModDotPlot
+      description: Captures the active assembly, evaluates identity at each selected map resolution, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, mergeCompatible, resolutions]
+              properties:
+                scope: {type: string, enum: [assembly, selection]}
+                mergeCompatible: {type: boolean}
+                resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
+                k: {type: integer, default: 21, minimum: 1, maximum: 65535}
+                identity: {type: number, default: 80, minimum: 0, maximum: 100}
+                sketchSize: {type: integer, default: 1000, minimum: 1, maximum: 1000000}
+                delta: {type: number, default: 0.5, minimum: 0, maximum: 1}
+                region:
+                  type: object
+                  required: [rowStart, rowEnd, columnStart, columnEnd]
+                  properties:
+                    rowStart: {type: integer, format: int64, minimum: 0}
+                    rowEnd: {type: integer, format: int64, minimum: 1}
+                    columnStart: {type: integer, format: int64, minimum: 0}
+                    columnEnd: {type: integer, format: int64, minimum: 1}
+      responses:
+        '202': {description: Analysis queued; poll sequence/jobs/list for progress and outputFile}
+        '400': {description: Invalid parameters or selection}
+        '409': {description: Map or linked FASTA unavailable, or stale assembly revision}
+        '429': {description: Analysis queue is full}
+  /sequence/dotplot/jobs:
+    post:
+      tags: [Sequence analysis]
+      summary: Generate or accumulate a selected alignment dotplot
+      operationId: startAssemblyDotPlot
+      description: Captures the active assembly, aligns the selected sequence axes using the configured minimap2/mm2-plus and samples PAF alignments into source bins, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, mergeCompatible, resolutions]
+              properties:
+                scope: {type: string, enum: [assembly, selection]}
+                mergeCompatible: {type: boolean}
+                resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
+                k: {type: integer, default: 15, minimum: 1, maximum: 28}
+                window: {type: integer, default: 10, minimum: 1, maximum: 255}
+                chainScore: {type: integer, default: 40, minimum: 1, maximum: 1000000}
+                sampleBp: {type: integer, default: 100, minimum: 1, maximum: 1000000}
+                minAlignmentLength: {type: integer, default: 100, minimum: 1, maximum: 100000000}
+                threads: {type: integer, default: 4, minimum: 1, maximum: 256}
+                region:
+                  type: object
+                  required: [rowStart, rowEnd, columnStart, columnEnd]
+                  properties:
+                    rowStart: {type: integer, format: int64, minimum: 0}
+                    rowEnd: {type: integer, format: int64, minimum: 1}
+                    columnStart: {type: integer, format: int64, minimum: 0}
+                    columnEnd: {type: integer, format: int64, minimum: 1}
+      responses:
+        '202': {description: Analysis queued; poll sequence/jobs/list for progress and outputFile}
+        '400': {description: Invalid parameters or selection}
+        '409': {description: Map or linked FASTA unavailable, or stale assembly revision}
+        '429': {description: Analysis queue is full}
   /sequence/jobs/list:
     post:
       tags: [Conversion]

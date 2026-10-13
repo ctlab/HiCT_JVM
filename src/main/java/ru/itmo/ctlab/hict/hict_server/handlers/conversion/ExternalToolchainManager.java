@@ -91,9 +91,9 @@ public final class ExternalToolchainManager {
 
   /** Optional sequence-analysis commands share the portable manifest/extraction path. */
   public @NotNull Path requireSequenceCommand(String command) throws IOException {
-    if (!List.of("seqkit", "moddotplot", "blastn").contains(command))
+    if (!List.of("seqkit", "hict-moddotplot", "blastn").contains(command))
       throw new IllegalArgumentException("Unknown sequence tool: " + command);
-    String setting = "HICT_" + command.toUpperCase(Locale.ROOT) + "_BIN";
+    String setting = command.equals("hict-moddotplot") ? "HICT_MODDOTPLOT_BIN" : "HICT_" + command.toUpperCase(Locale.ROOT) + "_BIN";
     var override = readSetting(setting);
     if (override.isPresent()) {
       var explicit = Path.of(override.get()).toAbsolutePath().normalize();
@@ -124,6 +124,13 @@ public final class ExternalToolchainManager {
     var found = findOnPath(List.of(command, command + ".exe"));
     if (found != null) return found;
     throw new IllegalStateException(command + " is not available in this build. Configure " + setting + " or install the portable sequence-tool payload.");
+  }
+
+  public @NotNull Path requireSequenceAligner() {
+    final var toolchain = resolveAnyToolchain();
+    final var command = toolchain.selectedDotplotAlignerCommand(dotplotAlignerPreference());
+    if (command == null) throw new IllegalStateException("Configure or bundle minimap2/mm2-plus for alignment dotplots");
+    return command;
   }
 
   public @NotNull ResolvedToolchain requireDotplotToolchain() {
@@ -201,15 +208,18 @@ public final class ExternalToolchainManager {
     ).toAbsolutePath().normalize();
     Files.createDirectories(extractionRoot);
     final var files = manifest.getJsonArray("files", new JsonArray());
+    final var commands = manifest.getJsonObject("commands", new JsonObject());
     for (int i = 0; i < files.size(); i++) {
       final var relative = files.getString(i);
       if (relative == null || relative.isBlank()) {
         continue;
       }
       final var target = extractionRoot.resolve(relative).normalize();
+      if (!target.startsWith(extractionRoot)) throw new IOException("Bundled tool path escapes extraction directory: " + relative);
+      final boolean executable = target.startsWith(extractionRoot.resolve("bin")) || commands.getMap().containsValue(relative);
       Files.createDirectories(target.getParent());
       if (Files.isRegularFile(target) && Files.size(target) > 0L) {
-        if (target.startsWith(extractionRoot.resolve("bin")) && !isWindows()) {
+        if (executable && !isWindows()) {
           target.toFile().setExecutable(true, true);
         }
         continue;
@@ -223,9 +233,17 @@ public final class ExternalToolchainManager {
           }
           throw new IOException("Missing bundled resource " + resourcePath);
         }
-        Files.copy(fileStream, target, StandardCopyOption.REPLACE_EXISTING);
+        // Multiple application processes can discover the same new payload.
+        // Publish complete files atomically so a second process never observes
+        // a nonempty but truncated Python library or native executable.
+        final var temporary = Files.createTempFile(target.getParent(), ".hict-extract-", ".pending");
+        Files.copy(fileStream, temporary, StandardCopyOption.REPLACE_EXISTING);
+        try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+        catch (java.nio.file.AtomicMoveNotSupportedException e) {
+          Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+        }
       }
-      if (target.startsWith(extractionRoot.resolve("bin")) && !isWindows()) {
+      if (executable && !isWindows()) {
         target.toFile().setExecutable(true, true);
       }
     }

@@ -147,7 +147,11 @@ env:
   HICT_JHDF5_NATIVES_ARCHIVE: "src/main/resources/libs/sis-jhdf5-19.04.1-natives.tar.gz"
 
 jobs:
+  sequence-tools:
+    uses: ./.github/workflows/sequence-tools.yml
+
   linux-portable:
+    needs: sequence-tools
     name: Linux portable .run
     runs-on: ubuntu-22.04
     continue-on-error: ${{ matrix.abi_mode == 'musl-static' }}
@@ -457,6 +461,20 @@ jobs:
           path: toolchains-dist/linux_x86_64
           key: ${{ steps.cache-linux-toolchains.outputs.cache-primary-key }}
 
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-linux_x86_64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-linux_x86_64.tar.gz -C sequence-tools-dist
+      - name: Merge verified sequence tools
+        shell: bash
+        run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/linux_x86_64 --target toolchains-dist/linux_x86_64
+
       - name: Build fat JAR in manylinux2014
         run: scripts/ci/linux_container_build.sh fatjar
 
@@ -675,6 +693,7 @@ jobs:
             scripts/ci/validate_linux_component.sh portable
           fi
   windows-portable:
+    needs: sequence-tools
     name: Windows portable ZIP and EXE
     runs-on: windows-2022
     env:
@@ -1089,6 +1108,20 @@ jobs:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..
         run: .\scripts\portable\prepare_electron_browser_payload_windows.ps1
 
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-windows_x86_64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-windows_x86_64.tar.gz -C sequence-tools-dist
+      - name: Merge verified sequence tools
+        shell: bash
+        run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/windows_x86_64 --target toolchains-dist/windows_x86_64
+
       - name: Build Windows portable package and EXE
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
@@ -1211,6 +1244,7 @@ jobs:
           exit 0
 
   macos-portable:
+    needs: sequence-tools
     name: macOS Apple Silicon portable .run
     runs-on: macos-14
     continue-on-error: true
@@ -1328,6 +1362,17 @@ jobs:
           restore-keys: |
             hictk-conan-v3-darwin-arm64-explicit-profile-${{ env.HICTK_REF }}-
             hictk-conan-v3-darwin-arm64-explicit-profile-
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-darwin_arm64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-darwin_arm64.tar.gz -C sequence-tools-dist
+
       - name: Build macOS Apple Silicon portable package
         run: ./scripts/portable/build_portable_darwin_arm64.sh
       - name: Upload macOS Apple Silicon HiCT native processing artifact
@@ -1434,6 +1479,7 @@ jobs:
         run: echo "::warning::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
 
   macos-intel-portable:
+    needs: sequence-tools
     name: macOS Intel portable .run
     runs-on: macos-15-intel
     continue-on-error: true
@@ -1551,6 +1597,17 @@ jobs:
           restore-keys: |
             hictk-conan-v3-darwin-x86_64-explicit-profile-${{ env.HICTK_REF }}-
             hictk-conan-v3-darwin-x86_64-explicit-profile-
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-darwin_x86_64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-darwin_x86_64.tar.gz -C sequence-tools-dist
+
       - name: Build macOS Intel portable package
         run: ./scripts/portable/build_portable_darwin_x86_64.sh
       - name: Upload macOS Intel HiCT native processing artifact

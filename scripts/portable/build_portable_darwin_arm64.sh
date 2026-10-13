@@ -219,6 +219,12 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
 fi
 
 HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
+if [[ -d "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" ]]; then
+  python3 "${SCRIPT_DIR}/../toolchains/merge_sequence_payload.py" \
+    --source "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" \
+    --target "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}"
+fi
+
 
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
 if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then

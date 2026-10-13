@@ -1,0 +1,18 @@
+# Computational adapter only; the upstream plotting CLI is not bundled.
+numpy==1.26.4
+scipy==1.14.1
+pandas==2.2.3
+h5py==3.12.1
+python-dateutil==2.9.0.post0
+pytz==2025.2
+tzdata==2025.2
+six==1.17.0
+setuptools==80.9.0
+wheel==0.45.1
+packaging==25.0
+altgraph==0.17.4
+pyinstaller==6.16.0
+pyinstaller-hooks-contrib==2025.9
+pefile==2023.2.7; sys_platform == 'win32'
+pywin32-ctypes==0.2.3; sys_platform == 'win32'
+macholib==1.16.3; sys_platform == 'darwin'
