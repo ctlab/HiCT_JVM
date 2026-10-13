@@ -117,7 +117,7 @@ fi
   ldd "${OUTPUT_DIR}/bin/minimap2" || true
 } > "${OUTPUT_DIR}/share/doc/minimap2/build-info.txt"
 
-python3 - "${OUTPUT_DIR}" "${REF}" <<'PY'
+python3 - "${OUTPUT_DIR}" "${REF}" "${ENABLE_STATIC_MUSL}" <<'PY'
 import json
 import pathlib
 import sys
@@ -157,7 +157,7 @@ if (root / "bin/minimap2").is_file():
         "minimap2 is redistributed under its MIT license. Keep the bundled license and citation files with released artifacts.",
     ])
     citations.append("minimap2: Li H. Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics. 2018;34(18):3094-3100.")
-    limitations.append("This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime.")
+    limitations.append("This payload was compiled as a static musl binary for Linux x86_64 and should not depend on the host glibc runtime." if sys.argv[3] == "1" else "This payload uses the build platform glibc ABI; Linux release CI verifies its symbol floor.")
 
 manifest = {
     "id": f"hict-toolchain-linux-x86_64-hictk-minimap2-{ref}",

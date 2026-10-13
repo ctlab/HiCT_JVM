@@ -54,7 +54,12 @@ def merge(source, target):
     for key in ('notices', 'citations'):
         base[key] = list(dict.fromkeys(base.get(key, []) + extra.get(key, [])))
     base['files'] = list(dict.fromkeys(base.get('files', []) + [prefix + '/' + p for p in extra['files']]))
-    base.setdefault('sha256', {}).update({prefix + '/' + p: v for p, v in extra['sha256'].items()})
+    # Pin existing aligners too: their release label can survive an ABI rebuild.
+    # The runtime extraction cache includes this manifest's content digest.
+    for name in base['files']:
+        if Path(name).is_absolute() or '..' in Path(name).parts:
+            raise ValueError('Unsafe existing payload file path: ' + name)
+    base['sha256'] = {name: digest(target / name) for name in base['files']}
     base['sequencePayloadSha256'] = hashlib.sha256(manifest_bytes).hexdigest()
     path.write_text(json.dumps(base, indent=2))
     print('Verified and merged', len(extra['files']), 'sequence payload files into', target)

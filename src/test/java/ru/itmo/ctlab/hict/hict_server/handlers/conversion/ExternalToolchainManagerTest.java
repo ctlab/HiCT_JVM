@@ -32,13 +32,13 @@ class ExternalToolchainManagerTest {
     var oldTemp = System.getProperty("java.io.tmpdir");
     try {
       System.setProperty("java.io.tmpdir", tempDir.toString());
-      var root = tempDir.resolve("hict-toolchains/test-platform/sequence-test");
-      var executable = root.resolve("sequence/hash/bin/seqkit");
-      Files.createDirectories(executable.getParent()); Files.writeString(executable, "fixture");
-      executable.toFile().setExecutable(false, false);
       var manifest = new io.vertx.core.json.JsonObject().put("id", "sequence-test")
         .put("commands", new io.vertx.core.json.JsonObject().put("seqkit", "sequence/hash/bin/seqkit"))
         .put("files", new io.vertx.core.json.JsonArray(java.util.List.of("sequence/hash/bin/seqkit")));
+      var root = tempDir.resolve("hict-toolchains/test-platform/" + ExternalToolchainManager.bundledPayloadId(manifest));
+      var executable = root.resolve("sequence/hash/bin/seqkit");
+      Files.createDirectories(executable.getParent()); Files.writeString(executable, "fixture");
+      executable.toFile().setExecutable(false, false);
       var method = ExternalToolchainManager.class.getDeclaredMethod("extractBundledPayload", String.class, io.vertx.core.json.JsonObject.class);
       method.setAccessible(true);
       assertEquals(root, method.invoke(new ExternalToolchainManager(), "test-platform", manifest));
@@ -49,6 +49,15 @@ class ExternalToolchainManagerTest {
       assertTrue(error.getCause() instanceof java.io.IOException);
       assertTrue(error.getCause().getMessage().contains("escapes"));
     } finally { restoreSystemProperty("java.io.tmpdir", oldTemp); }
+  }
+
+  @Test
+  void changedBuildWithSameReleaseLabelCannotReuseOldBinaryCache() {
+    var old = new io.vertx.core.json.JsonObject().put("id", "same-release")
+      .put("sha256", new io.vertx.core.json.JsonObject().put("bin/minimap2", "old-build"));
+    var current = old.copy().put("sha256", new io.vertx.core.json.JsonObject().put("bin/minimap2", "portable-build"));
+    org.junit.jupiter.api.Assertions.assertNotEquals(ExternalToolchainManager.bundledPayloadId(old), ExternalToolchainManager.bundledPayloadId(current));
+    assertEquals(ExternalToolchainManager.bundledPayloadId(current), ExternalToolchainManager.bundledPayloadId(current.copy()));
   }
 
   @Test

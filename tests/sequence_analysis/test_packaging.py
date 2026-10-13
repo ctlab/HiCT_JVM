@@ -22,6 +22,7 @@ def test_merge_checks_all_files_before_changing_existing_payload_and_preserves_t
     source,target=tmp_path/'source',tmp_path/'target'
     manifest=payload(source);target.mkdir()
     original=dict(commands={'hictk':'bin/hictk'},files=['bin/hictk'],notices=['original'])
+    (target/'bin').mkdir();(target/'bin/hictk').write_bytes(b'original tool')
     (target/'manifest.json').write_text(json.dumps(original))
     (source/'bin/seqkit').write_bytes(b'tampered')
     with pytest.raises(ValueError,match='checksum'):module.merge(source,target)
@@ -33,6 +34,7 @@ def test_merge_checks_all_files_before_changing_existing_payload_and_preserves_t
     assert merged['commands']['hictk']=='bin/hictk'
     assert (target/merged['commands']['seqkit']).read_bytes()==b'fixture tool'
     assert merged['notices']==['original','new notice']
+    assert merged['sha256']['bin/hictk']==hashlib.sha256(b'original tool').hexdigest()
     module.merge(source,target)
     assert json.loads((target/'manifest.json').read_text())==merged
 

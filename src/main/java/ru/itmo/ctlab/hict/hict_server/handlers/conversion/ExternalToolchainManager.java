@@ -199,7 +199,7 @@ public final class ExternalToolchainManager {
 
   private @NotNull Path extractBundledPayload(final @NotNull String platform,
                                               final @NotNull JsonObject manifest) throws IOException {
-    final var manifestId = manifest.getString("id", "default");
+    final var manifestId = bundledPayloadId(manifest);
     final var extractionRoot = Path.of(
       System.getProperty("java.io.tmpdir"),
       "hict-toolchains",
@@ -248,6 +248,19 @@ public final class ExternalToolchainManager {
       }
     }
     return extractionRoot;
+  }
+
+  static String bundledPayloadId(JsonObject manifest) {
+    try {
+      var hash = java.security.MessageDigest.getInstance("SHA-256").digest(
+        manifest.encode().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      // A release label can stay the same while the compiler, ABI or payload
+      // changes. Never silently reuse the previous extracted executable.
+      return manifest.getString("id", "default").replaceAll("[^A-Za-z0-9._-]", "_")
+        + "-" + java.util.HexFormat.of().formatHex(hash).substring(0, 20);
+    } catch (java.security.NoSuchAlgorithmException impossible) {
+      throw new IllegalStateException("SHA-256 unavailable", impossible);
+    }
   }
 
   private static boolean isOptionalBundledMetadata(final @NotNull String relative) {

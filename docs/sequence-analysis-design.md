@@ -118,9 +118,12 @@ The sequence payload is built from pinned sources, with dependency notices,
 archive hashes, native startup tests and known-answer fixtures. The Linux build
 uses manylinux2014 with a SHA-pinned python-build-standalone CPython 3.12.12
 runtime. All 197 ELF payload files passed the GLIBC <=2.17 check and native
-execution in that container. The existing converter/minimap2/mm2-plus payload
-is separate and retains its existing build provenance; the GLIBC claim above
-applies to the new sequence payload, not those older binaries. The kernels do
+execution in that container. The minimap2 and AVX2/AVX512 mm2-plus binaries in the benchmark kit were
+also rebuilt and executed in manylinux2014 after the laptop gate exposed an
+older Ubuntu-24.04 mm2-plus requiring glibc 2.38. All three rebuilt aligners
+require at most glibc 2.14 and start on Ubuntu 22.04. The benchmark kit does not
+add the unrelated older hictk binary; the normal release workflow builds hictk
+separately and performs its existing ABI validation. The kernels do
 not offer justified AVX2/AVX512 variants; baseline portable builds are used.
 Existing accelerated alignment choices remain available.
 
@@ -132,7 +135,7 @@ of a successful remote build.
 
 ## Validation
 
-The JVM suite has 240 tests, zero failures/errors and three skips. Native SeqKit
+The JVM suite has 241 tests, zero failures/errors and three skips. Native SeqKit
 and ModDotPlot HTTP tests were enabled. The coordinate oracle includes 300
 seeded per-base trials. Twelve Python regression tests cover upstream identity
 agreement, sparse replacement, bounded block storage, 200 randomized PAF cases,
@@ -181,3 +184,13 @@ the frozen full methods/application campaign remains a distinct measurement.
 
 Evidence is retained under
 `/mnt/Models/HiCT/jbat-experiments/sequence-analysis-evidence-20261013/`.
+
+
+A deployment gate caught the older mm2-plus ABI incompatibility before any
+laptop timings. The failed attempt and desktop pilot are retained as separate
+cohorts. Extraction paths now include the content digest of the manifest, which
+pins every bundled file: changing an executable under the same release label
+cannot silently reuse the prior extracted file. Linux aligner smoke checks now
+fail the CI job when both startup commands fail instead of ignoring the failure.
+The payload merger supports the Python 3.9/3.10 used by packaging runners as well
+as the explicit Python 3.12 used to build the computational adapter.
