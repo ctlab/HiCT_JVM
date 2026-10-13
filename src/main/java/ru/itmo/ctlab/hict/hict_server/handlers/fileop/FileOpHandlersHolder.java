@@ -566,6 +566,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       if (scheduler == null) {
         return;
       }
+      final var download = new TemporaryFastaDownload(ctx);
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.EXPORT,
@@ -587,18 +588,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final long gapLength = request == null
             ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()
             : request.getLong("defaultSpacerLength", ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
-          return request != null && request.getBoolean("preserveImportedGaps", false)
-            ? chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssemblyPreservingGaps(fastaPathWrapper.getPath())
-            : chunkedFileWrapper.getChunkedFile().getFastaProcessor().exportAssembly(fastaPathWrapper.getPath(), gapLength);
+          return download.write(output -> chunkedFileWrapper.getChunkedFile().getFastaProcessor().writeAssembly(
+            fastaPathWrapper.getPath(), output, request != null && request.getBoolean("preserveImportedGaps", false), gapLength));
         },
-        fasta -> ctx.response()
-          .setChunked(true)
-          .putHeader("Content-Type", "text/plain")
-          .end(Buffer.buffer(fasta, StandardCharsets.UTF_8.name())),
-        () -> ctx.response()
-          .setChunked(true)
-          .putHeader("Content-Type", "text/plain")
-          .end(Buffer.buffer("", StandardCharsets.UTF_8.name()))
+        download::send,
+        () -> {download.close();ctx.response().putHeader("Content-Type", "text/plain").end();}
       );
     });
 
@@ -620,6 +614,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         ctx.fail(new IllegalArgumentException("Selection coordinates must be provided"));
         return;
       }
+      final var download = new TemporaryFastaDownload(ctx);
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.EXPORT,
@@ -649,60 +644,30 @@ public class FileOpHandlersHolder extends HandlersHolder {
             fromBpY,
             toBpY
           );
-          if (!explicitAxisSources) {
-            return horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportSelection(
-              horizontalFastaPathWrapper.getPath(),
-              fromBpX,
-              fromBpY,
-              toBpX,
-              toBpY
-            );
-          }
-
-          final long horizontalStart = Math.min(fromBpX, toBpX);
-          final long horizontalEnd = Math.max(fromBpX, toBpX);
-          final long verticalStart = Math.min(fromBpY, toBpY);
-          final long verticalEnd = Math.max(fromBpY, toBpY);
-          if (
-            Objects.equals(horizontalSource, verticalSource) &&
-              horizontalStart == verticalStart &&
-              horizontalEnd == verticalEnd
-          ) {
-            return horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportInterval(
-              horizontalFastaPathWrapper.getPath(),
-              horizontalStart,
-              horizontalEnd,
-              String.format("selection_%d_%d", horizontalStart, horizontalEnd)
-            );
-          }
-
-          final var verticalChunkedFileWrapper = resolveChunkedFileWrapperBySource(map, verticalSource);
-          final var verticalFastaPathWrapper = resolveFastaPathWrapperBySource(map, verticalSource);
-          if (verticalFastaPathWrapper == null) {
-            throw new IllegalStateException("Link a FASTA file for the vertical source before exporting FASTA");
-          }
-          final var horizontalFasta = horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportInterval(
-            horizontalFastaPathWrapper.getPath(),
-            horizontalStart,
-            horizontalEnd,
-            String.format("selection_horizontal_%d_%d_%s", horizontalStart, horizontalEnd, horizontalSource.toLowerCase())
-          );
-          final var verticalFasta = verticalChunkedFileWrapper.getChunkedFile().getFastaProcessor().exportInterval(
-            verticalFastaPathWrapper.getPath(),
-            verticalStart,
-            verticalEnd,
-            String.format("selection_vertical_%d_%d_%s", verticalStart, verticalEnd, verticalSource.toLowerCase())
-          );
-          return horizontalFasta + verticalFasta;
+          return download.write(output -> {
+            if (!explicitAxisSources) {
+              long start=Math.max(0L,Math.min(Math.min(fromBpX,fromBpY),Math.min(toBpX,toBpY)));
+              long end=Math.max(Math.addExact(start,1),Math.max(Math.max(fromBpX,fromBpY),Math.max(toBpX,toBpY)));
+              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeInterval(
+                horizontalFastaPathWrapper.getPath(),output,start,end,String.format("selection_%d_%d",start,end));
+              return;
+            }
+            long xs=Math.min(fromBpX,toBpX),xe=Math.max(fromBpX,toBpX),ys=Math.min(fromBpY,toBpY),ye=Math.max(fromBpY,toBpY);
+            if(Objects.equals(horizontalSource,verticalSource)&&xs==ys&&xe==ye) {
+              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeInterval(
+                horizontalFastaPathWrapper.getPath(),output,xs,xe,String.format("selection_%d_%d",xs,xe));return;
+            }
+            final var verticalFile=resolveChunkedFileWrapperBySource(map,verticalSource);
+            final var verticalFasta=resolveFastaPathWrapperBySource(map,verticalSource);
+            if(verticalFasta==null)throw new IllegalStateException("Link a FASTA file for the vertical source before exporting FASTA");
+            horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeInterval(
+              horizontalFastaPathWrapper.getPath(),output,xs,xe,String.format("selection_horizontal_%d_%d_%s",xs,xe,horizontalSource.toLowerCase()));
+            verticalFile.getChunkedFile().getFastaProcessor().writeInterval(
+              verticalFasta.getPath(),output,ys,ye,String.format("selection_vertical_%d_%d_%s",ys,ye,verticalSource.toLowerCase()));
+          });
         },
-        fasta -> ctx.response()
-          .setChunked(true)
-          .putHeader("Content-Type", "text/plain")
-          .end(Buffer.buffer(fasta, StandardCharsets.UTF_8.name())),
-        () -> ctx.response()
-          .setChunked(true)
-          .putHeader("Content-Type", "text/plain")
-          .end(Buffer.buffer("", StandardCharsets.UTF_8.name()))
+        download::send,
+        () -> {download.close();ctx.response().putHeader("Content-Type", "text/plain").end();}
       );
     });
 

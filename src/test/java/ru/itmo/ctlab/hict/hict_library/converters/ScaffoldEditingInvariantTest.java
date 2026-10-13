@@ -13,6 +13,28 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ScaffoldEditingInvariantTest {
   @TempDir Path dir;
+  @Test void streamingFastaPreservesMaskingGapsAndCompressedSourceAcrossEdits() throws Exception {
+    try(var f=fixture()) {
+      var path=dir.resolve("masked.fa");String a="aCGTrymkSWBDHVN".repeat(400);
+      java.nio.file.Files.writeString(path,">A\n"+a+"\n>B\n"+"C".repeat(6000)+"\n>C\n"+"G".repeat(6000)+"\n");
+      assertEquals(6000,a.length());
+      var gzip=dir.resolve("masked.fa.gz");
+      try(var output=new java.util.zip.GZIPOutputStream(java.nio.file.Files.newOutputStream(gzip))){output.write(java.nio.file.Files.readAllBytes(path));}
+      var processor=f.getFastaProcessor();
+      for(var source:List.of(path,gzip)) {
+        assertEquals(">selection\naCGTrymkSWBDHVN\n",processor.exportInterval(source,0,15,"selection"));
+        var out=new java.io.ByteArrayOutputStream();processor.writeAssembly(source,out,true,0);
+        assertEquals(processor.exportAssemblyPreservingGaps(path),out.toString(java.nio.charset.StandardCharsets.UTF_8));
+      }
+      var bp=ResolutionDescriptor.fromBpResolution(0,f);
+      f.getScaffoldingOperations().reverseSelectionRangeBp(0,6000);
+      assertEquals(">selection\nNBDHVWSmkryACGt\n",processor.exportInterval(path,0,15,"selection"));
+      assertEquals(processor.exportInterval(path,0,15,"selection"),processor.exportInterval(gzip,0,15,"selection"));
+      f.getScaffoldingOperations().moveRegionToDebris(0,18000,bp,QueryLengthUnit.BASE_PAIRS);
+      assertEquals("",processor.exportAssembly(path,500));
+      assertThrows(IllegalArgumentException.class,()->processor.exportInterval(path,0,1,"selection"));
+    }
+  }
   private ChunkedFile fixture() {
     HDF5LibraryInitializer.initializeHDF5Library();
     var prefix=UUID.randomUUID().toString(); var input=dir.resolve(prefix+".mcool"); var output=dir.resolve(prefix+".hict.hdf5");

@@ -58,7 +58,7 @@ public class FASTAProcessor {
   private final @NotNull ChunkedFile chunkedFile;
 
   public @NotNull FASTALinkCompatibilityReport analyzeLinkCandidate(final @NotNull Path fastaPath) {
-    final var fastaRecords = readSequenceSummaries(fastaPath);
+    final var fastaRecords = sourceSummaries(fastaPath);
     final var assemblyEntries = currentAssemblyEntries();
 
     final boolean sameRecordCount = fastaRecords.size() == assemblyEntries.size();
@@ -172,7 +172,7 @@ public class FASTAProcessor {
   }
 
   public @NotNull Map<String, String> buildSourceNameAliases(final @NotNull Path fastaPath) {
-    final var fastaRecords = readSequenceSummaries(fastaPath);
+    final var fastaRecords = sourceSummaries(fastaPath);
     final var sourceDescriptors = this.chunkedFile.getOriginalDescriptors().values().stream()
       .sorted(Comparator.comparingInt(ContigDescriptor::getContigId))
       .toList();
@@ -195,123 +195,129 @@ public class FASTAProcessor {
     return aliases;
   }
 
-  /** Uses exactly the same source intervals, orientations and gaps as lossless AGP export. */
-  public @NotNull String exportAssemblyPreservingGaps(final @NotNull Path fastaPath) {
-    final var sequences = readSequenceContents(fastaPath);
-    final var aliases = buildSourceNameAliases(sequences);
-    final var objects = new LinkedHashMap<String, StringBuilder>();
-    for (var record : chunkedFile.getAgpProcessor().getAssemblyAGPRecords()) {
-      var builder = objects.computeIfAbsent(record.getScaffoldName(), k -> new StringBuilder());
-      if (record instanceof AGPProcessor.GapAGPRecord gap) {
-        builder.append("N".repeat(Math.toIntExact(gap.getGapLength())));
-      } else if (record instanceof AGPProcessor.ContigAGPRecord contig) {
-        var sourceName = aliases.getOrDefault(contig.getContigName(), contig.getContigName());
-        var source = sequences.get(sourceName);
-        if (source == null) throw new IllegalArgumentException("Linked FASTA does not contain sequence '" + sourceName + "'");
-        long length = contig.getIntraContigEndBpIncl() - contig.getIntraContigStartBpIncl() + 1;
-        builder.append(extractContigSliceFromSource(source, sourceName, Math.toIntExact(contig.getIntraContigStartBpIncl() - 1),
-          length, contig.getContigOrientation() == AGPProcessor.AGPContigOrientation.MINUS ? ContigDirection.REVERSED : ContigDirection.FORWARD,
-          0, length));
+  private volatile IndexedFastaSource sourceIndex;
+
+  private synchronized IndexedFastaSource indexedSource(Path path) throws IOException {
+    if (sourceIndex == null || !sourceIndex.matches(path)) sourceIndex = new IndexedFastaSource(path);
+    return sourceIndex;
+  }
+
+  /** Compatibility wrappers retain the String API; HTTP uses bounded-memory writers. */
+  public @NotNull String exportAssemblyPreservingGaps(final @NotNull Path path) {
+    return renderToString(out -> writeAssembly(path, out, true, 0));
+  }
+  public @NotNull String exportAssembly(final @NotNull Path path) {
+    return exportAssembly(path, AssemblyExportSettings.gapLengthBp());
+  }
+  public @NotNull String exportAssembly(final @NotNull Path path, final long gap) {
+    return renderToString(out -> writeAssembly(path, out, false, gap));
+  }
+  @FunctionalInterface private interface OutputAction { void write(java.io.OutputStream out) throws IOException; }
+  private static String renderToString(OutputAction action) {
+    try (var out = new java.io.ByteArrayOutputStream()) { action.write(out); return out.toString(StandardCharsets.UTF_8); }
+    catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+  }
+
+  public void writeAssembly(Path path, java.io.OutputStream output, boolean preserveGaps, long gap) throws IOException {
+    AssemblyExportSettings.requireGapLength(gap);
+    var records = preserveGaps ? chunkedFile.getAgpProcessor().getAssemblyAGPRecords()
+      : chunkedFile.getAgpProcessor().getAGPRecords(gap);
+    if (records.isEmpty()) return;
+    try (var source = new SourceSession(path)) {
+      // Validate every interval before producing any output.
+      for (var record : records) if (record instanceof AGPProcessor.ContigAGPRecord c)
+        source.validate(c.getContigName(), c.getIntraContigStartBpIncl()-1, c.getIntraContigEndBpIncl());
+      var writer = new WrappedOutput(output); String name = null;
+      for (var record : records) {
+        if (!record.getScaffoldName().equals(name)) {
+          name = record.getScaffoldName();
+          // Preserve legacy uniform-export naming of unplaced components.
+          String exportedName = !preserveGaps && name.startsWith("unscaffolded_") ? name.substring(13) : name;
+          writer.header(exportedName);
+        }
+        if (record instanceof AGPProcessor.GapAGPRecord g) writer.gap(g.getGapLength());
+        else if (record instanceof AGPProcessor.ContigAGPRecord c)
+          source.copy(c.getContigName(), c.getIntraContigStartBpIncl()-1, c.getIntraContigEndBpIncl(),
+            c.getContigOrientation()==AGPProcessor.AGPContigOrientation.MINUS, writer);
       }
+      writer.finish();
     }
-    return renderRecords(objects.entrySet().stream().map(e -> new FASTARecord(e.getKey(), e.getValue().toString())).toList());
   }
 
-  public @NotNull String exportAssembly(final @NotNull Path fastaPath) {
-    return exportAssembly(fastaPath, AssemblyExportSettings.gapLengthBp());
-  }
-
-  public @NotNull String exportAssembly(final @NotNull Path fastaPath, final long gapLengthBp) {
-    AssemblyExportSettings.requireGapLength(gapLengthBp);
-    final var sequences = readSequenceContents(fastaPath);
-    final var sequenceNameAliases = buildSourceNameAliases(sequences);
-    final var records = new ArrayList<FASTARecord>();
-    final var contigs = this.chunkedFile.getAssemblyInfo().contigs();
-    final var scaffolds = this.chunkedFile.getAssemblyInfo().scaffolds();
-
-    int scaffoldIndex = 0;
-    long assemblyPosition = 0L;
-    final var currentUnscaffolded = new StringBuilder();
-    String currentUnscaffoldedName = null;
-    final var currentScaffold = new StringBuilder();
-    String currentScaffoldName = null;
-    long currentScaffoldEnd = -1L;
-    long currentSpacerLength = 0L;
-    boolean scaffoldHasContent = false;
-
-    for (final var contig : contigs) {
-      while (scaffoldIndex < scaffolds.size()
-        && scaffolds.get(scaffoldIndex).scaffoldBordersBP().endBP() <= assemblyPosition) {
-        scaffoldIndex++;
+  public void writeInterval(Path path, java.io.OutputStream output, long from, long to, String name) throws IOException {
+    long start=Math.max(0,Math.min(from,to)), end=Math.max(Math.addExact(start,1),Math.max(from,to));
+    record Piece(String source,long from,long to,boolean reverse) { }
+    var pieces=new ArrayList<Piece>();long position=0;
+    for(var contig:chunkedFile.getAssemblyInfo().contigs()) {
+      var d=contig.descriptor();long length=d.getLengthBp(),a=Math.max(start-position,0),b=Math.min(end-position,length);
+      if(a<b) {
+        boolean reverse=contig.direction()==ContigDirection.REVERSED;
+        pieces.add(new Piece(d.getContigNameInSourceFASTA(),d.getOffsetInSourceFASTA()+(reverse?length-b:a),
+          d.getOffsetInSourceFASTA()+(reverse?length-a:b),reverse));
       }
+      position+=length;if(position>=end)break;
+    }
+    if(pieces.isEmpty())throw new IllegalArgumentException("Selected region does not intersect the current assembly");
+    try(var source=new SourceSession(path)) {
+      for(var piece:pieces)source.validate(piece.source,piece.from,piece.to);
+      var writer=new WrappedOutput(output);writer.header(name);
+      for(var piece:pieces)source.copy(piece.source,piece.from,piece.to,piece.reverse,writer);
+      writer.finish();
+    }
+  }
 
-      final var sequence = extractContigSequence(sequences, sequenceNameAliases, contig);
-      final ScaffoldTree.ScaffoldTuple coveringScaffold =
-        scaffoldIndex < scaffolds.size()
-          && scaffolds.get(scaffoldIndex).scaffoldDescriptor() != null
-          && scaffolds.get(scaffoldIndex).scaffoldBordersBP().startBP() <= assemblyPosition
-          && assemblyPosition < scaffolds.get(scaffoldIndex).scaffoldBordersBP().endBP()
-          ? scaffolds.get(scaffoldIndex)
-          : null;
-
-      if (coveringScaffold != null) {
-        if (currentUnscaffoldedName != null && currentUnscaffolded.length() > 0) {
-          records.add(new FASTARecord(currentUnscaffoldedName, currentUnscaffolded.toString()));
-          currentUnscaffolded.setLength(0);
-          currentUnscaffoldedName = null;
-        }
-        final ScaffoldDescriptor scaffoldDescriptor = coveringScaffold.scaffoldDescriptor();
-        final String scaffoldName = this.chunkedFile.getScaffoldDisplayName(scaffoldDescriptor.scaffoldId());
-        if (!scaffoldName.equals(currentScaffoldName)) {
-          if (currentScaffoldName != null && currentScaffold.length() > 0) {
-            records.add(new FASTARecord(currentScaffoldName, currentScaffold.toString()));
-            currentScaffold.setLength(0);
-          }
-          currentScaffoldName = scaffoldName;
-          currentScaffoldEnd = coveringScaffold.scaffoldBordersBP().endBP();
-          currentSpacerLength = gapLengthBp;
-          scaffoldHasContent = false;
-        }
-        if (scaffoldHasContent && currentSpacerLength > 0) {
-          currentScaffold.append("N".repeat(Math.toIntExact(currentSpacerLength)));
-        }
-        currentScaffold.append(sequence);
-        scaffoldHasContent = true;
-        if (assemblyPosition + contig.descriptor().getLengthBp() >= currentScaffoldEnd) {
-          records.add(new FASTARecord(currentScaffoldName, currentScaffold.toString()));
-          currentScaffold.setLength(0);
-          currentScaffoldName = null;
-          currentScaffoldEnd = -1L;
-          currentSpacerLength = 0L;
-          scaffoldHasContent = false;
-        }
+  private final class SourceSession implements AutoCloseable {
+    final Map<String,Long> lengths; final Map<String,String> aliases;
+    final IndexedFastaSource.Session indexed; final Map<String,String> compressed;
+    SourceSession(Path path) throws IOException {
+      // gzip is sequential: retain its compatible parser, without copying the
+      // output/scaffolds. Plain FASTA uses random reads and metadata-only caching.
+      if(path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gz")) {
+        compressed=readSequenceContents(path);indexed=null;lengths=new LinkedHashMap<>();
+        compressed.forEach((n,s)->lengths.put(n,(long)s.length()));
       } else {
-        if (currentScaffoldName != null && currentScaffold.length() > 0) {
-          records.add(new FASTARecord(currentScaffoldName, currentScaffold.toString()));
-          currentScaffold.setLength(0);
-          currentScaffoldName = null;
-          currentScaffoldEnd = -1L;
-          currentSpacerLength = 0L;
-          scaffoldHasContent = false;
-        }
-        currentUnscaffoldedName = this.chunkedFile.getContigDisplayName(contig.descriptor().getContigId());
-        currentUnscaffolded.setLength(0);
-        currentUnscaffolded.append(sequence);
-        records.add(new FASTARecord(currentUnscaffoldedName, currentUnscaffolded.toString()));
-        currentUnscaffolded.setLength(0);
-        currentUnscaffoldedName = null;
+        compressed=null;var index=indexedSource(path);lengths=index.lengths();indexed=index.open();
       }
+      var originals=chunkedFile.getOriginalDescriptors().values().stream().sorted(Comparator.comparingInt(ContigDescriptor::getContigId)).toList();
+      var result=new HashMap<String,String>();
+      if(originals.stream().noneMatch(d->lengths.containsKey(d.getContigNameInSourceFASTA())) && originals.size()==lengths.size()) {
+        var names=new ArrayList<>(lengths.keySet());boolean matched=true;
+        for(int i=0;i<originals.size();i++)if(lengths.get(names.get(i))!=originals.get(i).getLengthBp()){matched=false;break;}
+        if(matched)for(int i=0;i<originals.size();i++)result.put(originals.get(i).getContigNameInSourceFASTA(),names.get(i));
+      }
+      aliases=result;
+    }
+    void validate(String name,long start,long end) {
+      name=aliases.getOrDefault(name,name);Long size=lengths.get(name);
+      if(size==null||start<0||end<start||end>size)throw new IllegalArgumentException("Missing or out-of-bounds FASTA interval: "+name+" "+start+".."+end);
+    }
+    void copy(String name,long start,long end,boolean reverse,java.io.OutputStream output) throws IOException {
+      name=aliases.getOrDefault(name,name);
+      if(indexed!=null) { indexed.copy(name,start,end,reverse,output);return; }
+      String text=compressed.get(name);byte[] block=new byte[65536];long cursor=reverse?end:start;
+      while(reverse?cursor>start:cursor<end) {
+        if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("FASTA export cancelled");
+        int n=(int)Math.min(block.length,reverse?cursor-start:end-cursor);
+        for(int i=0;i<n;i++)block[i]=reverse?IndexedFastaSource.complement((byte)text.charAt(Math.toIntExact(cursor-i-1))):(byte)text.charAt(Math.toIntExact(cursor+i));
+        output.write(block,0,n);cursor+=reverse?-n:n;
+      }
+    }
+    public void close() throws IOException {if(indexed!=null)indexed.close();}
+  }
 
-      assemblyPosition += contig.descriptor().getLengthBp();
+  private static final class WrappedOutput extends java.io.OutputStream {
+    final java.io.OutputStream out;int column;
+    WrappedOutput(java.io.OutputStream out) {this.out=out;}
+    void header(String name) throws IOException {finish();out.write(('>'+name+'\n').getBytes(StandardCharsets.UTF_8));}
+    public void write(int value) throws IOException {out.write(value);if(++column==80){out.write('\n');column=0;}}
+    public void write(byte[] bytes,int offset,int length) throws IOException {
+      while(length>0){int n=Math.min(length,80-column);out.write(bytes,offset,n);column+=n;offset+=n;length-=n;if(column==80){out.write('\n');column=0;}}
     }
-
-    if (currentScaffoldName != null && currentScaffold.length() > 0) {
-      records.add(new FASTARecord(currentScaffoldName, currentScaffold.toString()));
+    void gap(long count) throws IOException {
+      byte[] block=new byte[65536];java.util.Arrays.fill(block,(byte)'N');
+      while(count>0){if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("FASTA export cancelled");int n=(int)Math.min(block.length,count);write(block,0,n);count-=n;}
     }
-    if (records.isEmpty()) {
-      throw new IllegalStateException("Current assembly does not contain any contigs");
-    }
-    return renderRecords(records);
+    void finish() throws IOException {if(column!=0){out.write('\n');column=0;}}
   }
 
   public @NotNull String exportSelection(final @NotNull Path fastaPath,
@@ -333,39 +339,7 @@ public class FASTAProcessor {
                                         final long fromBp,
                                         final long toBp,
                                         final @NotNull String recordName) {
-    final var sequences = readSequenceContents(fastaPath);
-    final var sequenceNameAliases = buildSourceNameAliases(sequences);
-    final long selectionStart = Math.max(0L, Math.min(fromBp, toBp));
-    final long selectionEnd = Math.max(selectionStart + 1L, Math.max(fromBp, toBp));
-    final var sequence = buildAssemblySlice(sequences, sequenceNameAliases, selectionStart, selectionEnd);
-    return renderRecords(List.of(new FASTARecord(recordName, sequence)));
-  }
-
-  private @NotNull String buildAssemblySlice(final @NotNull Map<String, String> sequences,
-                                             final @NotNull Map<String, String> sequenceNameAliases,
-                                             final long selectionStart,
-                                             final long selectionEnd) {
-    final var builder = new StringBuilder();
-    long assemblyPosition = 0L;
-    for (final var contig : this.chunkedFile.getAssemblyInfo().contigs()) {
-      final long contigStart = assemblyPosition;
-      final long contigEnd = assemblyPosition + contig.descriptor().getLengthBp();
-      final long overlapStart = Math.max(selectionStart, contigStart);
-      final long overlapEnd = Math.min(selectionEnd, contigEnd);
-      if (overlapEnd > overlapStart) {
-        final long startInsideContig = overlapStart - contigStart;
-        final long endInsideContig = overlapEnd - contigStart;
-        builder.append(extractContigSlice(sequences, sequenceNameAliases, contig, startInsideContig, endInsideContig));
-      }
-      assemblyPosition = contigEnd;
-      if (assemblyPosition >= selectionEnd) {
-        break;
-      }
-    }
-    if (builder.isEmpty()) {
-      throw new IllegalArgumentException("Selected region does not intersect the current assembly");
-    }
-    return builder.toString();
+    return renderToString(out -> writeInterval(fastaPath, out, fromBp, toBp, recordName));
   }
 
   private @NotNull List<AssemblyContigEntry> currentAssemblyEntries() {
@@ -381,6 +355,12 @@ public class FASTAProcessor {
       ));
     }
     return entries;
+  }
+
+  private List<FASTASequenceSummary> sourceSummaries(Path path) {
+    if(path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gz"))return readSequenceSummaries(path);
+    try {return indexedSource(path).lengths().entrySet().stream().map(e->new FASTASequenceSummary(e.getKey(),e.getValue())).toList();}
+    catch(IOException e){throw new java.io.UncheckedIOException(e);}
   }
 
   public static @NotNull List<FASTASequenceSummary> readSequenceSummaries(final @NotNull Path fastaPath) {
@@ -419,35 +399,21 @@ public class FASTAProcessor {
   }
 
   public static @NotNull Map<String, String> readSequenceContents(final @NotNull Path fastaPath) {
-    final var sequences = new LinkedHashMap<String, StringBuilder>();
-    final var order = new ArrayList<String>();
+    final var sequences = new LinkedHashMap<String, String>();
     try (final var stream = openPossiblyGzippedStream(fastaPath);
          final var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-      String currentName = null;
-      String line;
+      String currentName = null; StringBuilder current = new StringBuilder(); String line;
       while ((line = reader.readLine()) != null) {
         if (line.startsWith(">")) {
-          currentName = parseHeaderName(line);
-          if (sequences.containsKey(currentName)) throw new IllegalArgumentException("Duplicate FASTA identifier: " + currentName);
-          if (!sequences.containsKey(currentName)) {
-            sequences.put(currentName, new StringBuilder());
-            order.add(currentName);
-          }
-          continue;
-        }
-        if (currentName == null || line.isBlank()) {
-          continue;
-        }
-        sequences.get(currentName).append(line.trim());
+          if(currentName!=null)sequences.put(currentName,current.toString());
+          currentName=parseHeaderName(line);
+          if(sequences.containsKey(currentName))throw new IllegalArgumentException("Duplicate FASTA identifier: "+currentName);
+          current=new StringBuilder();
+        } else if(currentName!=null && !line.isBlank()) current.append(line.trim());
       }
-    } catch (final IOException e) {
-      throw new RuntimeException("Failed to read FASTA file " + fastaPath, e);
-    }
-    final var result = new LinkedHashMap<String, String>();
-    for (final var name : order) {
-      result.put(name, sequences.get(name).toString());
-    }
-    return result;
+      if(currentName!=null)sequences.put(currentName,current.toString());
+    } catch(IOException e) {throw new java.io.UncheckedIOException("Failed to read FASTA file "+fastaPath,e);}
+    return sequences;
   }
 
   private static @NotNull InputStream openPossiblyGzippedStream(final @NotNull Path fastaPath) throws IOException {
