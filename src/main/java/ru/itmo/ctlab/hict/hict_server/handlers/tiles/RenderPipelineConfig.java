@@ -48,8 +48,7 @@ public final class RenderPipelineConfig {
   private final @NotNull JsonObject lowerExpressionJson;
   private final @NotNull CompiledRootExpression upperExpression;
   private final @NotNull CompiledRootExpression lowerExpression;
-  private final @NotNull CompiledRootExpression primarySourceExpression;
-  private final @NotNull CompiledRootExpression secondarySourceExpression;
+  private final Map<String, CompiledRootExpression[]> sourceBranches;
   private final @NotNull Set<TrackBinding> requiredTrackBindings;
 
   private RenderPipelineConfig(final boolean enabled,
@@ -63,13 +62,9 @@ public final class RenderPipelineConfig {
     final var required = new HashSet<TrackBinding>();
     this.upperExpression = compileRootExpression(this.upperExpressionJson, required);
     this.lowerExpression = compileRootExpression(this.lowerExpressionJson, required);
-    this.primarySourceExpression = compileRootExpression(
-      findSourceColorExpression(this.upperExpressionJson, this.lowerExpressionJson, "PRIMARY"),
-      required
-    );
-    this.secondarySourceExpression = compileRootExpression(
-      findSourceColorExpression(this.upperExpressionJson, this.lowerExpressionJson, "SECONDARY"),
-      required
+    this.sourceBranches = Map.of(
+      "PRIMARY", new CompiledRootExpression[]{compileSourceBranch(this.upperExpressionJson, "PRIMARY", required), compileSourceBranch(this.lowerExpressionJson, "PRIMARY", required)},
+      "SECONDARY", new CompiledRootExpression[]{compileSourceBranch(this.upperExpressionJson, "SECONDARY", required), compileSourceBranch(this.lowerExpressionJson, "SECONDARY", required)}
     );
     this.requiredTrackBindings = Collections.unmodifiableSet(required);
   }
@@ -149,29 +144,21 @@ public final class RenderPipelineConfig {
   public int evaluateSourceArgb(final @NotNull String sourceName,
                                 final @NotNull MutablePixelContext context,
                                 final @NotNull SimpleVisualizationOptions options) {
-    final var root = "SECONDARY".equals(sourceName.trim().toUpperCase(Locale.ROOT))
-      ? this.secondarySourceExpression
-      : this.primarySourceExpression;
-    return root.evalArgb(context, options);
+    final var branches = this.sourceBranches.get("SECONDARY".equalsIgnoreCase(sourceName.trim()) ? "SECONDARY" : "PRIMARY");
+    final boolean upper = context.rowPx <= context.colPx;
+    final var root = branches[(this.swapUpperLower ? !upper : upper) ? 0 : 1];
+    return root == null ? 0x00000000 : root.evalArgb(context, options);
+  }
+
+  private static CompiledRootExpression compileSourceBranch(JsonObject branch, String source, Set<TrackBinding> required) {
+    if (!referencesSource(branch, source)) return null;
+    var color = findSourceColorExpressionRecursive(branch, source);
+    return compileRootExpression(color != null ? color : branch, required);
   }
 
   private @NotNull CompiledRootExpression selectRootExpression(final boolean upperTriangle) {
     final var useUpper = this.swapUpperLower ? !upperTriangle : upperTriangle;
     return useUpper ? this.upperExpression : this.lowerExpression;
-  }
-
-  private static @NotNull JsonObject findSourceColorExpression(final @NotNull JsonObject upper,
-                                                               final @NotNull JsonObject lower,
-                                                               final @NotNull String sourceName) {
-    final var upperCandidate = findSourceColorExpressionRecursive(upper, sourceName);
-    if (upperCandidate != null) {
-      return upperCandidate;
-    }
-    final var lowerCandidate = findSourceColorExpressionRecursive(lower, sourceName);
-    if (lowerCandidate != null) {
-      return lowerCandidate;
-    }
-    return colormapNode(defaultSourceNode(sourceName), "rgba(255,255,255,0.0)", "rgba(0,96,0,1.0)", 0.0d, 1.0d);
   }
 
   private static JsonObject findSourceColorExpressionRecursive(final @NotNull JsonObject node,

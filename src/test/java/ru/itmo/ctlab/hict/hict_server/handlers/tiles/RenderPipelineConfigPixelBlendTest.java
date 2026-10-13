@@ -166,4 +166,23 @@ class RenderPipelineConfigPixelBlendTest {
     assertEquals(0xffff0000, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
     assertEquals(0xff00ff00, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
   }
+  @Test void independentSourceLayersHonorTriangleRoutingAndSwap() {
+    var primary = new JsonObject().put("type", "colormap").put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+      .put("startColor", "#ff0000ff").put("endColor", "#ff0000ff");
+    var secondary = new JsonObject().put("type", "colormap").put("input", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+      .put("startColor", "#0000ffff").put("endColor", "#0000ffff");
+    for (boolean swap : new boolean[]{false, true}) {
+      var config = RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true).put("swapUpperLower", swap)
+        .put("upperExpression", primary).put("lowerExpression", secondary));
+      var ctx = new RenderPipelineConfig.MutablePixelContext();
+      ctx.primaryValue = 1; ctx.secondaryValue = 1;
+      for (long[] pair : new long[][]{{2, 5}, {5, 2}, {4, 4}}) {
+        ctx.rowPx = pair[0]; ctx.colPx = pair[1];
+        boolean isPrimary = (ctx.rowPx <= ctx.colPx) != swap;
+        assertEquals(isPrimary ? 0xffff0000 : 0, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
+        assertEquals(isPrimary ? 0 : 0xff0000ff, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
+      }
+    }
+  }
+
 }
