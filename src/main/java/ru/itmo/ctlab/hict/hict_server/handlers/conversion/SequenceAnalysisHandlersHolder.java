@@ -34,11 +34,16 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
           if (request != null && request.containsKey("gapLengthBp")) System.setProperty(AssemblyExportSettings.GAP_LENGTH_KEY, Long.toString(gapLength(request)));
           var result = new JsonObject().put("gapLengthBp", AssemblyExportSettings.gapLengthBp())
             .put("blastBundlePlatforms", "Linux x86_64");
-          // Plain gap settings reads must not extract a potentially large native toolchain.
-          if (request != null && request.getBoolean("checkBlast", false)) {
-            try { new ExternalToolchainManager().requireSequenceCommand("blastn"); result.put("blastAvailable", true); }
-            catch (Exception unavailable) { result.put("blastAvailable", false).put("blastUnavailableReason",
-              "BLAST is bundled for Linux x86_64. On Windows/macOS or an older build, install NCBI BLAST+ and set HICT_BLASTN_BIN to the blastn executable, then restart HiCT."); }
+          var shared = vertx.sharedData().getLocalMap("hict_server");
+          boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
+          result.put("mapOpen", shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile") != null);
+          result.put("fastaLinked", shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath") != null
+            || !secondary && shared.get("linkedFastaPath") != null);
+          // Plain gap settings reads do not extract the native payload.
+          if (request != null && (request.getBoolean("checkTools", false) || request.getBoolean("checkBlast", false))) {
+            var tools = SequenceToolAvailability.inspect(); result.put("tools", tools);
+            result.put("blastAvailable", tools.getJsonObject("blastn").getBoolean("available"));
+            result.put("blastUnavailableReason", tools.getJsonObject("blastn").getString("reason"));
           }
           return result;
         } catch (IllegalArgumentException e) { throw new HttpException(400,e.getMessage()); }
@@ -104,7 +109,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var mapWrapper = (ShareableWrappers.ChunkedFileWrapper) shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile");
     var fastaWrapper = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
     if (fastaWrapper == null && !secondary) fastaWrapper = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
-    if (mapWrapper == null || fastaWrapper == null) throw new HttpException(409, "Open a map and link its FASTA before searching");
+    if (mapWrapper == null || fastaWrapper == null) throw new HttpException(409, "Link the FASTA file for the active map before searching. Use Assembly → Link FASTA, or open the map and FASTA together in the Open Wizard.");
     request = request.copy().put("gapLengthBp", gapLength(request));
     var layout = AssemblySequenceLayout.capture(mapWrapper.getChunkedFile(), gapLength(request));
     var snapshot = layout.sequence();
@@ -121,7 +126,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var outputRoot = data.resolve("processed/sequence-analysis"); Files.createDirectories(outputRoot);
     if (!outputRoot.toRealPath().startsWith(data)) throw new HttpException(400, "Sequence output directory must remain inside DATA_DIR");
     var id = UUID.randomUUID().toString(); var directory = outputRoot.resolve(id); Files.createDirectory(directory);
-    var executable = new ExternalToolchainManager().requireSequenceCommand(request.getString("mode").equals("blast") ? "blastn" : "seqkit");
+    var executable = SequenceToolAvailability.require(request.getString("mode").equals("blast") ? "blastn" : "seqkit");
     var fasta = fastaWrapper.getPath().toRealPath();
     var sourceStamp = Stamp.read(fasta);
     var job = new Job(id, directory, data, snapshot, request.copy(), String.valueOf(shared.get(secondary ? "openedSecondaryFilename" : "openedFilename")));
@@ -225,7 +230,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var wrapper = (ShareableWrappers.ChunkedFileWrapper) shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile");
     var fastaWrapper = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
     if (fastaWrapper == null && !secondary) fastaWrapper = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
-    if (wrapper == null || fastaWrapper == null) throw new HttpException(409, "Open a map and link its FASTA before generating a dotplot");
+    if (wrapper == null || fastaWrapper == null) throw new HttpException(409, "Link the FASTA file for the active map before generating a dotplot. Use Assembly → Link FASTA, or open the map and FASTA together in the Open Wizard.");
     request = request.copy().put("gapLengthBp", gapLength(request));
     var map = wrapper.getChunkedFile();
     var layout = AssemblySequenceLayout.capture(map, gapLength(request));
@@ -244,9 +249,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       } else throw new IllegalArgumentException("Unknown analysis scope");
       analysis = AssemblyAnalysisPlan.capture(map, resolutions, rows, columns);
     } catch (IllegalArgumentException | ClassCastException e) { throw new HttpException(400, e.getMessage()); }
-    var manager = new ExternalToolchainManager();
-    var executable = manager.requireSequenceCommand("hict-moddotplot");
-    Path aligner = alignment ? manager.requireSequenceAligner() : null;
+    var executable = SequenceToolAvailability.require("hict-moddotplot");
+    Path aligner = alignment ? SequenceToolAvailability.requireAligner() : null;
     var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
     var root = data.resolve("processed/sequence-analysis"); Files.createDirectories(root);
     if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Analysis output must remain inside DATA_DIR");

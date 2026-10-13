@@ -53,7 +53,9 @@ def merge(source, target):
         command.chmod(command.stat().st_mode | 0o111)
     for key in ('notices', 'citations'):
         base[key] = list(dict.fromkeys(base.get(key, []) + extra.get(key, [])))
-    base['files'] = list(dict.fromkeys(base.get('files', []) + [prefix + '/' + p for p in extra['files']]))
+    # Retain old files on disk for rollback, but package only the active sequence
+    # payload. Otherwise every cache refresh silently grows the release JAR.
+    base['files'] = list(dict.fromkeys([p for p in base.get('files', []) if not p.startswith('sequence/')] + [prefix + '/' + p for p in extra['files']]))
     # Pin existing aligners too: their release label can survive an ABI rebuild.
     # The runtime extraction cache includes this manifest's content digest.
     for name in base['files']:
@@ -61,7 +63,9 @@ def merge(source, target):
             raise ValueError('Unsafe existing payload file path: ' + name)
     base['sha256'] = {name: digest(target / name) for name in base['files']}
     base['sequencePayloadSha256'] = hashlib.sha256(manifest_bytes).hexdigest()
-    path.write_text(json.dumps(base, indent=2))
+    temporary = path.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(base, indent=2), encoding='utf-8')
+    temporary.replace(path)
     print('Verified and merged', len(extra['files']), 'sequence payload files into', target)
 
 

@@ -333,6 +333,9 @@ public class HictCli implements Runnable {
     @Option(names = "--require-dotplot", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if no selected dotplot aligner is available.")
     boolean requireDotplot;
 
+    @Option(names = "--require-sequence-tools", description = "Require and execute SeqKit and the sequence overlay adapter (also BLAST on Linux x86_64).")
+    boolean requireSequenceTools;
+
     @Option(names = "--require-hdf5-native", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if bundled JHDF5/HDF5 native libraries cannot be initialized.")
     boolean requireHdf5Native;
 
@@ -361,6 +364,20 @@ public class HictCli implements Runnable {
       }
       if (requireDotplot && status.selectedDotplotAlignerCommand() == null) {
         failures.add("dotplot aligner is unavailable");
+      }
+      if (requireSequenceTools) {
+        final var tools = new ExternalToolchainManager();
+        final var names = new ArrayList<>(List.of("seqkit", "hict-moddotplot"));
+        if (status.platform().equals("linux_x86_64")) names.add("blastn");
+        for (final var name : names) {
+          try {
+            final var command = tools.requireSequenceCommand(name);
+            smokeCommandIfPresent(name, command.toString(), List.of(name.equals("blastn") ? "-version" : name.equals("seqkit") ? "version" : "--help"), failures);
+            if (!quiet) System.out.println(name + ": " + command);
+          } catch (final Exception error) {
+            failures.add(name + ": " + error.getMessage());
+          }
+        }
       }
       if (requireHdf5Native) {
         try {

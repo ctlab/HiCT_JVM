@@ -460,6 +460,18 @@ public class Track1DManager {
   }
 
   public void close() {
+    // Stop producers before closing their data sources. shutdownNow alone does
+    // not wait for a running writer; it could recreate a sidecar after close.
+    final var executors = List.of(this.precomputeJobExecutor, this.precomputeWorkerExecutor, this.precomputeWriterExecutor);
+    executors.forEach(java.util.concurrent.ExecutorService::shutdownNow);
+    boolean interrupted = false;
+    for (final var executor : executors) {
+      try {
+        if (!executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+          log.warn("A track precompute worker did not finish within the shutdown deadline");
+        }
+      } catch (final InterruptedException e) { interrupted = true; }
+    }
     try {
       this.lock.writeLock().lock();
       this.tracks.values().forEach(track -> closeDataSourceQuietly(track.dataSource()));
@@ -468,10 +480,8 @@ public class Track1DManager {
       this.precomputedSeriesCache.clear();
     } finally {
       this.lock.writeLock().unlock();
+      if (interrupted) Thread.currentThread().interrupt();
     }
-    this.precomputeJobExecutor.shutdownNow();
-    this.precomputeWorkerExecutor.shutdownNow();
-    this.precomputeWriterExecutor.shutdownNow();
   }
 
   public void setLinkedFastaAliasesBySource(final @Nullable Map<String, String> aliases) {

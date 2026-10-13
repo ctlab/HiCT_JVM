@@ -478,6 +478,14 @@ jobs:
       - name: Build fat JAR in manylinux2014
         run: scripts/ci/linux_container_build.sh fatjar
 
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
+
       - name: Validate fat JAR
         run: scripts/ci/validate_linux_component.sh fatjar
 
@@ -1132,6 +1140,14 @@ jobs:
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1
 
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
+
       - name: Stop Gradle daemons
         if: ${{ always() }}
         shell: pwsh
@@ -1375,6 +1391,14 @@ jobs:
 
       - name: Build macOS Apple Silicon portable package
         run: ./scripts/portable/build_portable_darwin_arm64.sh
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
+
       - name: Upload macOS Apple Silicon HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
@@ -1610,6 +1634,14 @@ jobs:
 
       - name: Build macOS Intel portable package
         run: ./scripts/portable/build_portable_darwin_x86_64.sh
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
+
       - name: Upload macOS Intel HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:

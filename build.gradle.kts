@@ -721,16 +721,29 @@ tasks.register("compileNativeProcessingBaseline") {
   dependsOn("compileNativeProcessingSse2")
 }
 
+val prepareBundledTools = tasks.register<Exec>("prepareBundledTools") {
+  group = "build"
+  description = "Build all bundled analysis/conversion tools; reuse only source-matched, checksummed payloads."
+  // Deliberately execute the verifier on every invocation: Gradle's output
+  // timestamps alone cannot prove that a restored external cache is complete.
+  commandLine(System.getenv("HICT_TOOL_BUILD_PYTHON") ?: if (System.getProperty("os.name").lowercase().contains("win")) "python" else "python3",
+    "scripts/toolchains/prepare_bundled_tools.py")
+}
+val completeNativeBuildRequested = gradle.startParameter.taskNames.any {
+  it.substringAfterLast(":") in listOf("natives", "prepareBundledTools", "build")
+}
+
 tasks.register("natives") {
   group = "build"
-  description = "Build every optional HiCT native processing library supported by this machine and toolchain."
+  description = "Build HiCT JNI libraries and every bundled conversion/sequence tool for this platform."
+  dependsOn(prepareBundledTools, "verifyNativeProcessingBuild")
   dependsOn(nativeProcessingVariants.map { "compileNativeProcessing${it.taskSuffix}" })
 }
 
 tasks.register("verifyNativeProcessingBuild") {
   group = "verification"
   description = "Warn when optional HiCT native processing variants were not built for the current platform."
-  dependsOn("natives")
+  dependsOn(nativeProcessingVariants.map { "compileNativeProcessing${it.taskSuffix}" })
   doLast {
     val platformDirectory = nativeProcessingPlatformDirectory()
     if (platformDirectory == null) {
@@ -752,7 +765,7 @@ tasks.register("verifyNativeProcessingBuild") {
         logger.lifecycle("HiCT native processing ${variant.id} library ready: ${outputFile.absolutePath}")
       }
     }
-    if (requireNativeProcessingVariants && missingVariants.isNotEmpty()) {
+    if ((requireNativeProcessingVariants || completeNativeBuildRequested) && missingVariants.isNotEmpty()) {
       throw GradleException(
         "Required HiCT native processing variant(s) were not built: ${missingVariants.joinToString()}"
       )
@@ -1129,6 +1142,8 @@ tasks.named("clean") {
 }
 
 tasks.named<ProcessResources>("processResources") {
+  if (completeNativeBuildRequested) dependsOn(prepareBundledTools)
+  mustRunAfter(prepareBundledTools)
   dependsOn("copyWebUI")
   dependsOn("verifyNativeProcessingBuild")
   dependsOn("prepareRuntimeJhdf5NativesArchive")
@@ -1296,6 +1311,7 @@ tasks.register("describeBundledToolchains") {
 }
 
 tasks.named("build") {
+  dependsOn("natives")
   dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
 }

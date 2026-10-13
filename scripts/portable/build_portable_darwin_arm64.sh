@@ -206,6 +206,14 @@ prepare_darwin_jhdf5_sidecar_archive() {
   echo "[darwin/portable] Bundled platform JHDF5 native archive: lib/${archive_name} (${platform_dir})"
 }
 
+HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
+if [[ -d "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" ]]; then
+  python3 "${SCRIPT_DIR}/../toolchains/merge_sequence_payload.py" \
+    --source "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" \
+    --target "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}"
+fi
+
+
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   resolve_jhdf5_for_portable_release
   # macOS portable packages intentionally embed only the target platform's
@@ -218,12 +226,6 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true verifyBundledJhdf5Payload shadowJar)
 fi
 
-HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
-if [[ -d "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" ]]; then
-  python3 "${SCRIPT_DIR}/../toolchains/merge_sequence_payload.py" \
-    --source "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" \
-    --target "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}"
-fi
 
 
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"

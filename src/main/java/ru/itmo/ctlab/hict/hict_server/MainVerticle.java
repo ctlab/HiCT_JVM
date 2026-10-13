@@ -411,9 +411,7 @@ public class MainVerticle extends AbstractVerticle {
       } else {
         log.error("An exception was caught at router top-level", ctx.failure());
       }
-      final var message = ctx.failure() != null && ctx.failure().getMessage() != null
-        ? ctx.failure().getMessage()
-        : "Request failed";
+      final var message = failureMessage(ctx.failure());
       final int statusCode = expected != null ? expected.getStatusCode() : ctx.statusCode() > 0 ? ctx.statusCode() : 500;
       ctx.response()
         .putHeader("content-type", "application/json")
@@ -435,5 +433,12 @@ public class MainVerticle extends AbstractVerticle {
         log.error("WebUI verticle deployment failed", ar.cause());
       }
     });
+  }
+
+  /** Vert.x keeps the user-facing explanation in payload, not getMessage() ("Conflict"). */
+  public static String failureMessage(Throwable failure) {
+    if (failure instanceof io.vertx.ext.web.handler.HttpException http
+        && http.getPayload() != null && !http.getPayload().isBlank()) return http.getPayload();
+    return failure != null && failure.getMessage() != null ? failure.getMessage() : "Request failed";
   }
 }

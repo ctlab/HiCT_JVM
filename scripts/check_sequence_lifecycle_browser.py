@@ -47,8 +47,48 @@ def main():
                 page.get_by_role('button', name='Load', exact=True).click()
             assert response.value.status == 200, response.value.text()
             page.get_by_placeholder('Filter current folder by file name or path').wait_for(state='hidden')
+        def missing_fasta():
+            settings = json.loads(app.http('/sequence/settings', {'checkTools': True}))
+            assert settings['mapOpen'] and not settings['fastaLinked'], settings
+            assert all(settings['tools'][name]['available'] for name in ('seqkit','blastn','dotplot','hict-moddotplot')), settings
+            for action, title, button in (
+                ('Generate ModDotPlot…', 'Generate ModDotPlot', 'Generate ModDotPlot'),
+                ('Generate dotplot from active assembly…', 'Generate dotplot from active assembly', 'Generate dotplot from active assembly'),
+                ('Find sequences in linked FASTA…', 'Find sequences in the linked FASTA', 'Find sequences')):
+                page.get_by_role('link', name='Tools', exact=True).click()
+                page.get_by_role('button', name=action, exact=True).click()
+                dialog = page.get_by_role('dialog', name=title, exact=True)
+                dialog.get_by_text('Link the FASTA for the active map', exact=False).wait_for()
+                assert dialog.get_by_role('button', name=button, exact=True).is_disabled()
+                dialog.get_by_role('button', name='Close', exact=True).last.click()
+            # Exercise the server guard independently, keeping expected 409
+            # responses out of the browser's unexpected-error audit.
+            import urllib.request, urllib.error
+            request = urllib.request.Request(app.url + '/sequence/moddotplot/jobs', data=json.dumps({'scope':'assembly','resolutions':[100],'mergeCompatible':True}).encode(), headers={'Content-Type':'application/json'})
+            try: urllib.request.urlopen(request); raise AssertionError('Missing FASTA accepted')
+            except urllib.error.HTTPError as failure:
+                payload = json.loads(failure.read())
+                assert failure.code == 409 and 'Link the FASTA' in payload['error'], payload
+                (out/'missing-fasta-response.json').write_text(json.dumps(payload,indent=2))
+        def missing_tools():
+            # Stub only the readiness response to exercise incomplete builds;
+            # all successful computations below still use the actual JAR tools.
+            def unavailable(route):
+                state = json.loads(app.http('/sequence/settings', route.request.post_data_json or {}))
+                state['tools'] = {name:dict(available=False,reason='This installation is missing '+name+'. Install the complete HiCT package.') for name in ('seqkit','blastn','dotplot','hict-moddotplot')}
+                route.fulfill(json=state)
+            page.route('**/sequence/settings', unavailable)
+            try:
+                page.get_by_role('link', name='Tools', exact=True).click()
+                page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
+                dialog=page.get_by_role('dialog',name='Find sequences in the linked FASTA',exact=True)
+                dialog.get_by_text('This installation is missing seqkit.',exact=False).wait_for()
+                assert dialog.get_by_role('button',name='Find sequences',exact=True).is_disabled()
+                assert dialog.locator('#search-mode option:disabled').count()==3
+                dialog.get_by_role('button',name='Close',exact=True).last.click()
+            finally: page.unroute('**/sequence/settings', unavailable)
         def search():
-            page.get_by_role('link', name='File', exact=True).click()
+            page.get_by_role('link', name='Tools', exact=True).click()
             page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
             page.get_by_label('FASTA records, or one DNA sequence per line').fill('>cross_join α\n' + motif)
             assert page.get_by_label('Search scope').input_value() == 'assembly'
@@ -70,10 +110,11 @@ def main():
             import h5py
             versions = []
             for iteration in range(2):
-                page.get_by_role('link', name='File', exact=True).click()
+                page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
                 dialog = page.get_by_role('dialog', name='Generate ModDotPlot', exact=True)
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
+                page.get_by_label('Display completed result').select_option('overlay' if iteration else 'below')
                 assert page.get_by_label('Accumulate compatible regions; replace scores within this rectangle').is_checked()
                 if iteration == 0:
                     page.screenshot(path=str(out / 'moddotplot-dialog.png'))
@@ -82,6 +123,12 @@ def main():
                 assert response.value.status == 202, response.value.text()
                 dialog.wait_for(state='hidden')
                 check.settle()
+                pipeline = json.loads(app.http('/render_pipeline/get', {}))
+                assert pipeline['enabled'] and not pipeline['swapUpperLower'], pipeline
+                if iteration:
+                    assert pipeline['upperExpression']['type'] == 'pixel_blend' and pipeline['lowerExpression']['type'] == 'pixel_blend', pipeline
+                else:
+                    assert pipeline['upperExpression']['type'] == 'colormap' and pipeline['lowerExpression']['type'] == 'hsv', pipeline
                 jobs = [j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind'] == 'moddotplot']
                 assert len(jobs) == iteration + 1 and all(j['status'] == 'finished' for j in jobs), jobs
                 latest = sorted(jobs, key=lambda j: j['createdAtMs'])[-1]
@@ -129,6 +176,8 @@ def main():
                 assert len(text.strip())>15, 'PDF labels must remain editable text'
             menu().get_by_role('menuitem', name='Generate ModDotPlot for selection…', exact=True).click()
             assert page.get_by_label('Analysis scope').input_value() == 'selection'
+            page.get_by_label('Display completed result').select_option('none')
+            previous_pipeline = json.loads(app.http('/render_pipeline/get', {}))
             with page.expect_response(lambda r: '/sequence/moddotplot/jobs' in r.url) as response:
                 page.get_by_role('dialog', name='Generate ModDotPlot', exact=True).get_by_role('button', name='Generate ModDotPlot', exact=True).click()
             assert response.value.status == 202, response.value.text()
@@ -136,6 +185,7 @@ def main():
             assert request['scope'] == 'selection' and request['region']['rowEnd'] < 4000, request
             page.get_by_role('dialog', name='Generate ModDotPlot', exact=True).wait_for(state='hidden')
             check.settle()
+            assert json.loads(app.http('/render_pipeline/get', {})) == previous_pipeline, 'Do not link now must retain the current display'
         def alignment_dotplot():
             import h5py
             check.select_range()
@@ -157,7 +207,7 @@ def main():
                 assert f['resolutions/100/treap_coo/block_length'][:].sum()>0
             (out/'dotplot-jobs.json').write_text(json.dumps(jobs,indent=2))
         def blast_search():
-            page.get_by_role('link', name='File', exact=True).click()
+            page.get_by_role('link', name='Tools', exact=True).click()
             page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
             page.get_by_label('FASTA records, or one DNA sequence per line').fill('>indel alignment\n' + sequence[100:190] + 'AAAAA' + sequence[190:310])
             page.get_by_label('Matching', exact=True).select_option('blast')
@@ -232,8 +282,10 @@ def main():
         try:
             page.goto(f'http://127.0.0.1:{static.server_port}/')
             check.step('open', lambda: load_file('File', 'Manual Open...', 'known.hict.hdf5', '/open'))
+            check.step('missing-fasta-guidance', missing_fasta)
             check.step('link-fasta', lambda: load_file('Assembly', 'Link FASTA', 'known.fasta', '/link_fasta'))
             check.step('split-and-invert-layout', lambda: load_file('Assembly', 'Load AGP', 'split.agp', '/load_agp'))
+            check.step('missing-tools-disabled', missing_tools)
             check.step('search-cross-join-and-open-track', search)
             check.step('blast-gapped-local-search', blast_search)
             check.step('search-warning-after-edit', search_warning)

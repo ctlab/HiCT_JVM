@@ -40,6 +40,8 @@ jobs:
         with:
           go-version: '1.25.5'
           cache: false
+      - name: Check tool cache and archive validation
+        run: python -m unittest discover -s tests/toolchains
       - name: Check build log encoding independently of the host locale
         run: python -m unittest discover -s tests/toolchains -p test_sequence_build_encoding.py
       - name: Build and execute native fixtures on Linux glibc 2.17
