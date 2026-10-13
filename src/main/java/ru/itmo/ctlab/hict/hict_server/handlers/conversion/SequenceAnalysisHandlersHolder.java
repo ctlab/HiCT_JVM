@@ -25,6 +25,32 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   public SequenceAnalysisHandlersHolder(Vertx vertx) { this.vertx = vertx; }
 
   @Override public void addHandlersToRouter(Router router) {
+    router.post("/sequence/settings").handler(ctx -> {
+      var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server").get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (wrapper == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
+      wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        var request = ctx.body().asJsonObject();
+        try {
+          if (request != null && request.containsKey("gapLengthBp")) System.setProperty(AssemblyExportSettings.GAP_LENGTH_KEY, Long.toString(gapLength(request)));
+          var result = new JsonObject().put("gapLengthBp", AssemblyExportSettings.gapLengthBp())
+            .put("blastBundlePlatforms", "Linux x86_64");
+          // Plain gap settings reads must not extract a potentially large native toolchain.
+          if (request != null && request.getBoolean("checkBlast", false)) {
+            try { new ExternalToolchainManager().requireSequenceCommand("blastn"); result.put("blastAvailable", true); }
+            catch (Exception unavailable) { result.put("blastAvailable", false).put("blastUnavailableReason",
+              "BLAST is bundled for Linux x86_64. On Windows/macOS or an older build, install NCBI BLAST+ and set HICT_BLASTN_BIN to the blastn executable, then restart HiCT."); }
+          }
+          return result;
+        } catch (IllegalArgumentException e) { throw new HttpException(400,e.getMessage()); }
+      }, result -> ctx.response().putHeader("content-type","application/json").end(result.encode()));
+    });
+    router.post("/sequence/cleanup").handler(ctx -> {
+      var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server").get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (wrapper == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
+      wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
+        () -> new JsonObject().put("removed", SequenceOverlayCleanup.collect(vertx.sharedData().getLocalMap("hict_server"))),
+        result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
+    });
     router.post("/sequence/search/jobs").handler(ctx -> {
       var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server")
         .get(RequestTaskScheduler.LOCAL_MAP_KEY);
@@ -62,11 +88,12 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     try {
       queries = SequenceSearchQueries.parse(request.getString("queries"));
       String mode = request.getString("mode");
-      if (!List.of("exact", "substitutions").contains(mode)) throw new IllegalArgumentException("Choose exact or substitutions search");
-      int mismatches = mode.equals("exact") ? 0 : request.getInteger("mismatches", 1);
+      if ("blast".equals(mode)) blastOptions(request);
+      if (!List.of("exact", "substitutions", "blast").contains(mode)) throw new IllegalArgumentException("Choose exact, substitutions or BLAST search");
+      int mismatches = !mode.equals("substitutions") ? 0 : request.getInteger("mismatches", 1);
       if (mode.equals("substitutions") && mismatches < 1) throw new IllegalArgumentException("Choose at least one allowed substitution");
       options = new SequenceSearchRunner.Options(request.getBoolean("bothStrands"), mismatches,
-        request.getBoolean("degenerate", false), ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(request.getInteger("threads", -1), "HICT_SEQUENCE_THREADS"));
+        mode.equals("exact") && request.getBoolean("degenerate", false), ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(request.getInteger("threads", -1), "HICT_SEQUENCE_THREADS"));
       for (var query : queries) {
         if (mismatches >= query.sequence().length()) throw new IllegalArgumentException("Substitutions must be fewer than query bases");
         if (mismatches > 0 && !query.sequence().matches("[ACGT]+")) throw new IllegalArgumentException("Substitution queries must use A, C, G and T only");
@@ -78,12 +105,15 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var fastaWrapper = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
     if (fastaWrapper == null && !secondary) fastaWrapper = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
     if (mapWrapper == null || fastaWrapper == null) throw new HttpException(409, "Open a map and link its FASTA before searching");
-    var snapshot = AssemblySequenceSnapshot.capture(mapWrapper.getChunkedFile());
+    request = request.copy().put("gapLengthBp", gapLength(request));
+    var layout = AssemblySequenceLayout.capture(mapWrapper.getChunkedFile(), gapLength(request));
+    var snapshot = layout.sequence();
+    request = request.copy().put("assemblyFingerprint", layout.fingerprint(gapLength(request)));
     String scope = request.getString("scope");
     if ("selection".equals(scope)) {
       Long start = request.getLong("startBp"), end = request.getLong("endBp");
       if (start == null || end == null) throw new HttpException(400, "Selection bounds are required");
-      try { snapshot = snapshot.slice(start, end); }
+      try { layout = layout.slice(start, end); snapshot = layout.sequence(); }
       catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
     } else if (!"assembly".equals(scope)) throw new HttpException(400, "Unknown search scope");
     if (snapshot.length() == 0) throw new HttpException(400, "The selected sequence is empty");
@@ -91,15 +121,16 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var outputRoot = data.resolve("processed/sequence-analysis"); Files.createDirectories(outputRoot);
     if (!outputRoot.toRealPath().startsWith(data)) throw new HttpException(400, "Sequence output directory must remain inside DATA_DIR");
     var id = UUID.randomUUID().toString(); var directory = outputRoot.resolve(id); Files.createDirectory(directory);
-    var executable = new ExternalToolchainManager().requireSequenceCommand("seqkit");
+    var executable = new ExternalToolchainManager().requireSequenceCommand(request.getString("mode").equals("blast") ? "blastn" : "seqkit");
     var fasta = fastaWrapper.getPath().toRealPath();
     var sourceStamp = Stamp.read(fasta);
     var job = new Job(id, directory, data, snapshot, request.copy(), String.valueOf(shared.get(secondary ? "openedSecondaryFilename" : "openedFilename")));
     var finalSnapshot = snapshot;
+    var finalLayout = layout;
     var processor = mapWrapper.getChunkedFile().getFastaProcessor();
     jobs.put(id, job);
     try {
-      workers.execute(() -> runSearch(job, processor, fasta, sourceStamp, executable, queries, options, finalSnapshot));
+      workers.execute(() -> runSearch(job, processor, fasta, sourceStamp, executable, queries, options, finalSnapshot, finalLayout));
     } catch (RejectedExecutionException busy) {
       jobs.remove(id);
       throw new HttpException(429, "The sequence analysis queue is full; wait for a job to finish");
@@ -109,7 +140,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
 
   private void runSearch(Job job, FASTAProcessor processor, Path fasta, Stamp stamp, Path executable,
                          List<SequenceSearchQueries.Query> queries, SequenceSearchRunner.Options options,
-                         AssemblySequenceSnapshot snapshot) {
+                         AssemblySequenceSnapshot snapshot, AssemblySequenceLayout layout) {
     job.thread = Thread.currentThread();
     String terminalState = "finished";
     try (var log = Files.newBufferedWriter(job.directory.resolve("job.log"), StandardOpenOption.CREATE_NEW)) {
@@ -119,21 +150,31 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       job.sourceFasta = fasta.toString(); job.sourceStamp = stamp.toString();
       job.toolSha256 = sha256(executable); job.toolCommand = executable.toString();
       job.log("Captured " + snapshot.length() + " active bases in " + snapshot.fragments().size() + " source fragments; snapshot " + snapshot.fingerprint());
+      boolean blast = job.request.getString("mode").equals("blast");
+      var blastOptions = blast ? blastOptions(job.request) : null;
       int overlap = queries.stream().mapToInt(q -> q.sequence().length()).max().orElseThrow() - 1;
       int chunk = Math.max(4 * 1024 * 1024, Math.addExact(overlap, 1));
+      if (blast) {
+        overlap = 0; chunk = Integer.MAX_VALUE;
+        for (long bp = 0; bp < snapshot.length(); bp = layout.segmentEnd(bp))
+          if (layout.segmentEnd(bp)-bp > Integer.MAX_VALUE) throw new IllegalArgumentException("BLAST subject exceeds 2^31-1 bases; split its scaffold or search a smaller selection");
+      }
       var input = job.directory.resolve("assembly-chunks.fasta");
       var digest = java.security.MessageDigest.getInstance("SHA-256");
       try (var out = new java.security.DigestOutputStream(new BufferedOutputStream(Files.newOutputStream(input, StandardOpenOption.CREATE_NEW)), digest)) {
-        processor.writeSearchChunks(fasta, out, snapshot, chunk, overlap);
+        processor.writeSearchChunks(fasta, out, layout, chunk, overlap);
       }
       job.inputSha256 = HexFormat.of().formatHex(digest.digest());
       stamp.check(fasta); job.checkCancelled();
       job.state = "running"; job.save();
-      var result = new SequenceSearchRunner().run(executable, job.directory, input, snapshot, queries, options,
-        job::log, process -> {
-          job.process = process;
-          if (process != null && job.cancelled.get()) process.destroyForcibly();
-        }, job.cancelled::get);
+      java.util.function.Consumer<Process> monitor = process -> {
+        job.process = process; if (process != null && job.cancelled.get()) process.destroyForcibly();
+      };
+      var result = blast
+        ? new BlastSearchRunner().run(executable, job.directory, input, snapshot, queries, blastOptions,
+            job.request.getString("assemblyFingerprint"), job::log, monitor, job.cancelled::get)
+        : new SequenceSearchRunner().run(executable, job.directory, input, snapshot, queries, options,
+            job::log, monitor, job.cancelled::get, job.request.getString("assemblyFingerprint"));
       stamp.check(fasta); job.checkCancelled();
       job.output = job.data.relativize(result.bed()).toString().replace('\\', '/');
       job.hits = result.hits(); job.fragments = result.fragments(); job.elapsedNs = result.elapsedNs();
@@ -185,7 +226,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var fastaWrapper = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
     if (fastaWrapper == null && !secondary) fastaWrapper = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
     if (wrapper == null || fastaWrapper == null) throw new HttpException(409, "Open a map and link its FASTA before generating a dotplot");
+    request = request.copy().put("gapLengthBp", gapLength(request));
     var map = wrapper.getChunkedFile();
+    var layout = AssemblySequenceLayout.capture(map, gapLength(request));
     long length = map.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum();
     AssemblyAnalysisPlan analysis;
     try {
@@ -213,13 +256,13 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var job = new Job(id, directory, data, analysis.sequence(), request.copy(), template.toString(), alignment ? "dotplot" : "moddotplot");
     var processor = map.getFastaProcessor();
     jobs.put(id, job);
-    try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, settings)); }
+    try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings)); }
     catch (RejectedExecutionException e) { jobs.remove(id); throw new HttpException(429, "Sequence analysis queue is full"); }
     return job.statusJson();
   }
 
   private void runOverlay(Job job, FASTAProcessor processor, Path fasta, Stamp stamp, Path template,
-                             Stamp templateStamp, Path executable, Path aligner, AssemblyAnalysisPlan analysis, JsonObject settings) {
+                             Stamp templateStamp, Path executable, Path aligner, AssemblyAnalysisPlan analysis, AssemblySequenceLayout layout, JsonObject settings) {
     job.thread = Thread.currentThread(); String terminal = "finished";
     try (var log = Files.newBufferedWriter(job.directory.resolve("job.log"), StandardOpenOption.CREATE_NEW)) {
       job.logWriter = log; job.checkCancelled(); stamp.check(fasta); templateStamp.check(template);
@@ -237,16 +280,19 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       var input = job.directory.resolve("assembly.fasta");
       var digest = java.security.MessageDigest.getInstance("SHA-256");
       try (var out = new java.security.DigestOutputStream(new BufferedOutputStream(Files.newOutputStream(input, StandardOpenOption.CREATE_NEW)), digest)) {
-        processor.writeSnapshot(fasta, out, analysis.sequence().slice(start, end), "analysis");
+        processor.writeLayout(fasta, out, layout, start, end, "analysis");
       }
       job.inputSha256 = HexFormat.of().formatHex(digest.digest());
       job.checkCancelled(); stamp.check(fasta);
       var levels = new JsonArray();
       for (var level : analysis.levels()) levels.add(new JsonObject().put("resolution", level.resolution())
-        .put("rows", windowsJson(level.rows(), aligner != null)).put("columns", windowsJson(level.columns(), aligner != null)));
+        .put("rows", windowsJson(level.rows(), aligner != null, layout)).put("columns", windowsJson(level.columns(), aligner != null, layout)));
       String sourceIdentity = fasta + "|" + stamp;
+      String gapPolicy = "preserve-agp;separator=" + gapLength(job.request);
+      settings = settings.copy(); // adapter parameters are separate from compatibility policy
+
       var keyText = template + "|" + templateStamp + "|" + sourceIdentity + "|" + settings.encode()
-        + "|" + analysis.levels().stream().map(AssemblyAnalysisPlan.Level::resolution).toList() + "|" + job.kind + "|" + job.toolSha256 + "|" + (aligner == null ? "1616ae94" : sha256(aligner));
+        + "|" + gapPolicy + "|" + analysis.levels().stream().map(AssemblyAnalysisPlan.Level::resolution).toList() + "|" + job.kind + "|" + job.toolSha256 + "|" + (aligner == null ? "1616ae94" : sha256(aligner));
       String key = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(keyText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
       var registry = job.directory.getParent().resolve("overlay-" + key + ".json");
       Path previous = null;
@@ -260,14 +306,15 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       var output = job.directory.resolve(job.kind + ".hict.hdf5.pending");
       var published = job.directory.resolve(job.kind + ".hict.hdf5");
       var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", settings).put("template", template.toString()).put("output", output.toString())
-        .put("input", input.toString()).put("inputOffset", start).put("inputLength", end - start)
-        .put("sequenceLength", analysis.sequence().length()).put("sourceFastaIdentity", sourceIdentity)
+        .put("gapPolicy", gapPolicy)
+        .put("input", input.toString()).put("inputOffset", layout.padded(start, true)).put("inputLength", layout.padded(end, false) - layout.padded(start, true))
+        .put("sequenceLength", layout.length()).put("sourceFastaIdentity", sourceIdentity)
         .put("inputSha256", job.inputSha256).put("snapshot", analysis.sequence().fingerprint())
         .put("sourceFragments", fragmentsJson(analysis.sequence())).put("levels", levels);
       if (previous != null) plan.put("previous", previous.toString());
       var planFile = job.directory.resolve("analysis-plan.json"); Files.writeString(planFile, plan.encodePrettily(), StandardOpenOption.CREATE_NEW);
       job.log("Dotplots use source-bin anchored windows in the captured active assembly. Existing scores move with edits; changed joins are not silently recomputed.");
-      job.log(previous == null ? "Creating a separate overlay version" : "Accumulating compatible regions; retaining the previous version");
+      job.log(previous == null ? "Creating a separate overlay version" : "Accumulating compatible regions; reclaiming the superseded matrix after successful publication and detach");
       job.state = "running"; job.save();
       long timer = System.nanoTime();
       var process = new ProcessBuilder(executable.toString(), "--plan", planFile.toString()).redirectErrorStream(true).start();
@@ -287,6 +334,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       catch (AtomicMoveNotSupportedException e) { Files.move(output, published); }
       job.output = job.data.relativize(published).toString().replace('\\', '/');
       atomicJson(registry, new JsonObject().put("outputFile", job.output).put("jobId", job.id).put("settings", settings));
+      if (previous != null) atomicJson(job.directory.getParent().resolve("superseded-" + job.id + ".json"),
+        new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
     } catch (Exception failure) {
       terminal = job.cancelled.get() || failure instanceof InterruptedException || failure instanceof InterruptedIOException || failure instanceof CancellationException ? "cancelled" : "failed";
       job.error = terminal.equals("failed") ? Objects.toString(failure.getMessage(), failure.getClass().getSimpleName()) : null;
@@ -317,8 +366,23 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     if (value < min || value > max) throw new IllegalArgumentException(name + " outside allowed range");
     return (int) value;
   }
-  private static JsonArray windowsJson(List<AssemblyAnalysisPlan.Window> windows, boolean alignment) {
-    return new JsonArray(windows.stream().map(w -> new JsonArray(List.of(w.stripe(), w.bin(), w.start(), alignment ? w.ownedEnd() : w.end()))).toList());
+  private static JsonArray windowsJson(List<AssemblyAnalysisPlan.Window> windows, boolean alignment, AssemblySequenceLayout layout) {
+    return new JsonArray(windows.stream().map(w -> {
+      long left = layout.segmentStart(w.start()), right = layout.segmentEnd(w.start());
+      var row = new JsonArray().add(w.stripe()).add(w.bin()).add(layout.padded(w.start(), true))
+        .add(layout.padded(Math.min(right, alignment ? w.ownedEnd() : w.end()), false));
+      if (!alignment) row.add(layout.padded(left, true)).add(layout.padded(right, false));
+      return row;
+    }).toList());
+  }
+  private static BlastSearchRunner.Options blastOptions(JsonObject request) {
+    return new BlastSearchRunner.Options(request.getBoolean("bothStrands"), request.getDouble("evalue", 10.0),
+      request.getDouble("identity", 70.0), request.getDouble("coverage", 50.0), integer(request,"maxTargets",500,1,1_000_000));
+  }
+  private static long gapLength(JsonObject request) {
+    long value = exactLong(request.getValue("gapLengthBp", AssemblyExportSettings.gapLengthBp()), "gapLengthBp");
+    if (value < 0 || value > 1_000_000) throw new IllegalArgumentException("Scaffold separator must be between 0 and 1,000,000 Ns");
+    return value;
   }
   private static JsonArray fragmentsJson(AssemblySequenceSnapshot snapshot) {
     return new JsonArray(snapshot.fragments().stream().map(f -> new JsonObject().put("source", f.source())

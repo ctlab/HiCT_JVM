@@ -215,7 +215,7 @@ public class ScaffoldTree implements Iterable<ScaffoldTree.Node> {
       final @NotNull var es = Node.expose(this.root, extendedBorders.startBP(), extendedBorders.endBP());
       final @NotNull ScaffoldDescriptor newScaffoldDescriptor;
       if (scaffoldGenerator == null) {
-        newScaffoldDescriptor = new ScaffoldDescriptor(this.rootScaffoldIdCounter, String.format("scaffold_auto_%d", this.rootScaffoldIdCounter), 1000);
+        newScaffoldDescriptor = new ScaffoldDescriptor(this.rootScaffoldIdCounter, String.format("scaffold_auto_%d", this.rootScaffoldIdCounter), ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
       } else {
         newScaffoldDescriptor = scaffoldGenerator.apply(this.rootScaffoldIdCounter);
       }

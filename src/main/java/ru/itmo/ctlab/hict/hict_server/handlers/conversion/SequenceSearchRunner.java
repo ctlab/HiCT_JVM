@@ -22,6 +22,11 @@ public final class SequenceSearchRunner {
   public Result run(Path executable, Path directory, Path chunkFasta, AssemblySequenceSnapshot snapshot,
                     List<SequenceSearchQueries.Query> queries, Options options,
                     Consumer<String> log, Consumer<Process> processStarted, BooleanSupplier cancelled) throws Exception {
+    return run(executable,directory,chunkFasta,snapshot,queries,options,log,processStarted,cancelled,snapshot.fingerprint());
+  }
+  public Result run(Path executable, Path directory, Path chunkFasta, AssemblySequenceSnapshot snapshot,
+                    List<SequenceSearchQueries.Query> queries, Options options,
+                    Consumer<String> log, Consumer<Process> processStarted, BooleanSupplier cancelled, String fingerprint) throws Exception {
     long startNs = System.nanoTime();
     for (var query : queries) {
       if (options.mismatches() >= query.sequence().length())
@@ -58,13 +63,17 @@ public final class SequenceSearchRunner {
       processStarted.accept(null);
     }
     Path bed = directory.resolve("sequence-search.bed");
-    long[] counts = anchorHits(raw, bed, snapshot, queries);
+    long[] counts = anchorHits(raw, bed, snapshot, queries, fingerprint);
     log.accept("Search complete: " + counts[0] + " matches, " + counts[1] + " source fragments");
     return new Result(bed, counts[0], counts[1], System.nanoTime() - startNs);
   }
 
   static long[] anchorHits(Path raw, Path bed, AssemblySequenceSnapshot snapshot,
                            List<SequenceSearchQueries.Query> queries) throws IOException {
+    return anchorHits(raw,bed,snapshot,queries,snapshot.fingerprint());
+  }
+  static long[] anchorHits(Path raw, Path bed, AssemblySequenceSnapshot snapshot,
+                           List<SequenceSearchQueries.Query> queries, String fingerprint) throws IOException {
     var byId = new HashMap<String, SequenceSearchQueries.Query>();
     queries.forEach(q -> byId.put(q.id(), q));
     String runId = UUID.randomUUID().toString();
@@ -90,7 +99,7 @@ public final class SequenceSearchRunner {
         if (query == null || end - start != query.sequence().length() || !(cells[5].equals("+") || cells[5].equals("-")))
           throw new IOException("SeqKit returned an unexpected query, length, or strand");
         var path = snapshot.slice(start, end);
-        var metadata = new SequenceSearchMetadata(runId + ":" + (++hits), query.id(), query.description(), cells[5], path, snapshot.fingerprint());
+        var metadata = new SequenceSearchMetadata(runId + ":" + (++hits), query.id(), query.description(), cells[5], path, fingerprint);
         String encoded = metadata.encode();
         for (var p : path.fragments()) {
           if (p.source().chars().anyMatch(Character::isWhitespace)) throw new IOException("FASTA identifiers in BED must not contain whitespace");

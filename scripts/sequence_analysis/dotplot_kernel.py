@@ -71,7 +71,7 @@ def run(plan, log=print):
     with open(plan['aligner'], 'rb') as stream:
         aligner_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
     settings = dict(kind='alignment-dotplot', parameters=options, alignerSha256=aligner_sha,
-                    sourceFasta=plan['sourceFastaIdentity'], sampling='paf-linear-endpoints-v1')
+                    sourceFasta=plan['sourceFastaIdentity'], sampling='paf-linear-endpoints-v1', gapPolicy=plan.get('gapPolicy', 'legacy-gap-free'))
     command = [plan['aligner'], '-t', str(options['threads']), '-k', str(options['k']), '-w', str(options['window']),
                '-m', str(options['chainScore']), '-P', '--no-long-join', str(root / 'columns.fasta'), str(root / 'rows.fasta')]
     log('Aligning selected sequence axes with ' + str(plan['aligner']))

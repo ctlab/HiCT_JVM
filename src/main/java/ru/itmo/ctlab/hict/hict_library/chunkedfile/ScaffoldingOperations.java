@@ -194,7 +194,7 @@ public class ScaffoldingOperations {
         final var descriptor = node.getContigDescriptor();
         final long end = position[0] + descriptor.getLengthBp();
         scaffoldTree.rescaffold(position[0], end,
-          id -> new ScaffoldDescriptor(id, "scf_" + chunkedFile.getContigDisplayName(descriptor.getContigId()), 1000));
+          id -> new ScaffoldDescriptor(id, "scf_" + chunkedFile.getContigDisplayName(descriptor.getContigId()), ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()));
         position[0] = end;
       });
 
@@ -488,10 +488,10 @@ public class ScaffoldingOperations {
       final boolean singleton = parentBorders.startBP() == leftBps && parentBorders.endBP() == leftBps + oldContigDescriptor.getLengthBp();
       scaffoldTree.rescaffold(parentBorders.startBP(), rightStart, id -> new ScaffoldDescriptor(id,
         singleton ? "scf_" + newCds.get(0).getContigName() : parentName + "_left_" + id,
-        parentScaffold == null ? 1000 : parentScaffold.spacerLength()));
+        parentScaffold == null ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp() : parentScaffold.spacerLength()));
       scaffoldTree.rescaffold(rightStart, rightEnd, id -> new ScaffoldDescriptor(id,
         singleton ? "scf_" + newCds.get(1).getContigName() : parentName + "_right_" + id,
-        parentScaffold == null ? 1000 : parentScaffold.spacerLength()));
+        parentScaffold == null ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp() : parentScaffold.spacerLength()));
 
 
       final var newContigTreeRoot = contigTree.getRoot();

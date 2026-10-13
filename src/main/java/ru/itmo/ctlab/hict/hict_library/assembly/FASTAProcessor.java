@@ -280,9 +280,39 @@ public class FASTAProcessor {
     }
   }
 
+  /** Selection coordinates stay gapless; emitted concatenated sequence preserves scaffold separators. */
+  public void writeSelection(Path path, java.io.OutputStream output, long from, long to, String name) throws IOException {
+    writeLayout(path, output, AssemblySequenceLayout.capture(chunkedFile, AssemblyExportSettings.gapLengthBp()), from, to, name);
+  }
+
+  /** Write a padded sequence interval without materializing nucleotides in memory. */
+  public void writeLayout(Path path, java.io.OutputStream output, AssemblySequenceLayout layout,
+                          long start, long end, String name) throws IOException {
+    if (start < 0 || end <= start || end > layout.sequence().length()) throw new IllegalArgumentException("Invalid sequence interval");
+    try (var source = new SourceSession(path)) {
+      var selected = layout.sequence().slice(start, end);
+      for (var piece : selected.fragments()) source.validate(piece.source(), piece.start(), piece.end());
+      var writer = new WrappedOutput(output); writer.header(name); long position = start;
+      for (var gap : layout.gaps()) {
+        if (gap.position() <= start || gap.position() >= end) continue;
+        for (var piece : layout.sequence().slice(position, gap.position()).fragments())
+          source.copy(piece.source(),piece.start(),piece.end(),piece.reversed(),writer);
+        writer.gap(gap.length()); position = gap.position();
+      }
+      for (var piece : layout.sequence().slice(position,end).fragments())
+        source.copy(piece.source(),piece.start(),piece.end(),piece.reversed(),writer);
+      writer.finish();
+    }
+  }
+
   /** Overlap chunks so matches crossing chunk/contig/scaffold joins are not lost. */
   public void writeSearchChunks(Path path, java.io.OutputStream output,
                                 AssemblySequenceSnapshot snapshot, int chunkSize, int overlap) throws IOException {
+    writeSearchChunks(path, output, new AssemblySequenceLayout(snapshot, List.of()), chunkSize, overlap);
+  }
+  public void writeSearchChunks(Path path, java.io.OutputStream output,
+                                AssemblySequenceLayout layout, int chunkSize, int overlap) throws IOException {
+    var snapshot = layout.sequence();
     if (chunkSize <= 0 || overlap < 0 || overlap >= chunkSize)
       throw new IllegalArgumentException("Search chunk size must exceed overlap");
     if (snapshot.length() == 0) throw new IllegalArgumentException("Empty search scope");
@@ -290,8 +320,9 @@ public class FASTAProcessor {
       for (var piece : snapshot.fragments()) source.validate(piece.source(), piece.start(), piece.end());
       var writer = new WrappedOutput(output);
       for (long start = 0; start < snapshot.length();) {
-        long ownedEnd = start + Math.min(chunkSize, snapshot.length() - start);
-        long end = ownedEnd + Math.min(overlap, snapshot.length() - ownedEnd);
+        long segmentEnd = layout.segmentEnd(start);
+        long ownedEnd = start + Math.min(chunkSize, segmentEnd - start);
+        long end = ownedEnd + Math.min(overlap, segmentEnd - ownedEnd);
         writer.header("hict_chunk_" + start + "_" + ownedEnd);
         for (var piece : snapshot.slice(start, end).fragments())
           source.copy(piece.source(), piece.start(), piece.end(), piece.reversed(), writer);

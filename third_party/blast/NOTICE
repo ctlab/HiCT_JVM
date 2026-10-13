@@ -1,0 +1,13 @@
+NCBI BLAST+ 2.16.0 (local blastn)
+https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.16.0/ncbi-blast-2.16.0+-src.tar.gz
+Source SHA-256: 17c93cf009721023e5aecf5753f9c6a255d157561638b91b3ad7276fd6950c2b
+NCBI code: public-domain government work; see LICENSE. Third-party code retains
+its own notices, collected by scripts/toolchains/add_blast.py into the payload.
+Citation: Camacho C et al. BMC Bioinformatics 2009;10:421.
+doi:10.1186/1471-2105-10-421
+Bundled only for Linux x86_64; Windows/macOS may use HICT_BLASTN_BIN.
+No remote database search, sequence upload, or NCBI usage reporting is enabled.
+
+Bundled GNU OpenMP runtime (GCC 10): GPLv3 with GCC Runtime Library Exception 3.1.
+GCC license texts: https://github.com/gcc-mirror/gcc/tree/releases/gcc-10.2.0
+SQLite is in the public domain: https://www.sqlite.org/copyright.html

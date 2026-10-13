@@ -1,15 +1,33 @@
 # Sequence analyses and assembly edits
 
-Implementation on `feature/sequence-analysis-20261013`, based on JVM `412768ac`
-and WebUI `9706538`. The running publication campaign is a different, frozen
+Implementation on `feature/sequence-analysis-20261013`, extended by
+`fix/sequence-lifecycle-20261014`, based on JVM `412768ac` and WebUI `9706538`.
+The running publication campaign is a different, frozen
 build; its results must not be relabelled as measurements of these features.
 
 ## Sequence coordinates
 
-The user selected a gap-free concatenation of the **active assembly**, in its
-current order and orientation, including joins between scaffolds. Debris and
-AGP-excluded intervals are absent. This differs from scaffold FASTA export,
-which can insert scaffold spacers. Dialogs must state this distinction.
+The current default preserves explicit imported AGP gaps and uses a configurable
+1,000-N separator between scaffolds in concatenated analysis sequences. The Open
+Wizard and sequence dialogs expose the server setting. Zero is an explicit opt-in
+to gap-free joins. New singleton/scaffold gaps use the configured default;
+changing it does not rewrite imported gaps. The environment/system property
+`HICT_EXPORT_GAP_LENGTH_BP` sets the startup default. UI changes apply to the
+running server; restarting uses its configured environment default.
+
+Normal FASTA export emits one record per scaffold and preserves its internal
+AGP gaps. Selection export may concatenate pieces with separators. Contact-matrix
+coordinates remain gapless: no synthetic contact bins or ATUs are introduced,
+and biological inter-scaffold Hi-C contacts are not discarded. Search subjects
+and ModDotPlot's expanded contexts stop at positive-length gaps. Alignment
+chaining can still span long ambiguous regions; padding alone is not a guarantee
+against all gapped alignments.
+
+[AGP 2.1](https://www.ncbi.nlm.nih.gov/genbank/genome_agp_specification/) distinguishes
+`N` (explicit size) from `U` (unknown size represented by 100 bases). A chosen
+1,000-N separator is an analysis/export policy, not an inferred biological gap
+length, and is not a `U`-gap. Separate FASTA scaffold records need no inter-record
+padding.
 
 Every job captures an immutable path of original FASTA source intervals before
 it starts. All coordinates inside the implementation are zero-based half-open.
@@ -74,9 +92,30 @@ Alignment Processing. *iMeta*, 2024, e191.
 provides local similarity alignment, including gaps, but heuristic searches are
 not exhaustive substring searches. NCBI government code is public domain, with
 third-party exceptions in the [toolkit licence](https://github.com/ncbi/ncbi-cxx-toolkit-public/blob/main/LICENSE).
-Any BLAST distribution needs a dependency-specific notice audit. HOMER targets
-motif analysis/enrichment; its official licence could not yet be verified and it
-is not selected for bundling.
+The Linux x86_64 payload adds BLAST+ **2.16.0**, compiled from its SHA-256-pinned
+source archive in manylinux2014. This version builds with that platform's GCC 10;
+2.17.0 requires C++20 constructs not supported by the compiler. NCBI's official
+2.17 Linux binary requires glibc 2.28 and is deliberately not shipped as a
+manylinux2014 binary. Public-domain and third-party notices are collected under
+`share/licenses/sequence-analysis/blast/`; see `third_party/blast/`.
+
+BLAST runs locally with usage reporting disabled. The UI exposes strand, identity,
+query coverage, E-value and maximum subject-record controls. It uses `blastn-short`
+if any query is shorter than 50 bases, otherwise `blastn`; low-complexity masking
+is disabled. A subject is a complete gap-free sequence segment, not a small
+arbitrary chunk: this avoids losing alignments at artificial chunk boundaries.
+Segments above BLAST's signed 32-bit length limit are rejected explicitly. The
+record cap defaults to 500 and can omit weaker hits. BED features span each HSP's
+subject coordinates, including indels, and tooltips retain query coordinates,
+identity, E-value, bitscore and gap counts. Raw `blast-hits.tsv` is retained.
+
+Windows/macOS keep SeqKit/ModDotPlot and may use an externally installed `blastn`
+via `HICT_BLASTN_BIN`; the UI states this limitation and disables unavailable
+BLAST. It is an additional method, not a replacement for exhaustive exact search.
+HOMER is outside this feature's scope.
+
+Citation: Camacho C et al. BLAST+: architecture and applications. BMC
+Bioinformatics 2009;10:421. https://doi.org/10.1186/1471-2105-10-421.
 
 Native packaging must pin payload hashes, retain notices, and execute a small
 known-answer search/identity fixture in CI on each target. AVX variants are only
@@ -90,8 +129,8 @@ The File menu provides separate ModDotPlot and active-assembly alignment dotplot
 dialogs. Both accept the whole active assembly or a selected row/column rectangle,
 with explicit parameters and streamed job logs. The primary map can remain in
 the upper triangle while the generated sidecar appears in the lower triangle.
-Search uses SeqKit exact or substitution-only matching; it does not claim BLAST
-alignment or HOMER motif discovery.
+Search offers SeqKit exact/substitution matching and local BLAST gapped alignments.
+It does not claim HOMER motif discovery.
 
 ModDotPlot stores identity percentage multiplied by 10,000 in legacy int64
 contact records. Each resolution is computed independently. Alignment dotplots
@@ -133,7 +172,7 @@ these jobs and merge their verified payloads before packaging. Windows/macOS
 execution is still pending an actual CI run; local configuration is not proof
 of a successful remote build.
 
-## Validation
+## Validation of the 13 October baseline
 
 The JVM suite has 241 tests, zero failures/errors and four skips. Native SeqKit
 and ModDotPlot HTTP tests were enabled. The coordinate oracle includes 300
@@ -171,14 +210,20 @@ the frozen full methods/application campaign remains a distinct measurement.
   application does. The dialog warns explicitly and permits saving without
   attaching. Once attached, the two maps follow the same assembly edits.
 * Region updates copy the prior sidecar before atomic publication; cost grows
-  with that file. Earlier versions and interrupted jobs are retained for review.
+  with that file. Managed superseded matrices are removed only after a finished,
+  reopenable replacement exists and the old matrix is detached. Cleanup follows
+  replacement chains; logs, prepared FASTA inputs and receipts remain. Cancellation keeps the previous
+  valid matrix. User inputs and unrelated files are never cleanup targets.
 * Jobs run through one bounded worker/queue. The current server retains the most
   recent 32 completed jobs in memory; durable job files survive but restart-time
   discovery in the UI is not implemented.
 * Widely separated selected axes currently export their bounding sequence span.
   This is correct but may do unnecessary FASTA I/O between those axes.
-* Assembly search concatenates active sequence without scaffold gap characters.
-  It can find join-spanning hits; it is not the scaffold FASTA export convention.
+* Search does not automatically rerun after edits. A track-level warning and
+  feature tooltip say “New matches might have formed”. Original hits follow source
+  intervals; a new gap through a hit marks it fragmented. Undoing to the original
+  sequence/gap state clears the warning. Fingerprints and projections are cached
+  once per track query, not rebuilt for every hit.
 * External binary overrides are supported but are not authenticated as the
   bundled upstream build. Executable hashes and job settings preserve provenance.
 
@@ -194,3 +239,68 @@ cannot silently reuse the prior extracted file. Linux aligner smoke checks now
 fail the CI job when both startup commands fail instead of ignoring the failure.
 The payload merger supports the Python 3.9/3.10 used by packaging runners as well
 as the explicit Python 3.12 used to build the computational adapter.
+
+
+## Lifecycle revision (14 October 2026)
+
+History checkpoints contain persistent roots owned by each open ChunkedFile.
+Attaching another file cannot reconstruct its earlier roots by simply replaying
+inverse operations: native splits can remove bins, debris excludes intervals,
+and AGP imports replace the layout. Creating/reprojecting a checkpoint for every
+historical state is a separate feature. Attachment/replacement/detachment therefore
+starts a new journal and is explicitly disclosed in the UI. Existing edits are
+not undone when the journal is reset.
+
+Generated overlays store cells against **original physical bins**. Opening one
+validates original contig names, FASTA intervals, resolutions and ATUs before
+replacing the existing source. The candidate is then given the primary's current
+AGP layout and visibility. This supports reopening the original map after making
+an overlay in an edited order; an incompatible source is refused even if a
+legacy mismatch override is requested. Axis identity is checked, not a full
+checksum of FASTA contents. Legacy non-generated secondary maps retain their
+existing compatibility workflow.
+
+Remapping a stored dotplot is not recomputation. Values whose windows included an
+old join still describe that calculation; especially ModDotPlot's expanded context
+can affect more than one edge bin. Provenance and the dialog disclose the need
+to regenerate for changed joins. No fixed time-to-recompute is promised.
+
+“Bounding FASTA interval” means that rows at 1–2 Mb and columns at 100–101 Mb may
+require a temporary sequence spanning 1–101 Mb. Only the selected matrix rectangle
+is scored/stored, so this is an I/O and temporary-space cost, not additional
+reported comparisons. Sequence search's **bounding interval** scope, in contrast,
+intentionally searches the intervening sequence too; its UI states the coordinates.
+
+The minimap now fits its actual content box and allows the zoom-out needed by
+viewports smaller than OpenLayers' default 256 pixels. The blue viewport is the true intersection of the projected visible
+extent with minimap bounds. It is not translated/resized to fit. The container
+clips drawing, and the existing drag-to-navigate interaction is preserved.
+
+Validation for this revision is recorded separately from the 13 October evidence
+and frozen remote performance campaigns. Do not label those historical timings
+as measurements of this revised version.
+
+The final 14 October checks reported 247 JVM tests (243 passed, four optional
+integration tests skipped), 12 Python tests passed with one optional skip,
+and passing WebUI type checks, DTO/resolution/viewport regressions and production
+build. Eleven Chromium 140 application scenarios passed with no unexpected
+console warnings/errors, failed requests or non-OK responses. They cover gapped
+BLAST alignment, exact matching across an explicitly gap-free join, post-edit
+warnings, minimap edge/full-view clipping, accumulated overlay cleanup, selection
+exports and reattaching a generated overlay after reopening the original map.
+PDF rasterization differed from PNG by 0.944/255 mean channel error; 1.373% of
+pixels differed by more than 10/255. Vector labels remain editable. Rendering
+across output formats is not claimed to be bit-identical.
+
+The source-built BLAST 2.16.0 executable and copied SQLite/OpenMP runtimes passed
+a real insertion-containing alignment inside the pinned manylinux2014 image.
+Their maximum GLIBC requirements are 2.14, 2.14 and 2.17 respectively. The rebuilt
+ModDotPlot adapter passed its native fixture and all 196 ELF files were within
+GLIBC 2.17. These checks used explicit native-tool overrides with the test JAR;
+the release workflow builds and inventories the combined payload. Windows/macOS
+release execution still requires actual GitHub Actions results.
+
+Evidence: `sequence-lifecycle-review-20261014/` and
+`sequence-lifecycle-browser-20261014-final/` under the benchmark workspace.
+The browser fixture is a functional test, not a publication performance estimate
+for large assemblies.

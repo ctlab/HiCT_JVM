@@ -13,6 +13,69 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ScaffoldEditingInvariantTest {
   @TempDir Path dir;
+  @Test void supersededOverlayIsDeletedOnlyAfterFinishedReplacementAndDetach() throws Exception {
+    var vertx=io.vertx.core.Vertx.vertx();
+    try (var fixture=fixture()) {
+      var root=dir.resolve("processed/sequence-analysis");java.nio.file.Files.createDirectories(root);
+      var previous=root.resolve(UUID.randomUUID().toString());var next=root.resolve(UUID.randomUUID().toString());
+      java.nio.file.Files.createDirectories(previous);java.nio.file.Files.createDirectories(next);
+      var old=previous.resolve("moddotplot.hict.hdf5");var replacement=next.resolve("moddotplot.hict.hdf5");
+      java.nio.file.Files.copy(fixture.getHdfFilePath(),old);java.nio.file.Files.copy(fixture.getHdfFilePath(),replacement);
+      try(var writer=HDF5Factory.open(replacement.toFile())) { writer.object().createGroup("/sequence_analysis");writer.bool().setAttr("/sequence_analysis","complete",true); }
+      var third=root.resolve(UUID.randomUUID().toString());java.nio.file.Files.createDirectories(third);
+      var finalReplacement=third.resolve("moddotplot.hict.hdf5");
+      String relative=dir.relativize(replacement).toString().replace('\\','/');
+      java.nio.file.Files.writeString(root.resolve("superseded-test.json"),new io.vertx.core.json.JsonObject()
+        .put("previous",dir.relativize(old).toString()).put("replacement",relative).encode());
+      java.nio.file.Files.writeString(next.resolve("job.json"),new io.vertx.core.json.JsonObject().put("status","running").put("outputFile",relative).encode());
+      io.vertx.core.shareddata.LocalMap<String,Object> shared=vertx.sharedData().getLocalMap("hict_server");
+      shared.put("dataDirectory",new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.PathWrapper(dir));
+      assertEquals(0,ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(shared));
+      java.nio.file.Files.writeString(next.resolve("job.json"),new io.vertx.core.json.JsonObject().put("status","finished").put("outputFile",relative).encode());
+      try(var opened=new ChunkedFile(new ChunkedFile.ChunkedFileOptions(old,1,1))) {
+        shared.put("chunkedFileSecondary",new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.ChunkedFileWrapper(opened));
+        assertEquals(0,ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(shared));
+        assertTrue(java.nio.file.Files.isRegularFile(old));
+        java.nio.file.Files.copy(replacement,finalReplacement);
+        String finalRelative=dir.relativize(finalReplacement).toString();
+        java.nio.file.Files.writeString(third.resolve("job.json"),new io.vertx.core.json.JsonObject().put("status","finished").put("outputFile",finalRelative).encode());
+        java.nio.file.Files.writeString(root.resolve("superseded-second.json"),new io.vertx.core.json.JsonObject().put("previous",relative).put("replacement",finalRelative).encode());
+        assertEquals(1,ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(shared));
+        assertFalse(java.nio.file.Files.exists(replacement));assertTrue(java.nio.file.Files.isRegularFile(old));
+      }
+      shared.remove("chunkedFileSecondary");
+      assertEquals(1,ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(shared));
+      assertFalse(java.nio.file.Files.exists(old));assertTrue(java.nio.file.Files.isRegularFile(finalReplacement));
+      assertTrue(java.nio.file.Files.isRegularFile(next.resolve("job.json")));
+      assertEquals(0,ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(shared));
+    } finally {vertx.close().toCompletionStage().toCompletableFuture().get();}
+  }
+  @Test void generatedOverlayValidatesOriginalBinsIndependentlyOfEditedOrder() throws Exception {
+    try (var f=fixture()) {
+      var copied=dir.resolve("overlay.hict.hdf5"); java.nio.file.Files.copy(f.getHdfFilePath(),copied);
+      try(var overlay=new ChunkedFile(new ChunkedFile.ChunkedFileOptions(copied,1,1))) {
+        f.scaffoldingOperations().reverseSelectionRangeBp(0,6000);
+        ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.requireCompatible(f,overlay);
+        overlay.getOriginalDescriptors().remove("A");
+        assertThrows(IllegalArgumentException.class,()->ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.requireCompatible(f,overlay));
+      }
+    }
+  }
+  @Test void analysisPaddingPreservesAgpGapsAndSearchCannotCrossScaffolds() throws Exception {
+    try (var f = fixture()) {
+      var fasta=dir.resolve("gaps.fa"); java.nio.file.Files.writeString(fasta,">A\n"+"A".repeat(6000)+"\n>B\n"+"C".repeat(6000)+"\n>C\n"+"G".repeat(6000)+"\n");
+      var layout=ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout.capture(f,1000);
+      assertEquals(20000,layout.length());
+      var out=new java.io.ByteArrayOutputStream();f.getFastaProcessor().writeLayout(fasta,out,layout,5998,6002,"selected");
+      assertEquals("AANN"+"N".repeat(998)+"CC",out.toString().replaceFirst(">selected\\n", "").replace("\n",""));
+      out.reset();f.getFastaProcessor().writeSearchChunks(fasta,out,layout.slice(5998,6002),10,3);
+      assertEquals(">hict_chunk_0_2\nAA\n>hict_chunk_2_4\nCC\n",out.toString());
+      f.importAGP(new java.io.StringReader("s\t1\t6000\t1\tW\tA\t1\t6000\t+\ns\t6001\t6037\t2\tN\t37\tscaffold\tyes\tproximity_ligation\ns\t6038\t12037\t3\tW\tB\t1\t6000\t+\nt\t1\t6000\t1\tW\tC\t1\t6000\t+\n"));
+      layout=ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout.capture(f,2000);
+      assertNotEquals(ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout.capture(f,1000).fingerprint(1000),layout.fingerprint(2000));
+      assertEquals(20037,layout.length());assertEquals(37,layout.gaps().getFirst().length());assertEquals(2000,layout.gaps().getLast().length());
+    }
+  }
   @Test void analysisWindowsKeepPhysicalBinOwnershipThroughExactAgpSplitsAndEdits() throws Exception {
     try (var f = fixture()) {
       var region = new ru.itmo.ctlab.hict.hict_library.assembly.AssemblyAnalysisPlan.Region(0, 18000);
@@ -65,7 +128,7 @@ class ScaffoldEditingInvariantTest {
         .header("content-type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}" )).build();
       assertEquals(400, client.send(invalid, java.net.http.HttpResponse.BodyHandlers.ofString()).statusCode());
       String body = new io.vertx.core.json.JsonObject().put("queries", ">across join\nAACCC").put("bothStrands", true)
-        .put("scope", "selection").put("startBp", 5995).put("endBp", 6005).put("mode", "exact").put("threads", 1).encode();
+        .put("gapLengthBp", 0).put("scope", "selection").put("startBp", 5995).put("endBp", 6005).put("mode", "exact").put("threads", 1).encode();
       var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/search/jobs"))
         .header("content-type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build();
       var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
@@ -190,7 +253,7 @@ class ScaffoldEditingInvariantTest {
     try (var f = fixture()) {
       var snapshot = ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.capture(f);
       var path = snapshot.slice(5000, 7000);
-      var metadata = new ru.itmo.ctlab.hict.hict_server.tracks.SequenceSearchMetadata("hit1", "query1", "cross-join motif", "+", path, snapshot.fingerprint());
+      var metadata = new ru.itmo.ctlab.hict.hict_server.tracks.SequenceSearchMetadata("hit1", "query1", "cross-join motif", "+", path, ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout.capture(f,0).fingerprint(0));
       var text = new StringBuilder();
       for (var p : path.fragments()) text.append(p.source()).append('\t').append(p.start()).append('\t').append(p.end())
         .append("\tquery1\t0\t+\t").append(p.start()).append('\t').append(p.end()).append("\t30,110,190\t1\t")
@@ -205,7 +268,15 @@ class ScaffoldEditingInvariantTest {
         assertEquals("cross-join motif", hit.getLabel());
         assertFalse(hit.getAttributes().containsKey("field13"));
       }
+      assertNull(result.getTracks().getFirst().getAnalysisWarning());
       f.scaffoldingOperations().scaffoldRegion(0, 12000, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
+      result = tracks.queryVisibleTracks(f, 14000, 18000, 4, 1000, QueryLengthUnit.BASE_PAIRS);
+      assertTrue(result.getTracks().getFirst().getAnalysisWarning().contains("New matches might have formed"), "A changed gap invalidates search completeness even outside the hits' viewport");
+      result = tracks.queryVisibleTracks(f, 0, 18000, 18, 1000, QueryLengthUnit.BASE_PAIRS);
+      assertEquals("fragmented", result.getTracks().getFirst().getBins().getFirst().getAttributes().get("matchStatus"));
+      f.restoreAssembly(initial);
+      f.scaffoldingOperations().scaffoldRegion(0, 12000, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS,
+        id -> new ScaffoldDescriptor(id, "joined", 0));
       f.scaffoldingOperations().reverseSelectionRangeBp(0, 12000);
       result = tracks.queryVisibleTracks(f, 0, 18000, 18, 1000, QueryLengthUnit.BASE_PAIRS);
       for (var hit : result.getTracks().getFirst().getBins()) {
@@ -228,6 +299,7 @@ class ScaffoldEditingInvariantTest {
       f.restoreAssembly(initial);
       result = tracks.queryVisibleTracks(f, 5000, 5500, 1, 1000, QueryLengthUnit.BASE_PAIRS);
       assertEquals("intact", result.getTracks().getFirst().getBins().getFirst().getAttributes().get("matchStatus"), "Viewport clipping must not mark the sequence broken");
+      assertNull(result.getTracks().getFirst().getAnalysisWarning(), "Undo restores search completeness");
     } finally { tracks.close(); }
   }
 

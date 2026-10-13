@@ -7,6 +7,7 @@ on:
     paths:
       - 'scripts/sequence_analysis/**'
       - 'scripts/toolchains/*sequence*'
+      - 'scripts/toolchains/*blast*'
       - 'third_party/**'
       - '.github/workflows/sequence-tools.yml'
 
@@ -44,7 +45,7 @@ jobs:
           set -euo pipefail
           go_root="$(go env GOROOT)"
           docker run --rm -v "$PWD:$PWD" -w "$PWD" -v "$go_root:/opt/hict-go:ro" \
-            quay.io/pypa/manylinux2014_x86_64:latest bash -euxc '
+            quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5 bash -euxc '
               export PATH=/opt/hict-go/bin:/opt/python/cp312-cp312/bin:$PATH
               bash scripts/toolchains/build_sequence_python_linux.sh /tmp/hict-shared-python
               /tmp/hict-shared-python/bin/python3.12 scripts/toolchains/build_sequence_tools.py \

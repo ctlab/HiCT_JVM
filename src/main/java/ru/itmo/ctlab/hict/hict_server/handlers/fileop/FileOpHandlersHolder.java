@@ -131,6 +131,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
           map.remove(SECONDARY_COMPATIBILITY_KEY);
+          try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
+          catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
           TileHandlersHolder.clearExpectedProfileCache(map);
           map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
 
@@ -266,8 +268,23 @@ public class FileOpHandlersHolder extends HandlersHolder {
           );
           final SecondaryCompatibility compatibility;
           try {
+            if (ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.isGenerated(secondaryChunkedFile)) {
+              final var source = primaryWrapper.getChunkedFile();
+              ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.requireCompatible(source, secondaryChunkedFile);
+              // Prepare the candidate completely before closing or replacing an existing source.
+              if (source.getContigTree().getRoot() == null) {
+                final long length = secondaryChunkedFile.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum();
+                if (length > 0) secondaryChunkedFile.scaffoldingOperations().moveRegionToDebris(0, length,
+                  ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+              } else {
+                final var agp = source.getAgpProcessor().getAssemblyAGPRecords().stream()
+                  .map(Object::toString).collect(java.util.stream.Collectors.joining("\n"));
+                try (var reader = new StringReader(agp)) { secondaryChunkedFile.importAGP(reader); }
+                synchronizeTargetVisibilityFromSource(source, secondaryChunkedFile);
+              }
+            }
             compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryChunkedFile);
-          } catch (final RuntimeException ex) {
+          } catch (final Exception ex) {
             try {
               secondaryChunkedFile.close();
             } catch (final Exception ignored) {
@@ -293,8 +310,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
           map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
           map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-          synchronizeOverlayAssembly(map, String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)));
+          if (!ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.isGenerated(secondaryChunkedFile))
+            synchronizeOverlayAssembly(map, String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)));
           final var synchronizedCompatibility = refreshSecondaryCompatibility(map);
+          try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
+          catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
           TileHandlersHolder.clearExpectedProfileCache(map);
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
@@ -326,6 +346,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
           map.remove(SECONDARY_COMPATIBILITY_KEY);
+          try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
+          catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
           TileHandlersHolder.clearExpectedProfileCache(map);
           if (ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)))) {
             map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
@@ -589,7 +611,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
             ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()
             : request.getLong("defaultSpacerLength", ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
           return download.write(output -> chunkedFileWrapper.getChunkedFile().getFastaProcessor().writeAssembly(
-            fastaPathWrapper.getPath(), output, request != null && request.getBoolean("preserveImportedGaps", false), gapLength));
+            fastaPathWrapper.getPath(), output, request == null || request.getBoolean("preserveImportedGaps", true), gapLength));
         },
         download::send,
         () -> {download.close();ctx.response().putHeader("Content-Type", "text/plain").end();}
@@ -648,21 +670,21 @@ public class FileOpHandlersHolder extends HandlersHolder {
             if (!explicitAxisSources) {
               long start=Math.max(0L,Math.min(Math.min(fromBpX,fromBpY),Math.min(toBpX,toBpY)));
               long end=Math.max(Math.addExact(start,1),Math.max(Math.max(fromBpX,fromBpY),Math.max(toBpX,toBpY)));
-              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeInterval(
+              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeSelection(
                 horizontalFastaPathWrapper.getPath(),output,start,end,String.format("selection_%d_%d",start,end));
               return;
             }
             long xs=Math.min(fromBpX,toBpX),xe=Math.max(fromBpX,toBpX),ys=Math.min(fromBpY,toBpY),ye=Math.max(fromBpY,toBpY);
             if(Objects.equals(horizontalSource,verticalSource)&&xs==ys&&xe==ye) {
-              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeInterval(
+              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeSelection(
                 horizontalFastaPathWrapper.getPath(),output,xs,xe,String.format("selection_%d_%d",xs,xe));return;
             }
             final var verticalFile=resolveChunkedFileWrapperBySource(map,verticalSource);
             final var verticalFasta=resolveFastaPathWrapperBySource(map,verticalSource);
             if(verticalFasta==null)throw new IllegalStateException("Link a FASTA file for the vertical source before exporting FASTA");
-            horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeInterval(
+            horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeSelection(
               horizontalFastaPathWrapper.getPath(),output,xs,xe,String.format("selection_horizontal_%d_%d_%s",xs,xe,horizontalSource.toLowerCase()));
-            verticalFile.getChunkedFile().getFastaProcessor().writeInterval(
+            verticalFile.getChunkedFile().getFastaProcessor().writeSelection(
               verticalFasta.getPath(),output,ys,ye,String.format("selection_vertical_%d_%d_%s",ys,ye,verticalSource.toLowerCase()));
           });
         },

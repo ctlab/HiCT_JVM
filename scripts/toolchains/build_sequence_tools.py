@@ -172,9 +172,11 @@ for dist in im.distributions():
     adapter = 'bin/hict-moddotplot/hict-moddotplot' + suffix
     run([py, ROOT / 'scripts/sequence_analysis/smoke_tools.py', '--seqkit', seqbin,
          '--adapter', payload / adapter, '--output', docs / 'smoke-test.json'])
+    from add_blast import add_blast
+    blast_command = add_blast(payload, work, args.manylinux2014)
     if args.manylinux2014:
         abi = {}
-        for file in (payload / 'bin').rglob('*'):
+        for file in payload.rglob('*'):
             if not file.is_file():
                 continue
             with file.open('rb') as stream:
@@ -200,6 +202,10 @@ for dist in im.distributions():
                              'ModDotPlot computational adapter, not the upstream plotting application.'],
                     citations=['Sweeten AP et al. Bioinformatics 2024;40(8):btae493. doi:10.1093/bioinformatics/btae493.',
                                'Shen W et al. iMeta 2024:e191. doi:10.1002/imt2.191.'])
+    if blast_command:
+        manifest['commands']['blastn'] = blast_command
+        manifest['notices'].append('NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only. Linux x86_64 portable payload.')
+        manifest['citations'].append('Camacho C et al. BMC Bioinformatics 2009;10:421. doi:10.1186/1471-2105-10-421.')
     (payload / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(payload, args.output)

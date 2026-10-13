@@ -73,14 +73,20 @@ class PreparedFasta:
         self.stream.close()
 
 
-def prepare_windows(read_sequence, sequence_length, windows, resolution, settings, log=lambda _: None):
+def prepare_windows(read_sequence, sequence_length, windows, resolution, settings, log=lambda _: None, context_bounds=None):
     """Read/hash at most 8 MiB or 1024 windows per batch (plus one long window)."""
     windows = [tuple(map(int, w)) for w in windows]
     if resolution <= 0 or any(not 0 <= a < b <= sequence_length or b - a > resolution for a, b in windows):
         raise ValueError('Invalid source-bin sequence windows')
     sparse, expectation = settings.sparsity(resolution)
     flank = resolution * settings.delta
-    expanded = [(max(0, round(a - flank)), min(sequence_length, round(b + flank))) for a, b in windows]
+    if context_bounds is None:
+        context_bounds = [(0, sequence_length)] * len(windows)
+    if len(context_bounds) != len(windows) or any(not 0 <= lo <= a < b <= hi <= sequence_length
+            for (a, b), (lo, hi) in zip(windows, context_bounds)):
+        raise ValueError('Invalid scaffold context bounds')
+    expanded = [(max(lo, round(a - flank)), min(hi, round(b + flank)))
+                for (a, b), (lo, hi) in zip(windows, context_bounds)]
     order = sorted(range(len(windows)), key=lambda i: expanded[i])
     result = [None] * len(windows)
     cursor = 0

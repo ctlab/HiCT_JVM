@@ -413,7 +413,7 @@ public class Initializers {
           final var descriptor = contig.descriptor();
           final long end = position + descriptor.getLengthBp();
           if (end > position) chunkedFile.getScaffoldTree().rescaffold(position, end,
-            id -> new ScaffoldDescriptor(id, "scf_" + descriptor.getContigName(), 1000));
+            id -> new ScaffoldDescriptor(id, "scf_" + descriptor.getContigName(), ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()));
           position = end;
         }
         return;

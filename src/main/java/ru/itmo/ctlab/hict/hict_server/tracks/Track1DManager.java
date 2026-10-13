@@ -1685,7 +1685,7 @@ public class Track1DManager {
       throw new IllegalArgumentException("Unsupported resolution for 1D track query: " + bpResolution);
     }
     final var contigs = chunkedFile.getAssemblyInfo().contigs();
-    final var sourceToAssemblySegments = new SourceSegmentMap(contigs);
+    final var sourceToAssemblySegments = new SourceSegmentMap(contigs, chunkedFile);
     final var orderedSegments = new ArrayList<AssemblySegment>();
     long assemblyCursor = 0L;
     long visiblePxCursor = 0L;
@@ -2322,6 +2322,10 @@ public class Track1DManager {
       attributes.put("currentFragmentLength", Long.toString(Math.min(feature.end(), segment.sourceEnd()) - Math.max(feature.start(), segment.sourceStart())));
       attributes.put("analysisSnapshot", metadata.snapshotFingerprint());
       label = metadata.description();
+      if (sourceMap.changedSince(metadata)) {
+        label = "⚠ " + label;
+        attributes.put("analysisWarning", "New matches might have formed. This track contains results from the previous assembly sequence. Edits can create new sequence at joins or remove old matches; existing hits are repositioned, but no new search runs automatically. Rerun the search to refresh all matches.");
+      }
       if (projection.status() != ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.FeatureStatus.INTACT) {
         label += " [part of match: " + projection.status().name().toLowerCase(Locale.ROOT) + "]";
         attributes.put("itemRgb", "210,105,20");
@@ -4384,14 +4388,41 @@ public class Track1DManager {
     private final List<ContigTree.ContigTuple> contigs;
     private ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot snapshot;
     private final Map<String, ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection> projections = new HashMap<>();
-    SourceSegmentMap(List<ContigTree.ContigTuple> contigs) { this.contigs = contigs; }
+    private final ChunkedFile map;
+    private final Map<Long, ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout> layouts = new HashMap<>();
+    private final Map<Long, String> layoutFingerprints = new HashMap<>();
+    SourceSegmentMap(List<ContigTree.ContigTuple> contigs, ChunkedFile map) { this.contigs = contigs; this.map = map; }
+    private ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout currentLayout(long separator) {
+      return layouts.computeIfAbsent(separator, gap -> ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout.capture(map,gap));
+    }
+    synchronized boolean changedSince(SequenceSearchMetadata metadata) {
+      String recorded = metadata.snapshotFingerprint();
+      if (recorded != null && recorded.matches("layout-v1:[0-9]+:[a-f0-9]{64}")) {
+        long separator = Long.parseLong(recorded.split(":")[1]);
+        String current = layoutFingerprints.computeIfAbsent(separator, gap ->
+          currentLayout(gap).fingerprint(gap));
+        return !current.equals(recorded);
+      }
+      return !snapshot.fingerprint().equals(recorded); // Backward-compatible saved search tracks.
+    }
     synchronized ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection project(SequenceSearchMetadata metadata, String key) {
       if (snapshot == null) snapshot = new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot(contigs.stream().map(tuple -> {
         var d = tuple.descriptor();
         return new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Fragment(d.getContigNameInSourceFASTA(),
           d.getOffsetInSourceFASTA(), d.getOffsetInSourceFASTA() + d.getLengthBp(), tuple.direction() == ContigDirection.REVERSED);
       }).toList());
-      return projections.computeIfAbsent(key, ignored -> snapshot.project(metadata.path()));
+      return projections.computeIfAbsent(key, ignored -> {
+        var result = snapshot.project(metadata.path());
+        var recorded = metadata.snapshotFingerprint();
+        if (result.sequencePreserved() && recorded != null && recorded.matches("layout-v1:[0-9]+:[a-f0-9]{64}")) {
+          var layout = currentLayout(Long.parseLong(recorded.split(":")[1]));
+          long start = result.pieces().stream().mapToLong(p -> p.assemblyStart()).min().orElse(0);
+          long end = result.pieces().stream().mapToLong(p -> p.assemblyEnd()).max().orElse(0);
+          if (layout.hasGapBetween(start,end)) return new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection(
+            result.pieces(), ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.FeatureStatus.FRAGMENTED, false);
+        }
+        return result;
+      });
     }
   }
 
@@ -4853,6 +4884,7 @@ public class Track1DManager {
     private final double maxValue;
     private final String error;
     private String statusMessage;
+    private String analysisWarning;
   }
 
   @Getter
@@ -5100,7 +5132,7 @@ public class Track1DManager {
         bigWigAggregationMode
       );
       final var maxValue = bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0.0d);
-      return new TrackRender(
+      var rendered = new TrackRender(
         trackId,
         name,
         type.name(),
@@ -5110,6 +5142,16 @@ public class Track1DManager {
         maxValue,
         null
       );
+      if (dataSource instanceof InMemoryTrackDataSource memory && sourceToAssemblySegments instanceof SourceSegmentMap sourceMap) {
+        var first = memory.featuresBySource().values().stream().filter(v -> !v.isEmpty()).findFirst().orElse(List.of());
+        var metadata = first.isEmpty() ? null : first.getFirst().searchMetadata();
+        if (metadata != null) {
+          sourceMap.project(metadata, metadata.hitId());
+          if (sourceMap.changedSince(metadata))
+            rendered.analysisWarning = "New matches might have formed. The assembly has changed since this search. Existing hits are repositioned and disrupted hits marked, but new joins may create matches that are absent from this track. Rerun the search to refresh results.";
+        }
+      }
+      return rendered;
     }
   }
 }

@@ -76,3 +76,15 @@ def test_invalid_scientific_parameters_are_rejected():
     for options in ({'k': 0}, {'delta': 2}, {'identity': float('nan')}, {'sketch_size': 0}):
         with pytest.raises(ValueError):
             Settings(**options)
+
+
+def test_scaffold_context_cannot_reach_an_unrelated_neighbor():
+    sequence = b'ACGTTGCA' * 12 + b'N' * 3 + b'TTTCCCAA' * 12
+    settings = Settings(k=5, identity=0, sketch_size=1000, delta=1)
+    actual = prepare_windows(lambda a,b: sequence[a:b], len(sequence), [(80,96)], 64, settings,
+                             context_bounds=[(0,96)])
+    isolated = prepare_windows(lambda a,b: sequence[a:b], 96, [(80,96)], 64, settings)
+    np.testing.assert_array_equal(actual[0].core, isolated[0].core)
+    np.testing.assert_array_equal(actual[0].neighbors, isolated[0].neighbors)
+    with pytest.raises(ValueError):
+        prepare_windows(lambda a,b: sequence[a:b], len(sequence), [(80,96)], 64, settings,context_bounds=[(0,90)])

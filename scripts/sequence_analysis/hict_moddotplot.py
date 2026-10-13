@@ -20,18 +20,19 @@ def run(plan_path):
     log = lambda message: print(message, flush=True)
     start = time.perf_counter_ns()
     settings = dict(kind='moddotplot', upstream=UPSTREAM_COMMIT, parameters=plan['settings'],
-                    sourceFasta=plan['sourceFastaIdentity'], windowPolicy='source-bin-current-sequence-v1')
+                    sourceFasta=plan['sourceFastaIdentity'], windowPolicy='source-bin-current-sequence-v2', gapPolicy=plan.get('gapPolicy', 'legacy-gap-free'))
     resolutions = [level['resolution'] for level in plan['levels']]
     source = PreparedFasta(plan['input'], plan['inputLength'])
     try:
         with OverlayWriter(plan['template'], plan['output'], resolutions, settings, previous=plan.get('previous')) as writer:
             for level in plan['levels']:
                 r, c = np.asarray(level['rows'], dtype=np.int64), np.asarray(level['columns'], dtype=np.int64)
-                if r.ndim != 2 or c.ndim != 2 or r.shape[1] != 4 or c.shape[1] != 4:
+                if r.ndim != 2 or c.ndim != 2 or r.shape[1] not in (4, 6) or c.shape[1] != r.shape[1]:
                     raise ValueError('Each axis needs stripe, bin, sequence start and sequence end')
                 windows = list(dict.fromkeys([tuple(x) for x in r[:, 2:].tolist() + c[:, 2:].tolist()]))
                 sketches = prepare_windows(lambda a, b: source.read(a - plan['inputOffset'], b - plan['inputOffset']),
-                    plan['sequenceLength'], windows, level['resolution'], options, log)
+                    plan['sequenceLength'], [w[:2] for w in windows], level['resolution'], options, log,
+                    context_bounds=[w[2:] for w in windows] if r.shape[1] == 6 else None)
                 by_window = dict(zip(windows, sketches))
                 rows = [by_window[tuple(w)] for w in r[:, 2:]]
                 cols = [by_window[tuple(w)] for w in c[:, 2:]]
