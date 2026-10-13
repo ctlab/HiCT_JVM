@@ -3,6 +3,7 @@ package ru.itmo.ctlab.hict.hict_server.concurrent;
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.Router;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -77,6 +78,18 @@ class RequestTaskSchedulerTest {
     assertTrue(ready.getAsBoolean(), "Timed out waiting for scheduler state");
   }
 
+  private java.util.List<CompletableFuture<HttpResponse<String>>> startBlockingRequests() throws Exception {
+    start();
+    var first = request("block");
+    // The pool has two prestarted workers but only one queue slot. Submitting
+    // both requests before a worker dequeues the first can legitimately reject
+    // the second. Establish the running state before testing cancellation.
+    until(() -> active.getCount() == 1);
+    var second = request("block");
+    assertTrue(active.await(3, TimeUnit.SECONDS));
+    return java.util.List.of(first, second);
+  }
+
   @Test
   void assemblyCommandsCannotOverlapAndKeepFifoOrder() throws Exception {
     var calls = new java.util.concurrent.CopyOnWriteArrayList<String>();
@@ -96,10 +109,9 @@ class RequestTaskSchedulerTest {
     assertEquals(java.util.List.of("first-start","first-end","second-start","second-end"),calls);
   }
 
-  @Test
+  @RepeatedTest(10)
   void queuedCancellationCompletesHttpWithoutRunningSupplier() throws Exception {
-    start(); var first=request("block");var second=request("block");
-    assertTrue(active.await(3,TimeUnit.SECONDS));
+    var running=startBlockingRequests();var first=running.getFirst();var second=running.getLast();
     var queued=request("ready");
     until(()->scheduler.diagnosticsSnapshot().pools().get(RequestPriority.TILE).queueSize()==1);
     scheduler.bumpGeneration(CancellationDomain.TILE);
@@ -115,10 +127,9 @@ class RequestTaskSchedulerTest {
     assertEquals(200,request("ready").get(3,TimeUnit.SECONDS).statusCode());
   }
 
-  @Test
+  @RepeatedTest(10)
   void runningCancellationCompletesBeforeUninterruptibleSupplierReturns() throws Exception {
-    start();var first=request("block");var second=request("block");
-    assertTrue(active.await(3,TimeUnit.SECONDS));
+    var running=startBlockingRequests();var first=running.getFirst();var second=running.getLast();
     scheduler.bumpGeneration(CancellationDomain.TILE);
     assertEquals(409,first.get(3,TimeUnit.SECONDS).statusCode());
     assertEquals(409,second.get(3,TimeUnit.SECONDS).statusCode());
@@ -137,10 +148,10 @@ class RequestTaskSchedulerTest {
     assertEquals(0,scheduler.diagnosticsSnapshot().cancellationDomains().get(CancellationDomain.TILE).trackedTaskCount());
   }
 
-  @Test
+  @RepeatedTest(10)
   void saturatedQueueRespondsAndDoesNotLeakTracking() throws Exception {
-    start();var first=request("block");var second=request("block");
-    assertTrue(active.await(3,TimeUnit.SECONDS));var queued=request("ready");
+    var running=startBlockingRequests();var first=running.getFirst();var second=running.getLast();
+    var queued=request("ready");
     until(()->scheduler.diagnosticsSnapshot().pools().get(RequestPriority.TILE).queueSize()==1);
     assertEquals(500,request("ready").get(3,TimeUnit.SECONDS).statusCode());
     assertEquals(3,scheduler.diagnosticsSnapshot().cancellationDomains().get(CancellationDomain.TILE).trackedTaskCount());
