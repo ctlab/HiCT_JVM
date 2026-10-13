@@ -16,7 +16,9 @@ def payload(root):
     return manifest
 
 
-def test_merge_checks_all_files_before_changing_existing_payload_and_preserves_tools(tmp_path):
+def test_merge_checks_all_files_before_changing_existing_payload_and_preserves_tools(tmp_path, monkeypatch):
+    # The packaging runner may have Python 3.9/3.10; file_digest arrived in 3.11.
+    monkeypatch.delattr(hashlib, 'file_digest', raising=False)
     source,target=tmp_path/'source',tmp_path/'target'
     manifest=payload(source);target.mkdir()
     original=dict(commands={'hictk':'bin/hictk'},files=['bin/hictk'],notices=['original'])

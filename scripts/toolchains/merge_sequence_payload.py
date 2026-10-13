@@ -12,8 +12,13 @@ import shutil
 
 
 def digest(path):
+    # Portable packaging jobs use the runner's Python (Ubuntu 22.04 has 3.10),
+    # independently of the Python 3.12 used to build the frozen native adapter.
+    h = hashlib.sha256()
     with path.open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for chunk in iter(lambda: stream.read(8 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def merge(source, target):
