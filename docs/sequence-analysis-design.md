@@ -135,7 +135,7 @@ of a successful remote build.
 
 ## Validation
 
-The JVM suite has 241 tests, zero failures/errors and three skips. Native SeqKit
+The JVM suite has 241 tests, zero failures/errors and four skips. Native SeqKit
 and ModDotPlot HTTP tests were enabled. The coordinate oracle includes 300
 seeded per-base trials. Twelve Python regression tests cover upstream identity
 agreement, sparse replacement, bounded block storage, 200 randomized PAF cases,
