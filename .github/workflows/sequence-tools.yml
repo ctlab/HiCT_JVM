@@ -11,6 +11,7 @@ on:
       - 'scripts/toolchains/prepare_bundled_tools.py'
       - 'scripts/ci/linux_container_build.sh'
       - 'scripts/ci/check_staged_linux_tools.py'
+      - 'scripts/ci/configure_centos_mirrors.py'
       - 'third_party/**'
       - '.github/workflows/sequence-tools.yml'
 

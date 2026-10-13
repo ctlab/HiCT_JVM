@@ -15,6 +15,10 @@ real Docker bootstrap and small executable probes, in addition to the full
 compiler and packaged-tool checks. This catches staging failures even when a
 developer machine already has a valid native-tool cache.
 
+The Linux container keeps the CentOS vault URL and adds the kernel.org CentOS
+7.9 archive as a fallback. This handles vault/CDN download failures while
+retaining Yum metadata checksum validation and CentOS package GPG verification.
+
 Linux requires Docker and Python 3.10+ on the host. Tool builds run inside
 manylinux2014 with their own Python 3.12 and pinned Go toolchain. Windows/macOS
 require Python 3.12, Go 1.25.5 and the C/C++ build dependencies used by the

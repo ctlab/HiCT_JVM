@@ -38,6 +38,7 @@ def source_key(root=ROOT):
                    for p in (root / folder).rglob('*') if p.is_file() and p.suffix != '.pyc' and '__pycache__' not in p.parts)
     values = {str(p.relative_to(root)): digest(p) for p in files}
     values['linux_container_build'] = digest(root / 'scripts/ci/linux_container_build.sh')
+    values['centos_mirrors'] = digest(root / 'scripts/ci/configure_centos_mirrors.py')
     values['refs'] = {k: os.environ.get(k, v) for k, v in REFS.items()}
     values['abi'] = os.environ.get('HICT_LINUX_ABI_MODE', 'glibc217')
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()

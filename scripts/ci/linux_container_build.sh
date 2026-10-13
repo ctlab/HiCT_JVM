@@ -82,6 +82,8 @@ run_manylinux() {
     bash -s <<'MANYLINUX'
 set -euo pipefail
 
+/usr/bin/python scripts/ci/configure_centos_mirrors.py
+
 yum install -y \
   autoconf automake binutils bzip2 bzip2-devel ca-certificates curl diffutils file findutils \
   gcc gcc-c++ git gzip libtool m4 make openssl-devel patch perl-core perl-IPC-Cmd pkgconfig \
