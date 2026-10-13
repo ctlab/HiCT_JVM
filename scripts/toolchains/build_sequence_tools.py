@@ -24,6 +24,9 @@ SEQ = 'd13b5fa388cc869de05abe1bdb07980eef5efb4e'
 
 def run(args, **kwargs):
     print('+', ' '.join(map(str, args)), flush=True)
+    # Go emits UTF-8 JSON even when Windows' process locale is cp1252.
+    if kwargs.get('text'):
+        kwargs.setdefault('encoding', 'utf-8')
     return subprocess.run(list(map(str, args)), check=True, **kwargs)
 
 
