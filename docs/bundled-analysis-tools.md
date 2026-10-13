@@ -8,6 +8,13 @@ HiCT sequence-analysis adapter, plus BLAST+ on Linux x86_64. Later runs reuse th
 payload only if the build inputs, required commands and every file hash match.
 Previous payloads and interrupted staging directories are retained.
 
+The external-tool stage contains build scripts and dependency metadata, not a
+Gradle checkout. Linux marks `gradlew` executable only for the JNI and fat-JAR
+targets. CI exercises all three tool targets in this scripts-only layout with
+real Docker bootstrap and small executable probes, in addition to the full
+compiler and packaged-tool checks. This catches staging failures even when a
+developer machine already has a valid native-tool cache.
+
 Linux requires Docker and Python 3.10+ on the host. Tool builds run inside
 manylinux2014 with their own Python 3.12 and pinned Go toolchain. Windows/macOS
 require Python 3.12, Go 1.25.5 and the C/C++ build dependencies used by the

@@ -132,6 +132,9 @@ fi
 ln -sfn "${PYBIN}" /usr/local/bin/python3
 
 install_temurin_jdk21() {
+  # Tool-only builds use a scripts-only staging directory. Only the
+  # hict-native and fatjar targets need the Gradle wrapper.
+  chmod +x gradlew
   local jdk_root="${GITHUB_WORKSPACE}/.cache/container-jdks/temurin-21-linux-x64"
   local tmp_root="${jdk_root}.tmp"
   local tarball="/tmp/temurin-jdk21-linux-x64.tar.gz"
@@ -161,7 +164,7 @@ python3 -m ensurepip --upgrade >/dev/null 2>&1 || true
 python3 -m pip install --upgrade pip
 python3 -m pip install "cmake>=3.25" ninja "conan>=2"
 
-chmod +x gradlew \
+chmod +x \
   scripts/toolchains/build_hictk_linux.sh \
   scripts/toolchains/build_minimap2_linux.sh \
   scripts/toolchains/build_mm2plus_linux.sh

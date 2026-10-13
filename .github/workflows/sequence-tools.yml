@@ -8,6 +8,9 @@ on:
       - 'scripts/sequence_analysis/**'
       - 'scripts/toolchains/*sequence*'
       - 'scripts/toolchains/*blast*'
+      - 'scripts/toolchains/prepare_bundled_tools.py'
+      - 'scripts/ci/linux_container_build.sh'
+      - 'scripts/ci/check_staged_linux_tools.py'
       - 'third_party/**'
       - '.github/workflows/sequence-tools.yml'
 
@@ -44,6 +47,15 @@ jobs:
         run: python -m unittest discover -s tests/toolchains
       - name: Check build log encoding independently of the host locale
         run: python -m unittest discover -s tests/toolchains -p test_sequence_build_encoding.py
+      - name: Check scripts-only Linux build staging without a Gradle wrapper
+        if: runner.os == 'Linux'
+        run: python scripts/ci/check_staged_linux_tools.py --output build/staged-linux-tools-check
+      - name: Preserve Linux staging regression logs
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: staged-linux-tools-check
+          path: build/staged-linux-tools-check/*.log
       - name: Build and execute native fixtures on Linux glibc 2.17
         if: runner.os == 'Linux'
         shell: bash
