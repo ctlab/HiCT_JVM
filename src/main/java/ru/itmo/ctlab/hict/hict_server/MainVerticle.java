@@ -76,6 +76,7 @@ import java.util.Map;
 @Slf4j(topic = "MainVerticle")
 public class MainVerticle extends AbstractVerticle {
   private RequestTaskScheduler requestTaskScheduler;
+  private ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder sequenceAnalysis;
   private String bindHost = "0.0.0.0";
 
   public static void main(final String[] args) {
@@ -177,6 +178,7 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void stop(final Promise<Void> stopPromise) {
+    if (this.sequenceAnalysis != null) this.sequenceAnalysis.close();
     if (this.requestTaskScheduler != null) {
       this.requestTaskScheduler.close();
       this.requestTaskScheduler = null;
@@ -395,6 +397,8 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
     handlersHolders.add(new ConversionHandlersHolder(vertx));
     handlersHolders.add(new DotplotHandlersHolder(vertx));
+    this.sequenceAnalysis = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder(vertx);
+    handlersHolders.add(this.sequenceAnalysis);
     handlersHolders.add(new InfoHandlersHolder(vertx, requestStatistics));
     handlersHolders.add(new ApiDocsHandlersHolder());
     handlersHolders.add(new TrackHandlersHolder(vertx));

@@ -1684,9 +1684,9 @@ public class Track1DManager {
     if (resolutionOrder == null) {
       throw new IllegalArgumentException("Unsupported resolution for 1D track query: " + bpResolution);
     }
-    final var sourceToAssemblySegments = new HashMap<String, List<AssemblySegment>>();
-    final var orderedSegments = new ArrayList<AssemblySegment>();
     final var contigs = chunkedFile.getAssemblyInfo().contigs();
+    final var sourceToAssemblySegments = new SourceSegmentMap(contigs);
+    final var orderedSegments = new ArrayList<AssemblySegment>();
     long assemblyCursor = 0L;
     long visiblePxCursor = 0L;
     for (int contigIndex = 0; contigIndex < contigs.size(); ++contigIndex) {
@@ -2237,6 +2237,7 @@ public class Track1DManager {
 
   private static @NotNull Optional<ProjectedFeature> projectSourceFeatureOnSegment(final @NotNull AssemblySegment segment,
                                                                                     final @NotNull FeatureRange feature,
+                                                                                    final Map<String, List<AssemblySegment>> sourceSegments,
                                                                                     final long queryStartPx,
                                                                                     final long queryEndPx,
                                                                                     final long bpResolution) {
@@ -2303,21 +2304,44 @@ public class Track1DManager {
     }
     projectedBlocks.sort(Comparator.comparingLong(ProjectedBlock::startPx));
     final var projected = projectedBase.get();
+    var attributes = feature.attributes();
+    var label = projected.label();
+    var strand = feature.strand();
+    if (segment.reversed()) strand = "+".equals(strand) ? "-" : "-".equals(strand) ? "+" : strand;
+    if (feature.searchMetadata() != null && sourceSegments instanceof SourceSegmentMap sourceMap) {
+      var metadata = feature.searchMetadata();
+      var projection = sourceMap.project(metadata, feature.attributes().get("field13"));
+      attributes = new LinkedHashMap<>(attributes);
+      attributes.remove("field13");
+      attributes.put("queryId", metadata.queryId());
+      attributes.put("query", metadata.description());
+      attributes.put("hitId", metadata.hitId());
+      attributes.put("matchStatus", projection.status().name().toLowerCase(Locale.ROOT));
+      attributes.put("sequencePreserved", Boolean.toString(projection.sequencePreserved()));
+      attributes.put("originalMatchLength", Long.toString(metadata.path().length()));
+      attributes.put("currentFragmentLength", Long.toString(Math.min(feature.end(), segment.sourceEnd()) - Math.max(feature.start(), segment.sourceStart())));
+      attributes.put("analysisSnapshot", metadata.snapshotFingerprint());
+      label = metadata.description();
+      if (projection.status() != ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.FeatureStatus.INTACT) {
+        label += " [part of match: " + projection.status().name().toLowerCase(Locale.ROOT) + "]";
+        attributes.put("itemRgb", "210,105,20");
+      }
+    }
     return Optional.of(new ProjectedFeature(
       projected.startBp(),
       projected.endBp(),
       projected.startPx(),
       projected.endPx(),
       projected.value(),
-      projected.label(),
-      feature.strand(),
+      label,
+      strand,
       thickStartBp,
       thickEndBp,
       thickStartPx,
       thickEndPx,
       feature.featureType(),
       projectedBlocks,
-      feature.attributes()
+      attributes
     ));
   }
 
@@ -3130,7 +3154,21 @@ public class Track1DManager {
                                          long featureCount,
                                          boolean hasSignalValues,
                                          boolean hasStructuredFeatures,
-                                         @NotNull RenderStyle preferredRenderStyle) implements TrackDataSource {
+                                         @NotNull RenderStyle preferredRenderStyle,
+                                         @NotNull Map<String, long[]> prefixEnds) implements TrackDataSource {
+    private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
+                                   boolean signals, boolean structured, RenderStyle style) {
+      this(features, count, signals, structured, style, indexEnds(features));
+    }
+    private static Map<String, long[]> indexEnds(Map<String, List<FeatureRange>> features) {
+      var result = new HashMap<String, long[]>();
+      features.forEach((source, ranges) -> {
+        var ends = new long[ranges.size()]; long maximum = 0;
+        for (int i = 0; i < ranges.size(); i++) ends[i] = maximum = Math.max(maximum, ranges.get(i).end());
+        result.put(source, ends);
+      });
+      return result;
+    }
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
       long total = 0L;
@@ -3693,9 +3731,14 @@ public class Track1DManager {
             continue;
           }
           final var sourceInterval = sourceIntervalOptional.get();
-          int index = lowerBoundByStart(sourceFeatures, sourceInterval.start());
-          if (index > 0) {
-            index--;
+          // A long/nested feature can start before many short features. Searching
+          // starts and backing up by one loses it; prefix maxima retain all overlaps.
+          var ends = prefixEnds.get(sourceName);
+          int index = 0, limit = ends.length;
+          while (index < limit) {
+            int mid = (index + limit) >>> 1;
+            if (ends[mid] <= sourceInterval.start()) index = mid + 1;
+            else limit = mid;
           }
           for (int i = index; i < sourceFeatures.size(); i++) {
             final var feature = sourceFeatures.get(i);
@@ -3708,6 +3751,7 @@ public class Track1DManager {
             final var projected = projectSourceFeatureOnSegment(
               segment,
               feature,
+              sourceToAssemblySegments,
               queryStartPx,
               queryEndPx,
               bpResolution
@@ -4335,6 +4379,22 @@ public class Track1DManager {
     SUM
   }
 
+  /** Lazily builds the canonical sequence index only for source-anchored search tracks. */
+  private static final class SourceSegmentMap extends HashMap<String, List<AssemblySegment>> {
+    private final List<ContigTree.ContigTuple> contigs;
+    private ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot snapshot;
+    private final Map<String, ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection> projections = new HashMap<>();
+    SourceSegmentMap(List<ContigTree.ContigTuple> contigs) { this.contigs = contigs; }
+    synchronized ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection project(SequenceSearchMetadata metadata, String key) {
+      if (snapshot == null) snapshot = new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot(contigs.stream().map(tuple -> {
+        var d = tuple.descriptor();
+        return new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Fragment(d.getContigNameInSourceFASTA(),
+          d.getOffsetInSourceFASTA(), d.getOffsetInSourceFASTA() + d.getLengthBp(), tuple.direction() == ContigDirection.REVERSED);
+      }).toList());
+      return projections.computeIfAbsent(key, ignored -> snapshot.project(metadata.path()));
+    }
+  }
+
   private record SegmentBuildResult(@NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
                                     @NotNull List<AssemblySegment> orderedSegments,
                                     long totalVisiblePixels) {
@@ -4540,7 +4600,15 @@ public class Track1DManager {
                               Long thickEnd,
                               String featureType,
                               @NotNull List<FeatureBlock> blocks,
-                              @NotNull Map<String, String> attributes) {
+                              @NotNull Map<String, String> attributes,
+                              SequenceSearchMetadata searchMetadata) {
+    private FeatureRange(long start, long end, double value, String label, String strand,
+                         Long thickStart, Long thickEnd, String featureType, List<FeatureBlock> blocks,
+                         Map<String, String> attributes) {
+      this(start, end, value, label, strand, thickStart, thickEnd, featureType, blocks, attributes,
+        attributes.getOrDefault("field13", "").startsWith(SequenceSearchMetadata.PREFIX)
+          ? SequenceSearchMetadata.decode(attributes.get("field13")) : null);
+    }
     private FeatureRange {
       attributes = Map.copyOf(attributes);
     }

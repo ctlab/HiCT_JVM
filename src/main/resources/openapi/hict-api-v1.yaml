@@ -1384,6 +1384,64 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /sequence/search/jobs:
+    post:
+      tags: [Conversion]
+      summary: Search a frozen active-assembly sequence and create a source-anchored BED track
+      operationId: startSequenceSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [queries, scope, mode, bothStrands]
+              properties:
+                queries: { type: string, description: 'FASTA records or one DNA sequence per line' }
+                scope: { type: string, enum: [assembly, selection] }
+                mode: { type: string, enum: [exact, substitutions] }
+                bothStrands: { type: boolean }
+                degenerate: { type: boolean, default: false }
+                mismatches: { type: integer, minimum: 0, default: 1 }
+                threads: { type: integer, default: -1 }
+                startBp: { type: integer, format: int64, minimum: 0, description: 'Selection start, zero-based and inclusive' }
+                endBp: { type: integer, format: int64, minimum: 1, description: 'Selection end, exclusive' }
+      responses:
+        '202':
+          description: Submitted job with captured sequence fingerprint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '400': { description: 'Invalid query, scope or matching settings' }
+        '409': { description: 'No open map or linked FASTA' }
+        '429': { description: 'Analysis queue full' }
+  /sequence/jobs/list:
+    post:
+      tags: [Conversion]
+      summary: List sequence analysis jobs with progress, output paths and recent logs
+      operationId: listSequenceAnalysisJobs
+      responses:
+        '200':
+          description: Jobs in the current server session; full provenance is retained beside each result
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
+  /sequence/jobs/{jobId}/stop:
+    post:
+      tags: [Conversion]
+      summary: Cancel a sequence job and its child process
+      operationId: stopSequenceAnalysisJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Job status; incomplete results are not attached as tracks
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '404': { description: 'Unknown job' }
   /dotplot/jobs:
     post:
       tags: [Conversion]

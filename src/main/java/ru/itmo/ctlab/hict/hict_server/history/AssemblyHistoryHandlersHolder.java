@@ -98,7 +98,8 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
     var label = EDITS.get(ctx.normalizedPath());
     var before = label != null && journal != null ? capture() : null;
     try {
-      if (label != null && journal != null && ctx.request().getHeader("X-HiCT-History-Session") != null)
+      boolean sequenceSnapshot = ctx.normalizedPath().startsWith("/sequence/") && ctx.normalizedPath().endsWith("/jobs");
+      if ((label != null || sequenceSnapshot) && journal != null && ctx.request().getHeader("X-HiCT-History-Session") != null)
         requireVersion(ctx.request().getHeader("X-HiCT-History-Session"),
           Long.parseLong(ctx.request().getHeader("X-HiCT-History-Revision")));
       var result = action.get();

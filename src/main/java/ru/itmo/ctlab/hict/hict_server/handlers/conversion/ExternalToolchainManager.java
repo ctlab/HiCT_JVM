@@ -89,6 +89,43 @@ public final class ExternalToolchainManager {
     return toolchain;
   }
 
+  /** Optional sequence-analysis commands share the portable manifest/extraction path. */
+  public @NotNull Path requireSequenceCommand(String command) throws IOException {
+    if (!List.of("seqkit", "moddotplot", "blastn").contains(command))
+      throw new IllegalArgumentException("Unknown sequence tool: " + command);
+    String setting = "HICT_" + command.toUpperCase(Locale.ROOT) + "_BIN";
+    var override = readSetting(setting);
+    if (override.isPresent()) {
+      var explicit = Path.of(override.get()).toAbsolutePath().normalize();
+      if (!isUsableCommand(explicit)) throw new IllegalStateException(setting + " is not an executable file");
+      return explicit;
+    }
+    var directory = readSetting(TOOLCHAIN_DIR_KEY);
+    if (directory.isPresent()) {
+      var root = Path.of(directory.get()).toAbsolutePath().normalize();
+      var manifestPath = root.resolve("manifest.json");
+      if (Files.isRegularFile(manifestPath)) {
+        var commands = new JsonObject(Files.readString(manifestPath)).getJsonObject("commands", new JsonObject());
+        var resolved = resolveManifestCommand(root, commands, command, Optional.empty());
+        if (resolved != null) return resolved;
+      }
+      var local = root.resolve("bin").resolve(command + (isWindows() ? ".exe" : ""));
+      if (isUsableCommand(local)) return local;
+    }
+    var platform = detectPlatform();
+    try (var stream = ExternalToolchainManager.class.getResourceAsStream(BUNDLED_ROOT + "/" + platform + "/manifest.json")) {
+      if (stream != null) {
+        var manifest = new JsonObject(new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        var root = extractBundledPayload(platform, manifest);
+        var resolved = resolveManifestCommand(root, manifest.getJsonObject("commands", new JsonObject()), command, Optional.empty());
+        if (resolved != null) return resolved;
+      }
+    }
+    var found = findOnPath(List.of(command, command + ".exe"));
+    if (found != null) return found;
+    throw new IllegalStateException(command + " is not available in this build. Configure " + setting + " or install the portable sequence-tool payload.");
+  }
+
   public @NotNull ResolvedToolchain requireDotplotToolchain() {
     return requireDotplotToolchain(dotplotAlignerPreference());
   }

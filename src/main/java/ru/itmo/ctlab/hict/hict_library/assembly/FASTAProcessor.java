@@ -266,6 +266,41 @@ public class FASTAProcessor {
     }
   }
 
+  /** Export the captured sequence even if the user has edited the assembly since submission. */
+  public void writeSnapshot(Path path, java.io.OutputStream output,
+                            AssemblySequenceSnapshot snapshot, String name) throws IOException {
+    if (snapshot.length() == 0) throw new IllegalArgumentException("Cannot export an empty sequence");
+    if (name == null || name.isBlank() || name.indexOf('\n') >= 0 || name.indexOf('\r') >= 0)
+      throw new IllegalArgumentException("Invalid FASTA record name");
+    try(var source=new SourceSession(path)) {
+      for(var piece:snapshot.fragments())source.validate(piece.source(),piece.start(),piece.end());
+      var writer=new WrappedOutput(output);writer.header(name);
+      for(var piece:snapshot.fragments())source.copy(piece.source(),piece.start(),piece.end(),piece.reversed(),writer);
+      writer.finish();
+    }
+  }
+
+  /** Overlap chunks so matches crossing chunk/contig/scaffold joins are not lost. */
+  public void writeSearchChunks(Path path, java.io.OutputStream output,
+                                AssemblySequenceSnapshot snapshot, int chunkSize, int overlap) throws IOException {
+    if (chunkSize <= 0 || overlap < 0 || overlap >= chunkSize)
+      throw new IllegalArgumentException("Search chunk size must exceed overlap");
+    if (snapshot.length() == 0) throw new IllegalArgumentException("Empty search scope");
+    try (var source = new SourceSession(path)) {
+      for (var piece : snapshot.fragments()) source.validate(piece.source(), piece.start(), piece.end());
+      var writer = new WrappedOutput(output);
+      for (long start = 0; start < snapshot.length();) {
+        long ownedEnd = start + Math.min(chunkSize, snapshot.length() - start);
+        long end = ownedEnd + Math.min(overlap, snapshot.length() - ownedEnd);
+        writer.header("hict_chunk_" + start + "_" + ownedEnd);
+        for (var piece : snapshot.slice(start, end).fragments())
+          source.copy(piece.source(), piece.start(), piece.end(), piece.reversed(), writer);
+        writer.finish();
+        start = ownedEnd;
+      }
+    }
+  }
+
   private final class SourceSession implements AutoCloseable {
     final Map<String,Long> lengths; final Map<String,String> aliases;
     final IndexedFastaSource.Session indexed; final Map<String,String> compressed;

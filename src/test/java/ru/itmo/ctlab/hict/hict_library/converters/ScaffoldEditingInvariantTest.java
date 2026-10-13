@@ -13,6 +13,135 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ScaffoldEditingInvariantTest {
   @TempDir Path dir;
+  @Test void nativeSearchJobRunsThroughHttpAndSavesVerifiableProvenance() throws Exception {
+    var executable = System.getenv("HICT_SEQKIT_BIN");
+    org.junit.jupiter.api.Assumptions.assumeTrue(executable != null && java.nio.file.Files.isExecutable(Path.of(executable)), "Set HICT_SEQKIT_BIN for native HTTP integration");
+    var vertx = io.vertx.core.Vertx.vertx();
+    var sizes = new java.util.EnumMap<ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority,
+      ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.PoolSizing>(ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority.class);
+    for (var priority : ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority.values())
+      sizes.put(priority, new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.PoolSizing(1, 1));
+    var scheduler = new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler(vertx,
+      new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.SchedulerConfig(5, 16, 10, sizes));
+    try (var f = fixture(); var handler = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder(vertx)) {
+      var fasta = dir.resolve("http.fa");
+      java.nio.file.Files.writeString(fasta, ">A\n" + "A".repeat(6000) + "\n>B\n" + "C".repeat(6000) + "\n>C\n" + "G".repeat(6000) + "\n");
+      var shared = vertx.sharedData().getLocalMap("hict_server");
+      shared.put("dataDirectory", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.PathWrapper(dir));
+      shared.put("chunkedFile", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.ChunkedFileWrapper(f));
+      shared.put("linkedFastaPrimaryPath", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.PathWrapper(fasta));
+      shared.put("requestTaskScheduler", new ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers.RequestTaskSchedulerWrapper(scheduler));
+      var router = io.vertx.ext.web.Router.router(vertx); router.route().handler(io.vertx.ext.web.handler.BodyHandler.create());
+      handler.addHandlersToRouter(router);
+      router.route().failureHandler(ctx -> ctx.response().setStatusCode(ctx.failure() instanceof io.vertx.ext.web.handler.HttpException e ? e.getStatusCode() : 500)
+        .end(new io.vertx.core.json.JsonObject().put("error", ctx.failure().getMessage()).encode()));
+      var server = vertx.createHttpServer().requestHandler(router).listen(0, "127.0.0.1").toCompletionStage().toCompletableFuture().get();
+      var client = java.net.http.HttpClient.newHttpClient();
+      String root = "http://127.0.0.1:" + server.actualPort();
+      var invalid = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/search/jobs"))
+        .header("content-type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}" )).build();
+      assertEquals(400, client.send(invalid, java.net.http.HttpResponse.BodyHandlers.ofString()).statusCode());
+      String body = new io.vertx.core.json.JsonObject().put("queries", ">across join\nAACCC").put("bothStrands", true)
+        .put("scope", "selection").put("startBp", 5995).put("endBp", 6005).put("mode", "exact").put("threads", 1).encode();
+      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/search/jobs"))
+        .header("content-type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build();
+      var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+      assertEquals(202, response.statusCode(), response.body());
+      var submitted = new io.vertx.core.json.JsonObject(response.body());
+      var list = java.net.http.HttpRequest.newBuilder(java.net.URI.create(root + "/sequence/jobs/list"))
+        .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}")).build();
+      io.vertx.core.json.JsonObject result = null;
+      long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+      while (System.nanoTime() < deadline) {
+        var rows = new io.vertx.core.json.JsonArray(client.send(list, java.net.http.HttpResponse.BodyHandlers.ofString()).body());
+        result = rows.getJsonObject(0);
+        if (List.of("finished", "failed", "cancelled").contains(result.getString("status"))) break;
+        Thread.sleep(50);
+      }
+      assertNotNull(result); assertEquals("finished", result.getString("status"), result.encode());
+      assertEquals(1L, result.getLong("hits")); assertEquals(2L, result.getLong("fragments"));
+      var output = dir.resolve(result.getString("outputFile")); assertTrue(java.nio.file.Files.isRegularFile(output));
+      // Terminal status is published only after the provenance file is saved.
+      var provenancePath = output.resolveSibling("job.json");
+      var provenance = new io.vertx.core.json.JsonObject(java.nio.file.Files.readString(provenancePath));
+      assertEquals("finished", provenance.getString("status"));
+      assertEquals(submitted.getString("snapshot"), provenance.getString("snapshot"));
+      var actual = java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(output.resolveSibling("assembly-chunks.fasta")));
+      assertEquals(java.util.HexFormat.of().formatHex(actual), provenance.getString("preparedInputSha256"));
+      assertEquals(64, provenance.getString("toolSha256").length());
+      server.close().toCompletionStage().toCompletableFuture().get();
+    } finally { scheduler.close(); vertx.close().toCompletionStage().toCompletableFuture().get(); }
+  }
+  @Test void frozenSequenceAndOverlappingChunksSurviveLaterDebrisEdits() throws Exception {
+    try (var f = fixture()) {
+      var fasta = dir.resolve("frozen.fa");
+      java.nio.file.Files.writeString(fasta, ">A\n" + "A".repeat(6000) + "\n>B\n" + "C".repeat(6000) + "\n>C\n" + "G".repeat(6000) + "\n");
+      f.scaffoldingOperations().reverseSelectionRangeBp(0, 6000);
+      var captured = ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.capture(f).slice(5995, 6005);
+      f.scaffoldingOperations().moveRegionToDebris(0, 18000, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      var out = new java.io.ByteArrayOutputStream();
+      f.getFastaProcessor().writeSnapshot(fasta, out, captured, "captured");
+      assertEquals(">captured\nTTTTTCCCCC\n", out.toString());
+      out.reset(); f.getFastaProcessor().writeSearchChunks(fasta, out, captured, 4, 3);
+      assertEquals(">hict_chunk_0_4\nTTTTTCC\n>hict_chunk_4_8\nTCCCCC\n>hict_chunk_8_10\nCC\n", out.toString());
+    }
+  }
+
+  @Test void sourceAnchoredSearchTracksExplainEditedMatchesAndRestoreOnUndo() throws Exception {
+    var tracks = new ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager(dir, dir.resolve("processed"));
+    try (var f = fixture()) {
+      var snapshot = ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.capture(f);
+      var path = snapshot.slice(5000, 7000);
+      var metadata = new ru.itmo.ctlab.hict.hict_server.tracks.SequenceSearchMetadata("hit1", "query1", "cross-join motif", "+", path, snapshot.fingerprint());
+      var text = new StringBuilder();
+      for (var p : path.fragments()) text.append(p.source()).append('\t').append(p.start()).append('\t').append(p.end())
+        .append("\tquery1\t0\t+\t").append(p.start()).append('\t').append(p.end()).append("\t30,110,190\t1\t")
+        .append(p.length()).append("\t0\t").append(metadata.encode()).append('\n');
+      java.nio.file.Files.writeString(dir.resolve("hits.bed"), text);
+      tracks.openTrack("hits.bed", "Search", "#1e6ebe");
+      var initial = f.snapshotAssembly();
+      var result = tracks.queryVisibleTracks(f, 0, 18000, 18, 1000, QueryLengthUnit.BASE_PAIRS);
+      assertEquals(2, result.getTracks().getFirst().getBins().size());
+      for (var hit : result.getTracks().getFirst().getBins()) {
+        assertEquals("intact", hit.getAttributes().get("matchStatus"));
+        assertEquals("cross-join motif", hit.getLabel());
+        assertFalse(hit.getAttributes().containsKey("field13"));
+      }
+      f.scaffoldingOperations().scaffoldRegion(0, 12000, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
+      f.scaffoldingOperations().reverseSelectionRangeBp(0, 12000);
+      result = tracks.queryVisibleTracks(f, 0, 18000, 18, 1000, QueryLengthUnit.BASE_PAIRS);
+      for (var hit : result.getTracks().getFirst().getBins()) {
+        assertEquals("-", hit.getStrand());
+        assertEquals("intact", hit.getAttributes().get("matchStatus"));
+      }
+      f.restoreAssembly(initial);
+      f.scaffoldingOperations().moveSelectionRangeBp(6000, 12000, 18000);
+      result = tracks.queryVisibleTracks(f, 0, 18000, 18, 1000, QueryLengthUnit.BASE_PAIRS);
+      for (var hit : result.getTracks().getFirst().getBins()) {
+        assertEquals("rearranged", hit.getAttributes().get("matchStatus"));
+        assertTrue(hit.getLabel().contains("part of match"));
+        assertEquals("210,105,20", hit.getAttributes().get("itemRgb"));
+      }
+      f.restoreAssembly(initial);
+      f.scaffoldingOperations().moveRegionToDebris(6000, 12000, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      result = tracks.queryVisibleTracks(f, 0, 12000, 12, 1000, QueryLengthUnit.BASE_PAIRS);
+      assertEquals(1, result.getTracks().getFirst().getBins().size());
+      assertEquals("partial", result.getTracks().getFirst().getBins().getFirst().getAttributes().get("matchStatus"));
+      f.restoreAssembly(initial);
+      result = tracks.queryVisibleTracks(f, 5000, 5500, 1, 1000, QueryLengthUnit.BASE_PAIRS);
+      assertEquals("intact", result.getTracks().getFirst().getBins().getFirst().getAttributes().get("matchStatus"), "Viewport clipping must not mark the sequence broken");
+    } finally { tracks.close(); }
+  }
+
+  @Test void nestedBedFeaturesRemainVisibleWhenTheirStartIsOutsideViewport() throws Exception {
+    var tracks = new ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager(dir, dir.resolve("processed"));
+    try (var f = fixture()) {
+      java.nio.file.Files.writeString(dir.resolve("nested.bed"), "A\t0\t5900\tlong\t0\t+\nA\t1000\t1100\tshort1\t0\t+\nA\t2000\t2100\tshort2\t0\t+\n");
+      tracks.openTrack("nested.bed", "Nested", "#123456");
+      var result = tracks.queryVisibleTracks(f, 5000, 5500, 1, 1000, QueryLengthUnit.BASE_PAIRS);
+      assertEquals(List.of("long"), result.getTracks().getFirst().getBins().stream().map(b -> b.getLabel()).toList());
+    } finally { tracks.close(); }
+  }
   @Test void streamingFastaPreservesMaskingGapsAndCompressedSourceAcrossEdits() throws Exception {
     try(var f=fixture()) {
       var path=dir.resolve("masked.fa");String a="aCGTrymkSWBDHVN".repeat(400);
