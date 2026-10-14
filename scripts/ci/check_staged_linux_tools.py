@@ -21,6 +21,15 @@ def main():
     root = Path(__file__).resolve().parents[2]
     shutil.copytree(root / 'scripts', stage / 'scripts',
                     ignore=shutil.ignore_patterns('__pycache__'))
+    # The required bootstrap packages are from CentOS, not EPEL. Reproduce
+    # an unavailable optional mirror deterministically inside each test-only
+    # container; this must not prevent any of the three tool targets starting.
+    mirror_helper = stage / 'scripts/ci/configure_centos_mirrors.py'
+    with mirror_helper.open('a') as stream:
+        stream.write("\nwith io.open('/etc/yum.repos.d/epel.repo', 'w', encoding='utf-8') as epel:\n"
+                     "    epel.write(u'[epel]\\nname=Unavailable optional test repository\\n'\n"
+                     "               u'baseurl=http://127.0.0.1:9/unavailable\\nenabled=1\\ngpgcheck=1\\n'\n"
+                     "               u'timeout=1\\nretries=0\\n')\n")
     assert not (stage / 'gradlew').exists()
     env = dict(os.environ)
     env.pop('GITHUB_WORKSPACE', None)

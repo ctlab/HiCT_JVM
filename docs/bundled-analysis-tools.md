@@ -20,6 +20,10 @@ The Linux container keeps the CentOS vault URL and adds the kernel.org CentOS
 retaining Yum metadata checksum validation and CentOS package GPG verification.
 Generated-directory ownership is resolved inside the container namespace, so
 both rootful and rootless Docker return writable files to the invoking user.
+The Linux bootstrap uses the same pinned manylinux2014 image as the sequence
+builder and excludes the unused EPEL repositories from its CentOS package install.
+CI deliberately makes EPEL unavailable to check this independence; it does not
+ignore package-install failures or disable signature verification.
 On Windows the merged payload uses a short cache label; its full original
 release label remains in metadata and the manifest hash still versions the
 extraction directory. CI tests native startup again after relocation into the

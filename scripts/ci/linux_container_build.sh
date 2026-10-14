@@ -78,7 +78,7 @@ run_manylinux() {
     -e HICT_CONTAINER_TARGET="${ml_target}" \
     -e HICT_STATIC_MUSL="0" \
     -e HICT_STATIC_MIMALLOC="0" \
-    quay.io/pypa/manylinux2014_x86_64:latest \
+    quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5 \
     bash -s <<'MANYLINUX'
 set -euo pipefail
 
@@ -88,7 +88,10 @@ HICT_OUTPUT_OWNER=$(stat -c '%u:%g' "${GITHUB_WORKSPACE}")
 
 /usr/bin/python scripts/ci/configure_centos_mirrors.py
 
-yum install -y \
+# All bootstrap packages below are provided by CentOS base/updates. Do not
+# depend on the retired EPEL 7 mirror-list service for unrelated build tools.
+# Missing packages still fail normally; signature checks remain enabled.
+yum --disablerepo='epel*' install -y \
   autoconf automake binutils bzip2 bzip2-devel ca-certificates curl diffutils file findutils \
   gcc gcc-c++ git gzip libtool m4 make openssl-devel patch perl-core perl-IPC-Cmd pkgconfig \
   tar unzip which xz xz-devel zip zlib-devel
