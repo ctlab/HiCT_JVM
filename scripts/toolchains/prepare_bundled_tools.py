@@ -46,7 +46,9 @@ def source_key(root=ROOT):
 
 def required_commands(name):
     commands = {'hictk', 'minimap2', 'mm2plus_avx2', 'seqkit', 'hict-moddotplot'}
-    if not name.endswith('arm64'):
+    # Match the platform builders: Darwin provides AVX2/native compatibility,
+    # while Linux and Windows x86_64 also build an AVX-512 executable.
+    if name in ('linux_x86_64', 'windows_x86_64'):
         commands.add('mm2plus_avx512')
     if name == 'linux_x86_64':
         commands.add('blastn')

@@ -42,6 +42,34 @@ class BundledToolsTest(unittest.TestCase):
         with patch.object(tools, 'source_key', return_value='changed'):
             self.assertFalse(tools.cached(self.root, 'linux_x86_64'))
 
+    def test_macos_payload_checks_supported_aligner_and_sequence_commands(self):
+        # The Darwin builder supplies AVX2 on Intel and its native/compatibility
+        # entrypoint on ARM. Neither payload advertises an AVX-512 command.
+        for name in ('darwin_x86_64', 'darwin_arm64'):
+            with self.subTest(platform=name):
+                self.manifest['commands'].pop('mm2plus_avx512', None)
+                self.manifest['commands'].pop('blastn', None)
+                self.write_manifest()
+                tools.verify(self.root, name)
+                jar = self.root / (name + '.jar')
+                with zipfile.ZipFile(jar, 'w') as z:
+                    z.write(self.root / 'manifest.json', 'toolchains/' + name + '/manifest.json')
+                    for entry in self.manifest['files']:
+                        z.write(self.root / entry, 'toolchains/' + name + '/' + entry)
+                verify_archive(jar, name)
+                saved = self.manifest['commands'].pop('seqkit')
+                self.write_manifest()
+                with self.assertRaisesRegex(ValueError, 'seqkit'):
+                    tools.verify(self.root, name)
+                self.manifest['commands']['seqkit'] = saved
+
+    def test_linux_and_windows_still_require_avx512_payload(self):
+        self.manifest['commands'].pop('mm2plus_avx512')
+        self.write_manifest()
+        for name in ('linux_x86_64', 'windows_x86_64'):
+            with self.subTest(platform=name), self.assertRaisesRegex(ValueError, 'mm2plus_avx512'):
+                tools.verify(self.root, name)
+
     def test_corruption_invalidates_cache(self):
         tools.seal(self.root, 'linux_x86_64')
         (self.root / 'bin/seqkit').write_bytes(b'changed')

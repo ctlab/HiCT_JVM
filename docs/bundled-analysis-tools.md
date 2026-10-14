@@ -42,6 +42,12 @@ cache, with developer overrides removed. Release jobs run this check on their
 native OS. SeqKit and the identity/alignment overlay adapter are required on all
 four release platforms. Bundled BLAST is currently Linux x86_64 only; on other
 platforms a compatible local BLAST can be selected with `HICT_BLASTN_BIN`.
+Linux and Windows x86_64 payloads require both mm2-plus AVX2 and AVX-512
+executables. The existing macOS builder supplies its AVX2/native compatibility
+entrypoint and minimap2, without an AVX-512 executable; packaging checks follow
+that platform contract. This does not change the application CPU dispatch or
+claim AVX-512 acceleration on macOS. Both Darwin platforms still require the
+sequence adapter, SeqKit, hictk and their checksummed payloads.
 
 `prepare_bundled_tools.py --seal` is intended for CI after its native build jobs
 have produced and checked the payload. It verifies completeness and hashes and
