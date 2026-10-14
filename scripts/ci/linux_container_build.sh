@@ -82,6 +82,10 @@ run_manylinux() {
     bash -s <<'MANYLINUX'
 set -euo pipefail
 
+# Resolve ownership in the container namespace. With rootless Docker, host UID
+# 1000 is container UID 0; chown to the host number produces UID 100999 outside.
+HICT_OUTPUT_OWNER=$(stat -c '%u:%g' "${GITHUB_WORKSPACE}")
+
 /usr/bin/python scripts/ci/configure_centos_mirrors.py
 
 yum install -y \
@@ -198,7 +202,7 @@ case "${HICT_CONTAINER_TARGET}" in
   *) echo "Unknown manylinux target: ${HICT_CONTAINER_TARGET}" >&2; exit 1 ;;
 esac
 
-chown -R "${HOST_UID}:${HOST_GID}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
+chown -R "${HICT_OUTPUT_OWNER}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
 MANYLINUX
 }
 
@@ -217,6 +221,8 @@ run_alpine_musl() {
       exec bash -s
     ' <<'ALPINE'
 set -euo pipefail
+
+HICT_OUTPUT_OWNER=$(stat -c '%u:%g' "${GITHUB_WORKSPACE}")
 
 export HICT_STATIC_MUSL=1
 export HICT_STATIC_MIMALLOC=1
@@ -269,7 +275,7 @@ for binary in toolchains-dist/linux_x86_64/bin/hictk toolchains-dist/linux_x86_6
   fi
 done
 
-chown -R "${HOST_UID}:${HOST_GID}" toolchains-dist .cache 2>/dev/null || true
+chown -R "${HICT_OUTPUT_OWNER}" toolchains-dist .cache 2>/dev/null || true
 ALPINE
 }
 

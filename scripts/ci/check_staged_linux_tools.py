@@ -28,6 +28,8 @@ def main():
     for tool in ('hictk', 'minimap2', 'mm2plus'):
         probe = stage / f'scripts/toolchains/build_{tool}_linux.sh'
         probe.write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
+                         'mkdir -p toolchains-dist/linux_x86_64/bin\n'
+                         f'printf "%s\\n" "{tool}" > "toolchains-dist/linux_x86_64/bin/{tool}"\n'
                          f'printf "%s\\n" "{tool}" > "{tool}.started"\n')
         # The container bootstrap must make these executable itself.
         probe.chmod(0o644)
@@ -38,6 +40,11 @@ def main():
                            stderr=subprocess.STDOUT, check=True)
         if (stage / f'{tool}.started').read_text().strip() != tool:
             raise RuntimeError(f'Target did not execute: {tool}')
+        output = stage / 'toolchains-dist/linux_x86_64/bin' / tool
+        with output.open('a') as stream:
+            stream.write('Host-side merge can update this output.\n')
+        if output.stat().st_uid != os.getuid():
+            raise RuntimeError(f'Container output belongs to another host UID: {output}')
         print(f'Scripts-only Docker stage passed: {tool}', flush=True)
 
 

@@ -18,6 +18,12 @@ developer machine already has a valid native-tool cache.
 The Linux container keeps the CentOS vault URL and adds the kernel.org CentOS
 7.9 archive as a fallback. This handles vault/CDN download failures while
 retaining Yum metadata checksum validation and CentOS package GPG verification.
+Generated-directory ownership is resolved inside the container namespace, so
+both rootful and rootless Docker return writable files to the invoking user.
+On Windows the merged payload uses a short cache label; its full original
+release label remains in metadata and the manifest hash still versions the
+extraction directory. CI tests native startup again after relocation into the
+same nested temporary-directory layout used by the application.
 
 Linux requires Docker and Python 3.10+ on the host. Tool builds run inside
 manylinux2014 with their own Python 3.12 and pinned Go toolchain. Windows/macOS
