@@ -5,7 +5,14 @@ NCBI code: public-domain government work; see LICENSE. Third-party code retains
 its own notices, collected by scripts/toolchains/add_blast.py into the payload.
 Citation: Camacho C et al. BMC Bioinformatics 2009;10:421.
 doi:10.1186/1471-2105-10-421
-Bundled only for Linux x86_64; Windows/macOS may use HICT_BLASTN_BIN.
+Bundled for Linux x86_64 (source build with glibc 2.17), Windows x86_64,
+and macOS Intel/Apple Silicon (official NCBI 2.16.0 archives). Archive SHA-256
+values are pinned in scripts/toolchains/blast_prebuilt.py and recorded in the
+payload's blast-smoke.json. HICT_BLASTN_BIN remains an optional override.
+Windows nghttp2.dll is upstream nghttp2 1.40.0, MIT; see nghttp2-COPYING.
+https://github.com/nghttp2/nghttp2/blob/v1.40.0/COPYING
+Windows app-local VC runtime: see Microsoft-Visual-Cpp-NOTICE.txt.
+NCBI's original LICENSE, BLAST_PRIVACY and package metadata are retained.
 No remote database search, sequence upload, or NCBI usage reporting is enabled.
 
 Bundled GNU OpenMP runtime (GCC 10): GPLv3 with GCC Runtime Library Exception 3.1.

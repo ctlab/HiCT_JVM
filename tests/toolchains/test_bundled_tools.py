@@ -28,8 +28,9 @@ class BundledToolsTest(unittest.TestCase):
     def write_manifest(self):
         (self.root / 'manifest.json').write_text(json.dumps(self.manifest))
 
-    def test_required_tools_include_blast_on_linux_and_seqkit_everywhere(self):
+    def test_required_tools_include_blast_and_seqkit_everywhere(self):
         for name in ('linux_x86_64', 'darwin_arm64', 'darwin_x86_64', 'windows_x86_64'):
+            self.assertIn('blastn', tools.required_commands(name))
             self.assertIn('seqkit', tools.required_commands(name))
             self.assertIn('hict-moddotplot', tools.required_commands(name))
         self.assertIn('blastn', tools.required_commands('linux_x86_64'))
@@ -48,7 +49,6 @@ class BundledToolsTest(unittest.TestCase):
         for name in ('darwin_x86_64', 'darwin_arm64'):
             with self.subTest(platform=name):
                 self.manifest['commands'].pop('mm2plus_avx512', None)
-                self.manifest['commands'].pop('blastn', None)
                 self.write_manifest()
                 tools.verify(self.root, name)
                 jar = self.root / (name + '.jar')
@@ -79,8 +79,9 @@ class BundledToolsTest(unittest.TestCase):
 
     def test_missing_command_is_rejected_even_with_valid_hashes(self):
         self.manifest['commands'].pop('blastn'); self.write_manifest()
-        with self.assertRaisesRegex(ValueError, 'blastn'):
-            tools.verify(self.root, 'linux_x86_64')
+        for name in ('linux_x86_64', 'windows_x86_64', 'darwin_x86_64', 'darwin_arm64'):
+            with self.subTest(platform=name), self.assertRaisesRegex(ValueError, 'blastn'):
+                tools.verify(self.root, name)
 
     def test_unlisted_command_is_rejected(self):
         self.manifest['commands']['seqkit'] = 'bin/unlisted'; self.write_manifest()

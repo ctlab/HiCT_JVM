@@ -39,7 +39,7 @@ def main():
     parser.add_argument('--platform', default=host_platform())
     parser.add_argument('--java', default='java')
     args = parser.parse_args()
-    verify_archive(args.jar, args.platform)
+    manifest = verify_archive(args.jar, args.platform)
     env = dict(os.environ)
     for key in tuple(env):
         if key.startswith('HICT_') and any(s in key for s in ('TOOLCHAIN', '_BIN', 'NATIVE_LIBRARY')):
@@ -62,7 +62,15 @@ def main():
                                         capture_output=True, text=True, errors='replace', timeout=30)
                 print(result.stdout, result.stderr, 'exit:', result.returncode, flush=True)
         raise
-    print('Packaged tools: hashes and startup checks passed for', args.platform)
+    from add_blast import smoke
+    entry = manifest['commands']['blastn']
+    matches = [p for p in Path(home).rglob(Path(entry).name)
+               if p.is_file() and p.as_posix().endswith('/' + entry)]
+    if len(matches) != 1:
+        raise RuntimeError('Expected one extracted BLAST command, found ' + str(matches))
+    result = smoke(matches[0], Path(home) / 'packaged-blast-smoke')
+    print('Packaged BLAST gapped alignment:', json.dumps(result), flush=True)
+    print('Packaged tools: hashes, startup and gapped alignment checks passed for', args.platform)
 
 
 if __name__ == '__main__':

@@ -1,8 +1,4 @@
-"""Pinned local BLAST+ for the Linux portable payload (glibc 2.17 source build).
-
-Other platforms keep SeqKit/ModDotPlot and can select an externally installed
-BLAST via HICT_BLASTN_BIN. Do not mislabel NCBI's glibc 2.28 binaries as manylinux.
-"""
+"""Pinned BLAST+: Linux glibc 2.17 source build; official Windows/macOS binaries."""
 import hashlib
 import json
 import os
@@ -21,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def add_blast(payload, work, manylinux):
     if sys.platform != 'linux' or os.uname().machine != 'x86_64':
-        return None
+        from blast_prebuilt import add_prebuilt
+        return add_prebuilt(payload, work, ROOT, smoke)
     archive = work / 'blast-source.tar.gz'
     with urllib.request.urlopen(SOURCE_URL, timeout=60) as response, archive.open('xb') as output:
         shutil.copyfileobj(response, output)
@@ -56,7 +53,7 @@ def add_blast(payload, work, manylinux):
     result = smoke(target, work / 'blast-smoke')
     result.update(version=VERSION, source=SOURCE_URL, sourceSha256=SOURCE_SHA256,
                   linuxAbi='manylinux2014' if manylinux else 'host-development',
-                  packaging='Linux x86_64 only; other platforms require HICT_BLASTN_BIN')
+                  packaging='Linux x86_64 source build')
     (docs / 'blast-smoke.json').write_text(json.dumps(result,indent=2))
     return 'bin/blastn'
 

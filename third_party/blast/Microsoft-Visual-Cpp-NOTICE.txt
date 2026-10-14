@@ -1,0 +1,12 @@
+Windows blastn includes unmodified x64 release C runtime DLLs from the build
+machine's licensed Visual Studio installation (VC/Redist/MSVC). These files
+remain proprietary Microsoft components, not HiCT MIT-licensed source code.
+Their exact paths and SHA-256 values are recorded in blast-smoke.json.
+Redistribution is subject to the Visual Studio license terms and REDIST list:
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+https://visualstudio.microsoft.com/license-terms/
+Application-local deployment follows:
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
+Only release x64 CRT files are copied; debug runtimes are never distributed.
+Windows 10/11 provides the Universal CRT as an OS component. App-local DLLs
+are updated with HiCT packages, not by a central VC redistributable installer.

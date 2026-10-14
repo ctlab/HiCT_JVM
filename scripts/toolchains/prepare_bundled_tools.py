@@ -50,8 +50,7 @@ def required_commands(name):
     # while Linux and Windows x86_64 also build an AVX-512 executable.
     if name in ('linux_x86_64', 'windows_x86_64'):
         commands.add('mm2plus_avx512')
-    if name == 'linux_x86_64':
-        commands.add('blastn')
+    commands.add('blastn')
     return commands
 
 

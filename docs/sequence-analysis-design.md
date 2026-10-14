@@ -109,9 +109,13 @@ record cap defaults to 500 and can omit weaker hits. BED features span each HSP'
 subject coordinates, including indels, and tooltips retain query coordinates,
 identity, E-value, bitscore and gap counts. Raw `blast-hits.tsv` is retained.
 
-Windows/macOS keep SeqKit/ModDotPlot and may use an externally installed `blastn`
-via `HICT_BLASTN_BIN`; the UI states this limitation and disables unavailable
-BLAST. It is an additional method, not a replacement for exhaustive exact search.
+Windows x64 and both native macOS architectures bundle the official NCBI
+2.16.0 distribution, pinned by SHA-256. Windows also includes nghttp2 and
+app-local release Visual C++ runtime DLLs, with their notices and hash receipts;
+no separate runtime installation is needed on Windows 10/11. `HICT_BLASTN_BIN`
+remains an optional override. Every platform must pass a real gapped alignment
+before packaging and again from the JAR-extracted executable. BLAST is an
+additional method, not a replacement for exhaustive exact search.
 HOMER is outside this feature's scope.
 
 Citation: Camacho C et al. BLAST+: architecture and applications. BMC

@@ -207,7 +207,7 @@ for dist in im.distributions():
                                'Shen W et al. iMeta 2024:e191. doi:10.1002/imt2.191.'])
     if blast_command:
         manifest['commands']['blastn'] = blast_command
-        manifest['notices'].append('NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only. Linux x86_64 portable payload.')
+        manifest['notices'].append('NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only. Native payload for this platform.')
         manifest['citations'].append('Camacho C et al. BMC Bioinformatics 2009;10:421. doi:10.1186/1471-2105-10-421.')
     (payload / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     args.output.parent.mkdir(parents=True, exist_ok=True)
