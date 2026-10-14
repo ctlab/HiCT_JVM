@@ -8,13 +8,19 @@ import java.util.Base64;
 
 /** BED12+1 annotation metadata, independent of transient assembly coordinates. */
 public record SequenceSearchMetadata(String hitId, String queryId, String description, String strand,
-                                     AssemblySequenceSnapshot path, String snapshotFingerprint) {
+                                     AssemblySequenceSnapshot path, String snapshotFingerprint,
+                                     String forwardColor, String reverseColor) {
   public static final String PREFIX = "hict-search-v1:";
+  public SequenceSearchMetadata(String hitId, String queryId, String description, String strand,
+                                AssemblySequenceSnapshot path, String snapshotFingerprint) {
+    this(hitId, queryId, description, strand, path, snapshotFingerprint, "220,38,38", "37,99,235");
+  }
   public String encode() {
     var pieces = new JsonArray();
     for (var p : path.fragments()) pieces.add(new JsonArray().add(p.source()).add(p.start()).add(p.end()).add(p.reversed()));
     var json = new JsonObject().put("hitId", hitId).put("queryId", queryId).put("description", description)
-      .put("strand", strand).put("snapshot", snapshotFingerprint).put("path", pieces);
+      .put("strand", strand).put("snapshot", snapshotFingerprint).put("path", pieces)
+      .put("forwardColor", forwardColor).put("reverseColor", reverseColor);
     return PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(json.encode().getBytes(StandardCharsets.UTF_8));
   }
   public static SequenceSearchMetadata decode(String value) {
@@ -28,6 +34,7 @@ public record SequenceSearchMetadata(String hitId, String queryId, String descri
     var strand = json.getString("strand");
     if (!"+".equals(strand) && !"-".equals(strand)) throw new IllegalArgumentException("Invalid search hit strand");
     return new SequenceSearchMetadata(json.getString("hitId"), json.getString("queryId"), json.getString("description"),
-      strand, new AssemblySequenceSnapshot(pieces), json.getString("snapshot"));
+      strand, new AssemblySequenceSnapshot(pieces), json.getString("snapshot"),
+      json.getString("forwardColor", "220,38,38"), json.getString("reverseColor", "37,99,235"));
   }
 }

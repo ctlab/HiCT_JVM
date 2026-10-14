@@ -10,7 +10,11 @@ import java.util.concurrent.CancellationException;
 
 /** Local BLAST+ HSPs: gaps, partial query coverage, both strands and source-anchored coordinates. */
 public final class BlastSearchRunner {
-  public record Options(boolean bothStrands, double evalue, double identity, double coverage, int maxTargets) {
+  public record Options(boolean bothStrands, double evalue, double identity, double coverage, int maxTargets,
+                        String forwardColor, String reverseColor) {
+    public Options(boolean bothStrands, double evalue, double identity, double coverage, int maxTargets) {
+      this(bothStrands, evalue, identity, coverage, maxTargets, "220,38,38", "37,99,235");
+    }
     public Options {
       if (!Double.isFinite(evalue) || evalue <= 0 || !Double.isFinite(identity) || identity < 0 || identity > 100
           || !Double.isFinite(coverage) || coverage < 0 || coverage > 100 || maxTargets < 1 || maxTargets > 1_000_000)
@@ -46,16 +50,21 @@ public final class BlastSearchRunner {
       if (cancelled.getAsBoolean() || Thread.currentThread().isInterrupted()) throw new CancellationException();
     } finally { if (process.isAlive()) process.destroyForcibly(); processStarted.accept(null); }
     var bed = directory.resolve("sequence-search.bed");
-    long[] counts = anchorHits(raw, bed, snapshot, queries, fingerprint);
+    long[] counts = anchorHits(raw, bed, snapshot, queries, fingerprint, options.forwardColor(), options.reverseColor());
     log.accept("BLAST complete: " + counts[0] + " local alignments, " + counts[1] + " source fragments. Raw HSP scores: " + raw.getFileName());
     return new SequenceSearchRunner.Result(bed, counts[0], counts[1], System.nanoTime()-start);
   }
   static long[] anchorHits(Path raw, Path bed, AssemblySequenceSnapshot snapshot,
       List<SequenceSearchQueries.Query> queries, String fingerprint) throws IOException {
+    return anchorHits(raw, bed, snapshot, queries, fingerprint, "220,38,38", "37,99,235");
+  }
+  static long[] anchorHits(Path raw, Path bed, AssemblySequenceSnapshot snapshot,
+      List<SequenceSearchQueries.Query> queries, String fingerprint, String forwardColor, String reverseColor) throws IOException {
     var byId = new HashMap<String, SequenceSearchQueries.Query>(); queries.forEach(q -> byId.put(q.id(),q));
     String run = UUID.randomUUID().toString(); long hits = 0, fragments = 0;
     try (var input = Files.newBufferedReader(raw); var output = Files.newBufferedWriter(bed, StandardOpenOption.CREATE_NEW)) {
-      output.write("# HiCT local BLAST alignments; BED12+1; coordinates are subject spans including alignment gaps\n");
+      output.write("# HiCT local BLAST alignments; BED12+1; coordinates are subject spans including alignment gaps;"
+        + " forwardColor=" + forwardColor + "; reverseColor=" + reverseColor + "\n");
       for (String line; (line = input.readLine()) != null;) {
         if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException("BLAST result conversion cancelled");
         if (line.isBlank() || line.startsWith("#")) continue;
@@ -72,11 +81,14 @@ public final class BlastSearchRunner {
         String description = q.description() + "; BLAST query " + qs + "–" + qe + "/" + f[12]
           + ", identity " + f[6] + "%, alignment columns " + f[7] + ", gap openings " + f[9] + ", E=" + f[10] + ", bits=" + f[11];
         var path = snapshot.slice(a,b);
-        var metadata = new SequenceSearchMetadata(run+":"+(++hits),q.id(),description,strand,path,fingerprint);
+        var metadata = new SequenceSearchMetadata(run+":"+(++hits),q.id(),description,strand,path,fingerprint,
+          forwardColor, reverseColor);
         for (var p : path.fragments()) {
           if (p.source().chars().anyMatch(Character::isWhitespace)) throw new IOException("BED identifiers cannot contain whitespace");
-          output.write(p.source()+"\t"+p.start()+"\t"+p.end()+"\t"+q.id()+"\t0\t"+((p.reversed()!=strand.equals("-"))?"-":"+")
-            +"\t"+p.start()+"\t"+p.end()+"\t30,110,190\t1\t"+p.length()+"\t0\t"+metadata.encode()+"\n");
+          String projectedStrand = (p.reversed()!=strand.equals("-"))?"-":"+";
+          String color = "+".equals(projectedStrand) ? forwardColor : reverseColor;
+          output.write(p.source()+"\t"+p.start()+"\t"+p.end()+"\t"+q.id()+"\t0\t"+projectedStrand
+            +"\t"+p.start()+"\t"+p.end()+"\t"+color+"\t1\t"+p.length()+"\t0\t"+metadata.encode()+"\n");
           fragments++;
         }
       }

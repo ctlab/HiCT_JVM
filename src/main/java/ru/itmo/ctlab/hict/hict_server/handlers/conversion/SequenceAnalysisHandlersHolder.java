@@ -97,8 +97,13 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       if (!List.of("exact", "substitutions", "blast").contains(mode)) throw new IllegalArgumentException("Choose exact, substitutions or BLAST search");
       int mismatches = !mode.equals("substitutions") ? 0 : request.getInteger("mismatches", 1);
       if (mode.equals("substitutions") && mismatches < 1) throw new IllegalArgumentException("Choose at least one allowed substitution");
+      var threadSelection = ru.itmo.ctlab.hict.hict_library.util.SequenceProcessingThreads.resolve(
+        request.getInteger("threads", -1), "HICT_SEQUENCE_THREADS", Long.MAX_VALUE);
+      request.put("requestedThreads", threadSelection.requested()).put("effectiveThreads", threadSelection.effective())
+        .put("threadMode", threadSelection.mode());
       options = new SequenceSearchRunner.Options(request.getBoolean("bothStrands"), mismatches,
-        mode.equals("exact") && request.getBoolean("degenerate", false), ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(request.getInteger("threads", -1), "HICT_SEQUENCE_THREADS"));
+        mode.equals("exact") && request.getBoolean("degenerate", false), threadSelection.effective(),
+        color(request, "forwardColor", "#dc2626"), color(request, "reverseColor", "#2563eb"));
       for (var query : queries) {
         if (mismatches >= query.sequence().length()) throw new IllegalArgumentException("Substitutions must be fewer than query bases");
         if (mismatches > 0 && !query.sequence().matches("[ACGT]+")) throw new IllegalArgumentException("Substitution queries must use A, C, G and T only");
@@ -125,6 +130,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
     var outputRoot = data.resolve("processed/sequence-analysis"); Files.createDirectories(outputRoot);
     if (!outputRoot.toRealPath().startsWith(data)) throw new HttpException(400, "Sequence output directory must remain inside DATA_DIR");
+    try { validateOutputRequest(request, data, ".bed"); }
+    catch (FileAlreadyExistsException e) { throw new HttpException(409, e.getMessage()); }
+    catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
     var id = UUID.randomUUID().toString(); var directory = outputRoot.resolve(id); Files.createDirectory(directory);
     var executable = SequenceToolAvailability.require(request.getString("mode").equals("blast") ? "blastn" : "seqkit");
     var fasta = fastaWrapper.getPath().toRealPath();
@@ -181,7 +189,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         : new SequenceSearchRunner().run(executable, job.directory, input, snapshot, queries, options,
             job::log, monitor, job.cancelled::get, job.request.getString("assemblyFingerprint"));
       stamp.check(fasta); job.checkCancelled();
-      job.output = job.data.relativize(result.bed()).toString().replace('\\', '/');
+      var delivered = publishRequestedOutput(result.bed(), job, ".bed");
+      job.output = job.data.relativize(delivered).toString().replace('\\', '/');
       job.hits = result.hits(); job.fragments = result.fragments(); job.elapsedNs = result.elapsedNs();
     } catch (Exception failure) {
       terminalState = job.cancelled.get() || failure instanceof InterruptedException || failure instanceof InterruptedIOException || failure instanceof CancellationException ? "cancelled" : "failed";
@@ -209,10 +218,13 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     List<Long> resolutions;
     try {
       if (alignment) {
+        var selected = ru.itmo.ctlab.hict.hict_library.util.SequenceProcessingThreads.resolve(
+          request.getInteger("threads", -1), "HICT_ALIGNMENT_THREADS", Long.MAX_VALUE);
+        request.put("requestedThreads", selected.requested()).put("effectiveThreads", selected.effective()).put("threadMode", selected.mode());
         settings = new JsonObject().put("k", integer(request, "k", 15, 1, 28))
           .put("window", integer(request, "window", 10, 1, 255)).put("chainScore", integer(request, "chainScore", 40, 1, 1_000_000))
           .put("sampleBp", integer(request, "sampleBp", 100, 1, 1_000_000)).put("minAlignmentLength", integer(request, "minAlignmentLength", 100, 1, 100_000_000))
-          .put("threads", integer(request, "threads", Math.min(4, Runtime.getRuntime().availableProcessors()), 1, 256));
+          .put("threads", selected.effective());
       } else {
         settings = new JsonObject().put("k", integer(request, "k", 21, 1, 65535))
           .put("identity", request.getDouble("identity", 80.0)).put("sketch_size", integer(request, "sketchSize", 1000, 1, 1_000_000))
@@ -254,6 +266,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
     var root = data.resolve("processed/sequence-analysis"); Files.createDirectories(root);
     if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Analysis output must remain inside DATA_DIR");
+    try { validateOutputRequest(request, data, ".hict.hdf5"); }
+    catch (FileAlreadyExistsException e) { throw new HttpException(409, e.getMessage()); }
+    catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
     var fasta = fastaWrapper.getPath().toRealPath(); var stamp = Stamp.read(fasta);
     var template = map.getHdfFilePath().toRealPath(); var templateStamp = Stamp.read(template);
     var id = UUID.randomUUID().toString(); var directory = root.resolve(id); Files.createDirectory(directory);
@@ -293,7 +308,24 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         .put("rows", windowsJson(level.rows(), aligner != null, layout)).put("columns", windowsJson(level.columns(), aligner != null, layout)));
       String sourceIdentity = fasta + "|" + stamp;
       String gapPolicy = "preserve-agp;separator=" + gapLength(job.request);
-      settings = settings.copy(); // adapter parameters are separate from compatibility policy
+      settings = settings.copy(); // Scientific parameters only; execution controls do not invalidate reuse.
+      JsonObject execution = new JsonObject();
+      if (aligner == null) {
+        long tasks = 0;
+        for (var level : analysis.levels()) {
+          long rowBlocks = (level.rows().size() + 255L) / 256L;
+          long columnBlocks = (level.columns().size() + 255L) / 256L;
+          tasks = Math.addExact(tasks, Math.multiplyExact(rowBlocks, columnBlocks));
+        }
+        var selected = ru.itmo.ctlab.hict.hict_library.util.SequenceProcessingThreads.boundToTasks(
+          ru.itmo.ctlab.hict.hict_library.util.SequenceProcessingThreads.resolve(
+            job.request.getInteger("threads", -1), "HICT_MODDOTPLOT_THREADS", tasks), tasks);
+        job.request.put("requestedThreads", selected.requested()).put("effectiveThreads", selected.effective())
+          .put("threadMode", selected.mode());
+        execution.put("threads", selected.effective()).put("mode", selected.mode());
+        job.log("ModDotPlot threads: requested=" + selected.requested() + ", effective=" + selected.effective()
+          + ", mode=" + selected.mode() + ", allocatedCPUs=" + ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.available());
+      }
 
       var keyText = template + "|" + templateStamp + "|" + sourceIdentity + "|" + settings.encode()
         + "|" + gapPolicy + "|" + analysis.levels().stream().map(AssemblyAnalysisPlan.Level::resolution).toList() + "|" + job.kind + "|" + job.toolSha256 + "|" + (aligner == null ? "1616ae94" : sha256(aligner));
@@ -309,7 +341,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       }
       var output = job.directory.resolve(job.kind + ".hict.hdf5.pending");
       var published = job.directory.resolve(job.kind + ".hict.hdf5");
-      var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", settings).put("template", template.toString()).put("output", output.toString())
+      var plan = new JsonObject().put("kind", job.kind).put("aligner", aligner == null ? null : aligner.toString()).put("settings", settings)
+        .put("execution", execution).put("template", template.toString()).put("output", output.toString())
         .put("gapPolicy", gapPolicy)
         .put("input", input.toString()).put("inputOffset", layout.padded(start, true)).put("inputLength", layout.padded(end, false) - layout.padded(start, true))
         .put("sequenceLength", layout.length()).put("sourceFastaIdentity", sourceIdentity)
@@ -336,8 +369,10 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       job.elapsedNs = System.nanoTime() - timer;
       try { Files.move(output, published, StandardCopyOption.ATOMIC_MOVE); }
       catch (AtomicMoveNotSupportedException e) { Files.move(output, published); }
-      job.output = job.data.relativize(published).toString().replace('\\', '/');
-      atomicJson(registry, new JsonObject().put("outputFile", job.output).put("jobId", job.id).put("settings", settings));
+      var delivered = publishRequestedOutput(published, job, ".hict.hdf5");
+      job.output = job.data.relativize(delivered).toString().replace('\\', '/');
+      var managedOutput = job.data.relativize(published).toString().replace('\\', '/');
+      atomicJson(registry, new JsonObject().put("outputFile", managedOutput).put("jobId", job.id).put("settings", settings));
       job.log("Saved overlay: " + job.output + ". Generation is complete; display attachment is a separate step.");
       if (previous != null) atomicJson(job.directory.getParent().resolve("superseded-" + job.id + ".json"),
         new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
@@ -382,7 +417,48 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   }
   private static BlastSearchRunner.Options blastOptions(JsonObject request) {
     return new BlastSearchRunner.Options(request.getBoolean("bothStrands"), request.getDouble("evalue", 10.0),
-      request.getDouble("identity", 70.0), request.getDouble("coverage", 50.0), integer(request,"maxTargets",500,1,1_000_000));
+      request.getDouble("identity", 70.0), request.getDouble("coverage", 50.0), integer(request,"maxTargets",500,1,1_000_000),
+      color(request, "forwardColor", "#dc2626"), color(request, "reverseColor", "#2563eb"));
+  }
+
+  private static String color(JsonObject request, String key, String fallback) {
+    String value = request.getString(key, fallback);
+    if (value == null || !value.matches("#[0-9a-fA-F]{6}")) throw new IllegalArgumentException(key + " must be a six-digit color");
+    return Integer.parseInt(value.substring(1, 3), 16) + "," + Integer.parseInt(value.substring(3, 5), 16)
+      + "," + Integer.parseInt(value.substring(5, 7), 16);
+  }
+
+  static void validateOutputRequest(JsonObject request, Path data, String extension) throws IOException {
+    String name = request.getString("outputFilename", "").trim();
+    if (name.isEmpty()) return;
+    if (!name.toLowerCase(Locale.ROOT).endsWith(extension)) throw new IllegalArgumentException("Saved output must end with " + extension);
+    Path target = data.resolve(name).normalize();
+    if (Path.of(name).isAbsolute() || !target.startsWith(data) || target.startsWith(data.resolve("processed/sequence-analysis")))
+      throw new IllegalArgumentException("Saved output must be a relative path under DATA_DIR and outside managed sidecars");
+    Files.createDirectories(target.getParent());
+    if (!target.getParent().toRealPath().startsWith(data) || Files.isSymbolicLink(target))
+      throw new IllegalArgumentException("Saved output path must remain inside DATA_DIR");
+    if (Files.exists(target) && !request.getBoolean("overwrite", false))
+      throw new FileAlreadyExistsException("Output already exists: " + name + ". Enable overwrite or choose another name.");
+  }
+
+  private static Path publishRequestedOutput(Path source, Job job, String extension) throws IOException {
+    String name = job.request.getString("outputFilename", "").trim();
+    if (name.isEmpty()) return source;
+    validateOutputRequest(job.request, job.data, extension);
+    Path target = job.data.resolve(name).normalize();
+    Path pending = target.resolveSibling(target.getFileName() + ".pending-" + job.id);
+    Files.copy(source, pending, StandardCopyOption.REPLACE_EXISTING);
+    var options = job.request.getBoolean("overwrite", false)
+      ? new StandardCopyOption[]{StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING}
+      : new StandardCopyOption[]{StandardCopyOption.ATOMIC_MOVE};
+    try { Files.move(pending, target, options); }
+    catch (AtomicMoveNotSupportedException e) {
+      if (job.request.getBoolean("overwrite", false)) Files.move(pending, target, StandardCopyOption.REPLACE_EXISTING);
+      else Files.move(pending, target);
+    } finally { Files.deleteIfExists(pending); }
+    job.log("Published reusable DATA artifact: " + name);
+    return target;
   }
   private static long gapLength(JsonObject request) {
     long value = exactLong(request.getValue("gapLengthBp", AssemblyExportSettings.gapLengthBp()), "gapLengthBp");
@@ -444,7 +520,11 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       return new JsonObject().put("jobId", id).put("kind", kind).put("status", state).put("createdAtMs", created)
         .put("finishedAtMs", finished).put("outputFile", output).put("mapFilename", mapFilename)
         .put("snapshot", snapshotId).put("sequenceLength", sequenceLength).put("hits", hits)
-        .put("fragments", fragments).put("analysisNs", elapsedNs).put("error", error).put("logs", new JsonArray(new ArrayList<>(logs)));
+        .put("fragments", fragments).put("analysisNs", elapsedNs).put("error", error)
+        .put("requestedThreads", request.getInteger("requestedThreads", request.getInteger("threads", -1)))
+        .put("effectiveThreads", request.getInteger("effectiveThreads"))
+        .put("threadMode", request.getString("threadMode"))
+        .put("logs", new JsonArray(new ArrayList<>(logs)));
     }
     void save() throws IOException {
       var provenance = statusJson().put("request", request).put("sourceFasta", sourceFasta).put("sourceStamp", sourceStamp)

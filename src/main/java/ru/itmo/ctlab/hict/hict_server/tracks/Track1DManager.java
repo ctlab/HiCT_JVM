@@ -2331,6 +2331,7 @@ public class Track1DManager {
       attributes.put("originalMatchLength", Long.toString(metadata.path().length()));
       attributes.put("currentFragmentLength", Long.toString(Math.min(feature.end(), segment.sourceEnd()) - Math.max(feature.start(), segment.sourceStart())));
       attributes.put("analysisSnapshot", metadata.snapshotFingerprint());
+      attributes.put("itemRgb", "+".equals(strand) ? metadata.forwardColor() : metadata.reverseColor());
       label = metadata.description();
       if (sourceMap.changedSince(metadata)) {
         label = "⚠ " + label;
@@ -2338,7 +2339,7 @@ public class Track1DManager {
       }
       if (projection.status() != ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.FeatureStatus.INTACT) {
         label += " [part of match: " + projection.status().name().toLowerCase(Locale.ROOT) + "]";
-        attributes.put("itemRgb", "210,105,20");
+        attributes.put("disruptedMatch", "true");
       }
     }
     return Optional.of(new ProjectedFeature(

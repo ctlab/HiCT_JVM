@@ -91,9 +91,13 @@ public final class ExternalToolchainManager {
 
   /** Optional sequence-analysis commands share the portable manifest/extraction path. */
   public @NotNull Path requireSequenceCommand(String command) throws IOException {
-    if (!List.of("seqkit", "hict-moddotplot", "blastn").contains(command))
+    if (!List.of("seqkit", "moddotplot", "hict-moddotplot", "blastn").contains(command))
       throw new IllegalArgumentException("Unknown sequence tool: " + command);
-    String setting = command.equals("hict-moddotplot") ? "HICT_MODDOTPLOT_BIN" : "HICT_" + command.toUpperCase(Locale.ROOT) + "_BIN";
+    String setting = switch (command) {
+      case "hict-moddotplot" -> "HICT_MODDOTPLOT_BIN";
+      case "moddotplot" -> "HICT_MODDOTPLOT_CLI_BIN";
+      default -> "HICT_" + command.toUpperCase(Locale.ROOT) + "_BIN";
+    };
     var override = readSetting(setting);
     if (override.isPresent()) {
       var explicit = Path.of(override.get()).toAbsolutePath().normalize();

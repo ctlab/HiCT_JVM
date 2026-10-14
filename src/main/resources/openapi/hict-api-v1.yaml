@@ -1427,6 +1427,10 @@ paths:
                 degenerate: { type: boolean, default: false }
                 mismatches: { type: integer, minimum: 0, default: 1 }
                 threads: { type: integer, default: -1 }
+                forwardColor: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', default: '#dc2626' }
+                reverseColor: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', default: '#2563eb' }
+                outputFilename: { type: string, description: 'Optional durable .bed path relative to DATA_DIR; managed sidecar is used when omitted' }
+                overwrite: { type: boolean, default: false }
                 gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
                 evalue: {type: number, exclusiveMinimum: 0, default: 10}
                 identity: {type: number, minimum: 0, maximum: 100, default: 70}
@@ -1465,6 +1469,9 @@ paths:
                 identity: {type: number, default: 80, minimum: 0, maximum: 100}
                 sketchSize: {type: integer, default: 1000, minimum: 1, maximum: 1000000}
                 delta: {type: number, default: 0.5, minimum: 0, maximum: 1}
+                threads: {type: integer, minimum: -1, maximum: 256, default: -1, description: '-1 all allocated logical CPUs; 0 adaptive auto; 1 single-threaded; positive exact cap'}
+                outputFilename: {type: string, description: 'Optional durable .hict.hdf5 path relative to DATA_DIR'}
+                overwrite: {type: boolean, default: false}
                 region:
                   type: object
                   required: [rowStart, rowEnd, columnStart, columnEnd]
@@ -1501,7 +1508,9 @@ paths:
                 chainScore: {type: integer, default: 40, minimum: 1, maximum: 1000000}
                 sampleBp: {type: integer, default: 100, minimum: 1, maximum: 1000000}
                 minAlignmentLength: {type: integer, default: 100, minimum: 1, maximum: 100000000}
-                threads: {type: integer, default: 4, minimum: 1, maximum: 256}
+                threads: {type: integer, default: -1, minimum: -1, maximum: 256, description: '-1 all allocated logical CPUs; 0 adaptive auto; positive exact cap'}
+                outputFilename: {type: string, description: 'Optional durable .hict.hdf5 path relative to DATA_DIR'}
+                overwrite: {type: boolean, default: false}
                 region:
                   type: object
                   required: [rowStart, rowEnd, columnStart, columnEnd]

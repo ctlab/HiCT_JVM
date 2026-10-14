@@ -103,6 +103,29 @@ Typically:
 
 `/convert/jobs` and `/convert/jobs/batch` support `overwrite` boolean.
 
+### Sequence analysis jobs
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/sequence/settings` | Read FASTA/tool readiness and sequence gap setting |
+| `POST` | `/sequence/search/jobs` | Submit exact, substitution or BLAST search |
+| `POST` | `/sequence/moddotplot/jobs` | Submit ModDotPlot identity matrix generation |
+| `POST` | `/sequence/dotplot/jobs` | Submit active-assembly alignment dotplot generation |
+| `POST` | `/sequence/jobs/list` | List sequence jobs, logs and effective worker counts |
+| `POST` | `/sequence/jobs/:jobId/stop` | Cancel a sequence job |
+| `POST` | `/sequence/cleanup` | Reclaim detached superseded managed overlays |
+
+All job requests capture immutable assembly/FASTA provenance before background
+execution. Optional `outputFilename` publishes a reusable result relative to
+`DATA_DIR`; it must end in `.bed` for search or `.hict.hdf5` for dotplots and may
+not target `processed/sequence-analysis`. `overwrite` defaults to false.
+
+Search accepts `forwardColor` and `reverseColor` as `#RRGGBB`. Dotplot and search
+thread fields use `-1` for all allocated CPUs, `0` for adaptive auto, `1` for
+single-threaded execution, or a positive requested count capped by the JVM/Slurm
+allocation. Status includes `requestedThreads`, `effectiveThreads`, and
+`threadMode`; execution counts are excluded from scientific overlay compatibility.
+
 ### Diagnostics
 
 | Method | Path | Purpose |

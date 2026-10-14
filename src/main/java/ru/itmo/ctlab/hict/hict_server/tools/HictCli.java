@@ -333,7 +333,7 @@ public class HictCli implements Runnable {
     @Option(names = "--require-dotplot", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if no selected dotplot aligner is available.")
     boolean requireDotplot;
 
-    @Option(names = "--require-sequence-tools", description = "Require and execute SeqKit and the sequence overlay adapter (also BLAST on Linux x86_64).")
+    @Option(names = "--require-sequence-tools", description = "Require and execute SeqKit, upstream ModDotPlot and the HiCT overlay adapter (also BLAST on Linux x86_64).")
     boolean requireSequenceTools;
 
     @Option(names = "--require-hdf5-native", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if bundled JHDF5/HDF5 native libraries cannot be initialized.")
@@ -367,7 +367,7 @@ public class HictCli implements Runnable {
       }
       if (requireSequenceTools) {
         final var tools = new ExternalToolchainManager();
-        final var names = new ArrayList<>(List.of("seqkit", "hict-moddotplot"));
+        final var names = new ArrayList<>(List.of("seqkit", "moddotplot", "hict-moddotplot"));
         if (status.platform().equals("linux_x86_64")) names.add("blastn");
         for (final var name : names) {
           try {
@@ -527,7 +527,10 @@ public class HictCli implements Runnable {
       "Examples:",
       "  hict toolbox hictk --help",
       "  hict toolbox minimap2 --help",
-      "  hict toolbox mm2-plus --help"
+      "  hict toolbox mm2-plus --help",
+      "  hict toolbox seqkit --help",
+      "  hict toolbox moddotplot --help",
+      "  hict toolbox hict-moddotplot --version"
     }
   )
   static class Toolbox implements Callable<Integer> {
@@ -547,7 +550,9 @@ public class HictCli implements Runnable {
     final var tool = normalizeToolName(rawTool);
     final var manager = new ExternalToolchainManager();
     final var status = manager.inspect();
-    final String command = switch (tool) {
+    final String command;
+    try {
+      command = switch (tool) {
       case "hictk" -> status.hictkCommand();
       case "minimap2" -> status.minimap2Command();
       case "mm2plus" -> {
@@ -561,8 +566,13 @@ public class HictCli implements Runnable {
       }
       case "mm2plus-avx2" -> status.mm2PlusAvx2Command();
       case "mm2plus-avx512" -> status.mm2PlusAvx512Command();
+      case "seqkit", "moddotplot", "hict-moddotplot" -> manager.requireSequenceCommand(tool).toString();
       default -> null;
-    };
+      };
+    } catch (Exception unavailable) {
+      System.err.println("HiCT toolbox could not find '" + rawTool + "': " + userFacingMessage(unavailable));
+      return 1;
+    }
     if (command == null || command.isBlank()) {
       System.err.println("HiCT toolbox could not find a bundled or configured executable for '" + rawTool + "'.");
       System.err.println(status.summary());
@@ -577,7 +587,10 @@ public class HictCli implements Runnable {
     commandLine.add(command);
     commandLine.addAll(Arrays.asList(args).subList(1, args.length));
     try {
-      final var process = new ProcessBuilder(ru.itmo.ctlab.hict.hict_server.handlers.conversion.BundledToolThreads.toolbox(commandLine, tool, System.err::println))
+      final var prepared = Set.of("hictk", "minimap2", "mm2plus", "mm2plus-avx2", "mm2plus-avx512").contains(tool)
+        ? ru.itmo.ctlab.hict.hict_server.handlers.conversion.BundledToolThreads.toolbox(commandLine, tool, System.err::println)
+        : commandLine;
+      final var process = new ProcessBuilder(prepared)
         .inheritIO()
         .start();
       return process.waitFor();
@@ -614,6 +627,9 @@ public class HictCli implements Runnable {
     out.println("  hict toolbox mm2-plus <mm2-plus arguments...>");
     out.println("  hict toolbox mm2-plus-avx2 <mm2-plus arguments...>");
     out.println("  hict toolbox mm2-plus-avx512 <mm2-plus arguments...>");
+    out.println("  hict toolbox seqkit <SeqKit arguments...>");
+    out.println("  hict toolbox moddotplot <upstream ModDotPlot arguments...>");
+    out.println("  hict toolbox hict-moddotplot <--plan FILE | --version>");
     out.println();
     out.println("The command forwards all remaining arguments to the selected executable.");
     out.println("Supported commands default to allocated CPUs; HICT_HICTK_THREADS / HICT_ALIGNMENT_THREADS override auto (-1).");
@@ -632,6 +648,14 @@ public class HictCli implements Runnable {
         System.err.println("minimap2 is bundled/configured as an optional alignment tool and is provided by its upstream authors under its own license.");
         System.err.println("Project: https://github.com/lh3/minimap2");
         System.err.println("Citation: Li H. Bioinformatics 2018;34(18):3094-3100.");
+      }
+      case "seqkit" -> {
+        System.err.println("SeqKit is provided under the MIT license. Project: https://github.com/shenwei356/seqkit");
+        System.err.println("Citation: Shen W et al. iMeta 2024:e191.");
+      }
+      case "moddotplot", "hict-moddotplot" -> {
+        System.err.println("ModDotPlot and ntHash are provided under the MIT license. Project: https://github.com/marbl/ModDotPlot");
+        System.err.println("Citation: Sweeten AP et al. Bioinformatics 2024;40(8):btae493.");
       }
       default -> {
         System.err.println("mm2-plus is bundled/configured as an optional alignment tool and is provided by its upstream authors under its own license.");

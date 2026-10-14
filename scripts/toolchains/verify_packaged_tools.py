@@ -54,13 +54,14 @@ def main():
     except subprocess.CalledProcessError:
         # The Java CLI reports exit codes; retain the native loader's actual
         # stderr too (especially PyInstaller DLL/path failures on Windows).
-        name = 'hict-moddotplot.exe' if os.name == 'nt' else 'hict-moddotplot'
-        for command in Path(home).rglob(name):
-            if command.is_file():
-                print('Native diagnostic:', command, flush=True)
-                result = subprocess.run([str(command), '--help'], env=env,
-                                        capture_output=True, text=True, errors='replace', timeout=30)
-                print(result.stdout, result.stderr, 'exit:', result.returncode, flush=True)
+        for base in ('hict-moddotplot', 'moddotplot'):
+            name = base + ('.exe' if os.name == 'nt' else '')
+            for command in Path(home).rglob(name):
+                if command.is_file():
+                    print('Native diagnostic:', command, flush=True)
+                    result = subprocess.run([str(command), '--help'], env=env,
+                                            capture_output=True, text=True, errors='replace', timeout=30)
+                    print(result.stdout, result.stderr, 'exit:', result.returncode, flush=True)
         raise
     from add_blast import smoke
     entry = manifest['commands']['blastn']

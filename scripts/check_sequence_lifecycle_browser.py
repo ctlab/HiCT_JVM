@@ -42,6 +42,7 @@ class OverlayFixture { public static void main(String[] a) {
     (data / 'split.agp').write_text('s1 1 2000 1 W assembly 1 2000 +\ns2 1 2000 1 W assembly 2001 4000 -\n')
     reverse = lambda s: s.translate(str.maketrans('ACGT', 'TGCA'))[::-1]
     motif = sequence[1990:2000] + reverse(sequence[3990:4000])
+    search_track_id = None
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *_): pass
     static = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Quiet, directory=str(Path(args.webui).resolve())))
@@ -66,7 +67,7 @@ class OverlayFixture { public static void main(String[] a) {
         def missing_fasta():
             settings = json.loads(app.http('/sequence/settings', {'checkTools': True}))
             assert settings['mapOpen'] and not settings['fastaLinked'], settings
-            assert all(settings['tools'][name]['available'] for name in ('seqkit','blastn','dotplot','hict-moddotplot')), settings
+            assert all(settings['tools'][name]['available'] for name in ('seqkit','blastn','dotplot','moddotplot','hict-moddotplot')), settings
             for action, title, button in (
                 ('Generate ModDotPlot…', 'Generate ModDotPlot', 'Generate ModDotPlot'),
                 ('Generate dotplot from active assembly…', 'Generate dotplot from active assembly', 'Generate dotplot from active assembly'),
@@ -91,7 +92,7 @@ class OverlayFixture { public static void main(String[] a) {
             # all successful computations below still use the actual JAR tools.
             def unavailable(route):
                 state = json.loads(app.http('/sequence/settings', route.request.post_data_json or {}))
-                state['tools'] = {name:dict(available=False,reason='This installation is missing '+name+'. Install the complete HiCT package.') for name in ('seqkit','blastn','dotplot','hict-moddotplot')}
+                state['tools'] = {name:dict(available=False,reason='This installation is missing '+name+'. Install the complete HiCT package.') for name in ('seqkit','blastn','dotplot','moddotplot','hict-moddotplot')}
                 route.fulfill(json=state)
             page.route('**/sequence/settings', unavailable)
             try:
@@ -104,15 +105,25 @@ class OverlayFixture { public static void main(String[] a) {
                 dialog.get_by_role('button',name='Close',exact=True).last.click()
             finally: page.unroute('**/sequence/settings', unavailable)
         def search():
+            nonlocal search_track_id
             page.get_by_role('link', name='Tools', exact=True).click()
             page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
             page.get_by_label('FASTA records, or one DNA sequence per line').fill('>cross_join α\n' + motif)
             assert page.get_by_label('Search scope').input_value() == 'assembly'
             assert page.get_by_label('Matching', exact=True).input_value() == 'exact'
+            assert page.get_by_label('Forward strand color').input_value() == '#dc2626'
+            assert page.get_by_label('Reverse strand color').input_value() == '#2563eb'
+            page.get_by_label('Forward strand color').fill('#12ab34')
+            page.get_by_label('Reverse strand color').fill('#3456ef')
+            page.get_by_label('Save reusable BED under DATA_DIR').check()
+            page.get_by_label('BED output path').fill('published/search-results.bed')
             page.get_by_label('Default gap length (Ns)', exact=True).fill('0')
             with page.expect_response(lambda r: '/sequence/search/jobs' in r.url) as response:
                 page.get_by_role('button', name='Find sequences', exact=True).click()
             assert response.value.status == 202, response.value.text()
+            request = response.value.request.post_data_json
+            assert request['forwardColor'] == '#12ab34' and request['reverseColor'] == '#3456ef', request
+            assert request['outputFilename'] == 'published/search-results.bed', request
             page.get_by_role('dialog', name='Find sequences in the linked FASTA', exact=True).wait_for(state='hidden')
             check.settle()
             jobs = json.loads(app.http('/sequence/jobs/list', {}))
@@ -120,8 +131,26 @@ class OverlayFixture { public static void main(String[] a) {
             assert jobs[0]['hits'] == 1 and jobs[0]['fragments'] == 2, jobs
             tracks = json.loads(app.http('/tracks/list', {}))
             assert any('Sequence search (1 matches)' == t['name'] for t in tracks), tracks
+            search_track_id = next(t['trackId'] for t in tracks if t['name'] == 'Sequence search (1 matches)')
+            published = data / 'published/search-results.bed'
+            assert published.is_file(), published
+            bed = published.read_text()
+            assert '\t18,171,52\t' in bed and '\t52,86,239\t' in bed, bed
             (out / 'jobs.json').write_text(json.dumps(jobs, indent=2))
             (out / 'tracks.json').write_text(json.dumps(tracks, indent=2))
+        def track_axis_visibility():
+            assert search_track_id
+            name = 'Sequence search (1 matches)'
+            page.get_by_role('button', name=f'Hide {name} horizontally', exact=True).click()
+            hidden = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
+            assert not hidden
+            check.menu('View', 'Tracks and layers...')
+            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+            dialog.get_by_role('button', name=f'Show {name} horizontally', exact=True).click()
+            restored = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
+            assert restored
+            dialog.get_by_role('button', name='Close', exact=True).click()
+            dialog.wait_for(state='hidden')
         def moddotplot():
             import h5py
             versions = []
@@ -132,6 +161,11 @@ class OverlayFixture { public static void main(String[] a) {
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
                 [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
                 dialog.locator('.resolution-options input[value="100"]').check()
+                assert page.get_by_label('Worker threads').input_value() in ('-1', '2')
+                page.get_by_label('Worker threads').fill('2')
+                if iteration == 0:
+                    page.get_by_label('Save a reusable copy under DATA_DIR').check()
+                    page.get_by_label('Output path').fill('published/moddotplot.hict.hdf5')
                 page.get_by_label('Display completed result').select_option('overlay' if iteration else 'below')
                 assert page.get_by_label('Accumulate compatible regions; replace scores within this rectangle').is_checked()
                 if iteration == 0:
@@ -168,17 +202,26 @@ class OverlayFixture { public static void main(String[] a) {
                 jobs = [j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind'] == 'moddotplot']
                 assert len(jobs) == iteration + 1 and all(j['status'] == 'finished' for j in jobs), jobs
                 latest = sorted(jobs, key=lambda j: j['createdAtMs'])[-1]
+                assert latest['requestedThreads'] == 2 and 1 <= latest['effectiveThreads'] <= 2, latest
                 path = data / latest['outputFile']
                 versions.append(path)
                 with h5py.File(path, 'r') as f:
                     assert f['sequence_analysis'].attrs['complete']
                     assert len(f['sequence_analysis/updates']) == iteration + 1
                     assert f['resolutions/100/treap_coo/block_length'][:].sum() > 0
-            assert versions[0] != versions[1] and not versions[0].exists(), versions
+                if iteration == 0:
+                    assert latest['outputFile'] == 'published/moddotplot.hict.hdf5' and path.is_file(), latest
+                page.get_by_role('button', name='SECONDARY', exact=True).click()
+                assert page.evaluate("() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('matrixViewStore').activeVisualizationSource") == 'SECONDARY'
+                page.get_by_role('button', name='PRIMARY', exact=True).click()
+                if iteration:
+                    target = page.get_by_label('Rendering pipeline colormap target')
+                    assert target.count() == 1 and target.locator('option').count() >= 2
+            assert versions[0] != versions[1] and versions[0].exists(), versions
             assert versions[1].is_file()
             (out / 'moddotplot-jobs.json').write_text(json.dumps(jobs, indent=2))
         def identity_presets():
-            page.get_by_role('button', name='ModDotPlot: Hi-C above, identity below', exact=True).click()
+            page.get_by_role('button', name='Load ModDotPlot Hi-C above identity below preset', exact=True).click()
             check.settle()
             expected = json.loads(app.http('/render_pipeline/get', {}))
             assert expected['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', expected
@@ -191,7 +234,7 @@ class OverlayFixture { public static void main(String[] a) {
             dialog.wait_for(state='hidden'); check.settle()
             actual = json.loads(app.http('/render_pipeline/get', {}))
             assert actual['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', actual
-            page.get_by_role('button', name='ModDotPlot: multicolor overlay', exact=True).click()
+            page.get_by_role('button', name='Load ModDotPlot multicolor overlay preset', exact=True).click()
             check.settle()
             actual = json.loads(app.http('/render_pipeline/get', {}))
             assert actual['upperExpression']['top']['mode'] == 'MODDOTPLOT_IDENTITY', actual
@@ -252,12 +295,15 @@ class OverlayFixture { public static void main(String[] a) {
             dialog.locator('.resolution-options input[value="100"]').check()
             for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20')]:
                 page.get_by_label(name,exact=True).fill(value)
+            page.get_by_label('Save a reusable copy under DATA_DIR').check()
+            page.get_by_label('Output path').fill('published/selection-dotplot.hict.hdf5')
             with page.expect_response(lambda r:'/sequence/dotplot/jobs' in r.url) as response:
                 dialog.get_by_role('button',name='Generate dotplot from active assembly',exact=True).click()
             assert response.value.status==202,response.value.text()
             dialog.wait_for(state='hidden');check.settle()
             jobs=[j for j in json.loads(app.http('/sequence/jobs/list',{})) if j['kind']=='dotplot']
             assert len(jobs)==1 and jobs[0]['status']=='finished',jobs
+            assert jobs[0]['outputFile']=='published/selection-dotplot.hict.hdf5' and (data/jobs[0]['outputFile']).is_file(),jobs
             with h5py.File(data/jobs[0]['outputFile']) as f:
                 assert f['sequence_analysis'].attrs['score_unit']=='alignment_sample_count'
                 assert f['resolutions/100/treap_coo/block_length'][:].sum()>0
@@ -343,6 +389,7 @@ class OverlayFixture { public static void main(String[] a) {
             check.step('split-and-invert-layout', lambda: load_file('Assembly', 'Load AGP', 'split.agp', '/load_agp'))
             check.step('missing-tools-disabled', missing_tools)
             check.step('search-cross-join-and-open-track', search)
+            check.step('hide-and-restore-track-axis', track_axis_visibility)
             check.step('blast-gapped-local-search', blast_search)
             check.step('search-warning-after-edit', search_warning)
             check.step('minimap-clipping', minimap_clipping)

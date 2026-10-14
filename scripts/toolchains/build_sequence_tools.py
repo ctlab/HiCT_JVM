@@ -173,8 +173,14 @@ for dist in im.distributions():
          '--exclude-module', 'matplotlib', '--exclude-module', 'IPython', '--exclude-module', 'pytest',
          ROOT / 'scripts/sequence_analysis/hict_moddotplot.py'])
     adapter = 'bin/hict-moddotplot/hict-moddotplot' + suffix
+    run([py, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--name', 'moddotplot',
+         '--distpath', payload / 'bin', '--workpath', work / 'pyinstaller-upstream', '--specpath', work,
+         '--hidden-import', 'moddotplot._nthash', '--collect-data', 'moddotplot', '--collect-all', 'matplotlib',
+         ROOT / 'scripts/sequence_analysis/upstream_moddotplot.py'])
+    upstream_cli = 'bin/moddotplot/moddotplot' + suffix
     run([py, ROOT / 'scripts/sequence_analysis/smoke_tools.py', '--seqkit', seqbin,
-         '--adapter', payload / adapter, '--output', docs / 'smoke-test.json'])
+         '--moddotplot', payload / upstream_cli, '--adapter', payload / adapter,
+         '--output', docs / 'smoke-test.json'])
     from add_blast import add_blast
     blast_command = add_blast(payload, work, args.manylinux2014)
     if args.manylinux2014:
@@ -199,10 +205,11 @@ for dist in im.distributions():
                 goModules=modules)
     (docs / 'build-info.json').write_text(json.dumps(info, indent=2))
     files = sorted(str(p.relative_to(payload)).replace('\\', '/') for p in payload.rglob('*') if p.is_file())
-    manifest = dict(platform=sys.platform, commands={'seqkit': 'bin/seqkit' + suffix, 'hict-moddotplot': adapter}, files=files,
+    manifest = dict(platform=sys.platform, commands={'seqkit': 'bin/seqkit' + suffix,
+                    'moddotplot': upstream_cli, 'hict-moddotplot': adapter}, files=files,
                     sha256={p: digest(payload / p) for p in files},
                     notices=['SeqKit (MIT) and ModDotPlot/ntHash (MIT), with third-party notices under share/licenses/sequence-analysis.',
-                             'ModDotPlot computational adapter, not the upstream plotting application.'],
+                             'Includes the upstream ModDotPlot plotting CLI and HiCT computational adapter as distinct commands.'],
                     citations=['Sweeten AP et al. Bioinformatics 2024;40(8):btae493. doi:10.1093/bioinformatics/btae493.',
                                'Shen W et al. iMeta 2024:e191. doi:10.1002/imt2.191.'])
     if blast_command:

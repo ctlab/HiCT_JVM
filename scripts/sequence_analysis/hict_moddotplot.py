@@ -17,6 +17,8 @@ def run(plan_path):
         from dotplot_kernel import run as alignment_dotplot
         return alignment_dotplot(plan, log=lambda message: print(message, flush=True))
     options = Settings(**plan['settings'])
+    execution = plan.get('execution', {})
+    workers = max(1, int(execution.get('threads', 1)))
     log = lambda message: print(message, flush=True)
     start = time.perf_counter_ns()
     settings = dict(kind='moddotplot', upstream=UPSTREAM_COMMIT, parameters=plan['settings'],
@@ -41,7 +43,7 @@ def run(plan_path):
                          inputSha256=plan['inputSha256'], rowWindows=r[:, 2:].tolist(), columnWindows=c[:, 2:].tolist()))
                 calculate_blocks(rows, cols, options,
                     lambda a, b, values: writer.patch(level['resolution'], r[a:a + len(values), :2],
-                        c[b:b + values.shape[1], :2], values), log=log)
+                        c[b:b + values.shape[1], :2], values), log=log, workers=workers)
     finally:
         source.close()
     log(f'Finished ModDotPlot in {(time.perf_counter_ns() - start) / 1e9:.3f} s: {plan["output"]}')

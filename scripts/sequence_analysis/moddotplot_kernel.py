@@ -6,6 +6,7 @@ reverse-complement sequence windows comparable in either orientation.
 """
 from __future__ import annotations
 import math
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from typing import NamedTuple
 import numpy as np
@@ -121,23 +122,60 @@ def prepare_windows(read_sequence, sequence_length, windows, resolution, setting
     return result
 
 
-def calculate_blocks(row_sketches, col_sketches, settings, accept, block_size=256, log=lambda _: None):
+def _calculate_block(row_sketches, col_sketches, settings, start_r, start_c, block_size):
+    r = row_sketches[start_r:start_r + block_size]
+    c = col_sketches[start_c:start_c + block_size]
+    values = pairwiseContainmentMatrix([x[0] for x in c], [x[0] for x in r],
+        [x[1] for x in c], [x[1] for x in r], settings.identity, settings.k, True)
+    col_positions = {}
+    for j, sketch in enumerate(c):
+        col_positions.setdefault(sketch.interval, []).append(j)
+    for i, sketch in enumerate(r):
+        for j in col_positions.get(sketch.interval, ()):
+            values[i, j] = 100.0 if len(sketch.core) else 0.0
+    return start_r, start_c, values
+
+
+def calculate_blocks(row_sketches, col_sketches, settings, accept, block_size=256,
+                     log=lambda _: None, workers=1):
     if not 1 <= block_size <= 1024:
         raise ValueError('Identity block size must be between 1 and 1024')
-    for start_r in range(0, len(row_sketches), block_size):
-        r = row_sketches[start_r:start_r + block_size]
-        for start_c in range(0, len(col_sketches), block_size):
-            c = col_sketches[start_c:start_c + block_size]
-            values = pairwiseContainmentMatrix([x[0] for x in c], [x[0] for x in r],
-                [x[1] for x in c], [x[1] for x in r], settings.identity, settings.k, True)
-            # Upstream selfContainmentMatrix pins genuine self windows to 100.
-            # Adaptive core/neighbor sampling can otherwise lower that diagonal.
-            # Empty evidence stays zero, including retained ambiguous windows.
-            col_positions = {}
-            for j, sketch in enumerate(c):
-                col_positions.setdefault(sketch.interval, []).append(j)
-            for i, sketch in enumerate(r):
-                for j in col_positions.get(sketch.interval, ()):
-                    values[i, j] = 100.0 if len(sketch.core) else 0.0
-            accept(start_r, start_c, values)
-        log(f'Compared {min(start_r + block_size, len(row_sketches))}/{len(row_sketches)} rows')
+    row_starts = range(0, len(row_sketches), block_size)
+    col_starts = range(0, len(col_sketches), block_size)
+    task_count = len(row_starts) * len(col_starts)
+    workers = max(1, min(int(workers), task_count or 1))
+    log(f'ModDotPlot block executor: workers={workers}, blocks={task_count}, blockSize={block_size}')
+    # The immutable sketches are shared in-process. Upstream performs its heavy
+    # set/array work in native NumPy/ntHash code, so threads avoid per-process
+    # genome copies and keep one HDF5 writer while still using available CPUs.
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='moddotplot') as pool:
+        tasks = ((r, c) for r in row_starts for c in col_starts)
+        pending, ready = {}, {}
+        submitted = next_to_write = 0
+        def submit_one():
+            nonlocal submitted
+            try:
+                start_r, start_c = next(tasks)
+            except StopIteration:
+                return False
+            future = pool.submit(_calculate_block, row_sketches, col_sketches,
+                                 settings, start_r, start_c, block_size)
+            pending[future] = submitted
+            submitted += 1
+            return True
+        for _ in range(min(task_count, workers * 2)):
+            submit_one()
+        completed_rows = -1
+        while pending:
+            completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in completed:
+                ready[pending.pop(future)] = future.result()
+                submit_one()
+            # Consume in submission order: output bytes and progress are deterministic.
+            while next_to_write in ready:
+                start_r, start_c, values = ready.pop(next_to_write)
+                next_to_write += 1
+                accept(start_r, start_c, values)
+                if start_r != completed_rows:
+                    completed_rows = start_r
+                    log(f'Compared {min(start_r + block_size, len(row_sketches))}/{len(row_sketches)} rows')

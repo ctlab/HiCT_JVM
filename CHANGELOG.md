@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add source-aware visualization controls for PRIMARY and SECONDARY matrices, including explicit colormap-target selection for custom rendering pipelines with multiple branches. Signal range, colors and automatic threshold updates now modify only the selected source/branch and retain ModDotPlot identity semantics.
+- Move ModDotPlot display choices into the normal visualization preset list and add a palette-only preset that can be applied to either Hi-C source.
+- Allow dotplot, ModDotPlot and sequence-search jobs to publish reusable `.hict.hdf5` or BED results at a validated path under `DATA_DIR`, with explicit overwrite consent. Managed immutable sidecars and provenance remain available for lifecycle/accumulation handling.
+- Parallelize independent ModDotPlot comparison blocks with deterministic output and one HDF5 writer. Add `-1` (all allocated CPUs), `0` (adaptive), `1` (single thread) and positive limits in WebUI/API, `HICT_MODDOTPLOT_THREADS` and `HICT_SEQUENCE_THREADS` in Launcher, and requested/effective worker diagnostics.
+- Color sequence-search BED hits by their current projected strand (red forward, blue reverse by default), expose both colors in WebUI, preserve them through edits, and mark disrupted matches with a separate warning outline.
+- Add `toolbox seqkit`, upstream `toolbox moddotplot`, and the separate `toolbox hict-moddotplot` computational adapter. Make all three commands mandatory, checksummed portable payload entries with startup and known-answer smoke coverage.
+- Pack overlapping BED/GFF/GTF features into deterministic vertical lanes in O(n log n), with a bounded pixel-density summary when overlaps exceed the available track height.
+- Add per-track horizontal and vertical hide buttons and matching axis controls in Tracks and Layers. Axis visibility is independently restorable and is retained in saved sessions.
+- Dispose frontend map state immediately on close and drain pending visualization-option reads before closing the backend map, preventing transient errors during rapid close/reopen workflows.
 - Regenerate translocation insertion arrows when zooming between resolutions. Keep cleared, hidden arrow sources dirty, avoid redundant clears/rebuilds, and preserve the selected segment while choosing an insertion point at another zoom level.
 - Preserve the main map center, zoom and rotation when refreshing assembly constraints after contig reversal or translocation. Prevent the blank viewport that previously required minimap interaction to recover; retain intentional isolation fitting and overlay coordinate rescaling, with viewport regression checks in the WebUI build.
 - Fix slow large-map opening by reading Cooler weights in heap-bounded, HDF5-chunk-aligned blocks instead of repeatedly decompressing whole legacy chunks. Retain the open dataset handle, weight values and NaN diagnostics.

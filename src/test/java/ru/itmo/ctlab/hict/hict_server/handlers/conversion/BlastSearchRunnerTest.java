@@ -18,6 +18,7 @@ class BlastSearchRunnerTest {
     var a=rows.getFirst().split("\t");var b=rows.getLast().split("\t");
     assertEquals("100",a[1]);assertEquals("103",a[2]);assertEquals("+",a[5]);
     assertEquals("0",b[1]);assertEquals("4",b[2]);assertEquals("-",b[5]);
+    assertEquals("220,38,38",a[8]);assertEquals("37,99,235",b[8]);
     var metadata=SequenceSearchMetadata.decode(a[12]);assertEquals(7,metadata.path().length());
     assertTrue(metadata.description().contains("gap openings 1"));
   }

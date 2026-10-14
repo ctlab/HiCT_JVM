@@ -26,8 +26,11 @@ class SequenceSearchRunnerTest {
     var a = rows.getFirst().split("\t"); var b = rows.getLast().split("\t");
     assertEquals("A", a[0]); assertEquals("0", a[1]); assertEquals("2", a[2]); assertEquals("-", a[5]);
     assertEquals("B", b[0]); assertEquals("0", b[1]); assertEquals("2", b[2]); assertEquals("+", b[5]);
+    assertEquals("37,99,235", a[8]); assertEquals("220,38,38", b[8]);
     var metadata = SequenceSearchMetadata.decode(a[12]);
     assertEquals("cross join motif", metadata.description());
+    assertEquals("220,38,38", metadata.forwardColor());
+    assertEquals("37,99,235", metadata.reverseColor());
     assertEquals(metadata.encode(), a[12]);
     assertEquals(a[12], b[12]);
     assertEquals(6, snapshot().project(metadata.path()).pieces().getFirst().assemblyStart());

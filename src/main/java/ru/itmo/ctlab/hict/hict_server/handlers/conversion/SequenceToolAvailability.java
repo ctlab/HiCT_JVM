@@ -18,7 +18,7 @@ public final class SequenceToolAvailability {
   }
   public static JsonObject inspect() {
     var tools = new JsonObject();
-    for (String command : new String[]{"seqkit", "hict-moddotplot", "blastn"}) {
+    for (String command : new String[]{"seqkit", "moddotplot", "hict-moddotplot", "blastn"}) {
       try { require(command); tools.put(command, new JsonObject().put("available", true)); }
       catch (HttpException e) { tools.put(command, new JsonObject().put("available", false).put("reason", e.getPayload())); }
     }
@@ -34,6 +34,7 @@ public final class SequenceToolAvailability {
     String feature = switch (command) {
       case "seqkit" -> "Exact and substitution search need SeqKit";
       case "blastn" -> "Gapped alignment search needs BLAST+";
+      case "moddotplot" -> "The upstream ModDotPlot plotting command is unavailable";
       default -> "Dotplot generation needs HiCT's sequence-analysis helper";
     };
     return feature + ", which is unavailable in this installation. Install the complete current portable package or rebuild with ./gradlew natives shadowJar."

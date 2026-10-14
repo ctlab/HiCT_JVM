@@ -24,7 +24,24 @@ class ExternalToolchainManagerTest {
     System.clearProperty("HICT_DOTPLOT_ALIGNER");
     System.clearProperty("HICT_COOLER_BIN");
     System.clearProperty("HICT_PYTHON_BIN");
+    System.clearProperty("HICT_SEQKIT_BIN");
+    System.clearProperty("HICT_MODDOTPLOT_CLI_BIN");
+    System.clearProperty("HICT_MODDOTPLOT_BIN");
     ExternalToolchainManager.setDotplotAlignerPreference("auto");
+  }
+
+  @Test
+  void resolvesDistinctSequenceToolOverrides() throws Exception {
+    final var seqkit = writeExecutable(tempDir.resolve("seqkit"));
+    final var upstream = writeExecutable(tempDir.resolve("moddotplot"));
+    final var adapter = writeExecutable(tempDir.resolve("hict-moddotplot"));
+    System.setProperty("HICT_SEQKIT_BIN", seqkit.toString());
+    System.setProperty("HICT_MODDOTPLOT_CLI_BIN", upstream.toString());
+    System.setProperty("HICT_MODDOTPLOT_BIN", adapter.toString());
+    final var manager = new ExternalToolchainManager();
+    assertEquals(seqkit.toAbsolutePath(), manager.requireSequenceCommand("seqkit"));
+    assertEquals(upstream.toAbsolutePath(), manager.requireSequenceCommand("moddotplot"));
+    assertEquals(adapter.toAbsolutePath(), manager.requireSequenceCommand("hict-moddotplot"));
   }
 
   @Test

@@ -11,10 +11,24 @@ import java.util.function.*;
 
 /** SeqKit adapter: bounded sequence chunks, explicit modes, stable source-anchored BED. */
 public final class SequenceSearchRunner {
-  public record Options(boolean bothStrands, int mismatches, boolean degenerate, int threads) {
+  public record Options(boolean bothStrands, int mismatches, boolean degenerate, int threads,
+                        String forwardColor, String reverseColor) {
+    public Options(boolean bothStrands, int mismatches, boolean degenerate, int threads) {
+      this(bothStrands, mismatches, degenerate, threads, "220,38,38", "37,99,235");
+    }
     public Options {
       if (mismatches < 0 || threads < 1) throw new IllegalArgumentException("Invalid search settings");
       if (mismatches > 0 && degenerate) throw new IllegalArgumentException("Mismatch search does not support IUPAC expansion");
+      forwardColor = normalizeRgb(forwardColor, "forward color");
+      reverseColor = normalizeRgb(reverseColor, "reverse color");
+    }
+
+    private static String normalizeRgb(final String value, final String name) {
+      if (value == null || !value.matches("(?:[0-9]{1,3},){2}[0-9]{1,3}"))
+        throw new IllegalArgumentException(name + " must be an RGB triplet");
+      for (var part : value.split(",")) if (Integer.parseInt(part) > 255)
+        throw new IllegalArgumentException(name + " components must be between 0 and 255");
+      return value;
     }
   }
   public record Result(Path bed, long hits, long fragments, long elapsedNs) { }
@@ -63,24 +77,31 @@ public final class SequenceSearchRunner {
       processStarted.accept(null);
     }
     Path bed = directory.resolve("sequence-search.bed");
-    long[] counts = anchorHits(raw, bed, snapshot, queries, fingerprint);
+    long[] counts = anchorHits(raw, bed, snapshot, queries, fingerprint,
+      options.forwardColor(), options.reverseColor());
     log.accept("Search complete: " + counts[0] + " matches, " + counts[1] + " source fragments");
     return new Result(bed, counts[0], counts[1], System.nanoTime() - startNs);
   }
 
   static long[] anchorHits(Path raw, Path bed, AssemblySequenceSnapshot snapshot,
                            List<SequenceSearchQueries.Query> queries) throws IOException {
-    return anchorHits(raw,bed,snapshot,queries,snapshot.fingerprint());
+    return anchorHits(raw,bed,snapshot,queries,snapshot.fingerprint(),"220,38,38","37,99,235");
   }
   static long[] anchorHits(Path raw, Path bed, AssemblySequenceSnapshot snapshot,
                            List<SequenceSearchQueries.Query> queries, String fingerprint) throws IOException {
+    return anchorHits(raw, bed, snapshot, queries, fingerprint, "220,38,38", "37,99,235");
+  }
+  static long[] anchorHits(Path raw, Path bed, AssemblySequenceSnapshot snapshot,
+                           List<SequenceSearchQueries.Query> queries, String fingerprint,
+                           String forwardColor, String reverseColor) throws IOException {
     var byId = new HashMap<String, SequenceSearchQueries.Query>();
     queries.forEach(q -> byId.put(q.id(), q));
     String runId = UUID.randomUUID().toString();
     long hits = 0, fragments = 0;
     try (var reader = Files.newBufferedReader(raw, StandardCharsets.UTF_8);
          var writer = Files.newBufferedWriter(bed, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW)) {
-      writer.write("# HiCT source-anchored sequence search; BED12+1; zero-based half-open coordinates\n");
+      writer.write("# HiCT source-anchored sequence search; BED12+1; zero-based half-open coordinates;"
+        + " forwardColor=" + forwardColor + "; reverseColor=" + reverseColor + "\n");
       String line;
       while ((line = reader.readLine()) != null) {
         if (Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("Search cancelled");
@@ -99,13 +120,15 @@ public final class SequenceSearchRunner {
         if (query == null || end - start != query.sequence().length() || !(cells[5].equals("+") || cells[5].equals("-")))
           throw new IOException("SeqKit returned an unexpected query, length, or strand");
         var path = snapshot.slice(start, end);
-        var metadata = new SequenceSearchMetadata(runId + ":" + (++hits), query.id(), query.description(), cells[5], path, fingerprint);
+        var metadata = new SequenceSearchMetadata(runId + ":" + (++hits), query.id(), query.description(), cells[5], path,
+          fingerprint, forwardColor, reverseColor);
         String encoded = metadata.encode();
         for (var p : path.fragments()) {
           if (p.source().chars().anyMatch(Character::isWhitespace)) throw new IOException("FASTA identifiers in BED must not contain whitespace");
           String strand = (p.reversed() != cells[5].equals("-")) ? "-" : "+";
+          String color = "+".equals(strand) ? forwardColor : reverseColor;
           writer.write(p.source() + "\t" + p.start() + "\t" + p.end() + "\t" + query.id() + "\t0\t" + strand
-            + "\t" + p.start() + "\t" + p.end() + "\t30,110,190\t1\t" + p.length() + "\t0\t" + encoded + "\n");
+            + "\t" + p.start() + "\t" + p.end() + "\t" + color + "\t1\t" + p.length() + "\t0\t" + encoded + "\n");
           fragments++;
         }
       }

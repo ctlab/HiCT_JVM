@@ -228,6 +228,8 @@ public final class HictLauncherGui {
       new ConfigSpec("HICT_CONVERSION_THREADS", "Conversion threads (-1 = auto)", "-1", PathKind.NONE),
       new ConfigSpec("HICT_HICTK_THREADS", "hictk threads (-1 = auto)", "-1", PathKind.NONE),
       new ConfigSpec("HICT_ALIGNMENT_THREADS", "minimap2 / mm2-plus threads (-1 = auto)", "-1", PathKind.NONE),
+      new ConfigSpec("HICT_SEQUENCE_THREADS", "SeqKit search threads (-1 = all, 0 = auto)", "-1", PathKind.NONE),
+      new ConfigSpec("HICT_MODDOTPLOT_THREADS", "ModDotPlot threads (-1 = all, 0 = auto)", "-1", PathKind.NONE),
       new ConfigSpec("HICT_CONVERSION_MAX_MEMORY_BYTES", "Shared conversion memory budget", "16g", PathKind.NONE),
       new ConfigSpec("HICT_IMPORT_MAX_MEMORY_BYTES", "Import memory budget", "16g", PathKind.NONE),
       new ConfigSpec("HICT_EXPORT_MAX_MEMORY_BYTES", "Export memory budget", "16g", PathKind.NONE),
@@ -247,6 +249,9 @@ public final class HictLauncherGui {
       new ConfigSpec("HICT_DOTPLOT_ALIGNER", "Dotplot aligner preference (auto, mm2plus, mm2plus-avx2, mm2plus-avx512, minimap2)", "auto", PathKind.NONE),
       new ConfigSpec("HICT_COOLER_BIN", "External cooler executable", "", PathKind.FILE),
       new ConfigSpec("HICT_PYTHON_BIN", "External Python executable", "", PathKind.FILE),
+      new ConfigSpec("HICT_SEQKIT_BIN", "External SeqKit executable", "", PathKind.FILE),
+      new ConfigSpec("HICT_MODDOTPLOT_CLI_BIN", "External upstream ModDotPlot executable", "", PathKind.FILE),
+      new ConfigSpec("HICT_MODDOTPLOT_BIN", "External HiCT ModDotPlot adapter", "", PathKind.FILE),
       new ConfigSpec("HICT_NATIVE_LIBRARY_DIR", "Native library directory override", "", PathKind.DIRECTORY),
       new ConfigSpec("HICT_NATIVE_LIBRARY_PATH", "Native library file override", "", PathKind.FILE),
       new ConfigSpec("HICT_JAVA_OPTS", "Extra JVM options", "", PathKind.NONE)
@@ -857,7 +862,8 @@ public final class HictLauncherGui {
       }
       showLogPanel();
       try {
-        for (final String key : List.of("HICT_CONVERSION_THREADS", "HICT_HICTK_THREADS", "HICT_ALIGNMENT_THREADS")) {
+        for (final String key : List.of("HICT_CONVERSION_THREADS", "HICT_HICTK_THREADS", "HICT_ALIGNMENT_THREADS",
+          "HICT_SEQUENCE_THREADS", "HICT_MODDOTPLOT_THREADS")) {
           ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.parse(getFieldValue(key), key);
         }
       } catch (IllegalArgumentException ex) {

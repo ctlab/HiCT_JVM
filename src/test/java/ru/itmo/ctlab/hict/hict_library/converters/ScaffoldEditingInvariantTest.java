@@ -289,7 +289,8 @@ class ScaffoldEditingInvariantTest {
       for (var hit : result.getTracks().getFirst().getBins()) {
         assertEquals("rearranged", hit.getAttributes().get("matchStatus"));
         assertTrue(hit.getLabel().contains("part of match"));
-        assertEquals("210,105,20", hit.getAttributes().get("itemRgb"));
+        assertEquals("220,38,38", hit.getAttributes().get("itemRgb"), "Disrupted hits retain strand color");
+        assertEquals("true", hit.getAttributes().get("disruptedMatch"));
       }
       f.restoreAssembly(initial);
       f.scaffoldingOperations().moveRegionToDebris(6000, 12000, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
