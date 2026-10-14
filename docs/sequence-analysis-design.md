@@ -172,9 +172,9 @@ Existing accelerated alignment choices remain available.
 
 The reusable GitHub Actions workflow builds and executes known-answer fixtures
 on Linux, Windows, macOS ARM64 and macOS x86_64. Portable releases depend on
-these jobs and merge their verified payloads before packaging. Windows/macOS
-execution is still pending an actual CI run; local configuration is not proof
-of a successful remote build.
+these jobs and merge their verified payloads before packaging. At this initial milestone, Windows/macOS
+execution was pending; the later platform validation is recorded below.
+Local configuration alone is not proof of a successful remote build.
 
 ## Validation of the 13 October baseline
 
@@ -301,8 +301,9 @@ a real insertion-containing alignment inside the pinned manylinux2014 image.
 Their maximum GLIBC requirements are 2.14, 2.14 and 2.17 respectively. The rebuilt
 ModDotPlot adapter passed its native fixture and all 196 ELF files were within
 GLIBC 2.17. These checks used explicit native-tool overrides with the test JAR;
-the release workflow builds and inventories the combined payload. Windows/macOS
-release execution still requires actual GitHub Actions results.
+the release workflow builds and inventories the combined payload. At this milestone Windows/macOS
+release execution still required actual GitHub Actions results; see the later
+platform validation below.
 
 Evidence: `sequence-lifecycle-review-20261014/` and
 `sequence-lifecycle-browser-20261014-final/` under the benchmark workspace.
@@ -337,3 +338,24 @@ sidecar, split/reversed assembly attachment, accumulation, independent aligner
 selection output, inline confirmation, pipeline round-trip, selection PNG/SVG/PDF
 export, and reattachment in original assembly order. Palette tests check eleven
 colors, missing values, and a 100% threshold.
+
+
+## Complete platform packaging (2026-10-14)
+
+JVM `4a372fb5` passed the Java regression jobs and all four native/portable-package
+jobs, including execution of tools extracted from the actual JAR:
+https://github.com/ctlab/HiCT_JVM/actions/runs/38494590739
+https://github.com/ctlab/HiCT_JVM/actions/runs/38494590760
+
+The packaging audit then found that BLAST had only been required on Linux.
+Commit `16977933` adds pinned official NCBI BLAST distributions for Windows x64,
+macOS x64 and macOS ARM64, with matching source notices and Windows app-local
+release runtime DLLs. BLAST is now mandatory on every supported platform.
+A real gapped local alignment must pass before packaging and after extraction
+from the JAR. The all-platform gate for this follow-up is:
+https://github.com/ctlab/HiCT_JVM/actions/runs/38501277100
+
+The follow-up changes packaging, verification and notices only. The running Linux
+benchmark keeps its exact `4a372fb5` JAR, checksums and source identity; its
+application/analysis source trees are identical to `16977933`. A documentation-only
+follow-up does not rename this cohort or imply that an untested binary was measured.

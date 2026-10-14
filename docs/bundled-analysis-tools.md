@@ -4,7 +4,7 @@
 external toolchain for the current platform. `./gradlew clean build natives jar`
 waits for this preparation before copying resources into the JAR. The first
 source build is substantial: it builds hictk, minimap2, mm2-plus, SeqKit and the
-HiCT sequence-analysis adapter, plus BLAST+ on Linux x86_64. Later runs reuse the
+HiCT sequence-analysis adapter, plus BLAST+ on all four release platforms. Later runs reuse the
 payload only if the build inputs, required commands and every file hash match.
 Previous payloads and interrupted staging directories are retained.
 
@@ -44,8 +44,14 @@ CI builds and merges sequence payloads **before** packaging, including macOS.
 files inside the actual JAR and starts the extracted tools using a fresh native
 cache, with developer overrides removed. Release jobs run this check on their
 native OS. SeqKit and the identity/alignment overlay adapter are required on all
-four release platforms. Bundled BLAST is currently Linux x86_64 only; on other
-platforms a compatible local BLAST can be selected with `HICT_BLASTN_BIN`.
+four release platforms. BLAST+ is also mandatory everywhere: Linux uses the
+source build targeting glibc 2.17; Windows x64 and both Mac architectures use
+SHA-256-pinned official NCBI 2.16.0 distributions. Windows includes release
+Visual C++ runtime DLLs beside blastn; builders need the licensed Visual Studio
+x64 redistributable files, as supplied by the C++ workload. Every platform runs
+a real insertion-containing alignment both before packaging and again from the
+JAR-extracted executable. Licenses, source/archive hashes and runtime DLL hashes
+are retained in the payload. `HICT_BLASTN_BIN` remains an optional override.
 Linux and Windows x86_64 payloads require both mm2-plus AVX2 and AVX-512
 executables. The existing macOS builder supplies its AVX2/native compatibility
 entrypoint and minimap2, without an AVX-512 executable; packaging checks follow
