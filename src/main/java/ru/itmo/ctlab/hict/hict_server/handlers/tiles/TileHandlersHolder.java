@@ -640,7 +640,7 @@ public class TileHandlersHolder extends HandlersHolder {
     );
     final var secondaryMatrixWithWeights = querySecondarySubmatrix(
       secondaryChunkedFile,
-      resolutionDescriptor,
+      chunkedFile.getResolutions()[resolutionDescriptor.getResolutionOrderInArray()],
       startRowPx,
       startColPx,
       endRowPx,
@@ -898,7 +898,7 @@ public class TileHandlersHolder extends HandlersHolder {
           ? secondaryChunkedFile.matrixQueries().getSubmatrix(
             ResolutionDescriptor.fromBpResolution(bpResolution, secondaryChunkedFile),
             startRowPx, startColPx, endRowPx, endColPx, false)
-          : querySecondarySubmatrix(secondaryChunkedFile, resolutionDescriptor,
+          : querySecondarySubmatrix(secondaryChunkedFile, bpResolution,
             matrixWithWeights.startRowIncl(), matrixWithWeights.startColIncl(),
             matrixWithWeights.startRowIncl() + rowCount, matrixWithWeights.startColIncl() + columnCount);
         signalMatrix = computePipelineSignalMatrix(
@@ -2006,7 +2006,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
   private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights querySecondarySubmatrix(
     final @Nullable ChunkedFile secondaryChunkedFile,
-    final @NotNull ResolutionDescriptor resolutionDescriptor,
+    final long bpResolution,
     final long startRowPx,
     final long startColPx,
     final long endRowPx,
@@ -2015,9 +2015,13 @@ public class TileHandlersHolder extends HandlersHolder {
     if (secondaryChunkedFile == null) {
       return null;
     }
+    final var resolutionOrder = secondaryChunkedFile.getResolutionToIndex().get(bpResolution);
+    if (resolutionOrder == null) {
+      return null;
+    }
     return querySourceSubmatrix(
       secondaryChunkedFile,
-      resolutionDescriptor,
+      ResolutionDescriptor.fromResolutionOrder(resolutionOrder),
       startRowPx,
       startColPx,
       endRowPx,
