@@ -711,6 +711,9 @@ public final class RenderPipelineConfig {
           node.getDouble("maxSignal", 1.0d),
           requiredTrackBindings
         );
+        if ("MODDOTPLOT_IDENTITY".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
+          yield context -> mapIdentityColor(inputExpression.eval(context), minExpression.eval(context), maxExpression.eval(context));
+        }
         final var defaultStart = new Color(255, 255, 255, 0);
         final var defaultEnd = new Color(0, 96, 0, 255);
         final var startColor = parseColor(node.getString("startColor"), defaultStart);
@@ -870,6 +873,28 @@ public final class RenderPipelineConfig {
       }
       default -> throw new IllegalArgumentException("Unsupported color expression type: " + nodeType);
     };
+  }
+
+  // ColorBrewer RdYlBu-11, reversed: low identity blue, high identity red.
+  // Attribution and license are included with the bundled ModDotPlot tools.
+  private static final int[] IDENTITY_COLORS = {0xff313695, 0xff4575b4, 0xff74add1,
+    0xffabd9e9, 0xffe0f3f8, 0xffffffbf, 0xfffee090, 0xfffdae61,
+    0xfff46d43, 0xffd73027, 0xffa50026};
+
+  private static int mapIdentityColor(double value, double minimum, double maximum) {
+    if (!Double.isFinite(value) || !Double.isFinite(minimum) || !Double.isFinite(maximum)
+        || value <= 0 || value < minimum || minimum < 0 || maximum < minimum) return 0;
+    final double fraction = maximum == minimum ? 1 : Math.min(1, (value - minimum) / (maximum - minimum));
+    final double index = fraction * (IDENTITY_COLORS.length - 1);
+    final int left = Math.min(IDENTITY_COLORS.length - 2, (int) index);
+    final double mix = index - left;
+    final int a = IDENTITY_COLORS[left], b = IDENTITY_COLORS[left + 1];
+    int result = 0xff000000;
+    for (int shift = 0; shift <= 16; shift += 8) {
+      final int channel = (int) Math.round(((a >> shift) & 255) * (1 - mix) + ((b >> shift) & 255) * mix);
+      result |= channel << shift;
+    }
+    return result;
   }
 
   private static @NotNull TrackAxis parseTrackAxis(final String axisRaw) {

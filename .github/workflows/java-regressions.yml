@@ -40,6 +40,8 @@ jobs:
           --tests '*CompactAssemblyInfoDTOTest'
           --tests '*AGPImportPlanTest'
           --tests '*AGPProcessorTest'
+          --tests '*SecondaryResolutionCompatibilityTest'
+          --tests '*ModDotPlotColormapTest'
           shadowJar -x copyWebUI --no-daemon
       - name: Preserve test evidence
         if: always()

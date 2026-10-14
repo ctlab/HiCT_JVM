@@ -338,6 +338,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       catch (AtomicMoveNotSupportedException e) { Files.move(output, published); }
       job.output = job.data.relativize(published).toString().replace('\\', '/');
       atomicJson(registry, new JsonObject().put("outputFile", job.output).put("jobId", job.id).put("settings", settings));
+      job.log("Saved overlay: " + job.output + ". Generation is complete; display attachment is a separate step.");
       if (previous != null) atomicJson(job.directory.getParent().resolve("superseded-" + job.id + ".json"),
         new JsonObject().put("previous", job.data.relativize(previous).toString().replace('\\', '/')).put("replacement", job.output));
     } catch (Exception failure) {

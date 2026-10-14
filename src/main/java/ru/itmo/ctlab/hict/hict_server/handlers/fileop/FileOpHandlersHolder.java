@@ -73,6 +73,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
   private static final String SECONDARY_CHUNKED_FILE_KEY = "chunkedFileSecondary";
   private static final String OPENED_SECONDARY_FILENAME_KEY = "openedSecondaryFilename";
   private static final String SECONDARY_COMPATIBILITY_KEY = "secondarySourceCompatibility";
+  private static final String SECONDARY_SEQUENCE_METADATA_KEY = "secondarySequenceMetadata";
   private static final String ASSEMBLY_SOURCE_KEY = "assemblyInfoSource";
   private static final String ASSEMBLY_SOURCE_PRIMARY = "PRIMARY";
   private static final String ASSEMBLY_SOURCE_SECONDARY = "SECONDARY";
@@ -267,8 +268,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
             )
           );
           final SecondaryCompatibility compatibility;
+          final boolean generatedOverlay;
+          final io.vertx.core.json.JsonObject sequenceMetadata;
           try {
-            if (ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.isGenerated(secondaryChunkedFile)) {
+            generatedOverlay = ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.isGenerated(secondaryChunkedFile);
+            sequenceMetadata = generatedOverlay ? readSequenceMetadata(secondaryChunkedFile) : null;
+            if (generatedOverlay) {
               final var source = primaryWrapper.getChunkedFile();
               ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.requireCompatible(source, secondaryChunkedFile);
               // Prepare the candidate completely before closing or replacing an existing source.
@@ -284,15 +289,24 @@ public class FileOpHandlersHolder extends HandlersHolder {
               }
             }
             compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryChunkedFile);
+            if (generatedOverlay && !compatibility.sameMatrixSizes()) {
+              throw new IllegalArgumentException("The generated overlay cannot be aligned with the current assembly at its calculated resolutions. The existing overlay was retained. Recompute it for the current map.");
+            }
           } catch (final Exception ex) {
             try {
               secondaryChunkedFile.close();
             } catch (final Exception ignored) {
               // no-op
             }
+            if (ex instanceof IllegalArgumentException) {
+              throw new io.vertx.ext.web.handler.HttpException(400, ex.getMessage());
+            }
             throw ex;
           }
-          if (!compatibility.exactMatch() && !allowMismatch) {
+          // Generated overlays intentionally contain only requested resolutions.
+          // Their source contigs/ATUs and synchronized dimensions were verified
+          // above. An unrelated map still requires explicit confirmation.
+          if (!compatibility.exactMatch() && !allowMismatch && !generatedOverlay) {
             try {
               secondaryChunkedFile.close();
             } catch (final Exception ignored) {
@@ -309,8 +323,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
           map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
+          if (sequenceMetadata != null) map.put(SECONDARY_SEQUENCE_METADATA_KEY, sequenceMetadata);
+          else map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
           map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-          if (!ru.itmo.ctlab.hict.hict_library.assembly.SequenceOverlayCompatibility.isGenerated(secondaryChunkedFile))
+          if (!generatedOverlay)
             synchronizeOverlayAssembly(map, String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)));
           final var synchronizedCompatibility = refreshSecondaryCompatibility(map);
           try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
@@ -346,6 +362,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
           map.remove(SECONDARY_COMPATIBILITY_KEY);
+          map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
           try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
           catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
           TileHandlersHolder.clearExpectedProfileCache(map);
@@ -1234,7 +1251,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final var secondaryMatrixSizeBins = responseMatrixSizeBins(secondary);
     return new SecondaryCompatibility(
       Arrays.equals(primaryResolutions, secondaryResolutions),
-      Arrays.equals(primaryMatrixSizeBins, secondaryMatrixSizeBins),
+      SecondaryResolutionCompatibility.matchingSubset(primaryResolutions, primaryMatrixSizeBins,
+        secondaryResolutions, secondaryMatrixSizeBins),
       primaryResolutions,
       secondaryResolutions,
       primaryMatrixSizeBins,
@@ -1266,7 +1284,22 @@ public class FileOpHandlersHolder extends HandlersHolder {
     if (attached && compatibility instanceof io.vertx.core.json.JsonObject compatibilityJson) {
       status.put("compatibility", compatibilityJson.copy());
     }
+    if (attached && map.get(SECONDARY_SEQUENCE_METADATA_KEY) instanceof io.vertx.core.json.JsonObject metadata) {
+      status.put("sequenceAnalysis", metadata.copy());
+    }
     return status;
+  }
+
+  private static io.vertx.core.json.JsonObject readSequenceMetadata(ChunkedFile file) {
+    try (var reader = ch.systemsx.cisd.hdf5.HDF5Factory.openForReading(file.getHdfFilePath().toFile())) {
+      var compatibility = new io.vertx.core.json.JsonObject(reader.string().getAttr("/sequence_analysis", "compatibility"));
+      var settings = compatibility.getJsonObject("settings", new io.vertx.core.json.JsonObject());
+      var parameters = settings.getJsonObject("parameters", new io.vertx.core.json.JsonObject());
+      return new io.vertx.core.json.JsonObject().put("kind", settings.getString("kind", "moddotplot"))
+        .put("scoreUnit", compatibility.getString("unit"))
+        .put("scoreScale", compatibility.getDouble("scale", 1.0))
+        .put("minimumIdentity", parameters.getDouble("identity", 80.0));
+    }
   }
 
   private record SecondaryCompatibility(boolean sameResolutions,
@@ -1291,14 +1324,17 @@ public class FileOpHandlersHolder extends HandlersHolder {
     }
 
     private io.vertx.core.json.JsonObject toJson() {
-      final var maxLength = Math.max(primaryMatrixSizeBins.length, secondaryMatrixSizeBins.length);
       final var mismatchedOrders = new io.vertx.core.json.JsonArray();
-      for (int idx = 0; idx < maxLength; idx++) {
-        final var primaryValue = idx < primaryMatrixSizeBins.length ? primaryMatrixSizeBins[idx] : -1L;
-        final var secondaryValue = idx < secondaryMatrixSizeBins.length ? secondaryMatrixSizeBins[idx] : -1L;
-        if (primaryValue != secondaryValue) {
-          mismatchedOrders.add(idx);
+      // Orders describe the secondary source; compare like resolutions, never array positions.
+      for (int secondaryOrder = 0; secondaryOrder < secondaryResolutions.length; secondaryOrder++) {
+        boolean matches = false;
+        for (int primaryOrder = 0; primaryOrder < primaryResolutions.length; primaryOrder++) {
+          if (primaryResolutions[primaryOrder] == secondaryResolutions[secondaryOrder]
+            && primaryMatrixSizeBins[primaryOrder] == secondaryMatrixSizeBins[secondaryOrder]) {
+            matches = true; break;
+          }
         }
+        if (!matches) mismatchedOrders.add(secondaryOrder);
       }
       final var primaryMaxBins = Arrays.stream(primaryMatrixSizeBins).max().orElse(0L);
       final var secondaryMaxBins = Arrays.stream(secondaryMatrixSizeBins).max().orElse(0L);

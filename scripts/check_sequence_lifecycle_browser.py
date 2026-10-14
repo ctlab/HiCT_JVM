@@ -19,7 +19,23 @@ def main():
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=False)
     data = out / 'data'; data.mkdir()
     fixture = suite / 'prepared/fixture/known.hict.hdf5'
-    shutil.copyfile(fixture, data / 'known.hict.hdf5')
+    # Multiple resolutions are essential: generated sidecars may contain a subset.
+    import cooler, numpy as np, pandas as pd
+    mcool = data / 'known.mcool'
+    for resolution in (100, 200):
+        n = 4000 // resolution
+        bins = pd.DataFrame(dict(chrom=['assembly'] * n, start=np.arange(n) * resolution, end=np.arange(1, n+1) * resolution))
+        pixels = pd.DataFrame([(i, j, (i+1)*43+j+1) for i in range(n) for j in range(i, n)], columns=['bin1_id','bin2_id','count'])
+        cooler.create_cooler(str(mcool) + f'::resolutions/{resolution}', bins, pixels, ordered=True, mode='a')
+    converter = out / 'OverlayFixture.java'
+    converter.write_text("""import java.nio.file.Path; import java.util.List;
+import ru.itmo.ctlab.hict.hict_library.converters.*;
+class OverlayFixture { public static void main(String[] a) {
+ new McoolToHictConverter().convert(new ConversionOptions(Path.of(a[0]), Path.of(a[1]), List.of(100L,200L),8192,1,
+ ConversionOptions.CompressionAlgorithm.DEFLATE,"",false,4,true,false,false,false,ConversionOptions.ExportMode.INTERNAL),System.err::println);
+}}""")
+    with (out/'fixture-conversion.log').open('w') as log:
+        subprocess.run(['java','--class-path',str(Path(args.jar).resolve()),str(converter),str(mcool),str(data/'known.hict.hdf5')], check=True, stdout=log, stderr=subprocess.STDOUT)
     rng = random.Random(721)
     sequence = ''.join(rng.choice('ACGT') for _ in range(4000))
     (data / 'known.fasta').write_text('>assembly\n' + sequence + '\n')
@@ -114,13 +130,26 @@ def main():
                 page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
                 dialog = page.get_by_role('dialog', name='Generate ModDotPlot', exact=True)
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
+                [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
+                dialog.locator('.resolution-options input[value="100"]').check()
                 page.get_by_label('Display completed result').select_option('overlay' if iteration else 'below')
                 assert page.get_by_label('Accumulate compatible regions; replace scores within this rectangle').is_checked()
                 if iteration == 0:
                     page.screenshot(path=str(out / 'moddotplot-dialog.png'))
+                def review_once(route):
+                    page.unroute('**/secondary/open', review_once)
+                    status = json.loads(app.http('/secondary/status', {}))
+                    status.update(requiresConfirmation=True, warnings=['Test: review a requested overlay before replacing the current layer.'])
+                    route.fulfill(json=status)
+                if iteration:
+                    page.route('**/secondary/open', review_once)
                 with page.expect_response(lambda r: '/sequence/moddotplot/jobs' in r.url) as response:
                     dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).click()
                 assert response.value.status == 202, response.value.text()
+                if iteration:
+                    dialog.get_by_text('Review overlay compatibility', exact=True).wait_for()
+                    page.screenshot(path=str(out/'inline-overlay-confirmation.png'))
+                    dialog.get_by_role('button', name='Attach despite differences', exact=True).click()
                 dialog.wait_for(state='hidden')
                 check.settle()
                 pipeline = json.loads(app.http('/render_pipeline/get', {}))
@@ -128,7 +157,14 @@ def main():
                 if iteration:
                     assert pipeline['upperExpression']['type'] == 'pixel_blend' and pipeline['lowerExpression']['type'] == 'pixel_blend', pipeline
                 else:
-                    assert pipeline['upperExpression']['type'] == 'colormap' and pipeline['lowerExpression']['type'] == 'hsv', pipeline
+                    assert pipeline['upperExpression']['type'] == 'colormap' and pipeline['lowerExpression']['type'] == 'colormap' and pipeline['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', pipeline
+                status = json.loads(app.http('/secondary/status', {}))
+                assert status['attached'] and not status.get('requiresConfirmation'), status
+                assert status['compatibility']['primaryResolutions'] == [200, 100], status
+                assert status['compatibility']['secondaryResolutions'] == [100], status
+                assert status['compatibility']['sameMatrixSizes'] and not status['compatibility']['mismatchedResolutionOrders'], status
+                assert status['sequenceAnalysis'] == dict(kind='moddotplot',scoreUnit='identity_percent',scoreScale=10000.0,minimumIdentity=80.0), status
+                (out/f'moddotplot-status-{iteration}.json').write_text(json.dumps(status,indent=2))
                 jobs = [j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind'] == 'moddotplot']
                 assert len(jobs) == iteration + 1 and all(j['status'] == 'finished' for j in jobs), jobs
                 latest = sorted(jobs, key=lambda j: j['createdAtMs'])[-1]
@@ -141,6 +177,24 @@ def main():
             assert versions[0] != versions[1] and not versions[0].exists(), versions
             assert versions[1].is_file()
             (out / 'moddotplot-jobs.json').write_text(json.dumps(jobs, indent=2))
+        def identity_presets():
+            page.get_by_role('button', name='ModDotPlot: Hi-C above, identity below', exact=True).click()
+            check.settle()
+            expected = json.loads(app.http('/render_pipeline/get', {}))
+            assert expected['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', expected
+            # Editing and reapplying the graph must not silently downgrade it to LINEAR.
+            check.menu('View', 'Rendering pipeline...')
+            dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
+            with page.expect_response(lambda r: '/render_pipeline/set' in r.url):
+                dialog.get_by_role('button', name='Apply', exact=True).click()
+            dialog.get_by_role('button', name='Close', exact=True).click()
+            dialog.wait_for(state='hidden'); check.settle()
+            actual = json.loads(app.http('/render_pipeline/get', {}))
+            assert actual['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', actual
+            page.get_by_role('button', name='ModDotPlot: multicolor overlay', exact=True).click()
+            check.settle()
+            actual = json.loads(app.http('/render_pipeline/get', {}))
+            assert actual['upperExpression']['top']['mode'] == 'MODDOTPLOT_IDENTITY', actual
         def selection_actions():
             check.select_range()
             box = page.locator('#hic-contact-map').bounding_box()
@@ -194,6 +248,8 @@ def main():
             page.get_by_role('menu',name='Assembly actions').get_by_role('menuitem',name='Generate dotplot for selection…',exact=True).click()
             dialog=page.get_by_role('dialog',name='Generate dotplot from active assembly',exact=True)
             assert page.get_by_label('Analysis scope').input_value()=='selection'
+            [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
+            dialog.locator('.resolution-options input[value="100"]').check()
             for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20')]:
                 page.get_by_label(name,exact=True).fill(value)
             with page.expect_response(lambda r:'/sequence/dotplot/jobs' in r.url) as response:
@@ -291,6 +347,7 @@ def main():
             check.step('search-warning-after-edit', search_warning)
             check.step('minimap-clipping', minimap_clipping)
             check.step('generate-display-and-accumulate-moddotplot', moddotplot)
+            check.step('identity-presets-and-pipeline-roundtrip', identity_presets)
             check.step('selection-menu-exports-and-moddotplot', selection_actions)
             check.step('selection-alignment-dotplot',alignment_dotplot)
             check.step('reattach-generated-overlay-to-original-order', reattach_to_original_order)

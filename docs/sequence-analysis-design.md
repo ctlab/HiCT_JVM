@@ -304,3 +304,32 @@ Evidence: `sequence-lifecycle-review-20261014/` and
 `sequence-lifecycle-browser-20261014-final/` under the benchmark workspace.
 The browser fixture is a functional test, not a publication performance estimate
 for large assemblies.
+
+
+## Displaying generated overlays (2026-10-14)
+
+Generated sidecars intentionally store only selected resolutions. Attachment first
+verifies original contig/FASTA intervals and physical ATUs, projects the current
+assembly, and compares dimensions by matching base-pair resolution. A missing
+unused resolution is not a reason to require manual confirmation. Source mismatch
+or an incomplete sidecar remains an error, including with `allowMismatch=true`.
+
+The generation dialog reports saved output separately from display attachment.
+It offers an inline compatibility confirmation for generic mismatches, and a
+saved-result retry without repeating computation. Dotplots are secondary matrix
+layers; annotation/sequence-search tracks are 1D layers. Manual attachment remains
+available under View → Tracks and layers.
+
+`MODDOTPLOT_IDENTITY` is a color expression over unchanged numeric identity scores.
+It uses reversed ColorBrewer RdYlBu-11 (blue → yellow → red), the stored identity
+threshold/scale, and transparent missing or below-threshold values. No Cooler
+weights or resolution scaling apply to identity scores. Sidebar and graph-editor
+presets support identity below the diagonal and multicolor compositing. The graph
+editor preserves this expression when loading, editing, and exporting a pipeline.
+The map format and computation algorithm are unchanged.
+
+Regression coverage includes a real two-resolution map with a one-resolution
+sidecar, split/reversed assembly attachment, accumulation, independent aligner
+selection output, inline confirmation, pipeline round-trip, selection PNG/SVG/PDF
+export, and reattachment in original assembly order. Palette tests check eleven
+colors, missing values, and a 100% threshold.
