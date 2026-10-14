@@ -37,6 +37,13 @@ def merge(source, target):
     target.mkdir(parents=True, exist_ok=True)
     path = target / 'manifest.json'
     base = json.loads(path.read_text()) if path.exists() else dict(commands={}, files=[], notices=[], citations=[])
+    if extra.get('platform') == 'win32':
+        # The Java extractor appends a manifest hash to this human-readable ID.
+        # Long release labels plus nested PyInstaller DLL paths can exceed
+        # Windows MAX_PATH even though the executable itself starts by path.
+        # Preserve provenance in metadata; the hash still versions the cache.
+        base.setdefault('sourceToolchainId', base.get('id', 'default'))
+        base['id'] = 'hict'
     for name in extra['files']:
         dest = target / prefix / name
         if dest.exists() and digest(dest) != extra['sha256'][name]:

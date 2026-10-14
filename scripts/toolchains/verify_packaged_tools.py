@@ -47,9 +47,21 @@ def main():
     # A fresh Java home directory forces classpath extraction, rather than a
     # developer's external native cache. Keep evidence if the command fails.
     home = tempfile.mkdtemp(prefix='hict-packaged-tool-check-')
-    subprocess.run([args.java, '-Duser.home=' + home, '-Djava.io.tmpdir=' + home, '-jar', str(args.jar.resolve()),
-                    'check-toolchains', '--require-hictk', '--require-dotplot',
-                    '--require-sequence-tools', '--check-available-natives'], env=env, check=True)
+    try:
+        subprocess.run([args.java, '-Duser.home=' + home, '-Djava.io.tmpdir=' + home, '-jar', str(args.jar.resolve()),
+                        'check-toolchains', '--require-hictk', '--require-dotplot',
+                        '--require-sequence-tools', '--check-available-natives'], env=env, check=True)
+    except subprocess.CalledProcessError:
+        # The Java CLI reports exit codes; retain the native loader's actual
+        # stderr too (especially PyInstaller DLL/path failures on Windows).
+        name = 'hict-moddotplot.exe' if os.name == 'nt' else 'hict-moddotplot'
+        for command in Path(home).rglob(name):
+            if command.is_file():
+                print('Native diagnostic:', command, flush=True)
+                result = subprocess.run([str(command), '--help'], env=env,
+                                        capture_output=True, text=True, errors='replace', timeout=30)
+                print(result.stdout, result.stderr, 'exit:', result.returncode, flush=True)
+        raise
     print('Packaged tools: hashes and startup checks passed for', args.platform)
 
 

@@ -73,6 +73,15 @@ jobs:
       - name: Build and execute native fixtures on Windows or macOS
         if: runner.os != 'Linux'
         run: python scripts/toolchains/build_sequence_tools.py --output sequence-tools-dist/${{ matrix.platform }}
+      - name: Check Windows sequence tools after merge and relocation
+        if: runner.os == 'Windows'
+        run: python scripts/ci/check_windows_sequence_relocation.py --source sequence-tools-dist/windows_x86_64 --output build/windows-sequence-relocation.json
+      - name: Preserve Windows relocation evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-sequence-relocation
+          path: build/windows-sequence-relocation.json
       - name: Preserve executable modes in artifact
         shell: bash
         run: tar -czf sequence-tools-${{ matrix.platform }}.tar.gz -C sequence-tools-dist ${{ matrix.platform }}

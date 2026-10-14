@@ -10,6 +10,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/toolchains'))
 import prepare_bundled_tools as tools
 from verify_packaged_tools import verify_archive
+from merge_sequence_payload import merge
 
 
 class BundledToolsTest(unittest.TestCase):
@@ -71,6 +72,20 @@ class BundledToolsTest(unittest.TestCase):
         self.manifest['files'].append('../outside'); self.write_manifest()
         with self.assertRaisesRegex(ValueError, 'Unsafe'):
             tools.verify(self.root, 'linux_x86_64')
+
+    def test_windows_merge_shortens_cache_label_without_losing_provenance(self):
+        self.manifest['platform']='win32';self.write_manifest()
+        target=self.root/'merged';target.mkdir()
+        label='hict-toolchain-windows-x86_64-hictk-minimap2-mm2plus-v1.2'
+        (target/'manifest.json').write_text(json.dumps(dict(id=label,commands={},files=[])))
+        merge(self.root,target)
+        first=json.loads((target/'manifest.json').read_text())
+        self.assertEqual(first['id'],'hict')
+        self.assertEqual(first['sourceToolchainId'],label)
+        for path,digest in first['sha256'].items():
+            self.assertEqual(hashlib.sha256((target/path).read_bytes()).hexdigest(),digest)
+        merge(self.root,target)
+        self.assertEqual(json.loads((target/'manifest.json').read_text()),first)
 
 
 if __name__ == '__main__':
