@@ -15,6 +15,15 @@ class ModDotPlotColormapTest {
     return RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
       .put("upperExpression", expression).put("lowerExpression", expression));
   }
+  private static RenderPipelineConfig percentageConfig(double minimum, double scale) {
+    var input = new JsonObject().put("type", "binary").put("op", "DIV")
+      .put("left", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+      .put("right", new JsonObject().put("type", "constant").put("value", scale));
+    var expression = new JsonObject().put("type", "colormap").put("mode", "MODDOTPLOT_IDENTITY")
+      .put("input", input).put("minSignal", minimum).put("maxSignal", 100);
+    return RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
+      .put("upperExpression", expression).put("lowerExpression", expression));
+  }
   private static int color(RenderPipelineConfig config, double value) {
     var pixel = new RenderPipelineConfig.MutablePixelContext(); pixel.secondaryValue = value;
     var options = new SimpleVisualizationOptions(-1, -1, false, false, false,
@@ -38,5 +47,11 @@ class ModDotPlotColormapTest {
   @Test void exactIdentityThresholdDoesNotDivideByZero() {
     assertEquals(0xffa50026, color(config(100), 1000000));
     assertEquals(0, color(config(100), 999999));
+  }
+  @Test void fixedPointStorageCanBeRenderedOnPercentageScale() {
+    var config = percentageConfig(86, 10000);
+    assertEquals(0, color(config, 859999));
+    assertEquals(0xff313695, color(config, 860000));
+    assertEquals(0xffa50026, color(config, 1000000));
   }
 }

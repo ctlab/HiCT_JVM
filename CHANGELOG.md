@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Present ModDotPlot identity values on a familiar 0-100 percentage scale. New presets divide fixed-point stored scores by their declared scale in the rendering pipeline, default the threshold slider to 0-100, and preserve that conversion during live palette edits without changing `.hict.hdf5` storage.
 - Stabilize ModDotPlot/Hi-C overlays during source switching, palette edits and panning. Out-of-order visualization-option responses can no longer apply the Secondary identity palette to Primary Hi-C, visualization reloads cancel stale tile requests, and missing or zero identity cells remain transparent instead of appearing as solid blue triangles.
 - Add source-aware visualization controls for PRIMARY and SECONDARY matrices, including explicit colormap-target selection for custom rendering pipelines with multiple branches. Signal range, colors and automatic threshold updates now modify only the selected source/branch and retain ModDotPlot identity semantics.
 - Move ModDotPlot display choices into the normal visualization preset list and add a palette-only preset that can be applied to either Hi-C source.
