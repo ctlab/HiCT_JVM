@@ -166,6 +166,49 @@ class RenderPipelineConfigPixelBlendTest {
     assertEquals(0xffff0000, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
     assertEquals(0xff00ff00, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
   }
+
+  @Test
+  void missingIdentityPixelsStayTransparentOverPrimarySourceTiles() {
+    final var identity = new JsonObject()
+      .put("type", "colormap")
+      .put("mode", "MODDOTPLOT_IDENTITY")
+      .put("input", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+      .put("startColor", "#313695ff")
+      .put("endColor", "#a50026ff")
+      .put("minSignal", 800000.0d)
+      .put("maxSignal", 1000000.0d);
+    final var primary = new JsonObject()
+      .put("type", "colormap")
+      .put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+      .put("startColor", "#00000000")
+      .put("endColor", "#ff0000ff")
+      .put("minSignal", 0.0d)
+      .put("maxSignal", 1.0d);
+    final var blend = new JsonObject()
+      .put("type", "pixel_blend")
+      .put("top", identity)
+      .put("bottom", primary)
+      .put("topOpacity", 0.65d)
+      .put("bottomOpacity", 1.0d);
+    final var config = RenderPipelineConfig.fromJson(
+      new JsonObject()
+        .put("enabled", true)
+        .put("upperExpression", blend)
+        .put("lowerExpression", blend.copy())
+    );
+
+    final var ctx = new RenderPipelineConfig.MutablePixelContext();
+    ctx.rowPx = 1;
+    ctx.colPx = 2;
+    ctx.primaryValue = 1.0d;
+    ctx.secondaryValue = 0.0d;
+    assertEquals(0xffff0000, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
+    assertEquals(0x00000000, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
+
+    ctx.secondaryValue = 800000.0d;
+    assertEquals(0xff313695, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
+  }
+
   @Test void independentSourceLayersHonorTriangleRoutingAndSwap() {
     var primary = new JsonObject().put("type", "colormap").put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
       .put("startColor", "#ff0000ff").put("endColor", "#ff0000ff");

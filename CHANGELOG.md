@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Stabilize ModDotPlot/Hi-C overlays during source switching, palette edits and panning. Out-of-order visualization-option responses can no longer apply the Secondary identity palette to Primary Hi-C, visualization reloads cancel stale tile requests, and missing or zero identity cells remain transparent instead of appearing as solid blue triangles.
 - Add source-aware visualization controls for PRIMARY and SECONDARY matrices, including explicit colormap-target selection for custom rendering pipelines with multiple branches. Signal range, colors and automatic threshold updates now modify only the selected source/branch and retain ModDotPlot identity semantics.
 - Move ModDotPlot display choices into the normal visualization preset list and add a palette-only preset that can be applied to either Hi-C source.
 - Store ModDotPlot display actions as ordinary records in the visualization preset JSON schema and render them through the same preset-row component as all other presets. Generated sequence overlays now render only at resolutions they actually contain; unavailable zoom levels are transparent instead of repeatedly fetching and scaling a dense finer-resolution matrix.
