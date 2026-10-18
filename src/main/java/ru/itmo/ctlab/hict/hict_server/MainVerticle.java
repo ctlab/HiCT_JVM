@@ -373,7 +373,13 @@ public class MainVerticle extends AbstractVerticle {
       .allowedHeader("Content-Type")
       .allowedHeader("X-HiCT-History-Session")
       .allowedHeader("X-HiCT-History-Revision")
-      .exposedHeader("X-HiCT-History"));
+      .exposedHeader("X-HiCT-History")
+      .exposedHeader("X-HiCT-Cancelled")
+      .exposedHeader("X-HiCT-Rows")
+      .exposedHeader("X-HiCT-Cols")
+      .exposedHeader("X-HiCT-Signal-Mode")
+      .exposedHeader("X-HiCT-Source")
+      .exposedHeader("X-HiCT-Unit"));
     router.route().handler(ctx -> {
       requestStatistics.recordStarted(ctx.normalizedPath());
       ctx.addBodyEndHandler(ignored -> requestStatistics.recordFinished());

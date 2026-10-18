@@ -58,6 +58,7 @@ import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -113,6 +114,75 @@ class ApiHttpIntegrationTest {
       closeFuture.get(10, TimeUnit.SECONDS);
       vertx = null;
     }
+  }
+
+  @Test
+  void cancelledTileAndMatrixResponsesAreExplicitAndPngIsTransparent() throws Exception {
+    final var started = new CountDownLatch(2);
+    final var release = new CountDownLatch(1);
+    startServerWithInfoAndFileHandlers(router -> router.get("/hold-tile-worker").handler(ctx ->
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.TILE, null, () -> {
+        started.countDown();
+        if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Test worker was not released");
+        return "released";
+      }, value -> ctx.response().end(value))));
+    final var holdRequest = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/hold-tile-worker")).GET().build();
+    final var holds = java.util.List.of(
+      httpClient.sendAsync(holdRequest, HttpResponse.BodyHandlers.ofString()),
+      httpClient.sendAsync(holdRequest, HttpResponse.BodyHandlers.ofString()));
+    try {
+      assertTrue(started.await(5, TimeUnit.SECONDS), "Both tile workers must be occupied");
+      final var requests = java.util.List.of(
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/get_tile?row=0&col=0&format=JSON_PNG_WITH_RANGES")).GET().build(),
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/get_tile?row=0&col=0&format=PNG")).GET().build(),
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/matrix/query"))
+          .header("content-type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{\"format\":\"JSON\"}")).build(),
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/matrix/query"))
+          .header("content-type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{\"format\":\"BINARY_FLOAT32\"}")).build());
+      final var responses = requests.stream().map(request -> httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())).toList();
+      final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (scheduler.diagnosticsSnapshot().pools().get(RequestTaskScheduler.RequestPriority.TILE).queueSize() < 4
+        && System.nanoTime() < deadline) Thread.sleep(10);
+      assertEquals(4, scheduler.diagnosticsSnapshot().pools().get(RequestTaskScheduler.RequestPriority.TILE).queueSize());
+      scheduler.bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
+      for (final var pending : responses) {
+        final var response = pending.get(5, TimeUnit.SECONDS);
+        assertEquals(200, response.statusCode());
+        assertEquals("true", response.headers().firstValue("x-hict-cancelled").orElse(""));
+        assertEquals("no-store", response.headers().firstValue("cache-control").orElse(""));
+      }
+      final var tile = new JsonObject(new String(responses.get(0).get().body(), StandardCharsets.UTF_8));
+      assertTrue(tile.getBoolean("cancelled"));
+      final var png = java.util.Base64.getDecoder().decode(tile.getString("image").substring("data:image/png;base64,".length()));
+      org.junit.jupiter.api.Assertions.assertArrayEquals(png, responses.get(1).get().body());
+      assertTransparentPng(png);
+      final var matrix = new JsonObject(new String(responses.get(2).get().body(), StandardCharsets.UTF_8));
+      assertTrue(matrix.getBoolean("cancelled"));
+      assertEquals(0, matrix.getInteger("rows"));
+      assertEquals(0, matrix.getInteger("cols"));
+      assertTrue(matrix.getJsonArray("values").isEmpty());
+      assertEquals(0, responses.get(3).get().body().length);
+    } finally {
+      release.countDown();
+      for (final var hold : holds) assertEquals("released", hold.get(5, TimeUnit.SECONDS).body());
+    }
+  }
+
+  private static void assertTransparentPng(byte[] png) throws IOException {
+    final var bytes = java.nio.ByteBuffer.wrap(png);
+    assertEquals(0x89504e470d0a1a0aL, bytes.getLong());
+    while (bytes.hasRemaining()) {
+      final int length = bytes.getInt();
+      assertTrue(length >= 0 && length <= bytes.remaining() - 8, "Truncated PNG chunk");
+      final var crc = new java.util.zip.CRC32();
+      crc.update(png, bytes.position(), length + 4);
+      bytes.position(bytes.position() + length + 4);
+      assertEquals((int) crc.getValue(), bytes.getInt(), "Invalid PNG chunk checksum");
+    }
+    final var image = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+    assertEquals(1, image.getWidth());
+    assertEquals(1, image.getHeight());
+    assertEquals(0, image.getRGB(0, 0) >>> 24, "Cancellation placeholder must be transparent");
   }
 
   @Test
@@ -281,6 +351,10 @@ class ApiHttpIntegrationTest {
   }
 
   private void startServerWithInfoAndFileHandlers() throws Exception {
+    startServerWithInfoAndFileHandlers(router -> {});
+  }
+
+  private void startServerWithInfoAndFileHandlers(java.util.function.Consumer<Router> configure) throws Exception {
     vertx = Vertx.vertx();
     scheduler = new RequestTaskScheduler(vertx, schedulerConfig());
 
@@ -293,6 +367,7 @@ class ApiHttpIntegrationTest {
 
     final var router = Router.router(vertx);
     router.route().handler(BodyHandler.create());
+    configure.accept(router);
     router.route().failureHandler(ctx -> {
       final var message = ctx.failure() != null && ctx.failure().getMessage() != null
         ? ctx.failure().getMessage()

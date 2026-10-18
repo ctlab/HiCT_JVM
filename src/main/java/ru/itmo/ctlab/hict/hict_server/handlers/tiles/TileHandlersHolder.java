@@ -68,10 +68,10 @@ import java.util.stream.IntStream;
 @Slf4j
 public class TileHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private final String statisticsInstance = java.util.UUID.randomUUID().toString();
   public static final String EXPECTED_PROFILE_LOCAL_MAP_KEY = "ViewportExpectedProfile";
-  private static final String TRANSPARENT_PNG_BASE64 =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z3ioAAAAASUVORK5CYII=";
-  private static final byte[] TRANSPARENT_PNG_BYTES = Base64.getDecoder().decode(TRANSPARENT_PNG_BASE64);
+  private static final byte[] TRANSPARENT_PNG_BYTES = createTransparentPng();
+  private static final String TRANSPARENT_PNG_BASE64 = Base64.getEncoder().encodeToString(TRANSPARENT_PNG_BYTES);
   private static final int MAX_MATRIX_QUERY_ELEMENTS = Integer.getInteger("HICT_MATRIX_QUERY_MAX_ELEMENTS", 16_777_216);
 
   public static void clearExpectedProfileCache(final @NotNull LocalMap<String, Object> map) {
@@ -472,6 +472,44 @@ public class TileHandlersHolder extends HandlersHolder {
       );
     });
 
+    router.post("/matrix/statistics").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      final var request = ctx.body().asJsonObject();
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.EXPORT,
+        RequestTaskScheduler.CancellationDomain.TILE, () -> {
+          final var revision = statisticsInstance + ":" + scheduler.currentGeneration(RequestTaskScheduler.CancellationDomain.TILE);
+          if (request.containsKey("revision") && !revision.equals(request.getString("revision")))
+            throw new java.util.concurrent.CancellationException("Signal statistics are obsolete");
+          final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var wrapper = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
+          if (wrapper == null) throw new IllegalStateException("Open a contact map first");
+          final var file = wrapper.getChunkedFile();
+          final var bpResolution = request.getLong("bpResolution");
+          if (bpResolution == null || !file.getResolutionToIndex().containsKey(bpResolution))
+            throw new IllegalArgumentException("Resolution is not available in the open map");
+          final var size = file.getContigTree().getLengthInUnits(QueryLengthUnit.PIXELS,
+            ResolutionDescriptor.fromBpResolution(bpResolution, file));
+          final var result = new JsonObject().put("revision", revision).put("size", size);
+          if (!request.getBoolean("metadataOnly", false)) {
+            final long row = request.getLong("startRowPx", 0L);
+            final long col = request.getLong("startColPx", 0L);
+            if (row < 0 || col < 0 || row >= size || col >= size)
+              throw new IllegalArgumentException("Statistics block is outside the map");
+            // Fixed blocks bound memory and cancellation latency, including for very fine maps.
+            final var query = request.copy().put("unit", "PIXELS").put("source", "PRIMARY")
+              .put("signalMode", "PIPELINE_SIGNAL").put("endRowPx", Math.min(size, row + 512))
+              .put("endColPx", Math.min(size, col + 512));
+            result.mergeIn(new JsonObject(computeMatrixQueryResponse(query, true).jsonBody()));
+          }
+          if (!revision.equals(statisticsInstance + ":" + scheduler.currentGeneration(RequestTaskScheduler.CancellationDomain.TILE)))
+            throw new java.util.concurrent.CancellationException("Signal statistics are obsolete");
+          return result;
+        }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()),
+        () -> ctx.response().setStatusCode(409).putHeader("content-type", "application/json")
+          .end(new JsonObject().put("error", "Map or rendering state changed; restart statistics scan").encode()));
+    });
+
     router.post("/matrix/query").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -752,8 +790,23 @@ public class TileHandlersHolder extends HandlersHolder {
     }
   }
 
+  private static byte[] createTransparentPng() {
+    // Generate once with the normal encoder rather than embedding an unchecked
+    // PNG literal. Legacy clients still decode cancellation placeholders.
+    final var bytes = new ByteArrayOutputStream();
+    try {
+      if (!ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), "png", bytes)) {
+        throw new IllegalStateException("PNG image writer is unavailable");
+      }
+      return bytes.toByteArray();
+    } catch (IOException error) {
+      throw new java.io.UncheckedIOException("Cannot encode transparent tile", error);
+    }
+  }
+
   private void respondCancelledTile(final @NotNull io.vertx.ext.web.RoutingContext ctx,
                                     final @NotNull TileFormat format) {
+    ctx.response().putHeader("x-hict-cancelled", "true").putHeader("cache-control", "no-store");
     if (format == TileFormat.JSON_PNG_WITH_RANGES) {
       final var map = vertx.sharedData().getLocalMap("hict_server");
       final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile"));
@@ -764,7 +817,7 @@ public class TileHandlersHolder extends HandlersHolder {
       final var result = new TileWithRanges("data:image/png;base64," + TRANSPARENT_PNG_BASE64, ranges);
       ctx.response()
         .putHeader("content-type", "application/json")
-        .end(Json.encode(result));
+        .end(JsonObject.mapFrom(result).put("cancelled", true).encode());
       return;
     }
     ctx.response()
@@ -775,6 +828,8 @@ public class TileHandlersHolder extends HandlersHolder {
   private void respondCancelledMatrixQuery(final @NotNull io.vertx.ext.web.RoutingContext ctx,
                                            final @NotNull MatrixResponseFormat format) {
     final var headers = Map.of(
+      "x-hict-cancelled", "true",
+      "cache-control", "no-store",
       "x-hict-rows", "0",
       "x-hict-cols", "0",
       "x-hict-dtype", format.defaultDtype(),
@@ -782,6 +837,7 @@ public class TileHandlersHolder extends HandlersHolder {
     );
     if (format == MatrixResponseFormat.JSON) {
       final var payload = new JsonObject()
+        .put("cancelled", true)
         .put("rows", 0)
         .put("cols", 0)
         .put("dtype", format.defaultDtype())
@@ -798,6 +854,10 @@ public class TileHandlersHolder extends HandlersHolder {
   }
 
   private MatrixResponsePayload computeMatrixQueryResponse(final @NotNull JsonObject request) {
+    return computeMatrixQueryResponse(request, false);
+  }
+
+  private MatrixResponsePayload computeMatrixQueryResponse(final @NotNull JsonObject request, boolean statisticsOnly) {
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var primaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (primaryChunkedFileWrapper == null) {
@@ -901,17 +961,42 @@ public class TileHandlersHolder extends HandlersHolder {
           : querySecondarySubmatrix(secondaryChunkedFile, bpResolution,
             matrixWithWeights.startRowIncl(), matrixWithWeights.startColIncl(),
             matrixWithWeights.startRowIncl() + rowCount, matrixWithWeights.startColIncl() + columnCount);
+        // Diagnostics evaluate a supplied numeric branch without changing the
+        // active rendering configuration or its tile cache version.
+        final var expression = request.getJsonObject("expression");
+        final var diagnosticPipeline = expression == null ? renderPipelineConfig
+          : RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
+            .put("upperExpression", expression).put("lowerExpression", expression));
         signalMatrix = computePipelineSignalMatrix(
           primaryChunkedFile,
           secondaryChunkedFile,
           matrixWithWeights,
           secondaryMatrixWithWeights,
           options,
-          renderPipelineConfig,
+          diagnosticPipeline,
           track1DManager
         );
       }
       default -> throw new IllegalStateException("Unsupported matrix signal mode: " + signalMode);
+    }
+
+    if (statisticsOnly) {
+      double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+      long finite = 0;
+      for (int row = 0; row < rowCount; row++) {
+        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+        for (int col = 0; col < columnCount; col++) {
+          final double value = signalMatrix == null ? rawMatrix.getAsDouble(row, col) : signalMatrix[row][col];
+          if (Double.isFinite(value)) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            finite++;
+          }
+        }
+      }
+      final var payload = new JsonObject().put("rows", rowCount).put("cols", columnCount)
+        .put("count", finite).put("min", finite == 0 ? null : min).put("max", finite == 0 ? null : max);
+      return new MatrixResponsePayload("application/json", payload.encode(), null, Map.of());
     }
 
     final String headerCoordinateSuffix = visibleOnly ? "px" : "bin";

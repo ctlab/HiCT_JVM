@@ -441,8 +441,13 @@ public class ChunkedFile implements AutoCloseable {
 
   @Override
   public void close() {
-    for (int i = 1; i < resolutions.length; ++i) {
-      this.datasetBundlePools.get(i).close();
+    try {
+      for (int i = 1; i < resolutions.length; ++i) {
+        this.datasetBundlePools.get(i).close();
+      }
+    } finally {
+      try { this.fastaProcessor.close(); }
+      catch (IOException e) { log.warn("Could not remove temporary FASTA index", e); }
     }
   }
 

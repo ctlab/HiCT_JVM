@@ -171,6 +171,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
           log.info("Putting chunkedFile into the local map");
           map.put(PRIMARY_CHUNKED_FILE_KEY, chunkedFileWrapper);
           map.put("openedFilename", requestedFilename);
+          var workspace = new WorkspaceStateStore();
+          map.put("workspaceStateStore", workspace);
           map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
 
           final var processedDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
@@ -187,7 +189,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put("openProgress", new io.vertx.core.json.JsonObject()
             .put("stage", "done")
             .put("progress", 1.0));
-          return generateOpenFileResponse(chunkedFile);
+          return io.vertx.core.json.JsonObject.mapFrom(generateOpenFileResponse(chunkedFile))
+            .put("workspaceVersion", workspace.version());
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -432,6 +435,23 @@ public class FileOpHandlersHolder extends HandlersHolder {
       );
     });
 
+    router.post("/workspace/state").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        var shared = vertx.sharedData().getLocalMap("hict_server");
+        var request = ctx.body().asJsonObject();
+        var workspace = (WorkspaceStateStore)shared.get("workspaceStateStore");
+        if (request == null || workspace == null ||
+            !java.util.Objects.equals(request.getValue("filename"), shared.get("openedFilename")))
+          throw new io.vertx.ext.web.handler.HttpException(409, "The active map has changed");
+        if (!(request.getValue("expectedVersion") instanceof io.vertx.core.json.JsonObject expected) ||
+            !(request.getValue("state") instanceof io.vertx.core.json.JsonObject state))
+          throw new io.vertx.ext.web.handler.HttpException(400, "Invalid workspace state");
+        return workspace.save(expected, state);
+      }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
+    });
+
     router.post("/attach").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -453,12 +473,14 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
           final var filename = (String) map.getOrDefault("openedFilename", "");
           final var secondaryStatus = secondaryStatusJson(map);
+          final var workspace = (WorkspaceStateStore)map.get("workspaceStateStore");
           return new JsonRouteResult(
             200,
             new io.vertx.core.json.JsonObject()
               .put("filename", filename)
               .put("fastaFilename", map.getOrDefault("linkedFastaFilename", map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, "")))
               .put("secondarySource", secondaryStatus)
+              .mergeIn(workspace == null ? new io.vertx.core.json.JsonObject() : workspace.snapshot())
               .put("openFileResponse", generateOpenFileResponse(chunkedFile))
           );
         },
@@ -496,6 +518,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
           map.remove("TileStatisticHolder");
           map.remove("openedFilename");
+          map.remove("workspaceStateStore");
           map.remove("linkedFastaPath");
           map.remove("linkedFastaFilename");
           map.remove(PRIMARY_FASTA_PATH_KEY);

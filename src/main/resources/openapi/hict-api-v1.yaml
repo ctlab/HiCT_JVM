@@ -371,6 +371,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpenProgressResponse'
+  /workspace/state:
+    post:
+      tags: [Files]
+      summary: Retain frontend workspace state for attachment to the active map
+      operationId: saveWorkspaceState
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, state, expectedVersion]
+              properties:
+                filename: { type: string }
+                expectedVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
+                state:
+                  type: object
+                  required: [version]
+                  properties:
+                    version: { type: integer, enum: [1] }
+                  additionalProperties: true
+      responses:
+        '200':
+          description: State retained in memory; returned by attach. Maximum serialized size is 1 MB.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  saved: { type: boolean }
+                  workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
+        '400':
+          description: Unsupported or oversized state
+        '409':
+          description: Active map session changed or another client saved newer workspace settings; attach again before saving.
   /attach:
     post:
       tags: [Files]
@@ -630,7 +665,11 @@ paths:
           description: Width in pixels for PNG_BY_PIXELS.
       responses:
         '200':
-          description: Tile payload
+          description: Tile payload. Cancelled work returns a transparent placeholder with x-hict-cancelled=true; clients must not cache or display it as a rendered map tile.
+          headers:
+            x-hict-cancelled:
+              description: True only when superseded work was cancelled.
+              schema: { type: boolean }
           content:
             application/json:
               schema:
@@ -639,6 +678,51 @@ paths:
               schema:
                 type: string
                 format: binary
+  /matrix/statistics:
+    post:
+      tags: [Tiles]
+      summary: Exact finite extrema of a bounded numeric-pipeline block
+      description: |
+        First request metadataOnly to obtain the current revision and full visible-pixel
+        extent of the resolution. Then visit every 512 by 512 block using that revision.
+        Both triangles and implicit zeros are included; there is no sampling or float32
+        conversion. Partial edge blocks are clipped to the map. Non-finite values are
+        excluded from count and extrema. Any rendering/assembly invalidation cancels
+        the snapshot with HTTP 409. Statistics run on the export worker pool.
+      operationId: queryMatrixStatistics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bpResolution]
+              properties:
+                bpResolution: { type: integer, format: int64, minimum: 1 }
+                metadataOnly: { type: boolean, default: false }
+                revision: { type: string }
+                startRowPx: { type: integer, format: int64, minimum: 0 }
+                startColPx: { type: integer, format: int64, minimum: 0 }
+                expression: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Snapshot metadata or exact block extrema
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision, size]
+                properties:
+                  revision: { type: string }
+                  size: { type: integer, format: int64 }
+                  rows: { type: integer }
+                  cols: { type: integer }
+                  count: { type: integer, format: int64 }
+                  min: { type: number, format: double, nullable: true }
+                  max: { type: number, format: double, nullable: true }
+        '409':
+          description: Snapshot invalidated; restart the scan
+
   /matrix/query:
     post:
       tags: [Tiles]
@@ -680,6 +764,9 @@ paths:
         '200':
           description: Matrix payload
           headers:
+            x-hict-cancelled:
+              description: True when superseded work was cancelled; the empty payload is not a zero-valued matrix.
+              schema: { type: boolean }
             x-hict-rows:
               schema: { type: integer }
             x-hict-cols:
@@ -1384,6 +1471,34 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /sequence/region:
+    post:
+      tags: [Sequence analysis]
+      summary: Read up to 4096 linked FASTA bases in current gap-free assembly coordinates
+      operationId: readAssemblySequenceRegion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [startBp, endBp]
+              properties:
+                startBp: { type: integer, format: int64, minimum: 0 }
+                endBp: { type: integer, format: int64, description: Exclusive end }
+      responses:
+        '200':
+          description: Linked status and, when linked, the requested oriented sequence
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  linked: { type: boolean }
+                  startBp: { type: integer, format: int64 }
+                  sequence: { type: string, maxLength: 4096 }
+        '400':
+          description: Invalid or oversized region
   /sequence/settings:
     post:
       tags: [Sequence analysis]
@@ -1748,6 +1863,12 @@ components:
         filename: { type: string }
         fastaFilename: { type: string }
       required: [filename]
+    WorkspaceVersion:
+      type: object
+      required: [session, revision]
+      properties:
+        session: { type: string, format: uuid }
+        revision: { type: integer, format: int64, minimum: 0 }
     OpenFileResponse:
       type: object
       properties:
@@ -1758,6 +1879,7 @@ components:
         denseBlockSize: { type: integer }
         assemblyInfo: { type: object, additionalProperties: true }
         matrixSizeBins: { type: array, items: { type: integer } }
+        workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
       required: [status, resolutions, assemblyInfo]
     OpenProgressResponse:
       type: object
@@ -1771,6 +1893,8 @@ components:
         filename: { type: string }
         fastaFilename: { type: string }
         openFileResponse: { $ref: '#/components/schemas/OpenFileResponse' }
+        workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
+        workspaceState: { type: object, nullable: true, additionalProperties: true }
 
     OpenSecondaryRequest:
       type: object
@@ -1841,6 +1965,9 @@ components:
     TileWithRangesResponse:
       type: object
       properties:
+        cancelled:
+          type: boolean
+          default: false
         image:
           type: string
           description: data:image/png;base64,...
@@ -1857,6 +1984,10 @@ components:
     MatrixQueryRequest:
       type: object
       properties:
+        expression:
+          type: object
+          additionalProperties: true
+          description: Optional numeric rendering expression for PIPELINE_SIGNAL diagnostics; does not alter the active pipeline.
         bpResolution:
           type: integer
           format: int64
@@ -1947,6 +2078,9 @@ components:
     MatrixQueryJsonResponse:
       type: object
       properties:
+        cancelled:
+          type: boolean
+          default: false
         rows: { type: integer }
         cols: { type: integer }
         dtype: { type: string, enum: [float64, int64] }

@@ -30,6 +30,7 @@ import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -40,6 +41,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
+import javax.swing.Scrollable;
 import javax.swing.JSlider;
 import javax.swing.JSeparator;
 import javax.swing.JTabbedPane;
@@ -379,7 +381,7 @@ public final class HictLauncherGui {
 
       final var title = new JLabel("HiCT portable launcher");
       title.setFont(title.getFont().deriveFont(Font.BOLD, this.uiScale.titleFontSize()));
-      panel.add(title, BorderLayout.WEST);
+      panel.add(title, BorderLayout.NORTH);
 
       final var buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), 0));
       this.startButton = new JButton("Start HiCT");
@@ -403,7 +405,7 @@ public final class HictLauncherGui {
       buttons.add(this.configureButton);
       buttons.add(this.aboutButton);
       buttons.add(this.stopButton);
-      panel.add(buttons, BorderLayout.EAST);
+      panel.add(buttons, BorderLayout.CENTER);
 
       final var separator = new JSeparator();
       panel.add(separator, BorderLayout.SOUTH);
@@ -441,10 +443,9 @@ public final class HictLauncherGui {
 
       panel.add(createStatusPanel(), BorderLayout.NORTH);
 
-      final var body = new JPanel(new BorderLayout(this.uiScale.gap(), this.uiScale.gap()));
+      final var body = new JPanel(new CardLayout());
       this.configurationPanel = createConfigurationPanel();
-      this.configurationPanel.setVisible(false);
-      body.add(this.configurationPanel, BorderLayout.NORTH);
+      body.add(this.configurationPanel, "configuration");
 
       this.logArea = new JTextArea();
       this.logArea.setEditable(false);
@@ -457,7 +458,8 @@ public final class HictLauncherGui {
       this.logCardsPanel = new JPanel(new CardLayout());
       this.logCardsPanel.add(createLaunchPlaceholderPanel(), "start");
       this.logCardsPanel.add(logScroll, "log");
-      body.add(this.logCardsPanel, BorderLayout.CENTER);
+      body.add(this.logCardsPanel, "activity");
+      ((CardLayout) body.getLayout()).show(body, "activity");
 
       panel.add(body, BorderLayout.CENTER);
       return panel;
@@ -625,13 +627,15 @@ public final class HictLauncherGui {
         gbc.gridy = i;
         gbc.gridx = 0;
         gbc.weightx = 0.0;
-        final var label = new JLabel(spec.label());
+        final var label = new JLabel("<html><div style='width:" + this.uiScale.scaled(220)
+          + "px'>" + spec.label() + "</div></html>");
         label.setToolTipText(spec.key());
         form.add(label, gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         final var field = new JTextField(resolveInitialValue(spec), this.uiScale.fieldColumns());
+        label.setLabelFor(field);
         this.fields.put(spec.key(), field);
         form.add(field, gbc);
 
@@ -646,16 +650,22 @@ public final class HictLauncherGui {
         }
       }
 
-      final var optionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), this.uiScale.gapSmall()));
-      optionPanel.add(new JLabel("Native processing:"));
-      optionPanel.add(createNativeProcessingModePanel());
+      final var optionPanel = new JPanel();
+      optionPanel.setLayout(new BoxLayout(optionPanel, BoxLayout.Y_AXIS));
+      final var nativeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gap(), this.uiScale.gapSmall()));
+      nativeRow.add(new JLabel("Native processing:"));
+      nativeRow.add(createNativeProcessingModePanel());
+      optionPanel.add(nativeRow);
       this.nativeProcessingStatusLabel = new JLabel(nativeProcessingStatusText());
       this.nativeProcessingStatusLabel.setForeground(new Color(90, 96, 104));
-      optionPanel.add(this.nativeProcessingStatusLabel);
+      final var statusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gap(), this.uiScale.gapSmall()));
+      statusRow.add(this.nativeProcessingStatusLabel);
+      optionPanel.add(statusRow);
+      final var loggingRow = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gap(), this.uiScale.gapSmall()));
       this.openAfterStartCheckbox = new JCheckBox("Open WebUI after start");
       this.openAfterStartCheckbox.setSelected(getBooleanSetting("openAfterStart", true));
-      optionPanel.add(this.openAfterStartCheckbox);
-      optionPanel.add(new JLabel("Verbosity:"));
+      loggingRow.add(this.openAfterStartCheckbox);
+      loggingRow.add(new JLabel("Verbosity:"));
       this.logLevelSlider = new JSlider(0, LOG_LEVELS.length - 1, resolveInitialLogLevelIndex());
       this.logLevelSlider.setMajorTickSpacing(1);
       this.logLevelSlider.setSnapToTicks(true);
@@ -667,8 +677,9 @@ public final class HictLauncherGui {
       this.logLevelValueLabel = new JLabel(selectedLogLevel());
       this.logLevelValueLabel.setFont(this.logLevelValueLabel.getFont().deriveFont(Font.BOLD));
       this.logLevelSlider.addChangeListener(ignored -> updateLogLevelLabel());
-      optionPanel.add(this.logLevelSlider);
-      optionPanel.add(this.logLevelValueLabel);
+      loggingRow.add(this.logLevelSlider);
+      loggingRow.add(this.logLevelValueLabel);
+      optionPanel.add(loggingRow);
 
       final var buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, this.uiScale.gap(), this.uiScale.gapSmall()));
       final var saveButton = new JButton("Save settings");
@@ -677,15 +688,70 @@ public final class HictLauncherGui {
         appendLauncherLog("Settings saved.");
       });
       buttonPanel.add(saveButton);
+      final var resetJvmButton = new JButton("Reset JVM settings");
+      resetJvmButton.addActionListener(ignored -> {
+        if (JOptionPane.showConfirmDialog(this.frame,
+          "Reset JVM configuration for the next start? Data and processed directory locations are retained. Environment defaults still apply.",
+          "Reset JVM settings", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+        for (var spec : CONFIG_SPECS) {
+          if (spec.key().equals("DATA_DIR") || spec.key().equals("PROCESSED_DIR")) continue;
+          this.settings.remove(spec.key());
+          this.fields.get(spec.key()).setText(resolveInitialValue(spec));
+        }
+        this.settings.remove("nativeProcessingMode");
+        selectNativeProcessingMode(resolveInitialNativeProcessingMode());
+        this.settings.remove("logLevel");
+        this.logLevelSlider.setValue(resolveInitialLogLevelIndex());
+        saveSettings();
+        appendLauncherLog("JVM settings reset. Restart HiCT to apply them.");
+      });
+      buttonPanel.add(resetJvmButton);
+      final var resetBrowserButton = new JButton("Reset WebUI settings and cache");
+      resetBrowserButton.addActionListener(ignored -> {
+        if (JOptionPane.showConfirmDialog(this.frame,
+          "Close bundled browsers and clear their settings, cookies and cache on their next launch? Exported files and the running assembly are not changed.",
+          "Reset WebUI", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+        this.backgroundExecutor.submit(() -> {
+          stopBundledBrowsers("before resetting WebUI data");
+          SwingUtilities.invokeLater(() -> {
+            this.settings.setProperty("resetBrowser.electron", "true");
+            this.settings.setProperty("resetBrowser.tauri", "true");
+            saveSettings();
+            appendLauncherLog("WebUI reset scheduled for the next launch of each bundled browser.");
+          });
+        });
+      });
+      buttonPanel.add(resetBrowserButton);
 
-      final var formScroll = new JScrollPane(form);
+      final var content = new ConfigurationScrollPanel();
+      content.add(optionPanel, BorderLayout.NORTH);
+      content.add(form, BorderLayout.CENTER);
+      final var formScroll = new JScrollPane(content);
       formScroll.setPreferredSize(this.uiScale.configurationScrollPreferredSize());
       formScroll.setMinimumSize(new Dimension(this.uiScale.minWindowWidth() / 2, this.uiScale.scaled(120)));
       outer.add(formScroll, BorderLayout.CENTER);
-      outer.add(optionPanel, BorderLayout.NORTH);
       outer.add(buttonPanel, BorderLayout.SOUTH);
       this.uiScale.applyFonts(outer);
       return outer;
+    }
+
+    /** Keep long settings scrollable without pushing the fixed action row off-screen. */
+    private static final class ConfigurationScrollPanel extends JPanel implements Scrollable {
+      ConfigurationScrollPanel() {
+        super(new BorderLayout());
+      }
+
+      @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
+      @Override public boolean getScrollableTracksViewportWidth() { return true; }
+      @Override public boolean getScrollableTracksViewportHeight() { return false; }
+      @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) {
+        return getFontMetrics(getFont()).getHeight();
+      }
+      @Override public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) {
+        return Math.max(getScrollableUnitIncrement(visible, orientation, direction),
+          (orientation == SwingConstants.VERTICAL ? visible.height : visible.width)
+            - getScrollableUnitIncrement(visible, orientation, direction));
+      }
     }
 
     private JPanel createNativeProcessingModePanel() {
@@ -773,8 +839,10 @@ public final class HictLauncherGui {
     }
 
     private void toggleConfiguration() {
-      this.configurationPanel.setVisible(!this.configurationPanel.isVisible());
-      this.configureButton.setText(this.configurationPanel.isVisible() ? "Hide Configuration" : "Show Configuration");
+      final boolean showConfiguration = !this.configurationPanel.isVisible();
+      final var body = this.configurationPanel.getParent();
+      ((CardLayout) body.getLayout()).show(body, showConfiguration ? "configuration" : "activity");
+      this.configureButton.setText(showConfiguration ? "Hide Configuration" : "Show Configuration");
       this.frame.revalidate();
       this.frame.repaint();
     }
@@ -1277,6 +1345,9 @@ public final class HictLauncherGui {
         .redirectErrorStream(true);
       processBuilder.environment().put("HICT_ELECTRON_URL", url);
       processBuilder.environment().put("HICT_TAURI_URL", url);
+      final var resetKey = "resetBrowser." + (isTauriBundle(bundle) ? "tauri" : "electron");
+      final boolean resetRequested = getBooleanSetting(resetKey, false);
+      if (resetRequested) processBuilder.environment().put("HICT_RESET_WEBUI", "1");
       try {
         appendLauncherLog("Starting bundled browser " + bundle.name()
           + " [engine=" + bundle.engine()
@@ -1288,6 +1359,7 @@ public final class HictLauncherGui {
           appendLauncherLog("Bundled browser " + bundle.name() + " exited immediately with code " + process.exitValue() + ".");
           if (!output.isBlank()) {
             appendLauncherLog(output);
+            if (resetRequested) output.lines().forEach(line -> acknowledgeBrowserReset(resetKey, line));
           }
           if (process.exitValue() == 0) {
             appendLauncherLog("Bundled browser can hand off to a GUI child process and exit cleanly; treating this launch as successful.");
@@ -1295,7 +1367,7 @@ public final class HictLauncherGui {
           }
           return false;
         }
-        registerBrowserProcess(process, bundle.name());
+        registerBrowserProcess(process, bundle.name(), resetRequested ? resetKey : null);
         appendLauncherLog("Opened WebUI in bundled browser " + bundle.name() + ": " + url);
         return true;
       } catch (final IOException ex) {
@@ -1349,13 +1421,26 @@ public final class HictLauncherGui {
       }
     }
 
-    private void registerBrowserProcess(final Process process, final String browserName) {
+    private void acknowledgeBrowserReset(final String resetKey, final String line) {
+      // Process survival or GUI handoff does not prove asynchronous data clearing
+      // succeeded. Older wrappers without acknowledgements retain the request.
+      if (resetKey == null || !"HICT_WEBUI_RESET_COMPLETE".equals(line)) return;
+      SwingUtilities.invokeLater(() -> {
+        if (this.settings.remove(resetKey) != null) {
+          saveSettings();
+          appendLauncherLog("Browser storage reset completed: " + resetKey);
+        }
+      });
+    }
+
+    private void registerBrowserProcess(final Process process, final String browserName, final String resetKey) {
       this.browserProcesses.add(process);
       this.backgroundExecutor.submit(() -> {
         try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
           String line;
           while ((line = reader.readLine()) != null) {
             appendBrowserLog(browserName, line);
+            acknowledgeBrowserReset(resetKey, line);
           }
         } catch (final IOException ex) {
           if (process.isAlive()) {

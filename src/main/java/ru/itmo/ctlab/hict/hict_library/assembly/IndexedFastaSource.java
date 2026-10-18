@@ -7,9 +7,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.zip.GZIPInputStream;
 
-/** Read-only, in-memory line index. No .fai or normalized copy is written beside the source. */
-final class IndexedFastaSource {
+/** Read-only line index; gzip gets a private random-access copy in java.io.tmpdir. */
+final class IndexedFastaSource implements AutoCloseable {
   private record Stamp(long size, java.nio.file.attribute.FileTime modified, Object key) { }
   private record Run(long start, long offset, long bases, long stride, long lines) {
     long end() { return start + (long) bases * lines; }
@@ -29,7 +30,10 @@ final class IndexedFastaSource {
     }
   }
   private final Path path;
+  private final Path indexedPath;
   private final Stamp stamp;
+  private boolean closed;
+  private int sessions;
   private final LinkedHashMap<String,Sequence> sequences=new LinkedHashMap<>();
   private static Stamp stamp(Path p) throws IOException {
     var a=Files.readAttributes(p,BasicFileAttributes.class);return new Stamp(a.size(),a.lastModifiedTime(),a.fileKey());
@@ -38,13 +42,18 @@ final class IndexedFastaSource {
   void verify() throws IOException { if(!matches(path)) throw new IOException("Linked FASTA changed during export: "+path); }
   IndexedFastaSource(Path input) throws IOException {
     path=input.toAbsolutePath().normalize();stamp=stamp(path);
+    boolean gzip=path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gz");
+    indexedPath=gzip?Files.createTempFile("hict-fasta-index-", ".fa"):path;
     // Scan bytes once, retaining only headers and regular-line runs. Even an
     // unwrapped chromosome does not allocate a chromosome-sized text buffer.
     byte[] block=new byte[1<<20];long position=0,lineStart=0,first=-1,last=-1;
     boolean header=false;Sequence current=null;ByteArrayOutputStream name=new ByteArrayOutputStream();
-    try(var in=Files.newInputStream(path)) {
+    try(var raw=Files.newInputStream(path);
+        var in=gzip?new GZIPInputStream(raw,1<<20):raw;
+        var copy=gzip?Files.newOutputStream(indexedPath):OutputStream.nullOutputStream()) {
       for(int size;(size=in.read(block))!=-1;) {
         if(Thread.currentThread().isInterrupted()) throw new InterruptedIOException("FASTA indexing cancelled");
+        if(gzip)copy.write(block,0,size);
         for(int i=0;i<size;i++,position++) {
           int b=block[i]&255;
           if(position==lineStart) { header=b=='>';first=-1;last=-1;name.reset(); }
@@ -66,18 +75,36 @@ final class IndexedFastaSource {
           if(id.isEmpty()||sequences.putIfAbsent(id,new Sequence())!=null)throw new IllegalArgumentException("Empty or duplicate FASTA identifier: "+id);
         } else if(current!=null && first>=0)current.line(first,last-first+1,position-lineStart);
       }
+      if(sequences.isEmpty())throw new IllegalArgumentException("FASTA contains no sequences");verify();
+    } catch(IOException | RuntimeException | Error failure) {
+      if(gzip) {
+        try { Files.deleteIfExists(indexedPath); }
+        catch(IOException cleanup) { failure.addSuppressed(cleanup); }
+      }
+      throw failure;
     }
-    if(sequences.isEmpty())throw new IllegalArgumentException("FASTA contains no sequences");verify();
   }
   LinkedHashMap<String,Long> lengths() {
     var result=new LinkedHashMap<String,Long>();sequences.forEach((n,s)->result.put(n,s.length));return result;
   }
-  Session open() throws IOException { verify();return new Session(); }
+  synchronized Session open() throws IOException {
+    if(closed)throw new IOException("FASTA index is closed");
+    verify();var session=new Session();sessions++;return session;
+  }
+  @Override public synchronized void close() throws IOException {
+    closed=true;
+    if(sessions==0 && !indexedPath.equals(path))Files.deleteIfExists(indexedPath);
+  }
+  private synchronized void release() throws IOException {
+    sessions--;
+    if(closed)close();
+  }
   final class Session implements AutoCloseable {
     private final FileChannel channel;
     private final byte[] data=new byte[64*1024];
     private byte[] physical=new byte[128*1024];
-    Session() throws IOException { channel=FileChannel.open(path,StandardOpenOption.READ); }
+    private boolean released;
+    Session() throws IOException { channel=FileChannel.open(indexedPath,StandardOpenOption.READ); }
     void copy(String name,long start,long end,boolean reverse,OutputStream output) throws IOException {
       Sequence sequence=sequences.get(name);
       if(sequence==null)throw new IllegalArgumentException("Linked FASTA does not contain sequence '"+name+"'");
@@ -112,7 +139,11 @@ final class IndexedFastaSource {
         start+=n;written+=n;
       }
     }
-    public void close() throws IOException { channel.close();verify(); }
+    public void close() throws IOException {
+      if(released)return;
+      released=true;
+      try { channel.close();verify(); } finally { release(); }
+    }
   }
   static byte complement(byte base) {
     int b=base&255;boolean lower=b>='a'&&b<='z';int c=Character.toUpperCase((char)b);

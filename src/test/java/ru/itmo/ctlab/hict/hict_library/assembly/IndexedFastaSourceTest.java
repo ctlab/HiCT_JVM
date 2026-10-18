@@ -46,4 +46,45 @@ class IndexedFastaSourceTest {
     var replacement=dir.resolve("new.fa");Files.writeString(replacement,">x\nTGA");Files.move(replacement,path,StandardCopyOption.REPLACE_EXISTING);
     assertFalse(index.matches(path));assertThrows(IOException.class,index::open);
   }
+
+  private static void gzip(Path path,String text) throws IOException {
+    try(var stream=new java.util.zip.GZIPOutputStream(Files.newOutputStream(path))) {
+      stream.write(text.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+    }
+  }
+  private static Path indexedPath(IndexedFastaSource index) throws Exception {
+    var field=IndexedFastaSource.class.getDeclaredField("indexedPath");field.setAccessible(true);
+    return (Path)field.get(index);
+  }
+  @Test void gzipIsIndexedOnceAndRemovedAfterLastReaderCloses() throws Exception {
+    var path=dir.resolve("input.fa.gz");String text="aCGTryMKSWBDHVN".repeat(20000);
+    gzip(path,">one description\r\n"+text+"\n>two\nACGT\n");
+    byte[] original=Files.readAllBytes(path);
+    var index=new IndexedFastaSource(path);var temporary=indexedPath(index);
+    assertNotEquals(path,temporary);assertTrue(Files.exists(temporary));
+    assertEquals(Map.of("one",(long)text.length(),"two",4L),index.lengths());
+    var random=new Random(245);
+    for(int i=0;i<100;i++) {
+      int start=random.nextInt(text.length()-4096),end=start+4096;
+      assertEquals(text.substring(start,end),copy(index,"one",start,end,false));
+      assertEquals(reverse(text.substring(start,end)),copy(index,"one",start,end,true));
+      assertEquals(temporary,indexedPath(index));
+    }
+    var reader=index.open();index.close();
+    assertTrue(Files.exists(temporary),"An active reader retains its backing file, including on Windows");
+    assertThrows(IOException.class,index::open);
+    var out=new ByteArrayOutputStream();reader.copy("two",0,4,false,out);
+    assertEquals("ACGT",out.toString());reader.close();reader.close();index.close();
+    assertFalse(Files.exists(temporary));assertArrayEquals(original,Files.readAllBytes(path));
+    try(var files=Files.list(dir)) {assertEquals(1,files.count(),"No sidecars beside the source");}
+  }
+  @Test void gzipReplacementCannotServeStaleBases() throws Exception {
+    var path=dir.resolve("input.fa.gz");gzip(path,">x\nACTG");
+    try(var index=new IndexedFastaSource(path)) {
+      var replacement=dir.resolve("replacement.gz");gzip(replacement,">x\nTGCA");
+      Files.move(replacement,path,StandardCopyOption.REPLACE_EXISTING);
+      assertFalse(index.matches(path));assertThrows(IOException.class,index::open);
+    }
+    try(var index=new IndexedFastaSource(path)) {assertEquals("TGCA",copy(index,"x",0,4,false));}
+  }
 }

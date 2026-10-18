@@ -52,7 +52,7 @@ import java.util.Comparator;
 import java.util.zip.GZIPInputStream;
 
 @RequiredArgsConstructor
-public class FASTAProcessor {
+public class FASTAProcessor implements AutoCloseable {
   private static final int MAX_MISMATCHES_IN_REPORT = 10;
 
   private final @NotNull ChunkedFile chunkedFile;
@@ -196,10 +196,35 @@ public class FASTAProcessor {
   }
 
   private volatile IndexedFastaSource sourceIndex;
+  private boolean closed;
+
+  /** Bounded, gap-free current-assembly sequence for nucleotide-level tracks. */
+  public String readRegion(Path path, long start, long end) throws IOException {
+    if (start < 0 || end <= start || end - start > 4096)
+      throw new IllegalArgumentException("Sequence track requests must contain 1 to 4096 bases");
+    var selected = AssemblySequenceSnapshot.capture(chunkedFile).slice(start, end);
+    try (var source = new SourceSession(path); var out = new java.io.ByteArrayOutputStream((int)(end-start))) {
+      for (var piece : selected.fragments()) {
+        source.validate(piece.source(), piece.start(), piece.end());
+        source.copy(piece.source(), piece.start(), piece.end(), piece.reversed(), out);
+      }
+      return out.toString(StandardCharsets.US_ASCII);
+    }
+  }
 
   private synchronized IndexedFastaSource indexedSource(Path path) throws IOException {
-    if (sourceIndex == null || !sourceIndex.matches(path)) sourceIndex = new IndexedFastaSource(path);
+    if(closed)throw new IOException("FASTA processor is closed");
+    if (sourceIndex == null || !sourceIndex.matches(path)) {
+      if(sourceIndex!=null)sourceIndex.close();
+      sourceIndex=null;
+      sourceIndex = new IndexedFastaSource(path);
+    }
     return sourceIndex;
+  }
+
+  @Override public synchronized void close() throws IOException {
+    closed=true;
+    if(sourceIndex!=null)sourceIndex.close();
   }
 
   /** Compatibility wrappers retain the String API; HTTP uses bounded-memory writers. */
@@ -334,15 +359,10 @@ public class FASTAProcessor {
 
   private final class SourceSession implements AutoCloseable {
     final Map<String,Long> lengths; final Map<String,String> aliases;
-    final IndexedFastaSource.Session indexed; final Map<String,String> compressed;
+    final IndexedFastaSource.Session indexed;
     SourceSession(Path path) throws IOException {
-      // gzip is sequential: retain its compatible parser, without copying the
-      // output/scaffolds. Plain FASTA uses random reads and metadata-only caching.
-      if(path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gz")) {
-        compressed=readSequenceContents(path);indexed=null;lengths=new LinkedHashMap<>();
-        compressed.forEach((n,s)->lengths.put(n,(long)s.length()));
-      } else {
-        compressed=null;var index=indexedSource(path);lengths=index.lengths();indexed=index.open();
+      synchronized(FASTAProcessor.this) {
+        var index=indexedSource(path);lengths=index.lengths();indexed=index.open();
       }
       var originals=chunkedFile.getOriginalDescriptors().values().stream().sorted(Comparator.comparingInt(ContigDescriptor::getContigId)).toList();
       var result=new HashMap<String,String>();
@@ -359,16 +379,9 @@ public class FASTAProcessor {
     }
     void copy(String name,long start,long end,boolean reverse,java.io.OutputStream output) throws IOException {
       name=aliases.getOrDefault(name,name);
-      if(indexed!=null) { indexed.copy(name,start,end,reverse,output);return; }
-      String text=compressed.get(name);byte[] block=new byte[65536];long cursor=reverse?end:start;
-      while(reverse?cursor>start:cursor<end) {
-        if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("FASTA export cancelled");
-        int n=(int)Math.min(block.length,reverse?cursor-start:end-cursor);
-        for(int i=0;i<n;i++)block[i]=reverse?IndexedFastaSource.complement((byte)text.charAt(Math.toIntExact(cursor-i-1))):(byte)text.charAt(Math.toIntExact(cursor+i));
-        output.write(block,0,n);cursor+=reverse?-n:n;
-      }
+      indexed.copy(name,start,end,reverse,output);
     }
-    public void close() throws IOException {if(indexed!=null)indexed.close();}
+    public void close() throws IOException {indexed.close();}
   }
 
   private static final class WrappedOutput extends java.io.OutputStream {
@@ -424,7 +437,6 @@ public class FASTAProcessor {
   }
 
   private List<FASTASequenceSummary> sourceSummaries(Path path) {
-    if(path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gz"))return readSequenceSummaries(path);
     try {return indexedSource(path).lengths().entrySet().stream().map(e->new FASTASequenceSummary(e.getKey(),e.getValue())).toList();}
     catch(IOException e){throw new java.io.UncheckedIOException(e);}
   }

@@ -78,8 +78,8 @@ public final class BlastSearchRunner {
         if (Math.min(qs,qe) < 1 || Math.max(qs,qe) > q.sequence().length() || Long.parseLong(f[12]) != q.sequence().length()
             || offset < 0 || a < offset || b <= a || b > ownedEnd || ownedEnd > snapshot.length()) throw new IOException("Out-of-bounds BLAST HSP");
         String strand = (ss > se) != (qs > qe) ? "-" : "+";
-        String description = q.description() + "; BLAST query " + qs + "–" + qe + "/" + f[12]
-          + ", identity " + f[6] + "%, alignment columns " + f[7] + ", gap openings " + f[9] + ", E=" + f[10] + ", bits=" + f[11];
+        String description = q.description() + "; BLAST identity " + f[6]
+          + "%, alignment columns " + f[7] + ", gap openings " + f[9] + ", E=" + f[10] + ", bits=" + f[11];
         var path = snapshot.slice(a,b);
         var metadata = new SequenceSearchMetadata(run+":"+(++hits),q.id(),description,strand,path,fingerprint,
           forwardColor, reverseColor);

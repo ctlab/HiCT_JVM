@@ -25,6 +25,24 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   public SequenceAnalysisHandlersHolder(Vertx vertx) { this.vertx = vertx; }
 
   @Override public void addHandlersToRouter(Router router) {
+    router.post("/sequence/region").handler(ctx -> {
+      var shared = vertx.sharedData().getLocalMap("hict_server");
+      var scheduler = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (scheduler == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
+      scheduler.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
+        var file = (ShareableWrappers.ChunkedFileWrapper) shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile");
+        var fasta = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
+        if (fasta == null && !secondary) fasta = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
+        if (file == null || fasta == null) return new JsonObject().put("linked", false);
+        var request = ctx.body().asJsonObject();
+        try {
+          long start = request.getLong("startBp", -1L), end = request.getLong("endBp", -1L);
+          return new JsonObject().put("linked", true).put("startBp", start)
+            .put("sequence", file.getChunkedFile().getFastaProcessor().readRegion(fasta.getPath(), start, end));
+        } catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
+      }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
+    });
     router.post("/sequence/settings").handler(ctx -> {
       var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server").get(RequestTaskScheduler.LOCAL_MAP_KEY);
       if (wrapper == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
