@@ -647,7 +647,22 @@ class HictToMcoolConverterTest {
     var source=tempDir.resolve("history.mcool"); var hict=tempDir.resolve("history.hict.hdf5");
     var fasta=tempDir.resolve("history.fa");
     writeSyntheticMcool(source);
-    Files.writeString(fasta, ">ctgA\n"+"ACGT".repeat(500)+"\n>ctgB\n"+"C".repeat(2000)+"\n");
+    // Three bins per component permit a genuine interior-bin removal leaving
+    // sequence on both sides. The old 2-bin/500-bp cut misaligned sequence and ATUs.
+    try (var writer=HDF5Factory.open(source.toFile())) {
+      writer.int64().writeArray("/chroms/length",new long[]{3000,3000});
+      writer.int64().writeArray("/resolutions/1000/chroms/length",new long[]{3000,3000});
+      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset",new long[]{0,3,6});
+      writer.int64().writeArray("/resolutions/1000/indexes/bin1_offset",new long[]{0,1,2,3,4,5,6});
+      writer.int64().writeArray("/resolutions/1000/bins/chrom",new long[]{0,0,0,1,1,1});
+      writer.int64().writeArray("/resolutions/1000/bins/start",new long[]{0,1000,2000,0,1000,2000});
+      writer.int64().writeArray("/resolutions/1000/bins/end",new long[]{1000,2000,3000,1000,2000,3000});
+      writer.float64().writeArray("/resolutions/1000/bins/weight",new double[]{1,1,1,1,1,1});
+      writer.int64().writeArray("/resolutions/1000/pixels/bin1_id",new long[]{0,1,2,3,4,5});
+      writer.int64().writeArray("/resolutions/1000/pixels/bin2_id",new long[]{0,1,2,3,4,5});
+      writer.int64().writeArray("/resolutions/1000/pixels/count",new long[]{11,12,13,14,15,16});
+    }
+    Files.writeString(fasta, ">ctgA\n"+"ACGT".repeat(750)+"\n>ctgB\n"+"C".repeat(3000)+"\n");
     new McoolToHictConverter().convert(roundTripOptions(source,hict,null),ignored->{});
     try(var file=new ChunkedFile(new ChunkedFile.ChunkedFileOptions(hict,1,2))) {
       var states=new java.util.ArrayList<ChunkedFile.AssemblySnapshot>();
@@ -659,15 +674,15 @@ class HictToMcoolConverterTest {
       Runnable remember=()->{
         states.add(file.snapshotAssembly()); layouts.add(file.getAgpProcessor().getAssemblyAGPRecords().toString());
         fastas.add(file.getFastaProcessor().exportAssemblyPreservingGaps(fasta));
-        var matrix=file.getMatrixQueries().getSubmatrix(resolution,0,0,4,4,false).matrix();
-        var cells=new long[16];for(int i=0;i<4;i++)for(int j=0;j<4;j++)cells[i*4+j]=(long)matrix.getAsDouble(i,j);
+        var matrix=file.getMatrixQueries().getSubmatrix(resolution,0,0,6,6,false).matrix();
+        var cells=new long[36];for(int i=0;i<6;i++)for(int j=0;j<6;j++)cells[i*6+j]=(long)matrix.getAsDouble(i,j);
         matrices.add(cells); names.add(java.util.Map.copyOf(file.getContigNameOverrides()));
         registry.add(java.util.Map.copyOf(file.getContigTree().getContigDescriptors()));
       };
       remember.run();
-      file.scaffoldingOperations().reverseSelectionRangeBp(0,2000);remember.run();
-      file.scaffoldingOperations().moveSelectionRangeBp(0,2000,4000);remember.run();
-      file.scaffoldingOperations().splitContigAtBin(500,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS);remember.run();
+      file.scaffoldingOperations().reverseSelectionRangeBp(0,3000);remember.run();
+      file.scaffoldingOperations().moveSelectionRangeBp(0,3000,6000);remember.run();
+      file.scaffoldingOperations().splitContigAtBin(1500,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS);remember.run();
       file.restoreAssembly(states.get(0));
       file.importAGP(new StringReader("s1 1 550 1 W ctgA 1 550 +\ns1 551 650 2 U 100 scaffold yes paired-ends\ns1 651 2650 3 W ctgB 1 2000 -\ns2 1 1450 1 W ctgA 551 2000 -\n"));remember.run();
       int contigId=file.getAssemblyInfo().contigs().getFirst().descriptor().getContigId();
@@ -680,7 +695,7 @@ class HictToMcoolConverterTest {
         assertEquals(names.get(index),file.getContigNameOverrides());
         assertEquals(registry.get(index),file.getContigTree().getContigDescriptors());
         var matrix=file.getMatrixQueries().getSubmatrix(resolution,0,0,4,4,false).matrix();
-        for(int i=0;i<4;i++)for(int j=0;j<4;j++)assertEquals(matrices.get(index)[i*4+j],(long)matrix.getAsDouble(i,j));
+        for(int i=0;i<4;i++)for(int j=0;j<4;j++)assertEquals(matrices.get(index)[i*6+j],(long)matrix.getAsDouble(i,j));
       }
       file.restoreAssembly(states.get(0));
       var groupingBefore=file.snapshotAssembly();

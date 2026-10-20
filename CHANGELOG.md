@@ -105,3 +105,11 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Added post-open control for invalid Cooler weight handling, so users can change the selected `NaN` weight policy after a map is already loaded.
 - Fixed first render after opening maps with invalid Cooler weights and delayed track initialization by refreshing OpenLayers, rulers, minimap viewport, and 1D tracks after the workspace grid changes, so the map no longer stays blank until minimap interaction.
 - Fixed first render after opening Hi-C plus dotplot overlay maps by applying overlay presentation before rendering, rebuilding secondary compatibility after assembly synchronization, then refreshing the workspace once more after the wizard closes.
+
+# Coordinate consistency correction (2026-10-20)
+
+- Share orientation-aware bp/bin conversion between matrix queries and 1D tracks; use retained source ATU origins for split-derived components.
+- Correct reversed zero-remainder track bins and screen-selected splits of reversed components with a terminal partial bin.
+- Include the final intersecting bin of half-open bp matrix query intervals.
+- Exclude the internal zero-resolution bp axis from signal-track precomputation.
+- Run coordinate and scaffold regressions in the cross-platform Java workflow; allow 600 seconds for portable native-tool smoke checks.

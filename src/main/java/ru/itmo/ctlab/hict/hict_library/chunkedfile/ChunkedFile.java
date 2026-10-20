@@ -455,6 +455,8 @@ public class ChunkedFile implements AutoCloseable {
     assert ((QueryLengthUnit.BASE_PAIRS.equals(fromUnits)) == (fromResolution.getResolutionOrderInArray() == 0)) : "If converting from base pairs, set fromResolution=0";
     assert ((QueryLengthUnit.BASE_PAIRS.equals(toUnits)) == (toResolution.getResolutionOrderInArray() == 0)) : "If converting from base pairs, set toResolution=0";
 
+    if (fromUnits == toUnits && fromResolution.getResolutionOrderInArray() == toResolution.getResolutionOrderInArray()) return position;
+
     final var contigTree = this.contigTree;
     final var lock = contigTree.getRootLock();
     try {
@@ -467,21 +469,89 @@ public class ChunkedFile implements AutoCloseable {
       final long leftFromUnits = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(fromUnits, fromResolution);
       final var leftToUnits = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(toUnits, toResolution);
 
+      // The terminal position is an exclusive boundary, not the first base/bin
+      // of a component. Hidden components still contribute to raw/bp totals.
+      if (position == contigTree.getLengthInUnits(fromUnits, fromResolution)) {
+        return contigTree.getLengthInUnits(toUnits, toResolution);
+      }
+      final var node = es.segment().push().updateSizes();
+      final var descriptor = node.getContigDescriptor();
+      final boolean reversed = node.getTrueDirection() == ru.itmo.ctlab.hict.hict_library.domain.ContigDirection.REVERSED;
       final var deltaFromUnits = position - leftFromUnits;
       final var deltaBp = switch (fromUnits) {
         case BASE_PAIRS -> deltaFromUnits;
-        case BINS, PIXELS -> (deltaFromUnits * fromBpResolution);
+        case BINS, PIXELS -> ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.binToBp(
+          deltaFromUnits, descriptor.getLengthBp(), descriptor.getLengthBinsAtResolution()[fromResolution.getResolutionOrderInArray()],
+          fromBpResolution, firstOwnedBinOffset(descriptor, fromResolution.getResolutionOrderInArray()), reversed);
       };
 
       final var deltaToUnits = switch (toUnits) {
         case BASE_PAIRS -> deltaBp;
-        case BINS, PIXELS -> (deltaBp / toBpResolution);
+        case BINS, PIXELS -> descriptor.getLengthInUnits(toUnits, toResolution) == 0 ? 0L
+          : ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.bpToBin(
+            deltaBp, descriptor.getLengthBp(), descriptor.getLengthBinsAtResolution()[toResolution.getResolutionOrderInArray()],
+            toBpResolution, firstOwnedBinOffset(descriptor, toResolution.getResolutionOrderInArray()), reversed);
       };
 
       return leftToUnits + deltaToUnits;
     } finally {
       lock.readLock().unlock();
     }
+  }
+
+  /** Source-coordinate origin of the first retained bin, relative to this piece.
+   * Derive it from physical ATU ownership, never from a split piece's new length. */
+  public long firstOwnedBinOffset(final ContigDescriptor descriptor, final int order) {
+    if (order == 0 || descriptor.getAtus().get(order).isEmpty()) return 0;
+    final var first = descriptor.getAtus().get(order).getFirst();
+    final int bin = first.getDirection() == ru.itmo.ctlab.hict.hict_library.domain.ATUDirection.FORWARD
+      ? first.getStartIndexInStripeIncl() : first.getEndIndexInStripeExcl() - 1;
+    final var original = originalDescriptors.get(descriptor.getContigNameInSourceFASTA());
+    if (original == descriptor) return 0;
+    if (original != null) {
+      long result = firstOwnedBinOffset(descriptor, order, first, bin, original);
+      if (result != Long.MIN_VALUE) return result;
+    }
+    for (final var source : originalDescriptors.values()) {
+      if (source.getContigNameInSourceFASTA().equals(descriptor.getContigNameInSourceFASTA())) {
+        long result = firstOwnedBinOffset(descriptor, order, first, bin, source);
+        if (result != Long.MIN_VALUE) return result;
+      }
+    }
+    throw new IllegalArgumentException("Missing original contact-bin ownership for " + descriptor.getContigName());
+  }
+
+  /** Exclusive visible-bin endpoint of a nonempty half-open bp interval.
+   * A hidden component contributes no pixel, including at the interval end. */
+  public long bpRangeEndToPixels(long endBp, ResolutionDescriptor resolution) {
+    final var tree = getContigTree();
+    final var lock = tree.getRootLock().readLock();
+    lock.lock();
+    try {
+      final var bp = ResolutionDescriptor.fromResolutionOrder(0);
+      if (endBp <= 0) return 0;
+      long total = tree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, bp);
+      if (endBp >= total) return tree.getLengthInUnits(QueryLengthUnit.PIXELS, resolution);
+      var segment = tree.expose(bp, endBp - 1, endBp, QueryLengthUnit.BASE_PAIRS).segment();
+      long pixel = convertUnits(endBp - 1, bp, QueryLengthUnit.BASE_PAIRS, resolution, QueryLengthUnit.PIXELS);
+      return pixel + (segment.getContigDescriptor().getLengthInUnits(QueryLengthUnit.PIXELS, resolution) > 0 ? 1 : 0);
+    } finally { lock.unlock(); }
+  }
+
+  private long firstOwnedBinOffset(ContigDescriptor descriptor, int order,
+                                  ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor first,
+                                  int bin, ContigDescriptor source) {
+    long ordinal = 0;
+    for (final var atu : source.getAtus().get(order)) {
+      if (atu.getStripeDescriptor().stripeId() == first.getStripeDescriptor().stripeId()
+          && bin >= atu.getStartIndexInStripeIncl() && bin < atu.getEndIndexInStripeExcl()) {
+        long offset = atu.getDirection() == ru.itmo.ctlab.hict.hict_library.domain.ATUDirection.FORWARD
+          ? bin - atu.getStartIndexInStripeIncl() : atu.getEndIndexInStripeExcl() - 1L - bin;
+        return source.getOffsetInSourceFASTA() + Math.multiplyExact(ordinal + offset, resolutions[order]) - descriptor.getOffsetInSourceFASTA();
+      }
+      ordinal += atu.getLength();
+    }
+    return Long.MIN_VALUE;
   }
 
   public void importAGP(final @NotNull Reader tsvReader) throws IOException, NoSuchFieldException {

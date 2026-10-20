@@ -551,6 +551,33 @@ class ScaffoldEditingInvariantTest {
     }
   }
 
+  @Test void bpSplitInsideBinSnapsSequenceToTheRemovedContactBin() {
+    try (var f = fixture()) {
+      f.scaffoldingOperations().splitContigAtBin(1500, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      var parts=f.getAssemblyInfo().contigs();
+      assertEquals(1000,parts.getFirst().descriptor().getLengthBp());
+      assertEquals(2000,parts.get(1).descriptor().getOffsetInSourceFASTA());
+    }
+  }
+
+  @Test void partialAgpPiecesUseStoredSourceBinOrigins() throws Exception {
+    try (var f = fixture()) {
+      f.importAGP(new java.io.StringReader("x\t1\t2501\t1\tW\tA\t1\t2501\t-\ny\t1\t3499\t1\tW\tA\t2502\t6000\t+\nz\t1\t6000\t1\tW\tB\t1\t6000\t+\nw\t1\t6000\t1\tW\tC\t1\t6000\t+\n"));
+      var bp = ResolutionDescriptor.fromResolutionOrder(0);
+      var r = ResolutionDescriptor.fromBpResolution(1000, f);
+      assertEquals(0, f.convertUnits(0, r, QueryLengthUnit.BINS, bp, QueryLengthUnit.BASE_PAIRS));
+      assertEquals(501, f.convertUnits(1, r, QueryLengthUnit.BINS, bp, QueryLengthUnit.BASE_PAIRS));
+      assertEquals(1501, f.convertUnits(2, r, QueryLengthUnit.BINS, bp, QueryLengthUnit.BASE_PAIRS));
+      assertEquals(3000, f.convertUnits(3, r, QueryLengthUnit.BINS, bp, QueryLengthUnit.BASE_PAIRS));
+      assertEquals(0, f.convertUnits(500, bp, QueryLengthUnit.BASE_PAIRS, r, QueryLengthUnit.BINS));
+      assertEquals(1, f.convertUnits(501, bp, QueryLengthUnit.BASE_PAIRS, r, QueryLengthUnit.BINS));
+      assertEquals(18, f.convertUnits(18000, bp, QueryLengthUnit.BASE_PAIRS, r, QueryLengthUnit.BINS));
+      assertEquals(1, f.bpRangeEndToPixels(501, r));
+      assertEquals(2, f.bpRangeEndToPixels(502, r));
+      assertEquals(0, f.bpRangeEndToPixels(3000, ResolutionDescriptor.fromBpResolution(10000, f)));
+    }
+  }
+
   @Test void splitPreservesScaffoldSidesAndZeroBinPiecesAtCoarserResolutions() {
     try(var f=fixture()) {
       var bp=ResolutionDescriptor.fromResolutionOrder(0);var ops=f.scaffoldingOperations();var initial=f.snapshotAssembly();

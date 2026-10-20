@@ -338,8 +338,11 @@ public class ScaffoldingOperations {
       scaffoldLock.writeLock().lock();
       final var oldContigTreeRoot = contigTree.getRoot();
       final var oldAssemblyLengthBp = oldContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
-      final var splitPositionBp = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
       final var splitPositionBins = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, minResolutionDescriptor, QueryLengthUnit.BINS);
+      // The sequence cut must use the same finest-resolution bin that the
+      // ATU operation removes, even when the caller supplied an interior bp.
+      final var splitPositionBp = this.chunkedFile.convertUnits(splitPositionBins, minResolutionDescriptor,
+        QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
       final var es = contigTree.expose(minResolutionDescriptor, splitPositionBins, 1 + splitPositionBins, QueryLengthUnit.BINS);
 
       final var leftBins = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BINS, minResolutionDescriptor);

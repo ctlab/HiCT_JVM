@@ -96,7 +96,7 @@ public class Track1DManager {
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_PRIMARY = "__internal__/cooler_weights/PRIMARY";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_SECONDARY = "__internal__/cooler_weights/SECONDARY";
-  private static final String PRECOMPUTE_CACHE_VERSION = "1";
+  private static final String PRECOMPUTE_CACHE_VERSION = "2";
   private static final String PRECOMPUTE_META_GROUP_PATH = "/cache_meta";
   private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
   private static final int PRECOMPUTE_JOB_THREADS = resolveThreadCount("HICT_TRACK_PRECOMPUTE_JOB_THREADS", 2);
@@ -1078,7 +1078,9 @@ public class Track1DManager {
       return List.of();
     }
     final var tasks = new ArrayList<PrecomputeTask>();
-    final var resolutions = Arrays.stream(chunkedFile.getResolutions()).boxed().sorted(Comparator.reverseOrder()).toList();
+    // Resolution zero is the internal base-pair axis, not a contact level.
+    final var resolutions = Arrays.stream(chunkedFile.getResolutions()).filter(r -> r > 0L)
+      .boxed().sorted(Comparator.reverseOrder()).toList();
     final var modeKeys = modeKeysForTrack(track);
     for (final var bpResolution : resolutions) {
       final var segmentsBuildResult = buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
@@ -1603,6 +1605,7 @@ public class Track1DManager {
       hash = fnv1a(hash, segment.assemblyEnd());
       hash = fnv1a(hash, segment.visiblePxStart());
       hash = fnv1a(hash, segment.visiblePxEnd());
+      hash = fnv1a(hash, segment.firstOwnedBinOffset());
       hash = fnv1a(hash, segment.reversed() ? 1L : 0L);
     }
     return Long.toUnsignedString(hash, 16);
@@ -1719,7 +1722,8 @@ public class Track1DManager {
           assemblyEnd,
           tuple.direction() == ContigDirection.REVERSED,
           visiblePxCursor,
-          visiblePxCursor + lengthPxAtResolution
+          visiblePxCursor + lengthPxAtResolution,
+          chunkedFile.firstOwnedBinOffset(descriptor, resolutionOrder)
         );
         orderedSegments.add(segment);
         sourceToAssemblySegments.computeIfAbsent(sourceName, key -> new ArrayList<>()).add(segment);
@@ -2099,7 +2103,7 @@ public class Track1DManager {
     return new BufferedReader(new InputStreamReader(dataStream, StandardCharsets.UTF_8));
   }
 
-  private static long localPxToAssemblyBp(final @NotNull AssemblySegment segment,
+  static long localPxToAssemblyBp(final @NotNull AssemblySegment segment,
                                           final long localPx,
                                           final long bpResolution) {
     final var segmentLengthBp = segment.assemblyEnd() - segment.assemblyStart();
@@ -2108,21 +2112,12 @@ public class Track1DManager {
     }
     final var segmentLengthPx = Math.max(1L, segment.visiblePxEnd() - segment.visiblePxStart());
     final var clampedLocalPx = Math.max(0L, Math.min(localPx, segmentLengthPx - 1L));
-    final long localBp;
-    if (!segment.reversed()) {
-      localBp = clampedLocalPx * bpResolution;
-    } else {
-      final var firstBinLengthBp = segmentLengthBp % bpResolution;
-      if (clampedLocalPx <= 0L) {
-        localBp = 0L;
-      } else {
-        localBp = firstBinLengthBp + (clampedLocalPx - 1L) * bpResolution;
-      }
-    }
+    final long localBp = ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.binToBp(
+      clampedLocalPx, segmentLengthBp, segmentLengthPx, bpResolution, segment.firstOwnedBinOffset(), segment.reversed());
     return Math.max(segment.assemblyStart(), Math.min(segment.assemblyEnd() - 1L, segment.assemblyStart() + localBp));
   }
 
-  private static long assemblyBpToLocalPx(final @NotNull AssemblySegment segment,
+  static long assemblyBpToLocalPx(final @NotNull AssemblySegment segment,
                                           final long assemblyBp,
                                           final long bpResolution) {
     final var segmentLengthBp = segment.assemblyEnd() - segment.assemblyStart();
@@ -2132,17 +2127,8 @@ public class Track1DManager {
     final var segmentLengthPx = Math.max(1L, segment.visiblePxEnd() - segment.visiblePxStart());
     final var clampedBp = Math.max(segment.assemblyStart(), Math.min(assemblyBp, segment.assemblyEnd() - 1L));
     final var inContigOffsetBp = clampedBp - segment.assemblyStart();
-    final long localPx;
-    if (!segment.reversed()) {
-      localPx = inContigOffsetBp / bpResolution;
-    } else {
-      final var firstBinLengthBp = segmentLengthBp % bpResolution;
-      if (inContigOffsetBp < firstBinLengthBp) {
-        localPx = 0L;
-      } else {
-        localPx = 1L + ((inContigOffsetBp - firstBinLengthBp) / bpResolution);
-      }
-    }
+    final long localPx = ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.bpToBin(
+      inContigOffsetBp, segmentLengthBp, segmentLengthPx, bpResolution, segment.firstOwnedBinOffset(), segment.reversed());
     return Math.max(0L, Math.min(localPx, segmentLengthPx - 1L));
   }
 
@@ -4449,13 +4435,18 @@ public class Track1DManager {
                                    boolean reversed) {
   }
 
-  private record AssemblySegment(long sourceStart,
+  record AssemblySegment(long sourceStart,
                                  long sourceEnd,
                                  long assemblyStart,
                                  long assemblyEnd,
                                  boolean reversed,
                                  long visiblePxStart,
-                                 long visiblePxEnd) {
+                                 long visiblePxEnd,
+                                 long firstOwnedBinOffset) {
+    AssemblySegment(long sourceStart, long sourceEnd, long assemblyStart, long assemblyEnd,
+                    boolean reversed, long visiblePxStart, long visiblePxEnd) {
+      this(sourceStart, sourceEnd, assemblyStart, assemblyEnd, reversed, visiblePxStart, visiblePxEnd, 0L);
+    }
   }
 
   private static final class GffTranscriptFeatureBuilder {

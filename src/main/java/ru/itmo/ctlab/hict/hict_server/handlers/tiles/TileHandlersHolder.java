@@ -913,8 +913,14 @@ public class TileHandlersHolder extends HandlersHolder {
     final boolean visibleOnly = units != QueryLengthUnit.BINS;
     final var startRowPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startRowInUnits) : startRowInUnits;
     final var startColPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, startColInUnits) : startColInUnits;
-    final var endRowPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endRowInUnits) : endRowInUnits;
-    final var endColPx = visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endColInUnits) : endColInUnits;
+    // A bp interval includes the bin containing its last base. Mapping the
+    // exclusive endpoint as a position drops that bin for non-aligned ends.
+    final var endRowPx = units == QueryLengthUnit.BASE_PAIRS && endRowInUnits > startRowInUnits
+      ? requestedChunkedFile.bpRangeEndToPixels(endRowInUnits, resolutionDescriptor)
+      : visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endRowInUnits) : endRowInUnits;
+    final var endColPx = units == QueryLengthUnit.BASE_PAIRS && endColInUnits > startColInUnits
+      ? requestedChunkedFile.bpRangeEndToPixels(endColInUnits, resolutionDescriptor)
+      : visibleOnly ? convertToPixels(requestedChunkedFile, resolutionDescriptor, units, endColInUnits) : endColInUnits;
     final long requestedRows = Math.subtractExact(endRowPx, startRowPx);
     final long requestedCols = Math.subtractExact(endColPx, startColPx);
     if (requestedRows > Integer.MAX_VALUE || requestedCols > Integer.MAX_VALUE
