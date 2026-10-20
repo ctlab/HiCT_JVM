@@ -112,4 +112,5 @@ Changes since `master` version `1.0.175-5ddcf3c-webui_a609177`:
 - Correct reversed zero-remainder track bins and screen-selected splits of reversed components with a terminal partial bin.
 - Include the final intersecting bin of half-open bp matrix query intervals.
 - Exclude the internal zero-resolution bp axis from signal-track precomputation.
+- Close native HDF5 readers when pooled dataset bundles are destroyed; repeated map opens no longer retain pooled file handles.
 - Run coordinate and scaffold regressions in the cross-platform Java workflow; allow 600 seconds for portable native-tool smoke checks.

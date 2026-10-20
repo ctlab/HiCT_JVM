@@ -47,4 +47,9 @@ public class HDF5FileDatasetsBundleFactory extends BasePooledObjectFactory<HDF5F
   public PooledObject<HDF5FileDatasetsBundle> wrap(HDF5FileDatasetsBundle obj) {
     return new DefaultPooledObject<HDF5FileDatasetsBundle>(obj);
   }
+
+  @Override
+  public void destroyObject(PooledObject<HDF5FileDatasetsBundle> pooled) {
+    pooled.getObject().close();
+  }
 }
