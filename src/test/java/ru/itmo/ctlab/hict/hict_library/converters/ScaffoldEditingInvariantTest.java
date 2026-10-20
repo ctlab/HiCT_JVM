@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_library.converters;
 
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
@@ -12,6 +13,24 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ScaffoldEditingInvariantTest {
+  @AfterEach void releaseWindowsTemporaryDirectory() throws Exception {
+    // Windows can report an otherwise deleted directory as nonempty briefly
+    // while native/antivirus handles finish closing. Retry cleanup, never the
+    // assertions. A genuinely leaked file still fails after the bounded wait.
+    if (!System.getProperty("os.name").startsWith("Windows")) return;
+    java.io.IOException last = null;
+    for (int attempt = 0; attempt < 50; attempt++) {
+      try {
+        if (!java.nio.file.Files.exists(dir)) return;
+        try (var paths = java.nio.file.Files.walk(dir)) {
+          for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList())
+            java.nio.file.Files.deleteIfExists(path);
+        }
+        return;
+      } catch (java.io.IOException e) { last = e; Thread.sleep(100); }
+    }
+    throw last;
+  }
   @TempDir Path dir;
   @Test void supersededOverlayIsDeletedOnlyAfterFinishedReplacementAndDetach() throws Exception {
     var vertx=io.vertx.core.Vertx.vertx();
