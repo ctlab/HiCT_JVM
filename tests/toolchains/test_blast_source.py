@@ -36,6 +36,7 @@ class BlastSourceTest(unittest.TestCase):
                 (output / 'bin/blastn').write_bytes(b'fixture')
                 (output / 'share/doc').mkdir(parents=True)
                 (output / 'share/doc/blast-macos-compatibility.json').write_text('{}')
+                (output / 'share/doc/blast-source-patches.json').write_text('{}')
 
             with patch.object(blast.sys, 'platform', 'darwin'), \
                  patch.object(blast.urllib.request, 'urlopen', return_value=io.BytesIO(contents)), \
@@ -50,6 +51,7 @@ class BlastSourceTest(unittest.TestCase):
             self.assertEqual(report['sourceSha256'], hashlib.sha256(contents).hexdigest())
             self.assertIsNone(report['linuxAbi'])
             self.assertTrue((payload / 'share/doc/sequence-analysis/blast-macos-compatibility.json').is_file())
+            self.assertTrue((payload / 'share/doc/sequence-analysis/blast-source-patches.json').is_file())
 
     def test_windows_keeps_official_binary_route(self):
         with patch.object(blast.sys, 'platform', 'win32'), \
@@ -75,7 +77,8 @@ chmod +x HiCTBlast/bin/blastn
             tools = work / 'tools'
             tools.mkdir()
             scripts = {
-                'xcrun': 'printf "/fake/sdk-or-compiler\\n"',
+                'xcrun': 'if [[ "$1" == --find ]]; then command -v mock-cc; else printf "/fake/sdk\\n"; fi',
+                'mock-cc': 'printf "%s\\n" "$@" > "$RECORD/preflight-args"; exit "${MOCK_CC_STATUS:-0}"',
                 'make': 'printf "%s\\n" "$@" > "$RECORD/make-args"',
                 'codesign': 'printf "%s\\n" "$@" > "$RECORD/codesign-args"',
                 'python3': 'printf "%s\\n" "$@" > "$RECORD/audit-args"',
@@ -107,6 +110,10 @@ chmod +x HiCTBlast/bin/blastn
                 self.assertEqual(audit_args[audit_args.index('--arch') + 1], arch)
                 self.assertEqual(audit_args[audit_args.index('--target') + 1], '12.3')
                 self.assertIn('2', (record / 'make-args').read_text().splitlines())
+                preflight = (record / 'preflight-args').read_text().splitlines()
+                self.assertIn('-DTARGET_OS_MAC=1', preflight)
+                self.assertIn('-fsyntax-only', preflight)
+                self.assertTrue(preflight[-1].endswith('/src/util/compress/zlib/zutil.c'))
 
             # NCBI can return success after skipping unmet requirements.
             with (source / 'configure').open('a') as configure:
@@ -116,6 +123,13 @@ chmod +x HiCTBlast/bin/blastn
                                     env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('did not produce blastn', result.stderr)
+
+            (record / 'make-args').unlink()
+            result = subprocess.run(['bash', str(blast.ROOT / 'scripts/toolchains/build_blast_darwin.sh'),
+                                     str(source.parent), str(work / 'failed-preflight')],
+                                    env=dict(env, MOCK_CC_STATUS='7'), capture_output=True, text=True)
+            self.assertEqual(result.returncode, 7)
+            self.assertFalse((record / 'make-args').exists())
 
 
 if __name__ == '__main__':

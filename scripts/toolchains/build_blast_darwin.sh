@@ -22,6 +22,14 @@ export CXXFLAGS="${CXXFLAGS:-} $target_flags"
 export LDFLAGS="${LDFLAGS:-} $target_flags"
 echo "Building BLAST for macOS $MACOSX_DEPLOYMENT_TARGET ($arch), jobs=$jobs"
 cd "$source_root/c++"
+python3 "$SCRIPT_DIR/patch_blast_source.py" "$source_root/c++" \
+  --report "$output_root/share/doc/blast-source-patches.json"
+# Compile the actual failing translation unit against this runner's SDK before
+# spending time on the complete toolkit. Force the macro from newer Apple SDKs
+# so older SDKs also exercise the regression. CFLAGS uses compiler word splitting.
+"$CC" -std=gnu17 $CFLAGS -DTARGET_OS_MAC=1 \
+  -I"$source_root/c++/include/util/compress/zlib" -fsyntax-only \
+  "$source_root/c++/src/util/compress/zlib/zutil.c"
 # NCBI recommends --without-openmp for Apple Clang. BLAST's own -num_threads
 # remains available via --with-mt; disabling OpenMP does not serialize searches.
 # SQLite is required by BLAST. Use Apple's system library through the SDK,

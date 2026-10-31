@@ -58,6 +58,7 @@ def add_blast(payload, work, manylinux):
     docs.mkdir(parents=True, exist_ok=True)
     if sys.platform == 'darwin':
         shutil.copy2(build / 'share/doc/blast-macos-compatibility.json', docs)
+        shutil.copy2(build / 'share/doc/blast-source-patches.json', docs)
     result = smoke(target, work / 'blast-smoke')
     result.update(version=VERSION, source=SOURCE_URL, sourceSha256=SOURCE_SHA256,
                   linuxAbi=('manylinux2014' if manylinux else 'host-development') if sys.platform == 'linux' else None,

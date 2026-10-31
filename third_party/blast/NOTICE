@@ -10,6 +10,10 @@ Silicon (source builds targeting macOS 12.3), and Windows x86_64 (official
 NCBI archive). Archive SHA-256 values are pinned in add_blast.py and
 blast_prebuilt.py and recorded in the payload's blast-smoke.json.
 HICT_BLASTN_BIN remains an optional override.
+macOS source builds backport zlib's classic-Mac-OS platform guard from
+https://github.com/madler/zlib/blob/v1.3.1/zutil.h to the bundled zlib 1.2.12.
+The altered guard is marked in the source. Original notices are retained;
+blast-source-patches.json records the header hashes and upstream reference.
 Windows nghttp2.dll is upstream nghttp2 1.40.0, MIT; see nghttp2-COPYING.
 https://github.com/nghttp2/nghttp2/blob/v1.40.0/COPYING
 Windows app-local VC runtime: see Microsoft-Visual-Cpp-NOTICE.txt.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix BLAST source compilation with recent Apple SDKs: backport zlib's classic-Mac-OS guard so `TARGET_OS_MAC` no longer replaces POSIX `fdopen` with `NULL`. Preserve source-patch provenance and compile the failing zlib unit against the runner SDK before the full toolkit build; retain the macOS 12.3 target and deployment audits.
 - Build the pinned BLAST 2.16.0 source for macOS 12.3 on Intel and Apple Silicon instead of bundling NCBI executables requiring macOS 14. Retain deployment audits and verify local gapped alignments with one and two requested threads. Close staged archive files before reopening them in the macOS compatibility checker, fixing Windows regression-test failures; preserve native build/audit evidence when packaging fails.
 - Restore Commons Lang's dependency version to `3.12.0`; the macOS deployment-target update accidentally changed it to nonexistent `3.12.3`, preventing regression and release builds on every platform.
 - Build Apple Silicon packages, sequence tools and Java regressions on `macos-latest`; keep Intel builds on `macos-15-intel`. Set a consistent macOS 12.3 Monterey minimum for the complete package (including SeqKit and SciPy), propagate it to JNI, Tauri and native toolchains, and prevent reuse of caches built for a different target. Select compatible Python wheels rather than newer-host wheels. Audit native deployment headers, including libraries inside JARs and archives, before packaging; retain the compatibility report with the release. WebUI assets target Safari 15 syntax for Monterey's WKWebView.
