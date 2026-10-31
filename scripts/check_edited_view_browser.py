@@ -148,7 +148,7 @@ def main():
                 dialog.locator("select").nth(0).select_option(source)
                 dialog.locator("select").nth(1).select_option(mode)
                 dialog.locator("select").nth(2).select_option(triangle)
-                page.locator(".histogram-chart svg").wait_for(state="visible")
+                page.wait_for_function("document.querySelector('.interactive-histogram')?.data?.[0]?.y")
                 query = queries[-1]
                 oracle_query = dict(query, format="JSON")
                 response = page.request.post(args.api + "/matrix/query", data=oracle_query)
@@ -165,8 +165,9 @@ def main():
                 low, high = values.min(), values.max()
                 indices = np.zeros(len(values), dtype=int) if low == high else np.minimum(
                     63, np.floor(64 * (values - low) / (high - low)).astype(int))
-                actual = page.locator(".histogram-chart rect").evaluate_all("nodes=>nodes.map(n=>Number(n.dataset.count))")
-                assert actual == np.bincount(indices, minlength=64).tolist(), (source, mode, triangle, query)
+                actual = page.locator(".interactive-histogram").evaluate("n=>n.data[0].y")
+                expected = [len(values)] if low == high else np.bincount(indices, minlength=64).tolist()
+                assert actual == expected, (source, mode, triangle, query)
                 results.append({"test": "selection histogram", "source": source, "mode": mode,
                                 "triangle": triangle, "count": len(values), "min": low, "max": high})
             page.screenshot(path=str(output / "selection-histogram.png"))

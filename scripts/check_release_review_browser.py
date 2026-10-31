@@ -99,7 +99,7 @@ def main():
             assert 'hict/signal_range' in graph['nodes'], graph
             page.evaluate('''() => {const g=document.querySelector('.graph-canvas').data.graph;
                 window.dispatchEvent(new CustomEvent('hict:pipeline-histogram',{detail:g._nodes.find(n=>n.type==='hict/source')}));}''')
-            page.locator('.histogram-chart svg').wait_for(state='visible')
+            page.wait_for_function("document.querySelector('.interactive-histogram')?.data?.[0]?.y")
             page.screenshot(path=str(out/'histogram.png'))
             page.locator('.histogram-dialog').get_by_role('button', name='Close', exact=True).click()
             results.append({'test':'graph histogram dialog renders sampled distribution'})

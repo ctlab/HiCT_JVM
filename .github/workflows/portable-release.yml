@@ -188,6 +188,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Assign run-specific release version
+        run: |
+          python scripts/ci/test_release_version.py
+          python scripts/ci/set_release_version.py
+
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
         run: |
@@ -717,6 +722,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Assign run-specific release version
+        run: |
+          python scripts/ci/test_release_version.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/ci/set_release_version.py
 
       - name: Download published JHDF5 jar
         shell: pwsh
@@ -1280,6 +1291,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Assign run-specific release version
+        run: |
+          python3 scripts/ci/test_release_version.py
+          python3 scripts/ci/set_release_version.py
+
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
         run: |
@@ -1523,6 +1539,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Assign run-specific release version
+        run: |
+          python3 scripts/ci/test_release_version.py
+          python3 scripts/ci/set_release_version.py
+
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
         run: |
@@ -1763,6 +1784,11 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Assign run-specific release version
+        run: |
+          python scripts/ci/test_release_version.py
+          python scripts/ci/set_release_version.py
 
       - name: Download packaged artifacts
         uses: actions/download-artifact@v6

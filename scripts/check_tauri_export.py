@@ -80,6 +80,30 @@ async function seed(){
   try{
    if(c.action==='seed'){await seed();await report({seeded:await state()});continue;}
    if(c.action==='quit'){await window.__TAURI__.core.invoke('quit_app');return;}
+   if(c.action==='histogram'){
+    const clickText=(selector,text)=>{
+     const element=Array.from(document.querySelectorAll(selector)).find(e=>e.textContent.trim()===text);
+     if(!element)throw Error('Missing control: '+text);element.click();};
+    clickText('a','View');clickText('a','Rendering pipeline...');
+    await until(()=>document.querySelector('.graph-canvas')?.data?.graph._nodes.length>2);
+    const graph=document.querySelector('.graph-canvas').data.graph;
+    const node=graph._nodes.find(n=>n.type==='hict/source'&&n.properties.source==='PRIMARY');
+    if(!node)throw Error('Primary source node missing');
+    window.dispatchEvent(new CustomEvent('hict:pipeline-histogram',{detail:node}));
+    await until(()=>document.querySelector('.interactive-histogram')?.data?.[0]?.y);
+    const chart=document.querySelector('.interactive-histogram');
+    const values=chart.data[0].y.reduce((a,b)=>a+b,0);
+    if(!(values>0))throw Error('Empty histogram');
+    clickText('.histogram-dialog label','Log X');
+    await until(()=>chart.layout.xaxis.type==='log');
+    document.querySelector('.histogram-dialog [aria-label="Autoscale both axes"]').click();
+    await until(()=>chart.layout.xaxis.autorange===true);
+    if(document.querySelector('.histogram-dialog [role="alert"]'))throw Error('Histogram render error');
+    await report({histogram:{values,logX:chart.layout.xaxis.type,autorange:chart.layout.xaxis.autorange}});
+    document.querySelector('.histogram-dialog [aria-label="Close"]').click();
+    clickText('.pipeline-root button','Close');
+    continue;
+   }
    if(window.__HICT_ACCEPTANCE__){
     const [scope,extension]=c.name.split('.');const start=ticks,before=viewState(),progress=[];
     const format={svg:'Svg',png:'Png',pdf:'Pdf'}[extension];
@@ -179,9 +203,10 @@ def main():
         path = output / key.lower()
         path.mkdir(mode=0o700)
         env[key] = str(path)
+    runtime_lib = Path(args.xvfb).resolve().parents[1] / 'lib/x86_64-linux-gnu'
     env.update(GSETTINGS_BACKEND='memory', XDG_CURRENT_DESKTOP='GNOME', GDK_BACKEND='x11',
                LIBGL_ALWAYS_SOFTWARE='1', HICT_EXPORT_DIR=str(output),
-               LD_LIBRARY_PATH='/tmp/hict-desktop-test/runtime/usr/lib/x86_64-linux-gnu')
+               LD_LIBRARY_PATH=str(runtime_lib) + (':' + env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else ''))
     for key in ('WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'HICT_RESET_WEBUI'):
         env.pop(key, None)
     processes, results = [], []
@@ -244,6 +269,9 @@ def main():
             app, state = launch()
             empty = {'local': None, 'cookie': '', 'databases': [], 'caches': []}
             assert state == empty, state
+            if webui:
+                commands.put({'action': 'histogram'})
+                results.append({'test': 'Interactive histogram in native WebKit', **event()})
             commands.put({'action': 'seed'})
             seeded = event()['seeded']
             assert seeded['local'] == 'retained' and 'hict-test' in seeded['databases']

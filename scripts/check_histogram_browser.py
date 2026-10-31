@@ -69,9 +69,8 @@ def main():
                 const node=document.querySelector('.graph-canvas').data.graph._nodes.find(n=>n.type==='hict/histogram');
                 node.widgets.find(w=>w.name==='Inspect distribution').callback();
             }""")
-            page.locator(".histogram-chart svg").wait_for(state="visible")
-            actual = page.locator(".histogram-chart rect").evaluate_all(
-                "nodes => nodes.map(node=>Number(node.dataset.count))")
+            page.wait_for_function("document.querySelector('.interactive-histogram')?.data?.[0]?.y")
+            actual = page.locator(".interactive-histogram").evaluate("node => node.data[0].y")
             text = page.locator(".histogram-dialog").inner_text()
             assert len(queries) == 1, queries
             query = queries[0]
@@ -94,11 +93,44 @@ def main():
             minimum, maximum = expected_values.min(), expected_values.max()
             indices = np.zeros(expected_values.size, dtype=int) if minimum == maximum else np.minimum(
                 63, np.floor(64 * (expected_values - minimum) / (maximum - minimum)).astype(int))
-            expected = np.bincount(indices, minlength=64).tolist()
+            expected = [expected_values.size] if minimum == maximum else np.bincount(indices, minlength=64).tolist()
             assert actual == expected, {"axis": axis, "actual": actual, "expected": expected, "query": query}
             results.append({"axis": axis, "rows": rows, "cols": cols, "count": sum(actual),
                             "min": minimum, "max": maximum, "histogram": text})
+            graph_div = page.locator('.interactive-histogram')
+            assert graph_div.evaluate("n=>n.layout.yaxis.type") == 'log'
+            request_count = len(queries)
+            page.get_by_label('Log X', exact=True).check()
+            page.wait_for_function("document.querySelector('.interactive-histogram').layout.xaxis.type==='log'")
+            positive = expected_values[expected_values > 0]
+            logged = graph_div.evaluate('n=>n.data[0].y')
+            assert sum(logged) == len(positive), (logged, positive)
+            if len(positive) and positive.min() != positive.max():
+                lo, hi = np.log10(positive.min()), np.log10(positive.max())
+                indices = np.minimum(63, np.floor((np.log10(positive)-lo)/(hi-lo)*64).astype(int))
+                assert logged == np.bincount(indices, minlength=64).tolist()
+                initial_range = graph_div.evaluate('n=>n.layout.xaxis.range.slice()')
+                drag = graph_div.locator('.nsewdrag').bounding_box()
+                assert drag
+                page.mouse.move(drag['x'] + drag['width'] * .15, drag['y'] + drag['height'] * .15)
+                page.mouse.down()
+                page.mouse.move(drag['x'] + drag['width'] * .65, drag['y'] + drag['height'] * .85, steps=8)
+                page.mouse.up()
+                page.wait_for_function("!document.querySelector('.interactive-histogram').layout.xaxis.autorange")
+                zoomed = graph_div.evaluate('n=>n.layout.xaxis.range.slice()')
+                assert zoomed[1] - zoomed[0] < initial_range[1] - initial_range[0]
+            page.get_by_role('button', name='Autoscale both axes').click()
+            page.wait_for_function("document.querySelector('.interactive-histogram').layout.xaxis.autorange===true")
+            assert len(queries) == request_count, 'Changing histogram axes must not requery the map'
             page.screenshot(path=str(output / f"histogram-{axis.lower()}.png"))
+            if axis == 'ROW':
+                page.set_viewport_size({'width': 390, 'height': 844})
+                page.wait_for_timeout(300)
+                rect = page.locator('.histogram-dialog').bounding_box()
+                assert rect and rect['x'] >= 0 and rect['x'] + rect['width'] <= 390
+                assert graph_div.evaluate('n=>n.scrollWidth<=n.clientWidth+1')
+                page.screenshot(path=str(output / 'histogram-mobile.png'))
+                page.set_viewport_size({'width': 1440, 'height': 1000})
             page.locator(".histogram-dialog").get_by_role("button", name="Close", exact=True).click()
 
         def cancelled_matrix(route):
@@ -123,10 +155,10 @@ def main():
         page.screenshot(path=str(output / "histogram-cancelled.png"))
         page.unroute(args.api + "/matrix/query", cancelled_matrix)
         dialog.get_by_role("button", name="Compute", exact=True).click()
-        dialog.locator("svg").wait_for(state="visible")
+        page.wait_for_function("document.querySelector('.interactive-histogram')?.data?.[0]?.y")
         assert alert.count() == 0
-        recovered = dialog.locator("rect").evaluate_all("nodes=>nodes.map(n=>Number(n.dataset.count))")
-        assert recovered == [1] + [0] * 63, recovered
+        recovered = dialog.locator(".interactive-histogram").evaluate("n=>n.data[0].y")
+        assert recovered == [1], recovered
         results.append({"test": "cancelled histogram shows an actionable error and recovers", "count": 1})
         assert not errors, errors
         (output / "results.json").write_text(json.dumps(results, indent=2) + "\n")

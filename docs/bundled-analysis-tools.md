@@ -3,8 +3,9 @@
 `./gradlew natives` now prepares **both** the HiCT JNI libraries and the complete
 external toolchain for the current platform. `./gradlew clean build natives jar`
 waits for this preparation before copying resources into the JAR. The first
-source build is substantial: it builds hictk, minimap2, mm2-plus, SeqKit and the
-HiCT sequence-analysis adapter, plus BLAST+ on all four release platforms. Later runs reuse the
+source build is substantial: it builds hictk, minimap2, mm2-plus, SeqKit, the
+upstream ModDotPlot CLI and the HiCT sequence-analysis adapter, plus BLAST+ on
+all four release platforms. Later runs reuse the
 payload only if the build inputs, required commands and every file hash match.
 Previous payloads and interrupted staging directories are retained.
 
@@ -43,8 +44,11 @@ CI builds and merges sequence payloads **before** packaging, including macOS.
 `scripts/toolchains/verify_packaged_tools.py --jar PATH` verifies all listed
 files inside the actual JAR and starts the extracted tools using a fresh native
 cache, with developer overrides removed. Release jobs run this check on their
-native OS. SeqKit and the identity/alignment overlay adapter are required on all
-four release platforms. BLAST+ is also mandatory everywhere: Linux uses the
+native OS. SeqKit, upstream `moddotplot`, and the identity/alignment
+`hict-moddotplot` adapter are required on all four release platforms. The former
+keeps the published plotting CLI, while the latter consumes HiCT's frozen
+assembly plan and writes a source-bin-anchored matrix. BLAST+ is also mandatory
+everywhere: Linux uses the
 source build targeting glibc 2.17; Windows x64 and both Mac architectures use
 SHA-256-pinned official NCBI 2.16.0 distributions. Windows includes release
 Visual C++ runtime DLLs beside blastn; builders need the licensed Visual Studio
@@ -82,3 +86,28 @@ The attachment choice is **Overlay**, **Below diagonal**, or **Do not link now**
 Overlay blends on both triangles; below-diagonal leaves Hi-C above. Attaching
 replaces the secondary source and starts a new journal, as described in the
 modal. Saving without attaching preserves the current display and journal.
+
+Each generation dialog can additionally publish a reusable result below
+`DATA_DIR`. The server rejects absolute paths, traversal, managed-sidecar paths,
+wrong extensions and symbolic-link escapes. Existing files require the explicit
+overwrite checkbox. The managed immutable result is retained for accumulation and
+provenance even when a reusable copy is published.
+
+ModDotPlot comparison blocks run in a bounded in-process executor. Immutable
+sketches are shared, completed blocks are committed in deterministic order, and a
+single writer owns HDF5. `-1` uses all CPUs available to the JVM/Slurm allocation,
+`0` is adaptive to the number of independent blocks, `1` is serial, and a positive
+value requests that many workers capped by the allocation. Launcher/environment
+settings are `HICT_MODDOTPLOT_THREADS` and `HICT_SEQUENCE_THREADS`; request values
+take precedence. Job status and logs report requested, effective and selected mode.
+
+The portable CLI exposes all sequence tools without changing their upstream syntax:
+
+```bash
+hict toolbox seqkit --help
+hict toolbox moddotplot --help
+hict toolbox hict-moddotplot --version
+```
+
+External overrides are `HICT_SEQKIT_BIN`, `HICT_MODDOTPLOT_CLI_BIN`, and
+`HICT_MODDOTPLOT_BIN` respectively.

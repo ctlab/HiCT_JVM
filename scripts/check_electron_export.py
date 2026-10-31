@@ -38,7 +38,8 @@ def main():
     env.pop('ELECTRON_RUN_AS_NODE', None)
     env['DBUS_SESSION_BUS_ADDRESS'] = 'disabled:'
     env['GSETTINGS_BACKEND'] = 'memory'
-    env['LD_LIBRARY_PATH'] = '/tmp/hict-desktop-test/runtime/usr/lib/x86_64-linux-gnu'
+    runtime_lib = Path(args.xvfb).resolve().parents[1] / 'lib/x86_64-linux-gnu'
+    env['LD_LIBRARY_PATH'] = str(runtime_lib) + (':' + env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
     # Ask Xvfb to allocate an unused display; never use DISPLAY from the parent.
     read_fd, write_fd = os.pipe()
     results, errors = [], []
@@ -119,6 +120,38 @@ def main():
                     await m.reloadTilesFromBackend();
                 }''')
                 page.wait_for_timeout(1000)
+                # Exercise the lazy Plotly bundle under the actual Electron CSP,
+                # including zero accounting and axis changes without server work.
+                page.get_by_role('link', name='View', exact=True).click()
+                page.get_by_role('link', name='Rendering pipeline...', exact=True).click()
+                page.wait_for_function("document.querySelector('.graph-canvas')?.data?.graph._nodes.length>2")
+                histogram_queries = []
+                def count_query(request):
+                    if request.url.endswith('/matrix/query'):
+                        histogram_queries.append(request.url)
+                page.on('request', count_query)
+                page.evaluate('''() => {
+                    const graph=document.querySelector('.graph-canvas').data.graph;
+                    const node=graph._nodes.find(n=>n.type==='hict/source' && n.properties.source==='PRIMARY');
+                    if(!node)throw Error('Primary source node missing');
+                    window.dispatchEvent(new CustomEvent('hict:pipeline-histogram',{detail:node}));
+                }''')
+                page.wait_for_function("document.querySelector('.interactive-histogram')?.data?.[0]?.y")
+                histogram = page.locator('.histogram-dialog')
+                counts = histogram.locator('.interactive-histogram').evaluate('n=>n.data[0].y')
+                assert sum(counts) > 0
+                before_queries = len(histogram_queries)
+                histogram.get_by_label('Log X', exact=True).check()
+                page.wait_for_function("document.querySelector('.interactive-histogram').layout.xaxis.type==='log'")
+                histogram.get_by_role('button', name='Autoscale both axes', exact=True).click()
+                assert len(histogram_queries) == before_queries
+                assert not histogram.locator('[role=alert]').count()
+                page.screenshot(path=str(out / 'histogram-electron.png'))
+                results.append({'test': 'interactive histogram under Electron CSP',
+                                'values': sum(counts), 'queries': before_queries, 'logX': True})
+                histogram.get_by_role('button', name='Close', exact=True).click()
+                page.locator('.pipeline-root').get_by_role('button', name='Close', exact=True).click()
+                page.remove_listener('request', count_query)
                 cases = [(scope, fmt, False) for scope in ('viewport', 'whole-map') for fmt in ('Svg', 'Png', 'Pdf')]
                 cases.append(('whole-map', 'Pdf', True))
                 for scope, fmt, cancel in cases:

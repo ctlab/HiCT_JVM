@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Deliver completed sequence-search BED tracks without waiting for unrelated viewport track queries. Show the saved BED path and no-match outcome, and allow retrying track delivery after a lost response without rerunning the search or duplicating its track.
+- Replace static signal histograms with locally bundled, lazy-loaded Plotly charts: zoom, pan, autoscale, logarithmic signal/frequency axes, selectable bin counts and explicit zero/negative/non-finite accounting. Re-bin cached samples on a logarithmic scale without repeating matrix queries.
+- Give scaffold/contig rename, reset and navigation buttons accessible names. Verify scaffold renaming updates exported AGP while preserving the viewport.
+- Assign a shared, advancing version to every platform and publisher in each portable-release workflow run, with distinct retry identifiers. Declare `version.txt` as a Gradle resource input and order resource packaging after local version increments to prevent stale embedded versions.
 - Replace the corrupt, opaque cancellation PNG with a valid transparent image. Explicitly mark superseded tile/matrix responses as non-cacheable cancellations, expose the marker across origins, and settle both browser tile transports as empty. Verify real scheduler HTTP cancellation and pixel-identical browser recovery after reload.
 - Fix Electron PDF export failures under its content-security policy: decode embedded PNGs in memory instead of fetching data URLs, and permit only local blob reads needed by svg2pdf. Keep external network origins and data-URL connections excluded. Add real Electron SVG/PDF pixel comparisons and native save/reset checks.
 - Wait for native WebView2/WKWebView storage-clear completion on Windows/macOS before loading HiCT after reset. The Launcher now retains a pending browser reset until the wrapper explicitly acknowledges completion, rather than clearing it after 1.2 seconds of process survival or GUI handoff. Add delayed-failure and engine-specific acknowledgement acceptance checks; cross-check both platform implementations against the locked Rust dependencies.

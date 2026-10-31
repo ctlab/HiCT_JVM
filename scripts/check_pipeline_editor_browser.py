@@ -76,7 +76,7 @@ def main():
         assert expected["hist"] == 1 and expected["viewport"] == [0.7, [123, 45]], expected
         page.evaluate("""() => {const n=document.querySelector('.graph-canvas').data.graph._nodes.find(n=>n.type==='hict/histogram');
             n.widgets.find(w=>w.name==='Inspect distribution').callback();}""")
-        page.locator(".histogram-chart svg").wait_for(state="visible")
+        page.wait_for_function("document.querySelector('.interactive-histogram')?.data?.[0]?.y")
         histogram_text = page.locator(".histogram-dialog").inner_text()
         assert "37" in histogram_text, histogram_text
         page.locator(".histogram-dialog").get_by_role("button", name="Close", exact=True).click()

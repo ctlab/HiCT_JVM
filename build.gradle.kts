@@ -1142,6 +1142,8 @@ tasks.named("clean") {
 }
 
 tasks.named<ProcessResources>("processResources") {
+  inputs.file(versionFile)
+  mustRunAfter("incrementPatchVersion")
   if (completeNativeBuildRequested) dependsOn(prepareBundledTools)
   mustRunAfter(prepareBundledTools)
   dependsOn("copyWebUI")
@@ -1547,6 +1549,7 @@ tasks.register("verifyBundledJhdf5Payload") {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
+  mustRunAfter("incrementPatchVersion")
   dependsOn("verifyNativeProcessingBuild")
   dependsOn(prepareRuntimeJhdf5NativesArchive)
   doFirst {
