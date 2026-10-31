@@ -1,7 +1,8 @@
-"""Pinned BLAST+: Linux glibc 2.17 source build; official Windows/macOS binaries."""
+"""Pinned BLAST+: source builds for Linux/macOS; official Windows binaries."""
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def add_blast(payload, work, manylinux):
-    if sys.platform != 'linux' or os.uname().machine != 'x86_64':
+    if sys.platform != 'darwin' and (sys.platform != 'linux' or platform.machine() != 'x86_64'):
         from blast_prebuilt import add_prebuilt
         return add_prebuilt(payload, work, ROOT, smoke)
     archive = work / 'blast-source.tar.gz'
@@ -30,10 +31,14 @@ def add_blast(payload, work, manylinux):
         source.extractall(source_dir, filter='data')
     source = source_dir / 'ncbi-blast-2.16.0+-src'
     build = work / 'blast-build'
-    subprocess.run(['bash', str(ROOT / 'scripts/toolchains/build_blast_linux.sh'), str(source), str(build)], check=True)
+    builder = 'build_blast_darwin.sh' if sys.platform == 'darwin' else 'build_blast_linux.sh'
+    subprocess.run(['bash', str(ROOT / 'scripts/toolchains' / builder), str(source), str(build)], check=True)
     target = payload / 'bin/blastn'; shutil.copy2(build / 'bin/blastn', target)
     if (build / 'lib/blast').exists(): shutil.copytree(build / 'lib/blast', payload / 'lib/blast')
     notices = payload / 'share/licenses/sequence-analysis/blast'; shutil.copytree(ROOT / 'third_party/blast', notices)
+    privacy = source / 'c++/scripts/projects/blast/BLAST_PRIVACY'
+    if privacy.is_file():
+        shutil.copy2(privacy, notices / 'BLAST_PRIVACY')
     # Retain the upstream public-domain notice and every third-party notice
     # supplied in the source distribution, including embedded license headers.
     for file in (source / 'c++').rglob('*'):
@@ -50,10 +55,14 @@ def add_blast(payload, work, manylinux):
                 if any(word in prefix.lower() for word in ('redistribution', 'permission', 'licence', 'license')):
                     out.write('\nSOURCE: '+str(file.relative_to(source / 'c++'))+'\n'+prefix+'\n')
     docs = payload / 'share/doc/sequence-analysis'
+    docs.mkdir(parents=True, exist_ok=True)
+    if sys.platform == 'darwin':
+        shutil.copy2(build / 'share/doc/blast-macos-compatibility.json', docs)
     result = smoke(target, work / 'blast-smoke')
     result.update(version=VERSION, source=SOURCE_URL, sourceSha256=SOURCE_SHA256,
-                  linuxAbi='manylinux2014' if manylinux else 'host-development',
-                  packaging='Linux x86_64 source build')
+                  linuxAbi=('manylinux2014' if manylinux else 'host-development') if sys.platform == 'linux' else None,
+                  platform=platform.system() + '-' + platform.machine(),
+                  packaging='Checksum-pinned NCBI source build')
     (docs / 'blast-smoke.json').write_text(json.dumps(result,indent=2))
     return 'bin/blastn'
 
@@ -66,9 +75,16 @@ def smoke(executable, work):
     subject=query[:100]+'AAAAA'+query[100:]
     (work/'q.fa').write_text('>q\n'+query+'\n'); (work/'s.fa').write_text('>s\n'+subject+'\n')
     env=dict(os.environ,BLAST_USAGE_REPORT='false')
-    result=subprocess.run([str(executable),'-query',str(work/'q.fa'),'-subject',str(work/'s.fa'),'-task','blastn',
-      '-dust','no','-outfmt','6 qseqid sseqid pident length gapopen'],env=env,check=True,capture_output=True,text=True,timeout=60)
-    rows=[r.split('\t') for r in result.stdout.splitlines()]
-    if not any(int(r[3])>=220 and int(r[4])>0 for r in rows): raise RuntimeError('BLAST gapped alignment smoke failed')
+    rows = None
+    for threads in (1, 2):
+        result=subprocess.run([str(executable),'-query',str(work/'q.fa'),'-subject',str(work/'s.fa'),'-task','blastn',
+          '-dust','no','-num_threads',str(threads),'-outfmt','6 qseqid sseqid pident length gapopen'],
+          env=env,check=True,capture_output=True,text=True,timeout=60)
+        current=[r.split('\t') for r in result.stdout.splitlines()]
+        if not any(int(r[3])>=220 and int(r[4])>0 for r in current):
+            raise RuntimeError(f'BLAST gapped alignment smoke failed with {threads} threads')
+        if rows is not None and sorted(rows) != sorted(current):
+            raise RuntimeError('BLAST alignment changed with thread count')
+        rows = current
     version=subprocess.check_output([str(executable),'-version'],text=True)
-    return dict(passed=True,versionOutput=version,alignments=rows)
+    return dict(passed=True,versionOutput=version,alignments=rows,threadCounts=[1, 2])

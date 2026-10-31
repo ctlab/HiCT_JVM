@@ -65,7 +65,8 @@ class BlastPrebuiltTest(unittest.TestCase):
             for machine, expected in [('arm64', 'darwin_arm64'), ('x86_64', 'darwin_x86_64')]:
                 with patch.object(blast.platform, 'machine', return_value=machine):
                     self.assertEqual(blast.host_platform(), expected)
-                    self.assertIn(expected, blast.ARCHIVES)
+                    # Official 2.16 macOS binaries require 14; use source builds.
+                    self.assertNotIn(expected, blast.ARCHIVES)
 
     def make_crt(self, machine=0x8664):
         source = self.root / 'VC/Redist/MSVC/14.44/x64/Microsoft.VC143.CRT'

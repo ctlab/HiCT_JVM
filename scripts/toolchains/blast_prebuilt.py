@@ -1,4 +1,4 @@
-"""Pinned NCBI BLAST distributions for platforms without the Linux ABI constraint."""
+"""Pinned NCBI Windows BLAST distribution and its licensed C++ runtime."""
 import hashlib
 import json
 import os
@@ -14,8 +14,6 @@ VERSION = '2.16.0'
 BASE = 'https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.16.0/'
 ARCHIVES = {
     'windows_x86_64': ('x64-win64', '3b6f27a72e9a875f1c02119704775a8e04ae97b5e4a148b560f9be9acd39e943'),
-    'darwin_x86_64': ('x64-macosx', '7eee1e7720f5daaf06e39d9c92b125d9072de7eb81f499c005dedb08b932324c'),
-    'darwin_arm64': ('aarch64-macosx', 'e8da4f34b0421da051b1c2d9e5f8e1e43bf76e38cf9361a1dbe2fbc44b6224db'),
 }
 CRT_REQUIRED = {'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'}
 

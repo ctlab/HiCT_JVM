@@ -83,6 +83,22 @@ class MacosCompatibilityTest(unittest.TestCase):
         self.assertEqual(inspect.call_count, 1)
         self.assertEqual(inspect.call_args.args[1], 'app.jar!natives.tar.gz!../native.dylib')
 
+    def test_staged_binary_can_be_reopened_and_is_removed_after_failure(self):
+        native = bytes.fromhex('cffaedfe') + b'fixture'
+        staged = []
+
+        def inspect(path, label):
+            staged.append(path)
+            self.assertEqual(path.read_bytes(), native)
+            raise RuntimeError('inspection failed')
+
+        auditor = audit.Auditor('12.3', 'arm64')
+        with patch.object(auditor, 'inspect_binary', side_effect=inspect):
+            with self.assertRaisesRegex(RuntimeError, 'inspection failed'):
+                auditor.scan(io.BytesIO(native), 'native.dylib')
+        self.assertFalse(staged[0].exists())
+        self.assertFalse(staged[0].parent.exists())
+
     def test_python_wheels_are_selected_for_target_not_host_os(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(build.sys, 'platform', 'darwin'), \
              patch.object(build.platform, 'machine', return_value='arm64'), patch.object(build, 'run') as run:

@@ -81,21 +81,23 @@ class Auditor:
             return
         if depth > 8:
             raise ValueError(f'Archive nesting is too deep: {label}')
-        # Never extract archive paths; only one anonymous member lives on disk.
-        with tempfile.NamedTemporaryFile() as temporary:
-            temporary.write(prefix)
-            shutil.copyfileobj(stream, temporary)
-            temporary.flush()
+        # Never extract archive paths. Close the staging file before another
+        # reader or native tool opens it; Windows locks NamedTemporaryFile.
+        with tempfile.TemporaryDirectory(prefix='hict-macos-audit-') as directory:
+            temporary = Path(directory) / 'member'
+            with temporary.open('wb') as output:
+                output.write(prefix)
+                shutil.copyfileobj(stream, output)
             if native:
-                self.inspect_binary(Path(temporary.name), label)
+                self.inspect_binary(temporary, label)
             elif label.endswith(('.jar', '.zip')):
-                with zipfile.ZipFile(temporary.name) as archive_file:
+                with zipfile.ZipFile(temporary) as archive_file:
                     for member in archive_file.infolist():
                         if not member.is_dir():
                             with archive_file.open(member) as child:
                                 self.scan(child, f'{label}!{member.filename}', depth + 1)
             else:
-                with tarfile.open(temporary.name, mode='r|*') as archive_file:
+                with tarfile.open(temporary, mode='r|*') as archive_file:
                     for member in archive_file:
                         if member.isfile():
                             with archive_file.extractfile(member) as child:
