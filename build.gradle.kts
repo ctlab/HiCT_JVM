@@ -568,7 +568,7 @@ dependencies {
   testRuntimeOnly("org.junit.platform:junit-platform-launcher:$junitPlatformVersion")
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
-  implementation("org.apache.commons:commons-lang3:3.12.0")
+  implementation("org.apache.commons:commons-lang3:3.12.3")
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-pool2
   implementation("org.apache.commons:commons-pool2:2.11.1")
@@ -634,6 +634,22 @@ nativeProcessingVariants.forEach { variant ->
     val javaPlatformInclude = jniPlatformInclude?.let { javaInclude.resolve(it) }
     val compilerExecutable = nativeProcessingCompilerExecutable()
     val compilerFlavor = nativeProcessingCompilerFlavor(compilerExecutable)
+    val macosDeploymentTarget = providers.environmentVariable("MACOSX_DEPLOYMENT_TARGET")
+      .orElse(providers.environmentVariable("MACOS_DEPLOYMENT_TARGET"))
+      .orElse("12.3").get()
+    if (platformDirectory == "macos_64") {
+      require(Regex("[0-9]+\\.[0-9]+(\\.[0-9]+)?").matches(macosDeploymentTarget) &&
+        (macosDeploymentTarget.substringBefore('.').toInt() > 12 ||
+          (macosDeploymentTarget.substringBefore('.').toInt() == 12 &&
+            macosDeploymentTarget.split('.')[1].toInt() >= 3))) {
+        "HiCT requires a macOS deployment target of 12.3 or newer."
+      }
+      val legacyTarget = providers.environmentVariable("MACOS_DEPLOYMENT_TARGET").orNull
+      require(legacyTarget == null || legacyTarget == macosDeploymentTarget) {
+        "Conflicting MACOSX_DEPLOYMENT_TARGET and MACOS_DEPLOYMENT_TARGET."
+      }
+      inputs.property("macosDeploymentTarget", macosDeploymentTarget)
+    }
 
     inputs.file(nativeProcessingSourceFile)
     inputs.property("platformDirectory", platformDirectory ?: "unsupported")
@@ -693,7 +709,8 @@ nativeProcessingVariants.forEach { variant ->
         "-o",
         outputFile.absolutePath,
         nativeProcessingSourceFile.asFile.absolutePath
-      ) + gnuVariantFlags + gnuOpenMpFlags
+      ) + gnuVariantFlags + gnuOpenMpFlags +
+        if (platformDirectory == "macos_64") listOf("-mmacosx-version-min=$macosDeploymentTarget") else emptyList()
     }
     commandLine(command)
 

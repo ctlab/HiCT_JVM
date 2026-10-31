@@ -1273,10 +1273,11 @@ jobs:
   macos-portable:
     needs: sequence-tools
     name: macOS Apple Silicon portable .run
-    runs-on: macos-14
+    runs-on: macos-latest
     continue-on-error: true
     env:
       HICT_DARWIN_ARCH: arm64
+      MACOSX_DEPLOYMENT_TARGET: '12.3'
       HICT_DARWIN_PLATFORM_DIR: darwin_arm64
       HICT_DARWIN_ARTIFACT_PLATFORM: darwin-arm64
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
@@ -1357,18 +1358,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_arm64
-          key: tauri-darwin-arm64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-arm64-${{ env.HICT_WEBUI_REF }}-
-            tauri-darwin-arm64-
+            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-arm64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
           restore-keys: |
-            hict-native-macos-arm64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+            hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Apple Silicon Tauri browser payload
@@ -1382,18 +1383,18 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_arm64
-          key: toolchain-v2-darwin-arm64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            toolchain-v2-darwin-arm64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+            toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
       - name: Restore Darwin Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_arm64
-          key: hictk-conan-v3-darwin-arm64-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            hictk-conan-v3-darwin-arm64-explicit-profile-${{ env.HICTK_REF }}-
-            hictk-conan-v3-darwin-arm64-explicit-profile-
+            hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-
+            hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
@@ -1407,6 +1408,12 @@ jobs:
 
       - name: Build macOS Apple Silicon portable package
         run: ./scripts/portable/build_portable_darwin_arm64.sh
+      - name: Preserve macOS Apple Silicon compatibility audit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-arm64-compatibility
+          path: build/portable/**/share/doc/macos-compatibility.json
       - name: Verify every bundled tool in the packaged JAR
         shell: bash
         run: |
@@ -1525,6 +1532,7 @@ jobs:
     continue-on-error: true
     env:
       HICT_DARWIN_ARCH: x86_64
+      MACOSX_DEPLOYMENT_TARGET: '12.3'
       HICT_DARWIN_PLATFORM_DIR: darwin_x86_64
       HICT_DARWIN_ARTIFACT_PLATFORM: darwin-x86_64
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
@@ -1605,18 +1613,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_x86_64
-          key: tauri-darwin-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-x86_64-${{ env.HICT_WEBUI_REF }}-
-            tauri-darwin-x86_64-
+            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
           restore-keys: |
-            hict-native-macos-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+            hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/build_portable_darwin_x86_64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Intel Tauri browser payload
@@ -1630,18 +1638,18 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_x86_64
-          key: toolchain-v2-darwin-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            toolchain-v2-darwin-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+            toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
       - name: Restore Darwin Intel Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_x86_64
-          key: hictk-conan-v3-darwin-x86_64-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            hictk-conan-v3-darwin-x86_64-explicit-profile-${{ env.HICTK_REF }}-
-            hictk-conan-v3-darwin-x86_64-explicit-profile-
+            hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-
+            hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
@@ -1655,6 +1663,12 @@ jobs:
 
       - name: Build macOS Intel portable package
         run: ./scripts/portable/build_portable_darwin_x86_64.sh
+      - name: Preserve macOS Intel compatibility audit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-x86_64-compatibility
+          path: build/portable/**/share/doc/macos-compatibility.json
       - name: Verify every bundled tool in the packaged JAR
         shell: bash
         run: |

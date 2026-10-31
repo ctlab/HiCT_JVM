@@ -35,6 +35,33 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def macos_target():
+    target = os.environ.get('MACOSX_DEPLOYMENT_TARGET', os.environ.get('MACOS_DEPLOYMENT_TARGET', '12.3'))
+    if not re.fullmatch(r'\d+\.\d+(?:\.\d+)?', target) or tuple(map(int, target.split('.')[:2])) < (12, 3):
+        raise ValueError('The complete macOS sequence payload requires macOS 12.3 or newer')
+    if os.environ.get('MACOS_DEPLOYMENT_TARGET', target) != target:
+        raise ValueError('Conflicting macOS deployment targets')
+    return target
+
+
+def install_requirements(py, work, docs):
+    requirements = ROOT / 'scripts/sequence_analysis/requirements-build.txt'
+    options = []
+    if sys.platform == 'darwin':
+        target = macos_target()
+        os.environ['MACOSX_DEPLOYMENT_TARGET'] = target
+        # pip expands this macOS platform into compatible older/universal tags.
+        # Download first: direct host installation can select macOS 14+ wheels
+        # even when the native compiler's deployment target is set to 12.
+        wheelhouse = work / 'macos-wheels'
+        platform_tag = 'macosx_' + '_'.join(target.split('.')[:2]) + '_' + platform.machine()
+        run([py, '-m', 'pip', 'download', '--only-binary=:all:', '--platform', platform_tag,
+             '--dest', wheelhouse, '-r', requirements])
+        options = ['--no-index', '--find-links', wheelhouse]
+    run([py, '-m', 'pip', 'install', *options, '--report', docs / 'python-install.json',
+         '-r', requirements])
+
+
 def checkout(url, commit, target, local=None):
     run(['git', 'clone', '--no-checkout', local or url, target])
     run(['git', 'checkout', '--detach', commit], cwd=target)
@@ -131,8 +158,7 @@ def main():
     run([sys.executable, '-m', 'venv', work / 'venv'])
     py = work / ('venv/Scripts/python.exe' if os.name == 'nt' else 'venv/bin/python')
     # pip records archive hashes and exact origins for every resolved wheel.
-    run([py, '-m', 'pip', 'install', '--report', docs / 'python-install.json',
-         '-r', ROOT / 'scripts/sequence_analysis/requirements-build.txt'])
+    install_requirements(py, work, docs)
     run([py, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation',
          '--report', docs / 'moddotplot-install.json', mod])
     # Capture installed distribution notices, including bundled native libraries.
@@ -183,6 +209,10 @@ for dist in im.distributions():
          '--output', docs / 'smoke-test.json'])
     from add_blast import add_blast
     blast_command = add_blast(payload, work, args.manylinux2014)
+    if sys.platform == 'darwin':
+        run([sys.executable, ROOT / 'scripts/ci/check_macos_compatibility.py', payload,
+             '--target', macos_target(), '--arch', platform.machine(),
+             '--report', docs / 'macos-compatibility.json'])
     if args.manylinux2014:
         abi = {}
         for file in payload.rglob('*'):

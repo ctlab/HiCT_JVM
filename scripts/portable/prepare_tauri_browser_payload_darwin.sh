@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+source "${SCRIPT_DIR}/macos_target.sh"
 WEBUI_REPO_URL="${HICT_WEBUI_REPO_URL:-https://github.com/ctlab/HiCT_WebUI.git}"
 WEBUI_REF="${HICT_WEBUI_REF:-same-as-jvm}"
 DARWIN_ARCH="$(uname -m)"

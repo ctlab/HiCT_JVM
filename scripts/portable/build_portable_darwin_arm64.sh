@@ -12,7 +12,7 @@ case "${DARWIN_ARCH}" in
 esac
 TOOLCHAIN_PLATFORM="${HICT_DARWIN_PLATFORM_DIR:-darwin_${DARWIN_ARCH}}"
 PLATFORM="${HICT_DARWIN_ARTIFACT_PLATFORM:-darwin-${DARWIN_ARCH}}"
-MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-12.0}"
+source "${SCRIPT_DIR}/macos_target.sh"
 APP_NAME="HiCT"
 VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
 APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
@@ -573,6 +573,12 @@ TAR_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.tar.gz"
 RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.run"
 SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.sha256"
 PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.xz"
+
+# Audit the staged runtime, Tauri, tools, and JNI/HDF5 inside JARs/sidecars.
+# Never advertise an older OS by just rewriting a binary's deployment header.
+python3 "${PROJECT_DIR}/scripts/ci/check_macos_compatibility.py" "${APP_DIR}" \
+  --arch "${DARWIN_ARCH}" --target "${MACOS_DEPLOYMENT_TARGET}" \
+  --report "${APP_DIR}/share/doc/macos-compatibility.json"
 
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"

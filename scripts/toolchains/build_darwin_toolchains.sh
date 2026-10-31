@@ -19,7 +19,7 @@ HICTK_REPO_URL="${HICTK_REPO_URL:-https://github.com/paulsengroup/hictk.git}"
 MINIMAP2_REPO_URL="${MINIMAP2_REPO_URL:-https://github.com/lh3/minimap2.git}"
 MM2PLUS_REPO_URL="${MM2PLUS_REPO_URL:-https://github.com/at-cg/mm2-plus.git}"
 BUILD_JOBS="${BUILD_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
-MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-12.0}"
+source "${PROJECT_DIR}/scripts/portable/macos_target.sh"
 
 usage() {
   cat <<EOF
@@ -34,7 +34,7 @@ Environment overrides:
   WORK_DIR=/tmp/hict-toolchains-${PLATFORM_DIR}
   HICTK_CONAN_HOME=/path/to/conan-cache
   BUILD_JOBS=8
-  MACOS_DEPLOYMENT_TARGET=12.0
+  MACOSX_DEPLOYMENT_TARGET=12.3 (MACOS_DEPLOYMENT_TARGET is also accepted)
 EOF
 }
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then usage; exit 0; fi
@@ -125,7 +125,7 @@ build_hictk() {
 
 build_minimap2() {
   local stage_dir="${WORK_DIR}/minimap2-stage" build_info="${OUTPUT_DIR}/share/doc/minimap2/build-info.txt"
-  if [[ -x "${OUTPUT_DIR}/bin/minimap2" && -f "${build_info}" ]] && grep -qx "ref=${MINIMAP2_REF}" "${build_info}" && grep -qx "platform=${PLATFORM_DIR}" "${build_info}"; then echo "[darwin/toolchains] Reusing cached minimap2 payload"; return 0; fi
+  if [[ -x "${OUTPUT_DIR}/bin/minimap2" && -f "${build_info}" ]] && grep -qx "ref=${MINIMAP2_REF}" "${build_info}" && grep -qx "platform=${PLATFORM_DIR}" "${build_info}" && grep -qx "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}" "${build_info}"; then echo "[darwin/toolchains] Reusing cached minimap2 payload"; return 0; fi
   [[ -d "${SOURCE_MINIMAP2}/.git" ]] || git clone --filter=blob:none "${MINIMAP2_REPO_URL}" "${SOURCE_MINIMAP2}" || git clone "${MINIMAP2_REPO_URL}" "${SOURCE_MINIMAP2}"
   git -C "${SOURCE_MINIMAP2}" fetch --tags --force origin "${MINIMAP2_REF}" || git -C "${SOURCE_MINIMAP2}" fetch --tags --force origin; git -C "${SOURCE_MINIMAP2}" checkout --force "${MINIMAP2_REF}"; make -C "${SOURCE_MINIMAP2}" clean >/dev/null 2>&1 || true
   if [[ "${DARWIN_ARCH}" == "arm64" ]]; then make -C "${SOURCE_MINIMAP2}" -j"${BUILD_JOBS}" CC="${CC}" aarch64=1 arm_neon=1 CFLAGS="-O3 -DNDEBUG -arch arm64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; else make -C "${SOURCE_MINIMAP2}" -j"${BUILD_JOBS}" CC="${CC}" CFLAGS="-O3 -DNDEBUG -arch x86_64 -mmacosx-version-min=${MACOS_DEPLOYMENT_TARGET}"; fi
@@ -133,7 +133,7 @@ build_minimap2() {
   [[ -f "${SOURCE_MINIMAP2}/LICENSE.txt" ]] && install -m 0644 "${SOURCE_MINIMAP2}/LICENSE.txt" "${stage_dir}/share/licenses/minimap2/LICENSE.txt" || { [[ -f "${SOURCE_MINIMAP2}/LICENSE" ]] && install -m 0644 "${SOURCE_MINIMAP2}/LICENSE" "${stage_dir}/share/licenses/minimap2/LICENSE" || true; }
   [[ -f "${stage_dir}/share/licenses/minimap2/LICENSE.txt" && ! -f "${stage_dir}/share/licenses/minimap2/LICENSE" ]] && cp "${stage_dir}/share/licenses/minimap2/LICENSE.txt" "${stage_dir}/share/licenses/minimap2/LICENSE"
   [[ -f "${stage_dir}/share/licenses/minimap2/LICENSE" && ! -f "${stage_dir}/share/licenses/minimap2/LICENSE.txt" ]] && cp "${stage_dir}/share/licenses/minimap2/LICENSE" "${stage_dir}/share/licenses/minimap2/LICENSE.txt"
-  { echo "project=minimap2"; echo "repository=${MINIMAP2_REPO_URL}"; echo "ref=${MINIMAP2_REF}"; echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "compiler=$(clang --version | head -n 1)"; echo "codesign=adhoc"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; echo "[file]"; file "${stage_dir}/bin/minimap2"; echo; echo "[otool]"; otool -L "${stage_dir}/bin/minimap2" || true; echo; echo "[codesign]"; codesign -dv --verbose=2 "${stage_dir}/bin/minimap2" 2>&1 || true; } > "${stage_dir}/share/doc/minimap2/build-info.txt"
+  { echo "project=minimap2"; echo "repository=${MINIMAP2_REPO_URL}"; echo "ref=${MINIMAP2_REF}"; echo "platform=${PLATFORM_DIR}"; echo "arch=${DARWIN_ARCH}"; echo "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}"; echo "compiler=$(clang --version | head -n 1)"; echo "codesign=adhoc"; echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; echo "[file]"; file "${stage_dir}/bin/minimap2"; echo; echo "[otool]"; otool -L "${stage_dir}/bin/minimap2" || true; echo; echo "[codesign]"; codesign -dv --verbose=2 "${stage_dir}/bin/minimap2" 2>&1 || true; } > "${stage_dir}/share/doc/minimap2/build-info.txt"
   cp -a "${stage_dir}/bin" "${OUTPUT_DIR}/"; cp -a "${stage_dir}/share" "${OUTPUT_DIR}/"; "${OUTPUT_DIR}/bin/minimap2" --help >/dev/null || true
 }
 
@@ -172,7 +172,7 @@ EOF
 
 build_mm2plus() {
   local stage_dir="${WORK_DIR}/mm2plus-stage" build_info="${OUTPUT_DIR}/share/doc/mm2plus/build-info.txt"
-  if [[ -f "${build_info}" ]] && grep -qx "ref=${MM2PLUS_REF}" "${build_info}" && grep -qx "platform=${PLATFORM_DIR}" "${build_info}" && [[ -e "${OUTPUT_DIR}/bin/mm2plus-avx2" ]]; then echo "[darwin/toolchains] Reusing cached mm2-plus payload"; return 0; fi
+  if [[ -f "${build_info}" ]] && grep -qx "ref=${MM2PLUS_REF}" "${build_info}" && grep -qx "platform=${PLATFORM_DIR}" "${build_info}" && grep -qx "macos_deployment_target=${MACOS_DEPLOYMENT_TARGET}" "${build_info}" && [[ -e "${OUTPUT_DIR}/bin/mm2plus-avx2" ]]; then echo "[darwin/toolchains] Reusing cached mm2-plus payload"; return 0; fi
   [[ -d "${SOURCE_MM2PLUS}/.git" ]] || git clone --filter=blob:none "${MM2PLUS_REPO_URL}" "${SOURCE_MM2PLUS}" || git clone "${MM2PLUS_REPO_URL}" "${SOURCE_MM2PLUS}"
   git -C "${SOURCE_MM2PLUS}" fetch --tags --force origin "${MM2PLUS_REF}" || git -C "${SOURCE_MM2PLUS}" fetch --tags --force origin; git -C "${SOURCE_MM2PLUS}" checkout --force "${MM2PLUS_REF}"; patch_mm2plus_for_no_openmp
   rm -rf "${stage_dir}"; mkdir -p "${stage_dir}/bin" "${stage_dir}/share/licenses/mm2plus" "${stage_dir}/share/doc/mm2plus"

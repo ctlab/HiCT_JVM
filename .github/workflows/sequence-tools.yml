@@ -12,6 +12,9 @@ on:
       - 'scripts/ci/linux_container_build.sh'
       - 'scripts/ci/check_staged_linux_tools.py'
       - 'scripts/ci/configure_centos_mirrors.py'
+      - 'scripts/ci/check_macos_compatibility.py'
+      - 'scripts/portable/macos_target.sh'
+      - 'tests/toolchains/**'
       - 'third_party/**'
       - '.github/workflows/sequence-tools.yml'
 
@@ -28,13 +31,14 @@ jobs:
             platform: linux_x86_64
           - os: windows-2022
             platform: windows_x86_64
-          - os: macos-14
+          - os: macos-latest
             platform: darwin_arm64
           - os: macos-15-intel
             platform: darwin_x86_64
     runs-on: ${{ matrix.os }}
     env:
       PYTHONUTF8: '1'
+      MACOSX_DEPLOYMENT_TARGET: '12.3'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
