@@ -34,6 +34,12 @@ echo 'Checking all bundled zlib C sources with strict POSIX declaration checks'
 "$CC" -std=gnu18 $CFLAGS -DTARGET_OS_MAC=1 -Werror=implicit-function-declaration \
   -I"$source_root/c++/include/util/compress/zlib" -fsyntax-only \
   "$source_root"/c++/src/util/compress/zlib/*.c
+# Instantiate the broken BitMagic assignment operators before the long build.
+# Run with this job's Apple compiler, SDK, architecture and deployment target.
+echo 'Checking bundled BitMagic buffer allocation with the native C++ compiler'
+"$CXX" -std=gnu++17 $CXXFLAGS -I"$source_root/c++/include" \
+  "$SCRIPT_DIR/blast_bitmagic_smoke.cpp" $LDFLAGS -o "$output_root/bitmagic-smoke"
+"$output_root/bitmagic-smoke"
 # NCBI recommends --without-openmp for Apple Clang. BLAST's own -num_threads
 # remains available via --with-mt; disabling OpenMP does not serialize searches.
 # SQLite is required by BLAST. Use Apple's system library through the SDK,

@@ -81,8 +81,13 @@ chmod +x HiCTBlast/bin/blastn
             tools = work / 'tools'
             tools.mkdir()
             scripts = {
-                'xcrun': 'if [[ "$1" == --find ]]; then command -v mock-cc; else printf "/fake/sdk\\n"; fi',
+                'xcrun': 'if [[ "$1" == --find ]]; then if [[ "$2" == clang++ ]]; then command -v mock-cxx; else command -v mock-cc; fi; else printf "/fake/sdk\\n"; fi',
                 'mock-cc': 'printf "%s\\n" "$@" > "$RECORD/preflight-args"; exit "${MOCK_CC_STATUS:-0}"',
+                'mock-cxx': '''printf "%s\\n" "$@" > "$RECORD/cxx-preflight-args"
+if [[ "${MOCK_CXX_STATUS:-0}" != 0 ]]; then exit "$MOCK_CXX_STATUS"; fi
+while [[ "$1" != -o ]]; do shift; done
+printf '#!/usr/bin/env bash\\nexit %s\\n' "${MOCK_SMOKE_STATUS:-0}" > "$2"
+chmod +x "$2"''',
                 'make': 'printf "%s\\n" "$@" > "$RECORD/make-args"',
                 'codesign': 'printf "%s\\n" "$@" > "$RECORD/codesign-args"',
                 'python3': 'printf "%s\\n" "$@" > "$RECORD/audit-args"',
@@ -122,6 +127,11 @@ chmod +x HiCTBlast/bin/blastn
                 self.assertIn('-fsyntax-only', preflight)
                 self.assertEqual({Path(arg).name for arg in preflight if arg.endswith('.c')},
                                  {'zutil.c', 'gzlib.c', 'gzread.c', 'gzwrite.c'})
+                cxx_preflight = (record / 'cxx-preflight-args').read_text().splitlines()
+                self.assertIn('-std=gnu++17', cxx_preflight)
+                self.assertIn('-mmacosx-version-min=12.3', cxx_preflight)
+                self.assertEqual(cxx_preflight[cxx_preflight.index('-arch') + 1], arch)
+                self.assertTrue(any(arg.endswith('blast_bitmagic_smoke.cpp') for arg in cxx_preflight))
 
             # NCBI can return success after skipping unmet requirements.
             with (source / 'configure').open('a') as configure:
@@ -138,6 +148,12 @@ chmod +x HiCTBlast/bin/blastn
                                     env=dict(env, MOCK_CC_STATUS='7'), capture_output=True, text=True)
             self.assertEqual(result.returncode, 7)
             self.assertFalse((record / 'make-args').exists())
+            for failure in ('MOCK_CXX_STATUS', 'MOCK_SMOKE_STATUS'):
+                result = subprocess.run(['bash', str(blast.ROOT / 'scripts/toolchains/build_blast_darwin.sh'),
+                                         str(source.parent), str(work / failure)],
+                                        env=dict(env, **{failure: '8'}), capture_output=True, text=True)
+                self.assertEqual(result.returncode, 8)
+                self.assertFalse((record / 'make-args').exists())
 
 
 if __name__ == '__main__':
