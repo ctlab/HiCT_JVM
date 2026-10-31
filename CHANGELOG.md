@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix BLAST's bundled zlib gzip compilation on both macOS architectures by explicitly enabling its POSIX `unistd.h` configuration. Check all bundled zlib C files, including gzip read/write/seek code, with implicit function declarations treated as errors before building the toolkit.
 - Fix BLAST source compilation with recent Apple SDKs: backport zlib's classic-Mac-OS guard so `TARGET_OS_MAC` no longer replaces POSIX `fdopen` with `NULL`. Preserve source-patch provenance and compile the failing zlib unit against the runner SDK before the full toolkit build; retain the macOS 12.3 target and deployment audits.
 - Build the pinned BLAST 2.16.0 source for macOS 12.3 on Intel and Apple Silicon instead of bundling NCBI executables requiring macOS 14. Retain deployment audits and verify local gapped alignments with one and two requested threads. Close staged archive files before reopening them in the macOS compatibility checker, fixing Windows regression-test failures; preserve native build/audit evidence when packaging fails.
 - Restore Commons Lang's dependency version to `3.12.0`; the macOS deployment-target update accidentally changed it to nonexistent `3.12.3`, preventing regression and release builds on every platform.

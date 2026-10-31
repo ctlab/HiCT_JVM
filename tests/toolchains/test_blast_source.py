@@ -67,6 +67,10 @@ class BlastSourceTest(unittest.TestCase):
             work = Path(temporary)
             source = work / 'source/c++'
             source.mkdir(parents=True)
+            zlib = source / 'src/util/compress/zlib'
+            zlib.mkdir(parents=True)
+            for name in ('zutil.c', 'gzlib.c', 'gzread.c', 'gzwrite.c'):
+                (zlib / name).touch()
             (source / 'configure').write_text('''#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$RECORD/configure-args"
 printf '%s\\n' "$CFLAGS" "$CXXFLAGS" "$LDFLAGS" "$MACOSX_DEPLOYMENT_TARGET" > "$RECORD/compiler-flags"
@@ -103,6 +107,7 @@ chmod +x HiCTBlast/bin/blastn
                 self.assertIn('--with-sqlite3=/usr', args)
                 self.assertIn('--without-boost', args)
                 flags = (record / 'compiler-flags').read_text().splitlines()
+                self.assertIn('-DHAVE_UNISTD_H=1', flags[0])
                 for value in flags[:3]:
                     self.assertIn('-arch ' + arch, value)
                     self.assertIn('-mmacosx-version-min=12.3', value)
@@ -112,8 +117,11 @@ chmod +x HiCTBlast/bin/blastn
                 self.assertIn('2', (record / 'make-args').read_text().splitlines())
                 preflight = (record / 'preflight-args').read_text().splitlines()
                 self.assertIn('-DTARGET_OS_MAC=1', preflight)
+                self.assertIn('-DHAVE_UNISTD_H=1', preflight)
+                self.assertIn('-Werror=implicit-function-declaration', preflight)
                 self.assertIn('-fsyntax-only', preflight)
-                self.assertTrue(preflight[-1].endswith('/src/util/compress/zlib/zutil.c'))
+                self.assertEqual({Path(arg).name for arg in preflight if arg.endswith('.c')},
+                                 {'zutil.c', 'gzlib.c', 'gzread.c', 'gzwrite.c'})
 
             # NCBI can return success after skipping unmet requirements.
             with (source / 'configure').open('a') as configure:

@@ -17,19 +17,23 @@ jobs="${HICT_BUILD_JOBS:-$(sysctl -n hw.ncpu)}"
 export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 export CC="$(xcrun --find clang)" CXX="$(xcrun --find clang++)"
 target_flags="-arch $arch -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET -isysroot $SDKROOT"
-export CFLAGS="${CFLAGS:-} $target_flags"
+# NCBI builds its bundled zlib without running zlib's configure. Darwin has
+# unistd.h, but does not set Linux's _LARGEFILE64_SOURCE fallback that includes
+# it in zconf.h. Supply zlib's supported feature setting for every C unit.
+export CFLAGS="${CFLAGS:-} $target_flags -DHAVE_UNISTD_H=1"
 export CXXFLAGS="${CXXFLAGS:-} $target_flags"
 export LDFLAGS="${LDFLAGS:-} $target_flags"
 echo "Building BLAST for macOS $MACOSX_DEPLOYMENT_TARGET ($arch), jobs=$jobs"
 cd "$source_root/c++"
 python3 "$SCRIPT_DIR/patch_blast_source.py" "$source_root/c++" \
   --report "$output_root/share/doc/blast-source-patches.json"
-# Compile the actual failing translation unit against this runner's SDK before
-# spending time on the complete toolkit. Force the macro from newer Apple SDKs
-# so older SDKs also exercise the regression. CFLAGS uses compiler word splitting.
-"$CC" -std=gnu17 $CFLAGS -DTARGET_OS_MAC=1 \
+# Check every bundled zlib C unit, including gzip read/write/seek code, against
+# this runner's SDK before the full build. Force the newer Apple SDK macro so
+# older SDKs exercise that guard too. CFLAGS uses compiler word splitting.
+echo 'Checking all bundled zlib C sources with strict POSIX declaration checks'
+"$CC" -std=gnu18 $CFLAGS -DTARGET_OS_MAC=1 -Werror=implicit-function-declaration \
   -I"$source_root/c++/include/util/compress/zlib" -fsyntax-only \
-  "$source_root/c++/src/util/compress/zlib/zutil.c"
+  "$source_root"/c++/src/util/compress/zlib/*.c
 # NCBI recommends --without-openmp for Apple Clang. BLAST's own -num_threads
 # remains available via --with-mt; disabling OpenMP does not serialize searches.
 # SQLite is required by BLAST. Use Apple's system library through the SDK,
