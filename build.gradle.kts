@@ -568,7 +568,7 @@ dependencies {
   testRuntimeOnly("org.junit.platform:junit-platform-launcher:$junitPlatformVersion")
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
-  implementation("org.apache.commons:commons-lang3:3.12.3")
+  implementation("org.apache.commons:commons-lang3:3.12.0")
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-pool2
   implementation("org.apache.commons:commons-pool2:2.11.1")

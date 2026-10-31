@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Restore Commons Lang's dependency version to `3.12.0`; the macOS deployment-target update accidentally changed it to nonexistent `3.12.3`, preventing regression and release builds on every platform.
 - Build Apple Silicon packages, sequence tools and Java regressions on `macos-latest`; keep Intel builds on `macos-15-intel`. Set a consistent macOS 12.3 Monterey minimum for the complete package (including SeqKit and SciPy), propagate it to JNI, Tauri and native toolchains, and prevent reuse of caches built for a different target. Select compatible Python wheels rather than newer-host wheels. Audit native deployment headers, including libraries inside JARs and archives, before packaging; retain the compatibility report with the release. WebUI assets target Safari 15 syntax for Monterey's WKWebView.
 - Deliver completed sequence-search BED tracks without waiting for unrelated viewport track queries. Show the saved BED path and no-match outcome, and allow retrying track delivery after a lost response without rerunning the search or duplicating its track.
 - Replace static signal histograms with locally bundled, lazy-loaded Plotly charts: zoom, pan, autoscale, logarithmic signal/frequency axes, selectable bin counts and explicit zero/negative/non-finite accounting. Re-bin cached samples on a logarithmic scale without repeating matrix queries.
