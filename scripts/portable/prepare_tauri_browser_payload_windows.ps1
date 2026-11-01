@@ -43,7 +43,7 @@ function Resolve-WebUiSource {
   }
 
   $sibling = Join-Path $projectDir "..\HiCT_WebUI"
-  if (Test-Path (Join-Path $sibling "package.json")) {
+  if ($WebUiRef -eq "same-as-jvm" -and (Test-Path (Join-Path $sibling "package.json"))) {
     return (Resolve-Path $sibling).Path
   }
 
@@ -52,28 +52,12 @@ function Resolve-WebUiSource {
     $requestedRef = Get-CurrentJvmRef
   }
 
-  $checkoutDir = Join-Path $WorkRoot "HiCT_WebUI"
-  if (Test-Path $checkoutDir) {
-    Remove-Item -Recurse -Force $checkoutDir
-  }
-  New-Item -ItemType Directory -Force -Path $WorkRoot | Out-Null
-  & git clone --depth 1 --branch $requestedRef $WebUiRepoUrl $checkoutDir
-  if ($LASTEXITCODE -eq 0) {
-    return $checkoutDir
-  }
+  $checkoutArgs = @((Join-Path $scriptDir "checkout_webui.mjs"), "--repo", $WebUiRepoUrl, "--ref", $requestedRef, "--root", $WorkRoot)
+  if ($WebUiRef -eq "same-as-jvm") { $checkoutArgs += @("--fallback", "master") }
+  $checkoutDir = & node @checkoutArgs
+  if ($LASTEXITCODE -ne 0) { throw "Could not fetch requested HiCT_WebUI revision '$requestedRef'." }
+  return $checkoutDir.Trim()
 
-  if ($requestedRef -ne "master") {
-    Write-Warning "HiCT_WebUI ref '$requestedRef' was not found; falling back to master."
-    if (Test-Path $checkoutDir) {
-      Remove-Item -Recurse -Force $checkoutDir
-    }
-    & git clone --depth 1 --branch master $WebUiRepoUrl $checkoutDir
-    if ($LASTEXITCODE -eq 0) {
-      return $checkoutDir
-    }
-  }
-
-  throw "Could not clone HiCT_WebUI ref '$requestedRef'."
 }
 
 Require-Command cargo

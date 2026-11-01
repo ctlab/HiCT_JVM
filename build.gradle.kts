@@ -70,17 +70,19 @@ val versionFile = file("${project.projectDir}/version.txt")
 val changelogFile = file("${project.projectDir}/CHANGELOG.md")
 val webUiPackageJson = file("${project.projectDir}/../HiCT_WebUI/package.json")
 
+val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
+val explicitWebUIRef = !webUIRefOverride.isNullOrBlank() && !webUIRefOverride.trim().equals("same-as-jvm", ignoreCase = true)
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
 val localWebUIRepositoryDirectory = layout.projectDirectory.dir("../HiCT_WebUI")
 val remoteWebUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
+val useLocalWebUI = localWebUIRepositoryDirectory.asFile.exists() && !explicitWebUIRef
 val webUIRepositoryDirectory =
-  if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
+  if (useLocalWebUI) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
 val bundledToolchainSourceDirectory = layout.projectDirectory.dir("toolchains-dist")
 val webUIFallbackRef = "master"
 val webUISameAsJvmRefToken = "same-as-jvm"
-val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
 val npmExecutable = if (System.getProperty("os.name").lowercase().contains("windows")) "npm.cmd" else "npm"
 val requireBundledWebUI =
   (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
@@ -1067,7 +1069,7 @@ tasks.register("buildWebUI") {
   doLast {
     try {
       val requestedWebUIRef = resolveWebUIRef()
-      if (localWebUIRepositoryDirectory.asFile.exists()) {
+      if (useLocalWebUI) {
         println(
           "Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath} " +
             "(branch/working tree will not be modified by Gradle; requested ref '${requestedWebUIRef}' is ignored)"
@@ -1119,6 +1121,7 @@ tasks.register("buildWebUI") {
         isIgnoreExitValue = true
       }
       if (checkOutResult.exitValue != 0) {
+        if (explicitWebUIRef) throw GradleException("Requested HiCT_WebUI ref '${requestedWebUIRef}' is unavailable; no fallback is allowed for an explicit pin.")
         println("Failed to checkout HiCT_WebUI ref '${requestedWebUIRef}', trying fallback '${webUIFallbackRef}'.")
         checkedOutRef = webUIFallbackRef
         checkOutResult = project.exec {
@@ -1134,11 +1137,23 @@ tasks.register("buildWebUI") {
       }
 
       println("Using HiCT_WebUI ref '${checkedOutRef}'.")
-      project.exec {
+      // Detached commit/tag pins must not follow a branch or produce a spurious pull failure.
+      val symbolicRef = project.exec {
+        commandLine("git", "symbolic-ref", "--quiet", "HEAD")
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = ByteArrayOutputStream()
+        isIgnoreExitValue = true
+      }
+      if (symbolicRef.exitValue == 0) project.exec {
         commandLine("git", "pull", "--ff-only")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
-        isIgnoreExitValue = true
+        isIgnoreExitValue = !explicitWebUIRef
+      }
+      project.exec {
+        commandLine("git", "log", "-1", "--format=WebUI source commit: %H")
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = System.out
       }
 
 
@@ -1155,6 +1170,7 @@ tasks.register("buildWebUI") {
       }
       verifyWebUIConverterDtoRegression(webUIRepositoryDirectory.asFile)
     } catch (e: Exception) {
+      if (explicitWebUIRef) throw GradleException("Could not build explicitly requested HiCT_WebUI '${webUIRefOverride}'.", e)
       if (e is GradleException && e.message?.startsWith("HiCT_WebUI converter DTO regression detected") == true) {
         throw e
       }

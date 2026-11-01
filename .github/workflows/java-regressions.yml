@@ -30,6 +30,11 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify pinned browser source checkout without fallback
+        run: node --test scripts/portable/check_webui_checkout.mjs
       - name: Compile full JVM, build fat JAR, and check edit/render contracts
         shell: bash
         run: >-
