@@ -649,6 +649,7 @@ nativeProcessingVariants.forEach { variant ->
         "Conflicting MACOSX_DEPLOYMENT_TARGET and MACOS_DEPLOYMENT_TARGET."
       }
       inputs.property("macosDeploymentTarget", macosDeploymentTarget)
+      inputs.property("macosInstallName", "@rpath/${outputFile.name}")
     }
 
     inputs.file(nativeProcessingSourceFile)
@@ -710,7 +711,10 @@ nativeProcessingVariants.forEach { variant ->
         outputFile.absolutePath,
         nativeProcessingSourceFile.asFile.absolutePath
       ) + gnuVariantFlags + gnuOpenMpFlags +
-        if (platformDirectory == "macos_64") listOf("-mmacosx-version-min=$macosDeploymentTarget") else emptyList()
+        if (platformDirectory == "macos_64") listOf(
+          "-mmacosx-version-min=$macosDeploymentTarget",
+          "-Wl,-install_name,@rpath/${outputFile.name}"
+        ) else emptyList()
     }
     commandLine(command)
 

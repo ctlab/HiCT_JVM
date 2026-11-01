@@ -1295,6 +1295,7 @@ jobs:
       - name: Assign run-specific release version
         run: |
           python3 scripts/ci/test_release_version.py
+          python3 scripts/ci/test_macos_compatibility.py
           python3 scripts/ci/set_release_version.py
 
       - name: Download published JHDF5 jar
@@ -1550,6 +1551,7 @@ jobs:
       - name: Assign run-specific release version
         run: |
           python3 scripts/ci/test_release_version.py
+          python3 scripts/ci/test_macos_compatibility.py
           python3 scripts/ci/set_release_version.py
 
       - name: Download published JHDF5 jar

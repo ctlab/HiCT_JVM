@@ -46,6 +46,25 @@ def minimum_versions(load_commands):
     return versions
 
 
+def library_references(load_commands):
+    """Distinguish a dylib's own install ID from libraries it loads.
+
+    otool -L includes LC_ID_DYLIB as its first line; that is not a dependency.
+    Both must still be relocatable in distributed payloads.
+    """
+    for block in re.split(r'Load command \d+', load_commands):
+        command = re.search(r'\bcmd (LC_\w+)\b', block)
+        if not command:
+            continue
+        kind = command.group(1)
+        if kind not in {'LC_ID_DYLIB', 'LC_LOAD_DYLIB', 'LC_LOAD_WEAK_DYLIB',
+                        'LC_REEXPORT_DYLIB', 'LC_LAZY_LOAD_DYLIB', 'LC_LOAD_UPWARD_DYLIB'}:
+            continue
+        name = re.search(r'^\s+name (.+?) \(offset \d+\)', block, re.MULTILINE)
+        if name:
+            yield ('install name' if kind == 'LC_ID_DYLIB' else 'dependency'), name.group(1)
+
+
 class Auditor:
     def __init__(self, target, arch):
         self.target = version(target)
@@ -64,11 +83,9 @@ class Auditor:
             self.binaries.append(dict(path=label, architecture=self.arch, minimumVersions=minima))
             if any(version(v) > self.target for v in minima):
                 self.errors.append(f'{label}: requires macOS {max(minima, key=version)}')
-            links = subprocess.check_output(
-                ['otool', '-arch', self.arch, '-L', str(path)], text=True)
-            for dependency in re.findall(r'^\s+(/\S+) \(', links, re.MULTILINE):
-                if not dependency.startswith(('/usr/lib/', '/System/Library/')):
-                    self.errors.append(f'{label}: non-system absolute dependency {dependency}')
+            for kind, name in library_references(commands):
+                if name.startswith('/') and not name.startswith(('/usr/lib/', '/System/Library/')):
+                    self.errors.append(f'{label}: non-system absolute {kind} {name}')
         except (subprocess.CalledProcessError, ValueError) as error:
             self.errors.append(f'{label}: {error}')
 
