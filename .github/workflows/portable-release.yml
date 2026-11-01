@@ -233,6 +233,7 @@ jobs:
         run: |
           node --version
           npm --version
+          node --test scripts/portable/check_webui_checkout.mjs
 
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
@@ -777,6 +778,7 @@ jobs:
         run: |
           node --version
           npm.cmd --version
+          node --test scripts/portable/check_webui_checkout.mjs
 
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
@@ -1336,6 +1338,7 @@ jobs:
         run: |
           node --version
           npm --version
+          node --test scripts/portable/check_webui_checkout.mjs
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
         with:
@@ -1592,6 +1595,7 @@ jobs:
         run: |
           node --version
           npm --version
+          node --test scripts/portable/check_webui_checkout.mjs
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
         with:
