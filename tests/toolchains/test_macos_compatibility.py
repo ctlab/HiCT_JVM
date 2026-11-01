@@ -50,10 +50,18 @@ class MacosCompatibilityTest(unittest.TestCase):
 
     def test_rejects_newer_dependency_and_absolute_build_host_link(self):
         auditor = audit.Auditor('12.0', 'arm64')
-        outputs = ['arm64', 'Load command 0\ncmd LC_BUILD_VERSION\nplatform MACOS\nminos 14.0',
-                   'library:\n\t/opt/homebrew/lib/libexample.dylib (compatibility version 1.0)']
-        with patch.object(audit.subprocess, 'check_output', side_effect=outputs):
+        outputs = ['arm64', '''Load command 0
+          cmd LC_BUILD_VERSION
+          platform MACOS
+          minos 14.0
+        Load command 1
+          cmd LC_LOAD_DYLIB
+          name /opt/homebrew/lib/libexample.dylib (offset 24)
+          compatibility version 1.0.0
+        ''']
+        with patch.object(audit.subprocess, 'check_output', side_effect=outputs) as command:
             auditor.inspect_binary(Path('library'), 'library')
+        self.assertEqual(command.call_count, 2)
         self.assertEqual(len(auditor.errors), 2)
         self.assertIn('14.0', auditor.errors[0])
         self.assertIn('/opt/homebrew/', auditor.errors[1])
