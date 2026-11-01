@@ -18,8 +18,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
-      # shadowJar/processResources require the split JHDF5 native archive even
-      # though these tests do not load JNI. Let Gradle resolve both release assets.
+      # Runtime and native-parity tests need the split JHDF5 native archive.
+      # Let Gradle resolve both release assets.
       HICT_JHDF5_SOURCE_MODE: release
       HICT_REQUIRE_BUNDLED_JHDF5: '1'
       MACOSX_DEPLOYMENT_TARGET: '12.3'
@@ -50,6 +50,13 @@ jobs:
           --tests '*Track1DManagerBinMappingTest'
           --tests '*ScaffoldEditingInvariantTest'
           testNativeProcessingBaseline shadowJar -x copyWebUI --no-daemon
+      - name: Audit macOS JNI deployment targets and relocatable install names
+        if: runner.os == 'macOS'
+        shell: bash
+        run: >-
+          python3 scripts/ci/check_macos_compatibility.py
+          build/native-processing/resources --arch "$(uname -m)" --target 12.3
+          --report build/reports/native-macos-compatibility.json
       - name: Preserve test evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -58,3 +65,4 @@ jobs:
           path: |
             build/reports/tests/
             build/test-results/
+            build/reports/native-macos-compatibility.json
