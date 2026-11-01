@@ -37,6 +37,56 @@ macOS platform and then installs only from that wheelhouse. This prevents a
 newer runner from selecting SciPy's macOS 14 wheel. ModDotPlot's source
 extension inherits the compiler deployment target.
 
+BLAST 2.16.0 is built from the checksum-pinned NCBI source archive on both
+Mac architectures: the official 2.16.0 executables require macOS 14. The
+builder passes the deployment target to C, C++ and the linker, uses static
+toolkit libraries with Apple's system SQLite, and audits the resulting
+executable before packaging. SQLite is a required BLAST dependency: NCBI's
+build can report success while skipping `blastn` if it is disabled. The
+builder therefore also checks explicitly that the executable was produced.
+It follows [NCBI's macOS guidance](https://www.ncbi.nlm.nih.gov/books/NBK569861/)
+to disable OpenMP for Apple Clang while retaining BLAST's multithreaded mode.
+Smoke tests compare local gapped alignments with `-num_threads 1` and `2`.
+Windows retains the checksum-pinned official executable and app-local C++
+runtime. Neither architecture's compatibility audit is bypassed.
+
+BLAST's bundled zlib 1.2.12 also needs the classic-Mac-OS guard backported
+from [upstream zlib 1.3.1](https://github.com/madler/zlib/blob/v1.3.1/zutil.h).
+`TARGET_OS_MAC` in recent Apple SDKs incorrectly activated a legacy `fdopen`
+replacement, breaking the system `stdio.h` declaration and redefining the
+gzip OS code. `patch_blast_source.py` applies the checked, repeatable guard
+change after archive verification. The altered source is marked and header
+hashes are retained in `blast-source-patches.json`.
+
+NCBI builds zlib without running zlib's own configure script. The Darwin
+builder supplies `-DHAVE_UNISTD_H=1` in CFLAGS so its gzip code includes the
+POSIX declarations for `read`, `write`, `close`, and `lseek`. Linux's
+`_LARGEFILE64_SOURCE` can incidentally enable this include, but Darwin does
+not use that fallback. The builder checks **all** bundled zlib C files with
+the triggering Apple macro, the runner's SDK and
+`-Werror=implicit-function-declaration` before compiling the toolkit. These
+checks include `gzlib.c`, `gzread.c` and `gzwrite.c`, not only `zutil.c`.
+
+The pinned BitMagic `bm.h` also has two stale calls in bulk-insert iterator
+assignment operators: `allocate_tempblock` and `free_tempblock` no longer
+exist on `bvector`. Both Apple Clang jobs fail on these calls (also reported
+in [NCBI issue 20](https://github.com/ncbi/ncbi-cxx-toolkit-public/issues/20)).
+The source patch replaces them with the allocator API already used by the
+same iterator's constructors and destructor. Both header patches are
+validated before either file is changed; unexpected or partially patched
+code is rejected. The provenance report now contains a `patches` array.
+Before configuring BLAST, the Mac builder compiles and runs
+`blast_bitmagic_smoke.cpp` with the job's C++ compiler, SDK and deployment
+target. It exercises copy assignment, move assignment, buffer reuse and
+resulting bit contents. Explicit instantiation also catches these errors
+with older compilers that accept the unused template definitions.
+
+Archive inspection stages each member in a temporary directory and closes
+the file before reopening it, so the same archive tests run on Windows
+without `NamedTemporaryFile` sharing violations. Files and directories are
+removed even if inspection fails. Native CI retains reports from the work
+directory as well as successfully published payloads.
+
 ## Release gate and evidence
 
 `scripts/ci/check_macos_compatibility.py` checks native deployment headers with
@@ -77,6 +127,59 @@ Use `--arch x86_64` for the Intel artifact.
   require 10.11, both within the chosen target.
 - Gradle configuration, WebUI production build, workflow YAML, shell and Node
   syntax, and whitespace checks are validated locally.
+
+## Packaging regression validation (2026-11-01)
+
+On Linux, 31 toolchain tests passed and the Apple-compiler-only test was
+skipped. Coverage includes reopening nested archive members, cleanup after
+inspection failure, verified BLAST source routing, compiler/linker target
+flags for both Mac architectures, and detection of a skipped executable.
+
+The checksum-pinned BLAST 2.16.0 source was also compiled on Linux using the
+Mac builder's dependency-selection options (with Linux compiler flags).
+Its executable found the expected 225-base, one-gap alignment, with identical
+results for `-num_threads 1` and `2`. This checks the dependency selection and
+executable behavior; it does not substitute for compiling with Apple's SDK or
+running on Windows. Native CI and Monterey runtime acceptance remain required.
+
+After the Apple-SDK zlib fix, 34 toolchain tests passed on Linux (one
+Apple-only test skipped). The original `zutil.c` failed with
+`TARGET_OS_MAC=1` and `__APPLE__=1`; the patched translation unit passed.
+All 15 bundled zlib C units compiled with those macros. Compression levels
+1/5/9 and gzip file-descriptor I/O round-tripped exactly, with Apple gzip OS
+code 19. The zlib library was rebuilt and `blastn` relinked for a repeated
+gapped-alignment smoke test. These macro regressions do not simulate Apple's
+entire SDK; a successful native Actions run is still required.
+
+The subsequent gzip-header failure exposed a gap in those earlier checks:
+they did not reject implicit function declarations, and the native preflight
+checked only `zutil.c`. With strict declaration checking and Linux's
+large-file include fallback explicitly disabled, `gzlib.c`, `gzread.c` and
+`gzwrite.c` each reproduced the reported errors. Enabling `HAVE_UNISTD_H`
+passed syntax checks on all 16 C sources (including the compression source
+included by NCBI's wrapper). All 15 library units then compiled under those
+strict flags and passed the compression/gzip round trips again. The 34 local
+toolchain tests passed, with one Apple-only test skipped. Builder regressions
+check propagation of the feature flag into the toolkit and coverage of every
+gzip unit in the early compile check on both target architectures.
+
+For the BitMagic follow-up, both failed macOS job logs in
+[Actions run 41248229062](https://github.com/ctlab/HiCT_JVM/actions/runs/41248229062)
+contained only the two missing-member compiler errors. Compiling the new
+assignment regression against the original pinned header reproduced both
+errors with Linux Clang 18.1.3; the patched header compiled and the program
+passed. Address/undefined-behavior sanitizer checks also passed (leak
+detection disabled because this sandbox uses ptrace). The 35 local toolchain
+tests passed, with one Apple-only test skipped. Native Actions must still
+validate Apple's SDK, Mach-O output and deployment audit for this change.
+
+A fresh Linux Clang 18.1.3 build of the patched BLAST source completed the
+full `all_r` target and produced `blastn` 2.16.0. Its gapped-alignment smoke
+test passed with identical
+225-base, one-gap results for one and two threads. This temporary Linux
+validation used `CONF_APP_LDFLAGS=-no-pie` to correct NCBI configure's
+unsupported Linux Clang `-nopie` spelling; the macOS builder is unchanged
+in this respect. No Apple SDK or Monterey runtime was available locally.
 
 ## Native acceptance still required
 
