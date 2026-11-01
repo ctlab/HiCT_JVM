@@ -376,6 +376,7 @@ public class MainVerticle extends AbstractVerticle {
       .exposedHeader("X-HiCT-History")
       .exposedHeader("X-HiCT-Cancelled")
       .exposedHeader("X-HiCT-Rows")
+      .exposedHeader("X-HiCT-Tile-Statistics")
       .exposedHeader("X-HiCT-Cols")
       .exposedHeader("X-HiCT-Signal-Mode")
       .exposedHeader("X-HiCT-Source")

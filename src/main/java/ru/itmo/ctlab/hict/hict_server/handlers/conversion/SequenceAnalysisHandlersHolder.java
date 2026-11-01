@@ -38,8 +38,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         var request = ctx.body().asJsonObject();
         try {
           long start = request.getLong("startBp", -1L), end = request.getLong("endBp", -1L);
-          return new JsonObject().put("linked", true).put("startBp", start)
-            .put("sequence", file.getChunkedFile().getFastaProcessor().readRegion(fasta.getPath(), start, end));
+          var window=file.getChunkedFile().getFastaProcessor().readTrackRegion(fasta.getPath(), start, end,
+            request.getBoolean("includeGaps", false),request.getLong("assemblyAnchorBp"));
+          return JsonObject.mapFrom(window).put("linked", true);
         } catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
       }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
     });

@@ -851,6 +851,21 @@ nativeProcessingVariants.forEach { variant ->
   }
 }
 
+tasks.register<Test>("testNativeProcessingBaseline") {
+  group = "verification"
+  description = "Load the compiled baseline JNI library and verify numeric/rendering parity."
+  dependsOn("testClasses", "compileNativeProcessingSse2")
+  testClassesDirs = sourceSets["test"].output.classesDirs
+  classpath = sourceSets["test"].runtimeClasspath
+  useJUnitPlatform()
+  filter { includeTestsMatching("*NativeProcessingServiceTest.compiledNativeLibraryMatchesJavaTileMathWhenProvided") }
+  val nativeLibrary = nativeProcessingOutputFile(nativeProcessingVariants.first())
+  systemProperty("hict.native.test.library", nativeLibrary.absolutePath)
+  doFirst {
+    if (!nativeLibrary.isFile) throw GradleException("Native parity test requires the compiled library: $nativeLibrary")
+  }
+}
+
 tasks.register("benchmarkNativeProcessingBaseline") {
   group = "verification"
   description = "Compatibility alias for benchmarkNativeProcessingAvx2."

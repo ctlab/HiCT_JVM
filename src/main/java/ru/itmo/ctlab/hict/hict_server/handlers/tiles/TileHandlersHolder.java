@@ -624,6 +624,9 @@ public class TileHandlersHolder extends HandlersHolder {
     final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
 
     if (sourceSpecificRequest) {
+      final var tileSignals = new TileSignalStatistics();
+      final var tileRevision = statisticsInstance + ":" + getScheduler(ctx).currentGeneration(RequestTaskScheduler.CancellationDomain.TILE);
+      final var selectedBpResolution = requestedChunkedFile.getResolutions()[level];
       final var selectedMatrixWithWeights = querySourceSubmatrix(
         requestedChunkedFile,
         resolutionDescriptor,
@@ -637,9 +640,13 @@ public class TileHandlersHolder extends HandlersHolder {
           new BufferedImage(Math.max(1, tileWidth), Math.max(1, tileHeight), BufferedImage.TYPE_INT_ARGB),
           format,
           stats,
-          chunkedFile
+          chunkedFile,
+          tileSignals.snapshot(requestedSource, selectedBpResolution, tileRevision)
         );
       }
+      final var raw = selectedMatrixWithWeights.matrix();
+      for (int r = 0; r < raw.rows(); r++) for (int c = 0; c < raw.cols(); c++)
+        tileSignals.raw.accept(raw.getAsDouble(r, c));
       final BufferedImage sourceImage;
       if (renderPipelineConfig.enabled()) {
         sourceImage = renderPipelineSingleSourceTile(
@@ -648,7 +655,8 @@ public class TileHandlersHolder extends HandlersHolder {
           options,
           renderPipelineConfig,
           requestedSource,
-          track1DManager
+          track1DManager,
+          tileSignals
         );
       } else {
         final var selectedExpectedProfile = "PRIMARY".equals(requestedSource)
@@ -657,14 +665,16 @@ public class TileHandlersHolder extends HandlersHolder {
         sourceImage = requestedChunkedFile.tileVisualizationProcessor().visualizeTile(
           selectedMatrixWithWeights,
           options,
-          selectedExpectedProfile
+          selectedExpectedProfile,
+          tileSignals::traditional
         );
       }
       return encodeTileImage(
         padTileImage(sourceImage, selectedMatrixWithWeights, startRowPx, startColPx, tileHeight, tileWidth),
         format,
         stats,
-        chunkedFile
+        chunkedFile,
+        tileSignals.snapshot(requestedSource, selectedBpResolution, tileRevision)
       );
     }
 
@@ -769,6 +779,14 @@ public class TileHandlersHolder extends HandlersHolder {
                                                        final @NotNull TileFormat format,
                                                        final @NotNull TileStatisticHolder stats,
                                                        final @NotNull ChunkedFile chunkedFile) {
+    return encodeTileImage(image, format, stats, chunkedFile, null);
+  }
+
+  private @NotNull TileResponsePayload encodeTileImage(final @NotNull BufferedImage image,
+                                                       final @NotNull TileFormat format,
+                                                       final @NotNull TileStatisticHolder stats,
+                                                       final @NotNull ChunkedFile chunkedFile,
+                                                       final @Nullable TileSignalStatistics.Snapshot tileSignals) {
     final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
     try {
@@ -778,7 +796,7 @@ public class TileHandlersHolder extends HandlersHolder {
         final String base64image = new String(base64);
         final var result = new TileWithRanges(
           String.format("data:image/png;base64,%s", base64image),
-          buildSignalRanges(stats, chunkedFile)
+          buildSignalRanges(stats, chunkedFile), tileSignals
         );
         return new TileResponsePayload("application/json", Json.encode(result), null);
       }
@@ -1008,6 +1026,19 @@ public class TileHandlersHolder extends HandlersHolder {
     final String headerCoordinateSuffix = visibleOnly ? "px" : "bin";
     final String jsonCoordinateSuffix = visibleOnly ? "Px" : "Bin";
     final var headers = new HashMap<String, String>();
+    if (request.getBoolean("includeTileStatistics", false)) {
+      final var tileSignals = new TileSignalStatistics();
+      final var processed = tileSignals.signal("");
+      for (int r = 0; r < rowCount; r++) for (int c = 0; c < columnCount; c++) {
+        final double raw = rawMatrix.getAsDouble(r, c);
+        tileSignals.raw.accept(raw);
+        processed.accept(signalMatrix == null ? raw : signalMatrix[r][c]);
+      }
+      final var scheduler = ((ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY))
+        .getRequestTaskScheduler();
+      headers.put("x-hict-tile-statistics", Json.encode(tileSignals.snapshot(requestedSource, bpResolution,
+        statisticsInstance + ":" + scheduler.currentGeneration(RequestTaskScheduler.CancellationDomain.TILE))));
+    }
     headers.put("x-hict-rows", Integer.toString(rowCount));
     headers.put("x-hict-cols", Integer.toString(columnCount));
     headers.put("x-hict-signal-mode", signalMode.name());
@@ -1601,7 +1632,9 @@ public class TileHandlersHolder extends HandlersHolder {
                                  @NotNull Map<@NotNull Integer, @NotNull Double> upperBounds) {
   }
 
-  public record TileWithRanges(@NotNull String image, @NotNull TileSignalRanges ranges) {
+  public record TileWithRanges(@NotNull String image, @NotNull TileSignalRanges ranges,
+                               @Nullable TileSignalStatistics.Snapshot signals) {
+    public TileWithRanges(String image, TileSignalRanges ranges) { this(image, ranges, null); }
   }
 
   private record TileResponsePayload(@NotNull String contentType,
@@ -1919,7 +1952,8 @@ public class TileHandlersHolder extends HandlersHolder {
                                                                 final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
                                                                 final @NotNull RenderPipelineConfig pipelineConfig,
                                                                 final @NotNull String sourceName,
-                                                                final Track1DManager track1DManager) {
+                                                                final Track1DManager track1DManager,
+                                                                final TileSignalStatistics tileSignals) {
     final var values = matrixWithWeights.matrix();
     final var rowCount = values.rows();
     final var columnCount = values.cols();
@@ -1988,6 +2022,7 @@ public class TileHandlersHolder extends HandlersHolder {
     }
 
     final var context = new RenderPipelineConfig.MutablePixelContext();
+    context.signalStatistics = tileSignals;
     final var rowWeights = matrixWithWeights.rowWeights();
     final var colWeights = matrixWithWeights.colWeights();
     final var resolutionScalingCoeffs = sourceChunkedFile.getResolutionScalingCoefficient();

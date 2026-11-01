@@ -12,6 +12,38 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ScaffoldEditingInvariantTest {
+  @Test void boundedSequenceTrackInvalidatesAfterEditsRestoreSplitsAndGapSettings() throws Exception {
+    final String key=ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.GAP_LENGTH_KEY;
+    final String previous=System.getProperty(key);
+    System.setProperty(key,"1000");
+    try(var f=fixture()) {
+      var path=dir.resolve("track.fa");
+      java.nio.file.Files.writeString(path,">A\n"+"A".repeat(6000)+"\n>B\n"+"C".repeat(6000)+"\n>C\n"+"G".repeat(6000)+"\n");
+      var processor=f.getFastaProcessor();var initial=f.snapshotAssembly();
+      assertEquals("AAAACC",processor.readTrackRegion(path,5996,6002,false).sequence());
+      assertEquals("AAAANN",processor.readTrackRegion(path,5996,6002,true).sequence());
+      var anchored=processor.readTrackRegion(path,0,60,true,6000L);
+      assertEquals(6970,anchored.startBp());assertEquals("N".repeat(30)+"C".repeat(30),anchored.sequence());
+      f.scaffoldingOperations().reverseSelectionRangeBp(0,6000);
+      var reversed=processor.readTrackRegion(path,0,6,false);
+      assertEquals("TTTTTT",reversed.sequence());assertEquals(5994,reversed.segments().getFirst().sourceStart());
+      assertTrue(reversed.segments().getFirst().reversed());
+      f.restoreAssembly(initial);assertEquals("AAAAAA",processor.readTrackRegion(path,0,6,false).sequence());
+      f.scaffoldingOperations().moveRegionToDebris(0,6000,ResolutionDescriptor.fromResolutionOrder(0),QueryLengthUnit.BASE_PAIRS);
+      assertEquals("CCCCCC",processor.readTrackRegion(path,0,6,true).sequence());
+      assertEquals(13000,processor.readTrackRegion(path,0,6,true).totalLength());
+      f.restoreAssembly(initial);
+      System.setProperty(key,"37");
+      assertEquals(6037,processor.readTrackRegion(path,0,1,true,6000L).startBp());
+      assertEquals(18074,processor.readTrackRegion(path,0,1,true).totalLength());
+      f.importAGP(new java.io.StringReader("x\t1\t2501\t1\tW\tA\t1\t2501\t-\ny\t1\t3499\t1\tW\tA\t2502\t6000\t+\nz\t1\t6000\t1\tW\tB\t1\t6000\t+\nw\t1\t6000\t1\tW\tC\t1\t6000\t+\n"));
+      var split=processor.readTrackRegion(path,2499,2503,false);
+      assertEquals("TTAA",split.sequence());assertEquals(2,split.segments().size());
+      assertEquals(2501,split.segments().getLast().sourceStart());
+      assertEquals("TTNNNN",processor.readTrackRegion(path,2499,2505,true).sequence());
+      f.restoreAssembly(initial);assertEquals("AAAAAA",processor.readTrackRegion(path,2499,2505,true).sequence());
+    } finally {if(previous==null)System.clearProperty(key);else System.setProperty(key,previous);}
+  }
   @Test void closingMapClosesPooledNativeHdf5Readers() throws Exception {
     var f=fixture();
     var pool=f.getDatasetBundlePools().get(1);

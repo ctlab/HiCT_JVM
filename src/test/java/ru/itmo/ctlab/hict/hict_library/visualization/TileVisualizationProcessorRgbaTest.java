@@ -8,6 +8,19 @@ import java.io.ByteArrayOutputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TileVisualizationProcessorRgbaTest {
+  @Test void javaFallbackPreservesEveryColormapPixelIncludingNonfiniteAndAlpha() throws Exception {
+    var map = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
+      32, new java.awt.Color(16,32,64,0), new java.awt.Color(240,128,192,175), -2, 10);
+    double[][] values = {{-100,-2,0,3,10,100},
+      {Double.NaN,Double.NEGATIVE_INFINITY,Double.POSITIVE_INFINITY,7.3,-0.1,9.9}};
+    var image = image(TileVisualizationProcessor.mapJavaRgba(values,map),6,2);
+    for (int row=0;row<2;row++) for(int col=0;col<6;col++)
+      assertEquals(map.mapSignal(values[row][col]).getRGB(), image.getRGB(col,row), "pixel "+row+","+col);
+    var bytes = new ByteArrayOutputStream();
+    ImageIO.write(image,"png",bytes);
+    var roundtrip = ImageIO.read(new ByteArrayInputStream(bytes.toByteArray()));
+    assertArrayEquals(image.getRGB(0,0,6,2,null,0,6),roundtrip.getRGB(0,0,6,2,null,0,6));
+  }
   // Exercise the shared native/Java RGBA image boundary without HDF5 or JNI.
   private BufferedImage image(byte[] rgba, int width, int height) throws Exception {
     var factory = TileVisualizationProcessor.class.getDeclaredMethod(

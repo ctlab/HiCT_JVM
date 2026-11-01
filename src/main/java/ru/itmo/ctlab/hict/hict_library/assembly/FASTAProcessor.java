@@ -212,6 +212,59 @@ public class FASTAProcessor implements AutoCloseable {
     }
   }
 
+  public record SequenceWindow(long startBp, long totalLength, String coordinateSystem,
+                               String sequence, java.util.List<SequenceTrackProjection.Piece> segments) { }
+  private Object sequenceContigRoot, sequenceScaffoldRoot, sequenceContigNames, sequenceScaffoldNames, sequenceGaps;
+  private long sequenceGap = -1;
+  private SequenceTrackProjection paddedSequenceProjection, plainSequenceProjection;
+
+  /** Caller holds the assembly scheduler. Cached immutable projections are invalidated by tree roots. */
+  public synchronized SequenceWindow readTrackRegion(Path path, long start, long end, boolean padded) throws IOException {
+    return readTrackRegion(path,start,end,padded,null);
+  }
+
+  /** Optional assembly anchor centers the bounded sequence window without exporting intervening DNA. */
+  public synchronized SequenceWindow readTrackRegion(Path path, long start, long end, boolean padded,
+                                                    Long assemblyAnchor) throws IOException {
+    var state=chunkedFile.snapshotAssembly();
+    var contigRoot=state.contigs();
+    var scaffoldRoot=state.scaffolds().root();
+    long gap=AssemblyExportSettings.gapLengthBp();
+    if(sequenceContigRoot!=contigRoot || sequenceScaffoldRoot!=scaffoldRoot || sequenceGap!=gap
+      || sequenceContigNames!=state.contigNames() || sequenceScaffoldNames!=state.scaffoldNames()
+      || sequenceGaps!=state.annotations().gaps()) {
+      paddedSequenceProjection=null;plainSequenceProjection=null;
+      sequenceContigRoot=contigRoot;sequenceScaffoldRoot=scaffoldRoot;sequenceGap=gap;
+      sequenceContigNames=state.contigNames();sequenceScaffoldNames=state.scaffoldNames();sequenceGaps=state.annotations().gaps();
+    }
+    if(padded && paddedSequenceProjection==null) paddedSequenceProjection=SequenceTrackProjection.capture(chunkedFile,true);
+    if(!padded && plainSequenceProjection==null) plainSequenceProjection=SequenceTrackProjection.capture(chunkedFile,false);
+    var projection=padded?paddedSequenceProjection:plainSequenceProjection;
+    if(assemblyAnchor!=null) {
+      long count=end-start;
+      if(count<1 || count>4096)throw new IllegalArgumentException("Sequence window must contain 1 to 4096 bases");
+      long anchor=projection.sequencePosition(assemblyAnchor);
+      start=Math.max(0,Math.min(anchor-count/2,projection.length()-count));
+      end=Math.min(projection.length(),start+count);
+    }
+    var pieces=projection.window(start,end);
+    try(var source=new SourceSession(path);var out=new java.io.ByteArrayOutputStream((int)(end-start))) {
+      var metadata=new ArrayList<SequenceTrackProjection.Piece>();
+      for(var piece:pieces) {
+        if(piece.gap()) {out.write("N".repeat((int)(piece.end()-piece.start())).getBytes(StandardCharsets.US_ASCII));metadata.add(piece);}
+        else {
+          source.validate(piece.source(),piece.sourceStart(),piece.sourceEnd());
+          source.copy(piece.source(),piece.sourceStart(),piece.sourceEnd(),piece.reversed(),out);
+          metadata.add(new SequenceTrackProjection.Piece(piece.start(),piece.end(),piece.assemblyStart(),piece.assemblyEnd(),
+            piece.contig(),piece.scaffold(),source.aliases.getOrDefault(piece.source(),piece.source()),
+            piece.sourceStart(),piece.sourceEnd(),piece.reversed(),false));
+        }
+      }
+      return new SequenceWindow(start,projection.length(),padded?"PADDED_SEQUENCE":"ASSEMBLY_BP",
+        out.toString(StandardCharsets.US_ASCII),List.copyOf(metadata));
+    }
+  }
+
   private synchronized IndexedFastaSource indexedSource(Path path) throws IOException {
     if(closed)throw new IOException("FASTA processor is closed");
     if (sourceIndex == null || !sourceIndex.matches(path)) {

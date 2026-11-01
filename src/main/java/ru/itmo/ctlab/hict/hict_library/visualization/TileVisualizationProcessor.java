@@ -32,6 +32,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
+import ru.itmo.ctlab.hict.hict_library.visualization.colormap.Colormap;
 
 import java.awt.*;
 import java.awt.image.*;
@@ -39,7 +40,6 @@ import java.util.Arrays;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.DoubleStream;
-import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 @Getter
@@ -277,10 +277,18 @@ public class TileVisualizationProcessor {
   public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
                                               final @NotNull SimpleVisualizationOptions options,
                                               final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    return visualizeTile(rawTile, options, expectedProfile, null);
+  }
+
+  public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                              final @NotNull SimpleVisualizationOptions options,
+                                              final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile,
+                                              final @Nullable java.util.function.Consumer<double[][]> signalObserver) {
     final var input = rawTile.matrix();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
     final var normalized = processTile(rawTile, options, expectedProfile);
+    if (signalObserver != null) signalObserver.accept(normalized.values());
     final var colormap = options.getColormap();
     if (colormap instanceof SimpleLinearGradient gradient) {
       final var nativeRgbaValues = NativeProcessingService.getInstance().tryMapLinearGradientRgba(
@@ -291,26 +299,26 @@ public class TileVisualizationProcessor {
         return createRgbaImage(nativeRgbaValues, columnCount, rowCount);
       }
     }
-    final var boxedARGBValues = Arrays.stream(normalized.values())
-      .flatMap(arrayRow ->
-        Arrays.stream(arrayRow)
-          .mapToObj(colormap::mapSignal)
-          .flatMap(color -> Stream.of(
-              (byte) (color.getRed()), // Red
-              (byte) (color.getGreen()), // Green
-              (byte) (color.getBlue()), // Blue,
-              (byte) (color.getAlpha()) // Alpha,
-            )
-          )
-      )
-      .toArray(Byte[]::new);
+    return createRgbaImage(mapJavaRgba(normalized.values(), colormap), columnCount, rowCount);
+  }
 
-    final byte[] rgbValues = new byte[boxedARGBValues.length];
-    for (var i = 0; i < boxedARGBValues.length; ++i) {
-      rgbValues[i] = boxedARGBValues[i];
+  /** Preserve the colormap's exact channel/alpha semantics without per-pixel streams or boxed bytes. */
+  static byte[] mapJavaRgba(double[][] values, Colormap colormap) {
+    final int rows = values.length;
+    final int columns = rows == 0 ? 0 : values[0].length;
+    final byte[] rgba = new byte[Math.multiplyExact(Math.multiplyExact(rows, columns), 4)];
+    int offset = 0;
+    for (final double[] row : values) {
+      if (row.length != columns) throw new IllegalArgumentException("Tile rows must have equal lengths");
+      for (final double value : row) {
+        final Color color = colormap.mapSignal(value);
+        rgba[offset++] = (byte) color.getRed();
+        rgba[offset++] = (byte) color.getGreen();
+        rgba[offset++] = (byte) color.getBlue();
+        rgba[offset++] = (byte) color.getAlpha();
+      }
     }
-
-    return createRgbaImage(rgbValues, columnCount, rowCount);
+    return rgba;
   }
 
   private static @NotNull BufferedImage createRgbaImage(final byte @NotNull [] rgbValues,

@@ -711,8 +711,13 @@ public final class RenderPipelineConfig {
           node.getDouble("maxSignal", 1.0d),
           requiredTrackBindings
         );
+        final var expressionKey = node.getJsonObject("input", defaultSourceNode("PRIMARY")).encode();
         if ("MODDOTPLOT_IDENTITY".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
-          yield context -> mapIdentityColor(inputExpression.eval(context), minExpression.eval(context), maxExpression.eval(context));
+          yield context -> {
+            final var value = inputExpression.eval(context);
+            if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
+            return mapIdentityColor(value, minExpression.eval(context), maxExpression.eval(context));
+          };
         }
         final var defaultStart = new Color(255, 255, 255, 0);
         final var defaultEnd = new Color(0, 96, 0, 255);
@@ -720,6 +725,7 @@ public final class RenderPipelineConfig {
         final var endColor = parseColor(node.getString("endColor"), defaultEnd);
         yield context -> {
           final var value = inputExpression.eval(context);
+          if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
           final var minValue = minExpression.eval(context);
           final var maxValue = maxExpression.eval(context);
           return mapLinearColor(value, minValue, maxValue, startColor, endColor);
@@ -1214,6 +1220,7 @@ public final class RenderPipelineConfig {
   }
 
   public static final class MutablePixelContext {
+    public TileSignalStatistics signalStatistics;
     public double primaryValue;
     public double secondaryValue;
     public double rowWeight;

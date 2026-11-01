@@ -37,6 +37,9 @@ jobs:
           --tests '*ScaffoldDescriptorDTOTest'
           --tests '*RequestTaskSchedulerTest'
           --tests '*TileVisualizationProcessorRgbaTest'
+          --tests '*TileSignalStatisticsTest'
+          --tests '*SequenceTrackProjectionTest'
+          --tests '*FASTAProcessorTest'
           --tests '*ScaffoldTreeSequentialScaffoldsTest'
           --tests '*CompactAssemblyInfoDTOTest'
           --tests '*AGPImportPlanTest'
@@ -46,12 +49,12 @@ jobs:
           --tests '*BinCoordinateMapperTest'
           --tests '*Track1DManagerBinMappingTest'
           --tests '*ScaffoldEditingInvariantTest'
-          shadowJar -x copyWebUI --no-daemon
+          testNativeProcessingBaseline shadowJar -x copyWebUI --no-daemon
       - name: Preserve test evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: java-regressions-${{ matrix.os }}
           path: |
-            build/reports/tests/test
-            build/test-results/test
+            build/reports/tests/
+            build/test-results/
