@@ -30,3 +30,8 @@ Pushes to `fix/*` branches run the normal portable build and upload workflow
 artifacts, but skip release publication (including rolling-asset deletion).
 These preview builds use the maintained `jvm-sfx-native` WebUI branch; manual
 workflow runs can still pin a specific WebUI commit with `webui_ref`.
+
+Each platform package now depends only on its corresponding sequence-tool build.
+Standalone sequence-tool validation still covers all four platforms. Fix-branch
+preview runs have independent concurrency groups, so new pushes can be tested
+without cancelling earlier runs; release-producing runs remain serialized.

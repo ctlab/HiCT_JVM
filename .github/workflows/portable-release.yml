@@ -132,7 +132,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: portable-release-${{ github.event_name == 'push' && format('latest-{0}', github.ref_name) || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && (inputs.release_tag != '' && inputs.release_tag || format('latest-{0}', github.ref_name)) || github.run_id }}
+  group: portable-release-${{ startsWith(github.ref_name, 'fix/') && github.run_id || github.event_name == 'push' && format('latest-{0}', github.ref_name) || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && (inputs.release_tag != '' && inputs.release_tag || format('latest-{0}', github.ref_name)) || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -147,11 +147,29 @@ env:
   HICT_JHDF5_NATIVES_ARCHIVE: "src/main/resources/libs/sis-jhdf5-19.04.1-natives.tar.gz"
 
 jobs:
-  sequence-tools:
+  # Each package waits only for its own platform payload and smoke tests.
+  sequence-tools-linux:
     uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: linux_x86_64
+
+  sequence-tools-windows:
+    uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: windows_x86_64
+
+  sequence-tools-macos:
+    uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: darwin_arm64
+
+  sequence-tools-macos-intel:
+    uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: darwin_x86_64
 
   linux-portable:
-    needs: sequence-tools
+    needs: sequence-tools-linux
     name: Linux portable .run
     runs-on: ubuntu-22.04
     continue-on-error: ${{ matrix.abi_mode == 'musl-static' }}
@@ -707,7 +725,7 @@ jobs:
             scripts/ci/validate_linux_component.sh portable
           fi
   windows-portable:
-    needs: sequence-tools
+    needs: sequence-tools-windows
     name: Windows portable ZIP and EXE
     runs-on: windows-2022
     env:
@@ -1283,7 +1301,7 @@ jobs:
           exit 0
 
   macos-portable:
-    needs: sequence-tools
+    needs: sequence-tools-macos
     name: macOS Apple Silicon portable .run
     runs-on: macos-latest
     continue-on-error: true
@@ -1540,7 +1558,7 @@ jobs:
         run: echo "::warning::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
 
   macos-intel-portable:
-    needs: sequence-tools
+    needs: sequence-tools-macos-intel
     name: macOS Intel portable .run
     runs-on: macos-15-intel
     continue-on-error: true

@@ -2,6 +2,12 @@ name: Sequence tools native regressions
 
 on:
   workflow_call:
+    inputs:
+      platform:
+        description: "Build one platform for its package job, or all for standalone validation"
+        type: string
+        required: false
+        default: all
   workflow_dispatch:
   pull_request:
     paths:
@@ -26,15 +32,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-22.04
-            platform: linux_x86_64
-          - os: windows-2022
-            platform: windows_x86_64
-          - os: macos-latest
-            platform: darwin_arm64
-          - os: macos-15-intel
-            platform: darwin_x86_64
+        include: ${{ fromJSON(
+          inputs.platform == 'linux_x86_64' && '[{"os":"ubuntu-22.04","platform":"linux_x86_64"}]' ||
+          inputs.platform == 'windows_x86_64' && '[{"os":"windows-2022","platform":"windows_x86_64"}]' ||
+          inputs.platform == 'darwin_arm64' && '[{"os":"macos-latest","platform":"darwin_arm64"}]' ||
+          inputs.platform == 'darwin_x86_64' && '[{"os":"macos-15-intel","platform":"darwin_x86_64"}]' ||
+          '[{"os":"ubuntu-22.04","platform":"linux_x86_64"},{"os":"windows-2022","platform":"windows_x86_64"},{"os":"macos-latest","platform":"darwin_arm64"},{"os":"macos-15-intel","platform":"darwin_x86_64"}]') }}
     runs-on: ${{ matrix.os }}
     env:
       PYTHONUTF8: '1'
