@@ -6,11 +6,14 @@ param(
   [string]$RuntimeModules = $(if ($env:HICT_RUNTIME_MODULES) { $env:HICT_RUNTIME_MODULES } else { "java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs" }),
   [string]$DistRoot = $(if ($env:HICT_PORTABLE_DIST_DIR) { $env:HICT_PORTABLE_DIST_DIR } else { (Join-Path $PSScriptRoot "..\..\build\portable") }),
   [string]$SevenZipRoot = $(if ($env:SEVENZIP_ROOT) { $env:SEVENZIP_ROOT } else { "C:\Program Files\7-Zip" }),
-  [string]$SevenZipSdkUrl = $(if ($env:SEVENZIP_SDK_URL) { $env:SEVENZIP_SDK_URL } else { "https://www.7-zip.org/a/lzma2601.7z" })
+  [string]$SevenZipSdkUrl = $(if ($env:SEVENZIP_SDK_URL) { $env:SEVENZIP_SDK_URL } else { "https://github.com/ip7z/7zip/releases/download/26.01/lzma2601.7z" }),
+  [string]$SevenZipSdkSha256 = $(if ($env:SEVENZIP_SDK_SHA256) { $env:SEVENZIP_SDK_SHA256 } else { "b860f17f9df3c0524dd2ef2c639ab5e43ad0006b77b8f7bb6d191bf528536885" }),
+  [string]$SevenZipSdkCacheDir = $(if ($env:HICT_LZMA_SDK_CACHE_DIR) { $env:HICT_LZMA_SDK_CACHE_DIR } else { (Join-Path $PSScriptRoot "..\..\.cache\lzma-sdk") })
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "download_verified.ps1")
 
 function Require-Command {
   param([Parameter(Mandatory = $true)][string]$Name)
@@ -160,19 +163,22 @@ function Expand-LzmaSdk {
     [Parameter(Mandatory = $true)][string]$NoticeTarget
   )
 
-  $sdkArchive = Join-Path $BuildDir "lzma-sdk.7z"
-  $sdkDir = Join-Path $BuildDir "lzma-sdk"
-  if (Test-Path $sdkDir) {
-    return $sdkDir
+  $urls = @($SevenZipSdkUrl)
+  # Mirrors are interchangeable only for this exact pinned official release.
+  if ($SevenZipSdkSha256 -eq "b860f17f9df3c0524dd2ef2c639ab5e43ad0006b77b8f7bb6d191bf528536885") {
+    $urls += "https://github.com/ip7z/7zip/releases/download/26.01/lzma2601.7z"
+    $urls += "https://www.7-zip.org/a/lzma2601.7z"
   }
-
-  Write-Host "Downloading official LZMA SDK from $SevenZipSdkUrl"
-  Invoke-WebRequest -Uri $SevenZipSdkUrl -OutFile $sdkArchive
+  $sdkArchive = Get-VerifiedDownload -Urls $urls -Sha256 $SevenZipSdkSha256 -CacheDirectory $SevenZipSdkCacheDir
+  # Never treat a partially extracted directory from a failed run as a valid SDK.
+  $sdkDir = Join-Path $BuildDir ("lzma-sdk-" + [guid]::NewGuid().ToString("N"))
   Invoke-Native -FilePath $SevenZipExe -Arguments @("x", $sdkArchive, "-o$sdkDir", "-y")
-  $sdkNotice = Join-Path $sdkDir "DOC\lzma-sdk.txt"
-  if (Test-Path $sdkNotice) {
-    Copy-Item -Force $sdkNotice $NoticeTarget
+  foreach ($required in @("DOC/lzma-sdk.txt", "bin/7zr.exe")) {
+    if (-not (Test-Path (Join-Path $sdkDir $required) -PathType Leaf)) {
+      throw "LZMA SDK extraction is incomplete: missing $required"
+    }
   }
+  Copy-Item -Force (Join-Path $sdkDir "DOC/lzma-sdk.txt") $NoticeTarget
   return $sdkDir
 }
 

@@ -171,7 +171,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICT_LINUX_ABI_MODE: ${{ matrix.abi_mode }}
       HICT_LINUX_JHDF5_NATIVE_POLICY: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_jhdf5_native_policy || 'warn-only' }}
       HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, matrix.abi_mode) }}
@@ -714,7 +714,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
@@ -723,6 +723,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Test resilient SDK acquisition
+        shell: pwsh
+        run: ./scripts/portable/test_download_verified.ps1
+
+      - name: Cache checksum-verified LZMA SDK
+        uses: actions/cache@v5
+        with:
+          path: .cache/lzma-sdk/*.7z
+          key: lzma-sdk-26.01-b860f17f9df3c0524dd2ef2c639ab5e43ad0006b77b8f7bb6d191bf528536885
 
       - name: Assign run-specific release version
         run: |
@@ -1285,7 +1295,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1542,7 +1552,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1785,6 +1795,7 @@ jobs:
       - name: Report non-blocking macOS Intel failure
         if: ${{ failure() }}
         run: echo "::warning::Non-blocking macOS Intel build failed; Windows/Linux release may still proceed without this artifact."
+  # Fix branches validate and upload artifacts on push without mutating releases.
   publish-release-assets:
     name: Publish release assets
     needs:
@@ -1792,13 +1803,13 @@ jobs:
       - windows-portable
       - macos-portable
       - macos-intel-portable
-    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
+    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || (github.event_name == 'push' && !startsWith(github.ref_name, 'fix/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
     runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5
