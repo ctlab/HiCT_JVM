@@ -39,6 +39,7 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.Scrollable;
@@ -52,6 +53,8 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.imageio.ImageIO;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -69,15 +72,22 @@ import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Image;
+import java.awt.HeadlessException;
 import java.awt.Insets;
+import java.awt.MouseInfo;
 import java.awt.Rectangle;
 import java.awt.Taskbar;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -89,6 +99,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -121,7 +132,10 @@ public final class HictLauncherGui {
     FILE
   }
 
-  private record ConfigSpec(String key, String label, String defaultValue, PathKind pathKind) {
+  private record ConfigSpec(String key, String label, String defaultValue, PathKind pathKind, String group) {
+  }
+
+  private record ConfigRow(ConfigSpec spec, JLabel label, List<Component> components) {
   }
 
   private record BrowserBundle(String name, String engine, int priority, Path root, Path executable, List<String> arguments) {
@@ -206,57 +220,57 @@ public final class HictLauncherGui {
     );
 
     private static final List<ConfigSpec> CONFIG_SPECS = List.of(
-      new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY),
-      new ConfigSpec("PROCESSED_DIR", "Processed/cache directory", "", PathKind.DIRECTORY),
-      new ConfigSpec("HICT_BIND_HOST", "Bind host", "127.0.0.1", PathKind.NONE),
-      new ConfigSpec("VXPORT", "API port", "5000", PathKind.NONE),
-      new ConfigSpec("WEBUI_PORT", "WebUI port", "8080", PathKind.NONE),
-      new ConfigSpec("TILE_SIZE", "Tile size", "256", PathKind.NONE),
-      new ConfigSpec("MIN_DS_POOL", "Min dataset pool", "4", PathKind.NONE),
-      new ConfigSpec("MAX_DS_POOL", "Max dataset pool", "16", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_TOTAL_MAX", "Total worker limit", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_QUEUE_CAPACITY", "Worker queue capacity", "32", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_KEEPALIVE_SECONDS", "Worker keepalive, seconds", "30", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_UI_MIN", "UI workers min", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_UI_MAX", "UI workers max", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_ASSEMBLY_MIN", "Assembly workers min", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_ASSEMBLY_MAX", "Assembly workers max", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_TILE_MIN", "Tile workers min", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_TILE_MAX", "Tile workers max", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_TRACK_MIN", "Track workers min", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_TRACK_MAX", "Track workers max", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_EXPORT_MIN", "Export workers min", "", PathKind.NONE),
-      new ConfigSpec("HICT_WORKERS_EXPORT_MAX", "Export workers max", "", PathKind.NONE),
-      new ConfigSpec("HICT_CONVERSION_THREADS", "Conversion threads (-1 = auto)", "-1", PathKind.NONE),
-      new ConfigSpec("HICT_HICTK_THREADS", "hictk threads (-1 = auto)", "-1", PathKind.NONE),
-      new ConfigSpec("HICT_ALIGNMENT_THREADS", "minimap2 / mm2-plus threads (-1 = auto)", "-1", PathKind.NONE),
-      new ConfigSpec("HICT_SEQUENCE_THREADS", "SeqKit search threads (-1 = all, 0 = auto)", "-1", PathKind.NONE),
-      new ConfigSpec("HICT_MODDOTPLOT_THREADS", "ModDotPlot threads (-1 = all, 0 = auto)", "-1", PathKind.NONE),
-      new ConfigSpec("HICT_CONVERSION_MAX_MEMORY_BYTES", "Shared conversion memory budget", "16g", PathKind.NONE),
-      new ConfigSpec("HICT_IMPORT_MAX_MEMORY_BYTES", "Import memory budget", "16g", PathKind.NONE),
-      new ConfigSpec("HICT_EXPORT_MAX_MEMORY_BYTES", "Export memory budget", "16g", PathKind.NONE),
-      new ConfigSpec("HICT_BUILD_RESOLUTION_PYRAMID", "Build resolution pyramid by default", "true", PathKind.NONE),
-      new ConfigSpec("HICT_EXPORT_GAP_LENGTH_BP", "AGP / FASTA output gap length, bp", "1000", PathKind.NONE),
-      new ConfigSpec("HICT_TRACK_PRECOMPUTE_JOB_THREADS", "Track precompute job threads", "", PathKind.NONE),
-      new ConfigSpec("HICT_TRACK_PRECOMPUTE_WORKER_THREADS", "Track precompute worker threads", "", PathKind.NONE),
-      new ConfigSpec("HICT_MATRIX_QUERY_MAX_ELEMENTS", "Max matrix query elements", "", PathKind.NONE),
-      new ConfigSpec("HICT_BLOCK_DATA_CACHE_BYTES", "Block data cache bytes", "", PathKind.NONE),
-      new ConfigSpec("HICT_BLOCK_META_ROW_CACHE_ROWS", "Block-meta row cache rows", "", PathKind.NONE),
-      new ConfigSpec("WEBUI_ROOT", "WebUI root override", "", PathKind.DIRECTORY),
-      new ConfigSpec("HICT_TOOLCHAIN_DIR", "Toolchain directory", "", PathKind.DIRECTORY),
-      new ConfigSpec("HICT_HICTK_BIN", "External hictk executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_MINIMAP2_BIN", "External minimap2 executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_MM2PLUS_AVX2_BIN", "External mm2-plus AVX2 executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_MM2PLUS_AVX512_BIN", "External mm2-plus AVX-512 executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_DOTPLOT_ALIGNER", "Dotplot aligner preference (auto, mm2plus, mm2plus-avx2, mm2plus-avx512, minimap2)", "auto", PathKind.NONE),
-      new ConfigSpec("HICT_COOLER_BIN", "External cooler executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_PYTHON_BIN", "External Python executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_SEQKIT_BIN", "External SeqKit executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_MODDOTPLOT_CLI_BIN", "External upstream ModDotPlot executable", "", PathKind.FILE),
-      new ConfigSpec("HICT_MODDOTPLOT_BIN", "External HiCT ModDotPlot adapter", "", PathKind.FILE),
-      new ConfigSpec("HICT_NATIVE_LIBRARY_DIR", "Native library directory override", "", PathKind.DIRECTORY),
-      new ConfigSpec("HICT_NATIVE_LIBRARY_PATH", "Native library file override", "", PathKind.FILE),
-      new ConfigSpec("HICT_JAVA_OPTS", "Extra JVM options", "", PathKind.NONE)
+      new ConfigSpec("DATA_DIR", "Data directory", "", PathKind.DIRECTORY, "Folders and network"),
+      new ConfigSpec("PROCESSED_DIR", "Processed/cache directory", "", PathKind.DIRECTORY, "Folders and network"),
+      new ConfigSpec("HICT_BIND_HOST", "Bind host", "127.0.0.1", PathKind.NONE, "Folders and network"),
+      new ConfigSpec("VXPORT", "API port", "5000", PathKind.NONE, "Folders and network"),
+      new ConfigSpec("WEBUI_PORT", "WebUI port", "8080", PathKind.NONE, "Folders and network"),
+      new ConfigSpec("MIN_DS_POOL", "Min dataset pool", "4", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("MAX_DS_POOL", "Max dataset pool", "16", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_TOTAL_MAX", "Total worker limit", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_QUEUE_CAPACITY", "Worker queue capacity", "32", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_KEEPALIVE_SECONDS", "Worker keepalive, seconds", "30", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_UI_MIN", "UI workers min", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_UI_MAX", "UI workers max", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_ASSEMBLY_MIN", "Assembly workers min", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_ASSEMBLY_MAX", "Assembly workers max", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_TILE_MIN", "Tile workers min", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_TILE_MAX", "Tile workers max", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_TRACK_MIN", "Track workers min", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_TRACK_MAX", "Track workers max", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_EXPORT_MIN", "Export workers min", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_WORKERS_EXPORT_MAX", "Export workers max", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_CONVERSION_THREADS", "Conversion threads (-1 = auto)", "-1", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_HICTK_THREADS", "hictk threads (-1 = auto)", "-1", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_ALIGNMENT_THREADS", "minimap2 / mm2-plus threads (-1 = auto)", "-1", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_SEQUENCE_THREADS", "SeqKit search threads (-1 = all, 0 = auto)", "-1", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_MODDOTPLOT_THREADS", "ModDotPlot threads (-1 = all, 0 = auto)", "-1", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_CONVERSION_MAX_MEMORY_BYTES", "Shared conversion memory budget", "16g", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_IMPORT_MAX_MEMORY_BYTES", "Import memory budget", "16g", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_EXPORT_MAX_MEMORY_BYTES", "Export memory budget", "16g", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_TRACK_PRECOMPUTE_JOB_THREADS", "Track precompute job threads", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("HICT_TRACK_PRECOMPUTE_WORKER_THREADS", "Track precompute worker threads", "", PathKind.NONE, "Memory and threads"),
+      new ConfigSpec("TILE_SIZE", "Tile size", "256", PathKind.NONE, "Server tuning"),
+      new ConfigSpec("HICT_BUILD_RESOLUTION_PYRAMID", "Build resolution pyramid by default", "true", PathKind.NONE, "Server tuning"),
+      new ConfigSpec("HICT_MATRIX_QUERY_MAX_ELEMENTS", "Max matrix query elements", "", PathKind.NONE, "Server tuning"),
+      new ConfigSpec("HICT_BLOCK_DATA_CACHE_BYTES", "Block data cache bytes", "", PathKind.NONE, "Server tuning"),
+      new ConfigSpec("HICT_BLOCK_META_ROW_CACHE_ROWS", "Block-meta row cache rows", "", PathKind.NONE, "Server tuning"),
+      new ConfigSpec("HICT_EXPORT_GAP_LENGTH_BP", "AGP / FASTA output gap length, bp", "1000", PathKind.NONE, "Output"),
+      new ConfigSpec("WEBUI_ROOT", "WebUI root override", "", PathKind.DIRECTORY, "External tools and JVM"),
+      new ConfigSpec("HICT_TOOLCHAIN_DIR", "Toolchain directory", "", PathKind.DIRECTORY, "External tools and JVM"),
+      new ConfigSpec("HICT_HICTK_BIN", "External hictk executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_MINIMAP2_BIN", "External minimap2 executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_MM2PLUS_AVX2_BIN", "External mm2-plus AVX2 executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_MM2PLUS_AVX512_BIN", "External mm2-plus AVX-512 executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_DOTPLOT_ALIGNER", "Dotplot aligner preference (auto, mm2plus, mm2plus-avx2, mm2plus-avx512, minimap2)", "auto", PathKind.NONE, "External tools and JVM"),
+      new ConfigSpec("HICT_COOLER_BIN", "External cooler executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_PYTHON_BIN", "External Python executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_SEQKIT_BIN", "External SeqKit executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_MODDOTPLOT_CLI_BIN", "External upstream ModDotPlot executable", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_MODDOTPLOT_BIN", "External HiCT ModDotPlot adapter", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_NATIVE_LIBRARY_DIR", "Native library directory override", "", PathKind.DIRECTORY, "External tools and JVM"),
+      new ConfigSpec("HICT_NATIVE_LIBRARY_PATH", "Native library file override", "", PathKind.FILE, "External tools and JVM"),
+      new ConfigSpec("HICT_JAVA_OPTS", "Extra JVM options", "", PathKind.NONE, "External tools and JVM")
     );
 
     private final CountDownLatch closed;
@@ -276,9 +290,10 @@ public final class HictLauncherGui {
     private JPanel configurationPanel;
     private JPanel logCardsPanel;
     private JTextArea logArea;
-    private JLabel apiStatusLabel;
-    private JLabel webUiStatusLabel;
-    private JLabel processStatusLabel;
+    private JLabel statusLabel;
+    private JProgressBar startProgress;
+    private JLabel dataFolderLabel;
+    private JCheckBox followLogCheckbox;
     private JLabel apiGatewayLabel;
     private JButton webUiLinkButton;
     private JLabel browserStatusLabel;
@@ -301,6 +316,12 @@ public final class HictLauncherGui {
     private Timer statusTimer;
     private volatile Process serverProcess;
     private volatile boolean closing;
+    private volatile Integer lastExitCode;
+    private volatile boolean stopRequested;
+    private volatile boolean startAttempted;
+    private volatile boolean exitDialogShown;
+    private final List<ConfigRow> configRows = new ArrayList<>();
+    private final Map<String, JLabel> configHeadings = new LinkedHashMap<>();
     private String settingsMigrationNotice = "";
 
     LauncherWindow(final CountDownLatch closed) {
@@ -339,6 +360,9 @@ public final class HictLauncherGui {
       this.frame.addWindowListener(new WindowAdapter() {
         @Override
         public void windowClosing(final WindowEvent e) {
+          if (isProcessAlive() && !confirmStopServer()) {
+            return;
+          }
           shutdownAndClose();
         }
       });
@@ -351,7 +375,7 @@ public final class HictLauncherGui {
 
       this.frame.pack();
       clampFrameToScreen();
-      this.frame.setLocationRelativeTo(null);
+      centerFrameOnScreen();
       this.frame.setVisible(true);
       appendLauncherLog("Launcher ready. DATA_DIR=" + getFieldValue("DATA_DIR"));
       final var portableNotice = firstNonBlank(System.getenv("HICT_PORTABLE_NOTICE"));
@@ -379,7 +403,7 @@ public final class HictLauncherGui {
       final var panel = new JPanel(new BorderLayout(this.uiScale.gapLarge(), this.uiScale.gap()));
       panel.setBorder(BorderFactory.createEmptyBorder(this.uiScale.gap(), this.uiScale.gapLarge(), 0, this.uiScale.gapLarge()));
 
-      final var title = new JLabel("HiCT portable launcher");
+      final var title = new JLabel("HiCT Launcher");
       title.setFont(title.getFont().deriveFont(Font.BOLD, this.uiScale.titleFontSize()));
       panel.add(title, BorderLayout.NORTH);
 
@@ -394,16 +418,18 @@ public final class HictLauncherGui {
       this.configureButton = new JButton("Show Configuration");
       this.configureButton.addActionListener(ignored -> toggleConfiguration());
       styleActionButton(this.configureButton, false);
-      this.aboutButton = new JButton("About");
-      this.aboutButton.addActionListener(ignored -> showAboutDialog());
-      styleActionButton(this.aboutButton, false);
       this.stopButton = new JButton("Stop HiCT");
-      this.stopButton.addActionListener(ignored -> stopHiCTInBackground(false));
+      this.stopButton.addActionListener(ignored -> {
+        if (!isProcessAlive() || confirmStopServer()) {
+          stopHiCTInBackground(false);
+        }
+      });
+      this.stopButton.setVisible(false);
       styleActionButton(this.stopButton, false);
+      this.startButton.setVisible(false);
       buttons.add(this.startButton);
       buttons.add(this.openWebUiButton);
       buttons.add(this.configureButton);
-      buttons.add(this.aboutButton);
       buttons.add(this.stopButton);
       panel.add(buttons, BorderLayout.CENTER);
 
@@ -454,10 +480,13 @@ public final class HictLauncherGui {
       this.logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, this.uiScale.logFontSize()));
       this.logArea.setRows(this.uiScale.logRows());
       final var logScroll = new JScrollPane(this.logArea);
-      logScroll.setBorder(BorderFactory.createTitledBorder("HiCT server log"));
+      final var logPanel = new JPanel(new BorderLayout());
+      logPanel.setBorder(BorderFactory.createTitledBorder("HiCT server log"));
+      logPanel.add(logScroll, BorderLayout.CENTER);
+      logPanel.add(createLogToolsRow(), BorderLayout.SOUTH);
       this.logCardsPanel = new JPanel(new CardLayout());
       this.logCardsPanel.add(createLaunchPlaceholderPanel(), "start");
-      this.logCardsPanel.add(logScroll, "log");
+      this.logCardsPanel.add(logPanel, "log");
       body.add(this.logCardsPanel, "activity");
       ((CardLayout) body.getLayout()).show(body, "activity");
 
@@ -481,6 +510,10 @@ public final class HictLauncherGui {
       content.add(title, gbc);
 
       gbc.gridy = 1;
+      gbc.insets = new Insets(0, 0, this.uiScale.gapLarge(), 0);
+      content.add(createDataFolderRow(), gbc);
+
+      gbc.gridy = 2;
       gbc.insets = new Insets(this.uiScale.gap(), 0, 0, 0);
       final var duplicateStartButton = new JButton("Start HiCT");
       duplicateStartButton.addActionListener(ignored -> startHiCT());
@@ -501,19 +534,23 @@ public final class HictLauncherGui {
       gbc.insets = this.uiScale.formInsets();
       gbc.anchor = GridBagConstraints.WEST;
 
-      this.processStatusLabel = new JLabel();
-      this.apiStatusLabel = new JLabel();
-      this.webUiStatusLabel = new JLabel();
+      this.statusLabel = new JLabel("Stopped");
+      this.statusLabel.setFont(this.statusLabel.getFont().deriveFont(Font.BOLD));
+      this.startProgress = new JProgressBar();
+      this.startProgress.setIndeterminate(true);
+      this.startProgress.setVisible(false);
+      this.startProgress.setPreferredSize(new Dimension(this.uiScale.scaled(120), this.uiScale.scaled(12)));
+      final var statusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gap(), 0));
+      statusRow.add(this.statusLabel);
+      statusRow.add(this.startProgress);
       this.webUiLinkButton = createLinkButton(webUiUrl());
       this.apiGatewayLabel = new JLabel(apiUrl(""));
       this.browserStatusLabel = new JLabel();
 
-      addStatusRow(panel, gbc, 0, "Process:", this.processStatusLabel);
-      addStatusRow(panel, gbc, 1, "API:", this.apiStatusLabel);
-      addStatusRow(panel, gbc, 2, "WebUI:", this.webUiStatusLabel);
-      addStatusRow(panel, gbc, 3, "Links:", createAddressLinksPanel());
-      addStatusRow(panel, gbc, 4, "Browser:", this.browserStatusLabel);
-      addStatusRow(panel, gbc, 5, "Open in:", createBrowserModePanel());
+      addStatusRow(panel, gbc, 0, "Status:", statusRow);
+      addStatusRow(panel, gbc, 1, "Links:", createAddressLinksPanel());
+      addStatusRow(panel, gbc, 2, "Open in:", createBrowserModePanel());
+      this.uiScale.applyFonts(panel);
       return panel;
     }
 
@@ -537,33 +574,16 @@ public final class HictLauncherGui {
     }
 
     private JPanel createAddressLinksPanel() {
-      final var panel = new JPanel(new GridBagLayout());
-      final var gbc = new GridBagConstraints();
-      gbc.insets = new Insets(0, 0, this.uiScale.gapSmall(), this.uiScale.gap());
-      gbc.anchor = GridBagConstraints.WEST;
-      gbc.gridx = 0;
-      gbc.gridy = 0;
-      final var webUiLabel = new JLabel("WebUI Link:");
-      webUiLabel.setFont(webUiLabel.getFont().deriveFont(Font.BOLD));
-      panel.add(webUiLabel, gbc);
-      gbc.gridx = 1;
-      gbc.weightx = 1.0;
-      gbc.fill = GridBagConstraints.HORIZONTAL;
-      panel.add(this.webUiLinkButton, gbc);
-
-      gbc.gridx = 0;
-      gbc.gridy = 1;
-      gbc.weightx = 0.0;
-      gbc.fill = GridBagConstraints.NONE;
-      final var apiLabel = new JLabel("API Gateway:");
+      final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), 0));
+      panel.add(this.webUiLinkButton);
+      final var api = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapSmall(), 0));
+      final var apiLabel = new JLabel("API:");
       apiLabel.setFont(apiLabel.getFont().deriveFont(Font.BOLD));
-      panel.add(apiLabel, gbc);
-      gbc.gridx = 1;
-      gbc.weightx = 1.0;
-      gbc.fill = GridBagConstraints.HORIZONTAL;
+      api.add(apiLabel);
       this.apiGatewayLabel.setForeground(new Color(90, 96, 104));
       this.apiGatewayLabel.setHorizontalAlignment(SwingConstants.LEFT);
-      panel.add(this.apiGatewayLabel, gbc);
+      api.add(this.apiGatewayLabel);
+      panel.add(api);
       return panel;
     }
 
@@ -583,6 +603,7 @@ public final class HictLauncherGui {
     }
 
     private JPanel createBrowserModePanel() {
+      final var outerPanel = new JPanel(new BorderLayout(this.uiScale.gapLarge(), 0));
       final var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gapLarge(), 0));
       final var group = new ButtonGroup();
       this.systemBrowserRadio = new JRadioButton(BrowserMode.SYSTEM.label);
@@ -609,7 +630,10 @@ public final class HictLauncherGui {
       this.systemBrowserRadio.addActionListener(ignored -> onBrowserModeChanged());
       this.tauriBrowserRadio.addActionListener(ignored -> onBrowserModeChanged());
       this.electronBrowserRadio.addActionListener(ignored -> onBrowserModeChanged());
-      return panel;
+      this.browserStatusLabel.setForeground(new Color(90, 96, 104));
+      outerPanel.add(panel, BorderLayout.WEST);
+      outerPanel.add(this.browserStatusLabel, BorderLayout.CENTER);
+      return outerPanel;
     }
 
     private JPanel createConfigurationPanel() {
@@ -622,15 +646,33 @@ public final class HictLauncherGui {
       gbc.anchor = GridBagConstraints.WEST;
       gbc.fill = GridBagConstraints.HORIZONTAL;
 
-      for (int i = 0; i < CONFIG_SPECS.size(); i++) {
-        final var spec = CONFIG_SPECS.get(i);
-        gbc.gridy = i;
+      this.configRows.clear();
+      this.configHeadings.clear();
+      int gridy = 0;
+      String currentGroup = null;
+      for (final var spec : CONFIG_SPECS) {
+        if (!spec.group().equals(currentGroup)) {
+          currentGroup = spec.group();
+          final var heading = new JLabel(currentGroup);
+          heading.setFont(heading.getFont().deriveFont(Font.BOLD));
+          heading.setBorder(BorderFactory.createEmptyBorder(this.uiScale.gap(), 0, this.uiScale.gapSmall(), 0));
+          gbc.gridy = gridy++;
+          gbc.gridx = 0;
+          gbc.gridwidth = 3;
+          gbc.weightx = 1.0;
+          form.add(heading, gbc);
+          gbc.gridwidth = 1;
+          this.configHeadings.put(currentGroup, heading);
+        }
+        final var rowComponents = new ArrayList<Component>();
+        gbc.gridy = gridy++;
         gbc.gridx = 0;
         gbc.weightx = 0.0;
         final var label = new JLabel("<html><div style='width:" + this.uiScale.scaled(220)
           + "px'>" + spec.label() + "</div></html>");
         label.setToolTipText(spec.key());
         form.add(label, gbc);
+        rowComponents.add(label);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
@@ -638,17 +680,34 @@ public final class HictLauncherGui {
         label.setLabelFor(field);
         this.fields.put(spec.key(), field);
         form.add(field, gbc);
+        rowComponents.add(field);
 
         gbc.gridx = 2;
         gbc.weightx = 0.0;
         if (spec.pathKind() == PathKind.NONE) {
-          form.add(Box.createHorizontalStrut(this.uiScale.browseButtonPlaceholderWidth()), gbc);
+          final var strut = Box.createHorizontalStrut(this.uiScale.browseButtonPlaceholderWidth());
+          form.add(strut, gbc);
+          rowComponents.add(strut);
         } else {
           final var browse = new JButton("Browse");
           browse.addActionListener(ignored -> browsePath(spec, field));
           form.add(browse, gbc);
+          rowComponents.add(browse);
         }
+        this.configRows.add(new ConfigRow(spec, label, rowComponents));
       }
+
+      final var filterField = new JTextField(this.uiScale.fieldColumns());
+      filterField.setToolTipText("Show only settings whose label or variable name contains this text");
+      filterField.getDocument().addDocumentListener(new DocumentListener() {
+        @Override public void insertUpdate(final DocumentEvent e) { applyConfigFilter(filterField.getText(), form); }
+        @Override public void removeUpdate(final DocumentEvent e) { applyConfigFilter(filterField.getText(), form); }
+        @Override public void changedUpdate(final DocumentEvent e) { applyConfigFilter(filterField.getText(), form); }
+      });
+      final var filterRow = new JPanel(new BorderLayout(this.uiScale.gap(), 0));
+      filterRow.setBorder(BorderFactory.createEmptyBorder(this.uiScale.gapSmall(), this.uiScale.gapSmall(), 0, this.uiScale.gapSmall()));
+      filterRow.add(new JLabel("Filter settings:"), BorderLayout.WEST);
+      filterRow.add(filterField, BorderLayout.CENTER);
 
       final var optionPanel = new JPanel();
       optionPanel.setLayout(new BoxLayout(optionPanel, BoxLayout.Y_AXIS));
@@ -724,7 +783,10 @@ public final class HictLauncherGui {
       buttonPanel.add(resetBrowserButton);
 
       final var content = new ConfigurationScrollPanel();
-      content.add(optionPanel, BorderLayout.NORTH);
+      final var north = new JPanel(new BorderLayout());
+      north.add(optionPanel, BorderLayout.NORTH);
+      north.add(filterRow, BorderLayout.SOUTH);
+      content.add(north, BorderLayout.NORTH);
       content.add(form, BorderLayout.CENTER);
       final var formScroll = new JScrollPane(content);
       formScroll.setPreferredSize(this.uiScale.configurationScrollPreferredSize());
@@ -752,6 +814,126 @@ public final class HictLauncherGui {
           (orientation == SwingConstants.VERTICAL ? visible.height : visible.width)
             - getScrollableUnitIncrement(visible, orientation, direction));
       }
+    }
+
+    private void applyConfigFilter(final String rawQuery, final JPanel form) {
+      final var query = rawQuery == null ? "" : rawQuery.trim().toLowerCase(Locale.ROOT);
+      final var visibleGroups = new HashSet<String>();
+      for (final var row : this.configRows) {
+        final boolean match = query.isEmpty()
+          || row.spec().label().toLowerCase(Locale.ROOT).contains(query)
+          || row.spec().key().toLowerCase(Locale.ROOT).contains(query);
+        for (final var component : row.components()) {
+          component.setVisible(match);
+        }
+        if (match) {
+          visibleGroups.add(row.spec().group());
+        }
+      }
+      for (final var entry : this.configHeadings.entrySet()) {
+        entry.getValue().setVisible(visibleGroups.contains(entry.getKey()));
+      }
+      form.revalidate();
+      form.repaint();
+    }
+
+    private JPanel createLogToolsRow() {
+      final var row = new JPanel(new FlowLayout(FlowLayout.LEFT, this.uiScale.gap(), this.uiScale.gapSmall()));
+      this.followLogCheckbox = new JCheckBox("Follow", true);
+      this.followLogCheckbox.setToolTipText("Scroll to the newest log line as it arrives");
+      final var copy = new JButton("Copy");
+      copy.addActionListener(ignored -> {
+        try {
+          java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+            .setContents(new StringSelection(this.logArea.getText()), null);
+        } catch (final IllegalStateException | HeadlessException ex) {
+          appendLauncherLog("Could not copy the log to the clipboard: " + ex.getMessage());
+        }
+      });
+      final var save = new JButton("Save\u2026");
+      save.addActionListener(ignored -> saveLogToFile());
+      final var clear = new JButton("Clear");
+      clear.addActionListener(ignored -> this.logArea.setText(""));
+      row.add(this.followLogCheckbox);
+      row.add(copy);
+      row.add(save);
+      row.add(clear);
+      this.uiScale.applyFonts(row);
+      return row;
+    }
+
+    private void saveLogToFile() {
+      final var chooser = new JFileChooser();
+      chooser.setSelectedFile(new java.io.File("hict-launcher.log"));
+      if (chooser.showSaveDialog(this.frame) != JFileChooser.APPROVE_OPTION) {
+        return;
+      }
+      final var target = chooser.getSelectedFile().toPath();
+      final var text = this.logArea.getText();
+      this.backgroundExecutor.submit(() -> {
+        try {
+          Files.writeString(target, text, StandardCharsets.UTF_8);
+          appendLauncherLog("Log saved to " + target);
+        } catch (final IOException ex) {
+          showError("Could not save the log", ex);
+        }
+      });
+    }
+
+    private JPanel createDataFolderRow() {
+      final var row = new JPanel(new FlowLayout(FlowLayout.CENTER, this.uiScale.gap(), 0));
+      this.dataFolderLabel = new JLabel();
+      refreshDataFolderLabel();
+      final var dataField = this.fields.get("DATA_DIR");
+      if (dataField != null) {
+        dataField.getDocument().addDocumentListener(new DocumentListener() {
+          @Override public void insertUpdate(final DocumentEvent e) { refreshDataFolderLabel(); }
+          @Override public void removeUpdate(final DocumentEvent e) { refreshDataFolderLabel(); }
+          @Override public void changedUpdate(final DocumentEvent e) { refreshDataFolderLabel(); }
+        });
+      }
+      final var change = new JButton("Change\u2026");
+      change.addActionListener(ignored -> {
+        final var spec = CONFIG_SPECS.stream().filter(candidate -> "DATA_DIR".equals(candidate.key())).findFirst().orElseThrow();
+        if (dataField != null) {
+          browsePath(spec, dataField);
+          refreshDataFolderLabel();
+        }
+      });
+      final var open = new JButton("Open folder");
+      open.addActionListener(ignored -> openDataFolder());
+      row.add(this.dataFolderLabel);
+      row.add(change);
+      row.add(open);
+      this.uiScale.applyFonts(row);
+      return row;
+    }
+
+    private void refreshDataFolderLabel() {
+      if (this.dataFolderLabel != null) {
+        final var value = getFieldValue("DATA_DIR");
+        this.dataFolderLabel.setText("Data folder: " + value);
+        this.dataFolderLabel.setToolTipText(value);
+      }
+    }
+
+    private void openDataFolder() {
+      final var dir = safeNormalizePath(getFieldValue("DATA_DIR"));
+      if (dir == null) {
+        showErrorMessage("Cannot open folder", "DATA_DIR is not a valid path.");
+        return;
+      }
+      this.backgroundExecutor.submit(() -> {
+        try {
+          Files.createDirectories(dir);
+          if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+            throw new IOException("Opening folders is not supported on this system: " + dir);
+          }
+          Desktop.getDesktop().open(dir.toFile());
+        } catch (final Exception ex) {
+          showError("Cannot open folder", ex);
+        }
+      });
     }
 
     private JPanel createNativeProcessingModePanel() {
@@ -832,10 +1014,39 @@ public final class HictLauncherGui {
     private JPanel createFooter() {
       final var panel = new JPanel(new BorderLayout(8, 0));
       panel.setBorder(BorderFactory.createEmptyBorder(0, this.uiScale.gapLarge(), this.uiScale.gap(), this.uiScale.gapLarge()));
-      final var hint = new JLabel("Explicit CLI commands still work: hict --help, hict start-server, hict convert --help.");
-      hint.setForeground(new Color(90, 96, 104));
-      panel.add(hint, BorderLayout.WEST);
+      final var version = new JLabel("HiCT " + this.launcherVersion);
+      version.setForeground(new Color(90, 96, 104));
+      this.uiScale.applyFonts(version);
+      panel.add(version, BorderLayout.WEST);
+      this.aboutButton = new JButton("About");
+      this.aboutButton.addActionListener(ignored -> showAboutDialog());
+      this.uiScale.applyFonts(this.aboutButton);
+      panel.add(this.aboutButton, BorderLayout.EAST);
       return panel;
+    }
+
+    private void showActivityCard() {
+      if (this.configurationPanel != null) {
+        final var body = this.configurationPanel.getParent();
+        ((CardLayout) body.getLayout()).show(body, "activity");
+      }
+      this.configureButton.setText("Show Configuration");
+      showLogPanel();
+      if (this.frame != null) {
+        this.frame.revalidate();
+        this.frame.repaint();
+      }
+    }
+
+    private boolean confirmStopServer() {
+      return JOptionPane.showConfirmDialog(
+        this.frame,
+        "Stop HiCT?" + System.lineSeparator()
+          + "Assembly edits are kept only while the server runs. Export AGP first to keep them.",
+        "Stop HiCT",
+        JOptionPane.YES_NO_OPTION,
+        JOptionPane.WARNING_MESSAGE
+      ) == JOptionPane.YES_OPTION;
     }
 
     private void toggleConfiguration() {
@@ -905,14 +1116,24 @@ public final class HictLauncherGui {
       this.frame.setSize(width, height);
     }
 
+    private void centerFrameOnScreen() {
+      final var bounds = this.uiScale.usableScreenBounds();
+      final var size = this.frame.getSize();
+      this.frame.setLocation(
+        bounds.x + Math.max(0, (bounds.width - size.width) / 2),
+        bounds.y + Math.max(0, (bounds.height - size.height) / 2)
+      );
+    }
+
     private void browsePath(final ConfigSpec spec, final JTextField field) {
       final var chooser = new JFileChooser();
       chooser.setFileSelectionMode(spec.pathKind() == PathKind.DIRECTORY
         ? JFileChooser.DIRECTORIES_ONLY
         : JFileChooser.FILES_ONLY);
       final var current = field.getText();
-      if (current != null && !current.isBlank()) {
-        chooser.setSelectedFile(Path.of(current).toFile());
+      final var currentPath = current == null || current.isBlank() ? null : safeNormalizePath(current);
+      if (currentPath != null) {
+        chooser.setSelectedFile(currentPath.toFile());
       }
       if (chooser.showOpenDialog(this.frame) == JFileChooser.APPROVE_OPTION) {
         field.setText(chooser.getSelectedFile().toPath().toAbsolutePath().normalize().toString());
@@ -924,11 +1145,10 @@ public final class HictLauncherGui {
 
     private void startHiCT() {
       if (isProcessAlive()) {
-        showLogPanel();
+        showActivityCard();
         appendLauncherLog("HiCT is already running.");
         return;
       }
-      showLogPanel();
       try {
         for (final String key : List.of("HICT_CONVERSION_THREADS", "HICT_HICTK_THREADS", "HICT_ALIGNMENT_THREADS",
           "HICT_SEQUENCE_THREADS", "HICT_MODDOTPLOT_THREADS")) {
@@ -946,7 +1166,11 @@ public final class HictLauncherGui {
         showError("AGP / FASTA output gap length must be a non-negative integer in base pairs", ex);
         return;
       }
+      if (!validateBeforeStart()) {
+        return;
+      }
       saveSettings();
+      showActivityCard();
 
       final Path dataDir;
       final Path tempDir;
@@ -972,8 +1196,12 @@ public final class HictLauncherGui {
       appendLauncherLog("Native processing launch mode: " + selectedNativeProcessingMode().label);
       appendLauncherLog("Command: " + String.join(" ", command));
 
+      this.lastExitCode = null;
+      this.stopRequested = false;
+      this.exitDialogShown = false;
       try {
         this.serverProcess = processBuilder.start();
+        this.startAttempted = true;
         readProcessOutput(this.serverProcess);
       } catch (final IOException ex) {
         this.serverProcess = null;
@@ -985,6 +1213,98 @@ public final class HictLauncherGui {
       if (this.openAfterStartCheckbox.isSelected()) {
         waitAndOpenWebUi();
       }
+    }
+
+    private int parsePort(final String key, final String name, final String fallback) {
+      final var raw = getFieldValue(key);
+      final var text = raw.isBlank() ? fallback : raw;
+      final int port;
+      try {
+        port = Integer.parseInt(text.trim());
+      } catch (final NumberFormatException ex) {
+        throw new IllegalArgumentException(name + " must be an integer from 1 to 65535 (got '" + text + "').");
+      }
+      if (port < 1 || port > 65535) {
+        throw new IllegalArgumentException(name + " must be an integer from 1 to 65535 (got " + port + ").");
+      }
+      return port;
+    }
+
+    private String checkPortBindable(final String host, final int port, final String name) {
+      try (var socket = new ServerSocket()) {
+        if (!isWindows()) {
+          socket.setReuseAddress(true);
+        }
+        final InetAddress address = host.isBlank() ? null : InetAddress.getByName(host);
+        socket.bind(new InetSocketAddress(address, port));
+        return null;
+      } catch (final UnknownHostException ex) {
+        return "Bind host '" + host + "' cannot be resolved.";
+      } catch (final IOException | RuntimeException ex) {
+        return name + " " + port + " is already in use or cannot be opened on "
+          + (host.isBlank() ? "all interfaces" : host) + ": " + ex.getMessage();
+      }
+    }
+
+    /** Checks everything that commonly makes the server fail right after start; reports the first problem. */
+    private boolean validateBeforeStart() {
+      final int apiPort;
+      final int webUiPort;
+      try {
+        apiPort = parsePort("VXPORT", "API port", "5000");
+        webUiPort = parsePort("WEBUI_PORT", "WebUI port", "8080");
+      } catch (final IllegalArgumentException ex) {
+        showErrorMessage("Invalid port", ex.getMessage());
+        return false;
+      }
+      if (apiPort == webUiPort) {
+        showErrorMessage("Invalid port", "API port and WebUI port must differ (both are " + apiPort + ").");
+        return false;
+      }
+      final var host = getFieldValue("HICT_BIND_HOST");
+      final var apiProblem = checkPortBindable(host, apiPort, "API port");
+      if (apiProblem != null) {
+        showErrorMessage("Cannot start HiCT", apiProblem);
+        return false;
+      }
+      final var webUiProblem = checkPortBindable(host, webUiPort, "WebUI port");
+      if (webUiProblem != null) {
+        showErrorMessage("Cannot start HiCT", webUiProblem);
+        return false;
+      }
+      final var dataDir = safeNormalizePath(getFieldValue("DATA_DIR"));
+      if (dataDir == null) {
+        showErrorMessage("Cannot start HiCT", "DATA_DIR is not a valid path.");
+        return false;
+      }
+      try {
+        Files.createDirectories(dataDir);
+      } catch (final IOException | RuntimeException ex) {
+        showErrorMessage("Cannot start HiCT", "DATA_DIR cannot be created: " + dataDir + " (" + ex.getMessage() + ")");
+        return false;
+      }
+      if (!Files.isWritable(dataDir)) {
+        showErrorMessage("Cannot start HiCT", "DATA_DIR is not writable: " + dataDir);
+        return false;
+      }
+      boolean loopback;
+      try {
+        loopback = !host.isBlank() && InetAddress.getByName(host).isLoopbackAddress();
+      } catch (final UnknownHostException ex) {
+        loopback = false;
+      }
+      if (!loopback) {
+        return JOptionPane.showConfirmDialog(
+          this.frame,
+          "The server will listen on " + (host.isBlank() ? "all interfaces" : host)
+            + ", not only on this computer." + System.lineSeparator()
+            + "Anyone on the network can open this session. Continue?",
+          "Network access",
+          JOptionPane.YES_NO_OPTION,
+          JOptionPane.WARNING_MESSAGE
+        ) == JOptionPane.YES_OPTION;
+      }
+      return true;
     }
 
     private void showLogPanel() {
@@ -1282,6 +1602,9 @@ public final class HictLauncherGui {
           final int exitCode;
           try {
             exitCode = process.waitFor();
+            if (this.serverProcess == process) {
+              this.lastExitCode = exitCode;
+            }
             appendLauncherLog("HiCT server process exited with code " + exitCode + ".");
           } catch (final InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -1299,12 +1622,18 @@ public final class HictLauncherGui {
     private void waitAndOpenWebUi() {
       this.backgroundExecutor.submit(() -> {
         final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
-        while (!this.closing && System.nanoTime() < deadline) {
+        while (!this.closing && isProcessAlive() && System.nanoTime() < deadline) {
           if (isUrlReachable(webUiUrl())) {
-            SwingUtilities.invokeLater(this::openWebUi);
+            if (isProcessAlive()) {
+              SwingUtilities.invokeLater(this::openWebUi);
+            }
             return;
           }
           sleepQuietly(800);
+        }
+        if (!isProcessAlive()) {
+          appendLauncherLog("HiCT stopped before the WebUI became reachable; not opening a browser.");
+          return;
         }
         appendLauncherLog("WebUI did not become reachable within 90 seconds; use Re-open WebUI after startup completes.");
       });
@@ -1394,6 +1723,7 @@ public final class HictLauncherGui {
     }
 
     private void stopHiCT() {
+      this.stopRequested = true;
       final var process = this.serverProcess;
       if (process == null) {
         appendLauncherLog("No HiCT server process is owned by this launcher.");
@@ -1510,12 +1840,43 @@ public final class HictLauncherGui {
     }
 
     private void updateStatusLabels(final boolean apiReachable, final boolean webUiReachable) {
-      this.processStatusLabel.setText(isProcessAlive() ? "running" : "stopped");
-      this.processStatusLabel.setForeground(isProcessAlive() ? new Color(20, 118, 55) : new Color(120, 58, 58));
-      this.apiStatusLabel.setText(apiReachable ? "reachable" : "not reachable");
-      this.apiStatusLabel.setForeground(apiReachable ? new Color(20, 118, 55) : new Color(120, 58, 58));
-      this.webUiStatusLabel.setText(webUiReachable ? "reachable" : "not reachable");
-      this.webUiStatusLabel.setForeground(webUiReachable ? new Color(20, 118, 55) : new Color(120, 58, 58));
+      final var green = new Color(20, 118, 55);
+      final var red = new Color(170, 40, 40);
+      final var amber = new Color(176, 112, 0);
+      final var neutral = new Color(90, 96, 104);
+      final var alive = isProcessAlive();
+      final var exitCode = this.lastExitCode;
+      String text;
+      Color color;
+      boolean starting = false;
+      if (alive) {
+        if (apiReachable && webUiReachable) {
+          text = "Running";
+          color = green;
+        } else {
+          text = "Starting\u2026";
+          color = neutral;
+          starting = true;
+        }
+      } else if (exitCode != null && exitCode != 0 && !this.stopRequested) {
+        text = "Stopped unexpectedly (exit " + exitCode + "). See log.";
+        color = red;
+        if (!this.exitDialogShown && !this.closing) {
+          this.exitDialogShown = true;
+          final var message = text;
+          SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+            this.frame, message, "HiCT Launcher", JOptionPane.ERROR_MESSAGE));
+        }
+      } else if (apiReachable || webUiReachable) {
+        text = "Port in use by another program";
+        color = amber;
+      } else {
+        text = "Stopped";
+        color = neutral;
+      }
+      this.statusLabel.setText(text);
+      this.statusLabel.setForeground(color);
+      this.startProgress.setVisible(starting);
       this.apiGatewayLabel.setText(apiUrl(""));
       this.webUiLinkButton.setText(webUiUrl());
       updateButtons();
@@ -1526,11 +1887,13 @@ public final class HictLauncherGui {
       this.browserStatusLabel.setToolTipText(null);
       if (selectedMode == BrowserMode.SYSTEM) {
         this.browserStatusLabel.setText("system default browser");
+        this.browserStatusLabel.setToolTipText("system default browser");
         return;
       }
       final var candidates = browserBundlesForMode(selectedMode);
       if (candidates.isEmpty()) {
         this.browserStatusLabel.setText(selectedMode.label + " is not bundled; system browser fallback");
+        this.browserStatusLabel.setToolTipText(this.browserStatusLabel.getText());
         return;
       }
       this.browserStatusLabel.setText(selectedMode.label + " bundled; system browser fallback enabled");
@@ -1539,7 +1902,9 @@ public final class HictLauncherGui {
 
     private void updateButtons() {
       final var alive = isProcessAlive();
+      this.startButton.setVisible(!alive && this.startAttempted && !this.closing);
       this.startButton.setEnabled(!alive && !this.closing);
+      this.stopButton.setVisible(alive && !this.closing);
       this.stopButton.setEnabled(alive && !this.closing);
       this.openWebUiButton.setVisible(alive && !this.closing);
       this.openWebUiButton.setEnabled(alive && !this.closing);
@@ -1897,7 +2262,7 @@ public final class HictLauncherGui {
     }
 
     private void loadSettings() {
-      final var configPath = settingsPath(defaultDataDir());
+      final var configPath = settingsPath();
       if (!Files.isRegularFile(configPath)) {
         this.settings.setProperty(SETTINGS_APP_VERSION_KEY, this.launcherVersion);
         return;
@@ -1925,15 +2290,16 @@ public final class HictLauncherGui {
       this.settings.setProperty("browserMode", selectedBrowserMode().wireName);
       this.settings.setProperty("nativeProcessingMode", selectedNativeProcessingMode().wireName);
       this.settings.setProperty("logLevel", selectedLogLevel());
-      final Path dataDir;
+      final var configPath = settingsPath();
       try {
-        dataDir = normalizePath(getFieldValue("DATA_DIR"));
-        Files.createDirectories(dataDir);
-      } catch (final Exception ex) {
-        appendLauncherLog("Could not save launcher settings because DATA_DIR is invalid: " + ex.getMessage());
+        final var parent = configPath.getParent();
+        if (parent != null) {
+          Files.createDirectories(parent);
+        }
+      } catch (final IOException | RuntimeException ex) {
+        appendLauncherLog("Could not save launcher settings to " + configPath + ": " + ex.getMessage());
         return;
       }
-      final var configPath = settingsPath(dataDir);
       if (settingsFileMatches(configPath)) {
         return;
       }
@@ -2066,12 +2432,41 @@ public final class HictLauncherGui {
       return "true".equalsIgnoreCase(value) || "1".equals(value) || "yes".equalsIgnoreCase(value);
     }
 
-    private Path settingsPath(final Path dataDir) {
+    /**
+     * One location for both load and save, independent of the DATA_DIR being edited:
+     * HICT_LAUNCHER_CONFIG, else the default data folder when writable, else a per-user file.
+     */
+    private Path settingsPath() {
       final var explicit = System.getenv("HICT_LAUNCHER_CONFIG");
       if (explicit != null && !explicit.isBlank()) {
         return normalizePath(explicit);
       }
-      return dataDir.resolve(".hict-launcher.properties");
+      final var dataDir = defaultDataDir();
+      if (canWriteDirectory(dataDir)) {
+        return dataDir.resolve(".hict-launcher.properties");
+      }
+      return userConfigDirectory().resolve("HiCT").resolve("launcher.properties");
+    }
+
+    private static boolean canWriteDirectory(final Path directory) {
+      Path candidate = directory;
+      while (candidate != null && !Files.exists(candidate)) {
+        candidate = candidate.getParent();
+      }
+      return candidate != null && Files.isDirectory(candidate) && Files.isWritable(candidate);
+    }
+
+    private static Path userConfigDirectory() {
+      final var home = Path.of(System.getProperty("user.home", "."));
+      if (isWindows()) {
+        final var appData = System.getenv("APPDATA");
+        return appData != null && !appData.isBlank() ? normalizePath(appData) : home.resolve("AppData").resolve("Roaming");
+      }
+      if (isMac()) {
+        return home.resolve("Library").resolve("Application Support");
+      }
+      final var xdg = System.getenv("XDG_CONFIG_HOME");
+      return xdg != null && !xdg.isBlank() ? normalizePath(xdg) : home.resolve(".config");
     }
 
     private void appendLog(final String message) {
@@ -2086,7 +2481,9 @@ public final class HictLauncherGui {
         if (length > MAX_LOG_CHARS) {
           this.logArea.replaceRange("", 0, length - MAX_LOG_CHARS);
         }
-        this.logArea.setCaretPosition(this.logArea.getDocument().getLength());
+        if (this.followLogCheckbox == null || this.followLogCheckbox.isSelected()) {
+          this.logArea.setCaretPosition(this.logArea.getDocument().getLength());
+        }
       });
     }
 
@@ -2111,6 +2508,16 @@ public final class HictLauncherGui {
       SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
         this.frame,
         title + System.lineSeparator() + ex.getMessage(),
+        "HiCT Launcher",
+        JOptionPane.ERROR_MESSAGE
+      ));
+    }
+
+    private void showErrorMessage(final String title, final String message) {
+      appendLauncherLog(title + ": " + message);
+      SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+        this.frame,
+        title + System.lineSeparator() + message,
         "HiCT Launcher",
         JOptionPane.ERROR_MESSAGE
       ));
@@ -2486,7 +2893,18 @@ public final class HictLauncherGui {
     private static Rectangle detectScreenBounds() {
       try {
         final GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();
-        final GraphicsDevice device = environment.getDefaultScreenDevice();
+        GraphicsDevice device = null;
+        try {
+          final var pointer = MouseInfo.getPointerInfo();
+          if (pointer != null) {
+            device = pointer.getDevice();
+          }
+        } catch (final HeadlessException | SecurityException ignoredPointer) {
+          // fall back to the default screen
+        }
+        if (device == null) {
+          device = environment.getDefaultScreenDevice();
+        }
         final GraphicsConfiguration configuration = device.getDefaultConfiguration();
         final Rectangle bounds = new Rectangle(configuration.getBounds());
         final Insets insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(configuration);
