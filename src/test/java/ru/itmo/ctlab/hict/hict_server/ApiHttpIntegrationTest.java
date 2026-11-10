@@ -379,6 +379,41 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void sessionSnapshotCapturesEditedAssemblyNamesAndVerbatimGraph() throws Exception {
+    for (String name : java.util.List.of("primary", "secondary"))
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, java.util.List.of(4L, 10L));
+    startServerWithInfoAndFileHandlers();
+    assertTrue(post("/session/snapshot", "{}").statusCode() >= 400);
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\"}").statusCode());
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    var primary = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile();
+    primary.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+    primary.setContigNameOverride(0, "renamed_tiny");
+    var graph = new JsonObject(Files.readString(Path.of("src/test/resources/reinforcement/custom-pipeline.json")));
+    var config = ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.fromJson(graph);
+    map.put(ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.LOCAL_MAP_KEY,
+      new ShareableWrappers.RenderPipelineConfigWrapper(config));
+    var response = post("/session/snapshot", "{}");
+    assertEquals(200, response.statusCode(), response.body());
+    var snapshot = new JsonObject(response.body());
+    assertEquals(1, snapshot.getInteger("snapshotVersion"));
+    assertEquals(graph, snapshot.getJsonObject("renderPipeline"));
+    var source = snapshot.getJsonObject("primary");
+    assertEquals("renamed_tiny", source.getJsonObject("contigNameOverrides").getString("0"));
+    assertEquals(0, source.getJsonObject("assemblyInfo").getJsonArray("contigDescriptors").getJsonObject(0).getInteger("contigDirection"));
+    assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+      .digest(source.getString("agp").getBytes(StandardCharsets.UTF_8))), source.getString("agpSha256"));
+    assertEquals("secondary.hict.hdf5", snapshot.getJsonObject("secondary").getString("filename"));
+    assertEquals(0, snapshot.getJsonArray("tracks").size());
+    assertEquals(snapshot, new JsonObject(post("/session/snapshot", "{}").body()));
+    primary.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+    var later = new JsonObject(post("/session/snapshot", "{}").body());
+    org.junit.jupiter.api.Assertions.assertNotEquals(source.getString("agpSha256"), later.getJsonObject("primary").getString("agpSha256"));
+    assertEquals(0, source.getJsonObject("assemblyInfo").getJsonArray("contigDescriptors").getJsonObject(0).getInteger("contigDirection"));
+  }
+
+  @Test
   void failedSecondarySynchronizationRollsBackPrimaryAndRetainsOldSecondary() throws Exception {
     for (String name : java.util.List.of("primary", "secondary", "candidate"))
       ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, java.util.List.of(4L, 10L));

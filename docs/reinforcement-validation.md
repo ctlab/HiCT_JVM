@@ -488,3 +488,47 @@ remain W1 work. No Java runtime code changed in this increment.
 A separate browser run also restored `legacy-session-v2.json` with its empty style
 bundle and FASTA reference, after all fourteen rejection checks, with no browser
 exceptions. Both successful restore paths therefore have runtime evidence.
+
+## W1 sixth increment: server capture foundation for v3 sessions
+
+The new `/session/snapshot` endpoint captures both open sources' AGP text and its
+SHA-256, name overrides, detailed assembly descriptors, filenames, FASTA references
+and capabilities. It includes the rendering graph's entire serialized expressions
+(including arbitrary multipliers), track summaries/definitions and the persisted
+workspace envelope. Snapshot version 1 identifies this internal capture contract;
+it is **not** saved-session format v3. The existing Save session UI remains legacy.
+
+Capture runs on the assembly scheduler and does not add a journal entry. A client
+with displayed history state sends its session/revision; the history interceptor
+rejects a stale capture with 409. The client capture method does not advance its
+displayed assembly revision merely by reading a snapshot. Missing open maps return
+404. The request, request DTO, client method, response DTO and OpenAPI contract were
+added together.
+
+Evidence: `/tmp/hict-w1-session-snapshot/` and `/tmp/hict-snapshot-*.log`.
+
+- Full Java suite and development JAR build passed: 327 tests, 320 passed, seven
+  optional skips. Real HDF5 HTTP tests verify the edited strand, renamed contig,
+  exact custom graph, both sources, independently computed AGP digest, stable
+  repeated capture and changed digest after a subsequent assembly edit.
+- The browser opens two real fixture maps, links FASTA, opens a BED track, reverses
+  the assembly and uses actual File Attach. It installs the custom graph, changes
+  zoom and waits for the real workspace autosave response. The client capture then
+  matches sources, edited strand, graph, track and persisted workspace. Capture
+  leaves the journal unchanged. A second client's edit produces a 409 for the old
+  displayed model; File Attach recovers and captures the new hash and strand.
+- Browser page exceptions: zero. WebUI build and API DTO checks passed. ESLint has
+  only the five existing unused-import warnings in request.ts/requestDTO.ts and
+  existing resolver notices.
+- Initial browser execution preceded server readiness and was rerun after HTTP
+  readiness on the same JVM. The workspace check initially used a clamped center
+  change that did not trigger autosave; the final test changes resolution and waits
+  for its actual successful response. Neither failed harness attempt is counted
+  as passing evidence.
+
+Remaining: content fingerprints for all referenced files, generated-result
+provenance validation, AGP round-trip representability and hash checks, strict v3
+schema/graph/reference validation, atomic restore, UI Save/Open integration and
+dirty-state handling. The snapshot is serialized with assembly mutations, but
+concurrent visualization/workspace writes still need the complete session
+transaction protocol. W1 is not complete and release qualification remains open.

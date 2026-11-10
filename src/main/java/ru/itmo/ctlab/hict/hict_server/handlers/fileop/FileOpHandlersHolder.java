@@ -49,6 +49,7 @@ import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fasta.FastaLinkResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.OpenFileResponseDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
+import ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
 import ru.itmo.ctlab.hict.hict_server.tracks.Track1DManager;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
@@ -491,6 +492,32 @@ public class FileOpHandlersHolder extends HandlersHolder {
           throw new io.vertx.ext.web.handler.HttpException(400, "Invalid workspace state");
         return workspace.save(expected, state);
       }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
+    });
+
+    router.post("/session/snapshot").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+        final var primary = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+        if (primary == null) throw new io.vertx.ext.web.handler.HttpException(404, "No open map to capture");
+        final var secondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+        final var pipeline = (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
+        final var tracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+        final var workspace = (WorkspaceStateStore) map.get("workspaceStateStore");
+        return new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1,
+          ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
+            String.valueOf(map.getOrDefault("openedFilename", "")),
+            String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, ""))),
+          secondary == null ? null : ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(
+            secondary.getChunkedFile(), String.valueOf(map.getOrDefault(OPENED_SECONDARY_FILENAME_KEY, "")),
+            String.valueOf(map.getOrDefault(SECONDARY_FASTA_FILENAME_KEY, ""))),
+          String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)),
+          pipeline == null ? RenderPipelineConfig.disabled().toJson() : pipeline.getRenderPipelineConfig().toJson(),
+          new io.vertx.core.json.JsonArray(tracks == null ? java.util.List.of() : tracks.getTrack1DManager().listTracks()
+            .stream().map(io.vertx.core.json.JsonObject::mapFrom).toList()),
+          workspace == null ? new io.vertx.core.json.JsonObject() : workspace.snapshot());
+      }, result -> ctx.response().putHeader("content-type", "application/json").end(io.vertx.core.json.Json.encode(result)));
     });
 
     router.post("/attach").handler(ctx -> {

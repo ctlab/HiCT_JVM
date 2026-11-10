@@ -480,6 +480,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SecondarySourceStatus'
+  /session/snapshot:
+    post:
+      tags: [Session]
+      summary: Capture assembly and rendering state for session construction
+      description: Read-only internal snapshot, not a portable saved session. Does not include source content fingerprints or certify AGP round-trip fidelity. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
+      operationId: getSessionSnapshot
+      responses:
+        '200':
+          description: Detached assembly and rendering snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshotVersion, primary, assemblySource, renderPipeline, tracks, workspace]
+                properties:
+                  snapshotVersion: { type: integer, enum: [1] }
+                  primary: { $ref: '#/components/schemas/SessionSourceSnapshot' }
+                  secondary:
+                    nullable: true
+                    allOf:
+                      - $ref: '#/components/schemas/SessionSourceSnapshot'
+                  assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }
+                  renderPipeline: { type: object, additionalProperties: true }
+                  tracks: { type: array, items: { type: object, additionalProperties: true } }
+                  workspace: { type: object, additionalProperties: true }
+        '404': { description: No open map }
+        '409': { description: Displayed assembly revision is stale }
   /secondary/set_assembly_source:
     post:
       tags: [Secondary source]
@@ -1910,6 +1937,18 @@ components:
           type: string
           enum: [PRIMARY, SECONDARY]
       required: [assemblySource]
+    SessionSourceSnapshot:
+      type: object
+      required: [filename, fastaFilename, agp, agpSha256, assemblyInfo, contigNameOverrides, scaffoldNameOverrides, capabilities]
+      properties:
+        filename: { type: string }
+        fastaFilename: { type: string }
+        agp: { type: string }
+        agpSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        assemblyInfo: { type: object, additionalProperties: true }
+        contigNameOverrides: { type: object, additionalProperties: { type: string } }
+        scaffoldNameOverrides: { type: object, additionalProperties: { type: string } }
+        capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
     SecondarySourceStatus:
       type: object
       properties:
