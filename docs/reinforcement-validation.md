@@ -1019,3 +1019,26 @@ says so and offers a button, but this was not exercised in a browser); the ident
 sources are disabled through the existing capability flag but not run here;
 `check_source_capabilities_browser.py` was updated to the new control but needs its fixtures and
 was not run; the export path was not compared with and without coverage.
+
+## FASTA without a map (W14: item 10)
+
+`FastaOnlyAssembly` scans a plain or gzip FASTA once (streamed) and returns each record's length and
+its runs of N at or above the window, writes a real `.hict.hdf5` through the existing
+`McoolToHictConverter` from a Cooler-shaped file with an empty pixel table and root metadata
+`SEQUENCE_ONLY` / `ABSENT` (no hictk needed), and describes splitting as an AGP applied by the normal
+AGP import. Tests (`FastaOnlyAssemblyTest`, 8): records, lengths and gaps, lower-case n, gzip equals
+plain, no empty pieces and source coordinates kept, the AGP text with true gap lengths, refusal of a
+duplicate name (with both lines), sequence before a header, no sequence, a zero window and
+cancellation, resolution selection, the written file's contigs and ABSENT state, and split pieces
+with their source offsets after the AGP import. Live server: a 249 Mb, 96-record FASTA is built in
+1.3 s; a split FASTA's assembly sequence equals the non-gap source pieces, and the exported FASTA
+records equal the input records byte for byte (gaps at 150 and 120, lower-case n kept). Browser gate
+(27 checks): the dialog (accessible modal, focus, Tab containment, file list, N window shown only
+when splitting, invalid window explained), duplicate names refused with the lines and nothing
+opened, the split open (6 contigs, lengths, SEQUENCE_ONLY/ABSENT, FASTA linked, not counted as
+unsaved), exports equal the input, a Reverse from the context menu then Undo restores the exact
+assembly, a saved session restores the same contigs, the 250 Mb FASTA opens in 4 s as 96 contigs,
+and the chip reads Assembly. Not done: cancel of a long read was not exercised in a browser (it is
+unit-tested); the opening wizard has no FASTA-only path; matrix-dependent sidebar sections are only
+disabled and explained, not hidden; tracks and exports on a FASTA-only map were not driven one by
+one; gzip was tested at the unit level only.

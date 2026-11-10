@@ -1201,6 +1201,71 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /fasta_only/start:
+    post:
+      tags: [Files]
+      summary: Build an assembly from a FASTA file alone (no contact data)
+      description: >
+        Starts one background job that reads the FASTA once and writes `fasta-only/<name>.hict.hdf5` in
+        the data directory: one contig per record, a declared SEQUENCE_ONLY source with no contacts, and
+        when `splitAtN` is set an AGP (`.agp`) that splits records at runs of at least `minNRun` N
+        (case-insensitive, default 100) and keeps the true gap lengths. Empty and all-N records are
+        skipped and listed in the warnings; duplicate names are refused. Cancelling or failing leaves
+        no output that looks finished. Open the result with the FASTA linked, then apply the AGP.
+      operationId: startFastaOnly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fastaFilename]
+              properties:
+                fastaFilename: { type: string, description: Path of the plain or gzip FASTA relative to the data directory }
+                splitAtN: { type: boolean, default: false }
+                minNRun: { type: integer, minimum: 1, maximum: 1000000, default: 100 }
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: Another FASTA is already being read
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /fasta_only/status:
+    post:
+      tags: [Files]
+      summary: Status of the FASTA-only job
+      description: >
+        state (IDLE, RUNNING, READY, FAILED, CANCELLED), progress, message, error and on READY the
+        outputFilename, agpFilename (null when nothing was split), fastaFilename, contig count, total
+        bases, warnings and whether an existing output was reused.
+      operationId: fastaOnlyStatus
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /fasta_only/cancel:
+    post:
+      tags: [Files]
+      summary: Cancel the FASTA-only job
+      operationId: cancelFastaOnly
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
   /normalization/coverage/prepare:
     post:
       tags: [Normalization]
