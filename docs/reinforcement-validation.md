@@ -958,3 +958,19 @@ so the question for the owner stands: if the supervisor wants binary presence in
 add it as a separately versioned mode built at each level, not by rewriting the stored
 counts. `test_dotplot.py` and `test_moddotplot.py` need the `moddotplot` package, which this
 machine's Python lacks, so they were not run here.
+
+## Sequence strip repaint (W4)
+
+Cause: the revision counter that tells the FASTA strip its content changed was a plain
+field, read only as a cache key, so after an edit nothing scheduled a redraw. The strip now
+subscribes to one notification (`RequestManager.bumpSequenceRevision`, also fired when the
+FASTA linkage changes) and to the contig snapshot being replaced, drops its cache, cancels
+the stale read and repaints at the same viewport. Letter visibility uses the measured width
+of the widest base glyph with hysteresis. Checked in a real browser on a 96-contig map with
+a generated FASTA at about 25 px per base: horizontal and vertical strips equal the FASTA,
+after Reverse they equal the reverse complement without panning (viewport unchanged), Undo
+and Redo restore each state, and linking a FASTA with different content under another name
+repaints with the new bases (14 checks). Linking by the same name after overwriting the file
+returns the new content from the server. Not done: Move, Split, Group and Ungroup were not
+driven separately (they share the same notification path), delayed responses and gzip input
+were not exercised, and the sequence detail dialog does not refresh while it is open.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The FASTA letter strip now repaints at once after Reverse, Move, Split, Group, Undo, Redo and after linking another FASTA, instead of waiting for you to pan. Letters appear when a base is wide enough for its glyph and do not flicker at the threshold.
 - A lock button at the ruler corner (on by default, remembered) keeps the map's top-left corner against the rulers. A map smaller than the window sits in the corner instead of floating, and a larger map can be panned across its whole extent but not past its top or left edge. Click the lock to move the map freely. A rotated view is not anchored.
 - The selection (Shift-drag box, its handle and a selected contig) is drawn with a dark outline under a light dashed one and a translucent warm fill, so it is visible on any matrix color, light or dark. Before it was white on white.
 - The toolbar zoom buttons now zoom one step per press, about the view center, and say so when the finest zoom or the whole map is reached. Before, they jumped to an extreme zoom.
