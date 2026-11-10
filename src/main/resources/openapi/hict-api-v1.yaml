@@ -18,6 +18,7 @@ tags:
   - name: Scaffolding
   - name: Names
   - name: Tracks
+  - name: Normalization
   - name: Conversion
 paths:
   /assembly/history:
@@ -1197,6 +1198,89 @@ paths:
       responses:
         '200':
           description: Track summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/coverage/prepare:
+    post:
+      tags: [Normalization]
+      summary: Start computing square-root coverage vectors for every open source
+      description: >
+        Starts one background job that reads the stored contacts of every resolution twice and builds
+        the square-root coverage weights (Juicebox VC_SQRT recipe, vectors cover the whole opened map).
+        Vectors are published only when all resolutions of all open sources are done. Starting again
+        while the job runs for the same sources joins it. The response is the same as the status call.
+      operationId: prepareCoverageNormalization
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: No map is open, or another preparation is running for different sources
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/coverage/status:
+    post:
+      tags: [Normalization]
+      summary: Status of the square-root coverage job
+      description: >
+        Returns state (IDLE, RUNNING, READY, FAILED, CANCELLED), progress 0..1, message, algorithm version,
+        error, whether vectors are prepared for every open source, the weights mode of the primary source
+        (FILE or SQRT_COVERAGE), whether every open source uses the same mode (consistent) and an
+        estimate of the memory the vectors take.
+      operationId: coverageNormalizationStatus
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/coverage/cancel:
+    post:
+      tags: [Normalization]
+      summary: Cancel the running square-root coverage job
+      description: Nothing is published and the maps are unchanged. Cancelling when no job runs is not an error.
+      operationId: cancelCoverageNormalization
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/weights:
+    post:
+      tags: [Normalization]
+      summary: Choose which per-bin weights tiles use when weights are applied
+      description: >
+        mode FILE uses the weights stored in the file. mode SQRT_COVERAGE uses the prepared coverage
+        vectors and answers 409 until every open source has them. All open sources switch together and
+        the tile version advances. This does not turn weights on or off; the render options do.
+      operationId: selectNormalizationWeights
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [FILE, SQRT_COVERAGE] }
+      responses:
+        '200':
+          description: The mode now in use and the new tile version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '400':
+          description: Unknown mode
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: Coverage is not prepared, or no map is open
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }

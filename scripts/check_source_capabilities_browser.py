@@ -52,6 +52,17 @@ def main():
                 reason = element.get_attribute("aria-describedby")
                 assert reason and page.locator("#" + reason).inner_text().strip(), "Unavailable control needs a readable reason"
 
+        def assert_weights_disabled(expected):
+            # Weights from the file are one option of the Normalization select: unavailable when the
+            # option is disabled, or when the whole select is (identity sources have no contact weights).
+            page.wait_for_function(
+                "expected=>{const s=document.querySelector('#normalization-mode');if(!s)return false;"
+                "const o=s.querySelector('option[value=file]');return (s.disabled||o.disabled)===expected}",
+                arg=expected)
+            if expected:
+                reason = page.locator("#imported-weights-unavailable, #contact-normalization-unavailable").first
+                assert reason.inner_text().strip(), "Unavailable weights need a readable reason"
+
         try:
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")
@@ -60,13 +71,13 @@ def main():
             assert primary["units"] == "CONTACT_COUNT" and primary["contactDataState"] == "PRESENT", primary
             assert primary["importedWeightResolutions"] == [4] and primary["weightMetadataComplete"], primary
             resolution(4)
-            assert_disabled("#checkbox-normalization-cooler-weights", False)
+            assert_weights_disabled(False)
             assert_disabled("#scaling-across-zoom", False)
             values = page.evaluate("""async () => Array.from((await window.__hictBenchmark.manager().networkManager.requestManager.queryMatrixFloat32({
                 bpResolution:4,startRowPx:0,startColPx:0,endRowPx:5,endColPx:5,source:'PRIMARY',signalMode:'RAW_COUNTS'})).values)""")
             assert values == [1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11], values
             resolution(10)
-            assert_disabled("#checkbox-normalization-cooler-weights", True)
+            assert_weights_disabled(True)
             results.append({"test": "real matrix values and per-resolution imported weight availability", "pixels": len(values)})
             page.screenshot(path=str(output / "unweighted-resolution.png"))
 
@@ -80,7 +91,7 @@ def main():
                 await m.reloadTilesFromBackend();} """)
             select_visualization_source(page, "SECONDARY")
             resolution(4)
-            assert_disabled("#checkbox-normalization-cooler-weights", True)
+            assert_weights_disabled(True)
             assert_disabled("#scaling-across-zoom", True)
             assert_disabled("#scaling-across-zoom", True)
             capability = page.evaluate("window.__hictBenchmark.manager().networkManager.requestManager.sourceCapabilities.SECONDARY")
@@ -90,7 +101,7 @@ def main():
             assert [score / capability["scoreScale"] for score in scores] == [90 if row == col else 0 for row in range(5) for col in range(5)], scores
             page.screenshot(path=str(output / "identity-controls.png"))
             select_visualization_source(page, "PRIMARY")
-            assert_disabled("#checkbox-normalization-cooler-weights", False)
+            assert_weights_disabled(False)
             results.append({"test": "identity capability follows selected source without affecting primary controls"})
 
             # Attach uses a fresh window, not retained state from openFile().
@@ -106,14 +117,14 @@ def main():
 
             open_file("tiny-identity.hict.hdf5")
             assert_disabled("#scaling-across-zoom", True)
-            assert_disabled("#checkbox-normalization-cooler-weights", True)
+            assert_weights_disabled(True)
             results.append({"test": "identity remains non-contact when opened as primary"})
             open_file("combined_ind2_4DN.hict.hdf5")
             modal = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
             if modal.is_visible():
                 modal.click()
             assert_disabled("#scaling-across-zoom", False)
-            assert_disabled("#checkbox-normalization-cooler-weights", False)
+            assert_weights_disabled(False)
             legacy = page.evaluate("window.__hictBenchmark.manager().networkManager.requestManager.sourceCapabilities.PRIMARY")
             assert legacy["units"] == "UNKNOWN", legacy
             assert legacy["importedWeights"]["state"] == "UNKNOWN", legacy

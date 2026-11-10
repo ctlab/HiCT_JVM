@@ -77,8 +77,9 @@ public class MatrixQueries {
     int deltaRow = (int) (startRow - startRowIncl);
     int deltaCol = (int) (startCol - startColIncl);
 
-    final double[] rowWeights = flattenWeights(rowATUs);
-    final double[] colWeights = symmetricQuery ? rowWeights : flattenWeights(colATUs);
+    final var weightsSnapshot = this.chunkedFile.getNormalizationWeights().snapshot();
+    final double[] rowWeights = flattenWeights(rowATUs, weightsSnapshot, resolutionOrder);
+    final double[] colWeights = symmetricQuery ? rowWeights : flattenWeights(colATUs, weightsSnapshot, resolutionOrder);
 
     final double[] paddedRowWeights = new double[queryRows];
     final double[] paddedColWeights = new double[queryCols];
@@ -249,25 +250,148 @@ public class MatrixQueries {
     return new DoubleMatrix(result);
   }
 
-  private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus) {
+  /**
+   * Weights of the bins covered by {@code atus}, in query order. They come from the file's stripes, or from
+   * the computed coverage vector when the snapshot selects it. A coverage vector is indexed by the bin's
+   * position along the source axis, so the stripe's first bin is found from the cumulative stripe lengths.
+   */
+  private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus,
+                                            final @NotNull NormalizationWeights.Snapshot weights,
+                                            final int resolutionOrder) {
     final var totalLength = atus.stream().mapToInt(ATUDescriptor::getLength).sum();
     final var result = new double[totalLength];
+    final double[] coverage = weights.usesCoverage() ? weights.prepared().weightsByResolution()[resolutionOrder] : null;
+    final long[] stripeStarts = coverage == null ? null : stripeStartBins(resolutionOrder);
     var dst = 0;
     for (final var atu : atus) {
-      final var src = atu.getStripeDescriptor().bin_weights();
       final var start = atu.getStartIndexInStripeIncl();
       final var end = atu.getEndIndexInStripeExcl();
       final var len = end - start;
+      final double[] src;
+      final int base;
+      if (coverage == null) {
+        src = atu.getStripeDescriptor().bin_weights();
+        base = 0;
+      } else {
+        src = coverage;
+        base = (int) stripeStarts[atu.getStripeDescriptor().stripeId()];
+      }
       if (atu.getDirection() == ATUDirection.FORWARD) {
-        System.arraycopy(src, start, result, dst, len);
+        System.arraycopy(src, base + start, result, dst, len);
       } else {
         for (int i = 0; i < len; i++) {
-          result[dst + i] = src[end - 1 - i];
+          result[dst + i] = src[base + end - 1 - i];
         }
       }
       dst += len;
     }
     return result;
+  }
+
+  /** The weights a tile at this resolution would use for the bins of {@code atus}, in query order. */
+  public double @NotNull [] weightsFor(final @NotNull List<@NotNull ATUDescriptor> atus, final int resolutionOrder) {
+    return flattenWeights(atus, this.chunkedFile.getNormalizationWeights().snapshot(), resolutionOrder);
+  }
+
+  private final Map<Integer, long[]> stripeStartCache = new ConcurrentHashMap<>();
+
+  /** First bin of every stripe along the source axis (cumulative stripe lengths). */
+  private long @NotNull [] stripeStartBins(final int resolutionOrder) {
+    return stripeStartCache.computeIfAbsent(resolutionOrder, order -> {
+      final var resolution = this.chunkedFile.getResolutions()[order];
+      try (final var reader = ch.systemsx.cisd.hdf5.HDF5Factory.openForReading(this.chunkedFile.getHdfFilePath().toFile())) {
+        final var lengths = reader.int64().readArray(
+          ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getStripeLengthsBinsDatasetPath(resolution));
+        final var starts = new long[lengths.length + 1];
+        for (int i = 0; i < lengths.length; i++) {
+          starts[i + 1] = starts[i] + lengths[i];
+        }
+        return starts;
+      }
+    });
+  }
+
+  /** Number of bins along the source axis at this resolution (the sum of the stripe lengths). */
+  public long sourceAxisBins(final int resolutionOrder) {
+    final var starts = stripeStartBins(resolutionOrder);
+    return starts[starts.length - 1];
+  }
+
+  /**
+   * Streams every stored contact at one resolution as {@code (row, col, value)} with bins numbered along
+   * the source axis. Diagonal blocks hold the upper triangle only, so each unordered pair appears once.
+   * {@code progress} receives the fraction of block rows done.
+   */
+  public void scanStoredContacts(final @NotNull ResolutionDescriptor resolutionDescriptor,
+                                 final ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.@NotNull ContactVisitor visitor,
+                                 final @NotNull java.util.function.BooleanSupplier cancelled,
+                                 final @Nullable java.util.function.DoubleConsumer progress) {
+    final int resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final int stripeCount = this.chunkedFile.getStripeCount()[resolutionOrder];
+    final long[] starts = stripeStartBins(resolutionOrder);
+    final int denseBlockSize = this.chunkedFile.getDenseBlockSize();
+    final var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
+    HDF5FileDatasetsBundle dsBundle = null;
+    try {
+      dsBundle = pool.borrowObject();
+      final var reader = dsBundle.getReader();
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        if (cancelled.getAsBoolean()) {
+          throw new ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException();
+        }
+        final long rowOffset = ((long) rowStripe) * stripeCount;
+        final var lengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
+        final var offsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
+        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+          final long length = lengths[colStripe];
+          if (length <= 0L) {
+            continue;
+          }
+          final long offset = offsets[colStripe];
+          final long rowBase = starts[rowStripe];
+          final long colBase = starts[colStripe];
+          if (offset >= 0L) {
+            final var rows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) length, offset);
+            final var cols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) length, offset);
+            final var values = readNumericArrayBlockWithOffset(reader, dsBundle.getBlockValuesDataSet(), (int) length, offset);
+            for (int i = 0; i < values.length; i++) {
+              visitor.accept(rowBase + rows[i], colBase + cols[i], values[i]);
+            }
+          } else {
+            final var idx = new IndexMap().bind(0, -(offset + 1L)).bind(1, 0L);
+            final var block = readNumericDenseBlock(reader, dsBundle.getDenseBlockDataSet(), denseBlockSize, idx).toMatrix();
+            final boolean diagonal = rowStripe == colStripe;
+            for (int r = 0; r < block.length; r++) {
+              final var line = block[r];
+              for (int c = diagonal ? r : 0; c < line.length; c++) {
+                final double v = line[c];
+                if (v != 0.0d) {
+                  visitor.accept(rowBase + r, colBase + c, v);
+                }
+              }
+            }
+          }
+        }
+        if (progress != null && (rowStripe & 15) == 0) {
+          progress.accept((rowStripe + 1) / (double) stripeCount);
+        }
+      }
+      if (progress != null) {
+        progress.accept(1.0d);
+      }
+    } catch (final ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException e) {
+      throw e;
+    } catch (final Exception ex) {
+      throw new RuntimeException("Scanning contacts failed", ex);
+    } finally {
+      if (dsBundle != null) {
+        try {
+          pool.returnObject(dsBundle);
+        } catch (final Exception ignored) {
+          // The pool is closed together with the file.
+        }
+      }
+    }
   }
 
   // Endpoints must contribute bins in the queried coordinate system. Short

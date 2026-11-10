@@ -990,3 +990,32 @@ an all-invalid and a comment-only file, base 4 accepted and 1, -3 refused, base 
 as typed, range 2..8 accepted and minimum 9 refused) all passed. Not done: VCF and GFF/GTF
 readers still skip short lines without counting them, and BigWig/BAM inputs are validated by
 their libraries only. A `.bedgraph` extension is not accepted yet (only `.bed`).
+
+## Square-root coverage normalization (W10: item 4)
+
+Reference pinned to Juicebox 3c4936c0 (`NormalizationCalculations.computeVC` and
+`NormalizationVectorUpdater.buildVCOrVCSQRT`), run by `scripts/normalization/GoldenVcSqrt.java`
+on six matrices (small, empty bin, diagonal only, off-diagonal only, all zero, random 40 bins
+with empty bins) to make `src/test/resources/normalization/vc_sqrt_golden.json`. Evidence:
+`CoverageNormalizerTest` (7 tests, tolerance 2e-6 relative because the reference accumulates in
+32-bit floats), `CoverageWeightsTest` (4 tests on a real converted HDF5: coverage equals the
+recipe applied to the full symmetric matrix at every resolution, weights follow the bins through
+a whole-assembly reversal, the file's weights are untouched, oversize and cancel leave nothing
+published), and `scripts/normalization/check_vc_sqrt_parity.py`, which reads the contacts directly
+from an `.hict.hdf5` and compares them with the reference: 11,145 bins, 10,969,252 contacts,
+10,904 valid bins, worst |weight x reference divisor - 1| = 1.5e-7, no weight where the reference
+has none. Preparing all ten resolutions of that 278,614-bin map takes about 16 s.
+
+Domain decision: one vector for the whole opened map (not per chromosome), keyed to source bins,
+so it is unchanged by reversal, move, regroup and (apart from the removed bin) split. Contigs
+hidden at a resolution still contribute their contacts, which matters when comparing with a
+visible-only matrix. Browser gate (18 checks): the control and its three options, progress with
+Cancel, cancel publishes nothing and the control keeps showing None, full path in 15 s, values
+change, switching between prepared modes is instant and exact, None restores the original
+values, the mode survives a reload and re-attach, a saved session records the mode and the
+restore recomputes it, and the file-weights NaN question is not asked while coverage is used.
+Not done: a second source attached after coverage was chosen must be prepared again (the sidebar
+says so and offers a button, but this was not exercised in a browser); the identity and presence
+sources are disabled through the existing capability flag but not run here;
+`check_source_capabilities_browser.py` was updated to the new control but needs its fixtures and
+was not run; the export path was not compared with and without coverage.

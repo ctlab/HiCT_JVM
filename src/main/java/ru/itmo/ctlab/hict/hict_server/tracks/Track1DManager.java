@@ -4007,39 +4007,12 @@ public class Track1DManager implements AutoCloseable {
       final double[] maxValues = new double[bucketCount];
       final long[] counts = new long[bucketCount];
 
+      // The same weights a tile would apply: the file's, or the computed coverage when that is selected.
+      final var queryWeights = chunkedFile.matrixQueries().weightsFor(atus, resolutionOrder);
       long pxCursor = queryStartPx;
-      for (final var atu : atus) {
-        final var weights = atu.getStripeDescriptor().bin_weights();
-        final var start = atu.getStartIndexInStripeIncl();
-        final var end = atu.getEndIndexInStripeExcl();
-        if (start < 0 || end <= start || end > weights.length) {
-          continue;
-        }
-        if (atu.getDirection() == ATUDirection.FORWARD) {
-          for (int i = start; i < end; i++) {
-            accumulateCoolerWeightValue(
-              pxCursor,
-              weights[i],
-              queryStartPx,
-              bucketSpan,
-              maxValues,
-              counts
-            );
-            pxCursor++;
-          }
-        } else {
-          for (int i = end - 1; i >= start; i--) {
-            accumulateCoolerWeightValue(
-              pxCursor,
-              weights[i],
-              queryStartPx,
-              bucketSpan,
-              maxValues,
-              counts
-            );
-            pxCursor++;
-          }
-        }
+      for (final double weight : queryWeights) {
+        accumulateCoolerWeightValue(pxCursor, weight, queryStartPx, bucketSpan, maxValues, counts);
+        pxCursor++;
       }
       return finalizeCoolerWeightBins(
         queryStartPx,

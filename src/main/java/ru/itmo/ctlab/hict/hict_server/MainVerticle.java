@@ -409,6 +409,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new InfoHandlersHolder(vertx, requestStatistics));
     handlersHolders.add(new ApiDocsHandlersHolder());
     handlersHolders.add(new TrackHandlersHolder(vertx));
+    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.normalization.NormalizationHandlersHolder(vertx));
 
     router.route().failureHandler(ctx -> {
       final var expected = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException httpError

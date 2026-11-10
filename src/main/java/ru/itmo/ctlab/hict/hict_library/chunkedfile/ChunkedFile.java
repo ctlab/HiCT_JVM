@@ -98,6 +98,8 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Long, String> scaffoldNameOverrides = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
   private final @NotNull Object nameOverrideLock = new Object();
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
+  /** Which per-bin weights are applied when a tile uses weights: the file's own, or computed coverage. */
+  private final @NotNull NormalizationWeights normalizationWeights = new NormalizationWeights();
   private final @NotNull FASTAProcessor fastaProcessor;
   private final @NotNull AtomicLong coolerWeightsNaNCount = new AtomicLong(0L);
   @Getter
