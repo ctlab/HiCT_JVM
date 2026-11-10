@@ -597,8 +597,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
         final var processedWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
         final var processed = processedWrapper == null ? dataDirectory.resolve("processed") : processedWrapper.getPath();
-        final var decoded = SessionSnapshotDecoder.decode(document);
-        final var saved = decoded.snapshot();
+        final ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO saved;
+        try {
+          saved = SessionSnapshotDecoder.decode(document).snapshot();
+        } catch (IllegalArgumentException invalid) {
+          throw new io.vertx.ext.web.handler.HttpException(400, invalid.getMessage());
+        }
         // Everything fallible happens in the candidate. A failure closes it and leaves the live session untouched.
         final SessionRestoreCandidate owned;
         final io.vertx.core.json.JsonObject openResponse;
@@ -611,6 +615,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
             : analyzeSecondaryCompatibility(candidate.primary(), candidate.secondary());
           statistics = TileStatisticHolder.newDefaultStatisticHolder(candidate.primary().getResolutions().length);
           owned = candidate.detach();
+        } catch (IllegalArgumentException invalid) {
+          throw new io.vertx.ext.web.handler.HttpException(400, invalid.getMessage());
+        } catch (java.nio.file.NoSuchFileException missing) {
+          throw new io.vertx.ext.web.handler.HttpException(409, "A file used by the session is missing: " + missing.getFile());
+        } catch (java.io.IOException changed) {
+          // Identity mismatches name the file and the reason, for example a changed size.
+          throw new io.vertx.ext.web.handler.HttpException(409, changed.getMessage());
         }
         final var workspace = WorkspaceStateStore.restored(saved.workspace() == null ? null : saved.workspace().getJsonObject("workspaceState"));
         final var primaryName = saved.primary().getString("filename");

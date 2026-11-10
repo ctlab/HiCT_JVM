@@ -131,7 +131,7 @@ class SessionRestoreCandidateTest {
     }
   }
 
-  @Test void rejectsMissingFingerprintsAndEscapingSymlinks() throws Exception {
+  @Test void rejectsMissingFingerprintsAndEscapingNamesButFollowsLinksInsideDataDir() throws Exception {
     var p = ReinforcementHdf5Fixture.create(directory, "primary", List.of(4L, 10L));
     var s = ReinforcementHdf5Fixture.create(directory, "secondary", List.of(4L, 10L));
     try (var primary = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(p, 1, 2));
@@ -145,11 +145,18 @@ class SessionRestoreCandidateTest {
       saved.primary().put("filename", "../outside.hict.hdf5");
       assertThrows(IllegalArgumentException.class,
         () -> SessionRestoreCandidate.prepare(directory, directory.resolve("processed"), saved, tracks.listTracks()));
-      // A nested data root must not use a symlink to its parent's otherwise valid map.
+      // A symlink placed inside DATA_DIR is followed, as /open does. Names that leave DATA_DIR are still refused.
       var nested = Files.createDirectory(directory.resolve("nested"));
-      try { Files.createSymbolicLink(nested.resolve("escape.hict.hdf5"), p); }
+      try {
+        Files.createSymbolicLink(nested.resolve("linked.hict.hdf5"), p);
+        Files.createSymbolicLink(nested.resolve("secondary.hict.hdf5"), s);
+      }
       catch (UnsupportedOperationException | java.nio.file.FileSystemException unavailable) { return; }
-      saved.primary().put("filename", "escape.hict.hdf5");
+      saved.primary().put("filename", "linked.hict.hdf5");
+      try (var candidate = SessionRestoreCandidate.prepare(nested, nested.resolve("processed"), saved, tracks.listTracks())) {
+        org.junit.jupiter.api.Assertions.assertNotNull(candidate.primary());
+      }
+      saved.primary().put("filename", "../primary.hict.hdf5");
       assertThrows(IllegalArgumentException.class,
         () -> SessionRestoreCandidate.prepare(nested, nested.resolve("processed"), saved, tracks.listTracks()));
     }

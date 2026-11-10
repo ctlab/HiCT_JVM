@@ -828,3 +828,27 @@ sessions valid. A changed file is refused with its name and the reason (size
 change or content difference). Edits that avoid all sampled regions of a large
 file are not detected by the default mode, so use `fullFingerprints` where that
 matters. Restore reads the algorithm stored in the snapshot.
+
+## Complete session Save and Open (W1-C)
+
+Save writes a v3 document (`format hict-session`, `version 3`): the server
+snapshot (both edited assemblies, linked FASTA, tracks, processing graph,
+visualization options, file identities) plus the client state (a fresh workspace
+capture with view, scopes, styles and track visibility, saved locations and
+presets). Open validates the envelope, restores through `/session/restore`, and
+replaces the displayed map only after the server accepted everything. Undo
+history is not saved, and the Save confirmation says so. Versions 1 and 2 keep the
+legacy path and its notice.
+
+Restore failures answer 400 for a malformed snapshot and 409 for a changed or
+missing file, with the file name and reason. Names must stay inside DATA_DIR as
+for `/open`, and a symlink placed inside DATA_DIR is followed (the earlier rule
+that the real path must also stay inside DATA_DIR rejected the common setup of
+linking maps stored elsewhere).
+
+Real Chromium gate (25 checks, zero failures): two edits through the context menu,
+a BED and a weights track, a x7 graph, a contig row scope and a zoomed view; Save
+through the File menu; Close; Open session. AGP hash, track list, graph, visualization
+options, scopes, view and track styles are identical, and sidebar swatches match.
+A session with a changed file or without file identities leaves the open assembly
+untouched.

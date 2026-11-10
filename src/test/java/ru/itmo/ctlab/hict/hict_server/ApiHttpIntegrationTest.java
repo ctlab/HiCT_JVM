@@ -521,7 +521,7 @@ class ApiHttpIntegrationTest {
 
     Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNACGGGG\n");
     var refused = post("/session/restore", saved.encode());
-    assertTrue(refused.statusCode() >= 400);
+    assertEquals(409, refused.statusCode());
     assertTrue(refused.body().contains("tiny.fa") && refused.body().contains("size changed"), refused.body());
     org.junit.jupiter.api.Assertions.assertSame(live, ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile());
     Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
@@ -530,13 +530,15 @@ class ApiHttpIntegrationTest {
 
     var tampered = saved.copy();
     tampered.getJsonObject("primary").getJsonObject("fileFingerprint").put("sha256", "0".repeat(64));
-    assertTrue(post("/session/restore", tampered.encode()).statusCode() >= 400);
+    assertEquals(409, post("/session/restore", tampered.encode()).statusCode());
     var missing = saved.copy();
     missing.getJsonObject("primary").put("filename", "absent.hict.hdf5");
-    assertTrue(post("/session/restore", missing.encode()).statusCode() >= 400);
+    var missingResponse = post("/session/restore", missing.encode());
+    assertEquals(409, missingResponse.statusCode());
+    assertTrue(missingResponse.body().contains("absent.hict.hdf5"), missingResponse.body());
     var malformed = saved.copy();
     malformed.put("assemblySource", "NEITHER");
-    assertTrue(post("/session/restore", malformed.encode()).statusCode() >= 400);
+    assertEquals(400, post("/session/restore", malformed.encode()).statusCode());
 
     org.junit.jupiter.api.Assertions.assertSame(live, ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile());
     assertEquals(before, new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getString("agpSha256"));
@@ -724,10 +726,12 @@ class ApiHttpIntegrationTest {
       final var message = ctx.failure() != null && ctx.failure().getMessage() != null
         ? ctx.failure().getMessage()
         : "Request failed";
+      final int status = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getStatusCode() : 500;
+      final var payload = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getPayload() : null;
       ctx.response()
         .putHeader("content-type", "application/json")
-        .setStatusCode(500)
-        .end("{\"error\":\"" + message.replace("\"", "\\\"") + "\"}");
+        .setStatusCode(status)
+        .end("{\"error\":\"" + (payload != null ? payload : message).replace("\"", "\\\"") + "\"}");
     });
 
     new InfoHandlersHolder(vertx).addHandlersToRouter(router);

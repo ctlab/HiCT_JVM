@@ -143,9 +143,11 @@ public final class SessionRestoreCandidate implements AutoCloseable {
     if (name == null || name.isBlank()) throw new IllegalArgumentException(field + "." + filenameKey + " is required");
     Path lexical = root.resolve(name).normalize();
     if (!lexical.startsWith(root)) throw new IllegalArgumentException(field + "." + filenameKey + " is outside DATA_DIR");
+    // Same confinement as /open and /link_fasta: the name must stay inside DATA_DIR, while a symlink
+    // placed there by the user (a common way to expose maps stored elsewhere) is followed.
     Path real = lexical.toRealPath();
-    if (!real.startsWith(root) || !Files.isRegularFile(real))
-      throw new IllegalArgumentException(field + "." + filenameKey + " must resolve to a regular file within DATA_DIR");
+    if (!Files.isRegularFile(real))
+      throw new IllegalArgumentException(field + "." + filenameKey + " must resolve to a regular file");
     JsonObject json = object.getJsonObject(fingerprintKey);
     String fingerprintField = field + "." + fingerprintKey;
     if (json == null || !(json.getValue("algorithm") instanceof String algorithm) || !SessionFileFingerprint.supports(algorithm)
