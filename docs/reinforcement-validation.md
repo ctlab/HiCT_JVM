@@ -1094,3 +1094,25 @@ A heap snapshot diff shows three vector layers (borders), their features, select
 controls per cycle still retained by something outside the map, which was not found in this pass. Backend
 executors and file handles were not examined. Gate for the plateau (heap, nodes and listeners flat after warmup)
 is therefore not met.
+
+## A readable map after every opening path (U1)
+
+On `combined_ind2_4DN`, turning off Cooler weights previously left a multiplication by
+`__builtin_cooler_weights__` in the pipeline and showed an empty map. The weight selection now
+publishes options together with the matching pipeline. The opening threshold uses the 99.5th
+percentile of the visible tiles for the active signal expression, with a bounded matrix query
+when tile metadata is unavailable. Explicitly replacing excluded weights with 1 uses the 90th
+percentile to keep the balanced signal visible when unweighted counts dominate the upper tail.
+
+Show O/E maps reciprocal ratios to opposite colors with a neutral midpoint at 1. The default
+ratio range is 0.5 to 2. Observed restores its previous range when selected again.
+
+The browser gate `scripts/check_opening_readable_browser.py` covers Manual Open, Open Wizard,
+Attach, normalization and excluded-bin choices, four and eight diagonal zoom steps, and the O/E
+round trip on `mat18_100k`, `combined_ind2_4DN` and `arabiensis.0`. It requires at least half of
+the visible diagonal samples to differ from the background, checks pipeline and sidebar
+agreement, and looks for both ends of the O/E palette in the rendered image.
+
+The fat JAR and WebUI browser gate passed 148 checks with zero page or console errors.
+The full WebUI build, JVM tests and changed-file lint also passed. The zoom checks passed
+at both depths on all three fixtures with the opening threshold.

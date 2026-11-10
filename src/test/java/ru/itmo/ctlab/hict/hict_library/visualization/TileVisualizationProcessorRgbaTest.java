@@ -8,6 +8,20 @@ import java.io.ByteArrayOutputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TileVisualizationProcessorRgbaTest {
+  @Test void observedOverExpectedUsesReciprocalBoundsAndANeutralMidpoint() throws Exception {
+    var bounds = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
+      32, java.awt.Color.WHITE, java.awt.Color.BLACK, 0.5, 2.0);
+    double[][] ratios = {{0, 0.5, Math.sqrt(0.5), 1, Math.sqrt(2), 2, 4}};
+    var tile = image(TileVisualizationProcessor.mapObservedOverExpectedRgba(ratios, bounds), 7, 1);
+    assertEquals(0xff2166ac, tile.getRGB(0, 0));
+    assertEquals(0xff2166ac, tile.getRGB(1, 0));
+    assertEquals(0xffffffff, tile.getRGB(3, 0));
+    assertEquals(0xffb2182b, tile.getRGB(5, 0));
+    assertEquals(0xffb2182b, tile.getRGB(6, 0));
+    assertEquals(144, (tile.getRGB(2, 0) >> 16) & 0xff, 1);
+    assertEquals(140, (tile.getRGB(4, 0) >> 8) & 0xff, 1);
+  }
+
   @Test void javaFallbackPreservesEveryColormapPixelIncludingNonfiniteAndAlpha() throws Exception {
     var map = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
       32, new java.awt.Color(16,32,64,0), new java.awt.Color(240,128,192,175), -2, 10);

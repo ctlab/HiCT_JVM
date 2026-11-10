@@ -90,6 +90,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
       final @NotNull @NonNull var request = VisualizationOptionsDTO.fromJSONObject(requestJSON);
       final var preserveRenderPipeline = requestJSON.getBoolean("preserveRenderPipeline", false);
+      final var requestedPipeline = requestJSON.getJsonObject("renderPipeline");
       scheduler.submit(
         ctx,
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
@@ -98,11 +99,20 @@ public class TileHandlersHolder extends HandlersHolder {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           log.debug("Got map");
           final var optionsEntity = request.toEntity();
+          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile"));
+          final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
+          if (chunkedFileWrapper == null || stats == null) {
+            throw new IllegalStateException("A map must be open before applying visualization options");
+          }
+          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          final var explicitPipeline = requestedPipeline == null ? null : RenderPipelineConfig.fromJson(requestedPipeline);
           map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(optionsEntity));
           if (optionsEntity.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
             clearExpectedProfileCache(map);
           }
-          if (!preserveRenderPipeline) {
+          if (explicitPipeline != null) {
+            map.put(RenderPipelineConfig.LOCAL_MAP_KEY, new ShareableWrappers.RenderPipelineConfigWrapper(explicitPipeline));
+          } else if (!preserveRenderPipeline) {
             final var previousPipelineWrapper =
               (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
             final var previousPipeline =
@@ -116,17 +126,6 @@ public class TileHandlersHolder extends HandlersHolder {
               RenderPipelineConfig.LOCAL_MAP_KEY,
               new ShareableWrappers.RenderPipelineConfigWrapper(syncedPipeline)
             );
-          }
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-          if (chunkedFileWrapper == null) {
-            throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
-          }
-          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-          log.debug("Got ChunkedFile from map");
-
-          final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
-          if (stats == null) {
-            throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
           }
           map.put("TileStatisticHolder", TileStatisticHolder.resetRangesKeepingVersion(stats, chunkedFile.getResolutions().length));
           scheduler.bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
