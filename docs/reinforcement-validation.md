@@ -852,3 +852,20 @@ through the File menu; Close; Open session. AGP hash, track list, graph, visuali
 options, scopes, view and track styles are identical, and sidebar swatches match.
 A session with a changed file or without file identities leaves the open assembly
 untouched.
+
+## Unsaved-edit prompts (W1-D)
+
+An assembly is unsaved when the edit journal's current state differs from the state
+at the last open, session restore or completed Save session. Undoing back to that
+state counts as saved. Attaching or detaching a source starts a new journal, which
+is not an edit, so a clean assembly stays clean and an edited one stays unsaved.
+Close, Manual Open, the Open Wizard and Open session ask Save session, Discard edits
+or Cancel (Esc cancels). A failed save keeps the dialog open and never continues.
+`beforeunload` warns while unsaved. Attach does not ask: it joins the same server
+session, so nothing is discarded. Edits made by another window count as unsaved too.
+
+Real Chromium gate (34 checks, zero failures): clean close without a prompt, dialog
+semantics and focus, Esc, undo back to clean, a forced failed save, save then
+continue into Open session, discard, and source attach/detach. It also found and
+fixed a defect: right-click menus stopped working after the map manager was replaced
+without an unmount (opening another map or restoring a session).
