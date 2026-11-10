@@ -515,6 +515,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var tracksValue = request == null ? Boolean.FALSE : request.getValue("verifyTrackDefinitions", Boolean.FALSE);
         if (!(tracksValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "verifyTrackDefinitions must be a boolean");
         final boolean verifyTracks = (Boolean) tracksValue;
+        final var visualization = (ShareableWrappers.SimpleVisualizationOptionsWrapper) map.get("visualizationOptions");
+        if (visualization == null) throw new IllegalStateException("Visualization options are unavailable");
         final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify, fingerprintFiles, verifyTracks,
           ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
             String.valueOf(map.getOrDefault("openedFilename", "")),
@@ -526,7 +528,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
           pipeline == null ? RenderPipelineConfig.disabled().toJson() : pipeline.getRenderPipelineConfig().toJson(),
           new io.vertx.core.json.JsonArray(tracks == null ? java.util.List.of() : tracks.getTrack1DManager().listTracks()
             .stream().map(io.vertx.core.json.JsonObject::mapFrom).toList()),
-          workspace == null ? new io.vertx.core.json.JsonObject() : workspace.snapshot());
+          workspace == null ? new io.vertx.core.json.JsonObject() : workspace.snapshot(),
+          SessionVisualizationCodec.encode(visualization.getSimpleVisualizationOptions()));
         if (verify && !(fingerprintFiles && verifyTracks)) {
           verifySessionAssembly(primary.getChunkedFile(), snapshot.primary());
           if (secondary != null) verifySessionAssembly(secondary.getChunkedFile(), snapshot.secondary());

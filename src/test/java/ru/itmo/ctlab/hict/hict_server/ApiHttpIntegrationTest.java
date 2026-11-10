@@ -394,9 +394,18 @@ class ApiHttpIntegrationTest {
     var config = ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.fromJson(graph);
     map.put(ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.LOCAL_MAP_KEY,
       new ShareableWrappers.RenderPipelineConfigWrapper(config));
+    assertTrue(post("/session/snapshot", "{}").statusCode() >= 400);
+    var visualization = new SimpleVisualizationOptions(2, 3, true, false, true,
+      new SimpleLinearGradient(32, new java.awt.Color(10, 20, 30, 2),
+        new java.awt.Color(200, 150, 100, 128), -5, 21));
+    map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(visualization));
     var response = post("/session/snapshot", "{\"verifyAssemblyRoundTrip\":true}");
     assertEquals(200, response.statusCode(), response.body());
     var snapshot = new JsonObject(response.body());
+    // The encoder holds Float values while the HTTP body parses back as Double, so compare serialized forms.
+    assertEquals(new JsonObject(ru.itmo.ctlab.hict.hict_server.handlers.fileop.SessionVisualizationCodec
+        .encode(visualization).encode()),
+      snapshot.getJsonObject("visualizationOptions"));
     assertEquals(1, snapshot.getInteger("snapshotVersion"));
     assertTrue(snapshot.getBoolean("assemblyVerified"));
     assertEquals(graph, snapshot.getJsonObject("renderPipeline"));

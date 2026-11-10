@@ -30,7 +30,8 @@ class SessionSnapshotDecoderTest {
     return new JsonObject().put("snapshotVersion", 1).put("assemblyVerified", false)
       .put("filesFingerprinted", false).put("tracksVerified", false).put("primary", source)
       .put("secondary", null).put("assemblySource", "PRIMARY").put("tracks", new JsonArray().add(track))
-      .put("renderPipeline", RenderPipelineConfig.disabled().toJson()).put("workspace", new JsonObject());
+      .put("renderPipeline", RenderPipelineConfig.disabled().toJson()).put("workspace", new JsonObject())
+      .put("visualizationOptions", SessionVisualizationCodecTest.sample());
   }
 
   private static JsonObject contig(JsonObject json) {

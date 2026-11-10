@@ -25,6 +25,7 @@ public final class SessionRestoreCandidate implements AutoCloseable {
   private ChunkedFile secondary;
   private Track1DManager tracks;
   private RenderPipelineConfig pipeline;
+  private ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions visualization;
   private Path primaryFasta;
   private Path secondaryFasta;
 
@@ -34,6 +35,7 @@ public final class SessionRestoreCandidate implements AutoCloseable {
   public ChunkedFile secondary() { return secondary; }
   public Track1DManager tracks() { return tracks; }
   public RenderPipelineConfig pipeline() { return pipeline; }
+  public ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions visualization() { return visualization; }
   public Path primaryFasta() { return primaryFasta; }
   public Path secondaryFasta() { return secondaryFasta; }
 
@@ -52,6 +54,7 @@ public final class SessionRestoreCandidate implements AutoCloseable {
       throw new IllegalArgumentException("tracks do not match the saved definitions");
     final var ids = definitions.stream().map(Track1DManager.TrackSummary::getTrackId).collect(Collectors.toSet());
     SessionGraphValidator.validate(saved.renderPipeline(), ids);
+    var visualization = SessionVisualizationCodec.decode(saved.visualizationOptions());
     final var root = dataDirectory.toRealPath();
     final var resources = new ArrayList<Resource>();
     final var primaryPath = resource(root, saved.primary(), "filename", "fileFingerprint", "primary", resources);
@@ -96,6 +99,7 @@ public final class SessionRestoreCandidate implements AutoCloseable {
       }
       if (secondaryFasta != null) candidate.secondary.getFastaProcessor().analyzeLinkCandidate(secondaryFasta);
       candidate.pipeline = RenderPipelineConfig.fromJson(saved.renderPipeline());
+      candidate.visualization = visualization;
       // Readers/layout preparation may take time. Reject content changed during that window.
       for (var resource : resources) resource.verify();
       return candidate;

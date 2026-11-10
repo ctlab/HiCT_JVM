@@ -32,7 +32,7 @@ class SessionRestoreCandidateTest {
       summaries.add(json);
     }
     return new SessionSnapshotDTO(1, true, true, true, source(primary), source(secondary),
-      "PRIMARY", RenderPipelineConfig.disabled().toJson(), summaries, new JsonObject());
+      "PRIMARY", RenderPipelineConfig.disabled().toJson(), summaries, new JsonObject(), SessionVisualizationCodecTest.sample());
   }
 
   @Test void preparesTwoEditedSourcesTracksAndFastaWithoutChangingLiveSession() throws Exception {
@@ -59,6 +59,7 @@ class SessionRestoreCandidateTest {
           candidate.tracks().listTracks().stream().map(JsonObject::mapFrom).toList());
         assertEquals(fasta.toRealPath(), candidate.primaryFasta());
         assertEquals(saved.renderPipeline(), candidate.pipeline().toJson());
+        assertEquals(saved.visualizationOptions(), SessionVisualizationCodec.encode(candidate.visualization()));
         assertEquals(before, saved.primary().encode());
       }
       candidate.close();
@@ -116,7 +117,7 @@ class SessionRestoreCandidateTest {
     var path = ReinforcementHdf5Fixture.create(directory, "primary", List.of(4L, 10L));
     try (var live = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(path, 1, 2))) {
       var saved = new SessionSnapshotDTO(1, true, true, true, source(live), null,
-        "PRIMARY", RenderPipelineConfig.disabled().toJson(), new JsonArray(), new JsonObject());
+        "PRIMARY", RenderPipelineConfig.disabled().toJson(), new JsonArray(), new JsonObject(), SessionVisualizationCodecTest.sample());
       try (var candidate = SessionRestoreCandidate.prepare(directory, directory.resolve("processed"), saved, List.of())) {
         assertNotNull(candidate.primary());
         assertNull(candidate.secondary());
@@ -124,7 +125,7 @@ class SessionRestoreCandidateTest {
         assertTrue(candidate.tracks().listTracks().isEmpty());
       }
       var missing = new SessionSnapshotDTO(1, true, true, true, saved.primary(), null,
-        "SECONDARY", saved.renderPipeline(), saved.tracks(), saved.workspace());
+        "SECONDARY", saved.renderPipeline(), saved.tracks(), saved.workspace(), saved.visualizationOptions());
       assertThrows(IllegalArgumentException.class,
         () -> SessionRestoreCandidate.prepare(directory, directory.resolve("processed"), missing, List.of()));
     }

@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 /** Server capture used to construct a portable session, not itself a saved session document. */
 public record SessionSnapshotDTO(int snapshotVersion, boolean assemblyVerified, boolean filesFingerprinted, boolean tracksVerified, JsonObject primary, JsonObject secondary,
                                  String assemblySource, JsonObject renderPipeline, JsonArray tracks,
-                                 JsonObject workspace) {
+                                 JsonObject workspace, JsonObject visualizationOptions) {
   public static JsonObject source(ChunkedFile file, String filename, String fastaFilename) {
     var agp = file.getAgpProcessor().getAssemblyAGPRecords().stream()
       .map(Object::toString).collect(Collectors.joining("\n", "", "\n"));

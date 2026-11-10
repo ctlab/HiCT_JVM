@@ -77,11 +77,13 @@ public final class SessionSnapshotDecoder {
     }
     var graph = object(root, "renderPipeline", "snapshot");
     SessionGraphValidator.validate(graph, ids);
+    var visualization = object(root, "visualizationOptions", "snapshot");
+    SessionVisualizationCodec.decode(visualization);
     var workspace = object(root, "workspace", "snapshot");
     workspace(workspace, active.equals("SECONDARY") ? secondary : primary);
     return new Decoded(new SessionSnapshotDTO(1,
       bool(root, "assemblyVerified", "snapshot"), bool(root, "filesFingerprinted", "snapshot"),
-      bool(root, "tracksVerified", "snapshot"), primary, secondary, active, graph, trackArray, workspace),
+      bool(root, "tracksVerified", "snapshot"), primary, secondary, active, graph, trackArray, workspace, visualization),
       List.copyOf(definitions));
   }
 

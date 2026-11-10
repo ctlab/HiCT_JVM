@@ -52,6 +52,18 @@ def main():
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
             attach()
             page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
+            visualization = {
+                'preLogBase': -1, 'postLogBase': 2, 'applyCoolerWeights': True,
+                'resolutionScaling': True, 'resolutionLinearScaling': False,
+                'autoThresholdEnabled': False, 'autoThresholdQuantile': .975,
+                'signalDisplayMode': 'OBSERVED', 'coolerWeightsNaNPolicy': 'REPLACE_NANS_WITH_ZERO',
+                'colormap': {'colormapType': 'SimpleLinearGradient',
+                             'startColorRGBAString': 'rgba(10,20,30,0.5)',
+                             'endColorRGBAString': 'rgba(200,150,100,1)',
+                             'minSignal': -5, 'maxSignal': 21},
+                'preserveRenderPipeline': True,
+            }
+            post('/set_visualization_options', visualization)
             with page.expect_response(lambda response: response.url.endswith('/workspace/state') and response.status == 200):
                 page.evaluate('''()=>{const view=window.__hictBenchmark.manager().getView();
                     view.setResolution(view.getResolution()/2);}''')
@@ -61,6 +73,17 @@ def main():
             assert first['filesFingerprinted'] is True
             assert first['tracksVerified'] is True
             assert first['renderPipeline'] == graph
+            saved_visualization = first['visualizationOptions']
+            for key in ('preLogBase', 'postLogBase', 'applyCoolerWeights', 'resolutionScaling',
+                        'resolutionLinearScaling', 'autoThresholdEnabled', 'autoThresholdQuantile',
+                        'signalDisplayMode', 'coolerWeightsNaNPolicy'):
+                assert saved_visualization[key] == visualization[key], (key, saved_visualization)
+            palette = saved_visualization['colormap']
+            assert palette['type'] == 'SimpleLinearGradient' and palette['bitDepth'] == 32
+            assert palette['minSignal'] == -5 and palette['maxSignal'] == 21
+            assert all(abs(a-b/255) < 1e-7 for a, b in zip(palette['startColor'], [10, 20, 30, 127]))
+            assert all(abs(a-b/255) < 1e-7 for a, b in zip(palette['endColor'], [200, 150, 100, 255]))
+            result['checks'].append('capture retains fallback palette RGBA components, log/scaling flags and NaN policy alongside the exact graph')
             assert first['primary']['filename'] == 'tiny-primary.hict.hdf5'
             assert first['primary']['fastaFilename'] == 'tiny.fa'
             assert first['secondary']['filename'] == 'old-secondary.hict.hdf5'
@@ -153,6 +176,7 @@ def main():
             second = capture()
             assert second['primary']['assemblyInfo']['contigDescriptors'][0]['contigDirection'] == 1
             assert second['primary']['agpSha256'] != first['primary']['agpSha256']
+            assert second['visualizationOptions'] == first['visualizationOptions']
             result['checks'].append('fresh Attach captures the new assembly hash and strand')
             unverified = dict(second)
             unverified.pop('assemblyVerified')
