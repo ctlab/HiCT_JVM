@@ -415,3 +415,39 @@ changed-file ESLint (no file warnings/errors), and API DTO/source-capability che
 passed. ESLint still emits its existing directive-schema resolver notices, and the
 build reports its existing bundle-size warning. W1 session v3, dirty-state prompts,
 complete stale-response handling and concurrent-reader publication remain open.
+
+## W1 fourth increment: reject malformed session containers before mutation
+
+`SessionDocument.ts` now validates legacy imports before file listing, filename
+resolution or opening. Only explicit versions 1 and 2 are supported at this stage;
+missing and future versions fail with a field-specific message. Limits are 8 MiB
+(measured as file bytes before reading and UTF-8 bytes in the parser), 32 nesting
+levels and 100,000 visited values. Non-finite JSON numeric results and reserved
+prototype property names are rejected. Validation covers filename/background
+string types, object containers, finite two-coordinate views, positive resolution,
+bookmark coordinates and IDs, preset IDs/names, and axis visibility ID arrays.
+
+The UI explains legacy imports cannot restore the edited assembly, full processing
+graph or undo history. This is a compatibility notice, not complete v3 migration.
+Nested visualization/style/action semantics, graph grammar, cross-references,
+fingerprints, full v3 save/restore, and backend-stage transactional restoration
+remain outstanding. In particular a well-formed legacy document can still fail
+later while opening referenced FASTA/AGP; this increment does not certify the W1
+atomic-session gate.
+
+Evidence: `/tmp/hict-w1-session-validation/browser-final/` plus
+`/tmp/hict-session-*.log`. Eight actual file-chooser uploads (future version, null,
+missing version, short center, zero resolution, wrong filename type, malformed
+bookmark and visibility list) preserved manager identity, exact reversed matrix,
+contig strand, view center/resolution and edit journal. No replacement/mutation
+requests or browser exceptions were recorded. A newly downloaded v2 settings file
+then restored successfully with the legacy notice. An initial extended-browser
+harness run failed because Python Playwright has `remove_listener`, not
+`remove_all_listeners`; the harness was corrected and the complete run passed.
+
+`node scripts/check-session-documents.mjs` covers valid v1/v2 and malformed fields,
+non-finite numbers, size/depth/value bounds and reserved keys. WebUI build and API
+DTO regressions passed. Changed-file ESLint reports only the two existing `any`
+warnings in MainUI and existing resolver notices. No Java runtime code changed;
+the browser used the previously validated immutable 1.0.223 development JAR with
+the newly built external WebUI. Packaged release qualification remains W16 work.
