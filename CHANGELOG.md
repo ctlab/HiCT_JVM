@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rulers place round base-pair ticks at their true map positions and show contig and scaffold bands. Break marks indicate hidden sequence, and letter zoom shows complete base-pair coordinates.
+
 - Open map goes straight to the file picker. Double-click a dataset or press Enter on its name. The options wizard skips conversion for directly openable datasets and skips track precompute when no tracks are selected.
 - Map controls are disabled until a map opens. Context menus stay within the window, presets use a dropdown, the information overlay updates as the view changes, and dialogs keep keyboard focus inside.
 

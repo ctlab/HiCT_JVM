@@ -1148,3 +1148,20 @@ passed 51 checks on that fixture, including the wizard, Attach and the signal co
 All 18 menu surfaces passed, including confirmation that the pipeline editor shows the
 enabled state set on the server. The WebUI build passed and ESLint reported zero errors
 on the changed files.
+A subsequent wheel-zoom check on `combined_ind2_4DN` changed the displayed bin resolution
+from 250,000 to 100,000 while the pointer stayed still.
+
+## Rulers at assembly coordinates (U4)
+
+Tick intervals use the 1–2–5 series. Each tick projects through the map's fractional
+base-pair coordinate mapping inside a visible contig. Contig and scaffold modes restart
+at the entity boundary. Narrow contigs share a band segment, and nearby break marks
+combine their hidden lengths and counts in the tooltip.
+
+`check-ruler-ticks.mjs`, included in the WebUI viewport suite, passed against the
+production coordinate holder for hidden spans, reversed and split components, scopes,
+and one-bin contigs. Chromium captures verified whole-map and mid-zoom rulers on the
+7,790-contig `AGWG.draft` map, and rulers after Reverse, Split and at FASTA letter zoom
+on `tiny-primary`. At letter zoom the PNG was 1035×791 pixels and the SVG viewport was
+1034.40625×791. The SVG contained both ruler units, entity names and sequence letters.
+The browser reported zero page errors, and the full WebUI build passed.
