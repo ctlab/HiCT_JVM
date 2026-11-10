@@ -1042,3 +1042,23 @@ and the chip reads Assembly. Not done: cancel of a long read was not exercised i
 unit-tested); the opening wizard has no FASTA-only path; matrix-dependent sidebar sections are only
 disabled and explained, not hidden; tracks and exports on a FASTA-only map were not driven one by
 one; gzip was tested at the unit level only.
+
+## Examples catalog and downloads (W15 and part of W13: item 11)
+
+Server: `ExamplesCatalog` (validation, merge, ordering from data, duplicate ids refused, bad local
+files reported with file and JSON pointer, 1 MiB limit; `ExamplesCatalogTest`, 8 tests), `ExampleDownloader`
+(`ExampleDownloaderTest`, 16 tests against a controlled local server: checksum, wrong length, resume
+with Range and If-Range, ignored range, 416, wrong resume position, unknown length, redirects and their
+limit, the URL policy on http, loopback, private, link-local, carrier-grade NAT, credentials, other
+ports, a redirect to a metadata address, no disk space, optional versus required files, cancel keeping the
+partial file, one job at a time, file names that try to leave the folder) and the three routes. The test
+constructor that allows plain http and loopback is package-private; the server only constructs the
+production policy. Browser gate (22 checks, real https): the dialog and sections, a card's content,
+citation links, provider and terms, no invented licence, draft marking, invalid-catalog report, Tab
+containment, a real 71,567-byte download with an optional file skipped and the manifest, progress in
+bytes, one download at a time, cancel then resume from the partial file, and Open in HiCT giving the wizard
+the downloaded file. Not done: the two DNA Zoo examples were not downloaded in full or opened (the card is
+marked draft); there is no persistent Background jobs panel and no restart reconciliation; the generic job
+contract that W13 describes is not built (FASTA-only, coverage and download each have their own service); a
+JSON Schema library is not used, the schema file is documentation checked only for shape; DNS rebinding
+between the address check and the connection is not pinned.

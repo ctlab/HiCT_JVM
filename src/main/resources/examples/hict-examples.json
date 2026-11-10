@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "hict-bundled",
+  "generator": "hand-curated",
+  "sections": [
+    {
+      "id": "dnazoo",
+      "title": "DNA Zoo chromosome-length assemblies",
+      "description": "Hi-C maps with the genome assemblies they were used to scaffold, shared by the DNA Zoo Consortium. Large downloads: check your disk space first.",
+      "order": 10
+    }
+  ],
+  "examples": [
+    {
+      "id": "dnazoo-cheetah",
+      "sectionId": "dnazoo",
+      "title": "Cheetah (Acinonyx jubatus)",
+      "organism": "Acinonyx jubatus",
+      "assemblyIds": [
+        "aciJub1_HiC"
+      ],
+      "tags": [
+        "mammal",
+        "2n=38",
+        "Hi-C"
+      ],
+      "description": "A chromosome-length cheetah assembly (aciJub1_HiC, 2n=38) with its Hi-C map. Shows scaffolding of a draft genome into chromosomes: contigs, scaffolds and the assembly file used to build them.",
+      "publications": [
+        {
+          "title": "De novo assembly of the Aedes aegypti genome using Hi-C yields chromosome-length scaffolds",
+          "citation": "Dudchenko O, Batra SS, Omer AD, et al. 2017. Science 356(6333):92-95.",
+          "url": "https://doi.org/10.1126/science.aal3327",
+          "doi": "10.1126/science.aal3327",
+          "kind": "method"
+        },
+        {
+          "title": "The Juicebox Assembly Tools / DNA Zoo method preprint",
+          "citation": "Dudchenko O, et al. 2018. bioRxiv 254797.",
+          "url": "https://doi.org/10.1101/254797",
+          "doi": "10.1101/254797",
+          "kind": "method"
+        },
+        {
+          "title": "Draft genome of the cheetah",
+          "citation": "Dobrynin P, et al. 2015. Genome Biology 16:277. Draft assembly GCA_001443585.1.",
+          "url": "https://doi.org/10.1186/s13059-015-0837-4",
+          "doi": "10.1186/s13059-015-0837-4",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "hic",
+          "url": "https://dnazoo.s3.wasabisys.com/Acinonyx_jubatus/revision_190807/aciJub1_HiC.hic",
+          "filename": "aciJub1_HiC.hic",
+          "required": true,
+          "bytes": 1407754884,
+          "description": "Hi-C contact map (needs conversion to HiCT format)"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://dnazoo.s3.wasabisys.com/Acinonyx_jubatus/revision_190807/aciJub1_HiC.fasta.gz",
+          "filename": "aciJub1_HiC.fasta.gz",
+          "required": true,
+          "bytes": 767362474,
+          "description": "Chromosome-length assembly sequence"
+        },
+        {
+          "id": "assembly",
+          "role": "assembly",
+          "format": "assembly",
+          "url": "https://dnazoo.s3.wasabisys.com/Acinonyx_jubatus/revision_190807/aciJub1_HiC.assembly",
+          "filename": "aciJub1_HiC.assembly",
+          "required": false,
+          "bytes": 473432,
+          "description": "Juicebox assembly file (scaffold layout)"
+        }
+      ],
+      "attribution": {
+        "provider": "DNA Zoo Consortium",
+        "url": "https://www.dnazoo.org/",
+        "termsUrl": "https://www.dnazoo.org/usage",
+        "acknowledgement": "DNA Zoo asks that its 3D de novo assembly methods paper is cited and that the acknowledgments of a paper using these data include: \"Unpublished genome assemblies and sequencing data for the cheetah (Acinonyx jubatus) are used with permission from the DNA Zoo Consortium (dnazoo.org).\"",
+        "restrictions": "The provider states no formal licence. Where a draft genome used by DNA Zoo was made by others and is unpublished, respect any restrictions set by its creators."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "assembly": "assembly",
+        "referenceId": "aciJub1_HiC"
+      },
+      "provenance": {
+        "sourceUrl": "https://www.dnazoo.org/assemblies/",
+        "retrieved": "2026-11-10",
+        "origin": "curated",
+        "reviewStatus": "draft"
+      }
+    },
+    {
+      "id": "dnazoo-aedes",
+      "sectionId": "dnazoo",
+      "title": "Yellow fever mosquito (Aedes aegypti)",
+      "organism": "Aedes aegypti",
+      "assemblyIds": [
+        "AaegL5.0"
+      ],
+      "tags": [
+        "insect",
+        "2n=6",
+        "Hi-C"
+      ],
+      "description": "The AaegL5.0 yellow fever mosquito assembly (2n=6) and its Hi-C map, the genome that demonstrated chromosome-length scaffolding with Hi-C. Three large chromosomes make the structure easy to read.",
+      "publications": [
+        {
+          "title": "De novo assembly of the Aedes aegypti genome using Hi-C yields chromosome-length scaffolds",
+          "citation": "Dudchenko O, Batra SS, Omer AD, et al. 2017. Science 356(6333):92-95.",
+          "url": "https://doi.org/10.1126/science.aal3327",
+          "doi": "10.1126/science.aal3327",
+          "kind": "method"
+        },
+        {
+          "title": "The Juicebox Assembly Tools / DNA Zoo method preprint",
+          "citation": "Dudchenko O, et al. 2018. bioRxiv 254797.",
+          "url": "https://doi.org/10.1101/254797",
+          "doi": "10.1101/254797",
+          "kind": "method"
+        },
+        {
+          "title": "Improved reference genome of Aedes aegypti informs arbovirus vector control",
+          "citation": "Matthews BJ, et al. 2018. Nature.",
+          "url": "https://doi.org/10.1038/s41586-018-0692-z",
+          "doi": "10.1038/s41586-018-0692-z",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "hic",
+          "url": "https://dnazoo.s3.wasabisys.com/Aedes_aegypti__AaegL5.0/AaegL5.0.hic",
+          "filename": "AaegL5.0.hic",
+          "required": true,
+          "bytes": 2780092536,
+          "description": "Hi-C contact map (needs conversion to HiCT format)"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://dnazoo.s3.wasabisys.com/Aedes_aegypti__AaegL5.0/AaegL5.0.fasta.gz",
+          "filename": "AaegL5.0.fasta.gz",
+          "required": true,
+          "bytes": 410300578,
+          "description": "Chromosome-length assembly sequence"
+        },
+        {
+          "id": "assembly",
+          "role": "assembly",
+          "format": "assembly",
+          "url": "https://dnazoo.s3.wasabisys.com/Aedes_aegypti__AaegL5.0/AaegL5.0.assembly",
+          "filename": "AaegL5.0.assembly",
+          "required": false,
+          "bytes": 71567,
+          "description": "Juicebox assembly file (scaffold layout)"
+        }
+      ],
+      "attribution": {
+        "provider": "DNA Zoo Consortium",
+        "url": "https://www.dnazoo.org/",
+        "termsUrl": "https://www.dnazoo.org/usage",
+        "acknowledgement": "DNA Zoo asks that its 3D de novo assembly methods paper is cited and that the acknowledgments of a paper using these data include: \"Unpublished genome assemblies and sequencing data for the yellow fever mosquito (Aedes aegypti) are used with permission from the DNA Zoo Consortium (dnazoo.org).\"",
+        "restrictions": "The provider states no formal licence. Where a draft genome used by DNA Zoo was made by others and is unpublished, respect any restrictions set by its creators."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "assembly": "assembly",
+        "referenceId": "AaegL5.0"
+      },
+      "provenance": {
+        "sourceUrl": "https://www.dnazoo.org/assemblies/",
+        "retrieved": "2026-11-10",
+        "origin": "curated",
+        "reviewStatus": "draft"
+      }
+    }
+  ]
+}

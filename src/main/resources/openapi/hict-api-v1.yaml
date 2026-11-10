@@ -1201,6 +1201,81 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/catalog:
+    post:
+      tags: [Files]
+      summary: List the example datasets
+      description: >
+        Sections, examples (title, what it shows, citations, files with sizes, attribution, opening
+        recipe, provenance) and any problems found in catalog files, merged from the bundled catalog and
+        `<data>/examples/catalogs/*.json`. A local file that is invalid is reported with its file name and
+        the JSON pointer of the first problem and is not used. See `examples/hict-examples.schema.json`.
+      operationId: listExamples
+      responses:
+        '200':
+          description: Merged catalog
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/download/start:
+    post:
+      tags: [Files]
+      summary: Download the files of one example in the background
+      description: >
+        Takes an example id only. The server resolves addresses, names, sizes and hashes from its own
+        catalog, accepts https addresses that resolve to public hosts (each redirect is checked again),
+        resumes partial files with Range and If-Range, verifies length and sha256 when the catalog has
+        them, writes to `<data>/examples/<id>/` through a temporary name, and records a manifest with
+        the attribution. Optional files may fail. Nothing downloaded is executed.
+      operationId: startExampleDownload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exampleId]
+              properties:
+                exampleId: { type: string }
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '404':
+          description: Unknown example
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: Another example is being downloaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/download/status:
+    post:
+      tags: [Files]
+      summary: Status of the example download
+      operationId: exampleDownloadStatus
+      responses:
+        '200':
+          description: state, progress, bytes, current file, finished files, skipped optional files, error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/download/cancel:
+    post:
+      tags: [Files]
+      summary: Cancel the example download
+      description: Partial files are kept so the download can resume.
+      operationId: cancelExampleDownload
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
   /fasta_only/start:
     post:
       tags: [Files]
