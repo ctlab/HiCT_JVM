@@ -529,6 +529,39 @@ paths:
                   workspace: { type: object, additionalProperties: true }
         '404': { description: No open map }
         '409': { description: Displayed assembly revision is stale }
+  /session/restore:
+    post:
+      tags: [Session]
+      summary: Replace the live session with a saved snapshot
+      description: Accepts the body produced by /session/snapshot with fingerprintFiles enabled. The snapshot is validated, then every resource (both sources with their edited assemblies, linked FASTA files, tracks, processing graph and visualization options) is prepared in an isolated candidate and its files are checked before and after preparation. Only a complete candidate is published, in one step, and the previous resources are closed afterwards. Any failure leaves the current session unchanged. The response has the shape of /attach plus the restored assemblySource, renderPipeline, visualizationOptions and tracks.
+      operationId: restoreSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Restored session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [filename, fastaFilename, assemblySource, secondarySource, openFileResponse, renderPipeline, visualizationOptions, tracks]
+                properties:
+                  filename: { type: string }
+                  fastaFilename: { type: string }
+                  assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }
+                  secondarySource: { $ref: '#/components/schemas/SecondarySourceStatus' }
+                  workspaceVersion: { type: object, additionalProperties: true }
+                  workspaceState: { type: object, nullable: true, additionalProperties: true }
+                  openFileResponse: { type: object, additionalProperties: true }
+                  renderPipeline: { type: object, additionalProperties: true }
+                  visualizationOptions: { type: object, additionalProperties: true }
+                  tracks: { type: array, items: { type: object, additionalProperties: true } }
+        '400': { description: Malformed snapshot or a file whose identity changed }
   /secondary/set_assembly_source:
     post:
       tags: [Secondary source]

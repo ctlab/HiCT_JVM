@@ -40,12 +40,24 @@ public final class SessionRestoreCandidate implements AutoCloseable {
   public Path secondaryFasta() { return secondaryFasta; }
 
   public static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory, JsonObject document) throws Exception {
+    return prepare(dataDirectory, processedDirectory, document, 1, 2);
+  }
+
+  /** Pool sizes apply to the prepared readers, so a published candidate serves tiles like a normally opened file. */
+  public static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory, JsonObject document,
+      int minDatasetPool, int maxDatasetPool) throws Exception {
     var decoded = SessionSnapshotDecoder.decode(document);
-    return prepare(dataDirectory, processedDirectory, decoded.snapshot(), decoded.tracks());
+    return prepare(dataDirectory, processedDirectory, decoded.snapshot(), decoded.tracks(), minDatasetPool, maxDatasetPool);
   }
 
   static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory,
       SessionSnapshotDTO saved, List<Track1DManager.TrackSummary> definitions) throws Exception {
+    return prepare(dataDirectory, processedDirectory, saved, definitions, 1, 2);
+  }
+
+  static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory,
+      SessionSnapshotDTO saved, List<Track1DManager.TrackSummary> definitions,
+      int minDatasetPool, int maxDatasetPool) throws Exception {
     if (saved.snapshotVersion() != 1) throw new IllegalArgumentException("Unsupported internal snapshot version");
     if (!Set.of("PRIMARY", "SECONDARY").contains(saved.assemblySource())
         || ("SECONDARY".equals(saved.assemblySource()) && saved.secondary() == null))
@@ -83,8 +95,8 @@ public final class SessionRestoreCandidate implements AutoCloseable {
     for (var resource : resources) resource.verify();
     final var candidate = new SessionRestoreCandidate();
     try {
-      candidate.primary = open(primaryPath, saved.primary());
-      if (secondaryPath != null) candidate.secondary = open(secondaryPath, saved.secondary());
+      candidate.primary = open(primaryPath, saved.primary(), minDatasetPool, maxDatasetPool);
+      if (secondaryPath != null) candidate.secondary = open(secondaryPath, saved.secondary(), minDatasetPool, maxDatasetPool);
       candidate.primaryFasta = primaryFasta;
       candidate.secondaryFasta = secondaryFasta;
       candidate.tracks = new Track1DManager(root, processedDirectory);
@@ -109,8 +121,8 @@ public final class SessionRestoreCandidate implements AutoCloseable {
     }
   }
 
-  private static ChunkedFile open(Path path, JsonObject saved) throws Exception {
-    final var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(path, 1, 2));
+  private static ChunkedFile open(Path path, JsonObject saved, int minPool, int maxPool) throws Exception {
+    final var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(path, minPool, maxPool));
     try {
       SessionAssemblyRestorer.restore(file, saved);
       return file;
@@ -154,6 +166,22 @@ public final class SessionRestoreCandidate implements AutoCloseable {
           || !Objects.equals(requested.toRealPath(), resolved))
         throw new IOException(field + ": resource identity changed");
     }
+  }
+
+  /** Hands the prepared resources to the caller. After this call close() releases nothing. */
+  public SessionRestoreCandidate detach() {
+    final var owned = new SessionRestoreCandidate();
+    owned.primary = primary;
+    owned.secondary = secondary;
+    owned.tracks = tracks;
+    owned.pipeline = pipeline;
+    owned.visualization = visualization;
+    owned.primaryFasta = primaryFasta;
+    owned.secondaryFasta = secondaryFasta;
+    primary = null;
+    secondary = null;
+    tracks = null;
+    return owned;
   }
 
   @Override public void close() throws Exception {

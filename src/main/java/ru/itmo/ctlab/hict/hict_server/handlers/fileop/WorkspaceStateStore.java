@@ -11,6 +11,16 @@ final class WorkspaceStateStore implements Shareable {
   private long revision;
   private JsonObject state;
 
+  /** A new store for a restored session. Its identity differs, so windows of the replaced session must attach again. */
+  static WorkspaceStateStore restored(JsonObject savedState) {
+    final var store = new WorkspaceStateStore();
+    if (savedState != null && savedState.getValue("version") instanceof Number v && v.doubleValue() == 1
+        && savedState.encode().length() <= 1_000_000) {
+      store.state = savedState.copy();
+    }
+    return store;
+  }
+
   synchronized JsonObject version() {
     return new JsonObject().put("session", session).put("revision", revision);
   }

@@ -424,6 +424,109 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void sessionRestorePublishesSavedStateAtomically() throws Exception {
+    for (String name : java.util.List.of("primary", "secondary"))
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, java.util.List.of(4L, 10L));
+    Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
+    Files.writeString(tempDataDir.resolve("marks.bed"), "tiny\t0\t5\tfeature\n");
+    startServerWithInfoAndFileHandlers();
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(
+      new SimpleVisualizationOptions(0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/link_fasta", "{\"fastaFilename\":\"tiny.fa\"}").statusCode());
+    var primary = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile();
+    primary.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+    primary.setContigNameOverride(0, "renamed_tiny");
+    var tracks = ((ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager")).getTrack1DManager();
+    tracks.openTrack("marks.bed", "Marks", "#aa3300");
+    tracks.openCoolerWeightsTrack("Weights", "#0033aa", "SECONDARY");
+    var graph = new JsonObject(Files.readString(Path.of("src/test/resources/reinforcement/custom-pipeline.json")));
+    map.put(ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.LOCAL_MAP_KEY,
+      new ShareableWrappers.RenderPipelineConfigWrapper(
+        ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.fromJson(graph)));
+    var visualization = new SimpleVisualizationOptions(2, 3, true, false, true,
+      new SimpleLinearGradient(32, new java.awt.Color(10, 20, 30, 2),
+        new java.awt.Color(200, 150, 100, 128), -5, 21));
+    map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(visualization));
+    var attach = new JsonObject(post("/attach", "{}").body());
+    var workspaceVersion = attach.getJsonObject("workspaceVersion");
+    var view = new JsonObject().put("version", 1).put("center", new io.vertx.core.json.JsonArray().add(3).add(4));
+    assertEquals(200, post("/workspace/state", new JsonObject().put("filename", "primary.hict.hdf5")
+      .put("expectedVersion", workspaceVersion).put("state", view).encode()).statusCode());
+
+    var saveResponse = post("/session/snapshot",
+      "{\"verifyAssemblyRoundTrip\":true,\"fingerprintFiles\":true,\"verifyTrackDefinitions\":true}");
+    assertEquals(200, saveResponse.statusCode(), saveResponse.body());
+    var saved = new JsonObject(saveResponse.body());
+    assertEquals(2, saved.getJsonArray("tracks").size());
+    final String savedAgpHash = saved.getJsonObject("primary").getString("agpSha256");
+
+    // Diverge: undo the edit, rename back, drop the tracks and the graph.
+    primary.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+    primary.setContigNameOverride(0, "other_name");
+    for (var track : tracks.listTracks()) tracks.removeTrack(track.getTrackId());
+    map.put(ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.LOCAL_MAP_KEY,
+      new ShareableWrappers.RenderPipelineConfigWrapper(
+        ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.disabled()));
+    assertEquals(200, post("/secondary/close", "{}").statusCode());
+    var diverged = new JsonObject(post("/session/snapshot", "{}").body());
+    org.junit.jupiter.api.Assertions.assertNotEquals(savedAgpHash, diverged.getJsonObject("primary").getString("agpSha256"));
+
+    var restoredResponse = post("/session/restore", saved.encode());
+    assertEquals(200, restoredResponse.statusCode(), restoredResponse.body());
+    var restoredBody = new JsonObject(restoredResponse.body());
+    assertEquals("primary.hict.hdf5", restoredBody.getString("filename"));
+    assertEquals("tiny.fa", restoredBody.getString("fastaFilename"));
+    assertEquals(view, restoredBody.getJsonObject("workspaceState"));
+    assertTrue(restoredBody.getJsonObject("secondarySource").getBoolean("attached", true));
+
+    var again = new JsonObject(post("/session/snapshot",
+      "{\"verifyAssemblyRoundTrip\":true,\"fingerprintFiles\":true,\"verifyTrackDefinitions\":true}").body());
+    assertEquals(savedAgpHash, again.getJsonObject("primary").getString("agpSha256"));
+    assertEquals(saved.getJsonObject("primary").getJsonObject("contigNameOverrides"), again.getJsonObject("primary").getJsonObject("contigNameOverrides"));
+    assertEquals(saved.getJsonArray("tracks"), again.getJsonArray("tracks"));
+    assertEquals(saved.getJsonObject("renderPipeline"), again.getJsonObject("renderPipeline"));
+    assertEquals(saved.getJsonObject("visualizationOptions"), again.getJsonObject("visualizationOptions"));
+    assertEquals(saved.getJsonObject("secondary").getString("agpSha256"), again.getJsonObject("secondary").getString("agpSha256"));
+    assertEquals("tiny.fa", again.getJsonObject("primary").getString("fastaFilename"));
+    assertEquals(graph, again.getJsonObject("renderPipeline"));
+  }
+
+  @Test
+  void rejectedSessionRestoreLeavesTheLiveSessionUntouched() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", java.util.List.of(4L, 10L));
+    startServerWithInfoAndFileHandlers();
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(
+      new SimpleVisualizationOptions(0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertTrue(post("/session/restore", "{}").statusCode() >= 400);
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    var live = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile();
+    live.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+    var saved = new JsonObject(post("/session/snapshot",
+      "{\"verifyAssemblyRoundTrip\":true,\"fingerprintFiles\":true,\"verifyTrackDefinitions\":true}").body());
+    var before = new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getString("agpSha256");
+
+    var tampered = saved.copy();
+    tampered.getJsonObject("primary").getJsonObject("fileFingerprint").put("sha256", "0".repeat(64));
+    assertTrue(post("/session/restore", tampered.encode()).statusCode() >= 400);
+    var missing = saved.copy();
+    missing.getJsonObject("primary").put("filename", "absent.hict.hdf5");
+    assertTrue(post("/session/restore", missing.encode()).statusCode() >= 400);
+    var malformed = saved.copy();
+    malformed.put("assemblySource", "NEITHER");
+    assertTrue(post("/session/restore", malformed.encode()).statusCode() >= 400);
+
+    org.junit.jupiter.api.Assertions.assertSame(live, ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile());
+    assertEquals(before, new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getString("agpSha256"));
+    assertEquals(200, post("/session/snapshot", "{}").statusCode());
+  }
+
+  @Test
   void failedSecondarySynchronizationRollsBackPrimaryAndRetainsOldSecondary() throws Exception {
     for (String name : java.util.List.of("primary", "secondary", "candidate"))
       ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, java.util.List.of(4L, 10L));

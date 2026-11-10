@@ -584,6 +584,99 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }, result -> ctx.response().putHeader("content-type", "application/json").end(io.vertx.core.json.Json.encode(result)));
     });
 
+    router.post("/session/restore").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+        final var document = ctx.body().asJsonObject();
+        if (document == null) throw new IllegalArgumentException("A session snapshot object is required");
+        final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
+        final var processedWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+        final var processed = processedWrapper == null ? dataDirectory.resolve("processed") : processedWrapper.getPath();
+        final var decoded = SessionSnapshotDecoder.decode(document);
+        final var saved = decoded.snapshot();
+        // Everything fallible happens in the candidate. A failure closes it and leaves the live session untouched.
+        final SessionRestoreCandidate owned;
+        final io.vertx.core.json.JsonObject openResponse;
+        final SecondaryCompatibility compatibility;
+        final TileStatisticHolder statistics;
+        try (var candidate = SessionRestoreCandidate.prepare(dataDirectory, processed, document,
+            (int) map.getOrDefault("MIN_DS_POOL", 4), (int) map.getOrDefault("MAX_DS_POOL", 16))) {
+          openResponse = io.vertx.core.json.JsonObject.mapFrom(generateOpenFileResponse(candidate.primary()));
+          compatibility = candidate.secondary() == null ? null
+            : analyzeSecondaryCompatibility(candidate.primary(), candidate.secondary());
+          statistics = TileStatisticHolder.newDefaultStatisticHolder(candidate.primary().getResolutions().length);
+          owned = candidate.detach();
+        }
+        final var workspace = WorkspaceStateStore.restored(saved.workspace() == null ? null : saved.workspace().getJsonObject("workspaceState"));
+        final var primaryName = saved.primary().getString("filename");
+        final var oldPrimary = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+        final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+        final var oldTracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+        map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.primary()));
+        map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(owned.tracks()));
+        map.put("openedFilename", primaryName);
+        map.put("workspaceStateStore", workspace);
+        map.put("TileStatisticHolder", statistics);
+        map.put(RenderPipelineConfig.LOCAL_MAP_KEY, new ShareableWrappers.RenderPipelineConfigWrapper(owned.pipeline()));
+        map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(owned.visualization()));
+        if (owned.secondary() != null) {
+          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.secondary()));
+          map.put(OPENED_SECONDARY_FILENAME_KEY, saved.secondary().getString("filename"));
+          map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
+        } else {
+          map.remove(SECONDARY_CHUNKED_FILE_KEY);
+          map.remove(OPENED_SECONDARY_FILENAME_KEY);
+          map.remove(SECONDARY_COMPATIBILITY_KEY);
+        }
+        map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
+        map.put(ASSEMBLY_SOURCE_KEY, saved.assemblySource());
+        map.remove("linkedFastaPath");
+        map.remove("linkedFastaFilename");
+        map.remove(PRIMARY_FASTA_PATH_KEY);
+        map.remove(PRIMARY_FASTA_FILENAME_KEY);
+        map.remove(SECONDARY_FASTA_PATH_KEY);
+        map.remove(SECONDARY_FASTA_FILENAME_KEY);
+        final String primaryFasta = saved.primary().getString("fastaFilename", "");
+        if (owned.primaryFasta() != null && !primaryFasta.isBlank()) {
+          final var fastaPath = dataDirectory.resolve(primaryFasta).normalize().toAbsolutePath();
+          map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
+          map.put("linkedFastaFilename", primaryFasta);
+          map.put(PRIMARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
+          map.put(PRIMARY_FASTA_FILENAME_KEY, primaryFasta);
+        }
+        final String secondaryFasta = saved.secondary() == null ? "" : saved.secondary().getString("fastaFilename", "");
+        if (owned.secondaryFasta() != null && !secondaryFasta.isBlank()) {
+          map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(dataDirectory.resolve(secondaryFasta).normalize().toAbsolutePath()));
+          map.put(SECONDARY_FASTA_FILENAME_KEY, secondaryFasta);
+        }
+        TileHandlersHolder.clearExpectedProfileCache(map);
+        // Cleanup failures must not report a failed restore after publication.
+        if (oldTracks != null) {
+          try { oldTracks.getTrack1DManager().close(); }
+          catch (Exception failure) { log.warn("Previous track resources could not be closed", failure); }
+        }
+        closeChunkedFileWrapper(oldPrimary);
+        closeChunkedFileWrapper(oldSecondary);
+        try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
+        catch (Exception failure) { log.warn("Superseded overlay cleanup deferred", failure); }
+        final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+        if (schedulerWrapper != null) schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
+        map.put("openProgress", new io.vertx.core.json.JsonObject().put("stage", "done").put("progress", 1.0));
+        return new io.vertx.core.json.JsonObject()
+          .put("filename", primaryName)
+          .put("fastaFilename", primaryFasta)
+          .put("assemblySource", saved.assemblySource())
+          .put("secondarySource", secondaryStatusJson(map))
+          .mergeIn(workspace.snapshot())
+          .put("openFileResponse", openResponse)
+          .put("visualizationOptions", saved.visualizationOptions().copy())
+          .put("renderPipeline", saved.renderPipeline().copy())
+          .put("tracks", saved.tracks().copy());
+      }, result -> ctx.response().putHeader("content-type", "application/json").end(result.encode()));
+    });
+
     router.post("/attach").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
