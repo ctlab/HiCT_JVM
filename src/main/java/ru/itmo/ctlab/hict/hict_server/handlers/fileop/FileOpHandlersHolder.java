@@ -512,7 +512,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var fingerprintValue = request == null ? Boolean.FALSE : request.getValue("fingerprintFiles", Boolean.FALSE);
         if (!(fingerprintValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "fingerprintFiles must be a boolean");
         final boolean fingerprintFiles = (Boolean) fingerprintValue;
-        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify, fingerprintFiles,
+        final var tracksValue = request == null ? Boolean.FALSE : request.getValue("verifyTrackDefinitions", Boolean.FALSE);
+        if (!(tracksValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "verifyTrackDefinitions must be a boolean");
+        final boolean verifyTracks = (Boolean) tracksValue;
+        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify, fingerprintFiles, verifyTracks,
           ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
             String.valueOf(map.getOrDefault("openedFilename", "")),
             String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, ""))),
@@ -527,6 +530,25 @@ public class FileOpHandlersHolder extends HandlersHolder {
         if (verify) {
           verifySessionAssembly(primary.getChunkedFile(), snapshot.primary());
           if (secondary != null) verifySessionAssembly(secondary.getChunkedFile(), snapshot.secondary());
+        }
+        if (verifyTracks) {
+          final var definitions = tracks == null ? java.util.List.<Track1DManager.TrackSummary>of() : tracks.getTrack1DManager().listTracks();
+          final var ids = definitions.stream().map(Track1DManager.TrackSummary::getTrackId).collect(java.util.stream.Collectors.toSet());
+          final var config = pipeline == null ? RenderPipelineConfig.disabled() : pipeline.getRenderPipelineConfig();
+          for (var binding : config.requiredTrackBindings()) {
+            if (!ids.contains(binding.trackId())) throw new IllegalArgumentException("Session graph references missing track " + binding.trackId());
+          }
+          for (var definition : definitions) {
+            if ("COOLER_WEIGHTS".equals(definition.getType()) && definition.getSourceFile().endsWith("/SECONDARY") && secondary == null)
+              throw new IllegalArgumentException("Session weights track references missing secondary source");
+          }
+          final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
+          final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+          try (var candidateTracks = new Track1DManager(dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath())) {
+            candidateTracks.restoreTrackDefinitions(definitions);
+            final var restored = new io.vertx.core.json.JsonArray(candidateTracks.listTracks().stream().map(io.vertx.core.json.JsonObject::mapFrom).toList());
+            if (!restored.equals(snapshot.tracks())) throw new IllegalArgumentException("Session track definitions cannot be restored without changes");
+          }
         }
         if (fingerprintFiles) {
           fingerprintSessionSource(map, primary.getChunkedFile(), snapshot.primary(), ASSEMBLY_SOURCE_PRIMARY);

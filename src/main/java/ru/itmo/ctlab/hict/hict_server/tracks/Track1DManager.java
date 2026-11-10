@@ -75,7 +75,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.zip.GZIPInputStream;
 
 @Slf4j
-public class Track1DManager {
+public class Track1DManager implements AutoCloseable {
   private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
     ".bed", ".bed.gz",
     ".vcf", ".vcf.gz",
@@ -359,6 +359,59 @@ public class Track1DManager {
     }
   }
 
+  /** Restore into an unpublished, empty manager without changing saved track IDs or order.
+   * Failed preparation closes every opened data source and leaves the manager unchanged.
+   */
+  public void restoreTrackDefinitions(final @NotNull List<TrackSummary> definitions) {
+    final var prepared = new LinkedHashMap<String, TrackState>();
+    this.lock.writeLock().lock();
+    try {
+      if (!this.tracks.isEmpty()) throw new IllegalStateException("Session tracks require an empty candidate manager");
+      long counter = this.trackCounter.get();
+      for (final var saved : definitions) {
+        final var id = saved.getTrackId();
+        if (id == null || !id.matches("trk_[1-9][0-9]*") || prepared.containsKey(id))
+          throw new IllegalArgumentException("Invalid session trackId: " + id);
+        final long number = Long.parseLong(id.substring(4));
+        if (number == Long.MAX_VALUE) throw new IllegalArgumentException("Session trackId exceeds supported range");
+        counter = Math.max(counter, number);
+        if (saved.getName() == null || saved.getName().isBlank()) throw new IllegalArgumentException("Session track name is required: " + id);
+        if (saved.getColor() == null || !saved.getColor().matches("^#[0-9a-fA-F]{6}$"))
+          throw new IllegalArgumentException("Invalid session track color: " + id);
+        if (!Double.isFinite(saved.getRangeMin()) || !Double.isFinite(saved.getRangeMax()) || saved.getRangeMin() >= saved.getRangeMax())
+          throw new IllegalArgumentException("Invalid session track range: " + id);
+        final var type = TrackType.valueOf(saved.getType());
+        final var renderMode = BamRenderMode.valueOf(saved.getRenderMode());
+        final var aggregation = BigWigAggregationMode.valueOf(saved.getAggregationMode());
+        final TrackDataSource source;
+        if (type == TrackType.COOLER_WEIGHTS) {
+          final String matrix;
+          if (COOLER_WEIGHTS_SOURCE_FILE.equals(saved.getSourceFile()) || COOLER_WEIGHTS_SOURCE_FILE_PRIMARY.equals(saved.getSourceFile())) matrix = "PRIMARY";
+          else if (COOLER_WEIGHTS_SOURCE_FILE_SECONDARY.equals(saved.getSourceFile())) matrix = "SECONDARY";
+          else throw new IllegalArgumentException("Invalid weights source for session track " + id);
+          source = new CoolerWeightsTrackDataSource(matrix);
+        } else {
+          final var path = resolveDataPath(saved.getSourceFile());
+          if (type == TrackType.UNSUPPORTED || TrackType.fromPath(path) != type)
+            throw new IllegalArgumentException("Session track type does not match its file: " + id);
+          source = createDataSource(type, path);
+        }
+        final var state = new TrackState(id, saved.getName(), type, saved.getSourceFile(), saved.getColor(),
+          saved.isVisible(), source, renderMode, aggregation, saved.isLogScale(), saved.isRangeAuto(), saved.getRangeMin(), saved.getRangeMax());
+        prepared.put(id, state);
+        if (!source.renderStyle().name().equals(saved.getRenderStyle()))
+          throw new IllegalArgumentException("Session track rendering style changed: " + id);
+      }
+      this.tracks.putAll(prepared);
+      this.trackCounter.set(counter);
+    } catch (RuntimeException | Error failure) {
+      prepared.values().forEach(state -> closeDataSourceQuietly(state.dataSource()));
+      throw failure;
+    } finally {
+      this.lock.writeLock().unlock();
+    }
+  }
+
   public @NotNull List<TrackSummary> listTracks() {
     try {
       this.lock.readLock().lock();
@@ -459,6 +512,7 @@ public class Track1DManager {
     }
   }
 
+  @Override
   public void close() {
     // Stop producers before closing their data sources. shutdownNow alone does
     // not wait for a running writer; it could recreate a sidecar after close.

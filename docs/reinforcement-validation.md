@@ -621,3 +621,49 @@ capture time, not proof that every pre-existing reader cache matches externally
 modified files. Cross-resource consistency and restore-time identity checks,
 auxiliary/index dependencies and generated-result provenance, strict v3 validation
 and atomic restore remain open. No release-readiness claim is made.
+
+## W1 ninth increment: stable track reconstruction and graph references
+
+Track managers can now prepare saved definitions in an empty candidate manager,
+preserving track IDs, ordering, names, colors, visibility, range/log settings,
+render/aggregation modes and virtual Cooler-weight source references. Validation
+rejects duplicate/malformed IDs, invalid appearance/range/mode values, unsupported
+or mismatched file types, changed render styles and missing files. Failure closes
+the staged data sources without publishing tracks or advancing the ID counter.
+Successful preparation advances the counter beyond the largest restored ID, so
+later user additions cannot overwrite saved graph references. Track1DManager now
+implements AutoCloseable using its existing close lifecycle.
+
+Snapshot requests opt into `verifyTrackDefinitions`; they construct and close an
+independent track manager and require its complete summaries to match. Rendering
+graph bindings must name existing tracks, and secondary weights need a secondary
+source. Success sets `tracksVerified`; a requesting client rejects an older-server
+response without it. This prepares the track part of the eventual atomic restore
+transaction but does not replace the live manager or change legacy Save/Open.
+
+Evidence: `/tmp/hict-w1-session-tracks/` and `/tmp/hict-session-tracks-*.log`.
+
+- Full Java suite/development JAR passed: 335 tests, 328 passed, seven optional
+  skips. Focused tests preserve sparse IDs and reordered mixed BED/virtual tracks
+  with custom settings, prove later additions use a fresh ID, and reject duplicate
+  IDs, missing resources and attempts to restore into a nonempty manager without
+  partial publication or counter advancement.
+- Eight browser checks passed. The saved custom graph now references a real BED
+  track by ID, as well as retaining its multiplier. Assembly/track verification,
+  independent content hashes, virtual weights, persisted workspace, missing-resource
+  recovery, stale-client refusal and fresh Attach all pass. A deliberately missing
+  graph track reference is rejected without changing assembly history. Older-server
+  fixtures omit each verification flag in turn and are refused. Page exceptions:
+  zero.
+- WebUI build, API DTO checks and changed-file lint passed; only the five existing
+  unused-import warnings/resolver notices remain. Initial Java compilation exposed
+  the missing AutoCloseable declaration; it was corrected. The first extended
+  browser run stopped on an extra quote in injected test JavaScript; the corrected
+  full run passed. Those incomplete attempts are not passing evidence.
+
+Remaining W1 work includes external v3 document validation and migration,
+restore-time fingerprints/auxiliary resources, preparation of the full session,
+atomic publication and client refresh, dirty-state prompts and large-export job
+progress/cancellation. These checks cover track definitions and their graph
+references, not every format's complete rendering/export fidelity; that requires
+expanded round-trip and release gates. W1 remains incomplete.

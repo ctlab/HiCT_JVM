@@ -11,7 +11,7 @@ import java.util.HexFormat;
 import java.util.stream.Collectors;
 
 /** Server capture used to construct a portable session, not itself a saved session document. */
-public record SessionSnapshotDTO(int snapshotVersion, boolean assemblyVerified, boolean filesFingerprinted, JsonObject primary, JsonObject secondary,
+public record SessionSnapshotDTO(int snapshotVersion, boolean assemblyVerified, boolean filesFingerprinted, boolean tracksVerified, JsonObject primary, JsonObject secondary,
                                  String assemblySource, JsonObject renderPipeline, JsonArray tracks,
                                  JsonObject workspace) {
   public static JsonObject source(ChunkedFile file, String filename, String fastaFilename) {

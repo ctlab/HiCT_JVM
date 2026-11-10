@@ -35,7 +35,7 @@ def main():
             page.get_by_role('link', name='Attach', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
         def capture():
-            return page.evaluate('()=>window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true)')
+            return page.evaluate('()=>window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true)')
         try:
             post('/close')
             empty = context.request.post(args.api + '/session/snapshot', data={})
@@ -45,7 +45,9 @@ def main():
             page.evaluate("api=>window.__hictBenchmark.open('tiny-primary.hict.hdf5',api)", args.api)
             post('/secondary/open', {'filename': 'old-secondary.hict.hdf5'})
             post('/link_fasta', {'fastaFilename': 'tiny.fa'})
-            post('/tracks/open', {'filename': 'session-track.bed', 'name': 'Session track'})
+            bed = post('/tracks/open', {'filename': 'session-track.bed', 'name': 'Session track'})
+            graph['lowerExpression']['left'] = {'type': 'binary', 'op': 'ADD', 'left': graph['lowerExpression']['left'],
+                                               'right': {'type': 'track1d', 'trackId': bed['trackId'], 'axis': 'ROW'}}
             post('/tracks/open_cooler_weights', {'source': 'PRIMARY'})
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
             attach()
@@ -57,6 +59,7 @@ def main():
             first = capture()
             assert first['assemblyVerified'] is True
             assert first['filesFingerprinted'] is True
+            assert first['tracksVerified'] is True
             assert first['renderPipeline'] == graph
             assert first['primary']['filename'] == 'tiny-primary.hict.hdf5'
             assert first['primary']['fastaFilename'] == 'tiny.fa'
@@ -80,7 +83,7 @@ def main():
                 assert not backup.exists()
                 track_path.rename(backup)
                 try:
-                    failed = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true);return null;}catch(error){return error.response?.status;}}''')
+                    failed = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.response?.status;}}''')
                     assert failed is not None and failed >= 400, failed
                     assert post('/assembly/history') == history
                 finally:
@@ -99,8 +102,18 @@ def main():
             assert post('/assembly/history') == history
             result['checks'].append('capture retains edited strand, both sources, FASTA and exact custom graph without adding history')
             result['checks'].append('capture includes track definitions and the persisted browser workspace')
+            missing_reference = json.loads(json.dumps(graph))
+            missing_reference['lowerExpression']['left']['right']['trackId'] = 'trk_missing'
+            try:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', missing_reference)
+                rejected = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(false,false,true);return null;}catch(error){return error.response?.status;}}''')
+                assert rejected is not None and rejected >= 400, rejected
+                assert post('/assembly/history') == history
+            finally:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
+            result['checks'].append('track verification rejects missing graph references without changing assembly history')
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
-            conflict = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true);return null;}catch(error){return error.response?.status;}}''')
+            conflict = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.response?.status;}}''')
             assert conflict == 409, conflict
             result['checks'].append('stale displayed assembly cannot be captured')
             attach()
@@ -114,13 +127,18 @@ def main():
                 route.fulfill(status=200, content_type='application/json', body=json.dumps(unverified))
             page.route('**/session/snapshot', legacy_snapshot)
             try:
-                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true);return null;}catch(error){return error.message;}}''')
+                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.message;}}''')
                 assert message == 'Server did not verify assembly reconstruction', message
                 unverified.clear()
                 unverified.update(second)
                 unverified.pop('filesFingerprinted')
-                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true);return null;}catch(error){return error.message;}}''')
+                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.message;}}''')
                 assert message == 'Server did not fingerprint session resources', message
+                unverified.clear()
+                unverified.update(second)
+                unverified.pop('tracksVerified')
+                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.message;}}''')
+                assert message == 'Server did not verify session track definitions', message
             finally:
                 page.unroute('**/session/snapshot', legacy_snapshot)
             result['checks'].append('explicit verification rejects an unverified older-server response')

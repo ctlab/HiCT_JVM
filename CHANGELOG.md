@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add isolated session-track reconstruction that preserves IDs, order, appearance, ranges and virtual source references. Optional snapshot verification rejects missing graph track references and refuses partial preparation without replacing live tracks.
 - Add opt-in SHA-256 content fingerprints for session matrix, FASTA and physical track resources, with explicit source references for virtual weights tracks. Refuse missing or changing resources and unverified older-server responses; hashing supports progress and cancellation for future export jobs.
 - Add optional isolated assembly reconstruction to session snapshots. Verify AGP hashes, source intervals, strands, contact-bin mappings, names and scaffold metadata before marking the assembly verified; failed candidates roll back without replacing live sources.
 - Add a read-only server session snapshot API for edited assemblies, AGP hashes, name overrides, source links, complete rendering graphs, track definitions and workspace state. Revision guards reject capture from stale displayed assemblies; portable v3 save and restore are still under development.

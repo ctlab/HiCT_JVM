@@ -493,6 +493,10 @@ paths:
             schema:
               type: object
               properties:
+                verifyTrackDefinitions:
+                  type: boolean
+                  default: false
+                  description: Prepare tracks in an isolated manager, preserving IDs, order and settings, and reject missing rendering-graph track references.
                 fingerprintFiles:
                   type: boolean
                   default: false
@@ -508,10 +512,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [snapshotVersion, assemblyVerified, filesFingerprinted, primary, assemblySource, renderPipeline, tracks, workspace]
+                required: [snapshotVersion, assemblyVerified, filesFingerprinted, tracksVerified, primary, assemblySource, renderPipeline, tracks, workspace]
                 properties:
                   snapshotVersion: { type: integer, enum: [1] }
                   filesFingerprinted: { type: boolean }
+                  tracksVerified: { type: boolean }
                   assemblyVerified: { type: boolean, description: Whether isolated candidate assembly reconstruction succeeded for all open sources. Does not verify source content fingerprints or complete session restoration. }
                   primary: { $ref: '#/components/schemas/SessionSourceSnapshot' }
                   secondary:
