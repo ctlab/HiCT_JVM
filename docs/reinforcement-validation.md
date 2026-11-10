@@ -667,3 +667,43 @@ atomic publication and client refresh, dirty-state prompts and large-export job
 progress/cancellation. These checks cover track definitions and their graph
 references, not every format's complete rendering/export fidelity; that requires
 expanded round-trip and release gates. W1 remains incomplete.
+
+## W1 tenth increment: graph validation at the session boundary
+
+Optional snapshot track verification now validates the graph before preparing
+tracks. The validator checks both expression roots, Boolean pipeline flags,
+numeric versus color inputs, operation and dynamic-field enums, existing track
+IDs (including supported built-in weight aliases), track axes, finite numeric
+values, explicit log bases and supported color syntax. It bounds traversal to
+32 nested levels and 10,000 expressions and reports the failing field path.
+Supported RGB/HSL/HSV channel aliases, blend aliases and optional renderer
+defaults remain accepted. Valid graphs are inspected without modification.
+The ordinary rendering API keeps its existing compatibility behavior.
+
+Evidence: `/tmp/hict-w1-session-graph/browser/results.json` and screenshot;
+`/tmp/hict-session-graph-focused.log`, `/tmp/hict-session-graph-build.log`
+and `/tmp/hict-session-graph-browser.log`.
+
+- Four focused tests pass, including preserved JSON and compiler compatibility,
+  supported aliases, missing references, invalid axes/operations/log bases/colors,
+  invalid child types, nonfinite values, flags, depth and node-count limits.
+  An initial test-fixture parenthesis error was corrected before passing runs.
+- Full Java suite and development runtime build pass: 339 tests, 332 passed,
+  seven optional skips, zero failures or errors.
+- Nine real Chromium checks pass, with zero page exceptions. The extra case
+  deliberately installs an axis that the ordinary renderer accepts by fallback;
+  verified capture refuses it and names
+  `renderPipeline.lowerExpression.left.right.axis`. Assembly history stays
+  unchanged, and correcting the graph restores successful verified capture.
+  Existing independent hashes, missing-file recovery, stale-client refusal,
+  Attach, exact graph capture and old-server refusal checks also pass.
+- The inspected screenshot still labels the primary source as absent from a
+  custom pipeline that does reference it. This remains a W2 sidebar attribution
+  defect, not evidence of a completed interface audit.
+
+This is a session-boundary foundation, not the complete external v3 validator:
+unknown extension properties, whole-document byte limits, source availability,
+static threshold relationships and dynamically evaluated domains still need
+the complete document contract. Preparation/publication, Save/Open v3, dirty
+state handling and the full W1 gate remain outstanding. No release qualification
+is claimed. No WebUI files changed in this increment.

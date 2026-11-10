@@ -112,6 +112,18 @@ def main():
             finally:
                 page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
             result['checks'].append('track verification rejects missing graph references without changing assembly history')
+            invalid_axis = json.loads(json.dumps(graph))
+            invalid_axis['lowerExpression']['left']['right']['axis'] = 'SIDEWAYS'
+            try:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', invalid_axis)
+                rejected = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(false,false,true);return null;}catch(error){return {status:error.response?.status,body:error.response?.data};}}''')
+                assert rejected is not None and rejected['status'] >= 400, rejected
+                assert 'renderPipeline.lowerExpression.left.right.axis' in json.dumps(rejected['body']), rejected
+                assert post('/assembly/history') == history
+            finally:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
+            assert capture()['renderPipeline'] == graph
+            result['checks'].append('invalid track axis is rejected with its graph field path and valid capture recovers')
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
             conflict = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.response?.status;}}''')
             assert conflict == 409, conflict

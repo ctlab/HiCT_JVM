@@ -534,10 +534,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         if (verifyTracks) {
           final var definitions = tracks == null ? java.util.List.<Track1DManager.TrackSummary>of() : tracks.getTrack1DManager().listTracks();
           final var ids = definitions.stream().map(Track1DManager.TrackSummary::getTrackId).collect(java.util.stream.Collectors.toSet());
-          final var config = pipeline == null ? RenderPipelineConfig.disabled() : pipeline.getRenderPipelineConfig();
-          for (var binding : config.requiredTrackBindings()) {
-            if (!ids.contains(binding.trackId())) throw new IllegalArgumentException("Session graph references missing track " + binding.trackId());
-          }
+          ru.itmo.ctlab.hict.hict_server.handlers.tiles.SessionGraphValidator.validate(snapshot.renderPipeline(), ids);
           for (var definition : definitions) {
             if ("COOLER_WEIGHTS".equals(definition.getType()) && definition.getSourceFile().endsWith("/SECONDARY") && secondary == null)
               throw new IllegalArgumentException("Session weights track references missing secondary source");

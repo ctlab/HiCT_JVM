@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Validate session snapshot graph expressions before certifying track restoration. Report invalid operations, references, axes, log bases, colors and complexity with field paths while retaining valid graph JSON verbatim.
+
 - Add isolated session-track reconstruction that preserves IDs, order, appearance, ranges and virtual source references. Optional snapshot verification rejects missing graph track references and refuses partial preparation without replacing live tracks.
 - Add opt-in SHA-256 content fingerprints for session matrix, FASTA and physical track resources, with explicit source references for virtual weights tracks. Refuse missing or changing resources and unverified older-server responses; hashing supports progress and cancellation for future export jobs.
 - Add optional isolated assembly reconstruction to session snapshots. Verify AGP hashes, source intervals, strands, contact-bin mappings, names and scaffold metadata before marking the assembly verified; failed candidates roll back without replacing live sources.

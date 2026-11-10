@@ -496,7 +496,7 @@ paths:
                 verifyTrackDefinitions:
                   type: boolean
                   default: false
-                  description: Prepare tracks in an isolated manager, preserving IDs, order and settings, and reject missing rendering-graph track references.
+                  description: Prepare tracks in an isolated manager, preserving IDs, order and settings, and validate bounded rendering expressions and track references without silently substituting invalid values.
                 fingerprintFiles:
                   type: boolean
                   default: false
