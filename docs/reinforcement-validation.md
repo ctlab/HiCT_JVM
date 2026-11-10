@@ -1062,3 +1062,21 @@ marked draft); there is no persistent Background jobs panel and no restart recon
 contract that W13 describes is not built (FASTA-only, coverage and download each have their own service); a
 JSON Schema library is not used, the schema file is documentation checked only for shape; DNS rebinding
 between the address check and the connection is not pinned.
+
+## Interface compaction, dialogs and narrow windows (W11: items 2, 7, 9; partial)
+
+Done: the Normalization control and the Advanced split (W2, W10), the FASTA-only and Examples dialogs
+(W14, W15), and in this step: narrow-window layout (at 390 px the map starts at y=409, before 548; at 768 px
+the map is 568 px wide, before 306, because the panel starts hidden under 900 px), Borders & labels starting
+collapsed for new users (saved preferences kept), Tab containment, modal semantics and initial focus for the
+Tracks dialog (Tab left it on 29 of 40 presses), the opening wizard (all 40), About and the on-screen display
+settings (40 of 40 inside afterwards), and job status messages no longer toasting on every poll. Regression
+gates re-run on the rebuilt interface: sessions 25/25, dirty-edit prompts, navigation and Escape, anchor and
+selection, and the signal controls 36/36 (that gate, and `check_source_capabilities_browser.py`, were updated for the
+Normalization control that replaced the Cooler weights switch).
+Not done: a shorter opening wizard (Choose dataset / Review and open), one transaction for opening (the NaN
+prompt after the wizard still recomputes thresholds as a second step), moving the undo journal out of the
+Visualization panel, hiding matrix-only sections on maps without contacts (they are disabled with a reason), an
+inspectable effect or stated prerequisite for every preset, focus return to a menu item that has closed
+(it falls back to the page), a minimum supported window size declaration beyond "usable at 390 px", and
+actionable-error and copy-diagnostics handling for every action.
