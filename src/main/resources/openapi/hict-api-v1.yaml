@@ -500,7 +500,11 @@ paths:
                 fingerprintFiles:
                   type: boolean
                   default: false
-                  description: Hash matrix, linked FASTA and physical track files using SHA-256. May take time for large inputs. Virtual weights tracks reference their fingerprinted map source.
+                  description: Record the identity of matrix, linked FASTA and physical track files. By default (algorithm HICT-QUICK-1) this covers the size, the first and last 4 MiB and 16 spaced blocks, so it stays fast for multi-gigabyte files. Virtual weights tracks reference their fingerprinted map source.
+                fullFingerprints:
+                  type: boolean
+                  default: false
+                  description: With fingerprintFiles, hash every byte with SHA-256 instead. May take minutes for large inputs.
                 verifyAssemblyRoundTrip:
                   type: boolean
                   default: false

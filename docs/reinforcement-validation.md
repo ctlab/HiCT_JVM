@@ -809,3 +809,22 @@ Ordinary workspace saving still accepts these malformed test states; the
 protection here is at verified session preparation. The portable envelope,
 frontend Save/Open, atomic publication/client replacement, dirty prompts and
 large-save jobs remain outstanding. The overall W1 and release gates remain open.
+
+## Session restore and file identity (W1-A, W1-B)
+
+`POST /session/restore` takes the body produced by `/session/snapshot`. The
+snapshot is decoded, both sources, tracks, linked FASTA files, processing graph
+and visualization options are prepared in an isolated candidate, and file
+identity is checked before and after preparation. The candidate is published
+in a single step. The previous resources are closed afterwards, and any failure
+leaves the live session as it was (HTTP tests cover tampered, missing and
+malformed snapshots).
+
+File identity defaults to `HICT-QUICK-1`: the size, the first and last 4 MiB and
+16 evenly spaced 64 KiB blocks. A 3 GiB file is identified in well under 2 s
+(unit test). `fullFingerprints` selects the whole-file SHA-256. The modification
+time is deliberately not part of the identity, so copying a data folder keeps
+sessions valid. A changed file is refused with its name and the reason (size
+change or content difference). Edits that avoid all sampled regions of a large
+file are not detected by the default mode, so use `fullFingerprints` where that
+matters. Restore reads the algorithm stored in the snapshot.

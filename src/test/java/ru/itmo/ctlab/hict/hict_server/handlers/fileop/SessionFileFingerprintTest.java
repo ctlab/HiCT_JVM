@@ -51,4 +51,45 @@ class SessionFileFingerprintTest {
     assertThrows(IOException.class, () -> SessionFileFingerprint.compute(directory));
     assertThrows(IOException.class, () -> SessionFileFingerprint.compute(directory.resolve("missing")));
   }
+
+  @Test void quickIdentityIsBoundedAndSensitiveToStartMiddleEndAndSize() throws Exception {
+    var path = directory.resolve("big");
+    long size = 3L << 30;
+    try (var file = new java.io.RandomAccessFile(path.toFile(), "rw")) { file.setLength(size); }
+    long started = System.nanoTime();
+    var quick = SessionFileFingerprint.computeQuick(path);
+    long millis = (System.nanoTime() - started) / 1_000_000;
+    assertTrue(millis < 2000, "quick identity of a 3 GiB file took " + millis + " ms");
+    assertEquals(SessionFileFingerprint.QUICK, quick.algorithm());
+    assertEquals(size, quick.sizeBytes());
+    assertEquals(quick, SessionFileFingerprint.compute(path, SessionFileFingerprint.QUICK));
+    long middle = (1L << 22) + ((size - (1L << 23) - (64 << 10)) / 15) * 7 + 5;
+    for (long offset : new long[]{0, 100, size - 1, size - (1L << 22), middle}) {
+      try (var file = new java.io.RandomAccessFile(path.toFile(), "rw")) { file.seek(offset); file.write(1); }
+      var changed = SessionFileFingerprint.computeQuick(path);
+      assertNotEquals(quick, changed, "edit at " + offset + " must change the identity");
+      assertEquals("its content differs from the saved version (checked at the start, middle and end)", quick.explainDifference(changed));
+      try (var file = new java.io.RandomAccessFile(path.toFile(), "rw")) { file.seek(offset); file.write(0); }
+      assertEquals(quick, SessionFileFingerprint.computeQuick(path));
+    }
+    try (var file = new java.io.RandomAccessFile(path.toFile(), "rw")) { file.setLength(size + 1); }
+    assertEquals("its size changed from " + size + " to " + (size + 1) + " bytes",
+      quick.explainDifference(SessionFileFingerprint.computeQuick(path)));
+  }
+
+  @Test void quickIdentityOfSmallFilesCoversEveryByteAndIgnoresTimestamps() throws Exception {
+    var path = directory.resolve("small");
+    Files.write(path, new byte[1000]);
+    var modified = Files.getLastModifiedTime(path);
+    var quick = SessionFileFingerprint.computeQuick(path);
+    Files.setLastModifiedTime(path, java.nio.file.attribute.FileTime.fromMillis(modified.toMillis() + 60_000));
+    assertEquals(quick, SessionFileFingerprint.computeQuick(path));
+    var bytes = new byte[1000];
+    bytes[517] = 1;
+    Files.write(path, bytes);
+    assertNotEquals(quick, SessionFileFingerprint.computeQuick(path));
+    assertNotEquals(SessionFileFingerprint.compute(path).sha256(), SessionFileFingerprint.computeQuick(path).sha256());
+    assertThrows(IOException.class, () -> SessionFileFingerprint.compute(path, "MD5"));
+    assertTrue(SessionFileFingerprint.supports("SHA-256") && SessionFileFingerprint.supports("HICT-QUICK-1"));
+  }
 }

@@ -504,12 +504,29 @@ class ApiHttpIntegrationTest {
       new SimpleVisualizationOptions(0, 0, false, false, false,
         new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
     assertTrue(post("/session/restore", "{}").statusCode() >= 400);
+    Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
     assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/link_fasta", "{\"fastaFilename\":\"tiny.fa\"}").statusCode());
     var live = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile();
     live.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
     var saved = new JsonObject(post("/session/snapshot",
       "{\"verifyAssemblyRoundTrip\":true,\"fingerprintFiles\":true,\"verifyTrackDefinitions\":true}").body());
     var before = new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getString("agpSha256");
+
+    assertEquals("HICT-QUICK-1", saved.getJsonObject("primary").getJsonObject("fileFingerprint").getString("algorithm"));
+    assertEquals("HICT-QUICK-1", saved.getJsonObject("primary").getJsonObject("fastaFingerprint").getString("algorithm"));
+    var fullSnapshot = post("/session/snapshot",
+      "{\"fingerprintFiles\":true,\"fullFingerprints\":true}");
+    assertEquals("SHA-256", new JsonObject(fullSnapshot.body()).getJsonObject("primary").getJsonObject("fileFingerprint").getString("algorithm"));
+
+    Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNACGGGG\n");
+    var refused = post("/session/restore", saved.encode());
+    assertTrue(refused.statusCode() >= 400);
+    assertTrue(refused.body().contains("tiny.fa") && refused.body().contains("size changed"), refused.body());
+    org.junit.jupiter.api.Assertions.assertSame(live, ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile());
+    Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
+    assertEquals(200, post("/session/restore", saved.encode()).statusCode());
+    live = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile();
 
     var tampered = saved.copy();
     tampered.getJsonObject("primary").getJsonObject("fileFingerprint").put("sha256", "0".repeat(64));

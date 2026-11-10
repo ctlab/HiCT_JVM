@@ -223,7 +223,7 @@ public final class SessionSnapshotDecoder {
   }
 
   private static void fingerprint(JsonObject json, String path) {
-    choice(json, "algorithm", path, "SHA-256");
+    choice(json, "algorithm", path, SessionFileFingerprint.FULL, SessionFileFingerprint.QUICK);
     integer(json, "sizeBytes", path, 0, MAX_INTEGER);
     if (!string(json, "sha256", path, false).matches("[0-9a-f]{64}")) fail(path + ".sha256", "invalid SHA-256 digest");
   }

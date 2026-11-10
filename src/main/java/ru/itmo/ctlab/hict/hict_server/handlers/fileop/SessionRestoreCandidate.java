@@ -148,23 +148,26 @@ public final class SessionRestoreCandidate implements AutoCloseable {
       throw new IllegalArgumentException(field + "." + filenameKey + " must resolve to a regular file within DATA_DIR");
     JsonObject json = object.getJsonObject(fingerprintKey);
     String fingerprintField = field + "." + fingerprintKey;
-    if (json == null || !"SHA-256".equals(json.getValue("algorithm"))
+    if (json == null || !(json.getValue("algorithm") instanceof String algorithm) || !SessionFileFingerprint.supports(algorithm)
         || !(json.getValue("sizeBytes") instanceof Number size)
         || size.doubleValue() < 0 || !Double.isFinite(size.doubleValue())
         || size.doubleValue() != size.longValue()
         || !(json.getValue("sha256") instanceof String hash) || !hash.matches("[0-9a-f]{64}"))
       throw new IllegalArgumentException(fingerprintField + " is not a valid SHA-256 fingerprint");
-    var expected = new SessionFileFingerprint("SHA-256", json.getLong("sizeBytes"), json.getString("sha256"));
+    var expected = new SessionFileFingerprint(json.getString("algorithm"), json.getLong("sizeBytes"), json.getString("sha256"));
     resources.add(new Resource(lexical, real, expected, fingerprintField));
     return real;
   }
 
   private record Resource(Path requested, Path resolved, SessionFileFingerprint expected, String field) {
     void verify() throws IOException {
-      if (!Objects.equals(requested.toRealPath(), resolved)
-          || !expected.equals(SessionFileFingerprint.compute(resolved))
-          || !Objects.equals(requested.toRealPath(), resolved))
-        throw new IOException(field + ": resource identity changed");
+      if (!Objects.equals(requested.toRealPath(), resolved))
+        throw new IOException(field + ": " + requested.getFileName() + " now resolves to a different file");
+      final var reason = expected.explainDifference(SessionFileFingerprint.compute(resolved, expected.algorithm()));
+      if (reason != null)
+        throw new IOException(field + ": " + requested.getFileName() + " changed since the session was saved, " + reason);
+      if (!Objects.equals(requested.toRealPath(), resolved))
+        throw new IOException(field + ": " + requested.getFileName() + " now resolves to a different file");
     }
   }
 

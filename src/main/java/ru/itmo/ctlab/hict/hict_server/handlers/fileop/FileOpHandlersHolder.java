@@ -512,6 +512,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var fingerprintValue = request == null ? Boolean.FALSE : request.getValue("fingerprintFiles", Boolean.FALSE);
         if (!(fingerprintValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "fingerprintFiles must be a boolean");
         final boolean fingerprintFiles = (Boolean) fingerprintValue;
+        final var fullValue = request == null ? Boolean.FALSE : request.getValue("fullFingerprints", Boolean.FALSE);
+        if (!(fullValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "fullFingerprints must be a boolean");
+        final String fingerprintAlgorithm = (Boolean) fullValue ? SessionFileFingerprint.FULL : SessionFileFingerprint.QUICK;
         final var tracksValue = request == null ? Boolean.FALSE : request.getValue("verifyTrackDefinitions", Boolean.FALSE);
         if (!(tracksValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "verifyTrackDefinitions must be a boolean");
         final boolean verifyTracks = (Boolean) tracksValue;
@@ -553,8 +556,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
         }
         if (fingerprintFiles) {
-          fingerprintSessionSource(map, primary.getChunkedFile(), snapshot.primary(), ASSEMBLY_SOURCE_PRIMARY);
-          if (secondary != null) fingerprintSessionSource(map, secondary.getChunkedFile(), snapshot.secondary(), ASSEMBLY_SOURCE_SECONDARY);
+          fingerprintSessionSource(map, primary.getChunkedFile(), snapshot.primary(), ASSEMBLY_SOURCE_PRIMARY, fingerprintAlgorithm);
+          if (secondary != null) fingerprintSessionSource(map, secondary.getChunkedFile(), snapshot.secondary(), ASSEMBLY_SOURCE_SECONDARY, fingerprintAlgorithm);
           final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath().toAbsolutePath().normalize();
           for (int i = 0; i < snapshot.tracks().size(); i++) {
             final var track = snapshot.tracks().getJsonObject(i);
@@ -567,7 +570,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
             } else {
               final var path = dataDirectory.resolve(filename).normalize();
               if (!path.startsWith(dataDirectory)) throw new IllegalArgumentException("Track resource is outside DATA_DIR");
-              track.put("fileFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(path)));
+              track.put("fileFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(path, fingerprintAlgorithm)));
             }
           }
         }
@@ -1529,12 +1532,12 @@ public class FileOpHandlersHolder extends HandlersHolder {
   }
 
   private static void fingerprintSessionSource(LocalMap<String, Object> map, ChunkedFile file,
-                                                io.vertx.core.json.JsonObject snapshot, String source) throws java.io.IOException {
-    snapshot.put("fileFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(file.getHdfFilePath())));
+                                                io.vertx.core.json.JsonObject snapshot, String source, String algorithm) throws java.io.IOException {
+    snapshot.put("fileFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(file.getHdfFilePath(), algorithm)));
     if (!snapshot.getString("fastaFilename", "").isBlank()) {
       final var fasta = resolveFastaPathWrapperBySource(map, source);
       if (fasta == null) throw new IllegalStateException("Linked FASTA resource is unavailable for " + source);
-      snapshot.put("fastaFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(fasta.getPath())));
+      snapshot.put("fastaFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(fasta.getPath(), algorithm)));
     }
   }
 
