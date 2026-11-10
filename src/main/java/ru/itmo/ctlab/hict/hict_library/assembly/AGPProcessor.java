@@ -324,11 +324,18 @@ public class AGPProcessor {
 
   public AGPImportPlan.ImportReport importRecords(final List<AGPFileRecord> records,
       final AGPImportPlan.MissingComponentsPolicy policy) {
+    return importRecords(records, policy, component ->
+      chunkedFile.resolveContigDescriptorByName(component.getContigName()));
+  }
+
+  private AGPImportPlan.ImportReport importRecords(List<AGPFileRecord> records,
+      AGPImportPlan.MissingComponentsPolicy policy,
+      java.util.function.Function<ContigAGPRecord, ContigDescriptor> resolveComponent) {
     // ChunkedFile holds both write locks. No live changes until both trees are ready.
     final var tree = chunkedFile.getContigTree();
     int nextId = tree.getContigDescriptors().keySet().stream().mapToInt(Integer::intValue).max().orElse(-1) + 1;
-    final var plan = AGPImportPlan.prepare(records, chunkedFile.getOriginalDescriptors().values(),
-      chunkedFile::resolveContigDescriptorByName, chunkedFile.getResolutions(), nextId, policy);
+    final var plan = AGPImportPlan.prepareComponents(records, chunkedFile.getOriginalDescriptors().values(),
+      resolveComponent, chunkedFile.getResolutions(), nextId, policy);
     if (plan.report().requiresChoice()) return plan.report();
     // Validate the entire AGP above, including excluded rows. Only the chosen
     // active records contribute contigs, scaffold coordinates or annotations.
@@ -359,6 +366,54 @@ public class AGPProcessor {
     chunkedFile.getScaffoldTree().replaceWith(preparedScaffolds);
     chunkedFile.getScaffoldNameOverrides().clear();
     return plan.report();
+  }
+
+  public ContigDescriptor resolveSessionComponent(int id, String sourceName, long start, long length) {
+    final var known = chunkedFile.getContigTree().getContigDescriptors().get(id);
+    if (known != null) {
+      if (!known.getContigNameInSourceFASTA().equals(sourceName)
+        || known.getOffsetInSourceFASTA() != start || known.getLengthBp() != length) {
+        throw new IllegalArgumentException("Session component ID refers to a different source interval");
+      }
+      return known;
+    }
+    final long end = Math.addExact(start, length);
+    final var original = chunkedFile.getOriginalDescriptors().values().stream()
+      .filter(contig -> contig.getContigNameInSourceFASTA().equals(sourceName)
+        && start >= contig.getOffsetInSourceFASTA()
+        && end <= contig.getOffsetInSourceFASTA() + contig.getLengthBp())
+      .findFirst().orElseThrow(() -> new IllegalArgumentException("Session component is outside the original source interval"));
+    final long origin = original.getOffsetInSourceFASTA();
+    final var slice = AGPImportPlan.slice(original, start - origin, end - origin, id, chunkedFile.getResolutions());
+    if (slice.getContigId() != id) {
+      throw new IllegalArgumentException("Session component does not preserve the original component ID");
+    }
+    return slice;
+  }
+
+  public void importSessionRecords(Reader input, List<Integer> componentIds) throws IOException, NoSuchFieldException {
+    final var records = parseRecords(input);
+    final var components = records.stream().filter(ContigAGPRecord.class::isInstance)
+      .map(ContigAGPRecord.class::cast).toList();
+    if (components.size() != componentIds.size()) {
+      throw new IllegalArgumentException("Session AGP component count differs from the saved assembly");
+    }
+    final var ids = new IdentityHashMap<ContigAGPRecord, Integer>();
+    for (int i = 0; i < components.size(); i++) ids.put(components.get(i), componentIds.get(i));
+    final var contigLock = chunkedFile.getContigTree().getRootLock().writeLock();
+    final var scaffoldLock = chunkedFile.getScaffoldTree().getRootLock().writeLock();
+    contigLock.lock();
+    scaffoldLock.lock();
+    try {
+      importRecords(records, AGPImportPlan.MissingComponentsPolicy.EXCLUDE, component -> {
+        final long start = component.getIntraContigStartBpIncl() - 1;
+        return resolveSessionComponent(ids.get(component), component.getContigName(), start,
+          component.getIntraContigEndBpIncl() - start);
+      });
+    } finally {
+      scaffoldLock.unlock();
+      contigLock.unlock();
+    }
   }
 
   public Stream<String> getAGPStream(final long spacerLength) {

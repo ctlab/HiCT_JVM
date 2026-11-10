@@ -2240,6 +2240,21 @@ components:
         assemblyInfo: { type: object, additionalProperties: true }
         contigNameOverrides: { type: object, additionalProperties: { type: string } }
         scaffoldNameOverrides: { type: object, additionalProperties: { type: string } }
+        splitEdits:
+          type: array
+          description: Native split operations in edit order, used to recover contact-bin ownership before applying AGP.
+          items:
+            type: object
+            required: [parentId, sourceName, sourceOffsetBp, parentLengthBp, reversed, splitOffsetBp, leftId, rightId]
+            properties:
+              parentId: { type: integer, format: int32, minimum: 0 }
+              sourceName: { type: string, minLength: 1 }
+              sourceOffsetBp: { type: integer, format: int32, minimum: 0 }
+              parentLengthBp: { type: integer, format: int64, minimum: 2 }
+              reversed: { type: boolean }
+              splitOffsetBp: { type: integer, format: int64, minimum: 1 }
+              leftId: { type: integer, format: int32, minimum: 1 }
+              rightId: { type: integer, format: int32, minimum: 2 }
         capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
     SecondarySourceStatus:
       type: object

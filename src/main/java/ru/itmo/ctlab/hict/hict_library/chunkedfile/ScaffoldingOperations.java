@@ -32,6 +32,7 @@ import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.*;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
+import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -324,6 +325,58 @@ public class ScaffoldingOperations {
   }
 
   public void splitContigAtBin(final long splitPosition, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull QueryLengthUnit units) {
+    splitContigAtBin(splitPosition, resolutionDescriptor, units, null);
+  }
+
+  /** Rebuild native bins from a parent before the saved AGP applies the final layout. */
+  public void replaySplit(ChunkedFile.SplitEdit edit, ContigDescriptor parent) {
+    final var tree = chunkedFile.getContigTree();
+    final var scaffoldTree = chunkedFile.getScaffoldTree();
+    tree.getRootLock().writeLock().lock();
+    scaffoldTree.getRootLock().writeLock().lock();
+    try {
+      if (parent.getContigId() != edit.parentId() || edit.leftId() <= edit.parentId()
+        || (long) edit.leftId() + 1 != edit.rightId()
+        || tree.getContigDescriptors().containsKey(edit.leftId())
+        || tree.getContigDescriptors().containsKey(edit.rightId())) {
+        throw new IllegalArgumentException("Invalid split component IDs");
+      }
+      if (!parent.getContigNameInSourceFASTA().equals(edit.sourceName())
+        || parent.getOffsetInSourceFASTA() != edit.sourceOffsetBp()
+        || parent.getLengthBp() != edit.parentLengthBp()
+        || edit.splitOffsetBp() <= 0 || edit.splitOffsetBp() >= parent.getLengthBp()) {
+        throw new IllegalArgumentException("Invalid split parent interval");
+      }
+      final var before = chunkedFile.snapshotAssembly();
+      final ContigDescriptor left;
+      final ContigDescriptor right;
+      try {
+        tree.getContigDescriptors().put(parent.getContigId(), parent);
+        tree.commitRoot(ContigTree.Node.createNodeFromDescriptor(parent,
+          edit.reversed() ? ContigDirection.REVERSED : ContigDirection.FORWARD));
+        scaffoldTree.replaceWith(new ScaffoldTree(parent.getLengthBp()));
+        splitContigAtBin(edit.splitOffsetBp(), ResolutionDescriptor.fromResolutionOrder(0),
+          QueryLengthUnit.BASE_PAIRS, edit);
+        left = tree.getContigDescriptors().get(edit.leftId());
+        right = tree.getContigDescriptors().get(edit.rightId());
+        if (left.getLengthBp() != edit.splitOffsetBp()) {
+          throw new IllegalArgumentException("Split offset is not a native bin boundary");
+        }
+      } finally {
+        chunkedFile.restoreAssembly(before);
+      }
+      tree.getContigDescriptors().put(parent.getContigId(), parent);
+      tree.getContigDescriptors().put(edit.leftId(), left);
+      tree.getContigDescriptors().put(edit.rightId(), right);
+      chunkedFile.recordSplit(edit);
+    } finally {
+      scaffoldTree.getRootLock().writeLock().unlock();
+      tree.getRootLock().writeLock().unlock();
+    }
+  }
+
+  private void splitContigAtBin(long splitPosition, ResolutionDescriptor resolutionDescriptor,
+                                QueryLengthUnit units, ChunkedFile.SplitEdit replay) {
     assert !QueryLengthUnit.BASE_PAIRS.equals(units) || (resolutionDescriptor.getResolutionOrderInArray() == 0) : "In bp query resolution should be set to 0";
 
     final var minResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(1);
@@ -364,7 +417,9 @@ public class ScaffoldingOperations {
 
       final int maxContigId = contigTree.getContigDescriptors().keySet().stream().max(Integer::compareTo).orElse(0);
 
-      final var newContigIds = List.of(1 + maxContigId, 2 + maxContigId);
+      final var newContigIds = replay == null
+        ? List.of(Math.addExact(maxContigId, 1), Math.addExact(maxContigId, 2))
+        : List.of(replay.leftId(), replay.rightId());
       final var newContigLengthBps = List.of(
         deltaBpsFromContigStart,
         oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart - minBpResolution
@@ -501,7 +556,11 @@ public class ScaffoldingOperations {
       final var newAssemblyLengthBp = newContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
 
       assert (oldAssemblyLengthBp == (newAssemblyLengthBp + minBpResolution)) : "Assembly length has changed after splitting contig??";
-
+      chunkedFile.recordSplit(new ChunkedFile.SplitEdit(
+        oldContigDescriptor.getContigId(), oldContigDescriptor.getContigNameInSourceFASTA(),
+        oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getLengthBp(),
+        oldContigNode.getTrueDirection() == ContigDirection.REVERSED, deltaBpsFromContigStart,
+        newContigIds.get(0), newContigIds.get(1)));
     } finally {
       scaffoldLock.writeLock().unlock();
       lock.writeLock().unlock();

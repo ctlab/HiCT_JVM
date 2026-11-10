@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Sessions save and restore after Split, including reversed contigs and subsequent assembly edits. If a save fails, a dialog shows the reason and the edit stays unsaved.
 - Opening a map fits its color range to the visible signal. The sidebar, saved options and rendering pipeline agree when weights change. Excluded bins are masked by default and the Change action remembers the choice per file.
 - Show O/E uses a diverging log₂ palette centered at a ratio of 1. Returning to Observed restores its previous range.
 - Closing a map now releases its tile images, layers, interactions and size observers. Over 15 open and close cycles the browser's JavaScript memory grew from 20 MB to 128 MB before; it now goes from 15 MB to 19 MB, and retained tile images dropped from about 1,000 to 1. A small leftover growth remains (see the validation notes).

@@ -153,6 +153,23 @@ public final class SessionSnapshotDecoder {
       String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(agp.getBytes(StandardCharsets.UTF_8)));
       if (!actual.equals(hash)) fail(path + ".agpSha256", "does not match AGP content");
     } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    if (source.containsKey("splitEdits")) {
+      final var splits = array(source, "splitEdits", path);
+      long previousRightId = -1;
+      for (int i = 0; i < splits.size(); i++) {
+        final var field = path + ".splitEdits[" + i + "]";
+        final var split = asObject(splits.getValue(i), field);
+        final long parent = integer(split, "parentId", field, 0, Integer.MAX_VALUE);
+        string(split, "sourceName", field, false);
+        integer(split, "sourceOffsetBp", field, 0, Integer.MAX_VALUE);
+        final long length = integer(split, "parentLengthBp", field, 2, MAX_INTEGER);
+        bool(split, "reversed", field);
+        integer(split, "splitOffsetBp", field, 1, length - 1);
+        final long left = integer(split, "leftId", field, parent + 1, Integer.MAX_VALUE - 1);
+        if (left <= previousRightId) fail(field + ".leftId", "split IDs must increase");
+        previousRightId = integer(split, "rightId", field, left + 1, left + 1);
+      }
+    }
     var assembly = object(source, "assemblyInfo", path);
     var contigs = array(assembly, "contigDescriptors", path + ".assemblyInfo");
     var contigIds = new HashSet<Long>();

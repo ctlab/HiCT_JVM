@@ -24,11 +24,18 @@ public record SessionSnapshotDTO(int snapshotVersion, boolean assemblyVerified, 
     } catch (NoSuchAlgorithmException impossible) {
       throw new IllegalStateException("SHA-256 is unavailable", impossible);
     }
-    return new JsonObject().put("filename", filename).put("fastaFilename", fastaFilename)
+    final var source = new JsonObject().put("filename", filename).put("fastaFilename", fastaFilename)
       .put("agp", agp).put("agpSha256", hash)
       .put("assemblyInfo", JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(file)))
       .put("contigNameOverrides", JsonObject.mapFrom(file.getContigNameOverrides()))
       .put("scaffoldNameOverrides", JsonObject.mapFrom(file.getScaffoldNameOverrides()))
       .put("capabilities", JsonObject.mapFrom(SourceCapabilitiesDTO.fromFile(file)));
+    final var splits = file.getSplitEdits();
+    if (!splits.isEmpty()) {
+      final var replay = new JsonArray();
+      splits.forEach(split -> replay.add(JsonObject.mapFrom(split)));
+      source.put("splitEdits", replay);
+    }
+    return source;
   }
 }

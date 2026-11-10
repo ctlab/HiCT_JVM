@@ -1116,3 +1116,18 @@ agreement, and looks for both ends of the O/E palette in the rendered image.
 The fat JAR and WebUI browser gate passed 148 checks with zero page or console errors.
 The full WebUI build, JVM tests and changed-file lint also passed. The zoom checks passed
 at both depths on all three fixtures with the opening threshold.
+
+## Save and restore sessions after Split (U2)
+
+Session snapshots retain native split coordinates, orientation and component IDs. The
+restorer replays those splits against the fingerprinted source before applying the saved
+AGP, then checks the assembly descriptors, bin lengths and AGP hash. Save verification also
+compares the native contact-bin mapping. Split replay records participate in Undo and Redo.
+Snapshots without split records follow the existing AGP restore path.
+
+The JVM suite passed, including forward and reversed cuts, two cuts in one component,
+Undo and Redo, and malformed split metadata. The browser snapshot gate passed 18 checks,
+including saving, closing and restoring after Split, reversed Split, Split followed by
+Group or Debris, and two splits in one contig. All five preserved the AGP hash and assembly
+descriptors. A forced HTTP 400 showed the server reason in the save dialog and kept the
+unsaved edit. The browser reported zero page errors.

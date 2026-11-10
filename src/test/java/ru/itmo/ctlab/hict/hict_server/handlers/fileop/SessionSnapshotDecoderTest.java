@@ -85,6 +85,21 @@ class SessionSnapshotDecoderTest {
         .put("scaffoldBordersBP", new JsonObject().put("startBP", 0).put("endBP", 17).put("lengthBp", 16))));
   }
 
+  @Test void validatesSplitReplayFieldsAndOrderBeforeOpeningResources() {
+    var split = new JsonObject().put("parentId", 0).put("sourceName", "tiny")
+      .put("sourceOffsetBp", 0).put("parentLengthBp", 17).put("reversed", false)
+      .put("splitOffsetBp", 8).put("leftId", 1).put("rightId", 2);
+    var json = valid();
+    json.getJsonObject("primary").put("splitEdits", new JsonArray().add(split));
+    assertEquals(json, JsonObject.mapFrom(SessionSnapshotDecoder.decode(json).snapshot()));
+    rejects("splitEdits[0].splitOffsetBp", x -> x.getJsonObject("primary")
+      .put("splitEdits", new JsonArray().add(split.copy().put("splitOffsetBp", 17))));
+    rejects("splitEdits[0].rightId", x -> x.getJsonObject("primary")
+      .put("splitEdits", new JsonArray().add(split.copy().put("rightId", 1))));
+    rejects("splitEdits[1].leftId", x -> x.getJsonObject("primary")
+      .put("splitEdits", new JsonArray().add(split).add(split.copy())));
+  }
+
   @Test void validatesViewAndIndependentScopeReferencesAgainstActiveAssembly() {
     var scope = new JsonObject().put("kind", "contig").put("id", 0).put("label", "tiny").put("startBp", 0).put("endBp", 17);
     var state = new JsonObject().put("version", 1).put("view", new JsonObject()

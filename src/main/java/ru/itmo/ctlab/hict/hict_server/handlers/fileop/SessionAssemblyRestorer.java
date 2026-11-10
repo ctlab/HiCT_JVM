@@ -33,7 +33,22 @@ public final class SessionAssemblyRestorer {
       final var expected = source.getJsonObject("assemblyInfo");
       final var contigs = expected.getJsonArray("contigDescriptors");
       final var scaffolds = expected.getJsonArray("scaffoldDescriptors");
-      candidate.importAGP(new StringReader(agp));
+      final var splits = source.getJsonArray("splitEdits");
+      if (splits == null || splits.isEmpty()) {
+        candidate.importAGP(new StringReader(agp));
+      } else {
+        for (int index = 0; index < splits.size(); index++) {
+          final var edit = splits.getJsonObject(index).mapTo(ChunkedFile.SplitEdit.class);
+          final var parent = candidate.getAgpProcessor().resolveSessionComponent(
+            edit.parentId(), edit.sourceName(), edit.sourceOffsetBp(), edit.parentLengthBp());
+          candidate.scaffoldingOperations().replaySplit(edit, parent);
+        }
+        final var componentIds = new ArrayList<Integer>(contigs.size());
+        for (int index = 0; index < contigs.size(); index++) {
+          componentIds.add(contigs.getJsonObject(index).getInteger("contigId"));
+        }
+        candidate.getAgpProcessor().importSessionRecords(new StringReader(agp), componentIds);
+      }
       final var imported = candidate.getAssemblyInfo().contigs();
       require(imported.size() == contigs.size(), "contigDescriptors", "AGP changed the number of components");
       final var replacements = new HashMap<Integer, ContigDescriptor>();

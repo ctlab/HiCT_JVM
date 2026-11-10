@@ -35,7 +35,79 @@ def main():
             page.get_by_role('link', name='Attach', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
         def capture():
-            return page.evaluate('()=>window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true)')
+            return page.evaluate('''async () => {
+                try {
+                    return await window.__hictBenchmark.manager().networkManager.requestManager
+                        .getSessionSnapshot(true, true, true, true);
+                } catch (error) {
+                    throw new Error(error.response?.data?.error ?? error.message);
+                }
+            }''')
+
+        def file_action(name):
+            page.get_by_role('link', name='File', exact=True).click()
+            page.get_by_role('link', name=name, exact=True).click()
+
+        def split_round_trips():
+            scenarios = (
+                ('split', False, (2,), None),
+                ('reversed split', True, (2,), None),
+                ('split then group', False, (2,), ('group_contigs_into_scaffold', 0, 13)),
+                ('split then debris', False, (2,), ('move_selection_to_debris', 0, 8)),
+                ('two splits in one contig', False, (1, 2), None),
+            )
+            for name, reverse, cuts, follow_up in scenarios:
+                post('/close')
+                post('/open', {'filename': 'tiny-primary.hict.hdf5'})
+                post('/render_pipeline/reset')
+                if reverse:
+                    post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
+                for cut in cuts:
+                    post('/split_contig_at_bin', {'splitPx': cut, 'bpResolution': 4})
+                if follow_up:
+                    route, start, end = follow_up
+                    post('/' + route, {'startBP': start, 'endBP': end})
+                attach()
+                expected = capture()['primary']
+                assert len(expected['splitEdits']) == len(cuts), (name, expected['splitEdits'])
+                with page.expect_download() as download:
+                    file_action('Save session')
+                path = output / f"{name.replace(' ', '-')}.json"
+                download.value.save_as(path)
+                saved = json.loads(path.read_text())['snapshot']['primary']
+                assert saved['agpSha256'] == expected['agpSha256'], name
+                file_action('Close')
+                page.get_by_role('heading', name='No contact map open').wait_for()
+                with page.expect_file_chooser() as chooser:
+                    file_action('Open session')
+                chooser.value.set_files(path)
+                page.get_by_text('Session restored. Undo history starts from the restored assembly.').wait_for()
+                actual = capture()['primary']
+                assert actual['agpSha256'] == expected['agpSha256'], name
+                assert actual['assemblyInfo'] == expected['assemblyInfo'], name
+                assert actual['splitEdits'] == expected['splitEdits'], name
+                result['checks'].append(f'{name} saves, closes and restores the exact assembly')
+
+        def failed_save_keeps_edits():
+            post('/close')
+            post('/open', {'filename': 'tiny-primary.hict.hdf5'})
+            attach()
+            with page.expect_response(lambda response: response.url.endswith('/split_contig_at_bin') and response.ok):
+                page.evaluate('() => window.__hictBenchmark.manager().eventManager.onClickInScissorsMode([2, 2], 4)')
+            dirty = '() => window.__hictBenchmark.manager().networkManager.requestManager.hasUnsavedAssemblyEdits()'
+            page.wait_for_function(dirty)
+            error = 'The session snapshot could not verify its assembly.'
+            page.route('**/session/snapshot', lambda route: route.fulfill(status=400, json={'error': error}))
+            try:
+                file_action('Save session')
+                dialog = page.get_by_role('alertdialog', name='Session could not be saved')
+                dialog.get_by_text(error, exact=True).wait_for()
+                assert page.evaluate(dirty)
+                dialog.get_by_role('button', name='OK').click()
+            finally:
+                page.unroute('**/session/snapshot')
+            result['checks'].append('a failed save displays the server reason and leaves the Split edit unsaved')
+
         try:
             post('/close')
             empty = context.request.post(args.api + '/session/snapshot', data={})
@@ -200,6 +272,8 @@ def main():
                 page.unroute('**/session/snapshot', legacy_snapshot)
             result['checks'].append('explicit verification rejects an unverified older-server response')
             result['first'], result['second'] = first, second
+            split_round_trips()
+            failed_save_keeps_edits()
             page.screenshot(path=str(output / 'snapshot.png'))
             assert not result['pageErrors'], result['pageErrors']
         finally:

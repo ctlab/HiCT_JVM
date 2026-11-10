@@ -23,6 +23,13 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
   public static AGPImportPlan prepare(List<AGPFileRecord> records,
       Collection<ContigDescriptor> originals, Function<String, ContigDescriptor> resolver,
       long[] resolutions, int firstNewId, MissingComponentsPolicy policy) {
+    return prepareComponents(records, originals, component -> resolver.apply(component.getContigName()),
+      resolutions, firstNewId, policy);
+  }
+
+  static AGPImportPlan prepareComponents(List<AGPFileRecord> records,
+      Collection<ContigDescriptor> originals, Function<ContigAGPRecord, ContigDescriptor> resolver,
+      long[] resolutions, int firstNewId, MissingComponentsPolicy policy) {
     validateLayout(records);
     var selected = new ArrayList<ContigTree.ContigTuple>();
     var omitted = new ArrayList<ContigTree.ContigTuple>();
@@ -34,7 +41,7 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
     int nextId = firstNewId, partials = 0, unknown = 0;
     for (var record : records) {
       if (!(record instanceof ContigAGPRecord c)) continue;
-      var source = resolver.apply(c.getContigName());
+      var source = resolver.apply(c);
       long start = c.getIntraContigStartBpIncl() - 1, end = c.getIntraContigEndBpIncl();
       long offset = source.getOffsetInSourceFASTA();
       if (start < offset || end > offset + source.getLengthBp()) {

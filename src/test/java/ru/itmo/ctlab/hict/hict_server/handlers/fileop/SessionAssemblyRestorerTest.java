@@ -2,9 +2,12 @@ package ru.itmo.ctlab.hict.hict_server.handlers.fileop;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
+import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO;
 import java.nio.file.Path;
 import java.util.List;
@@ -12,6 +15,43 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SessionAssemblyRestorerTest {
   @TempDir Path directory;
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void restoresNativeSplitWithIdenticalContactBins(boolean reversed) throws Exception {
+    var path = ReinforcementHdf5Fixture.create(directory, "map", List.of(4L, 10L));
+    var options = new ChunkedFile.ChunkedFileOptions(path, 1, 2);
+    try (var live = new ChunkedFile(options); var candidate = new ChunkedFile(options)) {
+      if (reversed) live.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+      live.getScaffoldingOperations().splitContigAtBin(
+        8, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      var saved = SessionSnapshotDTO.source(live, "map.hict.hdf5", "");
+      SessionAssemblyRestorer.restore(candidate, saved);
+      SessionAssemblyRestorer.verifyContactBinMapping(live, candidate);
+      assertEquals(saved, SessionSnapshotDTO.source(candidate, "map.hict.hdf5", ""));
+    }
+  }
+
+  @Test void restoresTwoSplitsAndTracksTheirLineageAcrossUndoAndRedo() throws Exception {
+    var path = ReinforcementHdf5Fixture.create(directory, "map", List.of(4L, 10L));
+    var options = new ChunkedFile.ChunkedFileOptions(path, 1, 2);
+    try (var live = new ChunkedFile(options); var candidate = new ChunkedFile(options)) {
+      var initial = live.snapshotAssembly();
+      var resolution = ResolutionDescriptor.fromResolutionOrder(0);
+      live.getScaffoldingOperations().splitContigAtBin(4, resolution, QueryLengthUnit.BASE_PAIRS);
+      live.getScaffoldingOperations().splitContigAtBin(8, resolution, QueryLengthUnit.BASE_PAIRS);
+      var edited = live.snapshotAssembly();
+      var saved = SessionSnapshotDTO.source(live, "", "");
+      assertEquals(2, saved.getJsonArray("splitEdits").size());
+      live.restoreAssembly(initial);
+      assertFalse(SessionSnapshotDTO.source(live, "", "").containsKey("splitEdits"));
+      live.restoreAssembly(edited);
+      assertEquals(saved, SessionSnapshotDTO.source(live, "", ""));
+      SessionAssemblyRestorer.restore(candidate, saved);
+      SessionAssemblyRestorer.verifyContactBinMapping(live, candidate);
+      assertEquals(saved, SessionSnapshotDTO.source(candidate, "", ""));
+    }
+  }
 
   @Test void restoresEditedLayoutNamesAndSpacerMetadataWithoutChangingSourceFile() throws Exception {
     var path = ReinforcementHdf5Fixture.create(directory, "map", List.of(4L, 10L));

@@ -96,6 +96,8 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
   private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Integer, String> contigNameOverrides = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
   private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Long, String> scaffoldNameOverrides = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
+  private final ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Integer, SplitEdit> splitEdits =
+    new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
   private final @NotNull Object nameOverrideLock = new Object();
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
   /** Which per-bin weights are applied when a tile uses weights: the file's own, or computed coverage. */
@@ -225,12 +227,31 @@ public class ChunkedFile implements AutoCloseable {
       (System.nanoTime() - openingStarted) / 1_000_000);
   }
 
+  /** Native split coordinates are relative to the parent in its orientation at the time of the edit. */
+  public record SplitEdit(int parentId, String sourceName, int sourceOffsetBp, long parentLengthBp,
+                          boolean reversed, long splitOffsetBp, int leftId, int rightId) {}
+
+  void recordSplit(SplitEdit split) {
+    splitEdits.put(split.leftId(), split);
+  }
+
+  public List<SplitEdit> getSplitEdits() {
+    contigTree.getRootLock().readLock().lock();
+    try {
+      return splitEdits.values().stream()
+        .sorted(java.util.Comparator.comparingInt(SplitEdit::leftId)).toList();
+    } finally {
+      contigTree.getRootLock().readLock().unlock();
+    }
+  }
+
   /** No matrix data or tree traversal: checkpoints share persistent nodes. */
   public record AssemblySnapshot(
       ChunkedFile owner, ContigTree.Node contigs, ScaffoldTree.Snapshot scaffolds,
       ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, ContigDescriptor> descriptors,
       ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, String> contigNames,
       ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Long, String> scaffoldNames,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, SplitEdit> splits,
       AGPProcessor.Annotations annotations) {}
 
   public AssemblySnapshot snapshotAssembly() {
@@ -239,7 +260,7 @@ public class ChunkedFile implements AutoCloseable {
     try {
       return new AssemblySnapshot(this, contigTree.getRoot(), scaffoldTree.snapshot(),
         contigTree.getContigDescriptors().snapshot(), contigNameOverrides.snapshot(),
-        scaffoldNameOverrides.snapshot(), agpProcessor.snapshotAnnotations());
+        scaffoldNameOverrides.snapshot(), splitEdits.snapshot(), agpProcessor.snapshotAnnotations());
     } finally {
       scaffoldTree.getRootLock().readLock().unlock(); contigTree.getRootLock().readLock().unlock();
     }
@@ -252,6 +273,7 @@ public class ChunkedFile implements AutoCloseable {
     try {
       contigTree.getContigDescriptors().restore(state.descriptors());
       contigNameOverrides.restore(state.contigNames()); scaffoldNameOverrides.restore(state.scaffoldNames());
+      splitEdits.restore(state.splits());
       agpProcessor.restoreAnnotations(state.annotations());
       contigTree.commitRoot(state.contigs()); scaffoldTree.restore(state.scaffolds());
     } finally {
