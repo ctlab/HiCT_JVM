@@ -94,3 +94,82 @@ def test_sparse_empty_index_and_failure_keeps_old_overlay(tmp_path):
     with h5py.File(first) as old, h5py.File(broken) as failed:
         assert old['sequence_analysis'].attrs['complete']
         assert not failed['sequence_analysis'].attrs['complete']
+
+
+def _expected(rows, cols, scores, base=None):
+    matrix = np.zeros((8, 8)) if base is None else base.copy()
+    for i, (rs, rb) in enumerate(rows):
+        for j, (cs, cb) in enumerate(cols):
+            matrix[rs * 4 + rb, cs * 4 + cb] = matrix[cs * 4 + cb, rs * 4 + rb] = round(scores[i, j], 4)
+    return matrix
+
+
+def test_repeating_an_identical_update_never_adds_values(tmp_path):
+    source = template(tmp_path / 'primary.hdf5')
+    rows, cols = np.array([[0, 0], [0, 1], [1, 2]]), np.array([[0, 2], [1, 0], [1, 3]])
+    scores = np.array([[10, 20, 30], [40, 50, 60], [70, 80, 90]], dtype=float)
+    previous = None
+    for round_number in range(4):
+        target = tmp_path / f'round{round_number}.hdf5'
+        with OverlayWriter(source, target, [2], {'k': 21}, previous=previous) as out:
+            out.record_coverage(2, rows, cols, {'snapshot': str(round_number)})
+            out.patch(2, rows, cols, scores)
+        previous = target
+        # Every repetition gives the same matrix as the first: replaced, never summed.
+        np.testing.assert_array_equal(read_matrix(target), _expected(rows, cols, scores))
+    # Identity percentages are stored as given. Nothing is clamped to 1 or to a presence flag.
+    assert read_matrix(previous).max() == 90
+
+
+def test_overlapping_regions_take_the_latest_value_and_keep_the_rest(tmp_path):
+    source = template(tmp_path / 'primary.hdf5')
+    rows = np.array([[0, 0], [0, 1], [1, 0]])
+    cols = np.array([[0, 2], [1, 1], [1, 2]])
+    first_scores = np.array([[11, 12, 13], [21, 22, 23], [31, 32, 33]], dtype=float)
+    first, second, third = (tmp_path / name for name in ('a.hdf5', 'b.hdf5', 'c.hdf5'))
+    with OverlayWriter(source, first, [2], {'k': 21}) as out:
+        out.record_coverage(2, rows, cols, {'snapshot': 'a'})
+        out.patch(2, rows, cols, first_scores)
+    expected = _expected(rows, cols, first_scores)
+    # A second computation covers the middle row and the last two columns with different values.
+    r2, c2 = rows[1:2], cols[1:]
+    s2 = np.array([[5, 6]], dtype=float)
+    with OverlayWriter(source, second, [2], {'k': 21}, previous=first) as out:
+        out.record_coverage(2, r2, c2, {'snapshot': 'b'})
+        out.patch(2, r2, c2, s2)
+    expected = _expected(r2, c2, s2, expected)
+    np.testing.assert_array_equal(read_matrix(second), expected)
+    # Cells outside the second region keep their first value, and the overlap shows 5 and 6, not 27 and 29.
+    assert expected[0, 6] == 13 and expected[1, 5] == 5 and expected[1, 6] == 6
+    # Computing the same overlap again is idempotent.
+    with OverlayWriter(source, third, [2], {'k': 21}, previous=second) as out:
+        out.record_coverage(2, r2, c2, {'snapshot': 'c'})
+        out.patch(2, r2, c2, s2)
+    np.testing.assert_array_equal(read_matrix(third), expected)
+
+
+def test_alignment_sample_counts_are_replaced_not_accumulated_and_retries_are_safe(tmp_path):
+    source = template(tmp_path / 'primary.hdf5')
+    rows, cols = np.array([[0, 0], [1, 1]]), np.array([[0, 3], [1, 2]])
+    counts = np.array([[3, 7], [1, 4]], dtype=float)
+    previous = None
+    for number in range(3):
+        target = tmp_path / f'counts{number}.hdf5'
+        with OverlayWriter(source, target, [2], {'k': 21}, previous=previous,
+                           unit='alignment_sample_count', scale=1) as out:
+            out.record_coverage(2, rows, cols, {'snapshot': str(number)})
+            out.patch(2, rows, cols, counts)
+        previous = target
+    # read_matrix divides by the identity scale; these overlays store raw counts (scale 1).
+    final = np.rint(read_matrix(previous) * SCALE)
+    expected = np.zeros((8, 8))
+    for i, (rs, rb) in enumerate(rows):
+        for j, (cs, cb) in enumerate(cols):
+            expected[rs * 4 + rb, cs * 4 + cb] = expected[cs * 4 + cb, rs * 4 + rb] = counts[i, j]
+    np.testing.assert_array_equal(final, expected)
+    # Counts that are not whole numbers and negative values are rejected, not rounded or clipped.
+    with OverlayWriter(source, tmp_path / 'bad.hdf5', [2], {'k': 21}, unit='alignment_sample_count', scale=1) as out:
+        with pytest.raises(ValueError):
+            out.patch(2, rows, cols, np.array([[1.5, 2], [3, 4]]))
+        with pytest.raises(ValueError):
+            out.patch(2, rows, cols, np.array([[-1, 2], [3, 4]]))

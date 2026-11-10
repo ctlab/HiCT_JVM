@@ -940,3 +940,21 @@ overscroll, persistence, keyboard Enter and Space, re-lock applied at once, and 
 pixels at the selection edge contain both dark (luminance below 90) and light (above 200)
 values over a dense red area and a pale area. Not done for W5: screenshots for every shipped
 palette on a dark background, increased UI scale, and a dedicated export layout test.
+
+## Dotplot accumulation (W7: item 6)
+
+Checked in `scripts/sequence_analysis/overlay_store.py`: accumulating overlays does not
+add values. `OverlayWriter.patch` replaces every cell of the updated rectangle (including
+with zero) and keeps cells outside it, and each update is recorded separately. Added tests
+(`tests/sequence_analysis/test_overlay.py`): four repeated identical updates give the same
+matrix as the first, an overlapping second computation shows its own values in the overlap
+(5 and 6, not 27 and 29) and keeps the rest, the same overlap computed again is idempotent,
+alignment sample counts replace rather than accumulate across overlays, identity percentages
+above 1 are stored as given (nothing is clamped to a presence flag), and fractional or
+negative counts are rejected. The Java PAF sampling path, the Python kernels, zoomify,
+tile composition and export were not audited in this pass. Within one computation the
+per-bin value is a count of alignment samples (and zoomify sums them at coarser levels),
+so the question for the owner stands: if the supervisor wants binary presence instead,
+add it as a separately versioned mode built at each level, not by rewriting the stored
+counts. `test_dotplot.py` and `test_moddotplot.py` need the `moddotplot` package, which this
+machine's Python lacks, so they were not run here.
