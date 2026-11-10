@@ -1080,3 +1080,17 @@ Visualization panel, hiding matrix-only sections on maps without contacts (they 
 inspectable effect or stated prerequisite for every preset, focus return to a menu item that has closed
 (it falls back to the page), a minimum supported window size declaration beyond "usable at 390 px", and
 actionable-error and copy-diagnostics handling for every action.
+
+## Repeated-open memory (W6: R25)
+
+Measured in headless Chromium with forced garbage collection between cycles (open a 96-contig map, close it,
+15 times). Before: JS heap 20.5 -> 128.3 MB (about 7.6 MB per cycle), DOM nodes 1,314 -> 4,084, event listeners
+326 -> 420, about 1,081 decoded tile images still alive after 6 cycles. Cause found: `ContactMapManager.dispose`
+detached the map from the page but left its layers, tile sources (with decoded images), interactions and the
+size observer reachable. Fix: disconnect the observer and clear and dispose the layers, sources, interactions and
+the map and overview map. After: JS heap 15.1 -> 18.8 MB over cycles 4 to 15, nodes 1,184 -> 1,294, tile images
+alive 1. **Not yet a plateau:** about 0.3 MB, 10 DOM nodes, 6 listeners and 3 canvases per cycle still accumulate.
+A heap snapshot diff shows three vector layers (borders), their features, selection interactions and two ruler
+controls per cycle still retained by something outside the map, which was not found in this pass. Backend
+executors and file handles were not examined. Gate for the plateau (heap, nodes and listeners flat after warmup)
+is therefore not met.
