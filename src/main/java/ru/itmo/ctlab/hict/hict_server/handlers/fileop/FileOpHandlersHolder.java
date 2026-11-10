@@ -354,6 +354,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
             synchronizedCompatibility = analyzeSecondaryCompatibility(primary, secondaryChunkedFile);
             response = new io.vertx.core.json.JsonObject()
               .put("attached", true).put("filename", filename).put("assemblySource", assemblySource)
+              .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(
+                AssemblyInfoDTO.generateFromChunkedFile(primary)))
               .put("capabilities", io.vertx.core.json.JsonObject.mapFrom(
                 ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(secondaryChunkedFile)))
               .put("requiresConfirmation", false)
@@ -446,17 +448,14 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw new IllegalStateException("Open primary Hi-C source first");
           }
           final var secondaryWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
-          final ChunkedFile sourceChunkedFile;
           final String normalizedSource;
           if (ASSEMBLY_SOURCE_SECONDARY.equals(requestedSource)) {
             if (secondaryWrapper == null) {
               throw new IllegalStateException("Secondary source is not attached");
             }
             normalizedSource = ASSEMBLY_SOURCE_SECONDARY;
-            sourceChunkedFile = secondaryWrapper.getChunkedFile();
           } else {
             normalizedSource = ASSEMBLY_SOURCE_PRIMARY;
-            sourceChunkedFile = primaryWrapper.getChunkedFile();
           }
           synchronizeOverlayAssembly(map, normalizedSource);
           final var synchronizedCompatibility = refreshSecondaryCompatibility(map);
@@ -468,7 +467,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           return new io.vertx.core.json.JsonObject()
             .put("assemblySource", normalizedSource)
-            .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(sourceChunkedFile)))
+            .put("assemblyInfo", io.vertx.core.json.JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(primaryWrapper.getChunkedFile())))
             .put("compatibility", synchronizedCompatibility != null ? synchronizedCompatibility.toJson() : null);
         },
         response -> ctx.response()

@@ -427,10 +427,26 @@ class ApiHttpIntegrationTest {
     failAfterImport.set(false);
     var accepted = post("/secondary/open", "{\"filename\":\"candidate.hict.hdf5\"}");
     assertEquals(200, accepted.statusCode(), accepted.body());
+    assertEquals(io.vertx.core.json.JsonObject.mapFrom(
+      ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO.generateFromChunkedFile(primary)),
+      new JsonObject(accepted.body()).getJsonObject("assemblyInfo"));
     org.junit.jupiter.api.Assertions.assertNotSame(oldSecondary, map.get("chunkedFileSecondary"));
     assertEquals(null, map.get("linkedFastaSecondaryFilename"));
     var resolution = ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(4, primary);
     assertEquals(1, primary.getMatrixQueries().getSubmatrix(resolution, 0, 0, 1, 1, false).matrix().getAsDouble(0, 0));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "disjoint", java.util.List.of(3L, 7L));
+    var mismatched = post("/secondary/open", "{\"filename\":\"disjoint.hict.hdf5\",\"allowMismatch\":true}");
+    assertEquals(200, mismatched.statusCode(), mismatched.body());
+    var primaryAssembly = io.vertx.core.json.JsonObject.mapFrom(
+      ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO.generateFromChunkedFile(primary));
+    assertEquals(primaryAssembly, new JsonObject(mismatched.body()).getJsonObject("assemblyInfo"));
+    for (var source : java.util.List.of("PRIMARY", "SECONDARY")) {
+      var switched = post("/secondary/set_assembly_source", new JsonObject().put("assemblySource", source).encode());
+      assertEquals(200, switched.statusCode(), switched.body());
+      assertEquals(io.vertx.core.json.JsonObject.mapFrom(
+        ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO.generateFromChunkedFile(primary)),
+        new JsonObject(switched.body()).getJsonObject("assemblyInfo"));
+    }
   }
 
   @Test

@@ -11,6 +11,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for arg in ('url', 'api', 'output'):
         parser.add_argument('--' + arg, required=True)
+    parser.add_argument('--secondary-drives-assembly', action='store_true')
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -41,7 +42,10 @@ def main():
                     endRowPx:5,endColPx:5,source,signalMode:'RAW_COUNTS'});
                 return {primary:Array.from((await query('PRIMARY')).values),secondary:Array.from((await query('SECONDARY')).values)};
             }""")
-            return {'status': post('/secondary/status'), 'history': post('/assembly/history'), 'pixels': pixels}
+            contigs = page.evaluate('''()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors
+                .map(c=>({id:c.contigId,name:c.contigName,direction:c.direction}))''')
+            return {'status': post('/secondary/status'), 'history': post('/assembly/history'),
+                    'pixels': pixels, 'clientContigs': contigs}
 
         def choose(filename):
             dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
@@ -69,6 +73,12 @@ def main():
             assert before['pixels'] == {'primary': expected, 'secondary': expected}
             page.get_by_role('link', name='View', exact=True).click()
             page.get_by_role('link', name='Tracks and layers...', exact=True).click()
+            if args.secondary_drives_assembly:
+                dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+                with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')):
+                    dialog.locator('select').select_option('SECONDARY')
+                page.wait_for_function("()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0].direction===0")
+                before = snapshot()
             failed = choose('broken.hict.hdf5')
             assert failed.status >= 400, failed.text()
             assert snapshot() == before
@@ -83,10 +93,43 @@ def main():
             page.get_by_text('Secondary source attached', exact=True).wait_for(state='visible')
             after = snapshot()
             assert after['status']['filename'] == 'candidate.hict.hdf5'
-            assert after['pixels'] == before['pixels']
-            result['checks'].append('accepted candidate follows reversed primary assembly with exact pixels')
+            if args.secondary_drives_assembly:
+                forward = list(reversed(expected))
+                assert after['pixels'] == {'primary': forward, 'secondary': forward}
+                page.wait_for_function("()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0].direction===1")
+                after = snapshot()
+                assert before['clientContigs'][0]['direction'] == 0
+                assert after['clientContigs'][0]['direction'] == 1
+                result['checks'].append('secondary-driven replacement refreshes client strand and both exact matrices')
+            else:
+                assert after['pixels'] == before['pixels']
+                assert after['clientContigs'] == before['clientContigs']
+                result['checks'].append('accepted candidate follows reversed primary assembly with exact pixels')
             page.screenshot(path=str(output / 'replacement.png'))
             result['before'], result['after'] = before, after
+            pending = choose('tiny-disjoint.hict.hdf5')
+            assert pending.ok and pending.json()['requiresConfirmation']
+            with page.expect_response(lambda response: response.url.endswith('/secondary/open')) as confirmed:
+                page.get_by_role('button', name='Continue and Attach', exact=True).click()
+            assert confirmed.value.ok, confirmed.value.text()
+            page.get_by_text('Secondary source attached with compatibility warning', exact=True).wait_for(state='visible')
+            assembly = confirmed.value.json()['assemblyInfo']['contigDescriptors']
+            expected_contigs = [{'id': c['contigId'], 'name': c['contigName'], 'direction': c['contigDirection']} for c in assembly]
+            client_contigs = page.evaluate('''()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors
+                .map(c=>({id:c.contigId,name:c.contigName,direction:c.direction}))''')
+            assert client_contigs == expected_contigs
+            assert post('/secondary/status')['filename'] == 'tiny-disjoint.hict.hdf5'
+            result['checks'].append('confirmed mismatched replacement applies the returned assembly to the client')
+            dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+            for source in ('PRIMARY', 'SECONDARY'):
+                with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')) as switched:
+                    dialog.locator('select').select_option(source)
+                assert switched.value.ok, switched.value.text()
+                assert set(switched.value.json()['assemblyInfo']['contigDescriptors'][0]['contigLengthBins']) == {'4', '10'}
+            page.wait_for_function('''()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0]
+                .contigLengthBins.has(4)''')
+            page.screenshot(path=str(output / 'mismatched-replacement.png'))
+            result['checks'].append('assembly-source switching keeps the primary coordinate grid for disjoint pyramids')
             assert not result['pageErrors'], result['pageErrors']
             assert not result['unexpectedHttpErrors'], result['unexpectedHttpErrors']
         finally:

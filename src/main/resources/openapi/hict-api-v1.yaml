@@ -1913,6 +1913,13 @@ components:
     SecondarySourceStatus:
       type: object
       properties:
+        assemblyInfo:
+          description: Synchronized assembly in the primary map resolution grid after a successful secondary open. Absent from status-only and confirmation responses.
+          type: object
+          required: [contigDescriptors, scaffoldDescriptors]
+          properties:
+            contigDescriptors: { type: array, items: { type: object, additionalProperties: true } }
+            scaffoldDescriptors: { type: array, items: { type: object, additionalProperties: true } }
         attached: { type: boolean }
         filename: { type: string }
         assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }

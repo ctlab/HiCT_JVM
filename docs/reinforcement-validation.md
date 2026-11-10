@@ -372,3 +372,46 @@ policy, and no session v3 or dirty-state workflow yet. The source-switch success
 path and every AGP/FASTA error stage still need the complete W1 acceptance audit.
 A successful secondary replacement when secondary drives the assembly also needs
 client-model refresh verification. These results do not certify all of W1.
+
+## W1 third increment: refresh the assembly after secondary replacement
+
+A browser diagnostic with secondary driving the assembly reproduced a stale client
+strand: the server's 25-cell matrix changed from reversed to forward, while the
+client's contig descriptor remained reversed. Evidence is in
+`/tmp/hict-w1-secondary-replacement/secondary-driven/` (diagnostic, not a passing
+acceptance run).
+
+Successful secondary opens now include the synchronized assembly. Both ordinary
+attachment and compatibility-confirmed attachment apply that assembly to the
+client after updating its secondary resolution model, refreshing contigs,
+scaffolds, scopes, visuals, overview and track caches. The dialog now explains
+that replacing a secondary which drives assembly adopts the replacement's layout.
+
+The expanded browser check then exposed a second failure: returning secondary's
+native resolution descriptors for a disjoint pyramid caused `Can't get prefix sum
+for resolution 4`. The final open and assembly-source-switch responses use the
+synchronized **primary map grid**, which the client's coordinate model requires.
+The response schema documents this. Secondary rendering retains its separate
+resolution model; this does not establish the complete W8 overlay gate.
+
+The Java regression compares the returned assembly to the primary model for both
+matching and disjoint pyramids, then switches both assembly sources. Its initial
+assertion also exposed differing default scaffold spacer metadata after AGP import
+(0 on the synchronized target versus 1000 on the original source). These defaults
+do not alter the tested one-contig intervals, but lossless session serialization
+must not assume an AGP round trip preserves every metadata field.
+
+Final evidence lives under `/tmp/hict-w1-secondary-replacement/client-refresh-*`.
+The full Java suite passed with 326 tests, 319 passed and seven optional skips.
+The secondary-driven browser run passed failure retention, cancellation, exact
+25-cell replacement values with updated strand, confirmed mismatched attachment,
+and assembly-source switching with disjoint pyramids, without page exceptions or
+unexpected HTTP errors. Screenshot review confirms the new source and source
+selection are visible; the old stacked-notification UX issue remains. This is a
+focused state/model test, not pixel-perfect validation of every overlay layer.
+
+The primary-driven browser journey also passed all five checks. Final WebUI build,
+changed-file ESLint (no file warnings/errors), and API DTO/source-capability checks
+passed. ESLint still emits its existing directive-schema resolver notices, and the
+build reports its existing bundle-size warning. W1 session v3, dirty-state prompts,
+complete stale-response handling and concurrent-reader publication remain open.
