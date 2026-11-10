@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Track files are checked when added. Records that cannot be placed (negative start, end not after start, too few fields) are skipped, non-finite or negative values are corrected, and a message gives the counts and the first lines affected. A file with no usable records, or a coordinate that is not a whole number or overflows, is refused with its line number and the track list stays as it was. A 4-column `.bed` whose fourth field is numeric is read as a signal (bedGraph-style) track; BED6 and BED12 are annotations.
+- Track settings no longer change silently. A log base that is not a positive number other than 1 is refused and the last valid base stays (before, values near 1 were quietly rewritten), and a signal range whose minimum is not below its maximum is refused with the reason instead of being reset to 0..1.
+- Requests that fail because of invalid input now answer 400 with the explanation instead of a generic 500.
 - The FASTA letter strip now repaints at once after Reverse, Move, Split, Group, Undo, Redo and after linking another FASTA, instead of waiting for you to pan. Letters appear when a base is wide enough for its glyph and do not flicker at the threshold.
 - A lock button at the ruler corner (on by default, remembered) keeps the map's top-left corner against the rulers. A map smaller than the window sits in the corner instead of floating, and a larger map can be panned across its whole extent but not past its top or left edge. Click the lock to move the map freely. A rotated view is not anchored.
 - The selection (Shift-drag box, its handle and a selected contig) is drawn with a dark outline under a light dashed one and a translucent warm fill, so it is visible on any matrix color, light or dark. Before it was white on white.

@@ -974,3 +974,19 @@ repaints with the new bases (14 checks). Linking by the same name after overwrit
 returns the new content from the server. Not done: Move, Split, Group and Ungroup were not
 driven separately (they share the same notification path), delayed responses and gzip input
 were not exercised, and the sequence detail dialog does not refresh while it is open.
+
+## Track input validation (W12)
+
+`Track1DManager.ParseReport` counts the records read, skipped and corrected for BED-family
+files and keeps the first five examples with line numbers; `TrackSummary.importWarnings`
+returns them from `/tracks/open` and the interface shows them in one message. Syntax errors
+(a coordinate that is not an integer or overflows 64 bits) reject the file with the line, as
+before. A file whose records are all unusable is refused and the track list is unchanged.
+`updateTrack` refuses a range whose maximum is not above its minimum (the old
+`normalizeTrackRange` reset it to 0..1 silently). The track log base uses the same validity
+rule as the map's (positive, finite, not 1) and keeps the last valid base. Unit tests
+(`Track1DManagerValidationTest`, 6 cases) and a browser run (open a partly valid file, refuse
+an all-invalid and a comment-only file, base 4 accepted and 1, -3 refused, base 1.0000001 kept
+as typed, range 2..8 accepted and minimum 9 refused) all passed. Not done: VCF and GFF/GTF
+readers still skip short lines without counting them, and BigWig/BAM inputs are validated by
+their libraries only. A `.bedgraph` extension is not accepted yet (only `.bed`).

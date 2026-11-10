@@ -413,13 +413,18 @@ public class MainVerticle extends AbstractVerticle {
     router.route().failureHandler(ctx -> {
       final var expected = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException httpError
         ? httpError : null;
+      final boolean badInput = ctx.failure() instanceof IllegalArgumentException;
       if (expected != null && expected.getStatusCode() < 500) {
         log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), expected.getStatusCode());
+      } else if (badInput) {
+        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), ctx.failure().getMessage());
       } else {
         log.error("An exception was caught at router top-level", ctx.failure());
       }
       final var message = failureMessage(ctx.failure());
-      final int statusCode = expected != null ? expected.getStatusCode() : ctx.statusCode() > 0 ? ctx.statusCode() : 500;
+      final int statusCode = expected != null ? expected.getStatusCode()
+        : badInput ? 400
+        : ctx.statusCode() > 0 ? ctx.statusCode() : 500;
       ctx.response()
         .putHeader("content-type", "application/json")
         .setStatusCode(statusCode)

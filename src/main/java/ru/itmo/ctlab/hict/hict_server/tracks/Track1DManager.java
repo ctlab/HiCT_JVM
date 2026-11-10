@@ -235,6 +235,15 @@ public class Track1DManager implements AutoCloseable {
       : requestedName.trim();
     final var color = normalizeColor(requestedColor, colorForIndex((int) this.trackCounter.get() - 1));
     final TrackDataSource dataSource = createDataSource(trackType, resolvedPath);
+    final var report = dataSource.importReport();
+    if (dataSource instanceof InMemoryTrackDataSource && dataSource.featureCountHint() == 0L) {
+      closeDataSourceQuietly(dataSource);
+      throw new IllegalArgumentException(
+        relativeFilename + " has no usable records"
+          + (report.skippedCount() > 0 ? " (" + String.join("; ", report.warnings()) + ")" : "")
+          + ". The track list was not changed."
+      );
+    }
     final var state = new TrackState(
       trackId,
       resolvedName,
@@ -259,7 +268,7 @@ public class Track1DManager implements AutoCloseable {
     } finally {
       this.lock.writeLock().unlock();
     }
-    return state.toSummary();
+    return state.toSummary().withImportWarnings(report.warnings());
   }
 
   public @NotNull TrackSummary openCoolerWeightsTrack(final String requestedName,
@@ -458,6 +467,14 @@ public class Track1DManager implements AutoCloseable {
       if (current == null) {
         throw new IllegalArgumentException("Unknown track id " + trackId);
       }
+      final var nextRangeMin = sanitizeTrackRangeValue(rangeMin, current.rangeMin());
+      final var nextRangeMax = sanitizeTrackRangeValue(rangeMax, current.rangeMax());
+      if ((rangeMin != null || rangeMax != null) && nextRangeMax <= nextRangeMin) {
+        throw new IllegalArgumentException(
+          "Range minimum (" + nextRangeMin + ") must be less than the maximum (" + nextRangeMax
+            + "). The range was not changed."
+        );
+      }
       final var updated = current.withUpdated(
         visible == null ? current.visible : visible,
         (color == null || color.isBlank()) ? current.color : normalizeColor(color, current.color),
@@ -466,8 +483,8 @@ public class Track1DManager implements AutoCloseable {
         parseBigWigAggregationMode(aggregationMode, current.bigWigAggregationMode()),
         logScale == null ? current.logScale() : logScale,
         rangeAuto == null ? current.rangeAuto() : rangeAuto,
-        sanitizeTrackRangeValue(rangeMin, current.rangeMin()),
-        sanitizeTrackRangeValue(rangeMax, current.rangeMax())
+        nextRangeMin,
+        nextRangeMax
       );
       this.tracks.put(trackId, updated);
       return updated.toSummary();
@@ -3182,8 +3199,72 @@ public class Track1DManager implements AutoCloseable {
     FEATURE
   }
 
+  /**
+   * What reading a track file skipped or corrected, so nothing is dropped silently. Syntax errors
+   * (a coordinate that is not an integer, or does not fit in 64 bits) reject the whole file with
+   * the line number. Records that parse but cannot be placed are skipped, and values the track
+   * model cannot hold are corrected. Both are counted and the first few are listed with line numbers.
+   */
+  static final class ParseReport {
+    static final ParseReport EMPTY = new ParseReport();
+    private static final int MAX_EXAMPLES = 5;
+    private long records;
+    private long skipped;
+    private long corrected;
+    private final Map<String, Long> reasons = new LinkedHashMap<>();
+    private final List<String> examples = new ArrayList<>();
+
+    void read() {
+      records++;
+    }
+
+    void skip(final long lineNo, final @NotNull String reason) {
+      skipped++;
+      reasons.merge("skipped: " + reason, 1L, Long::sum);
+      if (examples.size() < MAX_EXAMPLES) {
+        examples.add("line " + lineNo + " skipped: " + reason);
+      }
+    }
+
+    void correct(final long lineNo, final @NotNull String reason) {
+      corrected++;
+      reasons.merge("corrected: " + reason, 1L, Long::sum);
+      if (examples.size() < MAX_EXAMPLES) {
+        examples.add("line " + lineNo + " corrected: " + reason);
+      }
+    }
+
+    long records() {
+      return records;
+    }
+
+    long skippedCount() {
+      return skipped;
+    }
+
+    long correctedCount() {
+      return corrected;
+    }
+
+    @NotNull List<String> warnings() {
+      if (skipped == 0 && corrected == 0) {
+        return List.of();
+      }
+      final var result = new ArrayList<String>();
+      result.add(skipped + " of " + (records + skipped) + " records skipped, " + corrected + " corrected.");
+      reasons.forEach((reason, count) -> result.add(count + " x " + reason));
+      result.addAll(examples);
+      return List.copyOf(result);
+    }
+  }
+
   private interface TrackDataSource extends AutoCloseable {
     long featureCountHint();
+
+    @NotNull
+    default ParseReport importReport() {
+      return ParseReport.EMPTY;
+    }
 
     @NotNull
     Set<String> sourceNames();
@@ -3210,10 +3291,20 @@ public class Track1DManager implements AutoCloseable {
                                          boolean hasSignalValues,
                                          boolean hasStructuredFeatures,
                                          @NotNull RenderStyle preferredRenderStyle,
-                                         @NotNull Map<String, long[]> prefixEnds) implements TrackDataSource {
+                                         @NotNull Map<String, long[]> prefixEnds,
+                                         @NotNull ParseReport report) implements TrackDataSource {
     private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
                                    boolean signals, boolean structured, RenderStyle style) {
-      this(features, count, signals, structured, style, indexEnds(features));
+      this(features, count, signals, structured, style, indexEnds(features), ParseReport.EMPTY);
+    }
+    private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
+                                   boolean signals, boolean structured, RenderStyle style,
+                                   ParseReport report) {
+      this(features, count, signals, structured, style, indexEnds(features), report);
+    }
+    @Override
+    public @NotNull ParseReport importReport() {
+      return report;
     }
     private static Map<String, long[]> indexEnds(Map<String, List<FeatureRange>> features) {
       var result = new HashMap<String, long[]>();
@@ -3232,6 +3323,7 @@ public class Track1DManager implements AutoCloseable {
       boolean hasStrandFeatures = false;
       boolean hasThickFeatures = false;
       boolean hasBed12Rows = false;
+      final var report = new ParseReport();
       try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
         String line;
         long lineNo = 0L;
@@ -3242,16 +3334,35 @@ public class Track1DManager implements AutoCloseable {
           }
           final var fields = line.split("\t");
           if (fields.length < 3) {
+            report.skip(lineNo, "fewer than 3 tab-separated fields");
             continue;
           }
           final var sourceName = fields[0];
           final long start = parseLongOrThrow(fields[1], "BED start", lineNo);
           final long end = parseLongOrThrow(fields[2], "BED end", lineNo);
-          if (end <= start) {
+          if (start < 0) {
+            report.skip(lineNo, "negative start");
             continue;
           }
-          final var col4Numeric = fields.length >= 4 ? parseNullableDouble(fields[3]) : null;
-          final var col5Numeric = fields.length >= 5 ? parseNullableDouble(fields[4]) : null;
+          if (end <= start) {
+            report.skip(lineNo, "end is not after start");
+            continue;
+          }
+          report.read();
+          var col4Numeric = fields.length >= 4 ? parseNullableDouble(fields[3]) : null;
+          var col5Numeric = fields.length >= 5 ? parseNullableDouble(fields[4]) : null;
+          if (col4Numeric != null && !Double.isFinite(col4Numeric)) {
+            report.correct(lineNo, "non-finite value in column 4 treated as missing");
+            col4Numeric = null;
+          }
+          if (col5Numeric != null && !Double.isFinite(col5Numeric)) {
+            report.correct(lineNo, "non-finite score in column 5 treated as missing");
+            col5Numeric = null;
+          }
+          if ((fields.length == 4 && col4Numeric != null && col4Numeric < 0.0d)
+            || (fields.length > 4 && col5Numeric != null && col5Numeric < 0.0d)) {
+            report.correct(lineNo, "negative value shown as 0");
+          }
           final var hasStrand = fields.length >= 6 && isBedStrandToken(fields[5]);
           final String strand = hasStrand ? normalizeStrand(fields[5]) : null;
           final String label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
@@ -3336,7 +3447,8 @@ public class Track1DManager implements AutoCloseable {
         total,
         hasSignalValues,
         hasStructuredFeatures,
-        resolveBedRenderStyle(total, hasStrandFeatures, hasThickFeatures, hasBed12Rows)
+        resolveBedRenderStyle(total, hasStrandFeatures, hasThickFeatures, hasBed12Rows),
+        report
       );
     }
 
@@ -4926,6 +5038,13 @@ public class Track1DManager implements AutoCloseable {
     private final boolean rangeAuto;
     private final double rangeMin;
     private final double rangeMax;
+    /** Records skipped or corrected while reading the file. Empty when nothing was changed. */
+    private @NotNull List<String> importWarnings = List.of();
+
+    @NotNull TrackSummary withImportWarnings(final @NotNull List<String> warnings) {
+      this.importWarnings = List.copyOf(warnings);
+      return this;
+    }
   }
 
   @Getter
