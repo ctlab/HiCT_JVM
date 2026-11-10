@@ -509,7 +509,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var verifyValue = request == null ? Boolean.FALSE : request.getValue("verifyAssemblyRoundTrip", Boolean.FALSE);
         if (!(verifyValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "verifyAssemblyRoundTrip must be a boolean");
         final boolean verify = (Boolean) verifyValue;
-        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify,
+        final var fingerprintValue = request == null ? Boolean.FALSE : request.getValue("fingerprintFiles", Boolean.FALSE);
+        if (!(fingerprintValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "fingerprintFiles must be a boolean");
+        final boolean fingerprintFiles = (Boolean) fingerprintValue;
+        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify, fingerprintFiles,
           ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
             String.valueOf(map.getOrDefault("openedFilename", "")),
             String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, ""))),
@@ -524,6 +527,25 @@ public class FileOpHandlersHolder extends HandlersHolder {
         if (verify) {
           verifySessionAssembly(primary.getChunkedFile(), snapshot.primary());
           if (secondary != null) verifySessionAssembly(secondary.getChunkedFile(), snapshot.secondary());
+        }
+        if (fingerprintFiles) {
+          fingerprintSessionSource(map, primary.getChunkedFile(), snapshot.primary(), ASSEMBLY_SOURCE_PRIMARY);
+          if (secondary != null) fingerprintSessionSource(map, secondary.getChunkedFile(), snapshot.secondary(), ASSEMBLY_SOURCE_SECONDARY);
+          final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath().toAbsolutePath().normalize();
+          for (int i = 0; i < snapshot.tracks().size(); i++) {
+            final var track = snapshot.tracks().getJsonObject(i);
+            final var filename = track.getString("sourceFile");
+            if ("COOLER_WEIGHTS".equals(track.getString("type"))) {
+              final var source = filename.endsWith("/SECONDARY") ? ASSEMBLY_SOURCE_SECONDARY : ASSEMBLY_SOURCE_PRIMARY;
+              if (ASSEMBLY_SOURCE_SECONDARY.equals(source) && secondary == null)
+                throw new IllegalStateException("Secondary weights track has no attached source");
+              track.put("sourceReference", source);
+            } else {
+              final var path = dataDirectory.resolve(filename).normalize();
+              if (!path.startsWith(dataDirectory)) throw new IllegalArgumentException("Track resource is outside DATA_DIR");
+              track.put("fileFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(path)));
+            }
+          }
         }
         return snapshot;
       }, result -> ctx.response().putHeader("content-type", "application/json").end(io.vertx.core.json.Json.encode(result)));
@@ -1378,6 +1400,16 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final var compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryWrapper.getChunkedFile());
     map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
     return compatibility;
+  }
+
+  private static void fingerprintSessionSource(LocalMap<String, Object> map, ChunkedFile file,
+                                                io.vertx.core.json.JsonObject snapshot, String source) throws java.io.IOException {
+    snapshot.put("fileFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(file.getHdfFilePath())));
+    if (!snapshot.getString("fastaFilename", "").isBlank()) {
+      final var fasta = resolveFastaPathWrapperBySource(map, source);
+      if (fasta == null) throw new IllegalStateException("Linked FASTA resource is unavailable for " + source);
+      snapshot.put("fastaFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(fasta.getPath())));
+    }
   }
 
   private static void verifySessionAssembly(ChunkedFile source, io.vertx.core.json.JsonObject saved) throws Exception {

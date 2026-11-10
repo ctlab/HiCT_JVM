@@ -579,3 +579,45 @@ publication, dirty prompts and export progress/cancellation for large captures
 remain. Explicit verification opens candidate files and can be expensive on large
 maps; it is not enabled in the legacy Save UI. W1 and release qualification remain
 incomplete.
+
+## W1 eighth increment: content fingerprints for session resources
+
+Snapshot requests can opt into `fingerprintFiles`. Matrix sources and linked FASTA
+receive SHA-256/byte-length identities; physical track definitions receive their
+own identity. Virtual Cooler-weight tracks reference PRIMARY or SECONDARY instead
+of attempting to hash an internal pseudo-path. A requested fingerprint operation
+must succeed for every referenced resource before `filesFingerprinted: true` is
+returned. Clients reject older-server responses that omit that confirmation.
+
+`SessionFileFingerprint` streams contents with a bounded buffer, reports byte
+progress, accepts a cancellation predicate and observes thread interruption. It
+checks size, modification time, file key and resolved path before/after hashing,
+and refuses missing, non-regular or ordinarily changing resources. It deliberately
+has no size/mtime cache: changed bytes with unchanged size and restored timestamp
+produce a different identity. Timestamps are not part of content equality.
+
+Evidence: `/tmp/hict-w1-session-fingerprints/` and `/tmp/hict-fingerprint-*.log`.
+
+- Full Java suite and development JAR passed: 333 tests, 326 passed, seven optional
+  skips. Tests cover a known SHA-256 vector, same-size/same-time replacement,
+  progress, cancellation/recovery, changes during hashing, directories and missing
+  files.
+- Seven browser checks passed with no page exceptions. Python independently
+  computes both matrix digests plus FASTA and BED digests and compares the complete
+  returned fingerprints. A virtual weights track references its primary source.
+  Temporarily renaming the disposable BED rejects capture, leaves the journal
+  unchanged and recovers after the file is restored in a finally block; sources
+  and track snapshots match the previous capture. Existing assembly verification,
+  exact graph, workspace, stale-client and Attach recovery checks also passed.
+- The older-server fixture checks rejection of both absent assembly verification
+  and absent fingerprint confirmation. WebUI build and API DTO checks passed;
+  changed-file lint retains only five existing unused-import warnings and resolver
+  notices.
+
+This remains opt-in and is not wired to legacy Save. Full hashing currently runs
+within the serialized capture request; large-map export needs a progress/cancel
+job workflow before UI integration. The identities describe on-disk bytes at
+capture time, not proof that every pre-existing reader cache matches externally
+modified files. Cross-resource consistency and restore-time identity checks,
+auxiliary/index dependencies and generated-result provenance, strict v3 validation
+and atomic restore remain open. No release-readiness claim is made.

@@ -484,7 +484,7 @@ paths:
     post:
       tags: [Session]
       summary: Capture assembly and rendering state for session construction
-      description: Read-only internal snapshot, not a portable saved session. Does not include source content fingerprints. Optional verification certifies the captured assembly reconstruction only. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
+      description: Read-only internal snapshot, not a portable saved session. Optional fingerprinting reads matrix, FASTA and physical track contents. Optional verification certifies the captured assembly reconstruction only. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
       operationId: getSessionSnapshot
       requestBody:
         required: false
@@ -493,6 +493,10 @@ paths:
             schema:
               type: object
               properties:
+                fingerprintFiles:
+                  type: boolean
+                  default: false
+                  description: Hash matrix, linked FASTA and physical track files using SHA-256. May take time for large inputs. Virtual weights tracks reference their fingerprinted map source.
                 verifyAssemblyRoundTrip:
                   type: boolean
                   default: false
@@ -504,9 +508,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [snapshotVersion, assemblyVerified, primary, assemblySource, renderPipeline, tracks, workspace]
+                required: [snapshotVersion, assemblyVerified, filesFingerprinted, primary, assemblySource, renderPipeline, tracks, workspace]
                 properties:
                   snapshotVersion: { type: integer, enum: [1] }
+                  filesFingerprinted: { type: boolean }
                   assemblyVerified: { type: boolean, description: Whether isolated candidate assembly reconstruction succeeded for all open sources. Does not verify source content fingerprints or complete session restoration. }
                   primary: { $ref: '#/components/schemas/SessionSourceSnapshot' }
                   secondary:
@@ -1949,6 +1954,13 @@ components:
           type: string
           enum: [PRIMARY, SECONDARY]
       required: [assemblySource]
+    SessionContentFingerprint:
+      type: object
+      required: [algorithm, sizeBytes, sha256]
+      properties:
+        algorithm: { type: string, enum: [SHA-256] }
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
     SessionSourceSnapshot:
       type: object
       required: [filename, fastaFilename, agp, agpSha256, assemblyInfo, contigNameOverrides, scaffoldNameOverrides, capabilities]
@@ -1956,6 +1968,8 @@ components:
         filename: { type: string }
         fastaFilename: { type: string }
         agp: { type: string }
+        fileFingerprint: { $ref: '#/components/schemas/SessionContentFingerprint' }
+        fastaFingerprint: { $ref: '#/components/schemas/SessionContentFingerprint' }
         agpSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
         assemblyInfo: { type: object, additionalProperties: true }
         contigNameOverrides: { type: object, additionalProperties: { type: string } }
