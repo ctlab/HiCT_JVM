@@ -5,8 +5,9 @@
 Started from `plan-reinforce-final.md`, in its prescribed W0-first order.
 The first change was a **W0 foundation increment**, followed by real HDF5 fixtures
 and source capability integration. The W0 foundation is now ready for W1;
-the later package gates remain unimplemented and unqualified. W1–W16 have
-not been started. In particular, session loss, unsafe replacement, stale sequence,
+the later package gates remain unqualified. W1 has started with primary-map
+replacement failure protection; W2–W16 have not been started. In particular, session loss,
+unfinished replacement transactions, stale sequence,
 armed scissors after Escape, settings persistence and mixed-resolution failures
 still block release.
 
@@ -272,3 +273,55 @@ These short samples are a reproducible baseline, not a responsiveness budget,
 large-workload result or memory plateau. The heap increase remains a W6 concern.
 This step changes diagnostics, fixtures and documentation; no new application
 build is claimed.
+
+## W1 first increment: preserve the live map on failed primary replacement
+
+The primary `/open` handler now builds and validates the candidate map, response,
+statistics and track manager before changing the published session. Failure closes
+candidate resources and leaves the old wrappers, workspace, linked FASTA metadata
+and secondary attachment intact. Successful publication then retires the old
+resources; cleanup failures are logged without reporting a failed open after the
+new map has already been installed. Stale secondary sequence metadata is cleared
+on successful primary replacement.
+
+The first browser run exposed a separate client defect: the manual file-selection
+handler called `resetState()` before the request. The client now retains its map
+manager, filenames, scope state and workspace baseline until the server accepts
+the replacement. File-specific resets happen after success. The deep `ref` holding
+the map manager remains unchanged.
+
+Validation and evidence (`/tmp/hict-w1-primary-replacement/`):
+
+- Real-HDF5 HTTP regression opens primary/secondary, links FASTA, reverses the
+  assembly, then attempts a missing file and repeated malformed HDF5 opens.
+  It compares resource identity, workspace/statistics identity, AGP and exact
+  matrix values. A deliberately unusable processed-directory path forces failure
+  after candidate HDF5 preparation; the prior map remains readable. Finally,
+  reopening the same physical HDF5 path succeeds and returns its original pixels.
+- Full Java suite: 324 tests, 317 passed, seven optional skips, no failures/errors.
+  Development `shadowJar -x copyWebUI` also built successfully before launch.
+- WebUI `npm run build:web` passed all configured checks and production build.
+  ESLint without fixes reported zero errors and two existing benchmark-hook `any`
+  warnings; the installed plugin still emits directive-schema reference warnings.
+- Browser setup uses the benchmark opener, actual FASTA picker, secondary and
+  reversal APIs, then actual File Attach to load the edited assembly. Two actual
+  Manual Open failures preserve 25 exact reversed pixels, primary/secondary/FASTA
+  metadata, workspace, edit journal and client manager. A fresh browser reload
+  and File Attach preserve the same state. No page exceptions or unexpected HTTP
+  errors. The two failed `/open` responses are expected.
+- Existing multi-client Attach, stale-workspace conflict and same-path reopening
+  regressions pass on a separate physical copy of the medium map.
+- Harness development failures are retained: an initial run started before the
+  WebUI listener was ready; an early Attach comparison mistook the first automatic
+  workspace save for a replacement side effect. The final runner waits for the
+  original window's initial save before attaching and for Attach completion. The
+  observed client reset before its fix was an application defect, not a harness
+  problem. Initial test compilation mistakes were corrected before passing runs.
+
+This is a failure-protection increment, not the entire W1 transaction. The assembly
+scheduler serializes assembly mutations; it is not a global read lock. Coherent
+publication to concurrent readers, stale client responses, failures after server
+publication/client installation, secondary replacement, FASTA/AGP steps, session
+v3 validation/restoration and dirty-state prompts remain W1 work. Existing verbose
+and duplicate error notifications remain visible in screenshots and belong to
+error-presentation cleanup. No release-readiness claim is made.

@@ -126,60 +126,81 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
 
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY));
-          map.remove(PRIMARY_CHUNKED_FILE_KEY);
-          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
+          map.put("openProgress", new io.vertx.core.json.JsonObject()
+            .put("stage", "starting")
+            .put("progress", 0.0));
+
+          final ChunkedFile chunkedFile;
+          try {
+            chunkedFile = Initializers.withProgressReporter((stage, progressValue) -> {
+              map.put("openProgress", new io.vertx.core.json.JsonObject()
+                .put("stage", stage)
+                .put("progress", progressValue));
+              if (verbose) {
+                log.info(String.format("Open progress: %s (%.1f%%)", stage, progressValue * 100.0));
+              }
+            }, () -> new ChunkedFile(
+              new ChunkedFile.ChunkedFileOptions(
+                requestedFilePath,
+                (int) map.getOrDefault("MIN_DS_POOL", 4),
+                (int) map.getOrDefault("MAX_DS_POOL", 16)
+              )
+            ));
+          } catch (RuntimeException failure) {
+            map.put("openProgress", new io.vertx.core.json.JsonObject()
+              .put("stage", "failed").put("progress", 0.0));
+            throw failure;
+          }
+          // Prepare all fallible resources and the response before publishing anything.
+          // The assembly scheduler serializes replacement and assembly mutations.
+          final var workspace = new WorkspaceStateStore();
+          final Track1DManager candidateTracks;
+          final TileStatisticHolder candidateStatistics;
+          final io.vertx.core.json.JsonObject response;
+          try {
+            response = io.vertx.core.json.JsonObject.mapFrom(generateOpenFileResponse(chunkedFile))
+              .put("workspaceVersion", workspace.version());
+            candidateStatistics = TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length);
+            final var processedDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+            final var processedDirectory = processedDirectoryWrapper != null
+              ? processedDirectoryWrapper.getPath()
+              : dataDirectory.resolve("processed").normalize().toAbsolutePath();
+            candidateTracks = new Track1DManager(dataDirectory, processedDirectory);
+          } catch (Exception failure) {
+            closeChunkedFileWrapper(new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
+            map.put("openProgress", new io.vertx.core.json.JsonObject()
+              .put("stage", "failed").put("progress", 0.0));
+            throw failure;
+          }
+          final var oldPrimary = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
+          final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
+          final var oldTracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+          map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
+          map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(candidateTracks));
+          map.put("openedFilename", requestedFilename);
+          map.put("workspaceStateStore", workspace);
+          map.put("TileStatisticHolder", candidateStatistics);
           map.remove(SECONDARY_CHUNKED_FILE_KEY);
           map.remove(OPENED_SECONDARY_FILENAME_KEY);
           map.remove(SECONDARY_COMPATIBILITY_KEY);
-          try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
-          catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
-          TileHandlersHolder.clearExpectedProfileCache(map);
+          map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
           map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-
-          final var oldTrackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-          if (oldTrackManagerWrapper != null) {
-            oldTrackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
-            oldTrackManagerWrapper.getTrack1DManager().close();
-          }
           map.remove("linkedFastaPath");
           map.remove("linkedFastaFilename");
           map.remove(PRIMARY_FASTA_PATH_KEY);
           map.remove(PRIMARY_FASTA_FILENAME_KEY);
           map.remove(SECONDARY_FASTA_PATH_KEY);
           map.remove(SECONDARY_FASTA_FILENAME_KEY);
-
-          map.put("openProgress", new io.vertx.core.json.JsonObject()
-            .put("stage", "starting")
-            .put("progress", 0.0));
-
-          final var chunkedFile = Initializers.withProgressReporter((stage, progressValue) -> {
-            map.put("openProgress", new io.vertx.core.json.JsonObject()
-              .put("stage", stage)
-              .put("progress", progressValue));
-            if (verbose) {
-              log.info(String.format("Open progress: %s (%.1f%%)", stage, progressValue * 100.0));
-            }
-          }, () -> new ChunkedFile(
-            new ChunkedFile.ChunkedFileOptions(
-              requestedFilePath,
-              (int) map.getOrDefault("MIN_DS_POOL", 4),
-              (int) map.getOrDefault("MAX_DS_POOL", 16)
-            )
-          ));
-          final var chunkedFileWrapper = new ShareableWrappers.ChunkedFileWrapper(chunkedFile);
-          log.info("Putting chunkedFile into the local map");
-          map.put(PRIMARY_CHUNKED_FILE_KEY, chunkedFileWrapper);
-          map.put("openedFilename", requestedFilename);
-          var workspace = new WorkspaceStateStore();
-          map.put("workspaceStateStore", workspace);
-          map.put("TileStatisticHolder", TileStatisticHolder.newDefaultStatisticHolder(chunkedFile.getResolutions().length));
-
-          final var processedDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
-          final var processedDirectory = processedDirectoryWrapper != null
-            ? processedDirectoryWrapper.getPath()
-            : dataDirectory.resolve("processed").normalize().toAbsolutePath();
-          map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(new Track1DManager(dataDirectory, processedDirectory)));
+          TileHandlersHolder.clearExpectedProfileCache(map);
+          // Cleanup failures must not report a failed replacement after publication.
+          if (oldTracks != null) {
+            try { oldTracks.getTrack1DManager().close(); }
+            catch (Exception failure) { log.warn("Previous track resources could not be closed", failure); }
+          }
+          closeChunkedFileWrapper(oldPrimary);
+          closeChunkedFileWrapper(oldSecondary);
+          try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
+          catch (Exception failure) { log.warn("Superseded overlay cleanup deferred", failure); }
 
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
@@ -189,8 +210,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put("openProgress", new io.vertx.core.json.JsonObject()
             .put("stage", "done")
             .put("progress", 1.0));
-          return io.vertx.core.json.JsonObject.mapFrom(generateOpenFileResponse(chunkedFile))
-            .put("workspaceVersion", workspace.version());
+          return response;
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")

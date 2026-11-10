@@ -354,6 +354,69 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void failedPrimaryReplacementKeepsEditedSourcesFastaTracksAndWorkspace() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", java.util.List.of(4L, 10L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "secondary", java.util.List.of(4L, 10L));
+    Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
+    Files.writeString(tempDataDir.resolve("broken.hict.hdf5"), "Not an HDF5 file");
+    startServerWithInfoAndFileHandlers();
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\"}").statusCode());
+    var linked = post("/link_fasta", "{\"fastaFilename\":\"tiny.fa\"}");
+    assertEquals(200, linked.statusCode(), linked.body());
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    var primary = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
+    var secondary = map.get("chunkedFileSecondary");
+    var tracks = map.get("Track1DManager");
+    var workspace = map.get("workspaceStateStore");
+    var statistics = map.get("TileStatisticHolder");
+    var file = primary.getChunkedFile();
+    file.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+    var agp = file.getAgpProcessor().getAssemblyAGPRecords().toString();
+    var resolution = ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(4, file);
+    var pixels = file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 5, 5, false).matrix();
+    var attachedBefore = post("/attach", "{}").body();
+    for (String name : java.util.List.of("missing.hict.hdf5", "broken.hict.hdf5", "broken.hict.hdf5")) {
+      var failed = post("/open", new JsonObject().put("filename", name).encode());
+      assertTrue(failed.statusCode() >= 400, failed.body());
+      org.junit.jupiter.api.Assertions.assertSame(primary, map.get("chunkedFile"));
+      org.junit.jupiter.api.Assertions.assertSame(secondary, map.get("chunkedFileSecondary"));
+      org.junit.jupiter.api.Assertions.assertSame(tracks, map.get("Track1DManager"));
+      org.junit.jupiter.api.Assertions.assertSame(workspace, map.get("workspaceStateStore"));
+      org.junit.jupiter.api.Assertions.assertSame(statistics, map.get("TileStatisticHolder"));
+      assertEquals(agp, file.getAgpProcessor().getAssemblyAGPRecords().toString());
+      var retainedPixels = file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 5, 5, false).matrix();
+      for (int row = 0; row < 5; row++) for (int col = 0; col < 5; col++)
+        assertEquals(pixels.getAsDouble(row, col), retainedPixels.getAsDouble(row, col));
+      assertEquals(attachedBefore, post("/attach", "{}").body());
+    }
+    assertEquals("failed", new JsonObject(post("/open_progress", "{}").body()).getString("stage"));
+    // A failure after opening/validating the candidate must also retain live state.
+    var unusableDirectory = tempDataDir.resolve("not-a-directory");
+    Files.writeString(unusableDirectory, "occupied");
+    map.put("processedDirectory", new ShareableWrappers.PathWrapper(unusableDirectory));
+    var preparationFailure = post("/open", "{\"filename\":\"primary.hict.hdf5\"}");
+    assertTrue(preparationFailure.statusCode() >= 400, preparationFailure.body());
+    org.junit.jupiter.api.Assertions.assertSame(primary, map.get("chunkedFile"));
+    org.junit.jupiter.api.Assertions.assertSame(tracks, map.get("Track1DManager"));
+    assertEquals(attachedBefore, post("/attach", "{}").body());
+    assertEquals(agp, file.getAgpProcessor().getAssemblyAGPRecords().toString());
+    var stillReadable = file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 5, 5, false).matrix();
+    for (int row = 0; row < 5; row++) for (int col = 0; col < 5; col++)
+      assertEquals(pixels.getAsDouble(row, col), stillReadable.getAsDouble(row, col));
+    map.remove("processedDirectory");
+    // Opening the same physical HDF5 while the old read handles are live must work.
+    var reopened = post("/open", "{\"filename\":\"primary.hict.hdf5\"}");
+    assertEquals(200, reopened.statusCode(), reopened.body());
+    org.junit.jupiter.api.Assertions.assertNotSame(primary, map.get("chunkedFile"));
+    assertEquals(null, map.get("chunkedFileSecondary"));
+    assertEquals(null, map.get("linkedFastaFilename"));
+    var replacement = ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile();
+    assertEquals(1, replacement.getMatrixQueries().getSubmatrix(
+      ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(4, replacement), 0, 0, 1, 1, false).matrix().getAsDouble(0, 0));
+  }
+
+  @Test
   void sourceCapabilitiesSurviveOpenAttachAndDisjointSecondaryStatus() throws Exception {
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", java.util.List.of(4L, 10L));
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "secondary", java.util.List.of(3L, 7L));
