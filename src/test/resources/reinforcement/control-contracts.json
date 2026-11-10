@@ -1,0 +1,2372 @@
+{
+  "schemaVersion": 1,
+  "webuiRevision": "44ca0cd4464af728611932b13274d7214642b4f0",
+  "contracts": [
+    {
+      "id": "control-d49b728bf7f3852b",
+      "historicalIndex": 0,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "navbar-brand",
+      "prerequisites": "Application loaded",
+      "expectedEffect": "Brand link stays in the current application without losing the open assembly.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-47aedabd2fd8de74",
+      "historicalIndex": 1,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "data-bs-toggle=\"dropdown\"",
+      "prerequisites": "Application loaded",
+      "expectedEffect": "Open the named menu; keyboard navigation and Escape return focus without changing assembly state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1aa4c45a72be96fa",
+      "historicalIndex": 2,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "data-bs-toggle=\"dropdown\"",
+      "prerequisites": "Application loaded",
+      "expectedEffect": "Open the named menu; keyboard navigation and Escape return focus without changing assembly state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4b9fc9fcb2ae7ba5",
+      "historicalIndex": 3,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "data-bs-toggle=\"dropdown\"",
+      "prerequisites": "Application loaded",
+      "expectedEffect": "Open the named menu; keyboard navigation and Escape return focus without changing assembly state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9254d0d4a62e1594",
+      "historicalIndex": 4,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "data-bs-toggle=\"dropdown\"",
+      "prerequisites": "Application loaded",
+      "expectedEffect": "Open the named menu; keyboard navigation and Escape return focus without changing assembly state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-be1884000b4a9ebe",
+      "historicalIndex": 5,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "data-bs-toggle=\"dropdown\"",
+      "prerequisites": "Application loaded",
+      "expectedEffect": "Open the named menu; keyboard navigation and Escape return focus without changing assembly state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-f33e340ce095b757",
+      "historicalIndex": 6,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "data-bs-toggle=\"dropdown\"",
+      "prerequisites": "Application loaded",
+      "expectedEffect": "Open the named menu; keyboard navigation and Escape return focus without changing assembly state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-3e7e2f6440358863",
+      "historicalIndex": 7,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "searchQuery",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Typing a known contig or scaffold gives matching suggestions; selecting a hit centers its actual coordinates.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-8134319c22881108",
+      "historicalIndex": 8,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "goToSelection",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Go to centers the selected search result; unknown names produce recoverable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-aef5c2a540e91ff4",
+      "historicalIndex": 9,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "rowScopeQuery",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Apply a valid row scope and verify row intervals and unchanged column scope; invalid scope preserves the prior view.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6cc7966021a9e660",
+      "historicalIndex": 10,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "copyRowScopeToColumn",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Column scope exactly matches row intervals and orientation after copying.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-35e8375bdab993fb",
+      "historicalIndex": 11,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "columnScopeQuery",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Apply a valid column scope and verify column intervals and unchanged row scope.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ddeba1e87d17c7af",
+      "historicalIndex": 12,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "onSignalDisplayModeChanged",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Observed, Expected and O/E match independent numerical fixtures, including scaffold boundaries and zero denominators.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1cf02f19c458080e",
+      "historicalIndex": 13,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "reloadTiles",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Tiles refresh without changing assembly, graph or viewport; visible pixels match pre-refresh data.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-cd5b8c0b91ae4a45",
+      "historicalIndex": 14,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "osdOverlayVisible = !osdOverlayVisible",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Toggle the overlay and retain the chosen visibility across remount.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ca14c14d6e48ed29",
+      "historicalIndex": 15,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "cycleRulerMode",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Cycle ruler coordinate modes and verify tick labels against known assembly/source coordinates.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9f80d3ccbc23a5f4",
+      "historicalIndex": 16,
+      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
+      "anchor": "export-dropdown-toggle",
+      "prerequisites": "Open disposable contact map",
+      "expectedEffect": "Open the export controls; closing the menu leaves view and map state unchanged.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-273d47dd6ee4a8af",
+      "historicalIndex": 17,
+      "source": "src/app/ui/components/toolbar/upper_blocks/FirstBlock.vue",
+      "anchor": "zoomOut",
+      "prerequisites": "Open map, off-diagonal viewport and multiple resolutions",
+      "expectedEffect": "Move to the next coarser supported resolution while preserving the genomic center.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-3bbace8e85b80c4e",
+      "historicalIndex": 18,
+      "source": "src/app/ui/components/toolbar/upper_blocks/FirstBlock.vue",
+      "anchor": "zoomIn",
+      "prerequisites": "Open map, off-diagonal viewport and multiple resolutions",
+      "expectedEffect": "Move to the next finer supported resolution while preserving the genomic center.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0fb43d0cdef8dbdc",
+      "historicalIndex": 19,
+      "source": "src/app/ui/components/toolbar/upper_blocks/FirstBlock.vue",
+      "anchor": "slideVertically",
+      "prerequisites": "Open map, off-diagonal viewport and multiple resolutions",
+      "expectedEffect": "Align the vertical coordinate with the main diagonal while retaining the horizontal coordinate.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0ef9a25f243a48bc",
+      "historicalIndex": 20,
+      "source": "src/app/ui/components/toolbar/upper_blocks/FirstBlock.vue",
+      "anchor": "slideHorizontally",
+      "prerequisites": "Open map, off-diagonal viewport and multiple resolutions",
+      "expectedEffect": "Align the horizontal coordinate with the main diagonal while retaining the vertical coordinate.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-72f68ae330f5f3b0",
+      "historicalIndex": 21,
+      "source": "src/app/ui/components/toolbar/upper_blocks/FirstBlock.vue",
+      "anchor": "slideByCounterDiagonal",
+      "prerequisites": "Open map, off-diagonal viewport and multiple resolutions",
+      "expectedEffect": "Move along the counter-diagonal to the main diagonal and verify genomic coordinates.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-17606a6dcfcee979",
+      "historicalIndex": 22,
+      "source": "src/app/ui/components/toolbar/upper_blocks/RearrangementButtons.vue",
+      "anchor": "onReverseSelectionClicked",
+      "prerequisites": "Open disposable map and valid selection",
+      "expectedEffect": "Reverse selected contig order and strand; exact AGP and sequence agree; Undo restores both.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-a2fc8170f4799314",
+      "historicalIndex": 23,
+      "source": "src/app/ui/components/toolbar/upper_blocks/RearrangementButtons.vue",
+      "anchor": "translocationClick",
+      "prerequisites": "Open disposable map and valid selection",
+      "expectedEffect": "Move selected interval to the chosen target with correct order and coordinates; Escape cancels the mode.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d1955d2b5438dde1",
+      "historicalIndex": 24,
+      "source": "src/app/ui/components/toolbar/upper_blocks/RearrangementButtons.vue",
+      "anchor": "onSplitContigClicked",
+      "prerequisites": "Open disposable map and valid selection",
+      "expectedEffect": "Split at the selected bin boundary; verify AGP and sequence; Escape must disarm the split tool.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-210dad614d79fb41",
+      "historicalIndex": 25,
+      "source": "src/app/ui/components/toolbar/upper_blocks/ScaffoldingButtons.vue",
+      "anchor": "addScaffoldClicked",
+      "prerequisites": "Open disposable map; selection for local actions; matching FASTA for export",
+      "expectedEffect": "Group the selected interval into one scaffold and verify exported AGP.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-02b71b780e35c73e",
+      "historicalIndex": 26,
+      "source": "src/app/ui/components/toolbar/upper_blocks/ScaffoldingButtons.vue",
+      "anchor": "removeScaffoldClicked",
+      "prerequisites": "Open disposable map; selection for local actions; matching FASTA for export",
+      "expectedEffect": "Ungroup only selected scaffolds into singleton scaffolds and verify AGP.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ca2622bf1804463e",
+      "historicalIndex": 27,
+      "source": "src/app/ui/components/toolbar/upper_blocks/ScaffoldingButtons.vue",
+      "anchor": "unscaffoldAllClicked",
+      "prerequisites": "Open disposable map; selection for local actions; matching FASTA for export",
+      "expectedEffect": "Unscaffold all after confirmation; cancellation preserves assembly; Undo restores scaffold grouping.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-98168a11b9535fb0",
+      "historicalIndex": 28,
+      "source": "src/app/ui/components/toolbar/upper_blocks/ScaffoldingButtons.vue",
+      "anchor": "exportFASTAForSelectionClicked",
+      "prerequisites": "Open disposable map; selection for local actions; matching FASTA for export",
+      "expectedEffect": "Downloaded FASTA equals selected edited assembly sequence including strand and gaps.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-721a7db451e86b70",
+      "historicalIndex": 29,
+      "source": "src/app/ui/components/toolbar/upper_blocks/ThirdBlock.vue",
+      "anchor": "saveCurrentLocation",
+      "prerequisites": "Open map at known center/zoom",
+      "expectedEffect": "Create a bookmark and navigate back to exactly the saved location after moving away.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1da91736b8b2d208",
+      "historicalIndex": 30,
+      "source": "src/app/ui/components/toolbar/upper_blocks/ThirdBlock.vue",
+      "anchor": "moveToDebrisClicked",
+      "prerequisites": "Open disposable map with selected contigs",
+      "expectedEffect": "Move only selected contigs to debris, verify order and exclusions, then Undo.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ed96b34d5647de30",
+      "historicalIndex": 31,
+      "source": "src/app/ui/components/toolbar/bottom_blocks/BottomButtons.vue",
+      "anchor": "notificationStore.isOpen = true",
+      "prerequisites": "At least one notification",
+      "expectedEffect": "Open the same notification history with or without a count badge; preserve notification contents.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d1720551c71df985",
+      "historicalIndex": 32,
+      "source": "src/app/ui/components/sidebar/SideBar.vue",
+      "anchor": "toggleSidebarCollapsed",
+      "prerequisites": "Open map",
+      "expectedEffect": "Hide and restore the sidebar while resizing map and retaining viewport and settings.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-b09d59fc787c152c",
+      "historicalIndex": 33,
+      "source": "src/app/ui/MainUIComponent.vue",
+      "anchor": "Open map…",
+      "prerequisites": "No map open",
+      "expectedEffect": "Open the wizard and complete a real file selection; verify the resulting matrix and readable signal.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-aaf98ba3900cad36",
+      "historicalIndex": 34,
+      "source": "src/app/ui/MainUIComponent.vue",
+      "anchor": "Attach to open session",
+      "prerequisites": "Server has an open map; fresh browser",
+      "expectedEffect": "Attach restores the actual server assembly and source capabilities without reopening or resetting it.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1a2b32292346b386",
+      "historicalIndex": 35,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "onOpenFASTAFile",
+      "prerequisites": "Re-capture the specific surface with full ancestor and accessible-name information",
+      "expectedEffect": "Resolve each actual element before exercising it; close controls must dismiss only their own dialog/toast, restore focus and preserve unsaved state.",
+      "coverage": "pending",
+      "functionalCoverage": "pending",
+      "note": "This is an ambiguous historical signature, not a confirmed NavigationBar control. Source is the surface entry point; split into element-specific records."
+    },
+    {
+      "id": "control-6c57f5320aba70e3",
+      "historicalIndex": 36,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "onOpenFASTAFile",
+      "prerequisites": "Open map, no linked FASTA",
+      "expectedEffect": "Open the FASTA selector; successful matching link updates both axes and the chip.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-98041b2e6e21a56f",
+      "historicalIndex": 37,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "onLoadAGP",
+      "prerequisites": "Open disposable map",
+      "expectedEffect": "Open AGP selector; valid import changes the intended assembly; rejected import preserves it.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-5d9189b06d5d498a",
+      "historicalIndex": 38,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "onOpenFASTAFile",
+      "prerequisites": "Re-capture the specific surface with full ancestor and accessible-name information",
+      "expectedEffect": "Split captured instances by owner and element class. Dialog close buttons dismiss only their dialog and restore focus. The OpenLayers zoom-slider thumb changes resolution when dragged and preserves the genomic center; it must not be tested as a close button.",
+      "coverage": "pending",
+      "functionalCoverage": "pending",
+      "note": "Runtime capture confirms this signature merges modal close buttons with ol-zoomslider-thumb. NavigationBar is only the surface entry point. Full source ownership remains pending for the merged instances."
+    },
+    {
+      "id": "control-5cf5f88379c2c3f3",
+      "historicalIndex": 39,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "pathInput",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Entering a valid relative path and confirming selects or navigates to that path; traversal outside DATA_DIR is rejected.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-77cb02ffacc687b2",
+      "historicalIndex": 40,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "onPathGoClicked",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Go lists the specified directory or selects its file; invalid path keeps the picker usable.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-2e35f6aa79af47a3",
+      "historicalIndex": 41,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "goToParentDirectory",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Up navigates exactly one directory and cannot escape DATA_DIR.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4422ac57367ffacd",
+      "historicalIndex": 42,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "loadDirectory('')",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Root returns to DATA_DIR without loading a map.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-21f871e01560c953",
+      "historicalIndex": 43,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "searchTerm",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Filter shows matching filenames/paths and clearing it restores the current directory.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-317cc65bbb753970",
+      "historicalIndex": 44,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "showAllFiles",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Toggle reveals unsupported file types without silently making them valid inputs.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-12f37dad7296af10",
+      "historicalIndex": 45,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "selectorMode = 'explorer'",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Explorer mode preserves the selected path and uses the same directory.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6455887806c9c017",
+      "historicalIndex": 46,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "selectorMode = 'tree'",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Tree mode preserves selection and navigates expandable directories correctly.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1f2d46ab3eccb9a5",
+      "historicalIndex": 47,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "onDismissClicked",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Dismiss closes the picker without mutating the current map or parent form.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9481f2a4de0c4262",
+      "historicalIndex": 48,
+      "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+      "anchor": "onSelectClicked",
+      "prerequisites": "Open a file picker with nested disposable directories and valid/invalid files",
+      "expectedEffect": "Load delivers the selected supported path once; errors remain recoverable.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d59d054b6439a4ef",
+      "historicalIndex": 49,
+      "source": "src/app/ui/components/toolbar/bottom_blocks/BottomButtons.vue",
+      "anchor": "notificationStore.isOpen = true",
+      "prerequisites": "At least one notification",
+      "expectedEffect": "Open the same notification history with or without a count badge; preserve notification contents.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d59920f4de7960ef",
+      "historicalIndex": 50,
+      "source": "src/app/core/mapmanagers/ContactMapManager.ts",
+      "anchor": "new Map({",
+      "prerequisites": "Open map away from zoom limits; nonzero rotation for reset",
+      "expectedEffect": "Click the map plus button and verify a lower view resolution with the genomic center preserved; at the finest supported limit it remains stable.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "ContactMapManager leaves default controls enabled. OpenLayers defaults creates Zoom and Rotate; their click handlers change view zoom or reset rotation. These are distinct from FirstBlock toolbar buttons.",
+      "libraryEvidence": [
+        {
+          "path": "node_modules/ol/control/defaults.js",
+          "sha256": "804d9b0ba00eec064803df824d752f0eee7522032d5907c2a29af078639ee5a9"
+        },
+        {
+          "path": "node_modules/ol/control/Zoom.js",
+          "sha256": "1385b4334b448e57cb8079aa1d12be6ec74b41ac3f738a3a09e5311c876d49f5"
+        }
+      ]
+    },
+    {
+      "id": "control-d7d7b0a3716b7c14",
+      "historicalIndex": 51,
+      "source": "src/app/core/mapmanagers/ContactMapManager.ts",
+      "anchor": "new Map({",
+      "prerequisites": "Open map away from zoom limits; nonzero rotation for reset",
+      "expectedEffect": "Click the map minus button and verify a higher view resolution with the genomic center preserved; at the coarsest supported limit it remains stable.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "ContactMapManager leaves default controls enabled. OpenLayers defaults creates Zoom and Rotate; their click handlers change view zoom or reset rotation. These are distinct from FirstBlock toolbar buttons.",
+      "libraryEvidence": [
+        {
+          "path": "node_modules/ol/control/defaults.js",
+          "sha256": "804d9b0ba00eec064803df824d752f0eee7522032d5907c2a29af078639ee5a9"
+        },
+        {
+          "path": "node_modules/ol/control/Zoom.js",
+          "sha256": "1385b4334b448e57cb8079aa1d12be6ec74b41ac3f738a3a09e5311c876d49f5"
+        }
+      ]
+    },
+    {
+      "id": "control-93807fda398a5360",
+      "historicalIndex": 52,
+      "source": "src/app/core/mapmanagers/ContactMapManager.ts",
+      "anchor": "new Map({",
+      "prerequisites": "Open map away from zoom limits; nonzero rotation for reset",
+      "expectedEffect": "Click reset rotation from a nonzero angle; view rotation returns to zero without changing the genomic center.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "ContactMapManager leaves default controls enabled. OpenLayers defaults creates Zoom and Rotate; their click handlers change view zoom or reset rotation. These are distinct from FirstBlock toolbar buttons.",
+      "libraryEvidence": [
+        {
+          "path": "node_modules/ol/control/defaults.js",
+          "sha256": "804d9b0ba00eec064803df824d752f0eee7522032d5907c2a29af078639ee5a9"
+        },
+        {
+          "path": "node_modules/ol/control/Rotate.js",
+          "sha256": "a8d7f569879671923bbca73dbbbf96eb75d54581c219425fa8d67344b87f1c8a"
+        }
+      ]
+    },
+    {
+      "id": "control-7113d3a578dfe953",
+      "historicalIndex": 53,
+      "source": "src/app/ui/components/sidebar/SideBar.vue",
+      "anchor": "toggleLayersBlock",
+      "prerequisites": "Open map",
+      "expectedEffect": "Expand/collapse Borders & labels without changing layer styles or visibility.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4b56d36476fabd24",
+      "historicalIndex": 54,
+      "source": "src/app/ui/components/sidebar/LayerComponent.vue",
+      "anchor": "emit('onBorderStyleChanged', layerName, bordersStyle)",
+      "prerequisites": "Open map with contig and scaffold caption layers",
+      "expectedEffect": "Changing the chosen caption side moves only that layer; labels remain legible at all edges and exports use the same placement.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-5a1a0926634b0781",
+      "historicalIndex": 55,
+      "source": "src/app/ui/components/sidebar/LayerComponent.vue",
+      "anchor": "emit('onBorderStyleChanged', layerName, bordersStyle)",
+      "prerequisites": "Open map with contig and scaffold caption layers",
+      "expectedEffect": "Changing the chosen caption side moves only that layer; labels remain legible at all edges and exports use the same placement.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1d96e41d20e39969",
+      "historicalIndex": 56,
+      "source": "src/app/ui/components/sidebar/SideBar.vue",
+      "anchor": "activeSidebarPanel = 'visualization'",
+      "prerequisites": "Open map",
+      "expectedEffect": "Show the selected sidebar panel, preserve other panel state and restore controls on return.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-b30c5dc6ed9a0db2",
+      "historicalIndex": 57,
+      "source": "src/app/ui/components/sidebar/SideBar.vue",
+      "anchor": "activeSidebarPanel = 'entities'",
+      "prerequisites": "Open map",
+      "expectedEffect": "Show the selected sidebar panel, preserve other panel state and restore controls on return.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-76b9fdc692737155",
+      "historicalIndex": 58,
+      "source": "src/app/ui/components/sidebar/SideBar.vue",
+      "anchor": "activeSidebarPanel = 'history'",
+      "prerequisites": "Open map",
+      "expectedEffect": "Show the selected sidebar panel, preserve other panel state and restore controls on return.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0cbe94ecf8e5457d",
+      "historicalIndex": 59,
+      "source": "src/app/ui/components/AssemblyHistory.vue",
+      "anchor": "restore('undo')",
+      "prerequisites": "At least one committed assembly edit",
+      "expectedEffect": "Undo restores the previous AGP, coordinates, tracks and sequence; typing-focused Ctrl+Z does not undo assembly.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0853eb44c53bb76f",
+      "historicalIndex": 60,
+      "source": "src/app/ui/components/AssemblyHistory.vue",
+      "anchor": "restore('redo')",
+      "prerequisites": "An undone edit with no intervening edit",
+      "expectedEffect": "Redo restores the undone edit and derived views; a new edit invalidates the incompatible redo branch.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d7655f99af29edee",
+      "historicalIndex": 61,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "lowerBound",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Lower threshold changes the intended source/triangle colors and persists after Apply and remount; exact numerical signal remains unchanged.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-60dc94f256a7d76a",
+      "historicalIndex": 62,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "upperBound",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Upper threshold changes the intended source/triangle colors and persists after Apply and remount.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-a72cacdada032737",
+      "historicalIndex": 63,
+      "source": "src/app/ui/components/sidebar/SignalRangeControl.vue",
+      "anchor": "@keydown=\"key($event, side)\"",
+      "prerequisites": "Open map with nonzero slider domain",
+      "expectedEffect": "Drag or keyboard-adjust the selected threshold handle; verify actual bound, ordering, clamping and graph target.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d63e9a6ee4c5cb56",
+      "historicalIndex": 64,
+      "source": "src/app/ui/components/sidebar/SignalRangeControl.vue",
+      "anchor": "@keydown=\"key($event, side)\"",
+      "prerequisites": "Open map with nonzero slider domain",
+      "expectedEffect": "Drag or keyboard-adjust the selected threshold handle; verify actual bound, ordering, clamping and graph target.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e0baa78a78046466",
+      "historicalIndex": 65,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "sliderLogScale = false",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Linear slider spacing changes sensitivity without changing graph values or selected thresholds.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1ba4a3264900f983",
+      "historicalIndex": 66,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "sliderLogScale = true",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Log slider spacing changes sensitivity without applying signal logarithms.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4f91036a3fcb3de4",
+      "historicalIndex": 67,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "focusThresholds",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Slider limits fit the selected threshold interval without changing thresholds or matrix values.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-5e74fdfa15fb159d",
+      "historicalIndex": 68,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "Slider limits &amp; data",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Expand/collapse range controls without triggering a full-map scan.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0382716c10ab2b27",
+      "historicalIndex": 69,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "sliderUpperLimit",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Set a finite upper slider limit; thresholds and graph remain unchanged; invalid/reversed domain is rejected.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-31c633ef7aee20e0",
+      "historicalIndex": 70,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "useLoadedRange",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Slider domain matches exact loaded-tile extrema for the selected source.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1a2722795b981998",
+      "historicalIndex": 71,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "fetchExactRange",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Whole-map scan returns independent fixture extrema and caches by source/revision; panning does not rescan.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-53b30e937ff4ff3b",
+      "historicalIndex": 72,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "Cooler weights warning",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Expand the warning and expose the actual non-finite weight count and policy.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-67a672a451e8a42c",
+      "historicalIndex": 73,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "coolerWeightsNaNPolicy",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Selected NaN policy gives the documented exact pixels and persists after Apply.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d3dc4451ed3726c2",
+      "historicalIndex": 74,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "Signal processing",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Expand signal controls without mutating the graph.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-fb088383fc8f72db",
+      "historicalIndex": 75,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "resolutionScaling",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Quadratic resolution scaling persists after Apply and matches the declared numerical formula.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e3e148fabe6b4087",
+      "historicalIndex": 76,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "resolutionLinearScaling",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Linear resolution scaling persists after Apply and matches the declared numerical formula.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4cc0441f50de06a5",
+      "historicalIndex": 77,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "applyCoolerWeights",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Apply imported weights at the selected resolution and verify exact balanced pixels; unavailable sources show a reason.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-5b57bd0de5cb0200",
+      "historicalIndex": 78,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "applyPostLog",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Enable log2 and verify log(1+x)/log(2) for the selected source and half after Apply and remount.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-c4d7e3fd9131a93b",
+      "historicalIndex": 79,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "autoThresholdEnabled",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Legacy auto-threshold state is migrated as required by W2; the obsolete control is removed without silently changing custom graphs.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9df0f495e993f1a4",
+      "historicalIndex": 80,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "RenderingPipelineModal",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Open the rendering editor with the current graph intact.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-eee4c1b5930b0646",
+      "historicalIndex": 81,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "resetAttributes",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Reset follows the documented default for this source and preserves other sources/halves.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9a5f4105b25fa7c4",
+      "historicalIndex": 82,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "gradient-apply-button",
+      "prerequisites": "Draft signal settings with a controlled and custom graph case",
+      "expectedEffect": "Apply commits only editable selected-source signal settings; flags remain checked and exact matrix output changes accordingly; failed apply retains prior state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-cf0cdbd096625206",
+      "historicalIndex": 83,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptions.vue",
+      "anchor": "saveOptions",
+      "prerequisites": "Open map with a custom graph and existing presets",
+      "expectedEffect": "Save a named preset and restore its complete graph and settings after changing the view.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-fe667f87230af654",
+      "historicalIndex": 84,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptions.vue",
+      "anchor": "exportOptions",
+      "prerequisites": "Open map with a custom graph and existing presets",
+      "expectedEffect": "Export parses as the supported preset format and preserves custom graph nodes.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-c14f017d0cfcd866",
+      "historicalIndex": 85,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptions.vue",
+      "anchor": "importFileBtn",
+      "prerequisites": "Open map with a custom graph and existing presets",
+      "expectedEffect": "Import a valid exported preset without loss; malformed/future formats preserve existing presets.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-10d3b755acdfeff5",
+      "historicalIndex": 86,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-db9cd2cd5dd990d1",
+      "historicalIndex": 87,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "startRename",
+      "prerequisites": "Saved preset exists",
+      "expectedEffect": "Rename only the selected preset; Enter saves, Escape cancels, and reload retains the accepted name.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-2527c4df31da8963",
+      "historicalIndex": 88,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "$emit('remove', props.option_id)",
+      "prerequisites": "Saved preset exists",
+      "expectedEffect": "Remove only the selected preset and retain all other preset graphs.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-024de6760d6c4dab",
+      "historicalIndex": 89,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0af97d343677aab1",
+      "historicalIndex": 90,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-99c615f82fbb0ade",
+      "historicalIndex": 91,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-f7121d650472dd1a",
+      "historicalIndex": 92,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d0fabc68677c566f",
+      "historicalIndex": 93,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0a7d339cf00a6575",
+      "historicalIndex": 94,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-fb000ec3c75c629f",
+      "historicalIndex": 95,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-11e0e10e2c3742c6",
+      "historicalIndex": 96,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-62fddbe08741d13e",
+      "historicalIndex": 97,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-39efef86a75037bc",
+      "historicalIndex": 98,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-f07fe73e427f7026",
+      "historicalIndex": 99,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-06ccd8c555d4e75d",
+      "historicalIndex": 100,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1d53ec6bf1a66337",
+      "historicalIndex": 101,
+      "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
+      "anchor": "setOptionsPreset",
+      "prerequisites": "Open map; required primary/secondary sources for this named preset",
+      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-7b3067e452dbb64d",
+      "historicalIndex": 102,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "hictk",
+      "prerequisites": "Conversion dialog open",
+      "expectedEffect": "Open the declared hictk attribution URL in a separate browsing context; preserve the active workspace.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-323ed68e75c39d3d",
+      "historicalIndex": 103,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "Notices, attribution and diagnostics",
+      "prerequisites": "Conversion dialog open",
+      "expectedEffect": "Expand tool notices and verify the declared tool/version, attribution and diagnostic information.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0830d498eca53ffc",
+      "historicalIndex": 104,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "selectAll",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Select all eligible rows, preserving the actual set of selected file paths.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Shared signature also occurs in DotplotGenerator.vue with the same selection-handler names; execute separately for conversion and FASTA dotplot rows."
+    },
+    {
+      "id": "control-b6003eba3805db53",
+      "historicalIndex": 105,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "selectNone",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Clear all selected paths and disable Continue when empty.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Shared signature also occurs in DotplotGenerator.vue with the same selection-handler names; execute separately for conversion and FASTA dotplot rows."
+    },
+    {
+      "id": "control-794e2e40bfe0be15",
+      "historicalIndex": 106,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "invertSelection",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Invert exactly the eligible row set; applying twice restores original selection.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Shared signature also occurs in DotplotGenerator.vue with the same selection-handler names; execute separately for conversion and FASTA dotplot rows."
+    },
+    {
+      "id": "control-508bbc8a2e65a88d",
+      "historicalIndex": 107,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "selectAllConverted",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Select exactly files already converted; match actual conversion metadata.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-c59ed84ece4f4539",
+      "historicalIndex": 108,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "selectAllUnconverted",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Select exactly files not yet converted.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-5971ed519fade0aa",
+      "historicalIndex": 109,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "viewCurrentJobs",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Show current conversion jobs and reconcile their status with server jobs.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-cbb74ee39ba052ab",
+      "historicalIndex": 110,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "proceedBatchSettings",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Continue only with a valid selection and preserve selected paths in batch settings.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-33693b699c5b110c",
+      "historicalIndex": 111,
+      "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+      "anchor": "onDismissClicked",
+      "prerequisites": "Conversion picker with converted and unconverted disposable fixtures",
+      "expectedEffect": "Dismiss without starting or cancelling a job implicitly.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d110668cbfd23327",
+      "historicalIndex": 112,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "loadConversionJobs",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Refresh jobs and compare identifiers/states with the server; retain current form.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-8173705ccdaaf8fa",
+      "historicalIndex": 113,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "sourceFilename",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Source path must refer to the chosen file and cannot silently switch on refresh.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-b83e23918a576dd4",
+      "historicalIndex": 114,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "selectorKind = 'source'",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Browse selects a source file and fills the correct field without starting export.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-abc3c585ac43ebf0",
+      "historicalIndex": 115,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "outputFilename",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Output filename is validated under the allowed root and used by the resulting job.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e89e2736328b667c",
+      "historicalIndex": 116,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "useCurrentAssembly",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Toggle current assembly versus source layout and compare exported bin order and strand.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e5fd1a7ca06900db",
+      "historicalIndex": 117,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "exportMode",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Each supported exporter mode produces independently equivalent contacts and bins; unavailable mode explains why.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-7954bd0fcfb735a2",
+      "historicalIndex": 118,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "compressionAlgorithm",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Exported HDF5 uses the selected compression and retains exact data.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e6686989a2db96c3",
+      "historicalIndex": 119,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "compression",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Compression level is validated for the chosen algorithm; output is readable and exact.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0c924e3959688f46",
+      "historicalIndex": 120,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "parallelism",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Thread allocation honors automatic and explicit values; invalid counts are rejected.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0abcca02c1362aea",
+      "historicalIndex": 121,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "exportAllResolutions",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Export contains exactly the requested available resolutions.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-8430ad27d7343b6f",
+      "historicalIndex": 122,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "balanceExportedCoolers",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Balancing selection produces declared weights with documented NaN handling; raw contacts are preserved.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-a2f72b6183185d5f",
+      "historicalIndex": 123,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "overwrite",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Existing output is protected unless overwrite is explicitly selected.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-35f109d1913907c9",
+      "historicalIndex": 124,
+      "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+      "anchor": "startExport",
+      "prerequisites": "Matrix export dialog with disposable input/output files",
+      "expectedEffect": "Export completes with a readable matrix whose bins, contacts and weights match the edited assembly.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-60ecbaffc755eb6c",
+      "historicalIndex": 125,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "onOpenFASTAFile",
+      "prerequisites": "Re-capture the specific surface with full ancestor and accessible-name information",
+      "expectedEffect": "Resolve each actual element before exercising it; close controls must dismiss only their own dialog/toast, restore focus and preserve unsaved state.",
+      "coverage": "pending",
+      "functionalCoverage": "pending",
+      "note": "This is an ambiguous historical signature, not a confirmed NavigationBar control. Source is the surface entry point; split into element-specific records."
+    },
+    {
+      "id": "control-1245ef9b3cded008",
+      "historicalIndex": 126,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "trackFileSelectorOpen = true",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Browse opens the 1D track selector and preserves existing tracks.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6a1dd8f89f60190f",
+      "historicalIndex": 127,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "trackDisplayName",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Custom name is used for the added track and persists through refresh.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9c727ee83f68f3e1",
+      "historicalIndex": 128,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "onAddTrack",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Add a valid track and verify actual feature intervals, axes and values; invalid track leaves existing tracks intact.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-41f06e259212be2e",
+      "historicalIndex": 129,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "cooler-weights-primary",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Toggle the primary weight track; values match the imported source weights.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-99c5fc6893e2d0f5",
+      "historicalIndex": 130,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "cooler-weights-secondary",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Toggle the secondary weight track only when that source exists; values match its weights.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-b261d9ed73a08956",
+      "historicalIndex": 131,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "onAttachSecondarySource",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Attach the selected secondary with compatibility checks and correct capabilities; failed attach preserves prior source.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-21c354ef4553f864",
+      "historicalIndex": 132,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "onDetachSecondarySource",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Detach secondary and remove its layers/capabilities without changing primary data.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-7a3bb6e29bf60ac4",
+      "historicalIndex": 133,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "assemblySource",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Switch assembly source with guards and compare contig coordinates, edits and history scope.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-5395e52fba242d0d",
+      "historicalIndex": 134,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "onStartPrecomputeAll",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Start bounded precomputation, verify outputs and progress, and retain job visibility after closing.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-bbe0eb3d9e218a3e",
+      "historicalIndex": 135,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "inheritTrackBackgroundFromMap",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Toggle inheritance; inherited background follows map color and explicit background remains independent.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-425951576bb7a227",
+      "historicalIndex": 136,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "onTrackBackgroundColorChanged",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Set explicit track background and verify both axes and exports.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-99e4ffb443a4f613",
+      "historicalIndex": 137,
+      "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+      "anchor": "$emit('dismissed')",
+      "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
+      "expectedEffect": "Close this dialog without removing tracks or cancelling running work.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-728c6238cf16da13",
+      "historicalIndex": 138,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "togglePreviewMode",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Toggle editor preview layout while preserving graph and draft state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-150491fe224d54c7",
+      "historicalIndex": 139,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "enabled",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Enable/disable processing and verify numerical output after Apply; retain graph for re-enabling.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e16aadae6fbd65e4",
+      "historicalIndex": 140,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "swapUpperLower",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Swap graph halves and verify each source and triangle numerically.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-7d1a78d6b6010caf",
+      "historicalIndex": 141,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "selectedPresetId",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Selecting a preset does not replace the draft until Load preset is clicked.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ed57f983ec2f0f79",
+      "historicalIndex": 142,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "loadSelectedPreset",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Load selected graph into draft; verify node semantics before applying.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-44a05a4f0d5bbb0a",
+      "historicalIndex": 143,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "loadConfig",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Reload current server graph without retaining stale draft nodes.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-3f6127b21142c0a7",
+      "historicalIndex": 144,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "resetConfig",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Reset to the documented default graph; do not mutate unrelated state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-40d6b9b34ee5b7e9",
+      "historicalIndex": 145,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "exportGraphToFile",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Export preserves full graph node structure and constants.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6953efcce52c8a61",
+      "historicalIndex": 146,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "triggerImportGraph",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Import valid graph without loss; invalid graph does not mutate prior state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6865046eb1173f82",
+      "historicalIndex": 147,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "previewConfig",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Preview shows exact draft results without committing them.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-80296382edafa326",
+      "historicalIndex": 148,
+      "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+      "anchor": "saveConfig",
+      "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
+      "expectedEffect": "Apply commits exact graph, invalidates correct tiles and persists through close/reopen.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6c21eb885e61cbe2",
+      "historicalIndex": 149,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayVisible",
+      "prerequisites": "OSD settings open",
+      "expectedEffect": "Toggle visibility and verify actual overlay appearance and persistence.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-8e7a97cb2efa233e",
+      "historicalIndex": 150,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayPosition",
+      "prerequisites": "OSD settings open",
+      "expectedEffect": "Selected corner is reflected in actual overlay bounds after resize.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9d3f10bdd48089a5",
+      "historicalIndex": 151,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-31e3b14fe2e5b13c",
+      "historicalIndex": 152,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "moveOsdField(field, 1)",
+      "prerequisites": "OSD settings open",
+      "expectedEffect": "Move the selected field down one position; verify displayed order and boundary disabling.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1057f472af9e13c9",
+      "historicalIndex": 153,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9bcfc02a87cd072b",
+      "historicalIndex": 154,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ff719cd405028f07",
+      "historicalIndex": 155,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ea795ea6f3b6fc35",
+      "historicalIndex": 156,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-f7d63909cf79a27e",
+      "historicalIndex": 157,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-01ace3dcbfa88702",
+      "historicalIndex": 158,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d5bab6209ab83856",
+      "historicalIndex": 159,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-ff7f6bbddf0bb947",
+      "historicalIndex": 160,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-f38fe1fbf8ad52f2",
+      "historicalIndex": 161,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-cb8ac5b9bdb4731b",
+      "historicalIndex": 162,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdOverlayFields[field]",
+      "prerequisites": "OSD settings open with all fields enabled",
+      "expectedEffect": "Toggle the named field and verify only that field disappears/reappears; values match actual source, coordinates and resolution.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-3593cc72b199a7f9",
+      "historicalIndex": 163,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "osdSettingsOpen = false",
+      "prerequisites": "OSD settings open",
+      "expectedEffect": "Done closes OSD settings and preserves selected overlay fields, order and position.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-2a9d496fe1862bc8",
+      "historicalIndex": 164,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolutionFinestLimit",
+      "prerequisites": "Resolution settings open",
+      "expectedEffect": "Enter finest/coarsest limits; Set limits enables the intended source levels; invalid/reversed bounds do not leave an unusable view.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4d8619b9f5239d21",
+      "historicalIndex": 165,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolutionCoarsestLimit",
+      "prerequisites": "Resolution settings open",
+      "expectedEffect": "Enter finest/coarsest limits; Set limits enables the intended source levels; invalid/reversed bounds do not leave an unusable view.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4ab3b71f1eb3b635",
+      "historicalIndex": 166,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "applyResolutionLimits",
+      "prerequisites": "Resolution settings open with valid and invalid limit pairs",
+      "expectedEffect": "Apply the interval to enabled levels and verify subsequent zoom levels and unchanged genomic center.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4a344cd82af50ac3",
+      "historicalIndex": 167,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-cc648f1e01af8daa",
+      "historicalIndex": 168,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d3c4d09a74ae7f03",
+      "historicalIndex": 169,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d510921562b834bc",
+      "historicalIndex": 170,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-a6f20b874b45f5aa",
+      "historicalIndex": 171,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-800edb3d22ca1fbf",
+      "historicalIndex": 172,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e435e2cbff182320",
+      "historicalIndex": 173,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-befc048fa2b5ec2e",
+      "historicalIndex": 174,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4927d2f5b2aceaa4",
+      "historicalIndex": 175,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0ff9d1a637ecc692",
+      "historicalIndex": 176,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-cfc34d4e175babb8",
+      "historicalIndex": 177,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "resolution-modal-",
+      "prerequisites": "Resolution settings open with multiple available levels",
+      "expectedEffect": "Toggle this specific resolution; verify zoom excludes unchecked levels and at least one usable level remains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e1c75a0be3ba4e45",
+      "historicalIndex": 178,
+      "source": "src/app/ui/components/upper_ribbon/DotplotGenerator.vue",
+      "anchor": "viewCurrentJobs",
+      "prerequisites": "FASTA dotplot generator open",
+      "expectedEffect": "Show server dotplot jobs and their actual progress/output; closing the picker does not lose job status.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-24f0e4f3eb9490c7",
+      "historicalIndex": 179,
+      "source": "src/app/ui/components/upper_ribbon/DotplotGenerator.vue",
+      "anchor": "FileSelectionTable",
+      "prerequisites": "FASTA dotplot picker with the named disposable file",
+      "expectedEffect": "Toggle exactly this FASTA path in the selected set; Continue uses that set.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Row checkbox is rendered by FileSelectionTable; test by path, not the captured example filename."
+    },
+    {
+      "id": "control-ae685fc7b8766665",
+      "historicalIndex": 180,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "onOpenFASTAFile",
+      "prerequisites": "Re-capture the specific surface with full ancestor and accessible-name information",
+      "expectedEffect": "Resolve each actual element before exercising it; close controls must dismiss only their own dialog/toast, restore focus and preserve unsaved state.",
+      "coverage": "pending",
+      "functionalCoverage": "pending",
+      "note": "This is an ambiguous historical signature, not a confirmed NavigationBar control. Source is the surface entry point; split into element-specific records."
+    },
+    {
+      "id": "control-aa5df5bc2a60d368",
+      "historicalIndex": 181,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "How this works",
+      "prerequisites": "Sequence analysis dialog open",
+      "expectedEffect": "Expand the explanation without changing query/settings; repeat for search and both dotplot modes.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Shared control also appears in ModDotPlotModal.vue for alignment and identity modes. Test each originating dialog and preserve its draft state."
+    },
+    {
+      "id": "control-5b4e31d657032b06",
+      "historicalIndex": 182,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "emit('linkFasta')",
+      "prerequisites": "Sequence analysis dialog with no linked FASTA",
+      "expectedEffect": "Open matching FASTA selection and return to the originating dialog after success; cancellation preserves draft.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Shared control also appears in ModDotPlotModal.vue for alignment and identity modes. Test each originating dialog and preserve its draft state."
+    },
+    {
+      "id": "control-6e30c97c9864304a",
+      "historicalIndex": 183,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "readiness.refresh",
+      "prerequisites": "Sequence analysis dialog after linking or failed tool check",
+      "expectedEffect": "Recheck actual linked FASTA/tool readiness; enable computation only when prerequisites are met.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Shared control also appears in ModDotPlotModal.vue for alignment and identity modes. Test each originating dialog and preserve its draft state."
+    },
+    {
+      "id": "control-3385c82b3bb4caa0",
+      "historicalIndex": 184,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "queries",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Parse multiple FASTA/plain queries preserving IDs and IUPAC bases; reject malformed/empty input visibly.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9265262dc3b9fe7e",
+      "historicalIndex": 185,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "v-model=\"scope\"",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Search exactly the chosen assembly/selection scope and report assembly coordinates.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-2cbbe5d26776f0c3",
+      "historicalIndex": 186,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "bothStrands",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Both-strand search includes forward/reverse fixture hits; forward-only excludes reverse hits.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-efe0554087890445",
+      "historicalIndex": 187,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "v-model=\"mode\"",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Exact, substitution and gapped modes produce their independently expected hit sets.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-3a141b36fb6165c9",
+      "historicalIndex": 188,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "degenerate",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "IUPAC expansion changes the hit set according to declared ambiguous-base semantics.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1d8e8dee0ae8b5ba",
+      "historicalIndex": 189,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "Advanced",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Expand advanced options without changing settings or triggering computation.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending",
+      "note": "Shared control also appears in ModDotPlotModal.vue for alignment and identity modes. Test each originating dialog and preserve its draft state."
+    },
+    {
+      "id": "control-2c41be2e588b9d9a",
+      "historicalIndex": 190,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "forwardColor",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Forward hits use the chosen color; reverse hits remain unchanged.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4020de01f7391ca5",
+      "historicalIndex": 191,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "reverseColor",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Reverse hits use the chosen color; forward hits remain unchanged.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-7fb7e3cedb6e6f23",
+      "historicalIndex": 192,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "saveReusable",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Save reusable creates a readable BED with correct provenance and coordinates; unchecked mode remains temporary.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-8571b5cced1cfbc9",
+      "historicalIndex": 193,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "onOpenFASTAFile",
+      "prerequisites": "Re-capture the specific surface with full ancestor and accessible-name information",
+      "expectedEffect": "Resolve each actual element before exercising it; close controls must dismiss only their own dialog/toast, restore focus and preserve unsaved state.",
+      "coverage": "pending",
+      "functionalCoverage": "pending",
+      "note": "This is an ambiguous historical signature, not a confirmed NavigationBar control. Source is the surface entry point; split into element-specific records."
+    },
+    {
+      "id": "control-65ba204035069c0b",
+      "historicalIndex": 194,
+      "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+      "anchor": "@submit.prevent=\"start\"",
+      "prerequisites": "Search dialog, linked fixture FASTA and required local tools",
+      "expectedEffect": "Run queries and compare exact hit intervals, strand, alignment and output tracks to independent fixtures.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-0aa0302b67c659ac",
+      "historicalIndex": 195,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "v-model=\"scope\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Choose assembly or selected rectangle and verify computed region and coverage metadata.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-38df190e125ba4b7",
+      "historicalIndex": 196,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "v-model=\"resolutions\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Compute exactly the checked levels; an empty set is rejected.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d2573427ee18336b",
+      "historicalIndex": 197,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "alignmentSettings[option.key]",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Set minimizer k; job provenance records it and fixture alignments remain correctly mapped.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-26089880176312c9",
+      "historicalIndex": 198,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "alignmentSettings[option.key]",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Set minimizer window; job provenance and computed alignments match the requested settings.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1061909bacddafff",
+      "historicalIndex": 199,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "alignmentSettings[option.key]",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Set minimum chain score; fixture filtering obeys the boundary value.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-4d4f0e70925fb9f1",
+      "historicalIndex": 200,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "alignmentSettings[option.key]",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Set minimum alignment length; short alignments are excluded at the declared threshold.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d1ab71f9380cd9ae",
+      "historicalIndex": 201,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "alignmentSettings[option.key]",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Set sampling interval; expected per-bin alignment samples match an independent oracle.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-086d992a50443bf4",
+      "historicalIndex": 202,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "alignmentSettings[option.key]",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Set alignment worker count; job provenance and scheduler allocation reflect the valid request.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-786c47d9692efd82",
+      "historicalIndex": 203,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "saveReusable",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Reusable output persists with provenance; temporary output follows retention policy.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-16eb555f768fb203",
+      "historicalIndex": 204,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "displayMode",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Overlay, below-diagonal and no-link modes produce the chosen attachment/graph state without modifying primary values.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-90643dacedb18358",
+      "historicalIndex": 205,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "@submit.prevent=\"start\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Compute alignment overlay for the captured assembly revision; duplicate/overlap/retry does not add scores.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6fef86cfecfec302",
+      "historicalIndex": 206,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "v-model.number=\"identity\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Identity cutoff includes/excludes fixture scores at the documented boundary.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-82d0c181bd06875b",
+      "historicalIndex": 207,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "v-model.number=\"threads\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Worker allocation implements -1, 0 and positive counts; invalid values are rejected.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-89c42b3e8c0c87f6",
+      "historicalIndex": 208,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "v-model.number=\"k\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Job records identity k-mer length; settings compatibility prevents merging incompatible results.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-97fe6c9fa3cbf7cc",
+      "historicalIndex": 209,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "sketchSize",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Job uses requested sketch size and records it in provenance.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d25105ba6d844e1c",
+      "historicalIndex": 210,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "v-model.number=\"delta\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Job uses requested delta and records it in provenance; invalid values are rejected.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-e131c5aa69cbb79f",
+      "historicalIndex": 211,
+      "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+      "anchor": "@submit.prevent=\"start\"",
+      "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
+      "expectedEffect": "Compute identity scores and verify scale, uncomputed versus zero, coordinates and duplicate/overlap behavior.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-64eabb1aa875c436",
+      "historicalIndex": 212,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "aboutActiveTab = 'about'",
+      "prerequisites": "About dialog open",
+      "expectedEffect": "Show the selected tab; verify version, attribution and release notes against the running artifact, without losing workspace state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6e3dc4750dc6eb26",
+      "historicalIndex": 213,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "aboutActiveTab = 'attribution'",
+      "prerequisites": "About dialog open",
+      "expectedEffect": "Show the selected tab; verify version, attribution and release notes against the running artifact, without losing workspace state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-b9e25da42f9eb780",
+      "historicalIndex": 214,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "aboutActiveTab = 'changelog'",
+      "prerequisites": "About dialog open",
+      "expectedEffect": "Show the selected tab; verify version, attribution and release notes against the running artifact, without losing workspace state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d81f4c2cbeeedfe1",
+      "historicalIndex": 215,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "mailto:",
+      "prerequisites": "About dialog open",
+      "expectedEffect": "Mail link target matches the displayed author address; inspection only, do not send email.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-fb15f7db30845f57",
+      "historicalIndex": 216,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "mailto:",
+      "prerequisites": "About dialog open",
+      "expectedEffect": "Mail link target matches the displayed author address; inspection only, do not send email.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-95656ec0070d2fd6",
+      "historicalIndex": 217,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "mailto:",
+      "prerequisites": "About dialog open",
+      "expectedEffect": "Mail link target matches the displayed author address; inspection only, do not send email.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-eaed414f0d59418e",
+      "historicalIndex": 218,
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "mailto:",
+      "prerequisites": "About dialog open",
+      "expectedEffect": "Mail link target matches the displayed author address; inspection only, do not send email.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-9409df42690ffb5a",
+      "historicalIndex": 219,
+      "source": "src/app/ui/components/sidebar/SavedLocations.vue",
+      "anchor": "setActiveTab('bookmarks')",
+      "prerequisites": "Entities panel with bookmarks and more than one page of entities",
+      "expectedEffect": "Show saved bookmarks and preserve names/coordinates.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-6525b7ebe8d5252b",
+      "historicalIndex": 220,
+      "source": "src/app/ui/components/sidebar/SavedLocations.vue",
+      "anchor": "setActiveTab('contigs')",
+      "prerequisites": "Entities panel with bookmarks and more than one page of entities",
+      "expectedEffect": "Show current contigs in assembly order with correct names and intervals.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-3da6e5cae5b9503f",
+      "historicalIndex": 221,
+      "source": "src/app/ui/components/sidebar/SavedLocations.vue",
+      "anchor": "setActiveTab('scaffolds')",
+      "prerequisites": "Entities panel with bookmarks and more than one page of entities",
+      "expectedEffect": "Show current scaffolds with correct names and extents.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-18a23561bf1777f6",
+      "historicalIndex": 222,
+      "source": "src/app/ui/components/sidebar/SavedLocations.vue",
+      "anchor": "exportNames",
+      "prerequisites": "Entities panel with bookmarks and more than one page of entities",
+      "expectedEffect": "Exported names map exact stable entity IDs to current overrides and round-trip without changing assembly.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-559974871abde35d",
+      "historicalIndex": 223,
+      "source": "src/app/ui/components/sidebar/SavedLocations.vue",
+      "anchor": "resetScaffoldName",
+      "prerequisites": "Entities panel with bookmarks and more than one page of entities",
+      "expectedEffect": "Reset only this scaffold name to its original name and update map labels.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-d0e515c51cea2f26",
+      "historicalIndex": 224,
+      "source": "src/app/ui/components/sidebar/SavedLocations.vue",
+      "anchor": "goToScaffold",
+      "prerequisites": "Entities panel with bookmarks and more than one page of entities",
+      "expectedEffect": "Center/fit the actual scaffold extent, including reversed/reordered contigs.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-1a88920efcadf385",
+      "historicalIndex": 225,
+      "source": "src/app/ui/components/sidebar/SavedLocations.vue",
+      "anchor": "showMore",
+      "prerequisites": "Entities panel with bookmarks and more than one page of entities",
+      "expectedEffect": "Append the next batch without duplicates or losing edited names; stop at the actual entity count.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-5d65d252a207381f",
+      "historicalIndex": 226,
+      "source": "src/app/ui/components/AssemblyHistory.vue",
+      "anchor": "load(Math.max(0, offset - 100))",
+      "prerequisites": "Journal with more than 100 entries",
+      "expectedEffect": "Earlier loads the previous history page without restoring any state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-2523229b1a91fbd4",
+      "historicalIndex": 227,
+      "source": "src/app/ui/components/AssemblyHistory.vue",
+      "anchor": "load(offset + 100)",
+      "prerequisites": "Journal with more than 100 entries",
+      "expectedEffect": "Later loads the next page without restoring state or losing the current-state marker.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-dca86b8ebfdb8203",
+      "historicalIndex": 228,
+      "source": "src/app/ui/components/AssemblyHistory.vue",
+      "anchor": "restore('restore', entry.id)",
+      "prerequisites": "Journal with distinct fixture edit states",
+      "expectedEffect": "Restore the selected entry by immutable ID, not its timestamp label; AGP, sequence and graph references match that state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-41fa0dc3a90e70c9",
+      "historicalIndex": 229,
+      "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
+      "anchor": "sliderLowerLimit",
+      "prerequisites": "Open map with controlled graph and known pixel values",
+      "expectedEffect": "Set a finite lower slider limit without changing thresholds or graph; reject invalid domains.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-8a082573aeb6f26d",
+      "historicalIndex": 230,
+      "source": "src/app/ui/components/upper_ribbon/NormalizationSelector.vue",
+      "anchor": "applyPreLog",
+      "prerequisites": "Open map, selected source/half, controlled or custom graph",
+      "expectedEffect": "Legacy pre-log is preserved in custom graphs or explicitly migrated; W2 removes the obsolete sidebar option.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    },
+    {
+      "id": "control-970987862be587a3",
+      "historicalIndex": 231,
+      "source": "src/app/ui/components/notifications/NotificationCenterModal.vue",
+      "anchor": "notificationStore.clear()",
+      "prerequisites": "Notification history contains messages",
+      "expectedEffect": "Clear removes notification entries and badge without clearing jobs or assembly state.",
+      "coverage": "inspected",
+      "functionalCoverage": "pending"
+    }
+  ]
+}

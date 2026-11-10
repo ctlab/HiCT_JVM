@@ -213,3 +213,21 @@ Evidence: `/tmp/hict-reinforce-w0-capabilities/menu-surfaces-final/`.
 The initial opening-only run is retained separately. Python syntax, fixture IDs,
 source paths and protected-file hashes were checked. This increment changes only
 diagnostics, fixtures and documentation; no additional application build is claimed.
+
+## Fourth W0 increment: authored control expectations
+
+All 232 historical signatures now have an explicit contract with prerequisites,
+expected effect and coverage status. Source anchors were inspected for 227;
+five ambiguous signatures remain pending and explain why their surface entry
+point is not a confirmed element owner. Runtime functional outcomes remain
+separate and pending. See `reinforcement-control-coverage.md` and
+`src/test/resources/reinforcement/control-contracts.json`.
+
+The reconciler validates source anchors and refuses stale references or static
+claims of runtime success. New captures retain element HTML and dialog ownership.
+They confirmed that unnamed close buttons and the map zoom-slider thumb collide
+under the historical signature scheme. The contract distinguishes their outcomes.
+All 18 menu surfaces and three missing-FASTA recovery paths passed again with no
+page or HTTP errors, using the unchanged development application artifact.
+Evidence: `/tmp/hict-reinforce-control-contracts/`. No Java or WebUI application
+code changed in this increment; syntax and contract consistency were checked.

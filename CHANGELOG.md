@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Define prerequisites and expected outcomes for all 232 historical control signatures, distinguish source inspection from functional evidence, and capture dialog ownership to resolve ambiguous controls during the interface audit.
 - Add repeatable menu acceptance checks with explicit expected outcomes, API documentation window verification and missing-FASTA recovery checks. Preserve the historical control inventory for source reconciliation without treating visible controls as tested functionality.
 - Report declared source units and imported weights consistently when opening, attaching or selecting a secondary source. Disable inapplicable contact-scaling and weight controls with an accessible explanation, including resolutions without imported weights, while preserving legacy behavior when metadata is unknown.
 - Establish reinforcement regression fixtures for Log2, custom processing graphs and forward/reverse FASTA coordinates with gaps. Browser acceptance checks now use the actual FASTA and range-scan controls and require mixed-resolution overlays to remain visible; remaining failures are documented as release blockers.

@@ -68,7 +68,11 @@ def main():
                         result['missingFastaGuidance'] = 'visible with computation disabled'
                 controls = target.locator('button,a,input,select,summary,textarea,[role=menuitem]').evaluate_all('''es=>es.filter(e=>e.getClientRects().length).map(e=>({
                     tag:e.tagName,id:e.id,aria:e.getAttribute('aria-label'),text:(e.innerText||'').trim().slice(0,200),
-                    title:e.title,type:e.type??null,disabled:!!e.disabled||e.classList.contains('disabled')}))''')
+                    title:e.title,type:e.type??null,disabled:!!e.disabled||e.classList.contains('disabled'),
+                    elementHtml:e.outerHTML.slice(0,5000),
+                    owner:(()=>{const p=e.closest('[role=dialog],.modal,[data-sonner-toast]');return p?{
+                      tag:p.tagName,id:p.id,role:p.getAttribute('role'),classes:p.className,
+                      heading:p.querySelector('h1,h2,h3,h4,h5,h6')?.textContent?.trim()??null}:null})()}))''')
                 for control in controls:
                     signature = {key: control[key] for key in ('tag', 'id', 'aria', 'text', 'title', 'type')}
                     key = hashlib.sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:16]
