@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A lock button at the ruler corner (on by default, remembered) keeps the map's top-left corner against the rulers. A map smaller than the window sits in the corner instead of floating, and a larger map can be panned across its whole extent but not past its top or left edge. Click the lock to move the map freely. A rotated view is not anchored.
+- The selection (Shift-drag box, its handle and a selected contig) is drawn with a dark outline under a light dashed one and a translucent warm fill, so it is visible on any matrix color, light or dark. Before it was white on white.
 - The toolbar zoom buttons now zoom one step per press, about the view center, and say so when the finest zoom or the whole map is reached. Before, they jumped to an extreme zoom.
 - Escape cancels an armed Split or Move tool, so a later double-click can no longer cut the map by accident. The Split and Move buttons show when they are armed and offer Cancel, and the Split tooltip says that it cuts at the spot you double-click and removes one finest-resolution bin there (Undo restores it).
 - Log2 now applies and stays applied. The sidebar has a **Signal transform** switch (Linear / Log2) and an **Advanced** section with Log base, Scaling across zoom (None, Linear scaling or Quadratic scaling, one choice) and Cooler weights. Before, switching a setting on and pressing Apply reset it whenever a processing pipeline was active, and the log base showed as 1. An invalid base (1, 0, negative or text) is refused with a message.

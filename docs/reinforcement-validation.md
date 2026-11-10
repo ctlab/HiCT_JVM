@@ -924,3 +924,19 @@ armed double-click does split (contigs 96 to 97), the tool disarming itself and 
 Undo, and translocation mode following Escape. Not done for W3: a keyboard action for
 Split (the double-click gesture remains the only way) and showing the affected interval
 before the gesture.
+
+## Map anchoring and selection contrast (W5: items 3 and 5)
+
+`uiSettings.mapAnchorTopLeft` (default on, persisted) drives a lock at the ruler corner.
+`core/mapmanagers/mapAnchor.ts` is the only place that reaches into OpenLayers: it wraps
+`view.constraints_.center` after every `applyOptions_`, and `check-map-anchor.mjs` pins
+OpenLayers 9.1.0 and the private names it uses. Rule: a map smaller than the area sits at
+the top-left, a larger one pans across its whole extent but never past its top or left edge.
+A rotated view and an export in progress are not anchored. Selection styles live in
+`core/mapmanagers/selectionStyles.ts` (dark outline, light dashed outline, translucent fill).
+Real Chromium gate (15 checks, zero failures) at 1900x950 and 1100x800: default on, whole-map
+corner exactly at the origin, overscroll blocked, far corner reachable, unlock allows
+overscroll, persistence, keyboard Enter and Space, re-lock applied at once, and screenshot
+pixels at the selection edge contain both dark (luminance below 90) and light (above 200)
+values over a dense red area and a pale area. Not done for W5: screenshots for every shipped
+palette on a dark background, increased UI scale, and a dedicated export layout test.
