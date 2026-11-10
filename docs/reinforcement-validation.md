@@ -128,6 +128,8 @@ zoom workload. Visible red contact signal was checked in the saved screenshots.
 3. Reconcile all 232 historic control signatures and 18 menu destinations against
    source with stable ids, prerequisites, outcome expectations and evidence status.
    A DOM inventory is not 232 passing functional scenarios.
+   The menu contracts and repeatable opening checks now cover all 18 destinations;
+   the signature ledger and remaining manual work are in `reinforcement-control-coverage.md`.
 4. Complete catalog and legacy/custom preset/session fixtures against the actual
    finalized schemas. Current catalog snippets are semantic cases, not schema passes.
 5. Extend measured performance to pan/input acknowledgement and representative
@@ -194,3 +196,20 @@ Validation:
 The disabled controls do not rewrite existing/custom rendering graphs. Numerical
 processing transactions and legacy migration remain W2. Contact applicability is
 not a claim that square-root normalization or FASTA-only runtime is implemented.
+
+## Third W0 increment: repeatable menu coverage
+
+Added 18 source-backed menu contracts, a fresh-context browser runner, and the
+preserved 232-signature historical fixture with deterministic IDs and source search
+candidates. The source search finds candidates for 170 signatures; none is promoted
+to functional coverage automatically. Detailed prerequisites and effects for the
+232 signatures remain manual work; W0 remains incomplete.
+
+All 18 destination opening assertions passed at 1280×720 on the same development
+runtime, including the actual API documentation popup. Three sequence dialogs
+settled to missing-FASTA guidance, disabled computation and opened the FASTA picker
+from their recovery buttons. No page exceptions or HTTP errors were recorded.
+Evidence: `/tmp/hict-reinforce-w0-capabilities/menu-surfaces-final/`.
+The initial opening-only run is retained separately. Python syntax, fixture IDs,
+source paths and protected-file hashes were checked. This increment changes only
+diagnostics, fixtures and documentation; no additional application build is claimed.

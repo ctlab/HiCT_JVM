@@ -1,0 +1,6377 @@
+[
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "HiCT",
+      "title": "HiCT",
+      "type": ""
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "File",
+      "title": "File",
+      "type": ""
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "Assembly",
+      "title": "Assembly",
+      "type": ""
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "View",
+      "title": "View",
+      "type": ""
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "Tools",
+      "title": "Tools",
+      "type": ""
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "Dev",
+      "title": "Dev",
+      "type": ""
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "Help",
+      "title": "Help",
+      "type": ""
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "global-search-input",
+      "aria": null,
+      "text": "",
+      "title": "Find contig, scaffold or feature",
+      "type": "text"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "global-search-button",
+      "aria": null,
+      "text": "Go to",
+      "title": "Go to",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": "Rows scope",
+      "text": "",
+      "title": "Rows shown on the map",
+      "type": "text"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Copy row scope to columns",
+      "text": "",
+      "title": "Copy row scope to columns",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": "Columns scope",
+      "text": "",
+      "title": "Columns shown on the map",
+      "type": "text"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "",
+      "aria": null,
+      "text": "Show Observed\nShow Expected\nShow O/E",
+      "title": "Expected and O/E use the standard renderer and are computed within scaffolds; if no scaffolds are present, each contig is treated as its own scaffold.",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "reload-tiles-button",
+      "aria": null,
+      "text": "Reload tiles",
+      "title": "Reload tiles",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "toggle-osd-button",
+      "aria": null,
+      "text": "OSD",
+      "title": "Hide map information overlay",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "ruler-mode-button",
+      "aria": null,
+      "text": "Ruler: Global",
+      "title": "Cycle ruler coordinate mode. Current: Ruler: Global",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "export-dropdown-toggle",
+      "aria": null,
+      "text": "Export",
+      "title": "Export the map as SVG, PNG or PDF",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Zoom out",
+      "text": "",
+      "title": "Zoom out to the next coarser resolution",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Zoom in",
+      "text": "",
+      "title": "Zoom in to the next finer resolution",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Slide to the main diagonal vertically",
+      "text": "",
+      "title": "Slide to the main diagonal vertically",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Slide to the main diagonal horizontally",
+      "text": "",
+      "title": "Slide to the main diagonal horizontally",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Slide to the main diagonal over counter-diagonal",
+      "text": "",
+      "title": "Slide to the main diagonal over counter-diagonal",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Reverse Selection",
+      "text": "",
+      "title": "Reverse Selection",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Enter translocation mode",
+      "text": "",
+      "title": "Enter translocation mode",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Split contig at bin",
+      "text": "",
+      "title": "Split contig at bin",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Group selection into scaffold",
+      "text": "",
+      "title": "Group selection into scaffold",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Ungroup selection into singleton scaffolds",
+      "text": "",
+      "title": "Ungroup selection into singleton scaffolds",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Unscaffold all",
+      "text": "",
+      "title": "Unscaffold all",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Export FASTA for selection",
+      "text": "",
+      "title": "Export FASTA for selection",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Bookmark current location",
+      "text": "",
+      "title": "Bookmark current location (listed under Entities → Bookmarks)",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Move selection to debris",
+      "text": "",
+      "title": "Move selection to debris",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Open notifications",
+      "text": "",
+      "title": "Notifications",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Hide side panel",
+      "text": "",
+      "title": "Hide side panel (more room for the map)",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Open map…",
+      "title": "Open map…",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Attach to open session",
+      "title": "Attach to open session",
+      "type": "button"
+    },
+    "surfaces": [
+      "empty-state"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Close toast",
+      "text": "",
+      "title": "Close toast",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "FASTA: not linked",
+      "title": "No FASTA linked. Click to link one.",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "AGP: none",
+      "title": "No AGP loaded. Click to load one.",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Relative folder or file path under DATA_DIR",
+      "type": "text"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Go",
+      "title": "Go",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Up",
+      "title": "Up",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Root",
+      "title": "Root",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Filter current folder by file name or path",
+      "type": "text"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "toggle-show-all-files",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Explorer",
+      "title": "Explorer",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Tree",
+      "title": "Tree",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Dismiss",
+      "title": "Dismiss",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Load",
+      "title": "Load",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Open notifications",
+      "text": "1",
+      "title": "Notifications",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "+",
+      "title": "Zoom in",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "–",
+      "title": "Zoom out",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Reset rotation",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Borders & labels",
+      "title": "",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "",
+      "aria": "Contig names caption side",
+      "text": "Above\nBelow\nLeft\nRight\nInside",
+      "title": "Caption position",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "",
+      "aria": "Scaffold names caption side",
+      "text": "Above\nBelow\nLeft\nRight\nInside",
+      "title": "Caption position",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Visualization",
+      "title": "Visualization",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Entities",
+      "title": "Entities",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Journal",
+      "title": "Journal",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Undo assembly edit",
+      "text": "↶ Undo",
+      "title": "Undo (Ctrl+Z)",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Redo assembly edit",
+      "text": "↷ Redo",
+      "title": "Redo (Ctrl+Y or Ctrl+Shift+Z)",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Entities",
+      "panel Journal",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": "Lower signal threshold",
+      "text": "",
+      "title": "Lower signal threshold",
+      "type": "number"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": "Upper signal threshold",
+      "text": "",
+      "title": "Upper signal threshold",
+      "type": "number"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Lower threshold",
+      "text": "",
+      "title": "Lower: 0",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Upper threshold",
+      "text": "",
+      "title": "Upper: 705",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Linear",
+      "title": "Linear",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Log",
+      "title": "Log",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Focus range",
+      "title": "Expand the selected range across the slider for finer adjustment",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SUMMARY",
+      "id": "",
+      "aria": null,
+      "text": "Slider limits & data\n0 – 2.46e+4",
+      "title": "",
+      "type": null
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": "Slider maximum signal",
+      "text": "",
+      "title": "Slider maximum signal",
+      "type": "number"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Use the exact minimum and maximum of the loaded tiles, including rare extreme pixels",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Scan whole map",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SUMMARY",
+      "id": "",
+      "aria": null,
+      "text": "Cooler weights",
+      "title": "Cooler weights warning",
+      "type": null
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "cooler-weights-nan-policy",
+      "aria": null,
+      "text": "",
+      "title": "Do not use Cooler weights Replace NaNs with weight 1.0  Replace NaNs with weight 0",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SUMMARY",
+      "id": "",
+      "aria": null,
+      "text": "Signal processing",
+      "title": "",
+      "type": null
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "checkbox-normalization-resolution-scaling",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "checkbox-normalization-resolution-linear-scaling",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "checkbox-normalization-cooler-weights",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "checkbox-normalization-post-log",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "checkbox-normalization-auto-threshold",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Rendering pipeline...",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Reset",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "gradient-apply-button",
+      "aria": null,
+      "text": "Apply",
+      "title": "Apply",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Save",
+      "title": "Save current visualization options",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Export",
+      "title": "Export",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Import",
+      "title": "Import",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Mosquitoes Demo",
+      "title": "Apply preset “Mosquitoes Demo”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Rename preset",
+      "text": "",
+      "title": "Rename preset",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Remove visualization preset",
+      "text": "",
+      "title": "Remove visualization preset",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / API docs...",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "Help / About",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Visualization",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Cold-Hot",
+      "title": "Apply preset “Cold-Hot”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Visible dots with cooler weights",
+      "title": "Apply preset “Visible dots with cooler weights”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "JBAT-like",
+      "title": "Apply preset “JBAT-like”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Night JBAT-like",
+      "title": "Apply preset “Night JBAT-like”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Light terminal",
+      "title": "Apply preset “Light terminal”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Terminal",
+      "title": "Apply preset “Terminal”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Greens",
+      "title": "Apply preset “Greens”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Dotplot black",
+      "title": "Apply preset “Dotplot black”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Hi-C balanced red auto",
+      "title": "Apply preset “Hi-C balanced red auto”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Dotplot overlay black",
+      "title": "Apply preset “Dotplot overlay black”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "ModDotPlot: Hi-C above, identity below",
+      "title": "Apply preset “ModDotPlot: Hi-C above, identity below”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "ModDotPlot: multicolor overlay",
+      "title": "Apply preset “ModDotPlot: multicolor overlay”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "ModDotPlot palette: active source",
+      "title": "Apply preset “ModDotPlot palette: active source”",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Manual Open...",
+      "File / Convert matrices",
+      "File / Export matrix",
+      "Assembly / Link FASTA",
+      "Assembly / Load AGP",
+      "Assembly / Apply Juicebox assembly",
+      "View / Tracks and layers...",
+      "View / Rendering pipeline...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Tools / Generate dotplot from FASTA files…",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "Help / API docs...",
+      "Help / About",
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "hictk",
+      "title": "hictk",
+      "type": ""
+    },
+    "surfaces": [
+      "File / Convert matrices"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SUMMARY",
+      "id": "",
+      "aria": null,
+      "text": "Notices, attribution and diagnostics",
+      "title": "",
+      "type": null
+    },
+    "surfaces": [
+      "File / Convert matrices"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Select All",
+      "title": "Select All",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices",
+      "Tools / Generate dotplot from FASTA files…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Select None",
+      "title": "Select None",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices",
+      "Tools / Generate dotplot from FASTA files…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Invert Selection",
+      "title": "Invert Selection",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices",
+      "Tools / Generate dotplot from FASTA files…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Select All Converted",
+      "title": "Select All Converted",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Select All Unconverted",
+      "title": "Select All Unconverted",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "View current conversion jobs",
+      "title": "View current conversion jobs",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Continue",
+      "title": "Continue",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices",
+      "Tools / Generate dotplot from FASTA files…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Dismiss",
+      "title": "Dismiss",
+      "type": "submit"
+    },
+    "surfaces": [
+      "File / Convert matrices",
+      "Tools / Generate dotplot from FASTA files…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Refresh jobs",
+      "title": "Refresh jobs",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "text"
+    },
+    "surfaces": [
+      "File / Export matrix",
+      "View / Tracks and layers...",
+      "View / Tracks and layers...",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Browse...",
+      "title": "Browse...",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "matrix.mcool",
+      "type": "text"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "export-current-assembly",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "",
+      "aria": null,
+      "text": "auto (prefer hictk-assisted)\nhictk-assisted\ndirect internal exporter",
+      "title": "auto (prefer hictk-assisted)hictk-assisteddirect internal exporter",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "",
+      "aria": null,
+      "text": "deflate\nzstd\nlzf",
+      "title": "deflatezstdlzf",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "File / Export matrix",
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "-1: automatic server CPU allocation",
+      "type": "number"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "export-all-resolutions",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "export-balance-coolers",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "export-overwrite",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Export Cooler",
+      "title": "Export Cooler",
+      "type": "button"
+    },
+    "surfaces": [
+      "File / Export matrix"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Tracks and layers...",
+      "View / OSD settings...",
+      "View / Restrict Resolutions...",
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Browse…",
+      "title": "Browse…",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Tracks and layers...",
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "Optional",
+      "type": "text"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Add file",
+      "title": "Add file",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "cooler-weights-primary",
+      "aria": null,
+      "text": "",
+      "title": "Show or hide Cooler balancing weights for the primary source.",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "cooler-weights-secondary",
+      "aria": null,
+      "text": "",
+      "title": "Attach a secondary source first.",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Attach",
+      "title": "Attach",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Detach",
+      "title": "Detach",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "",
+      "aria": null,
+      "text": "Primary\nSecondary",
+      "title": "Primary Secondary",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Precompute all",
+      "title": "Precompute all",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "track-bg-inherit",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "color"
+    },
+    "surfaces": [
+      "View / Tracks and layers..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Close",
+      "title": "Close",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Tracks and layers...",
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Preview",
+      "title": "Preview",
+      "type": "button"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "pipeline-enabled",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "pipeline-swap",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "",
+      "aria": null,
+      "text": "Default Primary only\nDotplot overlay\nModDotPlot identity below diagonal\nModDotPlot multicolor overlay",
+      "title": "Default Primary onlyDotplot overlayModDotPlot identity below diagonalModDotPlot multicolor overlay",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Load preset",
+      "title": "Load preset",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Reload",
+      "title": "Reload",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Reset",
+      "title": "Reset",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Export graph",
+      "title": "Export graph",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Import graph",
+      "title": "Import graph",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Preview",
+      "title": "Preview",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Apply",
+      "title": "Apply",
+      "type": "submit"
+    },
+    "surfaces": [
+      "View / Rendering pipeline..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "toggle-osd-visible",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "osd-position-select",
+      "aria": null,
+      "text": "Top right\nBottom left",
+      "title": "Top rightBottom left",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-global",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Down",
+      "title": "Down",
+      "type": "button"
+    },
+    "surfaces": [
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings...",
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-resolution",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-source",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-visibleResolutions",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-pixels",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-bins",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-basePairs",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-contigs",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-inContig",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-scaffolds",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "osd-field-inScaffold",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / OSD settings..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Done",
+      "title": "Done",
+      "type": "button"
+    },
+    "surfaces": [
+      "View / OSD settings...",
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-finest-limit",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-coarsest-limit",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Set limits",
+      "title": "Set limits",
+      "type": "button"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-1000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-5000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-10000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-15000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-25000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-50000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-100000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-150000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-250000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-500000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "resolution-modal-1000000",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "View / Restrict Resolutions..."
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "View current dotplot jobs",
+      "title": "View current dotplot jobs",
+      "type": "submit"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from FASTA files…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": "Select quad_combined_ind2.fasta",
+      "text": "",
+      "title": "Select quad_combined_ind2.fasta",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from FASTA files…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Close",
+      "text": "",
+      "title": "Close",
+      "type": "button"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SUMMARY",
+      "id": "",
+      "aria": null,
+      "text": "How this works",
+      "title": "",
+      "type": null
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Link FASTA…",
+      "title": "",
+      "type": "button"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Check again",
+      "title": "Check again",
+      "type": "button"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "TEXTAREA",
+      "id": "search-sequences",
+      "aria": null,
+      "text": "",
+      "title": ">my motif\nACGTACGT\n>another motif\nTTGCAACC",
+      "type": "textarea"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "search-scope",
+      "aria": null,
+      "text": "Whole active assembly\nSelected assembly interval",
+      "title": "Whole active assembly Selected assembly interval",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "search-strands",
+      "aria": null,
+      "text": "Both strands\nForward assembly strand only",
+      "title": "Both strandsForward assembly strand only",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "search-mode",
+      "aria": null,
+      "text": "Exact match\nAllow substitutions (SeqKit)\nGapped local alignment (BLAST+)",
+      "title": "Exact match  Allow substitutions (SeqKit)  Gapped local alignment (BLAST+)",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "search-degenerate",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SUMMARY",
+      "id": "",
+      "aria": null,
+      "text": "Advanced",
+      "title": "",
+      "type": null
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "search-forward-color",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "color"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "search-reverse-color",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "color"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "search-save-data",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Close",
+      "title": "Close",
+      "type": "button"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Dev / Runtime statistics...",
+      "Dev / Worker diagnostics...",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Find sequences",
+      "title": "Find sequences",
+      "type": "submit"
+    },
+    "surfaces": [
+      "Tools / Find sequences in linked FASTA…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "moddotplot-scope",
+      "aria": null,
+      "text": "Whole active assembly\nSelected rectangle",
+      "title": "Whole active assembly Selected rectangle",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "Tools / Generate ModDotPlot…",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "dotplot-k",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "dotplot-window",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "dotplot-chainScore",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "dotplot-minAlignmentLength",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "dotplot-sampleBp",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "dotplot-threads",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "analysis-save-data",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "SELECT",
+      "id": "dotplot-display",
+      "aria": null,
+      "text": "Overlay on the Hi-C map\nBelow diagonal\nDo not link now",
+      "title": "Overlay on the Hi-C mapBelow diagonalDo not link now",
+      "type": "select-one"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…",
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Generate dotplot from active assembly",
+      "title": "Generate dotplot from active assembly",
+      "type": "submit"
+    },
+    "surfaces": [
+      "Tools / Generate dotplot from active assembly…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "moddotplot-identity",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "moddotplot-threads",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "moddotplot-k",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "moddotplot-sketch",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "moddotplot-delta",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "number"
+    },
+    "surfaces": [
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Generate ModDotPlot",
+      "title": "Generate ModDotPlot",
+      "type": "submit"
+    },
+    "surfaces": [
+      "Tools / Generate ModDotPlot…"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "About",
+      "title": "About",
+      "type": "button"
+    },
+    "surfaces": [
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Attribution",
+      "title": "Attribution",
+      "type": "button"
+    },
+    "surfaces": [
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Changelog",
+      "title": "Changelog",
+      "type": "button"
+    },
+    "surfaces": [
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "ntwwwnt@gmail.com",
+      "title": "ntwwwnt@gmail.com",
+      "type": ""
+    },
+    "surfaces": [
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "anserdiukov@itmo.ru",
+      "title": "anserdiukov@itmo.ru",
+      "type": ""
+    },
+    "surfaces": [
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "zamyatin.anton@gmail.com",
+      "title": "zamyatin.anton@gmail.com",
+      "type": ""
+    },
+    "surfaces": [
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "A",
+      "id": "",
+      "aria": null,
+      "text": "azamyatin@psu.edu",
+      "title": "azamyatin@psu.edu",
+      "type": ""
+    },
+    "surfaces": [
+      "Help / About"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "bookmarks-btn",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "radio"
+    },
+    "surfaces": [
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "contigs-btn",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "radio"
+    },
+    "surfaces": [
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "scaffolds-btn",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "radio"
+    },
+    "surfaces": [
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Export names",
+      "title": "Export names",
+      "type": "submit"
+    },
+    "surfaces": [
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Reset scaffold name",
+      "text": "",
+      "title": "Reset scaffold name",
+      "type": "button"
+    },
+    "surfaces": [
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": "Go to scaffold",
+      "text": "",
+      "title": "Go to scaffold",
+      "type": "button"
+    },
+    "surfaces": [
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities",
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Show 500 more",
+      "title": "Show 500 more",
+      "type": "button"
+    },
+    "surfaces": [
+      "panel Entities"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Earlier",
+      "title": "Earlier",
+      "type": "submit"
+    },
+    "surfaces": [
+      "panel Journal"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Later",
+      "title": "Later",
+      "type": "submit"
+    },
+    "surfaces": [
+      "panel Journal"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Initial assembly (current)",
+      "title": "2026-11-09T23:08:54.861010913Z",
+      "type": "submit"
+    },
+    "surfaces": [
+      "panel Journal"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "",
+      "aria": "Slider minimum signal",
+      "text": "",
+      "title": "Slider minimum signal",
+      "type": "number"
+    },
+    "surfaces": [
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "INPUT",
+      "id": "checkbox-normalization-pre-log",
+      "aria": null,
+      "text": "",
+      "title": "",
+      "type": "checkbox"
+    },
+    "surfaces": [
+      "panel Visualization",
+      "panel Open notifications"
+    ]
+  },
+  {
+    "signature": {
+      "tag": "BUTTON",
+      "id": "",
+      "aria": null,
+      "text": "Clear",
+      "title": "Clear",
+      "type": "button"
+    },
+    "surfaces": [
+      "panel Open notifications"
+    ]
+  }
+]
