@@ -864,8 +864,48 @@ or Cancel (Esc cancels). A failed save keeps the dialog open and never continues
 `beforeunload` warns while unsaved. Attach does not ask: it joins the same server
 session, so nothing is discarded. Edits made by another window count as unsaved too.
 
-Real Chromium gate (34 checks, zero failures): clean close without a prompt, dialog
+Real Chromium gate (27 checks, zero failures): clean close without a prompt, dialog
 semantics and focus, Esc, undo back to clean, a forced failed save, save then
 continue into Open session, discard, and source attach/detach. It also found and
 fixed a defect: right-click menus stopped working after the map manager was replaced
 without an unmount (opening another map or restoring a session).
+
+## Signal controls (W2: items 1, 2, 7)
+
+Causes found by tracing the real sidebar: the toggle negated the stored base, so the
+default off value `-1` became base 1 when switched on. With a processing graph
+active, Apply never rewrote the graph's signal subtree, so the sidebar reloaded the
+old flags. When a graph held a single log, the reader assigned it to the legacy
+pre-log, which made the post-log switch appear to reset.
+
+`core/visualization/signalProfile.ts` is the single definition of the standard
+signal subtree: divisor, post-log, Cooler weights, linear scaling, quadratic
+scaling, pre-log, source, in that order, each optional, with a coefficient on either
+side of a product. A log with nothing multiplied outside it is the signal transform.
+Anything else is custom and is never rewritten (the sidebar says so and disables the
+signal controls). Convention everywhere: `log(1 + x) / log(base)`, base finite,
+positive and not 1. A pre-log with nothing multiplied after it builds the same graph
+as a post-log and is reported as one, which is numerically identical.
+
+Controls: Signal transform (Linear / Log2, or Log10 or Log for another base), and an
+Advanced disclosure with Log base, Scaling across zoom (None, Linear, Quadratic, one
+choice) and Cooler weights. Pre-log and Auto upper threshold are removed from the
+ordinary controls, and a preset that uses them shows a one-line summary with a button
+to remove it. Invalid bases (1, 0, negative, text, above 1000) are rejected visibly
+and never sent. The slider's Linear/Log buttons are captioned Slider scale.
+
+R3 (nearly blank or inconsistent map after the wizard): the opening threshold was
+written into the graph while the sidebar and the stored options kept the preset's
+old value, which the next Apply wrote back. The thresholds are now read back from the
+graph. On the arabiensis map the sidebar and graph both show 0 to 0.6535 after the
+wizard (before: sidebar 0.003, graph 0.6535).
+
+Checks: `check-visualization-signal-profile.mjs` (144 build and read round trips,
+19 custom graphs left untouched, the log convention), and a real Chromium gate of 36
+checks with zero failures: numeric output from the server equals `log2(1 + x)` with no
+pipeline, with a standard pipeline (evaluated on the graph's input branch) and a custom
+graph stays `x * 7`; every control persists after Apply, a sidebar remount, a reload
+and Attach; invalid bases are never sent; resetting a custom graph makes the controls
+editable again. Still open for W2: a single opening transaction that includes the NaN
+choice (the prompt after the wizard still recomputes thresholds as a second step), and
+exact-scan ownership of the slider domain.

@@ -35,7 +35,7 @@ def main():
             prompt = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
             if prompt.is_visible():
                 prompt.click()
-            details = page.locator("#normalization-settings-dropdown")
+            details = page.locator("#signal-advanced")
             if details.get_attribute("open") is None:
                 details.locator("summary").click()
 
@@ -61,7 +61,7 @@ def main():
             assert primary["importedWeightResolutions"] == [4] and primary["weightMetadataComplete"], primary
             resolution(4)
             assert_disabled("#checkbox-normalization-cooler-weights", False)
-            assert_disabled("#checkbox-normalization-resolution-scaling", False)
+            assert_disabled("#scaling-across-zoom", False)
             values = page.evaluate("""async () => Array.from((await window.__hictBenchmark.manager().networkManager.requestManager.queryMatrixFloat32({
                 bpResolution:4,startRowPx:0,startColPx:0,endRowPx:5,endColPx:5,source:'PRIMARY',signalMode:'RAW_COUNTS'})).values)""")
             assert values == [1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11], values
@@ -81,8 +81,8 @@ def main():
             select_visualization_source(page, "SECONDARY")
             resolution(4)
             assert_disabled("#checkbox-normalization-cooler-weights", True)
-            assert_disabled("#checkbox-normalization-resolution-scaling", True)
-            assert_disabled("#checkbox-normalization-resolution-linear-scaling", True)
+            assert_disabled("#scaling-across-zoom", True)
+            assert_disabled("#scaling-across-zoom", True)
             capability = page.evaluate("window.__hictBenchmark.manager().networkManager.requestManager.sourceCapabilities.SECONDARY")
             assert capability["units"] == "IDENTITY_PERCENT" and capability["scoreScale"] == 10000, capability
             scores = page.evaluate("""async () => Array.from((await window.__hictBenchmark.manager().networkManager.requestManager.queryMatrixFloat32({
@@ -105,14 +105,14 @@ def main():
             results.append({"test": "fresh-window File Attach restores primary and secondary capabilities"})
 
             open_file("tiny-identity.hict.hdf5")
-            assert_disabled("#checkbox-normalization-resolution-scaling", True)
+            assert_disabled("#scaling-across-zoom", True)
             assert_disabled("#checkbox-normalization-cooler-weights", True)
             results.append({"test": "identity remains non-contact when opened as primary"})
             open_file("combined_ind2_4DN.hict.hdf5")
             modal = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
             if modal.is_visible():
                 modal.click()
-            assert_disabled("#checkbox-normalization-resolution-scaling", False)
+            assert_disabled("#scaling-across-zoom", False)
             assert_disabled("#checkbox-normalization-cooler-weights", False)
             legacy = page.evaluate("window.__hictBenchmark.manager().networkManager.requestManager.sourceCapabilities.PRIMARY")
             assert legacy["units"] == "UNKNOWN", legacy

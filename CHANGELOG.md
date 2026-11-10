@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Log2 now applies and stays applied. The sidebar has a **Signal transform** switch (Linear / Log2) and an **Advanced** section with Log base, Scaling across zoom (None, Linear scaling or Quadratic scaling, one choice) and Cooler weights. Before, switching a setting on and pressing Apply reset it whenever a processing pipeline was active, and the log base showed as 1. An invalid base (1, 0, negative or text) is refused with a message.
+- The pre-log and auto upper threshold options are gone from the ordinary controls. A preset that still uses them shows a one-line note with a button to remove it. The slider's Linear/Log buttons are now captioned **Slider scale**, separate from the signal transform.
+- Sidebar signal edits rewrite only a standard processing graph. A graph built by hand in Rendering pipeline is left untouched, and the sidebar says so.
+- After the Open Wizard the sidebar shows the same color range as the map. Before, it showed the preset's old threshold, which the next Apply wrote back.
 - Sessions now save and restore the edited assembly, tracks, row and column scopes, processing graph, visualization options and view. File → Save session writes everything, and File → Open session restores it only after every file has been checked. Undo history is not saved.
 - Opening a session whose map, FASTA or track file changed is refused with the file name and the reason, and the open map stays as it was. Files are identified by size and sampled content, so saving stays fast on multi-gigabyte maps. Malformed or oversized session files are rejected with the field name before anything changes.
 - Close, Open, the Open Wizard and Open session now ask before discarding unsaved assembly edits (Save session, Discard edits or Cancel). A failed save never continues, and the browser warns before the tab is closed. Undoing back to the opened state counts as saved.
