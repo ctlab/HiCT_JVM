@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from browser_review_helpers import expand_slider_limits, select_visualization_source
 
 
 def main():
@@ -42,6 +43,8 @@ def main():
                 upperExpression:color('PRIMARY'),lowerExpression:color('SECONDARY')});
             await m.reloadTilesFromBackend();m.viewAndLayersManager.fitViewToActiveExtent();
         }""")
+        expand_slider_limits(page)
+        page.get_by_role("button", name="Scan whole map", exact=True).click()
         page.wait_for_function("""() => {
             const t=document.querySelector('[data-testid="exact-range-status"]')?.textContent ?? '';
             return t.includes('Exact limits:') && !t.includes('blocks');
@@ -55,7 +58,8 @@ def main():
         assert page.get_by_test_id("exact-range-status").inner_text() == before
         assert len(blocks) == block_count, "Panning restarted a completed whole-resolution scan"
         results.append({"test": "pan retains exact bounds and cache", "status": before, "blocks": block_count})
-        page.get_by_role('group', name='Visualization source', exact=True).get_by_role('button', name='SECONDARY', exact=True).click()
+        select_visualization_source(page, "SECONDARY")
+        page.get_by_role("button", name="Scan whole map", exact=True).click()
         page.wait_for_function("""previous => {
             const t=document.querySelector('[data-testid="exact-range-status"]')?.textContent ?? '';
             return t.includes('Exact limits:') && !t.includes('blocks') && t!==previous;
@@ -64,7 +68,7 @@ def main():
         results.append({"test": "independent secondary bounds", "status": secondary})
         page.screenshot(path=str(out / "exact-range-desktop.png"))
         before_return = len(blocks)
-        page.get_by_role('group', name='Visualization source', exact=True).get_by_role('button', name='PRIMARY', exact=True).click()
+        select_visualization_source(page, "PRIMARY")
         page.wait_for_function("""expected => document.querySelector('[data-testid="exact-range-status"]')?.textContent.trim()===expected""", arg=before)
         assert len(blocks) == before_return, "Switching back did not reuse the completed source range"
         results.append({"test": "returning to PRIMARY uses cached exact extrema"})

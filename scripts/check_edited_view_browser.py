@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 from playwright.sync_api import sync_playwright
+from browser_review_helpers import link_fasta
 
 
 def first_sequence(path):
@@ -72,8 +73,7 @@ def main():
                 button.click()
             descriptor = page.evaluate("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0]")
             assert descriptor["contigName"] == name, descriptor
-            response = page.request.post(args.api + "/link_fasta", data={"fastaFilename": "quad_combined_ind2.fasta"})
-            assert response.ok, response.text()
+            link_fasta(page, "quad_combined_ind2.fasta")
             page.evaluate("""() => {const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
                 const p=l.currentViewState.resolutionDesciptor.pixelResolution;
                 l.selectionInteractions.contigSelectExtent.setExtent([p,-2*p,2*p,-p]);

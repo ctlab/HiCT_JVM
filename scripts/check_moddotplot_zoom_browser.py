@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
+from browser_review_helpers import expand_slider_limits, link_fasta, select_visualization_source
 
 
 def main():
@@ -72,8 +73,7 @@ def main():
             button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
             if button.is_visible():
                 button.click()
-            response = page.request.post(args.api + "/link_fasta", data={"fastaFilename": "quad_combined_ind2.fasta"})
-            assert response.ok, response.text()
+            link_fasta(page, "quad_combined_ind2.fasta")
             page.evaluate("""async () => {const m=window.__hictBenchmark.manager();
                 const primary={type:'colormap',mode:'LINEAR',input:{type:'source',source:'PRIMARY'},
                     startColor:'#ffffff00',endColor:'#ff0000ff',minSignal:0,maxSignal:100};
@@ -116,7 +116,8 @@ def main():
                 assert np.array_equal(baseline[upper], current[upper]), "Generated overlay changed primary upper-triangle pixels"
                 results.append({"test": "real 5K generation preserves primary pixels", "iteration": iteration + 1,
                                 "seconds": time.monotonic() - start, "comparedPixels": int(upper.sum())})
-            page.get_by_role("group", name="Visualization source", exact=True).get_by_role("button", name="SECONDARY", exact=True).click()
+            select_visualization_source(page, "SECONDARY")
+            expand_slider_limits(page)
             page.wait_for_function("document.querySelector('[data-testid=exact-range-status]')?.textContent.includes('Percentage scale')")
             assert float(page.get_by_label("Slider minimum signal", exact=True).input_value()) == 0
             assert float(page.get_by_label("Slider maximum signal", exact=True).input_value()) == 100
@@ -135,7 +136,7 @@ def main():
                 missing = snapshot(f"missing-10K-{iteration}")
                 visible = page.evaluate("""() => window.__hictBenchmark.manager().viewAndLayersManager.layersHolder
                     .secondaryHiCDataLayers.filter(l=>l.getVisible()).map(l=>l.get('bpResolution'))""")
-                assert not visible, visible
+                assert visible, "Missing 10K level must use the available 5K identity layer (W8), not hide it"
                 assert graph() == config
                 set_view(5000, 16)
                 returned = snapshot(f"returned-5K-{iteration}")
@@ -150,12 +151,7 @@ def main():
             assert max(identity) == 1000000 and sum(value > 0 for value in identity) >= 8, identity
             for preset, mode in (("ModDotPlot: multicolor overlay", "overlay"),
                                  ("ModDotPlot: Hi-C above, identity below", "below")):
-                for item in page.locator(".saved-locations").all():
-                    if item.locator("input").input_value() == preset:
-                        item.get_by_title("Load visualization preset", exact=True).click()
-                        break
-                else:
-                    raise AssertionError(f"Missing normal preset row: {preset}")
+                page.get_by_role("button", name=preset, exact=True).click()
                 page.wait_for_function("""mode=>window.__hictBenchmark.manager().networkManager.requestManager
                     .getRenderPipelineConfig().then(p=>mode==='overlay'?p.upperExpression.type==='pixel_blend':p.upperExpression.type==='colormap')""", arg=mode)
                 rendered = snapshot(f"preset-{mode}")

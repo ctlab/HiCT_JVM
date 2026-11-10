@@ -11,6 +11,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 from check_edited_view_browser import first_sequence
+from browser_review_helpers import link_fasta
 
 
 def main():
@@ -79,8 +80,7 @@ def main():
             if button.is_visible():
                 button.click()
             start = time.monotonic()
-            response = page.request.post(args.api + "/link_fasta", data={"fastaFilename": "acceptance/quad-large-fasta.fa.gz"})
-            assert response.ok, response.text()
+            link_fasta(page, "acceptance/quad-large-fasta.fa.gz")
             results.append({"test": "gzip link", "seconds": time.monotonic() - start})
             rng = random.Random(654)
             timings = []
@@ -122,12 +122,14 @@ def main():
             page.evaluate("""() => {for(const axis of ['horizontal','vertical']) {
                 const ruler=document.querySelector('#'+axis+'-ruler-div').getBoundingClientRect();
                 const bases=document.querySelector('.sequence-axis.'+axis).getBoundingClientRect();
-                if(axis==='horizontal'?ruler.bottom>bases.top+0.1:ruler.right>bases.left+0.1)
+                const overlap=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.1
+                    && Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.1;
+                if(overlap(ruler,bases))
                     throw new Error('FASTA letters overlap '+axis+' ruler');
                 if(axis==='horizontal'?ruler.height<30:ruler.width<30)
                     throw new Error('Ruler lane too small');
                 const painted=document.querySelector('#'+axis+'-ruler-div canvas').getBoundingClientRect();
-                if(axis==='horizontal'?painted.bottom>bases.top+0.1:painted.right>bases.left+0.1)
+                if(overlap(painted,bases))
                     throw new Error('Ruler canvas has not resized');
             }}""")
             assert all(0 < request["endBp"] - request["startBp"] <= 4096 for request in requests), requests
@@ -176,19 +178,31 @@ def main():
                 assert letter["base"] == sequence[letter["bp"]], letter
             results.append({"test": "superseded real responses", "aborted": len(failures), "letters": len(last_letters)})
 
+            # Different content with identical identifiers and lengths is the oracle.
+            # Relinking byte-identical data need not cause a redundant request.
+            changed = data / "acceptance" / "changed-bases.fa"
+            translation = bytes.maketrans(b"ACGTacgt", b"CGTAcgta")
+            with source.open("rb") as reader, changed.open("wb") as writer:
+                for line in reader:
+                    writer.write(line if line.startswith(b">") else line.translate(translation))
             before_revision = page.evaluate("window.__hictBenchmark.manager().networkManager.requestManager.sequenceRevision")
             requests.clear()
-            page.get_by_role("link", name="Assembly", exact=True).click()
-            page.get_by_role("link", name="Link FASTA", exact=True).click()
-            dialog = page.locator(".modal.show").filter(has_text="Select FASTA file")
-            dialog.locator(f'span[title="{source.name}"]').click()
-            with page.expect_response("**/link_fasta") as relink:
-                dialog.get_by_role("button", name="Load", exact=True).click()
-            assert relink.value.ok, relink.value.text()
+            link_fasta(page, "acceptance/changed-bases.fa")
             page.wait_for_function("before=>window.__hictBenchmark.manager().networkManager.requestManager.sequenceRevision>before", arg=before_revision)
-            page.wait_for_timeout(800)
-            assert requests, "Relinking must invalidate cached base-track sequences"
-            results.append({"test": "relink through Assembly menu invalidates base cache", "requests": len(requests)})
+            expected = {str(letter["bp"]): sequence[letter["bp"]].translate(str.maketrans("ACGT", "CGTA"))
+                        for letter in last_letters}
+            # Capture at the stationary viewport: panning would conceal the defect.
+            page.wait_for_function("""expected => {
+                const m=window.__hictBenchmark.manager(),d=m.viewAndLayersManager.currentViewState.resolutionDesciptor;
+                const axes=Array.from(document.querySelectorAll('.sequence-axis'));
+                return axes.length===2 && axes.every(canvas=>canvas.__letters?.length>0 && canvas.__letters.every(letter=>{
+                    const horizontal=canvas.classList.contains('horizontal');
+                    const c=m.getMap().getCoordinateFromPixel(horizontal?[letter.x,0]:[0,letter.y]);
+                    const bp=Math.floor(m.contigDimensionHolder.getFractionalBpOfPx((horizontal?c[0]:-c[1])/d.pixelResolution,d.bpResolution));
+                    return letter.value===expected[bp];
+                }));
+            }""", arg=expected, timeout=10000)
+            results.append({"test": "changed FASTA refreshes both axes without panning", "requests": len(requests)})
             assert not errors, errors
         finally:
             (output / "results.json").write_text(json.dumps({"results": results, "errors": errors}, indent=2))
