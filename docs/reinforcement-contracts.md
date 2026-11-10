@@ -64,7 +64,30 @@ coarser level winning an exact tie, and hysteresis around a transition. This is 
 target requirement, not a claim that current exact-only selection implements it.
 The fixture also includes unsorted, duplicate and empty levels.
 
-## Source capability contract (target, not yet exposed by `/open`)
+## Source capability contract
+
+Implemented subset: `/open`, nested `/attach.openFileResponse` and attached
+`/secondary/status` and `/secondary/open` responses now carry `capabilities`.
+Its `schemaVersion` is 1, with declared `units`, `scoreScale`, `contactDataState`,
+`resolutions`, `importedWeightResolutions`, `weightMetadataComplete`, and
+`contactNormalization` / `importedWeights` availability objects. Availability
+is `AVAILABLE`, `UNAVAILABLE` or `UNKNOWN`, with a reason code and readable reason.
+`contactNormalization` expresses applicability of contact-specific operations;
+it does not advertise the not-yet-implemented square-root algorithm.
+
+New conversions persist root attributes `hict_source_metadata_version`,
+`hict_source_units`, `contact_data_state`, `hict_score_scale`, and per-resolution
+`hict_imported_weights` (`PRESENT` / `ABSENT`). They preserve explicitly declared
+source semantics and mark only actual Cooler `bins/weight` datasets as imported.
+Legacy files remain unknown, even when their stored vectors happen to be ones.
+Existing sequence-overlay `score_unit` / `score_scale` metadata takes precedence
+over any template metadata. Unknown versions or unreadable optional metadata do
+not authorize invented units. Source files are opened read-only.
+
+The frontend accepts supported, valid capability objects, preserves behavior
+when metadata is unknown, and disables inapplicable contact scaling / imported
+weight controls with accessible explanations. Imported weights are checked at
+the active resolution. A partially described resolution remains unknown.
 
 The opening response will contain a versioned capability object per source:
 source id, content identity, semantic units, available resolutions, sequence
@@ -76,8 +99,10 @@ availability distinguishes imported weights, computed square-root coverage and
 pending computation. Frontend parsing, Attach, secondary status and `/open` must
 agree; explicit `ABSENT` disables contact controls with an accessible reason.
 
-Runtime DTOs, metadata discovery and capability-driven controls remain a W0
-integration task. The later FASTA-only package persists `contact_data_state=ABSENT`.
+Source identity/fingerprints, linked-sequence capability updates, and eligibility
+across the rest of the interface remain integration work. The later FASTA-only
+package must persist absence consistently with this contract and implement
+transparent tiles; declaring metadata alone does not implement a sequence-only session.
 
 ## Common background-job contract (target)
 
@@ -113,5 +138,24 @@ Large real inputs must remain outside git and be copied physically into an
 isolated data directory. Record SHA-256 and bytes before a run, the exact JAR and
 WebUI revisions/hashes, machine/browser versions and command. The local baseline
 manifest identifies available real fixtures without redistributing user data.
-Tiny HDF5 conversion, full catalog fixtures, and W0 capability integration remain
-outstanding; a JSON matrix alone does not test HDF5 I/O.
+`ReinforcementHdf5Fixture` now generates tiny real Cooler and HiCT files with
+primary `[4,10]`, disjoint `[3,7]`, fine-only `[1]` and coarse-only `[25]` levels.
+The 17 bp source has four contact records. Tests exercise production conversion,
+full/single-pixel reads, a zero row, terminal partial bins, reversal and restoration.
+When upper-triangle contacts collapse into a coarse diagonal, count each stored
+contact once; full symmetric matrix sums are not invariant under this rebinning.
+The coarse-only fixture intentionally has a hidden sub-resolution contig; its
+bin-domain reads remain valid and must not be confused with visible-pixel reads.
+
+Generate fixtures using the test classes and a development server JAR:
+
+```sh
+./gradlew testClasses -x copyWebUI
+java -cp "build/classes/java/test:<server-fat.jar>" ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture /tmp/hict-fixtures-new
+python scripts/prepare_reinforcement_sources.py --data-dir /tmp/hict-fixtures-new
+```
+
+Use the existing validation Python environment with h5py and NumPy. The preparer
+adds a declared synthetic weighted source and an identity overlay using the
+production overlay writer. It refuses to overwrite existing outputs. Full catalog
+fixtures and the remainder of W0 capability integration are still outstanding.

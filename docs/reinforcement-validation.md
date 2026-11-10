@@ -3,8 +3,8 @@
 ## Scope and status
 
 Started from `plan-reinforce-final.md`, in its prescribed W0-first order.
-This change is a **W0 foundation increment**, not completion of W0 or a release.
-No runtime defects are claimed fixed by adding regression tests. W1–W16 have
+The first change was a **W0 foundation increment**, followed by real HDF5 fixtures
+and source capability integration. W0 is not yet complete. W1–W16 have
 not been started. In particular, session loss, unsafe replacement, stale sequence,
 armed scissors after Escape, settings persistence and mixed-resolution failures
 still block release.
@@ -119,10 +119,12 @@ zoom workload. Visible red contact signal was checked in the saved screenshots.
 
 ## Remaining W0 work before W1
 
-1. Generate a tiny on-disk HDF5 fixture and exercise real source I/O and disjoint
-   pyramids, not only JSON signal/projection inputs.
-2. Integrate the capability contract into persisted source metadata, `/open`, Attach,
-   secondary status, frontend DTOs and accessible control availability.
+1. Real on-disk HDF5 fixture generation and disjoint-pyramid reads are implemented
+   in the second increment described below; continuous mixed-resolution display
+   remains the W8 gate.
+2. Source units, resolution-specific weight metadata, `/open`, Attach, secondary
+   status and applicable scaling/weight controls are integrated. Finish source
+   identity, linked-sequence capabilities and applicability across other controls.
 3. Reconcile all 232 historic control signatures and 18 menu destinations against
    source with stable ids, prerequisites, outcome expectations and evidence status.
    A DOM inventory is not 232 passing functional scenarios.
@@ -136,3 +138,59 @@ zoom workload. Visible red contact signal was checked in the saved screenshots.
 
 W0 is intentionally left open. Later packages must not be marked complete, and
 release readiness must not be inferred from the Java test pass.
+
+## Second W0 increment: source metadata and real HDF5 fixtures
+
+Baseline JVM `7f8740d0`, WebUI `8107d95`, unchanged protected files. Evidence root
+`/tmp/hict-reinforce-w0-capabilities/`; API/WebUI ports 5204/8204, disposable data.
+Runtime uses newly compiled JVM code and the rebuilt WebUI, not the earlier review
+artifact. The development JAR was built with `shadowJar -x copyWebUI` and an explicit
+WebUI dist override. Full packaged qualification remains W16.
+
+Changes:
+
+- Conversion now preserves declared source semantics and records whether weights
+  actually came from each source resolution. Legacy metadata stays unknown.
+- `/open`, Attach and secondary status carry versioned capabilities; the OpenAPI
+  opening field names also now match the existing `pixelResolutions`, `tileSize`
+  and `matrixSizesBins` wire fields.
+- The selected source's inapplicable contact-scaling and imported-weight controls
+  are disabled with one accessible explanation. A source switch and a change of
+  resolution update applicability. Unknown legacy sources retain prior controls.
+- Real tiny Cooler-to-HiCT fixtures exercise pixels, zero rows, partial bins,
+  disjoint/fine/coarse pyramids and reversal through production I/O. Separate
+  fixtures cover actual imported weights and generated identity metadata.
+
+Validation:
+
+- Full Java suite: 323 tests, 316 passed, seven optional skips, zero errors/failures.
+  Includes HTTP Open/Attach/secondary/detach consistency and real conversion weights.
+- `npm run build:web`: type checks, all configured regression groups, capability
+  parser tests and production build pass. Existing large-chunk warnings remain.
+- ESLint without fixes on touched WebUI files: no reported lint violations;
+  the installed plugin emits existing directive-schema reference warnings.
+- Browser capability scenario: 25 exact matrix cells; 4 bp imported weights
+  available versus 10 bp absent; selected identity source blocks contact controls;
+  returning to primary restores availability; fresh-window File Attach restores
+  both capabilities; identity opened as primary remains non-contact; legacy map
+  retains unknown metadata and usable controls. No page or HTTP errors.
+- Initial browser setup failures were harness issues: the tiny map's fit constraint
+  kept its finest level selected, and a secondary source absent from the graph did
+  not show source selection. The final test selects a single enabled level and
+  includes both sources in its graph. This does not certify W8 zoom interpolation.
+- Existing exact-range, pipeline-editor (including stale cached graph and delayed
+  threshold protection), and multi-client Attach/conflict browser regressions pass.
+  A launcher attempt passed an unsupported `--data-dir` to the pipeline script;
+  the corrected invocation passed. It was not an application failure.
+- Generated fixture and runtime artifact hashes are recorded in the local
+  `manifest.json`. No real or generated binary data are added to git.
+- One development restart failed because the running JVM's JAR was rebuilt in
+  place before it had exited. The old process logged missing Netty classes and
+  retained its ports during shutdown; its thread dump was saved. This is a test
+  orchestration error, not evidence of a capability regression. That owned process
+  was terminated, the final artifact was started in a fresh JVM, and the capability
+  journey passed again. Future builds must stop the JVM first or use a new JAR path.
+
+The disabled controls do not rewrite existing/custom rendering graphs. Numerical
+processing transactions and legacy migration remain W2. Contact applicability is
+not a claim that square-root normalization or FASTA-only runtime is implemented.

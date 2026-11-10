@@ -1310,6 +1310,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
     if (attached && map.get(SECONDARY_SEQUENCE_METADATA_KEY) instanceof io.vertx.core.json.JsonObject metadata) {
       status.put("sequenceAnalysis", metadata.copy());
     }
+    if (attached && map.get(SECONDARY_CHUNKED_FILE_KEY) instanceof ShareableWrappers.ChunkedFileWrapper wrapper) {
+      status.put("capabilities", ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(wrapper.getChunkedFile()));
+    }
     return status;
   }
 
@@ -1418,7 +1421,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
       Arrays.stream(resolutionsWithoutZero).mapToDouble(r -> (double) r / minResolution).boxed().toList(),
       chunkedFile.getDenseBlockSize(),
       AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
-      Arrays.stream(matrixSizeBins).mapToInt(l -> (int) l).boxed().toList()
+      Arrays.stream(matrixSizeBins).mapToInt(l -> (int) l).boxed().toList(),
+      ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(chunkedFile)
     );
   }
 }

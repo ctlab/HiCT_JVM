@@ -36,5 +36,6 @@ public record OpenFileResponseDTO(
   @NotNull List<@NotNull Double> pixelResolutions,
   int tileSize,
   @NotNull AssemblyInfoDTO assemblyInfo,
-  @NotNull List<@NotNull Integer> matrixSizesBins) {
+  @NotNull List<@NotNull Integer> matrixSizesBins,
+  @NotNull SourceCapabilitiesDTO capabilities) {
 }

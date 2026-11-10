@@ -115,6 +115,7 @@ public class McoolToHictConverter {
           progressTracker.markStep("Wrote resolution " + resolution);
         }
 
+        ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.writeConverted(srcAgain, dst, selectedResolutions);
         if (!options.agpPath().isBlank()) {
           applyAssemblyLayoutToOutput(srcAgain, dst, selectedResolutions, options, requestedWorkers, intStorageFeatures, synchronizedLogConsumer);
           synchronizedLogConsumer.accept("Applied assembly layout to generated .hict from " + resolveLayoutPath(options).getFileName());

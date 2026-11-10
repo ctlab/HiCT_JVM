@@ -1875,10 +1875,11 @@ components:
         status: { type: string }
         dtype: { type: string }
         resolutions: { type: array, items: { type: integer, format: int64 } }
-        resolutionScales: { type: array, items: { type: number } }
-        denseBlockSize: { type: integer }
+        pixelResolutions: { type: array, items: { type: number } }
+        tileSize: { type: integer }
         assemblyInfo: { type: object, additionalProperties: true }
-        matrixSizeBins: { type: array, items: { type: integer } }
+        matrixSizesBins: { type: array, items: { type: integer } }
+        capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
         workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
       required: [status, resolutions, assemblyInfo]
     OpenProgressResponse:
@@ -1922,7 +1923,29 @@ components:
           items: { type: string }
         compatibility:
           $ref: '#/components/schemas/SecondaryCompatibility'
+        capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
       required: [attached, filename, assemblySource]
+    SourceCapabilities:
+      type: object
+      description: Declared source semantics. Missing or unknown metadata must not be inferred from filenames or matrix values. Additive since schema version 1.
+      required: [schemaVersion, units, scoreScale, contactDataState, resolutions, importedWeightResolutions, weightMetadataComplete, contactNormalization, importedWeights]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        units: { type: string, enum: [CONTACT_COUNT, ALIGNMENT_SAMPLE_COUNT, ALIGNMENT_PRESENCE, IDENTITY_PERCENT, SEQUENCE_ONLY, UNKNOWN] }
+        scoreScale: { type: number, minimum: 0, exclusiveMinimum: true }
+        contactDataState: { type: string, enum: [PRESENT, ABSENT, UNKNOWN] }
+        resolutions: { type: array, items: { type: integer, format: int64, minimum: 1 } }
+        importedWeightResolutions: { type: array, items: { type: integer, format: int64, minimum: 1 } }
+        weightMetadataComplete: { type: boolean }
+        contactNormalization: { $ref: '#/components/schemas/CapabilityAvailability' }
+        importedWeights: { $ref: '#/components/schemas/CapabilityAvailability' }
+    CapabilityAvailability:
+      type: object
+      required: [state, reasonCode, reason]
+      properties:
+        state: { type: string, enum: [AVAILABLE, UNAVAILABLE, UNKNOWN] }
+        reasonCode: { type: string }
+        reason: { type: string }
     SecondaryCompatibility:
       type: object
       properties:

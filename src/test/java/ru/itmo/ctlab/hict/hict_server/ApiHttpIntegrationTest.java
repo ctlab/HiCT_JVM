@@ -97,6 +97,9 @@ class ApiHttpIntegrationTest {
       if (map.get("chunkedFile") instanceof ShareableWrappers.ChunkedFileWrapper wrapper) {
         wrapper.getChunkedFile().close();
       }
+      if (map.get("chunkedFileSecondary") instanceof ShareableWrappers.ChunkedFileWrapper wrapper) {
+        wrapper.getChunkedFile().close();
+      }
     }
     if (scheduler != null) {
       scheduler.close();
@@ -348,6 +351,31 @@ class ApiHttpIntegrationTest {
         PosixFilePermission.OWNER_EXECUTE
       ));
     }
+  }
+
+  @Test
+  void sourceCapabilitiesSurviveOpenAttachAndDisjointSecondaryStatus() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", java.util.List.of(4L, 10L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "secondary", java.util.List.of(3L, 7L));
+    startServerWithInfoAndFileHandlers();
+    var opened = post("/open", "{\"filename\":\"primary.hict.hdf5\"}");
+    assertEquals(200, opened.statusCode(), opened.body());
+    var capabilities = new JsonObject(opened.body()).getJsonObject("capabilities");
+    assertEquals(1, capabilities.getInteger("schemaVersion"));
+    assertEquals("UNKNOWN", capabilities.getString("units"));
+    assertEquals("UNAVAILABLE", capabilities.getJsonObject("importedWeights").getString("state"));
+    var attached = post("/attach", "{}");
+    assertEquals(200, attached.statusCode(), attached.body());
+    assertEquals(capabilities, new JsonObject(attached.body()).getJsonObject("openFileResponse").getJsonObject("capabilities"));
+    var secondary = post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\",\"allowMismatch\":true}");
+    assertEquals(200, secondary.statusCode(), secondary.body());
+    var secondaryCapabilities = new JsonObject(secondary.body()).getJsonObject("capabilities");
+    assertEquals(new io.vertx.core.json.JsonArray("[3,7]"), secondaryCapabilities.getJsonArray("resolutions"));
+    var status = post("/secondary/status", "{}");
+    assertEquals(secondaryCapabilities, new JsonObject(status.body()).getJsonObject("capabilities"));
+    var detached = post("/secondary/close", "{}");
+    assertEquals(200, detached.statusCode(), detached.body());
+    assertTrue(!new JsonObject(detached.body()).containsKey("capabilities"));
   }
 
   private void startServerWithInfoAndFileHandlers() throws Exception {
