@@ -760,3 +760,52 @@ integration for large resources. Double hashing detects changes during
 preparation but does not lock external files against later replacement. FASTA
 analysis retains existing partial-link behavior rather than claiming full
 sequence coverage. W1 and the release gate remain incomplete.
+
+## W1 twelfth increment: decode serialized resource snapshots before preparation
+
+The public candidate preparation entry now accepts JSON and first runs the pure
+`SessionSnapshotDecoder`. Combined snapshot verification uses this entry, so
+resource reconstruction no longer depends on copying typed definitions directly
+from the live track manager. The decoder owns a copy of the validated tree and
+returns immutable typed track definitions.
+
+Validation covers the internal snapshot version, required Boolean/string/object/
+array fields, exact integers within the portable safe range, duplicate component
+and track IDs, contig resolution maps, scaffold bounds/order/lengths, name override
+references, AGP content hashes, fingerprint syntax, track settings and virtual
+source references, graph grammar and track bindings. Verification flags are
+type-checked but do not bypass reconstruction or fingerprint verification.
+The full tree, including unknown extension fields, is bounded to 8 MiB encoded
+UTF-8, 100,000 visited values and depth 64; nonfinite values and reserved
+prototype keys are refused before copying or compiling.
+
+Saved view fields require finite coordinates, a positive resolution and finite
+rotation. Row and column scopes are validated independently against the active
+assembly's IDs and intervals. Invalid values report their document field path.
+
+Evidence: `/tmp/hict-w1-session-decoder/`,
+`/tmp/hict-session-decoder-focused.log`,
+`/tmp/hict-session-decoder-build.log` and
+`/tmp/hict-session-decoder-browser.log`.
+
+- Six decoder tests cover exact serialized round trips/input ownership, scalar
+  coercion refusal, fractional and unsafe integers, missing/duplicate references,
+  interval/hash/fingerprint corruption, malformed views/scopes, size/count/depth
+  limits and rejection before any filesystem access. A real two-source candidate
+  regression now uses the JSON entry point.
+- Full Java suite and development JAR pass: 350 tests, 343 passed, seven optional
+  skips, zero failures or errors.
+- Eleven real Chromium checks pass with zero page exceptions. Two new cases
+  deliberately install a zero-resolution workspace and then a missing contig
+  scope via the existing workspace API. Verified capture rejects each with its
+  precise field path, preserves assembly history and succeeds after restoring
+  the original state. The previous graph/resource/recovery/stale-client checks
+  continue to pass.
+
+This decoder validates the internal resource snapshot, not a finished portable
+v3 document. Workspace styling and matrix-view metadata still need their full
+versioned contract, as do capabilities/provenance and generated auxiliary files.
+Ordinary workspace saving still accepts these malformed test states; the
+protection here is at verified session preparation. The portable envelope,
+frontend Save/Open, atomic publication/client replacement, dirty prompts and
+large-save jobs remain outstanding. The overall W1 and release gates remain open.

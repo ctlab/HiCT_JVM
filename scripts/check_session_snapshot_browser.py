@@ -124,6 +124,27 @@ def main():
                 page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
             assert capture()['renderPipeline'] == graph
             result['checks'].append('invalid track axis is rejected with its graph field path and valid capture recovers')
+            for invalid_kind, expected_field in [('resolution', 'workspace.workspaceState.view.resolution'),
+                                                 ('scope', 'workspace.workspaceState.axisScopes.row.id')]:
+                workspace = post('/session/snapshot')['workspace']
+                original_state = workspace['workspaceState']
+                invalid_state = json.loads(json.dumps(original_state))
+                if invalid_kind == 'resolution':
+                    invalid_state['view']['resolution'] = 0
+                else:
+                    invalid_state['axisScopes']['row'] = {'kind': 'contig', 'id': 999999, 'label': 'Missing'}
+                changed = post('/workspace/state', {'filename': 'tiny-primary.hict.hdf5',
+                    'expectedVersion': workspace['workspaceVersion'], 'state': invalid_state})
+                try:
+                    rejected = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return {status:error.response?.status,body:error.response?.data};}}''')
+                    assert rejected is not None and rejected['status'] >= 400, rejected
+                    assert expected_field in json.dumps(rejected['body']), rejected
+                    assert post('/assembly/history') == history
+                finally:
+                    post('/workspace/state', {'filename': 'tiny-primary.hict.hdf5',
+                        'expectedVersion': changed['workspaceVersion'], 'state': original_state})
+                assert capture()['workspace']['workspaceState'] == original_state
+                result['checks'].append('invalid workspace ' + invalid_kind + ' is rejected with its field path and recovers without assembly changes')
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
             conflict = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.response?.status;}}''')
             assert conflict == 409, conflict

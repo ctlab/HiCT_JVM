@@ -571,9 +571,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
         if (verify && fingerprintFiles && verifyTracks) {
           final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
           final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
-          final var definitions = tracks == null ? java.util.List.<Track1DManager.TrackSummary>of() : tracks.getTrack1DManager().listTracks();
           try (var candidate = SessionRestoreCandidate.prepare(dataDirectory,
-              processed == null ? dataDirectory.resolve("processed") : processed.getPath(), snapshot, definitions)) {
+              processed == null ? dataDirectory.resolve("processed") : processed.getPath(), io.vertx.core.json.JsonObject.mapFrom(snapshot))) {
             SessionAssemblyRestorer.verifyContactBinMapping(primary.getChunkedFile(), candidate.primary());
             if (secondary != null) SessionAssemblyRestorer.verifyContactBinMapping(secondary.getChunkedFile(), candidate.secondary());
           }

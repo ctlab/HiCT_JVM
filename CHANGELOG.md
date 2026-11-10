@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Decode serialized session snapshots before preparing files. Validate bounded input, exact IDs and coordinates, assembly intervals and AGP hashes, typed track definitions, fingerprints, graph references and saved view/scope fields without trusting producer verification flags.
+
 - Prepare both saved sources, tracks, linked FASTA aliases and rendering configuration as one disposable session candidate. Verify resource fingerprints before and after preparation, reject paths escaping DATA_DIR, and close candidates without changing the live session.
 
 - Validate session snapshot graph expressions before certifying track restoration. Report invalid operations, references, axes, log bases, colors and complexity with field paths while retaining valid graph JSON verbatim.

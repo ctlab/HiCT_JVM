@@ -37,7 +37,12 @@ public final class SessionRestoreCandidate implements AutoCloseable {
   public Path primaryFasta() { return primaryFasta; }
   public Path secondaryFasta() { return secondaryFasta; }
 
-  public static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory,
+  public static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory, JsonObject document) throws Exception {
+    var decoded = SessionSnapshotDecoder.decode(document);
+    return prepare(dataDirectory, processedDirectory, decoded.snapshot(), decoded.tracks());
+  }
+
+  static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory,
       SessionSnapshotDTO saved, List<Track1DManager.TrackSummary> definitions) throws Exception {
     if (saved.snapshotVersion() != 1) throw new IllegalArgumentException("Unsupported internal snapshot version");
     if (!Set.of("PRIMARY", "SECONDARY").contains(saved.assemblySource())

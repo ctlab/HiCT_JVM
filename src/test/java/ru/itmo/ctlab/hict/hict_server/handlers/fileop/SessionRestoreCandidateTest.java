@@ -50,7 +50,7 @@ class SessionRestoreCandidateTest {
       var saved = snapshot(primary, secondary, tracks);
       saved.primary().put("fastaFilename", "tiny.fa").put("fastaFingerprint", JsonObject.mapFrom(SessionFileFingerprint.compute(fasta)));
       var before = saved.primary().encode();
-      var candidate = SessionRestoreCandidate.prepare(directory, directory.resolve("processed"), saved, tracks.listTracks());
+      var candidate = SessionRestoreCandidate.prepare(directory, directory.resolve("processed"), JsonObject.mapFrom(saved));
       try (candidate) {
         SessionAssemblyRestorer.verifyContactBinMapping(primary, candidate.primary());
         SessionAssemblyRestorer.verifyContactBinMapping(secondary, candidate.secondary());
