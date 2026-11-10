@@ -4,7 +4,8 @@
 
 Started from `plan-reinforce-final.md`, in its prescribed W0-first order.
 The first change was a **W0 foundation increment**, followed by real HDF5 fixtures
-and source capability integration. W0 is not yet complete. W1–W16 have
+and source capability integration. The W0 foundation is now ready for W1;
+the later package gates remain unimplemented and unqualified. W1–W16 have
 not been started. In particular, session loss, unsafe replacement, stale sequence,
 armed scissors after Escape, settings persistence and mixed-resolution failures
 still block release.
@@ -117,29 +118,29 @@ The heap increase is not a plateau result; W6's repeated-open retention diagnosi
 remains required. Timing includes browser instrumentation and only the declared
 zoom workload. Visible red contact signal was checked in the saved screenshots.
 
-## Remaining W0 work before W1
+## W0 handoff to W1
 
-1. Real on-disk HDF5 fixture generation and disjoint-pyramid reads are implemented
-   in the second increment described below; continuous mixed-resolution display
-   remains the W8 gate.
-2. Source units, resolution-specific weight metadata, `/open`, Attach, secondary
-   status and applicable scaling/weight controls are integrated. Finish source
-   identity, linked-sequence capabilities and applicability across other controls.
-3. Reconcile all 232 historic control signatures and 18 menu destinations against
-   source with stable ids, prerequisites, outcome expectations and evidence status.
-   A DOM inventory is not 232 passing functional scenarios.
-   The menu contracts and repeatable opening checks now cover all 18 destinations;
-   the signature ledger and remaining manual work are in `reinforcement-control-coverage.md`.
-4. Complete catalog and legacy/custom preset/session fixtures against the actual
-   finalized schemas. Current catalog snippets are semantic cases, not schema passes.
-5. Extend measured performance to pan/input acknowledgement and representative
-   medium/large workflows. The navigation diagnostic is not a 30-minute soak or
-   proof of a memory plateau, and OS/server caches are not cleared.
-6. Finish the export-caption oracle and resolve any remaining harness failures
-   before treating subsequent failures as application regressions.
+The eight W0 foundation deliverables are present. This is readiness to begin the
+ordered implementation packages, not certification of their target behavior.
 
-W0 is intentionally left open. Later packages must not be marked complete, and
-release readiness must not be inferred from the Java test pass.
+| W0 requirement | Evidence |
+|---|---|
+| Repository baseline and protected changes | Original HEAD/status/index and SHA-256 manifests; verified before every commit |
+| Deterministic and real fixtures | Numerical/sequence/alignment oracles, generated real HDF5 pyramids, complete synthetic catalog cases, legacy preset/session envelopes and custom graph; real input hashes above |
+| Coordinate contract | `reinforcement-contracts.md`, production sequence projection and tiny HDF5 read/reversal tests |
+| Source capabilities and applicability | Versioned Open/Attach/secondary DTOs, declared source metadata, resolution-specific imported weights and disabled controls with reasons; HTTP and browser tests |
+| Common job contract | Target states, transitions, revision identity and publication rules in `reinforcement-contracts.md`; runtime implementation belongs to W13 |
+| Control inventory | 18 menu contracts and 232 signature contracts with IDs, prerequisites, expected effects and explicit inspected/pending status; five merged signatures still need instance-specific audit |
+| Stale harness repairs | Correct selectors, user-triggered scan, FASTA linking, ruler lane ordering, mixed-resolution failure oracle and rotated export envelope; known application failures retained |
+| Performance baseline | Declared hardware/browser/input hashes, fresh/repeat runs, zoom and drag-pan outcomes, event-to-view/render timings, frame distribution, long tasks, tile timings/counts and heap |
+
+Some earlier entries described later-package validation as unfinished W0 work.
+Those are not dropped: source fingerprints and transactional sequence lifecycle
+belong to W1/W3, complete catalog schema validation to W15, continuous independent
+pyramid display to W8, retention diagnosis to W6, and full caption parity and
+representative performance qualification to W16. Their tests must consume these
+fixtures and contracts. No schema acceptance, migration correctness, exhaustive
+control coverage, memory plateau or release readiness is claimed here.
 
 ## Second W0 increment: source metadata and real HDF5 fixtures
 
@@ -231,3 +232,43 @@ All 18 menu surfaces and three missing-FASTA recovery paths passed again with no
 page or HTTP errors, using the unchanged development application artifact.
 Evidence: `/tmp/hict-reinforce-control-contracts/`. No Java or WebUI application
 code changed in this increment; syntax and contract consistency were checked.
+
+## Fifth W0 increment: complete fixture documents and input baseline
+
+Added standalone complete synthetic catalog and nine negative catalog documents,
+a legacy preset export, legacy v2 session and a custom processing graph. Their
+structure and internal references were checked against the declared contract and
+existing serializer. They remain inputs for the later production validators, not
+proof that those validators exist or accept the documents. The fixture README
+marks all catalog URLs and citations as synthetic and prohibits fetching them.
+
+The browser baseline now verifies 20 zoom actions and six drag pans per opening,
+for 52 actions across fresh and repeat opens. Timing starts in a DOM capture
+listener. Center/resolution property events mark the first actual view update;
+the subsequent map postrender marks a rendered frame, not screen presentation.
+Event dispatch delay uses injected browser input and is not hardware latency.
+An initial harness used generic OpenLayers change events, which can arrive at
+animation completion; those measurements are retained separately and superseded
+by `property-events/`. Another initial read preceded the postrender callback;
+the runner now explicitly waits for that callback. Neither issue is an app defect.
+
+Evidence: `/tmp/hict-reinforce-baseline-complete/property-events/`, same declared
+machine, Chromium and development runtime as the prior capability runs, with
+1440×1000 viewport and a controlled raw-count graph. No page or HTTP errors.
+
+| Metric | Fresh browser | Repeat open |
+|---|---:|---:|
+| Frame p50 / p95 (ms) | 16.7 / 16.7 | 16.7 / 16.7 |
+| Zoom-in first view change p95 (ms) | 12.67 | 14.04 |
+| Zoom-in first rendered frame p95 (ms) | 29.87 | 31.11 |
+| Zoom-out first view change p95 (ms) | 13.30 | 13.48 |
+| Zoom-out first rendered frame p95 (ms) | 31.02 | 31.32 |
+| Drag-pan first view change p95 (ms) | 32.43 | 32.28 |
+| Drag-pan first rendered frame p95 (ms) | 33.48 | 33.30 |
+| Long tasks over 50 ms | 0 | 0 |
+| Heap after forced GC (bytes) | 23,258,040 | 32,569,880 |
+
+These short samples are a reproducible baseline, not a responsiveness budget,
+large-workload result or memory plateau. The heap increase remains a W6 concern.
+This step changes diagnostics, fixtures and documentation; no new application
+build is claimed.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Extend navigation diagnostics with real drag-pan checks and browser event-to-view/render timings, and add complete synthetic catalog and legacy session/preset fixtures for reinforcement testing.
 - Define prerequisites and expected outcomes for all 232 historical control signatures, distinguish source inspection from functional evidence, and capture dialog ownership to resolve ambiguous controls during the interface audit.
 - Add repeatable menu acceptance checks with explicit expected outcomes, API documentation window verification and missing-FASTA recovery checks. Preserve the historical control inventory for source reconciliation without treating visible controls as tested functionality.
 - Report declared source units and imported weights consistently when opening, attaching or selecting a secondary source. Disable inapplicable contact-scaling and weight controls with an accessible explanation, including resolutions without imported weights, while preserving legacy behavior when metadata is unknown.

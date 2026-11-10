@@ -32,6 +32,13 @@ def main():
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     results = {"platform": platform.platform(), "viewport": [1440, 1000], "runs": []}
+    results['timingDefinitions'] = {
+        'dispatchDelayMs': 'DOM event timestamp to capture listener; browser-injected input, not hardware latency',
+        'firstViewChangeMs': 'Capture listener to first changed center/resolution property',
+        'firstRenderedFrameMs': 'Capture listener to first postrender after that property change; not display presentation',
+        'settledMs': 'Playwright action start through animation/tile settling; includes automation overhead',
+        'cacheState': 'Fresh browser then repeat open; OS and server caches are not cleared',
+    }
     errors, http_errors = [], []
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
@@ -76,11 +83,30 @@ def main():
                     requestAnimationFrame(frame);
                     b.observer=new PerformanceObserver(list=>b.longTasks.push(...list.getEntries().map(e=>e.duration)));
                     b.observer.observe({type:'longtask'});
+                    const m=window.__hictBenchmark.manager(),v=m.getView(),map=m.getMap();
+                    b.input=e=>{const a=b.action;if(!a || a.receivedAt!==undefined)return;
+                        if((a.kind==='pan' && e.type==='pointerdown') || (a.kind!=='pan' && e.type==='click')){
+                            a.receivedAt=performance.now();a.eventTimestamp=e.timeStamp;
+                            a.dispatchDelayMs=Math.max(0,a.receivedAt-e.timeStamp);
+                        }};
+                    b.changed=()=>{const a=b.action;if(!a || a.receivedAt===undefined)return;
+                        const now=[v.getCenter(),v.getResolution()];
+                        if(JSON.stringify(now)!==JSON.stringify(a.before) && a.firstViewChangeMs===undefined)
+                            a.firstViewChangeMs=performance.now()-a.receivedAt;};
+                    b.rendered=()=>{const a=b.action;if(a?.firstViewChangeMs!==undefined && a.firstRenderedFrameMs===undefined)
+                        a.firstRenderedFrameMs=performance.now()-a.receivedAt;};
+                    document.addEventListener('click',b.input,true);
+                    document.addEventListener('pointerdown',b.input,true);
+                    v.on(['change:center','change:resolution'],b.changed);map.on('postrender',b.rendered);
+                    b.cleanup=()=>{document.removeEventListener('click',b.input,true);
+                        document.removeEventListener('pointerdown',b.input,true);
+                        v.un(['change:center','change:resolution'],b.changed);map.un('postrender',b.rendered);};
                     performance.clearResourceTimings();
                 }""")
                 actions = []
                 for index in range(20):
                     before = view(page)
+                    arm_action(page, 'zoom-in' if index % 2 == 0 else 'zoom-out', before)
                     started = time.monotonic()
                     # Actual OpenLayers buttons, independently of the known broken toolbar zoom.
                     page.locator(".ol-zoom-in" if index % 2 == 0 else ".ol-zoom-out").click()
@@ -89,9 +115,32 @@ def main():
                     after = view(page)
                     assert (after[1] < before[1]) if index % 2 == 0 else (after[1] > before[1]), (before, after)
                     actions.append({"action": "zoom-in" if index % 2 == 0 else "zoom-out",
-                                    "clickRoundTripMs": click_ms, "settledMs": (time.monotonic() - started) * 1000})
+                                    "clickRoundTripMs": click_ms, "settledMs": (time.monotonic() - started) * 1000,
+                                    "browserTiming": action_timing(page)})
+                # Zoom in enough to leave room for genuine drag movement instead
+                # of testing an extent-constrained pan at the full-map fit.
+                page.evaluate('window.__baseline.action=null')
+                for _ in range(2):
+                    page.locator('.ol-zoom-in').click()
+                    settle(page)
+                box = page.evaluate('window.__hictBenchmark.manager().getMap().getViewport().getBoundingClientRect().toJSON()')
+                for index in range(6):
+                    before = view(page)
+                    arm_action(page, 'pan', before)
+                    x, y = box['x'] + box['width'] * .5, box['y'] + box['height'] * .5
+                    dx, dy = (80, 45) if index % 2 == 0 else (-80, -45)
+                    started = time.monotonic()
+                    page.mouse.move(x, y)
+                    page.mouse.down()
+                    page.mouse.move(x + dx, y + dy, steps=8)
+                    page.mouse.up()
+                    settle(page)
+                    after = view(page)
+                    assert after[0] != before[0] and after[1] == before[1], (before, after)
+                    actions.append({'action': 'pan', 'settledMs': (time.monotonic()-started)*1000,
+                                    'before': before, 'after': after, 'browserTiming': action_timing(page)})
                 measured = page.evaluate("""() => {
-                    const b=window.__baseline;b.active=false;b.observer.disconnect();
+                    const b=window.__baseline;b.active=false;b.observer.disconnect();b.cleanup();
                     return {frames:b.frames,longTasks:b.longTasks,resources:performance.getEntriesByType('resource')
                         .filter(r=>/\\/(get_tile|tile|matrix)/.test(r.name)).map(r=>({url:r.name,durationMs:r.duration,bytes:r.transferSize}))};
                 }""")
@@ -112,6 +161,20 @@ def main():
             (output / "results.json").write_text(json.dumps(results, indent=2) + "\n")
             browser.close()
     print(json.dumps({"runs": len(results["runs"]), "evidence": str(output)}, indent=2))
+
+
+def arm_action(page, kind, before):
+    page.evaluate('a=>window.__baseline.action=a', {'kind': kind, 'before': before})
+
+
+def action_timing(page):
+    # View completion and the subsequent map frame are separate events. The
+    # queue can already be empty before that last postrender callback runs.
+    page.wait_for_function('window.__baseline.action?.firstRenderedFrameMs !== undefined')
+    timing = page.evaluate('window.__baseline.action')
+    assert timing.get('firstViewChangeMs') is not None, timing
+    assert timing.get('firstRenderedFrameMs') is not None, timing
+    return timing
 
 
 def view(page):

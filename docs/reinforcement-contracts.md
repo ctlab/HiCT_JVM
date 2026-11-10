@@ -129,9 +129,10 @@ Committed synthetic inputs live in `src/test/resources/reinforcement/`.
 `ReinforcementFixtureTest` exercises production sequence and rendering code.
 Alignment CIGAR fixtures include substitution, insertion, deletion, duplicates and
 reverse orientation; they are input contracts for W7/W9, not executable alignment
-parity yet. Catalog snippets are semantic test cases, explicitly not complete
-JSON Schema instances; W15 must add complete valid/invalid documents against its
-final schema. Legacy settings and malformed sessions are supplied for W1/W2.
+parity yet. Complete synthetic catalog documents now supplement the original
+semantic snippets, including nine negative cases. W15 must validate them against
+its finalized schema and semantic rules; no catalog runtime exists yet. Standalone
+legacy preset/session envelopes and a custom graph are supplied for W1/W2.
 No invalid session is fed into a user's running server.
 
 Large real inputs must remain outside git and be copied physically into an
@@ -157,5 +158,8 @@ python scripts/prepare_reinforcement_sources.py --data-dir /tmp/hict-fixtures-ne
 
 Use the existing validation Python environment with h5py and NumPy. The preparer
 adds a declared synthetic weighted source and an identity overlay using the
-production overlay writer. It refuses to overwrite existing outputs. Full catalog
-fixtures and the remainder of W0 capability integration are still outstanding.
+production overlay writer. It refuses to overwrite existing outputs. Fixture
+provenance, target-format limitations and intended use are listed in the adjacent
+fixture README. Later packages implement the remaining capability lifecycle and
+the catalog/session/preset validators; declaring these contracts is not their
+runtime implementation.
