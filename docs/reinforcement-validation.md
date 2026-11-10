@@ -325,3 +325,50 @@ publication/client installation, secondary replacement, FASTA/AGP steps, session
 v3 validation/restoration and dirty-state prompts remain W1 work. Existing verbose
 and duplicate error notifications remain visible in screenshots and belong to
 error-presentation cleanup. No release-readiness claim is made.
+
+## W1 second increment: secondary preparation and layout rollback
+
+Secondary attachment now prepares alignment, compatibility and its response before
+publishing the candidate or closing the old source. When secondary is the active
+assembly source, a failed preparation restores the primary assembly snapshot.
+Shared overlay synchronization also restores its target snapshot and raises an
+error instead of swallowing a failed import and claiming success. Assembly-source
+selection is published only after synchronization succeeds. Successful secondary
+replacement clears the previous secondary FASTA path/name; rejected candidates and
+cancelled compatibility warnings retain it.
+
+Primary FASTA alias construction now precedes publication of the new FASTA paths.
+The alias map is validated before it is handed to the track manager. This reduces
+a partial-publication path; it does not solve changed-content indexing or stale
+sequence responses, which remain in W3.
+
+Evidence: `/tmp/hict-w1-secondary-replacement/`.
+
+- A real-HDF5 HTTP regression injects an IOException **after an actual AGP import**
+  has changed primary's layout while secondary is the active assembly source.
+  Repeated failed replacements preserve both original AGPs, reversed matrix values,
+  old secondary wrapper, status and FASTA link. A failed assembly-source switch
+  keeps its prior selection. Removing the injected failure lets the replacement
+  succeed, aligns the primary to the new source and clears the old FASTA link.
+  Fault injection exists only in the test subclass, not in the runtime.
+- Rejected missing-file and unconfirmed mismatching FASTA relinks retain the
+  published primary and secondary path objects and filenames.
+- Full Java suite and development shadow JAR build passed: 326 tests, 319 passed,
+  seven optional skips, zero failures/errors. No WebUI source changed in this step.
+- Actual Tracks and layers actions rejected an invalid secondary, cancelled a
+  mismatching-resolution warning, and attached a valid replacement. Both 25-cell
+  edited matrices and the journal were unchanged on failure/cancellation; the
+  accepted candidate reproduced the reversed primary pixels exactly. No browser
+  page exceptions or unexpected HTTP errors.
+- The earlier edited-session primary-failure browser journey passed again,
+  including fresh-client Attach, preserved workspace and edit journal.
+- The source-capability browser regression passed all five checks, including
+  per-resolution weights, generated identity sources and fresh-client Attach.
+  Screenshot review still shows stacked low-level Axios error notifications after
+  the rejected file; readable, deduplicated error presentation remains outstanding.
+
+The same W1 limits remain: no global reader transaction, no complete stale-response
+policy, and no session v3 or dirty-state workflow yet. The source-switch success
+path and every AGP/FASTA error stage still need the complete W1 acceptance audit.
+A successful secondary replacement when secondary drives the assembly also needs
+client-model refresh verification. These results do not certify all of W1.

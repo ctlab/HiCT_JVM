@@ -354,6 +354,86 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void rejectedFastaRelinksRetainPublishedPrimaryAndSecondaryPaths() throws Exception {
+    for (String name : java.util.List.of("primary", "secondary"))
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, java.util.List.of(4L, 10L));
+    Files.writeString(tempDataDir.resolve("valid.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
+    Files.writeString(tempDataDir.resolve("mismatch.fa"), ">unrelated\nACGT\n");
+    startServerWithInfoAndFileHandlers();
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\"}").statusCode());
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    for (String source : java.util.List.of("PRIMARY", "SECONDARY")) {
+      assertEquals(200, post("/link_fasta", new JsonObject().put("source", source).put("fastaFilename", "valid.fa").encode()).statusCode());
+      String key = "linkedFasta" + (source.equals("PRIMARY") ? "Primary" : "Secondary");
+      var path = map.get(key + "Path");
+      var missing = post("/link_fasta", new JsonObject().put("source", source).put("fastaFilename", "missing.fa").encode());
+      assertTrue(missing.statusCode() >= 400, missing.body());
+      var mismatch = post("/link_fasta", new JsonObject().put("source", source).put("fastaFilename", "mismatch.fa").encode());
+      assertEquals(200, mismatch.statusCode(), mismatch.body());
+      assertTrue(new JsonObject(mismatch.body()).getBoolean("requiresConfirmation"), mismatch.body());
+      org.junit.jupiter.api.Assertions.assertSame(path, map.get(key + "Path"));
+      assertEquals("valid.fa", map.get(key + "Filename"));
+    }
+    assertEquals("valid.fa", map.get("linkedFastaFilename"));
+  }
+
+  @Test
+  void failedSecondarySynchronizationRollsBackPrimaryAndRetainsOldSecondary() throws Exception {
+    for (String name : java.util.List.of("primary", "secondary", "candidate"))
+      ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, java.util.List.of(4L, 10L));
+    Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
+    startServerWithInfoAndFileHandlers();
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    var failAfterImport = new java.util.concurrent.atomic.AtomicBoolean(false);
+    var primary = new ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile(
+      new ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile.ChunkedFileOptions(
+        tempDataDir.resolve("primary.hict.hdf5"), 1, 2)) {
+      @Override public void importAGP(java.io.Reader reader) throws java.io.IOException, NoSuchFieldException {
+        super.importAGP(reader);
+        if (failAfterImport.get()) throw new java.io.IOException("Injected failure after actual assembly import");
+      }
+    };
+    ((ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile")).getChunkedFile().close();
+    map.put("chunkedFile", new ShareableWrappers.ChunkedFileWrapper(primary));
+    primary.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/link_fasta", "{\"fastaFilename\":\"tiny.fa\",\"source\":\"SECONDARY\"}").statusCode());
+    assertEquals(200, post("/secondary/set_assembly_source", "{\"assemblySource\":\"SECONDARY\"}").statusCode());
+    var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFileSecondary");
+    var priorStatus = post("/secondary/status", "{}").body();
+    var primaryAgp = primary.getAgpProcessor().getAssemblyAGPRecords().toString();
+    var secondaryAgp = oldSecondary.getChunkedFile().getAgpProcessor().getAssemblyAGPRecords().toString();
+    failAfterImport.set(true);
+    for (int attempt = 0; attempt < 2; attempt++) {
+      var failed = post("/secondary/open", "{\"filename\":\"candidate.hict.hdf5\"}");
+      assertTrue(failed.statusCode() >= 400, failed.body());
+      org.junit.jupiter.api.Assertions.assertSame(oldSecondary, map.get("chunkedFileSecondary"));
+      assertEquals(priorStatus, post("/secondary/status", "{}").body());
+      assertEquals("tiny.fa", map.get("linkedFastaSecondaryFilename"));
+      assertEquals(primaryAgp, primary.getAgpProcessor().getAssemblyAGPRecords().toString());
+      assertEquals(secondaryAgp, oldSecondary.getChunkedFile().getAgpProcessor().getAssemblyAGPRecords().toString());
+      for (var file : java.util.List.of(primary, oldSecondary.getChunkedFile())) {
+        var resolution = ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(4, file);
+        assertEquals(11, file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 1, 1, false).matrix().getAsDouble(0, 0));
+      }
+    }
+    // A failed source switch must not publish the requested source flag either.
+    map.put("assemblyInfoSource", "PRIMARY");
+    assertTrue(post("/secondary/set_assembly_source", "{\"assemblySource\":\"SECONDARY\"}").statusCode() >= 400);
+    assertEquals("PRIMARY", map.get("assemblyInfoSource"));
+    map.put("assemblyInfoSource", "SECONDARY");
+    failAfterImport.set(false);
+    var accepted = post("/secondary/open", "{\"filename\":\"candidate.hict.hdf5\"}");
+    assertEquals(200, accepted.statusCode(), accepted.body());
+    org.junit.jupiter.api.Assertions.assertNotSame(oldSecondary, map.get("chunkedFileSecondary"));
+    assertEquals(null, map.get("linkedFastaSecondaryFilename"));
+    var resolution = ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(4, primary);
+    assertEquals(1, primary.getMatrixQueries().getSubmatrix(resolution, 0, 0, 1, 1, false).matrix().getAsDouble(0, 0));
+  }
+
+  @Test
   void failedPrimaryReplacementKeepsEditedSourcesFastaTracksAndWorkspace() throws Exception {
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", java.util.List.of(4L, 10L));
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "secondary", java.util.List.of(4L, 10L));

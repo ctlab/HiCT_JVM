@@ -342,27 +342,49 @@ public class FileOpHandlersHolder extends HandlersHolder {
               .put("compatibility", compatibility.toJson())
               .put("warnings", compatibility.warningsAsJsonArray());
           }
-          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
+          final var assemblySource = String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY));
+          final var primary = primaryWrapper.getChunkedFile();
+          final var primaryBefore = primary.snapshotAssembly();
+          final SecondaryCompatibility synchronizedCompatibility;
+          final io.vertx.core.json.JsonObject response;
+          try {
+            if (!generatedOverlay) {
+              synchronizeOverlayAssembly(primary, secondaryChunkedFile, assemblySource);
+            }
+            synchronizedCompatibility = analyzeSecondaryCompatibility(primary, secondaryChunkedFile);
+            response = new io.vertx.core.json.JsonObject()
+              .put("attached", true).put("filename", filename).put("assemblySource", assemblySource)
+              .put("capabilities", io.vertx.core.json.JsonObject.mapFrom(
+                ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(secondaryChunkedFile)))
+              .put("requiresConfirmation", false)
+              .put("compatibility", synchronizedCompatibility.toJson())
+              .put("warnings", synchronizedCompatibility.warningsAsJsonArray());
+            if (sequenceMetadata != null) response.put("sequenceAnalysis", sequenceMetadata.copy());
+          } catch (Exception failure) {
+            // With SECONDARY as assembly source, preparation can change primary's
+            // layout. Restore it before returning an error and keep the old source live.
+            primary.restoreAssembly(primaryBefore);
+            closeChunkedFileWrapper(new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
+            throw failure;
+          }
+          final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
           map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
-          map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
+          map.put(SECONDARY_COMPATIBILITY_KEY, synchronizedCompatibility.toJson());
           if (sequenceMetadata != null) map.put(SECONDARY_SEQUENCE_METADATA_KEY, sequenceMetadata);
           else map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
           map.putIfAbsent(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-          if (!generatedOverlay)
-            synchronizeOverlayAssembly(map, String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)));
-          final var synchronizedCompatibility = refreshSecondaryCompatibility(map);
+          map.remove(SECONDARY_FASTA_PATH_KEY);
+          map.remove(SECONDARY_FASTA_FILENAME_KEY);
+          closeChunkedFileWrapper(oldSecondary);
           try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
-          catch (java.io.IOException e) { log.warn("Superseded overlay cleanup deferred: {}", e.getMessage()); }
+          catch (Exception failure) { log.warn("Superseded overlay cleanup deferred", failure); }
           TileHandlersHolder.clearExpectedProfileCache(map);
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
             schedulerWrapper.getRequestTaskScheduler().bumpGeneration(RequestTaskScheduler.CancellationDomain.TILE);
           }
-          return secondaryStatusJson(map)
-            .put("requiresConfirmation", false)
-            .put("compatibility", synchronizedCompatibility != null ? synchronizedCompatibility.toJson() : compatibility.toJson())
-            .put("warnings", synchronizedCompatibility != null ? synchronizedCompatibility.warningsAsJsonArray() : compatibility.warningsAsJsonArray());
+          return response;
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -436,9 +458,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
             normalizedSource = ASSEMBLY_SOURCE_PRIMARY;
             sourceChunkedFile = primaryWrapper.getChunkedFile();
           }
-          map.put(ASSEMBLY_SOURCE_KEY, normalizedSource);
           synchronizeOverlayAssembly(map, normalizedSource);
           final var synchronizedCompatibility = refreshSecondaryCompatibility(map);
+          map.put(ASSEMBLY_SOURCE_KEY, normalizedSource);
           TileHandlersHolder.clearExpectedProfileCache(map);
           final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
           if (schedulerWrapper != null) {
@@ -616,6 +638,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var report = targetChunkedFile.getFastaProcessor().analyzeLinkCandidate(fastaPath);
           final boolean requiresConfirmation = report.hasWarnings() && !allowMismatch;
           if (!requiresConfirmation) {
+            // Alias construction reads/indexes FASTA and can fail. Do it before
+            // publishing any of the paths that the sequence/track APIs consume.
+            final var aliases = ASSEMBLY_SOURCE_PRIMARY.equals(normalizedSource)
+              ? java.util.Map.copyOf(targetChunkedFile.getFastaProcessor().buildSourceNameAliases(fastaPath))
+              : java.util.Map.<String, String>of();
             if (ASSEMBLY_SOURCE_SECONDARY.equals(normalizedSource)) {
               map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
               map.put(SECONDARY_FASTA_FILENAME_KEY, fastaFilename);
@@ -627,7 +654,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
               final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
               if (trackManagerWrapper != null) {
                 trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(
-                  chunkedFileWrapper.getChunkedFile().getFastaProcessor().buildSourceNameAliases(fastaPath)
+                  aliases
                 );
               }
             }
@@ -1047,11 +1074,16 @@ public class FileOpHandlersHolder extends HandlersHolder {
       return;
     }
 
-    final var primary = primaryWrapper.getChunkedFile();
-    final var secondary = secondaryWrapper.getChunkedFile();
+    synchronizeOverlayAssembly(primaryWrapper.getChunkedFile(), secondaryWrapper.getChunkedFile(), assemblySource);
+  }
+
+  private static void synchronizeOverlayAssembly(final ChunkedFile primary,
+                                                  final ChunkedFile secondary,
+                                                  final String assemblySource) {
     final var source = ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? secondary : primary;
     final var target = ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? primary : secondary;
 
+    final var targetBefore = target.snapshotAssembly();
     try {
       if (source.getContigTree().getRoot() == null) {
         final long length = target.getContigTree().getLengthInUnits(QueryLengthUnit.BASE_PAIRS,
@@ -1074,10 +1106,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
         ASSEMBLY_SOURCE_SECONDARY.equalsIgnoreCase(assemblySource) ? ASSEMBLY_SOURCE_PRIMARY : ASSEMBLY_SOURCE_SECONDARY
       );
     } catch (final Exception ex) {
-      log.warn("Failed to synchronize {} assembly layout for overlay rendering; sources will keep their own layout",
-        assemblySource,
-        ex
-      );
+      target.restoreAssembly(targetBefore);
+      throw new IllegalArgumentException("Cannot synchronize the selected assembly with the other source; the previous layout was retained", ex);
     }
   }
 
