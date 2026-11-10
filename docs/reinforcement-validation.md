@@ -909,3 +909,18 @@ and Attach; invalid bases are never sent; resetting a custom graph makes the con
 editable again. Still open for W2: a single opening transaction that includes the NaN
 choice (the prompt after the wizard still recomputes thresholds as a second step), and
 exact-scan ownership of the slider domain.
+
+## Toolbar zoom and tool safety (W3)
+
+The toolbar zoom buttons animated to the sentinel zooms `10e10` and `0` from pixel
+indices. They now take one step (`getConstrainedZoom(zoom +/- 1)`, 250 ms), keep the
+view center and report the limits. Escape disarms the armed tool (`deactivateScissors`
+or `deactivateTranslocation`) before clearing the selection. The armed tool is backed
+by a Vue ref, because async completions hold the raw manager and the toolbar buttons
+stayed pressed after a finished split. Real Chromium gate (18 checks, zero failures):
+one-step zoom with the center kept, the real limits reached at a realistic click pace and
+explained, Escape then a double-click changes nothing, a positive control showing that an
+armed double-click does split (contigs 96 to 97), the tool disarming itself and exact
+Undo, and translocation mode following Escape. Not done for W3: a keyboard action for
+Split (the double-click gesture remains the only way) and showing the affected interval
+before the gesture.

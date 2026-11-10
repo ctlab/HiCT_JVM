@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The toolbar zoom buttons now zoom one step per press, about the view center, and say so when the finest zoom or the whole map is reached. Before, they jumped to an extreme zoom.
+- Escape cancels an armed Split or Move tool, so a later double-click can no longer cut the map by accident. The Split and Move buttons show when they are armed and offer Cancel, and the Split tooltip says that it cuts at the spot you double-click and removes one finest-resolution bin there (Undo restores it).
 - Log2 now applies and stays applied. The sidebar has a **Signal transform** switch (Linear / Log2) and an **Advanced** section with Log base, Scaling across zoom (None, Linear scaling or Quadratic scaling, one choice) and Cooler weights. Before, switching a setting on and pressing Apply reset it whenever a processing pipeline was active, and the log base showed as 1. An invalid base (1, 0, negative or text) is refused with a message.
 - The pre-log and auto upper threshold options are gone from the ordinary controls. A preset that still uses them shows a one-line note with a button to remove it. The slider's Linear/Log buttons are now captioned **Slider scale**, separate from the signal transform.
 - Sidebar signal edits rewrite only a standard processing graph. A graph built by hand in Rendering pipeline is left untouched, and the sidebar says so.
