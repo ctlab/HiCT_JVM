@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Failed actions show one message with copyable diagnostics. Background failures remain in Notifications. A full server queue asks you to retry, and a duplicate coverage request reports that preparation is already running.
+
 - Rulers place round base-pair ticks at their true map positions and show contig and scaffold bands. Break marks indicate hidden sequence, and letter zoom shows complete base-pair coordinates.
 
 - Open map goes straight to the file picker. Double-click a dataset or press Enter on its name. The options wizard skips conversion for directly openable datasets and skips track precompute when no tracks are selected.

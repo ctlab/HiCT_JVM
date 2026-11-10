@@ -293,8 +293,8 @@ public final class RequestTaskScheduler implements AutoCloseable {
         unregisterTask(domain, generationSnapshot, futureTask);
       }
       if (responseScheduled.compareAndSet(false, true)) {
-        dispatchFailure(ctx, new IllegalStateException(
-          "Request queue is saturated for priority " + priority + ". Please retry.", rejection
+        dispatchFailure(ctx, new io.vertx.ext.web.handler.HttpException(
+          503, "The server request queue is full. Retry in a moment.", rejection
         ));
       }
     }

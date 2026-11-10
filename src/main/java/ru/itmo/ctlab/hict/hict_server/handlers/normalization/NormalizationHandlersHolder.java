@@ -67,8 +67,12 @@ public class NormalizationHandlersHolder extends HandlersHolder {
         ctx.fail(new HttpException(409, "Open a map first"));
         return;
       }
-      ctx.response().putHeader("content-type", "application/json")
-        .end(Json.encode(describe(service.start(files, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES), files)));
+      try {
+        final var status = service.start(files, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES);
+        ctx.response().putHeader("content-type", "application/json").end(Json.encode(describe(status, files)));
+      } catch (CoverageNormalizationService.AlreadyRunningException conflict) {
+        ctx.fail(new HttpException(409, conflict.getMessage()));
+      }
     });
     router.post("/normalization/coverage/status").handler(ctx -> {
       final var files = openFiles();

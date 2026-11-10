@@ -1347,9 +1347,8 @@ paths:
       summary: Start computing square-root coverage vectors for every open source
       description: >
         Starts one background job that reads the stored contacts of every resolution twice and builds
-        the square-root coverage weights (Juicebox VC_SQRT recipe, vectors cover the whole opened map).
-        Vectors are published only when all resolutions of all open sources are done. Starting again
-        while the job runs for the same sources joins it. The response is the same as the status call.
+        square-root coverage weights over the whole opened map. Vectors are published only when
+        all resolutions of all open sources are done. Follow a running job through the status endpoint.
       operationId: prepareCoverageNormalization
       responses:
         '200':
@@ -1358,7 +1357,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
         '409':
-          description: No map is open, or another preparation is running for different sources
+          description: No map is open, or a preparation is already running
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }

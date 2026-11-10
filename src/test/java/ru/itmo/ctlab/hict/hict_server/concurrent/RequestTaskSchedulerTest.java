@@ -153,7 +153,7 @@ class RequestTaskSchedulerTest {
     var running=startBlockingRequests();var first=running.getFirst();var second=running.getLast();
     var queued=request("ready");
     until(()->scheduler.diagnosticsSnapshot().pools().get(RequestPriority.TILE).queueSize()==1);
-    assertEquals(500,request("ready").get(3,TimeUnit.SECONDS).statusCode());
+    assertEquals(503,request("ready").get(3,TimeUnit.SECONDS).statusCode());
     assertEquals(3,scheduler.diagnosticsSnapshot().cancellationDomains().get(CancellationDomain.TILE).trackedTaskCount());
     release.countDown();
     for(var response:java.util.List.of(first,second,queued))assertEquals(200,response.get(3,TimeUnit.SECONDS).statusCode());

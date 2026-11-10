@@ -68,7 +68,6 @@ public final class CoverageNormalizationService {
   private final Object lock = new Object();
   private Status status = new Status(State.IDLE, 0.0d, "Not started", CoverageNormalizer.ALGORITHM_VERSION, null, 0L);
   private AtomicBoolean cancelFlag = new AtomicBoolean(false);
-  private List<ChunkedFile> currentFiles = List.of();
   private long nextJobId = 1L;
 
   public @NotNull Status status() {
@@ -77,14 +76,17 @@ public final class CoverageNormalizationService {
     }
   }
 
-  /** Starts a job for the files, or joins the running one for the same files. */
+  public static final class AlreadyRunningException extends IllegalStateException {
+    private AlreadyRunningException() {
+      super("Square-root coverage is already being prepared. Wait for it or cancel it first.");
+    }
+  }
+
+  /** Starts a job for the files. Clients can follow an existing job through status. */
   public @NotNull Status start(final @NotNull List<ChunkedFile> files, final long budgetBytes) {
     synchronized (lock) {
       if (status.state() == State.RUNNING) {
-        if (sameFiles(currentFiles, files)) {
-          return status;
-        }
-        throw new IllegalStateException("Another normalization is already being prepared. Cancel it first.");
+        throw new AlreadyRunningException();
       }
       if (files.stream().allMatch(f -> f.getNormalizationWeights().prepared() != null)) {
         status = new Status(State.READY, 1.0d, "Already prepared", CoverageNormalizer.ALGORITHM_VERSION, null, nextJobId++);
@@ -93,7 +95,6 @@ public final class CoverageNormalizationService {
       final long jobId = nextJobId++;
       final var cancel = new AtomicBoolean(false);
       this.cancelFlag = cancel;
-      this.currentFiles = List.copyOf(files);
       status = new Status(State.RUNNING, 0.0d, "Reading contacts", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
       executor.execute(() -> run(jobId, List.copyOf(files), budgetBytes, cancel));
       return status;
@@ -154,18 +155,6 @@ public final class CoverageNormalizationService {
           CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
       }
     }
-  }
-
-  private static boolean sameFiles(final @NotNull List<ChunkedFile> a, final @NotNull List<ChunkedFile> b) {
-    if (a.size() != b.size()) {
-      return false;
-    }
-    for (int i = 0; i < a.size(); i++) {
-      if (a.get(i) != b.get(i)) {
-        return false;
-      }
-    }
-    return true;
   }
 
   public void close() {

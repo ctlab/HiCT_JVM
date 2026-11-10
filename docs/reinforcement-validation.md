@@ -1165,3 +1165,17 @@ and one-bin contigs. Chromium captures verified whole-map and mid-zoom rulers on
 on `tiny-primary`. At letter zoom the PNG was 1035×791 pixels and the SVG viewport was
 1034.40625×791. The SVG contained both ruler units, entity names and sequence letters.
 The browser reported zero page errors, and the full WebUI build passed.
+
+## One message per failed action (U5)
+
+The transport rejects failed requests to the caller. The action presents the server
+reason once and records diagnostic details separately. Console errors and unhandled
+promise rejections go to Notifications. Session save keeps its error dialog and offers
+Copy diagnostics there.
+
+`check_failure_reporting_browser.py` passed seven checks against the fat JAR. It forced
+failures in open, FASTA link, track add, session save and PNG export, verified one visible
+message per action, and checked the copied diagnostics. It also verified that console and
+unhandled errors stayed out of toasts and that a second coverage preparation returned
+HTTP 409. The JVM scheduler test verified HTTP 503 for a saturated queue and no leaked
+task tracking across ten repetitions. Full JVM and WebUI checks passed.
