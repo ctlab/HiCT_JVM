@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add optional isolated assembly reconstruction to session snapshots. Verify AGP hashes, source intervals, strands, contact-bin mappings, names and scaffold metadata before marking the assembly verified; failed candidates roll back without replacing live sources.
 - Add a read-only server session snapshot API for edited assemblies, AGP hashes, name overrides, source links, complete rendering graphs, track definitions and workspace state. Revision guards reject capture from stale displayed assemblies; portable v3 save and restore are still under development.
 - Validate nested session visualization options, colors, style bundles, preset actions and duplicate bookmark/preset IDs before replacing the map. Preserve legacy empty-style documents and action-preset colormap placeholders without applying invalid styles.
 - Reject unsupported session versions, malformed view coordinates and container fields, and oversized or excessively nested session documents before opening files or changing the active map. Legacy imports now explain that edited assemblies, full processing graphs and undo history are not included.

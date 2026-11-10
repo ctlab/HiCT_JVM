@@ -34,7 +34,7 @@ def main():
             page.get_by_role('link', name='Attach', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
         def capture():
-            return page.evaluate('()=>window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot()')
+            return page.evaluate('()=>window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true)')
         try:
             post('/close')
             empty = context.request.post(args.api + '/session/snapshot', data={})
@@ -53,6 +53,7 @@ def main():
                     view.setResolution(view.getResolution()/2);}''')
             history = post('/assembly/history')
             first = capture()
+            assert first['assemblyVerified'] is True
             assert first['renderPipeline'] == graph
             assert first['primary']['filename'] == 'tiny-primary.hict.hdf5'
             assert first['primary']['fastaFilename'] == 'tiny.fa'
@@ -69,7 +70,7 @@ def main():
             result['checks'].append('capture retains edited strand, both sources, FASTA and exact custom graph without adding history')
             result['checks'].append('capture includes track definitions and the persisted browser workspace')
             post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
-            conflict = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot();return null;}catch(error){return error.response?.status;}}''')
+            conflict = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true);return null;}catch(error){return error.response?.status;}}''')
             assert conflict == 409, conflict
             result['checks'].append('stale displayed assembly cannot be captured')
             attach()
@@ -77,6 +78,17 @@ def main():
             assert second['primary']['assemblyInfo']['contigDescriptors'][0]['contigDirection'] == 1
             assert second['primary']['agpSha256'] != first['primary']['agpSha256']
             result['checks'].append('fresh Attach captures the new assembly hash and strand')
+            unverified = dict(second)
+            unverified.pop('assemblyVerified')
+            def legacy_snapshot(route):
+                route.fulfill(status=200, content_type='application/json', body=json.dumps(unverified))
+            page.route('**/session/snapshot', legacy_snapshot)
+            try:
+                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true);return null;}catch(error){return error.message;}}''')
+                assert message == 'Server did not verify assembly reconstruction', message
+            finally:
+                page.unroute('**/session/snapshot', legacy_snapshot)
+            result['checks'].append('explicit verification rejects an unverified older-server response')
             result['first'], result['second'] = first, second
             page.screenshot(path=str(output / 'snapshot.png'))
             assert not result['pageErrors'], result['pageErrors']

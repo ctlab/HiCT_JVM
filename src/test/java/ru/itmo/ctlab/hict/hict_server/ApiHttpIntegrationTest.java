@@ -394,10 +394,11 @@ class ApiHttpIntegrationTest {
     var config = ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.fromJson(graph);
     map.put(ru.itmo.ctlab.hict.hict_server.handlers.tiles.RenderPipelineConfig.LOCAL_MAP_KEY,
       new ShareableWrappers.RenderPipelineConfigWrapper(config));
-    var response = post("/session/snapshot", "{}");
+    var response = post("/session/snapshot", "{\"verifyAssemblyRoundTrip\":true}");
     assertEquals(200, response.statusCode(), response.body());
     var snapshot = new JsonObject(response.body());
     assertEquals(1, snapshot.getInteger("snapshotVersion"));
+    assertTrue(snapshot.getBoolean("assemblyVerified"));
     assertEquals(graph, snapshot.getJsonObject("renderPipeline"));
     var source = snapshot.getJsonObject("primary");
     assertEquals("renamed_tiny", source.getJsonObject("contigNameOverrides").getString("0"));
@@ -406,7 +407,7 @@ class ApiHttpIntegrationTest {
       .digest(source.getString("agp").getBytes(StandardCharsets.UTF_8))), source.getString("agpSha256"));
     assertEquals("secondary.hict.hdf5", snapshot.getJsonObject("secondary").getString("filename"));
     assertEquals(0, snapshot.getJsonArray("tracks").size());
-    assertEquals(snapshot, new JsonObject(post("/session/snapshot", "{}").body()));
+    assertEquals(snapshot, new JsonObject(post("/session/snapshot", "{\"verifyAssemblyRoundTrip\":true}").body()));
     primary.getScaffoldingOperations().reverseSelectionRangeBp(0, 17);
     var later = new JsonObject(post("/session/snapshot", "{}").body());
     org.junit.jupiter.api.Assertions.assertNotEquals(source.getString("agpSha256"), later.getJsonObject("primary").getString("agpSha256"));

@@ -505,7 +505,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var pipeline = (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
         final var tracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
         final var workspace = (WorkspaceStateStore) map.get("workspaceStateStore");
-        return new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1,
+        final var request = ctx.body().asJsonObject();
+        final var verifyValue = request == null ? Boolean.FALSE : request.getValue("verifyAssemblyRoundTrip", Boolean.FALSE);
+        if (!(verifyValue instanceof Boolean)) throw new io.vertx.ext.web.handler.HttpException(400, "verifyAssemblyRoundTrip must be a boolean");
+        final boolean verify = (Boolean) verifyValue;
+        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify,
           ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
             String.valueOf(map.getOrDefault("openedFilename", "")),
             String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, ""))),
@@ -517,6 +521,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
           new io.vertx.core.json.JsonArray(tracks == null ? java.util.List.of() : tracks.getTrack1DManager().listTracks()
             .stream().map(io.vertx.core.json.JsonObject::mapFrom).toList()),
           workspace == null ? new io.vertx.core.json.JsonObject() : workspace.snapshot());
+        if (verify) {
+          verifySessionAssembly(primary.getChunkedFile(), snapshot.primary());
+          if (secondary != null) verifySessionAssembly(secondary.getChunkedFile(), snapshot.secondary());
+        }
+        return snapshot;
       }, result -> ctx.response().putHeader("content-type", "application/json").end(io.vertx.core.json.Json.encode(result)));
     });
 
@@ -1369,6 +1378,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final var compatibility = analyzeSecondaryCompatibility(primaryWrapper.getChunkedFile(), secondaryWrapper.getChunkedFile());
     map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
     return compatibility;
+  }
+
+  private static void verifySessionAssembly(ChunkedFile source, io.vertx.core.json.JsonObject saved) throws Exception {
+    try (var candidate = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(source.getHdfFilePath(), 1, 2))) {
+      SessionAssemblyRestorer.restore(candidate, saved);
+      SessionAssemblyRestorer.verifyContactBinMapping(source, candidate);
+    }
   }
 
   private io.vertx.core.json.JsonObject secondaryStatusJson(final @NotNull LocalMap<String, Object> map) {

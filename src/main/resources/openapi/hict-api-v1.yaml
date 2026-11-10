@@ -484,8 +484,19 @@ paths:
     post:
       tags: [Session]
       summary: Capture assembly and rendering state for session construction
-      description: Read-only internal snapshot, not a portable saved session. Does not include source content fingerprints or certify AGP round-trip fidelity. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
+      description: Read-only internal snapshot, not a portable saved session. Does not include source content fingerprints. Optional verification certifies the captured assembly reconstruction only. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
       operationId: getSessionSnapshot
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verifyAssemblyRoundTrip:
+                  type: boolean
+                  default: false
+                  description: Open independent candidates and verify AGP, assembly descriptors and metadata without publishing them.
       responses:
         '200':
           description: Detached assembly and rendering snapshot
@@ -493,9 +504,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [snapshotVersion, primary, assemblySource, renderPipeline, tracks, workspace]
+                required: [snapshotVersion, assemblyVerified, primary, assemblySource, renderPipeline, tracks, workspace]
                 properties:
                   snapshotVersion: { type: integer, enum: [1] }
+                  assemblyVerified: { type: boolean, description: Whether isolated candidate assembly reconstruction succeeded for all open sources. Does not verify source content fingerprints or complete session restoration. }
                   primary: { $ref: '#/components/schemas/SessionSourceSnapshot' }
                   secondary:
                     nullable: true

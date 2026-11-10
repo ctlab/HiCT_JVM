@@ -532,3 +532,50 @@ schema/graph/reference validation, atomic restore, UI Save/Open integration and
 dirty-state handling. The snapshot is serialized with assembly mutations, but
 concurrent visualization/workspace writes still need the complete session
 transaction protocol. W1 is not complete and release qualification remains open.
+
+## W1 seventh increment: isolated assembly reconstruction and fidelity checks
+
+`SessionAssemblyRestorer` reconstructs an unpublished candidate from captured AGP,
+checks its SHA-256, component identities, source intervals, strands and bin counts,
+restores visibility and original/display names, and reconstructs scaffold metadata
+that AGP alone does not retain (stable IDs and default spacer lengths). It then
+requires the complete assembly DTO and regenerated AGP hash to match. Any failure
+restores the candidate checkpoint. Name restoration changes in-memory maps only.
+The helper assumes a structurally validated capture; complete external v3 document
+validation is still required before it becomes part of the restore endpoint.
+
+Snapshot requests can opt into `verifyAssemblyRoundTrip`. The server opens and
+closes independent primary/secondary candidates, reconstructs them and compares
+canonical native contact-bin mappings with the live sources, including stripe,
+range and direction at each resolution. Only successful verification returns
+`assemblyVerified: true`. Existing snapshot requests remain lightweight by default.
+The client rejects missing/false verification when verification was requested,
+including an older server that ignores the new option. No Save/Open UI migration
+or live-source replacement is part of this increment.
+
+Evidence: `/tmp/hict-w1-assembly-restorer/` and
+`/tmp/hict-session-restorer-*.log`.
+
+- Real-HDF5 tests reconstruct reversed and renamed assemblies with their scaffold
+  defaults, and split/reversed components with an annotated gap. The latter test
+  compares every matrix cell at both fixture resolutions, besides exact snapshot
+  equality. Hash, strand and display-name corruption trigger candidate rollback.
+  A deliberately altered native mapping is rejected even with matching lengths.
+- Full Java suite and development JAR: 330 tests, 323 passed, seven optional skips.
+- Five final browser checks pass with explicit verification of both sources,
+  custom graph, BED track, FASTA and persisted workspace. The journal is unchanged,
+  stale clients receive 409, fresh Attach recovers, and an injected older-server
+  response without verification is refused. Browser page exceptions: zero.
+- WebUI build, API DTO tests and changed-file lint passed with the five existing
+  unused-import warnings and resolver notices. An initial build failed TypeScript
+  narrowing in the request factory, leaving the previous bundle in dist; the
+  browser assertion caught its unverified request. The cast was corrected and
+  fail-fast build/check commands and the complete browser run subsequently passed.
+
+Component IDs must currently survive AGP reconstruction; a layout requiring an ID
+remap fails rather than publishing incompatible references. Fingerprints, generated
+provenance, comprehensive v3 validation, cross-resource restoration, atomic
+publication, dirty prompts and export progress/cancellation for large captures
+remain. Explicit verification opens candidate files and can be expensive on large
+maps; it is not enabled in the legacy Save UI. W1 and release qualification remain
+incomplete.
