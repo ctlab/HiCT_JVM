@@ -56,7 +56,7 @@ def main():
 
         def file_menu(item):
             page.get_by_role('link', name='File', exact=True).click()
-            page.get_by_text(item, exact=True).click()
+            page.get_by_role('link', name=item, exact=True).click()
 
         def pick(dialog, fixture):
             dialog.get_by_text(fixture, exact=False).first.click()
@@ -72,14 +72,14 @@ def main():
             page.wait_for_timeout(3500)
 
         def open_manual(fixture):
-            file_menu('Manual Open...')
+            file_menu('Open…')
             dialog = page.get_by_role('dialog')
             dialog.wait_for(state='visible')
             pick(dialog, fixture)
             wait_for_map()
 
         def open_wizard(fixture):
-            file_menu('Open Wizard...')
+            file_menu('Open with options…')
             dialog = page.get_by_role('dialog')
             dialog.wait_for(state='visible')
             dialog.get_by_role('button', name='Single map').click()
@@ -87,6 +87,9 @@ def main():
             dialog.get_by_role('button', name='Browse…').first.click()
             picker = page.get_by_role('dialog').last
             pick(picker, fixture)
+            dialog.get_by_text('Map files conversion', exact=True).wait_for(state='hidden')
+            check(f'{fixture}: no track precompute step without tracks',
+                  dialog.get_by_text('Track precomputing', exact=True).count() == 0)
             page.wait_for_timeout(800)
             for _ in range(14):
                 finish = dialog.get_by_role('button', name='Finish', exact=True)

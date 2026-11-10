@@ -72,7 +72,7 @@ def main():
             assert before['history']['summary']['position'] > 0, before['history']
             for attempt in range(2):
                 page.get_by_role('link', name='File', exact=True).click()
-                page.get_by_role('link', name='Manual Open...', exact=True).click()
+                page.get_by_role('link', name='Open…', exact=True).click()
                 dialog = page.locator('.modal.show').filter(has_text='Open Hi-C dataset')
                 dialog.locator('span[title]').filter(has_text='broken.hict.hdf5').click()
                 with page.expect_response(lambda response: response.url.endswith('/open')) as failed:

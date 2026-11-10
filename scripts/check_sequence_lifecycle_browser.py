@@ -368,7 +368,7 @@ class OverlayFixture { public static void main(String[] a) {
             jobs = sorted([j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind']=='dotplot'], key=lambda j:j['createdAtMs'])
             filename=jobs[-1]['outputFile']
             check.menu('File','Close'); check.settle()
-            load_file('File','Manual Open...','known.hict.hdf5','/open')
+            load_file('File','Open…','known.hict.hdf5','/open')
             result=page.evaluate("""async filename => {
               const m=window.__hictBenchmark.manager(), api=m.networkManager.requestManager;
               const opened=await api.openSecondarySource(filename);
@@ -383,7 +383,7 @@ class OverlayFixture { public static void main(String[] a) {
             (out/'original-order-reattachment.json').write_text(json.dumps(result,indent=2))
         try:
             page.goto(f'http://127.0.0.1:{static.server_port}/')
-            check.step('open', lambda: load_file('File', 'Manual Open...', 'known.hict.hdf5', '/open'))
+            check.step('open', lambda: load_file('File', 'Open…', 'known.hict.hdf5', '/open'))
             check.step('missing-fasta-guidance', missing_fasta)
             check.step('link-fasta', lambda: load_file('Assembly', 'Link FASTA', 'known.fasta', '/link_fasta'))
             check.step('split-and-invert-layout', lambda: load_file('Assembly', 'Load AGP', 'split.agp', '/load_agp'))

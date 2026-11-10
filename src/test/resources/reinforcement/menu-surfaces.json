@@ -2,7 +2,7 @@
   {
     "id": "menu-01",
     "menu": "File",
-    "action": "Manual Open...",
+    "action": "Open…",
     "heading": "Open Hi-C dataset",
     "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
     "prerequisites": [

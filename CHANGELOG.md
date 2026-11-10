@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Open map goes straight to the file picker. Double-click a dataset or press Enter on its name. The options wizard skips conversion for directly openable datasets and skips track precompute when no tracks are selected.
+- Map controls are disabled until a map opens. Context menus stay within the window, presets use a dropdown, the information overlay updates as the view changes, and dialogs keep keyboard focus inside.
+
 - Sessions save and restore after Split, including reversed contigs and subsequent assembly edits. If a save fails, a dialog shows the reason and the edit stays unsaved.
 - Opening a map fits its color range to the visible signal. The sidebar, saved options and rendering pipeline agree when weights change. Excluded bins are masked by default and the Change action remembers the choice per file.
 - Show O/E uses a diverging log₂ palette centered at a ratio of 1. Returning to Observed restores its previous range.

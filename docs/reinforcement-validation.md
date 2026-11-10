@@ -1131,3 +1131,20 @@ including saving, closing and restoring after Split, reversed Split, Split follo
 Group or Debris, and two splits in one contig. All five preserved the AGP hash and assembly
 descriptors. A forced HTTP 400 showed the server reason in the save dialog and kept the
 unsaved edit. The browser reported zero page errors.
+
+## Direct opening and interface controls (U3)
+
+The empty workspace opens the existing file picker directly, with separate actions for
+the wizard, examples and FASTA-only creation. The picker requires selection before Load.
+The wizard omits conversion when every selected source opens directly and omits track
+precompute when no tracks are selected. The information overlay refreshes on view changes
+and when the new tiles finish rendering. Twelve dialogs use modal focus handling with
+nested-dialog support.
+
+Chromium opened `mat18_100k` from the empty workspace with a double-click at 1280×720
+and Enter at 1440×900. Both runs verified rendered contact pixels, picker focus
+containment and an assembly context menu within the window. The opening regression
+passed 51 checks on that fixture, including the wizard, Attach and the signal controls.
+All 18 menu surfaces passed, including confirmation that the pipeline editor shows the
+enabled state set on the server. The WebUI build passed and ESLint reported zero errors
+on the changed files.
