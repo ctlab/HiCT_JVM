@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Prepare both saved sources, tracks, linked FASTA aliases and rendering configuration as one disposable session candidate. Verify resource fingerprints before and after preparation, reject paths escaping DATA_DIR, and close candidates without changing the live session.
+
 - Validate session snapshot graph expressions before certifying track restoration. Report invalid operations, references, axes, log bases, colors and complexity with field paths while retaining valid graph JSON verbatim.
 
 - Add isolated session-track reconstruction that preserves IDs, order, appearance, ranges and virtual source references. Optional snapshot verification rejects missing graph track references and refuses partial preparation without replacing live tracks.

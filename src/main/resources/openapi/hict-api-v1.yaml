@@ -484,7 +484,7 @@ paths:
     post:
       tags: [Session]
       summary: Capture assembly and rendering state for session construction
-      description: Read-only internal snapshot, not a portable saved session. Optional fingerprinting reads matrix, FASTA and physical track contents. Optional verification certifies the captured assembly reconstruction only. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
+      description: Read-only internal snapshot, not a portable saved session. Optional fingerprinting reads matrix, FASTA and physical track contents. Assembly verification checks reconstruction. When all three verification options are enabled, prepare both sources, tracks, linked FASTA aliases and rendering configuration together, checking fingerprints before and after preparation without publishing the candidate. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
       operationId: getSessionSnapshot
       requestBody:
         required: false

@@ -707,3 +707,56 @@ static threshold relationships and dynamically evaluated domains still need
 the complete document contract. Preparation/publication, Save/Open v3, dirty
 state handling and the full W1 gate remain outstanding. No release qualification
 is claimed. No WebUI files changed in this increment.
+
+## W1 eleventh increment: prepare the session resources together
+
+`SessionRestoreCandidate` owns unpublished primary/secondary readers, a track
+manager, linked FASTA paths/primary aliases and the compiled rendering pipeline.
+It validates the active source, checks track summaries against their typed
+definitions, verifies graph references and resolves each physical resource under
+the real DATA_DIR. Lexical traversal and symlink escapes are rejected. Matrix,
+FASTA and physical-track fingerprints are mandatory in this preparation layer.
+Virtual weight references must agree with their saved source and availability.
+
+All resource contents are checked before opening the candidate, and checked
+again after assembly, track and FASTA preparation. Failure closes every resource
+already prepared, preserving cleanup failures as suppressed exceptions. Explicit
+close is idempotent. Source assembly reconstruction still checks complete
+descriptors and AGP hashes; the snapshot route additionally compares the
+candidate's native contact-bin mappings with the live source.
+
+The existing snapshot route uses this combined preparation whenever all three
+verification flags are true. Individual verification options keep their narrower
+behavior. Candidates are closed after verification; no source/track publication
+or client session replacement happens in this increment.
+
+Evidence: `/tmp/hict-w1-session-candidate/`;
+`/tmp/hict-session-candidate-focused.log`,
+`/tmp/hict-session-candidate-build.log`,
+`/tmp/hict-session-candidate-tests-final.log` and
+`/tmp/hict-session-candidate-browser.log`.
+
+- Five candidate tests cover two reversed sources with different resolution
+  pyramids, BED and secondary-weight tracks, linked FASTA, primary-only sessions,
+  invalid active-secondary references, same-size/same-timestamp track replacement,
+  missing fingerprints, traversal/symlink escape, secondary AGP failure and retry.
+  Live assembly/track state remains usable and unchanged.
+- Full Java suite: 344 tests, 337 passed, seven optional skips, no failures or
+  errors. Development JAR build passed.
+- All nine existing real Chromium snapshot checks pass through combined
+  preparation, including recovery, exact graph retention and stale-client guards.
+  Zero page exceptions.
+- Eight additional consecutive fully verified captures leave the process's
+  data-file descriptor counts unchanged (one descriptor per live matrix) and
+  preserve assembly history. Tiny-fixture capture times were about 10–16 ms;
+  these are not large-file performance claims.
+
+Remaining work is substantial: externally supplied v3 documents still need a
+complete validator and typed decoder; workspace/source metadata, generated-result
+provenance and auxiliary indices need their complete contract; candidate
+publication and client refresh must form one transaction; Save/Open v3 and dirty
+prompts remain unwired. Hashing is synchronous and requires cancellable job
+integration for large resources. Double hashing detects changes during
+preparation but does not lock external files against later replacement. FASTA
+analysis retains existing partial-link behavior rather than claiming full
+sequence coverage. W1 and the release gate remain incomplete.

@@ -527,7 +527,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           new io.vertx.core.json.JsonArray(tracks == null ? java.util.List.of() : tracks.getTrack1DManager().listTracks()
             .stream().map(io.vertx.core.json.JsonObject::mapFrom).toList()),
           workspace == null ? new io.vertx.core.json.JsonObject() : workspace.snapshot());
-        if (verify) {
+        if (verify && !(fingerprintFiles && verifyTracks)) {
           verifySessionAssembly(primary.getChunkedFile(), snapshot.primary());
           if (secondary != null) verifySessionAssembly(secondary.getChunkedFile(), snapshot.secondary());
         }
@@ -539,12 +539,14 @@ public class FileOpHandlersHolder extends HandlersHolder {
             if ("COOLER_WEIGHTS".equals(definition.getType()) && definition.getSourceFile().endsWith("/SECONDARY") && secondary == null)
               throw new IllegalArgumentException("Session weights track references missing secondary source");
           }
-          final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
-          final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
-          try (var candidateTracks = new Track1DManager(dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath())) {
-            candidateTracks.restoreTrackDefinitions(definitions);
-            final var restored = new io.vertx.core.json.JsonArray(candidateTracks.listTracks().stream().map(io.vertx.core.json.JsonObject::mapFrom).toList());
-            if (!restored.equals(snapshot.tracks())) throw new IllegalArgumentException("Session track definitions cannot be restored without changes");
+          if (!(verify && fingerprintFiles)) {
+            final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
+            final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+            try (var candidateTracks = new Track1DManager(dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath())) {
+              candidateTracks.restoreTrackDefinitions(definitions);
+              final var restored = new io.vertx.core.json.JsonArray(candidateTracks.listTracks().stream().map(io.vertx.core.json.JsonObject::mapFrom).toList());
+              if (!restored.equals(snapshot.tracks())) throw new IllegalArgumentException("Session track definitions cannot be restored without changes");
+            }
           }
         }
         if (fingerprintFiles) {
@@ -564,6 +566,16 @@ public class FileOpHandlersHolder extends HandlersHolder {
               if (!path.startsWith(dataDirectory)) throw new IllegalArgumentException("Track resource is outside DATA_DIR");
               track.put("fileFingerprint", io.vertx.core.json.JsonObject.mapFrom(SessionFileFingerprint.compute(path)));
             }
+          }
+        }
+        if (verify && fingerprintFiles && verifyTracks) {
+          final var dataDirectory = ((ShareableWrappers.PathWrapper) map.get("dataDirectory")).getPath();
+          final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+          final var definitions = tracks == null ? java.util.List.<Track1DManager.TrackSummary>of() : tracks.getTrack1DManager().listTracks();
+          try (var candidate = SessionRestoreCandidate.prepare(dataDirectory,
+              processed == null ? dataDirectory.resolve("processed") : processed.getPath(), snapshot, definitions)) {
+            SessionAssemblyRestorer.verifyContactBinMapping(primary.getChunkedFile(), candidate.primary());
+            if (secondary != null) SessionAssemblyRestorer.verifyContactBinMapping(secondary.getChunkedFile(), candidate.secondary());
           }
         }
         return snapshot;
