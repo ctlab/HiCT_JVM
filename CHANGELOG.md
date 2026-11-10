@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Validate nested session visualization options, colors, style bundles, preset actions and duplicate bookmark/preset IDs before replacing the map. Preserve legacy empty-style documents and action-preset colormap placeholders without applying invalid styles.
 - Reject unsupported session versions, malformed view coordinates and container fields, and oversized or excessively nested session documents before opening files or changing the active map. Legacy imports now explain that edited assemblies, full processing graphs and undo history are not included.
 - Refresh contig and scaffold models after secondary replacement, including confirmed mismatches. Keep assembly responses in the primary map's resolution grid so selecting a secondary assembly with a different pyramid does not invalidate the rulers and map coordinates.
 - Prepare secondary-source alignment and metadata before replacement, roll back failed layout synchronization, and retain the old source on errors or cancelled compatibility warnings. Successful replacement clears its old FASTA link; primary FASTA aliases are prepared before publishing new links.

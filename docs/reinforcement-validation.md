@@ -451,3 +451,40 @@ DTO regressions passed. Changed-file ESLint reports only the two existing `any`
 warnings in MainUI and existing resolver notices. No Java runtime code changed;
 the browser used the previously validated immutable 1.0.223 development JAR with
 the newly built external WebUI. Packaged release qualification remains W16 work.
+
+## W1 fifth increment: nested legacy session validation
+
+The pre-mutation validator now checks visualization boolean flags, logarithm bases
+(base one is invalid; non-positive values retain the existing disabled-stage
+convention), quantiles, NaN counts, known signal/weight policies, gradient bounds
+and colors. Both track style records must be complete when supplied; numeric
+width/label fields, border/name-placement enums and label booleans/colors are
+checked. Saved presets use the same validators and validate their action variants,
+palette colors, signal thresholds and duplicate IDs. Bookmark IDs must also be
+unique. Color parsing uses the application's existing ColorTranslator library.
+
+Two compatibility cases were verified against actual saved documents. Legacy
+`trackStyles: {}` means no saved style and is removed from the parsed document
+before application (the previous loader passed it to a routine requiring both
+contigs and scaffolds). Action presets may carry an `Unknown` colormap placeholder;
+it is accepted only in a preset with a validated action, while ordinary unsupported
+colormap types fail visibly. An initial overly strict check rejected this known
+representation; fixture tests caught it before committing.
+
+Evidence: `/tmp/hict-w1-session-nested/` and `/tmp/hict-session-nested-*.log`.
+The browser's fourteen malformed chooser uploads now include string-valued weight
+flags, base-one logs, bad colors, partial styles, reversed ranges and invalid
+preset actions. All retained the edited matrix, manager, view and journal without
+mutation requests. The current UI's downloaded v2 session restored successfully.
+Node tests also load the repository legacy fixture and a real downloaded session.
+WebUI build, changed-file ESLint and API DTO regressions passed; only existing
+ESLint resolver notices and the build's bundle-size warning remain.
+
+This completes more of the legacy field validation, not session format v3. Full
+processing-graph validation/persistence, source fingerprints, assembly round-trip
+verification, cross-references and transactional restoration across backend stages
+remain W1 work. No Java runtime code changed in this increment.
+
+A separate browser run also restored `legacy-session-v2.json` with its empty style
+bundle and FASTA reference, after all fourteen rejection checks, with no browser
+exceptions. Both successful restore paths therefore have runtime evidence.

@@ -10,6 +10,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ('url', 'api', 'output'):
         parser.add_argument('--' + key, required=True)
+    parser.add_argument('--legacy-file', help='Optional legacy fixture to restore instead of the downloaded file')
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -60,6 +61,12 @@ def main():
                 ('wrong-filename', {'version': 2, 'filename': 42}, 'filename'),
                 ('bad-bookmark', {'version': 2, 'savedLocations': [{'location_id': 1}]}, 'center_point'),
                 ('bad-visibility', {'version': 2, 'axisTrackVisibility': {'horizontalHidden': [2]}}, 'horizontalHidden'),
+                ('bad-weight-flag', {'version': 2, 'visualizationOptions': {'applyCoolerWeights': 'false'}}, 'applyCoolerWeights'),
+                ('bad-log-base', {'version': 2, 'visualizationOptions': {'postLogBase': 1}}, 'postLogBase'),
+                ('bad-color', {'version': 2, 'backgroundColor': 'invalid color'}, 'backgroundColor'),
+                ('partial-styles', {'version': 2, 'trackStyles': {'contigs': {}}}, 'trackStyles.contigs'),
+                ('reversed-range', {'version': 2, 'visualizationOptions': {'colormap': {'minSignal': 4, 'maxSignal': 1}}}, 'maxSignal'),
+                ('bad-action', {'version': 2, 'savedVisualizationPresets': [{'option_id': 1, 'name': 'bad', 'action': {'type': 'sequence-overlay', 'mode': 'overlay', 'kind': 'other'}}]}, 'action.kind'),
             ]
             for name, document, field in cases:
                 page.get_by_role('link', name='File', exact=True).click()
@@ -80,10 +87,11 @@ def main():
             page.get_by_role('link', name='File', exact=True).click()
             with page.expect_file_chooser() as chooser:
                 page.get_by_role('link', name='Open session', exact=True).click()
-            chooser.value.set_files(str(output / 'saved-session.json'))
+            chooser.value.set_files(args.legacy_file or str(output / 'saved-session.json'))
             page.get_by_text('Legacy session v2 restores settings', exact=False).wait_for(state='visible')
             page.get_by_text('Session restored', exact=True).wait_for(state='visible')
-            result['checks'].append('valid downloaded v2 settings restore with an explicit legacy limitation notice')
+            result['checks'].append('valid v2 settings restore with an explicit legacy limitation notice')
+            result['restoredFile'] = args.legacy_file or str(output / 'saved-session.json')
             assert not result['pageErrors'], result['pageErrors']
         finally:
             (output / 'results.json').write_text(json.dumps(result, indent=2) + '\n')
