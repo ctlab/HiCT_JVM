@@ -183,6 +183,26 @@ paths:
             text/html:
               schema:
                 type: string
+  /api/v1/assets/swagger-ui.css:
+    get:
+      tags: [Info]
+      summary: Bundled Swagger UI stylesheet
+      operationId: getSwaggerStylesheet
+      responses:
+        '200':
+          description: Local stylesheet
+        '304':
+          description: Asset is unchanged
+  /api/v1/assets/swagger-ui-bundle.js:
+    get:
+      tags: [Info]
+      summary: Bundled Swagger UI JavaScript
+      operationId: getSwaggerBundle
+      responses:
+        '200':
+          description: Local JavaScript bundle
+        '304':
+          description: Asset is unchanged
   /api/v1/openapi:
     get:
       tags: [Info]
@@ -738,17 +758,17 @@ paths:
         - in: query
           name: tile_size
           required: false
-          schema: { type: integer, default: 256 }
+          schema: { type: integer, minimum: 1, maximum: 1024, default: 256 }
           description: Tile edge size for tile-based queries.
         - in: query
           name: rows
           required: false
-          schema: { type: integer }
+          schema: { type: integer, minimum: 1, maximum: 1024 }
           description: Height in pixels for PNG_BY_PIXELS.
         - in: query
           name: cols
           required: false
-          schema: { type: integer }
+          schema: { type: integer, minimum: 1, maximum: 1024 }
           description: Width in pixels for PNG_BY_PIXELS.
       responses:
         '200':
@@ -765,6 +785,10 @@ paths:
               schema:
                 type: string
                 format: binary
+        '400':
+          description: Invalid tile dimensions or coordinates
+        '503':
+          description: The server queue is full. Retry the request shortly.
   /matrix/statistics:
     post:
       tags: [Tiles]

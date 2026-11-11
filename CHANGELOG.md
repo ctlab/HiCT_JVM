@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Long conversions keep running until they finish. Upload inputs are cleaned up after conversion, and completed results stay available for download until they expire.
+- Opening, closing or restoring a map cancels its previous coverage job. FASTA-only maps return blank contact tiles, tile requests have bounded dimensions, and the API reference works offline.
+
 - Failed actions show one message with copyable diagnostics. Background failures remain in Notifications. A full server queue asks you to retry, and a duplicate coverage request reports that preparation is already running.
 
 - Rulers place round base-pair ticks at their true map positions and show contig and scaffold bands. Break marks indicate hidden sequence, and letter zoom shows complete base-pair coordinates.

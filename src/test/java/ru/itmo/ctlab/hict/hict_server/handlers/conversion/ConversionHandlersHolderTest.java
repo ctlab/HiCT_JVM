@@ -5,8 +5,18 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConversionHandlersHolderTest {
+
+  @Test
+  void cleanupExpiresOnlyJobsThatFinishedMoreThanAnHourAgo() {
+    long now = 10_000_000L;
+    assertFalse(ConversionHandlersHolder.isExpired(0, now));
+    assertFalse(ConversionHandlersHolder.isExpired(now - 3_600_000, now));
+    assertTrue(ConversionHandlersHolder.isExpired(now - 3_600_001, now));
+  }
 
   @Test
   void clientFilenamePreservesDataDirectoryRelativeParent() {

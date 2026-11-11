@@ -24,6 +24,7 @@
 
 package ru.itmo.ctlab.hict.hict_server;
 
+import ru.itmo.ctlab.hict.hict_server.handlers.normalization.NormalizationHandlersHolder;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import io.vertx.config.ConfigRetriever;
@@ -178,6 +179,7 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void stop(final Promise<Void> stopPromise) {
+    if (this.normalization != null) this.normalization.close();
     if (this.sequenceAnalysis != null) this.sequenceAnalysis.close();
     if (this.requestTaskScheduler != null) {
       this.requestTaskScheduler.close();
@@ -359,6 +361,8 @@ public class MainVerticle extends AbstractVerticle {
     return port;
   }
 
+  private NormalizationHandlersHolder normalization;
+
   private @NotNull Router createRouter() {
     final var router = Router.router(vertx);
     final var requestStatistics = new RequestStatistics();
@@ -386,7 +390,12 @@ public class MainVerticle extends AbstractVerticle {
       ctx.addBodyEndHandler(ignored -> requestStatistics.recordFinished());
       ctx.next();
     });
-    router.route().handler(BodyHandler.create().setUploadsDirectory("/tmp").setBodyLimit(2L * 1024 * 1024 * 1024));
+    final var dataDirectory = ((ShareableWrappers.PathWrapper)
+      vertx.sharedData().getLocalMap("hict_server").get("dataDirectory")).getPath();
+    router.route().handler(BodyHandler.create()
+      .setUploadsDirectory(dataDirectory.resolve(ConversionHandlersHolder.UPLOAD_DIRECTORY_NAME).toString())
+      .setDeleteUploadedFilesOnEnd(true)
+      .setBodyLimit(2L * 1024 * 1024 * 1024));
 
     vertx.exceptionHandler(event -> {
       log.error("An exception was caught at the top level", event);
@@ -398,7 +407,8 @@ public class MainVerticle extends AbstractVerticle {
     final List<HandlersHolder> handlersHolders = new ArrayList<>();
     handlersHolders.add(new FSHandlersHolder(vertx));
     handlersHolders.add(new TileHandlersHolder(vertx));
-    handlersHolders.add(new FileOpHandlersHolder(vertx));
+    this.normalization = new NormalizationHandlersHolder(vertx);
+    handlersHolders.add(new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange));
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
@@ -409,7 +419,7 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new InfoHandlersHolder(vertx, requestStatistics));
     handlersHolders.add(new ApiDocsHandlersHolder());
     handlersHolders.add(new TrackHandlersHolder(vertx));
-    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.normalization.NormalizationHandlersHolder(vertx));
+    handlersHolders.add(this.normalization);
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.fastaonly.FastaOnlyHandlersHolder(vertx));
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.examples.ExamplesHandlersHolder(vertx));
 

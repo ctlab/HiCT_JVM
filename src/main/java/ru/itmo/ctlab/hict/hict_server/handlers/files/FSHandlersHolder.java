@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.files;
 
+import static ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionHandlersHolder.UPLOAD_DIRECTORY_NAME;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
@@ -307,11 +309,13 @@ public class FSHandlersHolder extends HandlersHolder {
 
   private static @NotNull List<Path> listRegularFiles(final @NotNull Path dataDirectory) {
     final var files = new ArrayList<Path>();
+    final var uploadDirectory = dataDirectory.resolve(UPLOAD_DIRECTORY_NAME);
     try {
       Files.walkFileTree(dataDirectory, new SimpleFileVisitor<>() {
         @Override
         public @NotNull FileVisitResult preVisitDirectory(final @NotNull Path dir,
                                                           final @NotNull BasicFileAttributes attrs) {
+          if (dir.equals(uploadDirectory)) return FileVisitResult.SKIP_SUBTREE;
           if (!dir.equals(dataDirectory) && attrs.isOther()) {
             log.debug("Skipping non-standard directory while listing files: {}", dir);
             return FileVisitResult.SKIP_SUBTREE;
@@ -361,6 +365,10 @@ public class FSHandlersHolder extends HandlersHolder {
     if (!directory.startsWith(normalizedDataDirectory)) {
       throw new IllegalArgumentException("Directory is outside the configured data directory");
     }
+    final var uploadDirectory = normalizedDataDirectory.resolve(UPLOAD_DIRECTORY_NAME);
+    if (directory.startsWith(uploadDirectory)) {
+      throw new IllegalArgumentException("Conversion uploads are available through the conversion job");
+    }
     if (!Files.isDirectory(directory)) {
       throw new IllegalArgumentException("Directory does not exist: " + cleanRequestedDirectory);
     }
@@ -368,6 +376,7 @@ public class FSHandlersHolder extends HandlersHolder {
     final var entries = new ArrayList<FileEntry>();
     try (final var stream = Files.list(directory)) {
       stream.forEach(path -> {
+        if (path.equals(uploadDirectory)) return;
         if (Files.isDirectory(path)) {
           entries.add(toDetailedFileEntry(normalizedDataDirectory, path, "directory"));
         } else if (Files.isRegularFile(path)) {

@@ -30,7 +30,6 @@ import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
@@ -66,10 +65,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 
-@RequiredArgsConstructor
 @Slf4j
 public class FileOpHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private final Runnable cancelCoverage;
+
+  public FileOpHandlersHolder(Vertx vertx) {
+    this(vertx, () -> {});
+  }
+
+  public FileOpHandlersHolder(Vertx vertx, Runnable cancelCoverage) {
+    this.vertx = vertx;
+    this.cancelCoverage = cancelCoverage;
+  }
+
   private static final String PRIMARY_CHUNKED_FILE_KEY = "chunkedFile";
   private static final String SECONDARY_CHUNKED_FILE_KEY = "chunkedFileSecondary";
   private static final String OPENED_SECONDARY_FILENAME_KEY = "openedSecondaryFilename";
@@ -176,23 +185,27 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var oldPrimary = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
           final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
           final var oldTracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-          map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
-          map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(candidateTracks));
-          map.put("openedFilename", requestedFilename);
-          map.put("workspaceStateStore", workspace);
-          map.put("TileStatisticHolder", candidateStatistics);
-          map.remove(SECONDARY_CHUNKED_FILE_KEY);
-          map.remove(OPENED_SECONDARY_FILENAME_KEY);
-          map.remove(SECONDARY_COMPATIBILITY_KEY);
-          map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
-          map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-          map.remove("linkedFastaPath");
-          map.remove("linkedFastaFilename");
-          map.remove(PRIMARY_FASTA_PATH_KEY);
-          map.remove(PRIMARY_FASTA_FILENAME_KEY);
-          map.remove(SECONDARY_FASTA_PATH_KEY);
-          map.remove(SECONDARY_FASTA_FILENAME_KEY);
-          TileHandlersHolder.clearExpectedProfileCache(map);
+          synchronized (map) {
+            cancelCoverage.run();
+            map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
+            map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(candidateTracks));
+            map.put("openedFilename", requestedFilename);
+            map.put("workspaceStateStore", workspace);
+            map.put("TileStatisticHolder", candidateStatistics);
+            map.remove(SECONDARY_CHUNKED_FILE_KEY);
+            map.remove(OPENED_SECONDARY_FILENAME_KEY);
+            map.remove(SECONDARY_COMPATIBILITY_KEY);
+            map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
+            map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+            map.remove("linkedFastaPath");
+            map.remove("linkedFastaFilename");
+            map.remove(PRIMARY_FASTA_PATH_KEY);
+            map.remove(PRIMARY_FASTA_FILENAME_KEY);
+            map.remove(SECONDARY_FASTA_PATH_KEY);
+            map.remove(SECONDARY_FASTA_FILENAME_KEY);
+            TileHandlersHolder.clearExpectedProfileCache(map);
+            scheduler.bumpAssemblyGeneration();
+          }
           // Cleanup failures must not report a failed replacement after publication.
           if (oldTracks != null) {
             try { oldTracks.getTrack1DManager().close(); }
@@ -202,11 +215,6 @@ public class FileOpHandlersHolder extends HandlersHolder {
           closeChunkedFileWrapper(oldSecondary);
           try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
           catch (Exception failure) { log.warn("Superseded overlay cleanup deferred", failure); }
-
-          final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
-          if (schedulerWrapper != null) {
-            schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
-          }
 
           map.put("openProgress", new io.vertx.core.json.JsonObject()
             .put("stage", "done")
@@ -628,44 +636,48 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var oldPrimary = (ShareableWrappers.ChunkedFileWrapper) map.get(PRIMARY_CHUNKED_FILE_KEY);
         final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
         final var oldTracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-        map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.primary()));
-        map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(owned.tracks()));
-        map.put("openedFilename", primaryName);
-        map.put("workspaceStateStore", workspace);
-        map.put("TileStatisticHolder", statistics);
-        map.put(RenderPipelineConfig.LOCAL_MAP_KEY, new ShareableWrappers.RenderPipelineConfigWrapper(owned.pipeline()));
-        map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(owned.visualization()));
-        if (owned.secondary() != null) {
-          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.secondary()));
-          map.put(OPENED_SECONDARY_FILENAME_KEY, saved.secondary().getString("filename"));
-          map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
-        } else {
-          map.remove(SECONDARY_CHUNKED_FILE_KEY);
-          map.remove(OPENED_SECONDARY_FILENAME_KEY);
-          map.remove(SECONDARY_COMPATIBILITY_KEY);
-        }
-        map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
-        map.put(ASSEMBLY_SOURCE_KEY, saved.assemblySource());
-        map.remove("linkedFastaPath");
-        map.remove("linkedFastaFilename");
-        map.remove(PRIMARY_FASTA_PATH_KEY);
-        map.remove(PRIMARY_FASTA_FILENAME_KEY);
-        map.remove(SECONDARY_FASTA_PATH_KEY);
-        map.remove(SECONDARY_FASTA_FILENAME_KEY);
         final String primaryFasta = saved.primary().getString("fastaFilename", "");
-        if (owned.primaryFasta() != null && !primaryFasta.isBlank()) {
-          final var fastaPath = dataDirectory.resolve(primaryFasta).normalize().toAbsolutePath();
-          map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
-          map.put("linkedFastaFilename", primaryFasta);
-          map.put(PRIMARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
-          map.put(PRIMARY_FASTA_FILENAME_KEY, primaryFasta);
-        }
         final String secondaryFasta = saved.secondary() == null ? "" : saved.secondary().getString("fastaFilename", "");
-        if (owned.secondaryFasta() != null && !secondaryFasta.isBlank()) {
-          map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(dataDirectory.resolve(secondaryFasta).normalize().toAbsolutePath()));
-          map.put(SECONDARY_FASTA_FILENAME_KEY, secondaryFasta);
+        synchronized (map) {
+          cancelCoverage.run();
+          map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.primary()));
+          map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(owned.tracks()));
+          map.put("openedFilename", primaryName);
+          map.put("workspaceStateStore", workspace);
+          map.put("TileStatisticHolder", statistics);
+          map.put(RenderPipelineConfig.LOCAL_MAP_KEY, new ShareableWrappers.RenderPipelineConfigWrapper(owned.pipeline()));
+          map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(owned.visualization()));
+          if (owned.secondary() != null) {
+            map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.secondary()));
+            map.put(OPENED_SECONDARY_FILENAME_KEY, saved.secondary().getString("filename"));
+            map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
+          } else {
+            map.remove(SECONDARY_CHUNKED_FILE_KEY);
+            map.remove(OPENED_SECONDARY_FILENAME_KEY);
+            map.remove(SECONDARY_COMPATIBILITY_KEY);
+          }
+          map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
+          map.put(ASSEMBLY_SOURCE_KEY, saved.assemblySource());
+          map.remove("linkedFastaPath");
+          map.remove("linkedFastaFilename");
+          map.remove(PRIMARY_FASTA_PATH_KEY);
+          map.remove(PRIMARY_FASTA_FILENAME_KEY);
+          map.remove(SECONDARY_FASTA_PATH_KEY);
+          map.remove(SECONDARY_FASTA_FILENAME_KEY);
+          if (owned.primaryFasta() != null && !primaryFasta.isBlank()) {
+            final var fastaPath = dataDirectory.resolve(primaryFasta).normalize().toAbsolutePath();
+            map.put("linkedFastaPath", new ShareableWrappers.PathWrapper(fastaPath));
+            map.put("linkedFastaFilename", primaryFasta);
+            map.put(PRIMARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(fastaPath));
+            map.put(PRIMARY_FASTA_FILENAME_KEY, primaryFasta);
+          }
+          if (owned.secondaryFasta() != null && !secondaryFasta.isBlank()) {
+            map.put(SECONDARY_FASTA_PATH_KEY, new ShareableWrappers.PathWrapper(dataDirectory.resolve(secondaryFasta).normalize().toAbsolutePath()));
+            map.put(SECONDARY_FASTA_FILENAME_KEY, secondaryFasta);
+          }
+          TileHandlersHolder.clearExpectedProfileCache(map);
+          scheduler.bumpAssemblyGeneration();
         }
-        TileHandlersHolder.clearExpectedProfileCache(map);
         // Cleanup failures must not report a failed restore after publication.
         if (oldTracks != null) {
           try { oldTracks.getTrack1DManager().close(); }
@@ -675,8 +687,6 @@ public class FileOpHandlersHolder extends HandlersHolder {
         closeChunkedFileWrapper(oldSecondary);
         try { ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceOverlayCleanup.collect(map); }
         catch (Exception failure) { log.warn("Superseded overlay cleanup deferred", failure); }
-        final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
-        if (schedulerWrapper != null) schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
         map.put("openProgress", new io.vertx.core.json.JsonObject().put("stage", "done").put("progress", 1.0));
         return new io.vertx.core.json.JsonObject()
           .put("filename", primaryName)
@@ -741,37 +751,35 @@ public class FileOpHandlersHolder extends HandlersHolder {
         null,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get(PRIMARY_CHUNKED_FILE_KEY)));
-          if (chunkedFileWrapper != null) {
-            try {
-              chunkedFileWrapper.getChunkedFile().close();
-            } catch (Exception e) {
-              log.warn("Failed to close chunked file", e);
-            }
+          final ShareableWrappers.ChunkedFileWrapper primary;
+          final ShareableWrappers.ChunkedFileWrapper secondary;
+          final ShareableWrappers.Track1DManagerWrapper tracks;
+          synchronized (map) {
+            cancelCoverage.run();
+            primary = (ShareableWrappers.ChunkedFileWrapper) map.remove(PRIMARY_CHUNKED_FILE_KEY);
+            secondary = (ShareableWrappers.ChunkedFileWrapper) map.remove(SECONDARY_CHUNKED_FILE_KEY);
+            tracks = (ShareableWrappers.Track1DManagerWrapper) map.remove("Track1DManager");
+            map.remove(OPENED_SECONDARY_FILENAME_KEY);
+            map.remove(SECONDARY_COMPATIBILITY_KEY);
+            map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
+            map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+            map.remove("TileStatisticHolder");
+            map.remove("openedFilename");
+            map.remove("workspaceStateStore");
+            map.remove("linkedFastaPath");
+            map.remove("linkedFastaFilename");
+            map.remove(PRIMARY_FASTA_PATH_KEY);
+            map.remove(PRIMARY_FASTA_FILENAME_KEY);
+            map.remove(SECONDARY_FASTA_PATH_KEY);
+            map.remove(SECONDARY_FASTA_FILENAME_KEY);
+            TileHandlersHolder.clearExpectedProfileCache(map);
+            scheduler.bumpAssemblyGeneration();
           }
-          map.remove(PRIMARY_CHUNKED_FILE_KEY);
-          closeChunkedFileWrapper((ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY));
-          map.remove(SECONDARY_CHUNKED_FILE_KEY);
-          map.remove(OPENED_SECONDARY_FILENAME_KEY);
-          map.remove(SECONDARY_COMPATIBILITY_KEY);
-          map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-          map.remove("TileStatisticHolder");
-          map.remove("openedFilename");
-          map.remove("workspaceStateStore");
-          map.remove("linkedFastaPath");
-          map.remove("linkedFastaFilename");
-          map.remove(PRIMARY_FASTA_PATH_KEY);
-          map.remove(PRIMARY_FASTA_FILENAME_KEY);
-          map.remove(SECONDARY_FASTA_PATH_KEY);
-          map.remove(SECONDARY_FASTA_FILENAME_KEY);
-          final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.remove("Track1DManager");
-          if (trackManagerWrapper != null) {
-            trackManagerWrapper.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
-            trackManagerWrapper.getTrack1DManager().close();
-          }
-          final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
-          if (schedulerWrapper != null) {
-            schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
+          closeChunkedFileWrapper(primary);
+          closeChunkedFileWrapper(secondary);
+          if (tracks != null) {
+            tracks.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
+            tracks.getTrack1DManager().close();
           }
           return new io.vertx.core.json.JsonObject().put("status", "closed");
         },

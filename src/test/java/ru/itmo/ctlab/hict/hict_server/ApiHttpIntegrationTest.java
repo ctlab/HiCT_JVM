@@ -55,6 +55,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -239,6 +240,20 @@ class ApiHttpIntegrationTest {
     assertEquals(200, docsResponse.statusCode());
     assertTrue(docsResponse.body().contains("SwaggerUIBundle"));
     assertTrue(docsResponse.body().contains("/api/v1/openapi.yaml"));
+    assertTrue(docsResponse.body().contains("validatorUrl: null"));
+    assertTrue(!docsResponse.body().contains("unpkg.com"));
+    for (final var asset : Map.of(
+      "swagger-ui.css", "text/css",
+      "swagger-ui-bundle.js", "text/javascript"
+    ).entrySet()) {
+      final var path = "/api/v1/assets/" + asset.getKey();
+      final var response = get(path);
+      assertEquals(200, response.statusCode(), response.body());
+      assertTrue(response.headers().firstValue("content-type").orElse("").startsWith(asset.getValue()));
+      assertTrue(response.body().length() > 1000);
+      final var etag = response.headers().firstValue("etag").orElseThrow();
+      assertEquals(304, get(path, Map.of("If-None-Match", etag)).statusCode());
+    }
     final var docsEtag = docsResponse.headers().firstValue("etag").orElse("");
     assertTrue(!docsEtag.isBlank());
 
@@ -262,8 +277,60 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void tileRequestsRejectOversizedDimensionsAndOverflowingOffsets() throws Exception {
+    startServerWithInfoAndFileHandlers();
+    for (final var query : List.of(
+      "tile_size=1025", "tile_size=0",
+      "format=PNG_BY_PIXELS&rows=1&cols=1025",
+      "format=PNG_BY_PIXELS&rows=1025&cols=1",
+      "row=9223372036854775807&tile_size=256",
+      "format=PNG_BY_PIXELS&row=9223372036854775807&rows=2&cols=1"
+    )) {
+      final var response = get("/get_tile?" + query);
+      assertEquals(400, response.statusCode(), query + ": " + response.body());
+    }
+  }
+
+  @Test
+  void fastaOnlySourcesReturnBlankTilesAndRejectContactNormalization() throws Exception {
+    final var fasta = tempDataDir.resolve("reference.fa");
+    Files.writeString(fasta, ">sequence\nACGTACGTACGT\n");
+    final var scan = ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly.scan(fasta, 100, () -> false, null);
+    ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly.write(
+      scan, tempDataDir.resolve("sequence.hict.hdf5"), () -> false, null);
+    startServerWithInfoAndFileHandlers(router ->
+      new ru.itmo.ctlab.hict.hict_server.handlers.normalization.NormalizationHandlersHolder(vertx).addHandlersToRouter(router));
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(
+        new SimpleVisualizationOptions(0, 0, false, false, false,
+          new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+
+    final var opened = post("/open", "{\"filename\":\"sequence.hict.hdf5\"}");
+    assertEquals(200, opened.statusCode(), opened.body());
+    final var resolution = new JsonObject(opened.body()).getJsonArray("resolutions").getValue(0);
+    final var tile = get("/get_tile?bpResolution=" + resolution + "&tile_size=4");
+    assertEquals(200, tile.statusCode(), tile.body());
+    final var image = new JsonObject(tile.body()).getString("image");
+    final var png = java.util.Base64.getDecoder().decode(image.substring("data:image/png;base64,".length()));
+    final var decoded = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+    assertEquals(4, decoded.getWidth());
+    assertEquals(4, decoded.getHeight());
+    for (int row = 0; row < 4; row++) for (int col = 0; col < 4; col++) {
+      assertEquals(0, decoded.getRGB(col, row) >>> 24);
+    }
+    final var stats = post("/matrix/statistics", new JsonObject().put("bpResolution", resolution).encode());
+    assertEquals(200, stats.statusCode(), stats.body());
+    assertEquals(0, new JsonObject(stats.body()).getInteger("count"));
+    final var coverage = post("/normalization/coverage/prepare", "{}");
+    assertEquals(409, coverage.statusCode(), coverage.body());
+    assertTrue(coverage.body().contains("needs contact data"));
+  }
+
+  @Test
   void infoAndFileEndpointsRespondOverHttpWithScheduler() throws Exception {
     Files.createDirectories(tempDataDir.resolve("build/quad"));
+    final var uploads = Files.createDirectories(tempDataDir.resolve(ConversionHandlersHolder.UPLOAD_DIRECTORY_NAME));
+    Files.writeString(uploads.resolve("output-private.hict.hdf5"), "temporary");
     Files.writeString(tempDataDir.resolve("build/quad/a.hict.hdf5"), "x", StandardCharsets.UTF_8);
     Files.writeString(tempDataDir.resolve("build/quad/source.hic"), "x", StandardCharsets.UTF_8);
     Files.writeString(tempDataDir.resolve("build/quad/b.cool"), "x", StandardCharsets.UTF_8);
@@ -286,6 +353,10 @@ class ApiHttpIntegrationTest {
     final var files = post("/list_files", "{}");
     assertEquals(200, files.statusCode());
     assertTrue(files.body().contains("a.hict.hdf5"));
+    assertTrue(!files.body().contains("output-private.hict.hdf5"));
+    final var root = post("/list_directory", "{}");
+    assertEquals(200, root.statusCode(), root.body());
+    assertTrue(!root.body().contains(ConversionHandlersHolder.UPLOAD_DIRECTORY_NAME));
 
     final var detailed = post("/list_files_detailed", "{}");
     assertEquals(200, detailed.statusCode());

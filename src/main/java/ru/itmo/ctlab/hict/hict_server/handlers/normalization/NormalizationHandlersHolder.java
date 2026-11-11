@@ -59,19 +59,34 @@ public class NormalizationHandlersHolder extends HandlersHolder {
     this.vertx = vertx;
   }
 
+  public void cancelForMapChange() {
+    service.invalidateForMapChange();
+  }
+
+  public void close() {
+    service.close();
+  }
+
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
     router.post("/normalization/coverage/prepare").handler(ctx -> {
-      final var files = openFiles();
-      if (files.isEmpty()) {
-        ctx.fail(new HttpException(409, "Open a map first"));
-        return;
-      }
-      try {
-        final var status = service.start(files, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES);
-        ctx.response().putHeader("content-type", "application/json").end(Json.encode(describe(status, files)));
-      } catch (CoverageNormalizationService.AlreadyRunningException conflict) {
-        ctx.fail(new HttpException(409, conflict.getMessage()));
+      final var map = vertx.sharedData().getLocalMap("hict_server");
+      synchronized (map) {
+        final var files = openFiles();
+        if (files.isEmpty()) {
+          ctx.fail(new HttpException(409, "Open a map first"));
+          return;
+        }
+        if (files.stream().anyMatch(NormalizationHandlersHolder::lacksContactData)) {
+          ctx.fail(new HttpException(409, "Square-root coverage needs contact data in every open source"));
+          return;
+        }
+        try {
+          final var status = service.start(files, CoverageWeightsBuilder.DEFAULT_BUDGET_BYTES);
+          ctx.response().putHeader("content-type", "application/json").end(Json.encode(describe(status, files)));
+        } catch (CoverageNormalizationService.AlreadyRunningException conflict) {
+          ctx.fail(new HttpException(409, conflict.getMessage()));
+        }
       }
     });
     router.post("/normalization/coverage/status").handler(ctx -> {
@@ -149,6 +164,11 @@ public class NormalizationHandlersHolder extends HandlersHolder {
       files.add(secondary.getChunkedFile());
     }
     return files;
+  }
+
+  private static boolean lacksContactData(ChunkedFile file) {
+    return file.getSourceMetadata().contactDataState()
+      == ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.ContactDataState.ABSENT;
   }
 
   private long bumpTileVersion(final @NotNull ChunkedFile chunkedFile, final @NotNull RequestTaskScheduler scheduler) {

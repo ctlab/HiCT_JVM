@@ -110,6 +110,16 @@ public final class CoverageNormalizationService {
     }
   }
 
+  public void invalidateForMapChange() {
+    synchronized (lock) {
+      cancelFlag.set(true);
+      final boolean running = status.state() == State.RUNNING;
+      status = new Status(running ? State.CANCELLED : State.IDLE, 0.0d,
+        running ? "Cancelled because the map changed" : "Not started",
+        CoverageNormalizer.ALGORITHM_VERSION, null, 0L);
+    }
+  }
+
   private void run(final long jobId, final @NotNull List<ChunkedFile> files, final long budgetBytes,
                    final @NotNull AtomicBoolean cancel) {
     try {
@@ -130,6 +140,8 @@ public final class CoverageNormalizationService {
       }
       // Publish only now, so nothing changes unless every file finished.
       synchronized (lock) {
+        if (status.jobId() != jobId) return;
+        if (cancel.get()) throw new CoverageNormalizer.CancelledException();
         for (int i = 0; i < files.size(); i++) {
           files.get(i).getNormalizationWeights().publish(prepared.get(i));
         }
@@ -137,11 +149,17 @@ public final class CoverageNormalizationService {
       }
     } catch (final CoverageNormalizer.CancelledException cancelled) {
       synchronized (lock) {
+        if (status.jobId() != jobId) return;
         status = new Status(State.CANCELLED, status.progress(), "Cancelled", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
       }
     } catch (final Throwable failure) {
-      log.warn("Coverage normalization failed", failure);
       synchronized (lock) {
+        if (status.jobId() != jobId) return;
+        if (cancel.get()) {
+          status = new Status(State.CANCELLED, status.progress(), "Cancelled", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
+          return;
+        }
+        log.warn("Coverage normalization failed", failure);
         final var message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
         status = new Status(State.FAILED, status.progress(), "Failed", CoverageNormalizer.ALGORITHM_VERSION, message, jobId);
       }
@@ -158,7 +176,7 @@ public final class CoverageNormalizationService {
   }
 
   public void close() {
-    cancelFlag.set(true);
+    invalidateForMapChange();
     executor.shutdownNow();
   }
 }

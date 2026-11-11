@@ -73,6 +73,7 @@ public class TileHandlersHolder extends HandlersHolder {
   private static final byte[] TRANSPARENT_PNG_BYTES = createTransparentPng();
   private static final String TRANSPARENT_PNG_BASE64 = Base64.getEncoder().encodeToString(TRANSPARENT_PNG_BYTES);
   private static final int MAX_MATRIX_QUERY_ELEMENTS = Integer.getInteger("HICT_MATRIX_QUERY_MAX_ELEMENTS", 16_777_216);
+  private static final int MAX_TILE_EDGE = 1024;
 
   public static void clearExpectedProfileCache(final @NotNull LocalMap<String, Object> map) {
     map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
@@ -487,6 +488,9 @@ public class TileHandlersHolder extends HandlersHolder {
           final var bpResolution = request.getLong("bpResolution");
           if (bpResolution == null || !file.getResolutionToIndex().containsKey(bpResolution))
             throw new IllegalArgumentException("Resolution is not available in the open map");
+          if (isSequenceOnly(file)) {
+            return new JsonObject().put("revision", revision).put("size", 0).put("count", 0);
+          }
           final var size = file.getContigTree().getLengthInUnits(QueryLengthUnit.PIXELS,
             ResolutionDescriptor.fromBpResolution(bpResolution, file));
           final var result = new JsonObject().put("revision", revision).put("size", size);
@@ -544,24 +548,49 @@ public class TileHandlersHolder extends HandlersHolder {
     final int tileHeight;
     final int tileWidth;
     final var format = TileFormat.valueOf(ctx.request().getParam("format", "JSON_PNG_WITH_RANGES"));
+    if (format == TileFormat.PNG_BY_PIXELS) {
+      tileHeight = tileEdge(ctx.request().getParam("rows", "0"), "rows");
+      tileWidth = tileEdge(ctx.request().getParam("cols", "0"), "cols");
+    } else {
+      tileHeight = tileEdge(ctx.request().getParam("tile_size", "256"), "tile_size");
+      tileWidth = tileHeight;
+    }
+    final long startRowPx, startColPx, endRowPx, endColPx;
+    try {
+      startRowPx = format == TileFormat.PNG_BY_PIXELS ? row : Math.multiplyExact(row, tileHeight);
+      startColPx = format == TileFormat.PNG_BY_PIXELS ? col : Math.multiplyExact(col, tileWidth);
+      endRowPx = Math.addExact(startRowPx, tileHeight);
+      endColPx = Math.addExact(startColPx, tileWidth);
+    } catch (ArithmeticException overflow) {
+      throw new io.vertx.ext.web.handler.HttpException(400, "Tile coordinates are outside the supported range");
+    }
 
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-    final var primaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
-    if (primaryChunkedFileWrapper == null) {
-      throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
+    final ChunkedFile chunkedFile;
+    final ChunkedFile secondaryChunkedFile;
+    final ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options;
+    final RenderPipelineConfig renderPipelineConfig;
+    final TileStatisticHolder stats;
+    final Track1DManager track1DManager;
+    synchronized (map) {
+      final var primary = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
+      if (primary == null) {
+        throw new io.vertx.ext.web.handler.HttpException(409, "Open a map before requesting tiles");
+      }
+      chunkedFile = primary.getChunkedFile();
+      final var secondary = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFileSecondary");
+      secondaryChunkedFile = secondary != null ? secondary.getChunkedFile() : null;
+      final var visualization = (ShareableWrappers.SimpleVisualizationOptionsWrapper) map.get("visualizationOptions");
+      stats = (TileStatisticHolder) map.get("TileStatisticHolder");
+      if (visualization == null || stats == null) {
+        throw new IllegalStateException("The open map has no visualization state");
+      }
+      options = visualization.getSimpleVisualizationOptions();
+      final var pipeline = (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
+      renderPipelineConfig = pipeline != null ? pipeline.getRenderPipelineConfig() : RenderPipelineConfig.disabled();
+      final var tracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+      track1DManager = tracks != null ? tracks.getTrack1DManager() : null;
     }
-    final var chunkedFile = primaryChunkedFileWrapper.getChunkedFile();
-    final var secondaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFileSecondary")));
-    final var secondaryChunkedFile = secondaryChunkedFileWrapper != null ? secondaryChunkedFileWrapper.getChunkedFile() : null;
-    final var visualizationOptionsWrapper = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) (map.get("visualizationOptions")));
-    if (visualizationOptionsWrapper == null) {
-      throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
-    }
-    final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
-    final var renderPipelineWrapper = (ShareableWrappers.RenderPipelineConfigWrapper) map.get(RenderPipelineConfig.LOCAL_MAP_KEY);
-    final var renderPipelineConfig = renderPipelineWrapper != null
-      ? renderPipelineWrapper.getRenderPipelineConfig()
-      : RenderPipelineConfig.disabled();
     final var requestedSourceParam = ctx.request().getParam("source");
     final var sourceSpecificRequest = requestedSourceParam != null && !requestedSourceParam.isBlank();
     final var requestedSource = "SECONDARY".equalsIgnoreCase(requestedSourceParam)
@@ -587,11 +616,6 @@ public class TileHandlersHolder extends HandlersHolder {
       level = resolutionLookupChunkedFile.getResolutions().length - Integer.parseInt(ctx.request().getParam("level", "0"));
     }
 
-    final var stats = (TileStatisticHolder) map.get("TileStatisticHolder");
-    if (stats == null) {
-      throw new RuntimeException("Tile statistics is not present in the local map, maybe the file is not yet opened?");
-    }
-
     var currentVersion = stats.versionCounter().get();
     long version = requestedVersion;
     if (version < currentVersion) {
@@ -601,26 +625,12 @@ public class TileHandlersHolder extends HandlersHolder {
       currentVersion = stats.versionCounter().get();
     } while ((currentVersion < version) && !stats.versionCounter().compareAndSet(currentVersion, version));
 
-    final long startRowPx, startColPx, endRowPx, endColPx;
-    if (format == TileFormat.PNG_BY_PIXELS) {
-      startRowPx = row;
-      startColPx = col;
-      endRowPx = startRowPx + Long.parseLong(ctx.request().getParam("rows", "0"));
-      endColPx = startColPx + Long.parseLong(ctx.request().getParam("cols", "0"));
-      tileHeight = (int) (endRowPx - startRowPx);
-      tileWidth = (int) (endColPx - startColPx);
-    } else {
-      tileHeight = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
-      tileWidth = Integer.parseInt(ctx.request().getParam("tile_size", "256"));
-      startRowPx = row * tileHeight;
-      endRowPx = (row + 1) * tileHeight;
-      startColPx = col * tileWidth;
-      endColPx = (col + 1) * tileWidth;
+    if (isSequenceOnly(requestedChunkedFile)
+      && (sourceSpecificRequest || secondaryChunkedFile == null || isSequenceOnly(secondaryChunkedFile))) {
+      return encodeTileImage(new BufferedImage(tileWidth, tileHeight, BufferedImage.TYPE_INT_ARGB),
+        format, stats, chunkedFile);
     }
-
     final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(level);
-    final var trackManagerWrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
-    final Track1DManager track1DManager = trackManagerWrapper != null ? trackManagerWrapper.getTrack1DManager() : null;
 
     if (sourceSpecificRequest) {
       final var tileSignals = new TileSignalStatistics();
@@ -725,6 +735,20 @@ public class TileHandlersHolder extends HandlersHolder {
       stats,
       chunkedFile
     );
+  }
+
+  private static int tileEdge(String raw, String name) {
+    final long edge = Long.parseLong(raw);
+    if (edge < 1 || edge > MAX_TILE_EDGE) {
+      throw new io.vertx.ext.web.handler.HttpException(400, name + " must be between 1 and " + MAX_TILE_EDGE + " pixels");
+    }
+    return (int) edge;
+  }
+
+  private static boolean isSequenceOnly(ChunkedFile file) {
+    final var metadata = file.getSourceMetadata();
+    return metadata.units() == ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.Units.SEQUENCE_ONLY
+      && metadata.contactDataState() == ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.ContactDataState.ABSENT;
   }
 
   private @NotNull BufferedImage padTileImage(

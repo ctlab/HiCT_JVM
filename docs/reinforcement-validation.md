@@ -1179,3 +1179,23 @@ message per action, and checked the copied diagnostics. It also verified that co
 unhandled errors stayed out of toasts and that a second coverage preparation returned
 HTTP 409. The JVM scheduler test verified HTTP 503 for a saturated queue and no leaked
 task tracking across ten repetitions. Full JVM and WebUI checks passed.
+
+## Server resource lifecycle and offline API reference (U6)
+
+The conversion expiry clock starts at completion. Multipart uploads are staged under
+DATA_DIR and removed from the dataset listing. The request releases its upload after
+submission, the worker removes the staged input when it ends, and the result remains
+available through the job until expiry. Tile edges are limited to 1024 pixels, and
+overflowing coordinates return HTTP 400.
+
+Map replacement, close and session restore invalidate the coverage job and tile
+generation before closing previous resources. FASTA-only contact tiles and statistics
+return empty results without scanning blocks, and coverage preparation returns HTTP 409.
+Swagger UI 5.30.2 is bundled and its external validator is disabled.
+[Maven Central artifact](https://central.sonatype.com/artifact/org.webjars/swagger-ui/5.30.2).
+
+The JVM suite passed, including expiry boundaries, upload listing, invalid tile dimensions,
+FASTA-only responses, offline assets, and atomic session restore. Chromium rendered the
+API reference with external requests blocked, converted and downloaded a multipart
+HiCT upload, verified staged input cleanup, and confirmed that close, open and restore
+cancel a running coverage job.

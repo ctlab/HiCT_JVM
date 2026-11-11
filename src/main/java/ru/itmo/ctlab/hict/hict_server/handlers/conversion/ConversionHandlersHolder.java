@@ -45,6 +45,7 @@ import java.util.regex.Pattern;
 public class ConversionHandlersHolder extends HandlersHolder {
 
     private final Vertx vertx;
+    public static final String UPLOAD_DIRECTORY_NAME = ".hict-uploads";
     private static final long MAX_UPLOAD_BYTES = 2L * 1024 * 1024 * 1024;
     private static final long JOB_TTL_MS = 60 * 60 * 1000;
     private static final int MAX_CONVERSION_LOG_LINES = 1_000;
@@ -114,19 +115,22 @@ public class ConversionHandlersHolder extends HandlersHolder {
                 RequestTaskScheduler.CancellationDomain.EXPORT,
                 () -> {
                     cleanupOldJobs();
+                    Path sourcePath = null;
+                    Path outputPath = null;
+                    ConversionJob job = null;
+                    boolean submitted = false;
                     try {
                         final var upload = ctx.fileUploads().stream()
                             .findFirst()
                             .orElseThrow(() -> new IllegalArgumentException("No file uploaded"));
-                        final var sourcePath = Path.of(upload.uploadedFileName());
-
-                        if (Files.size(sourcePath) > MAX_UPLOAD_BYTES) {
-                            Files.deleteIfExists(sourcePath);
+                        final var uploadPath = Path.of(upload.uploadedFileName());
+                        if (Files.size(uploadPath) > MAX_UPLOAD_BYTES) {
                             throw new IllegalArgumentException("Uploaded file is too large");
                         }
+                        final var originalName = Path.of(upload.fileName()).getFileName();
+                        if (originalName == null) throw new IllegalArgumentException("Uploaded file has no name");
                         final var req = ctx.request();
-                        final var direction = ConversionDirection.fromRequestOrSource(req.getParam("direction"), sourcePath);
-                        final var outputPath = Files.createTempFile("hict-converter-out-", direction.outputExtension());
+                        final var direction = ConversionDirection.fromRequestOrSource(req.getParam("direction"), originalName);
 
                         final var resolutionCsv = req.getParam("resolutions");
                         final var resolutions = parseResolutions(resolutionCsv);
@@ -156,6 +160,13 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var agpPath = useAgp
                           ? resolveOptionalAssemblyPath(dataDirectory, agpPathRaw).toString()
                           : ConversionOptions.NO_AGP;
+                        final var uploadDirectory = Files.createDirectories(dataDirectory.resolve(UPLOAD_DIRECTORY_NAME));
+                        final String filename = originalName.toString();
+                        final String suffix = filename.substring(Math.max(0, filename.length() - 64))
+                          .replaceAll("[^A-Za-z0-9._-]", "_");
+                        sourcePath = Files.createTempFile(uploadDirectory, "input-", "-" + suffix);
+                        Files.move(uploadPath, sourcePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        outputPath = Files.createTempFile(uploadDirectory, "output-", direction.outputExtension());
                         final var options = new ConversionOptions(
                             sourcePath,
                             outputPath,
@@ -173,11 +184,18 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             exportMode
                         );
 
-                        final var job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true, HictkLoadOptions.EMPTY);
-                        submitJob(job, options, ensureGroup("upload", 1));
+                        job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true, HictkLoadOptions.EMPTY);
+                        submitJob(job, options, ensureGroup(job.jobId, 1));
+                        submitted = true;
                         return new ConversionSubmitResponseDTO("submitted", job.jobId);
                     } catch (IOException e) {
-                        throw new RuntimeException(e);
+                        throw new java.io.UncheckedIOException(e);
+                    } finally {
+                        if (!submitted) {
+                            if (job != null) jobs.remove(job.jobId, job);
+                            deleteTemporaryFile(sourcePath);
+                            deleteTemporaryFile(outputPath);
+                        }
                     }
                 },
                 response -> ctx.response().end(Json.encode(response)),
@@ -821,6 +839,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
             }
         } finally {
             job.activeProcess = null;
+            if (job.deleteSourceOnCleanup) deleteTemporaryFile(job.sourcePath);
             job.finishedAtMs = Instant.now().toEpochMilli();
             group.onJobFinished();
         }
@@ -949,10 +968,19 @@ public class ConversionHandlersHolder extends HandlersHolder {
         return 0L;
     }
 
+    private static void deleteTemporaryFile(Path path) {
+        if (path == null) return;
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            log.warn("Unable to remove temporary conversion file {}", path, e);
+        }
+    }
+
     private void cleanupOldJobs() {
         final var now = Instant.now().toEpochMilli();
         jobs.values().removeIf(job -> {
-            final var expired = now - job.createdAtMs > JOB_TTL_MS;
+            final boolean expired = isExpired(job.finishedAtMs, now);
             if (expired) {
                 try {
                     if (job.deleteSourceOnCleanup) {
@@ -967,6 +995,10 @@ public class ConversionHandlersHolder extends HandlersHolder {
             }
             return expired;
         });
+    }
+
+    static boolean isExpired(long finishedAt, long now) {
+        return finishedAt > 0 && now - finishedAt > JOB_TTL_MS;
     }
 
     private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
@@ -999,7 +1031,6 @@ public class ConversionHandlersHolder extends HandlersHolder {
 
     private static class ConversionJob {
         private final String jobId;
-        private final long createdAtMs = Instant.now().toEpochMilli();
         private final Path sourcePath;
         private final Path outputPath;
         private final Path dataDirectory;

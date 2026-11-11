@@ -511,6 +511,7 @@ application {
 val lombokVersion = "1.18.34"
 
 dependencies {
+  runtimeOnly("org.webjars:swagger-ui:5.30.2") { isTransitive = false }
 //  implementation(fileTree("src/main/resources/libs"))
 //  runtimeOnly(fileTree("src/main/resources/libs/natives"))
 
