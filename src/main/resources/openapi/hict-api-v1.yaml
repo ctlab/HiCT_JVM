@@ -624,6 +624,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericMap'
+        '409':
+          description: A required secondary source or track is unavailable. The supplied visualization is rejected atomically.
   /get_visualization_options:
     post:
       tags: [Rendering]

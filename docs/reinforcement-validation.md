@@ -1966,7 +1966,6 @@ and Apple Silicon macOS fail only AsyncLoggingTest. Their downloaded JUnit
 artifacts show the fake console throws AssertionError from InterruptedException
 when AsyncAppender.stop interrupts its worker immediately after the release
 latch opens. This terminates the test worker before any of its 201 events drain.
-The production appender configuration is unchanged.
 [Java regression run](https://github.com/ctlab/HiCT_JVM/actions/runs/43014849030)
 
 The fake sink now accepts that shutdown interruption after release, preserves
@@ -1979,3 +1978,73 @@ passes 466 tests with seven optional skips, including in-progress full-preset
 regressions, in `/tmp/hict-u13-async-shutdown-full.log`. CI execution containing
 this test correction remains pending. Existing failing artifacts are retained
 under `/tmp/hict-u13-identity-ci-junit/`. All remote inspection was read-only.
+
+
+### U13 complete rendering graph presets
+
+Save now captures applied options and both rendering branches from one scheduler
+snapshot. The control explicitly labels that applied-state behavior and shows
+Saving while the request is pending. The optional renderPipeline payload travels
+through local preset records, deduplication, JSON export/import and native session
+libraries. Older option-only records retain their application path. Native restore
+preserves preset IDs. Wizard source-style choices explicitly label complete presets
+when extracting their options to construct the wizard presentation.
+
+A shared bounded parser validates expressions before committing an imported batch.
+It preserves the original AST, branch flags and optional editor state. Editor cache
+records include the applied expression signature. Capture uses matching layouts
+and disconnected inspectors, and tolerates unavailable optional storage. Snapshot
+sRGB float components are rounded back to their original 8-bit channels before
+using the legacy option decoder. This fixes a reproduced fractional RGB string
+that the API rejected during the first full-preset application attempt.
+
+Explicit preset publication uses the existing atomic options-and-pipeline request
+through VisualizationManager. Existing option events and expected-profile refresh
+run after acceptance. Enabled pipelines with unavailable secondary or track inputs
+receive HTTP 409 before publication. Background and border styles apply after
+acceptance. Same-filename imports reset their file input after reading, and file
+read failures provide feedback. Invalid later graph records preserve the entire
+library and current view. Native document bounds support the editor's deep graphs
+while retaining expression, total-value and byte limits.
+
+The six-case browser gate compares all 25 signal values and actual pixels for two
+distinct constant branches with swapped triangles, exact exported/imported AST,
+editor viewport and a disconnected histogram, native-session library identity,
+100 nested unary nodes, expected-mode profile initialization and independent
+nonzero-contact diagonal means. Missing secondary and track cases check exact
+server options, client options, graph, styles, background, view and resolution.
+Their two intentional HTTP conflicts are explicitly counted. A valid first item
+followed by an invalid graph leaves the import batch unapplied. Evidence is under
+`/tmp/hict-u13-full-graph-presets-complete-profile-dir`.
+
+Existing browser suites pass all fourteen built-in presets, twelve editor cases,
+legacy session validation and all seven workspace scenarios with the required
+large structural fixture. Evidence pointers are
+`/tmp/hict-u13-full-preset-builtins-dir`,
+`/tmp/hict-u13-full-preset-editor-dir`,
+`/tmp/hict-u13-full-preset-session-validation-dir` and
+`/tmp/hict-u13-full-preset-workspace-large-dir`.
+Unit checks cover detached copies, invalid expressions, unavailable storage,
+matching and stale layout signatures, exact float-color reconstruction and native
+session depth boundaries. The normal WebUI build and explicit session document
+suite pass. Full lint records zero errors.
+The Java working-tree suite passes 466 tests with seven optional skips, including
+twenty logging-race repetitions. Final package qualification remains required.
+
+The final six-case gate also restores non-default contig/scaffold widths and
+label size with the saved background. Full-graph imports preserve the active
+visualization until selection. Import reuses native library validation, including
+style validation and legacy empty-style normalization. An invalid style record
+preserves the library and live state. Existing option-only import handling remains
+supported. Final evidence is under
+`/tmp/hict-u13-full-presets-import-atomic-final-dir`, with the seven-scenario
+workspace repeat under `/tmp/hict-u13-full-presets-workspace-final-dir`.
+
+API alpha decoding now rounds valid normalized alpha to the nearest byte and
+rejects values outside zero through one before integer conversion. The previous
+floor conversion could lose one alpha level when reading the API's six-decimal
+color representation. The DTO regression covers all 256 alpha values and the
+snapshot serializer covers all 256 channel values. The final Java suite passes
+468 tests with seven optional skips in
+`/tmp/hict-u13-full-preset-alpha-full.log`. Final UI lint records zero errors and
+99 warnings in `/tmp/hict-u13-full-preset-lossless-final-lint.log`.

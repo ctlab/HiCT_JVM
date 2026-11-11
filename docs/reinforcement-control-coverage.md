@@ -140,7 +140,7 @@ instances to be exercised. A row with remaining assertions stays open.
 | 61–69, 229 | Opening gate checks displayed/stored/rendered bound coherence, source numerical regressions exercise transforms and graph synchronization | Keyboard/drag handles, Linear/Log slider sensitivity, invalid domains, Log2/Log10 and fractional scaling pass the signal audit. Independent source/half targeting remains. |
 | 70–71 | Exact-range gate verifies independent source bounds and cache reuse after panning | Loaded-tile and exact-range buttons pass the independent known-count signal fixture. Additional independent-source extrema fixtures remain. |
 | 72–82, 230 | Opening/capability gates check silent NaN policy, weight availability at changing levels, coherent pipeline, O/E palette, numerical rendering and migrated source controls | All advanced sidebar controls, policy variants and reset/apply failure interactions |
-| 83–88 | Workspace saves/renames with Enter/Escape, exports/removes/imports/applies visualization-option presets and preserves a missing-overlay graph with guidance | Explicit persisted reload of accepted rename. Malformed later-item rejection, exact local threshold/pipeline preservation, multi-item IDs and legacy unnamed imports now pass. |
+| 83–88 | Workspace saves/renames with Enter/Escape, exports/removes/imports/applies presets and preserves a missing-overlay graph with guidance | Full graph JSON and native-session round trips now verify both branches, flags, editor viewport, disconnected inspectors, stable IDs, exact signals and rendered pixels. Missing-input rejection and invalid later-item batches preserve live state and libraries. Legacy imports remain covered. |
 | 89–101 | ModDotPlot gate applies its ordinary preset rows and verifies primary pixels plus secondary percentage scale, opening suite checks default maps | All fourteen sidebar actions now pass known-count numerical transforms, rendered RGBA, missing-overlay preservation and a manual-range palette assertion. Both generated identity modes and all four editor presets also pass with real sources. |
 | 102–110 | Batch gate checks hictk link target and notices, All/None/Invert/Converted/Unconverted exact filename sets and settings Back, real batch output matches independent contacts | Complete for the audited batch fixture, including exact empty active-job status |
 | 111–112 | Batch conversion completes after dialog dismissal, export suite reads completed jobs | Refresh preserves a draft and reconciles exact job IDs |
@@ -159,12 +159,13 @@ instances to be exercised. A row with remaining assertions stays open.
 
 The static contracts have been aligned with the updated plan and current control
 semantics. Open map uses the plain picker. Unscaffold All is Undoable. Visualization
-presets save visualization options, and the pipeline editor exports complete custom
-graphs. The pipeline preset dropdown chooses a preset and Load preset builds its draft. Preview publishes the graph and switches the editor layout. Automatic worker
-allocation uses the supported value `-1`. These corrections remove earlier audit
-assumptions that had introduced extra UI behavior. The owner subsequently selected
-full custom graph capture in visualization presets. That extension and its
-compatibility checks remain pending.
+presets save the applied options and complete rendering graph, including matching
+editor layout and disconnected inspectors. The pipeline editor also exports graphs.
+The pipeline preset dropdown chooses a preset and Load preset builds its draft.
+Preview publishes the graph and switches the editor layout. Automatic worker
+allocation uses the supported value `-1`. The owner's full-graph preset extension
+now passes the six-case browser gate and existing workspace, built-in preset,
+pipeline-editor and legacy-session validation suites.
 
 Additional evidence pointers include
 `/tmp/hict-u13-picker-complete-controls-dir`,

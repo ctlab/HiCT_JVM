@@ -121,7 +121,7 @@ class SessionSnapshotDecoderTest {
     rejects("complexity", x -> {
       var nested = new JsonObject();
       var root = nested;
-      for (int i = 0; i < 65; i++) { var next = new JsonObject(); nested.put("child", next); nested = next; }
+      for (int i = 0; i < 161; i++) { var next = new JsonObject(); nested.put("child", next); nested = next; }
       x.put("extension", root);
     });
     rejects("complexity", x -> {

@@ -366,7 +366,13 @@ def main():
                 .locator("option")
                 .count()
             )
-            group.get_by_title("Save current visualization options", exact=True).click()
+            group.get_by_title(
+                "Save applied visualization and complete rendering graph", exact=True
+            ).click()
+            page.wait_for_function(
+                "count => document.querySelector('select[aria-label=\"Visualization preset\"]').options.length === count + 1",
+                arg=count,
+            )
             # Bind the saved row through its owner, keeping duplicate action labels scoped.
             rename = page.get_by_role("button", name="Rename preset", exact=True).last
             rename.click()

@@ -48,9 +48,18 @@ transform changes the displayed values. Square-root coverage uses a single
 whole-map domain at each resolution. Bins without contacts remain empty.
 Show O/E uses a diverging log-ratio range centered at one.
 
-Presets store reusable settings. Manage opens preset management. The Rendering
-pipeline editor supports custom signal expressions. A custom graph remains
-explicitly identified when ordinary sidebar controls cannot rewrite it.
+Manage opens preset management. Save captures the applied visualization options,
+both rendering branches, enable and swap flags, background and border styles.
+Matching editor layouts and disconnected inspectors are retained. Apply pending
+changes before saving a preset. Selecting a saved preset restores the complete
+visualization. Export and Import transfer the library as JSON, and native session
+files retain it. Older option-only preset files remain supported. A missing
+secondary source or track produces guidance before the preset is applied.
+
+The opening wizard labels complete presets as source style when using their
+options to construct its selected presentation. The Rendering pipeline editor
+supports custom signal expressions and complete graph export. A custom graph
+remains explicitly identified when ordinary sidebar controls cannot rewrite it.
 
 Tracks and layers manages annotations, signal tracks and secondary matrices.
 Compatible matrix references may have different resolution pyramids. Each layer

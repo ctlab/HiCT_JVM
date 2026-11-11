@@ -194,9 +194,9 @@ picker gate verifies four scenarios with independent loaded matrix values.
 
 The runtime ledger now lists every historical control index alongside executed
 assertions and remaining checks in `docs/reinforcement-control-coverage.md`. The
-full interface audit remains open. The owner selected full custom graph capture
-in visualization presets. That extension is pending. The current separate pipeline
-graph export preserves complete custom graphs.
+full interface audit remains open. The owner-selected full custom graph preset
+extension now passes JSON and native-session round trips, independent signals
+and rendered colors, complete editor layouts and dependency rejection checks.
 
 Batch selection and real conversion produce independently exact contacts, and
 overwrite cancellation preserves both the output hash and server job list. The
@@ -385,8 +385,8 @@ read existing runs, jobs, logs or artifacts.
 Existing run 43014849030 passes Windows and Intel macOS Java jobs, verifying the
 source identity correction on Windows. Linux and Apple Silicon macOS fail the
 fake logging sink's shutdown-interrupt race. Both JUnit artifacts show the sink
-throws before counting any of its 201 queued events. The local test correction
-preserves the production logging configuration and passes twenty repetitions
+throws before counting any of its 201 queued events. The corrected fake sink
+passes twenty repetitions
 with the original enqueue and complete-drain assertions. A workflow run containing
 this correction is still required.
 [Subsequent Java run](https://github.com/ctlab/HiCT_JVM/actions/runs/43014849030)
@@ -394,3 +394,29 @@ this correction is still required.
 The earlier portable run 43010279649 now passes Windows and Apple Silicon macOS
 packaging plus their native tool jobs. Linux native tools also pass. Linux
 packaging and Intel macOS native tools remain in progress at this checkpoint.
+
+
+## Complete rendering presets
+
+The owner-selected preset extension passes six real-browser scenarios covering
+complete branches and flags, custom editor layout and a disconnected inspector,
+exact signal and pixel values, non-default border styles, saved background,
+JSON and native-session libraries, stable IDs, 100 nested unary nodes and
+expected-profile restoration against independent diagonal means. Missing-input
+and malformed batch/style cases preserve the live visualization and library.
+Full-graph import adds records without changing the active visualization.
+Applied-state saving is explicit in the control. Wizard source-style choices
+identify the options component used in the selected wizard presentation.
+
+The normal UI build, native session parser checks and the current 466-test Java
+suite pass, with seven optional skips. Existing built-in preset, pipeline-editor,
+legacy-session and workspace browser gates also pass. These source changes still
+require final package qualification and the corrected full-duration soak.
+
+
+The final preset implementation also preserves every 8-bit alpha value through
+the decimal API format. All 468 local Java tests pass with seven optional skips.
+Final UI lint has zero errors and 99 warnings. Existing portable run 43010279649
+now has successful native-tool jobs for all four targets and successful Windows,
+Apple Silicon macOS and Linux packaging jobs. Intel macOS packaging is still
+running at this checkpoint. Source revisions remain fd46e1fd and WebUI f0ef290.

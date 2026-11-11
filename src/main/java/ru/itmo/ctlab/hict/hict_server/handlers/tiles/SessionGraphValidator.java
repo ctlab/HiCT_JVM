@@ -50,7 +50,7 @@ public final class SessionGraphValidator {
   }
 
   private void node(Object value, String path, int depth, boolean numeric, Set<String> ids) {
-    if (depth > 32 || ++nodes > 10000) fail(path, "expression exceeds session complexity limit");
+    if (depth > 120 || ++nodes > 10000) fail(path, "expression exceeds session complexity limit");
     if (!(value instanceof JsonObject)) fail(path, "expected an expression object");
     var n = (JsonObject) value;
     String type = text(n.getValue("type"), path + ".type").toUpperCase(Locale.ROOT);

@@ -6,6 +6,7 @@ import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class VisualizationOptionsDTOTest {
 
@@ -42,4 +43,25 @@ class VisualizationOptionsDTOTest {
     assertEquals(0.0d, CoolerWeightsNaNPolicy.REPLACE_NANS_WITH_ZERO.sanitize(Double.POSITIVE_INFINITY), 1e-12);
     assertEquals(0.25d, CoolerWeightsNaNPolicy.REPLACE_NANS_WITH_ZERO.sanitize(0.25d), 1e-12);
   }
+  @Test
+  void preservesEveryEightBitAlphaThroughTheApiDecimalFormat() {
+    for (int alpha = 0; alpha <= 255; alpha++) {
+      var start = String.format(java.util.Locale.US, "rgba(12,34,56,%.6f)", alpha / 255.0d);
+      var end = String.format(java.util.Locale.US, "rgba(232,0,0,%.6f)", (255 - alpha) / 255.0d);
+      var gradient = new SimpleLinearGradientDTO(start, end, 0, 10).toEntity();
+      assertEquals(alpha, gradient.getStartColor().getAlpha(), "start alpha " + alpha);
+      assertEquals(255 - alpha, gradient.getEndColor().getAlpha(), "end alpha " + alpha);
+    }
+    assertEquals(128,
+      new SimpleLinearGradientDTO("rgba(12,34,56,0.5)", "rgba(232,0,0,1)", 0, 10).toEntity().getStartColor().getAlpha());
+  }
+
+  @Test
+  void rejectsAlphaOutsideItsRangeBeforeIntegerConversion() {
+    for (String alpha : new String[]{"-0.1", "1.1", "16843009.0039215686"}) {
+      assertThrows(IllegalArgumentException.class,
+        () -> new SimpleLinearGradientDTO("rgba(12,34,56," + alpha + ")", "rgba(232,0,0,1)", 0, 10).toEntity());
+    }
+  }
+
 }

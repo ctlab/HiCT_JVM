@@ -246,7 +246,7 @@ public final class SessionSnapshotDecoder {
   }
 
   private void bound(Object value, String path, int depth) {
-    if (depth > 64 || ++values > 100000) fail(path, "exceeds snapshot complexity limit");
+    if (depth > 160 || ++values > 100000) fail(path, "exceeds snapshot complexity limit");
     if (value instanceof JsonObject object) {
       for (String key : object.fieldNames()) {
         if (Set.of("__proto__", "constructor", "prototype").contains(key)) fail(path + "." + key, "reserved key");

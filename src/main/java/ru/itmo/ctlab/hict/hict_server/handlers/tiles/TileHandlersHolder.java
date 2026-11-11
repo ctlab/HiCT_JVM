@@ -88,6 +88,33 @@ public class TileHandlersHolder extends HandlersHolder {
     map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
   }
 
+  private static void validatePipelineResources(RenderPipelineConfig pipeline, LocalMap<String, Object> map) {
+    if (!pipeline.enabled()) return;
+    if (map.get("chunkedFileSecondary") == null && requiresSecondary(pipeline.toJson())) {
+      throw new io.vertx.ext.web.handler.HttpException(409, "Attach the secondary source before applying this rendering graph preset");
+    }
+    var wrapper = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
+    var ids = wrapper == null ? java.util.Set.<String>of()
+      : wrapper.getTrack1DManager().listTracks().stream().map(Track1DManager.TrackSummary::getTrackId)
+        .collect(java.util.stream.Collectors.toSet());
+    for (var binding : pipeline.requiredTrackBindings()) {
+      var id = binding.trackId();
+      if (!id.equalsIgnoreCase(RenderPipelineConfig.BUILTIN_COOLER_WEIGHTS_TRACK_ID)
+          && !id.equalsIgnoreCase("__builtin_cooler_weights") && !ids.contains(id)) {
+        throw new io.vertx.ext.web.handler.HttpException(409, "Restore the required track before applying this rendering graph preset: " + id);
+      }
+    }
+  }
+
+  private static boolean requiresSecondary(JsonObject expression) {
+    if ("source".equalsIgnoreCase(expression.getString("type"))
+        && "SECONDARY".equalsIgnoreCase(expression.getString("source"))) return true;
+    for (var value : expression.getMap().values()) {
+      if (value instanceof JsonObject child && requiresSecondary(child)) return true;
+    }
+    return false;
+  }
+
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
     router.post("/set_visualization_options").handler(ctx -> {
@@ -116,6 +143,7 @@ public class TileHandlersHolder extends HandlersHolder {
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
           final var explicitPipeline = requestedPipeline == null ? null : RenderPipelineConfig.fromJson(requestedPipeline);
+          if (explicitPipeline != null) validatePipelineResources(explicitPipeline, map);
           map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(optionsEntity));
           if (optionsEntity.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
             clearExpectedProfileCache(map);

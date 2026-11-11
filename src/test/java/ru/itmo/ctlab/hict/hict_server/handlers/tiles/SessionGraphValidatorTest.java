@@ -76,9 +76,17 @@ class SessionGraphValidatorTest {
     invalid(new JsonObject().put("type", "unknown"), ".type");
   }
 
+  @Test void preservesDeepGraphsSupportedByTheEditor() {
+    var expression = source();
+    for (int i = 0; i < 100; i++) expression = new JsonObject().put("type", "unary").put("op", "ABS").put("input", expression);
+    var config = graph(expression);
+    assertDoesNotThrow(() -> SessionGraphValidator.validate(config, Set.of()));
+    assertEquals(config, RenderPipelineConfig.fromJson(config).toJson());
+  }
+
   @Test void boundsDepthAndNodeCountBeforeCompilation() {
     var deep = source();
-    for (int i = 0; i < 34; i++) deep = new JsonObject().put("type", "unary").put("op", "ABS").put("input", deep);
+    for (int i = 0; i < 121; i++) deep = new JsonObject().put("type", "unary").put("op", "ABS").put("input", deep);
     invalid(deep, ".input");
     var wide = source();
     for (int i = 0; i < 14; i++) wide = new JsonObject().put("type", "binary").put("op", "ADD").put("left", wide).put("right", wide);

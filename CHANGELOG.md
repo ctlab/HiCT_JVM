@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Save complete custom rendering graphs, editor layouts and lossless colors in visualization presets, JSON libraries and native sessions.
+
+- Retry updated preset imports with the same filename and preserve the current visualization when a required graph input is missing.
+
 - Make shutdown logging release checks reliable under worker interruption.
 
 - Add Borrelia Hi-C and yeast Micro-C quick starts with verified matching references and automatic preparation.

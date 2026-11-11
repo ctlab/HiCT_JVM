@@ -805,6 +805,41 @@ class ApiHttpIntegrationTest {
     assertTrue(!new JsonObject(detached.body()).containsKey("capabilities"));
   }
 
+  @Test
+  void fullPresetRejectsUnavailableInputsBeforeChangingOptionsOrGraph() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", List.of(4L, 10L));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    var before = new JsonObject(post("/session/snapshot", "{}").body());
+    var options = new JsonObject(post("/get_visualization_options", "{}").body());
+    var primary = new JsonObject().put("type", "source").put("source", "PRIMARY");
+    for (var input : List.of(
+      new JsonObject().put("type", "source").put("source", "SECONDARY"),
+      new JsonObject().put("type", "track1d").put("trackId", "missing-track").put("axis", "ROW"))) {
+      var graph = new JsonObject().put("enabled", true).put("swapUpperLower", true)
+        .put("upperExpression", primary.copy()).put("lowerExpression", input);
+      var rejected = post("/set_visualization_options", options.copy().put("postLogBase", 2).put("renderPipeline", graph).encode());
+      assertEquals(409, rejected.statusCode(), rejected.body());
+      assertTrue(rejected.body().contains(input.getString("type").equals("source") ? "secondary source" : "required track"), rejected.body());
+      var after = new JsonObject(post("/session/snapshot", "{}").body());
+      assertEquals(before.getJsonObject("visualizationOptions"), after.getJsonObject("visualizationOptions"));
+      assertEquals(before.getJsonObject("renderPipeline"), after.getJsonObject("renderPipeline"));
+      assertEquals(before.getJsonObject("primary"), after.getJsonObject("primary"));
+    }
+    var graph = new JsonObject().put("enabled", true).put("swapUpperLower", true)
+      .put("upperExpression", primary.copy())
+      .put("lowerExpression", new JsonObject().put("type", "constant").put("value", 7));
+    var accepted = post("/set_visualization_options", options.copy().put("postLogBase", 2).put("renderPipeline", graph).encode());
+    assertEquals(200, accepted.statusCode(), accepted.body());
+    var after = new JsonObject(post("/session/snapshot", "{}").body());
+    assertEquals(graph, after.getJsonObject("renderPipeline"));
+    assertEquals(2.0, after.getJsonObject("visualizationOptions").getDouble("postLogBase"));
+  }
+
   private void startServerWithInfoAndFileHandlers() throws Exception {
     startServerWithInfoAndFileHandlers(router -> {});
   }
