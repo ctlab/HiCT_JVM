@@ -119,12 +119,13 @@ class BrowserCheck:
         self.page.locator(".open-progress-modal").wait_for(state="hidden")
         self.page.evaluate("""() => {
             const manager=window.__hictBenchmark.manager();
-            if(manager)manager.getMap().on('rendercomplete',()=>{});
+            if(manager){manager.getMap().on('rendercomplete',()=>{});manager.getMap().renderSync();}
         }""")
         self.page.wait_for_function("""() => {
             const manager=window.__hictBenchmark.manager();
             if(!manager)return true;
             const map=manager.getMap();
+            if(!map.getView().getAnimating() && map.tileQueue_.getTilesLoading()===0 && map.tileQueue_.getCount()===0)map.renderSync();
             return !map.getView().getAnimating() && map.renderComplete_
                 && map.tileQueue_.getTilesLoading()===0 && map.tileQueue_.getCount()===0;
         }""")

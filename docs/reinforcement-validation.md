@@ -1552,3 +1552,31 @@ The export capability change introduced one Prettier warning on a multiline
 conditional tag. The separate lint pass formats that tag. Focused ESLint now
 reports zero errors and zero warnings. The change preserves template semantics.
 The complete source lint baseline retains 100 existing warnings.
+
+## Named bookmark persistence during U13
+
+The inventory's bookmark scenario exposed names being held only in an input's
+local state. Bookmark records now carry an optional name through the existing
+session store, export/import and native session client state. Editing updates
+the stored record immediately. Older unnamed records retain their default label.
+Bookmark imports reuse the session library validator before replacing records.
+The validator accepts optional string names and reports malformed name fields.
+
+The full frontend build and existing source regressions pass. Added session
+regressions cover legacy unnamed records, Unicode names in v2 and v3 documents
+and malformed name types. Focused lint has zero errors and the ten existing
+format warnings in the pre-existing session regression script. The production
+files have zero warnings.
+
+The real browser first reproduces the missing exported name, then verifies named
+bookmark export/import, sidebar remount and native session recovery after page
+reload into an empty bookmark store. A legacy unnamed import retains its default
+label. The complete five-scenario workspace gate also passes preset Enter/Escape,
+map-tool Escape, eleven OSD fields and notification clearing with zero errors.
+Evidence pointers are `/tmp/hict-u13-bookmark-name-before-dir` and
+`/tmp/hict-u13-bookmark-name-qualified-dir`.
+
+The browser helper explicitly renders an idle frame before checking completion.
+This resolves a stale OpenLayers completion flag observed after Split with zero
+queued/loading tiles. Structural state, AGP and completed-frame assertions remain
+in place. The generated structural fixture passes all seven edit/Undo/Redo cases.

@@ -85,6 +85,9 @@ def main():
             page.locator("label[for=bookmarks-btn]").click()
             expected = view()
             page.get_by_title("Save current viewport", exact=True).click()
+            page.get_by_role(
+                "textbox", name="Name of the saved location", exact=True
+            ).fill("Release landmark")
             page.get_by_role("button", name="Zoom in", exact=True).click()
             check.settle()
             assert view()["resolution"] != expected["resolution"]
@@ -105,7 +108,7 @@ def main():
             target = output / "bookmarks.json"
             download.value.save_as(target)
             exported = json.loads(target.read_text())
-            assert exported
+            assert exported and exported[0]["name"] == "Release landmark", exported
             page.locator(
                 'button[title="Remove saved location"], button[data-bs-original-title="Remove saved location"]'
             ).last.click()
@@ -119,6 +122,64 @@ def main():
             page.locator(
                 'button[title="Go to saved location"], button[data-bs-original-title="Go to saved location"]'
             ).last.wait_for()
+            assert (
+                page.get_by_role(
+                    "textbox", name="Name of the saved location", exact=True
+                ).input_value()
+                == "Release landmark"
+            )
+            page.get_by_role("button", name="Visualization", exact=True).click()
+            page.get_by_role("button", name="Entities", exact=True).click()
+            page.locator("label[for=bookmarks-btn]").click()
+            assert (
+                page.get_by_role(
+                    "textbox", name="Name of the saved location", exact=True
+                ).input_value()
+                == "Release landmark"
+            )
+            with page.expect_download() as session_download:
+                check.menu("File", "Save session")
+            session_path = output / "named-bookmark-session.json"
+            session_download.value.save_as(session_path)
+            saved = json.loads(session_path.read_text())
+            assert saved["client"]["savedLocations"][0]["name"] == "Release landmark"
+            check.menu("File", "Close")
+            page.get_by_role(
+                "heading", name="No contact map open", exact=True
+            ).wait_for()
+            page.reload()
+            page.wait_for_function("window.__hictBenchmark")
+            assert page.evaluate(
+                "document.querySelector('#app').__vue_app__.config.globalProperties"
+                ".$pinia._s.get('sessionStore').savedLocations.length"
+            ) == 0
+            with page.expect_file_chooser() as chooser:
+                check.menu("File", "Open session")
+            chooser.value.set_files(session_path)
+            page.get_by_text(
+                "Session restored. Undo history starts from the restored assembly.",
+                exact=True,
+            ).wait_for()
+            page.get_by_role("button", name="Entities", exact=True).click()
+            page.locator("label[for=bookmarks-btn]").click()
+            assert (
+                page.get_by_role(
+                    "textbox", name="Name of the saved location", exact=True
+                ).input_value()
+                == "Release landmark"
+            )
+            legacy_path = output / "legacy-bookmarks.json"
+            legacy = [
+                {key: value for key, value in entry.items() if key != "name"}
+                for entry in exported
+            ]
+            legacy_path.write_text(json.dumps(legacy))
+            page.locator(".bookmark-actions input[type=file]").set_input_files(
+                legacy_path
+            )
+            page.wait_for_function(
+                "document.querySelector('input[aria-label=\"Name of the saved location\"]').value === '0 unnamed location'"
+            )
             page.get_by_role("button", name="Visualization", exact=True).click()
 
         def presets():

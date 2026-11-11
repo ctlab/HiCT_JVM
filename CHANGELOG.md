@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve edited bookmark names through export, import, sidebar changes and saved-session recovery.
+
 ## 2.0.0
 
 ### Release preparation and cleanup
