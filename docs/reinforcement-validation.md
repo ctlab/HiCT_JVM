@@ -1866,3 +1866,21 @@ under `/tmp/hict-u13-modal-memory-{diagnostic,console,primitives,mouse,no-handle
 The failed full run remains under
 `/tmp/hict-u13-source-independent-release-soak-valid-port-dir`, and the corrected
 preflight is under `/tmp/hict-u13-primitive-modal-soak-preflight-dir`.
+
+
+### U13 track controls and immediate background repaint
+
+The track background settings changed host styling while opaque track canvases
+kept their previous fill until another render. MainUI now watches the effective
+track background and repaints both axes from cached data. Its component scope
+owns the watcher. The normal WebUI build and focused lint pass, with two existing
+explicit-any warnings.
+
+The real-browser gate passes named BED browsing and addition, exact feature
+interval and score attributes, primary and secondary weight-track toggles with
+independent values 2 through 6, secondary attachment and detachment, explicit and
+inherited background pixels on both displayed and exported canvases, and
+precompute completion after closing the track dialog. Assembly AGP is unchanged.
+The prior background failure remains in
+`/tmp/hict-u13-track-controls-feature-count-dir`. Passing evidence is in
+`/tmp/hict-u13-track-background-fixed-dir`.

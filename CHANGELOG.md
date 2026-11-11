@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update track backgrounds immediately on both map axes and preserve their export colors.
+
 - Use descriptive red-palette names and keep success confirmations clear of dialog actions.
 
 - Expand release validation for session recovery, offline use, native exports and analysis settings.
