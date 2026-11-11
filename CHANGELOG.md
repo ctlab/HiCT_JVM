@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve custom colormap alpha during contrast edits and confine changes to the selected source and triangle.
+
+- Publish primary styling atomically and report failed sidebar edits once with retryable diagnostics.
+
 - Verify reload pixel fidelity, zoom boundaries and all exported caption positions in release checks.
 
 - Preserve fractional alpha behavior while restoring saved visualization colors exactly.

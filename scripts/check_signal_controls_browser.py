@@ -2,6 +2,7 @@
 """Verify contrast, slider domains, logarithms and scaling against known contacts."""
 
 import argparse
+import copy
 import io
 import json
 import math
@@ -58,9 +59,10 @@ def main():
             page.wait_for_timeout(450)
             check.settle()
 
-        def sample(label):
+        def sample(label, coordinate=(1.5, -0.5)):
             point = page.evaluate(
-                """()=>{const m=window.__hictBenchmark.manager(),p=m.getMap().getPixelFromCoordinate([1.5,-.5]),b=m.getMap().getViewport().getBoundingClientRect();return [Math.round(b.x+p[0]),Math.round(b.y+p[1])];}"""
+                """coordinate=>{const m=window.__hictBenchmark.manager(),p=m.getMap().getPixelFromCoordinate(coordinate),b=m.getMap().getViewport().getBoundingClientRect();return [Math.round(b.x+p[0]),Math.round(b.y+p[1])];}""",
+                coordinate,
             )
             content = page.screenshot(path=str(output / (label + ".png")))
             image = Image.open(io.BytesIO(content)).convert("RGB")
@@ -252,6 +254,215 @@ def main():
             results.append(
                 {
                     "test": "Reset uses declared Log10 and native 10/4 resolution scaling matches independent linear/quadratic formula"
+                }
+            )
+            page.evaluate(
+                """async api => {
+                await window.__hictBenchmark.open('tiny-primary.hict.hdf5', api);
+                const m=window.__hictBenchmark.manager(), requests=m.networkManager.requestManager;
+                const status=await requests.openSecondarySource('old-secondary.hict.hdf5', false);
+                m.viewAndLayersManager.setSecondaryResolutionModel(status.compatibility);
+                const color=(source,endColor,maxSignal,startColor='#ffffffff')=>({type:'colormap',mode:'LINEAR',
+                    input:{type:'source',source},minSignal:0,maxSignal,startColor,endColor});
+                const blend=(top,bottom)=>({type:'pixel_blend',mode:'OVER',top,bottom,topOpacity:0.5,bottomOpacity:1});
+                await requests.setRenderPipelineConfig({enabled:true,swapUpperLower:false,
+                    upperExpression:blend(color('PRIMARY','#0000ffff',22,'#ffffff7f'),color('PRIMARY','#ff0000ff',11)),
+                    lowerExpression:blend(color('SECONDARY','#0000ffff',11),color('PRIMARY','#00ff00ff',11))});
+                await m.reloadTilesFromBackend();m.viewAndLayersManager.fitViewToActiveExtent();
+            }""",
+                args.api,
+            )
+            check.settle()
+            sources = page.get_by_role("group", name="Visualization source", exact=True)
+            sources.get_by_role("button", name="Primary", exact=True).click()
+            page.get_by_role("button", name="Upper triangle", exact=True).click()
+            targets = page.get_by_label(
+                "Rendering pipeline colormap target", exact=True
+            )
+            expect(targets.locator("option")).to_have_count(2)
+            targets.select_option("upper.top")
+            upper = page.get_by_role(
+                "spinbutton", name="Upper signal threshold", exact=True
+            )
+            page.wait_for_function(
+                "document.querySelector('[aria-label=\"Upper signal threshold\"]').value === '22'"
+            )
+            original = pipeline()
+            before_upper = sample("target-before-upper")
+            before_lower = sample("target-before-lower", (0.5, -1.5))
+            upper.fill("55")
+            apply()
+            expected = copy.deepcopy(original)
+
+            def set_expected_range(node, maximum):
+                node["maxSignal"] = maximum
+                for key, value in (("min", node["minSignal"]), ("max", maximum)):
+                    node[key] = {
+                        "type": "constant",
+                        "value": value,
+                        "rangeSource": node["input"]["source"],
+                        "rangeOutput": "selectedMin" if key == "min" else "selectedMax",
+                    }
+
+            set_expected_range(expected["upperExpression"]["top"], 55)
+            assert pipeline() == expected, (pipeline(), expected)
+            assert sample("target-after-upper") != before_upper
+            assert sample("target-after-lower", (0.5, -1.5)) == before_lower
+            link = page.get_by_role(
+                "button", name="Link upper and lower triangles", exact=True
+            )
+            assert link.get_attribute("aria-pressed") == "false"
+            link.click()
+            check.settle()
+            upper.fill("66")
+            apply()
+            for node in (
+                expected["upperExpression"]["top"],
+                expected["upperExpression"]["bottom"],
+                expected["lowerExpression"]["bottom"],
+            ):
+                set_expected_range(node, 66)
+                node["startColor"] = "#ffffff7f"
+                node["endColor"] = "#0000ffff"
+            assert pipeline() == expected, (pipeline(), expected)
+            sources.get_by_role("button", name="Secondary", exact=True).click()
+            page.wait_for_function(
+                "document.querySelector('[aria-label=\"Upper signal threshold\"]').value === '11'"
+            )
+            upper.fill("77")
+            apply()
+            set_expected_range(expected["lowerExpression"]["top"], 77)
+            assert pipeline() == expected, (pipeline(), expected)
+            assert query() == known
+            for label in ("Swap sources", "Swap upper and lower triangles"):
+                before = pipeline()
+                before_pixels = sample(label.replace(" ", "-") + "-before")
+                with page.expect_response(
+                    lambda response: response.url.endswith("/render_pipeline/set")
+                ):
+                    page.get_by_role("button", name=label, exact=True).click()
+                check.settle()
+                changed = pipeline()
+                assert changed != before
+                if label == "Swap upper and lower triangles":
+                    assert changed["upperExpression"] == before["lowerExpression"]
+                    assert changed["lowerExpression"] == before["upperExpression"]
+                with page.expect_response(
+                    lambda response: response.url.endswith("/render_pipeline/set")
+                ):
+                    page.get_by_role("button", name=label, exact=True).click()
+                check.settle()
+                assert pipeline() == before
+                assert sample(label.replace(" ", "-") + "-restored") == before_pixels
+                assert query() == known
+            results.append(
+                {
+                    "test": "Source, triangle, individual colormap, linked ranges and both swap controls preserve exact signals and isolate displayed colors"
+                }
+            )
+            sources.get_by_role("button", name="Primary", exact=True).click()
+            check.settle()
+            if link.get_attribute("aria-pressed") != "true":
+                link.click()
+                check.settle()
+            before_graph = pipeline()
+            options_response = page.request.post(
+                args.api + "/get_visualization_options", data={}
+            )
+            assert options_response.ok, options_response.text()
+            before_options = options_response.json()
+            before_pixels = sample("atomic-publication-before")
+            errors_before = page.evaluate(
+                "document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('notificationCenter').entries.filter(e=>e.level==='error').length"
+            )
+            failed_requests = []
+
+            def fail_publication(route):
+                failed_requests.append(route.request.post_data_json)
+                route.fulfill(
+                    status=503,
+                    json={"error": "Forced visualization publication failure"},
+                )
+
+            page.route("**/set_visualization_options", fail_publication)
+            try:
+                upper.fill("85")
+                with page.expect_response(
+                    lambda response: response.url.endswith("/set_visualization_options")
+                ) as failed:
+                    apply()
+                assert failed.value.status == 503
+                page.wait_for_timeout(750)
+                page.wait_for_function(
+                    "count=>document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('notificationCenter').entries.filter(e=>e.level==='error').length===count+1",
+                    arg=errors_before,
+                )
+                assert len(failed_requests) == 1, failed_requests
+                assert "renderPipeline" in failed_requests[0], failed_requests
+                assert pipeline() == before_graph
+                after_options = page.request.post(
+                    args.api + "/get_visualization_options", data={}
+                )
+                assert after_options.ok and after_options.json() == before_options
+                assert sample("atomic-publication-rejected") == before_pixels
+                expected_error = "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+                assert len(check.errors) <= 1 and all(
+                    error == expected_error for error in check.errors
+                ), check.errors
+                check.errors.clear()
+            finally:
+                page.unroute("**/set_visualization_options", fail_publication)
+            apply()
+            expected = copy.deepcopy(before_graph)
+            for node in (
+                expected["upperExpression"]["top"],
+                expected["upperExpression"]["bottom"],
+                expected["lowerExpression"]["bottom"],
+            ):
+                set_expected_range(node, 85)
+            assert pipeline() == expected, (pipeline(), expected)
+            options_response = page.request.post(
+                args.api + "/get_visualization_options", data={}
+            )
+            assert (
+                options_response.ok
+                and options_response.json()["colormap"]["maxSignal"] == 85
+            )
+            assert query() == known
+            results.append(
+                {
+                    "test": "Rejected atomic primary publication preserves graph, options and pixels, reports one error and succeeds on retry"
+                }
+            )
+
+            for index, key, color in (
+                (0, "startColor", "#00ff00b3"),
+                (1, "endColor", "#ff0000e5"),
+            ):
+                before_pixels = sample("color-picker-" + key + "-before")
+                page.locator(".threshold-compact-card").get_by_role(
+                    "button", name="Choose color", exact=True
+                ).nth(index).click()
+                picker = page.locator(".hict-color-picker-overlay:visible")
+                field = picker.get_by_role(
+                    "textbox", name="Type a color name or hex value", exact=True
+                )
+                field.fill(color)
+                field.press("Tab")
+                picker.locator(".picker_done button").click()
+                apply()
+                for node in (
+                    expected["upperExpression"]["top"],
+                    expected["upperExpression"]["bottom"],
+                    expected["lowerExpression"]["bottom"],
+                ):
+                    node[key] = color
+                assert pipeline() == expected, (pipeline(), expected)
+                assert sample("color-picker-" + key + "-after") != before_pixels
+                assert query() == known
+            results.append(
+                {
+                    "test": "Both actual colormap color pickers preserve explicit alpha and change rendered colors in the linked primary target set"
                 }
             )
             assert not check.errors, check.errors

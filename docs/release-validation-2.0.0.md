@@ -2,12 +2,22 @@
 
 ## Release decision
 
-**NO-GO for publication while the required Windows and macOS evidence is pending.**
-An earlier 30-minute run exceeded the selected RSS trend threshold. Its one-hour
-repeat passes the original limits. A later packaged candidate also passes a 40-minute qualification.
-Subsequent scaling and dialog changes require final artifact qualification. The full control audit and remaining platform qualification stay open.
-This report records revision-specific local evidence. The manual platform record
-is in `docs/release-manual-checklist.md`. Nothing has been pushed or merged.
+**NO-GO for publication while current-revision CI, the remaining control audit and owner platform evidence remain open.**
+The last packaged application candidate is JVM `a1f7f0b8` and WebUI `d091321`.
+Acceptance-only commit `861d9a59` adds reload, zoom-endpoint and caption checks.
+The full Java suite passes 468 tests with seven optional skips. All forty browser scripts have passing recorded results across the final source
+sweep and focused compatible-candidate repeats. The corrected full-duration
+packaged memory soak passes its original limits. The control ledger retains its remaining
+boundary and interaction assertions.
+
+Both Linux packages pass fresh Borrelia journeys, offline use and exact metadata.
+The self-extracting package also passes a fresh yeast journey. Existing GitHub
+portable run 43010279649 passes all four targets at JVM fd46e1fd and WebUI
+f0ef290. The later Java run at 2e48a9f0 passes Windows and Intel macOS and fails
+the logging-test race on Linux and Apple Silicon. The race is fixed locally in
+02391436. Current local fixes await the owner push required by the plan.
+The Windows and macOS interactive checklist remains unverified. GitHub inspection
+has used existing runs, logs and artifacts. Nothing has been pushed or merged.
 
 ## Implementation traceability
 
@@ -23,7 +33,7 @@ is in `docs/release-manual-checklist.md`. Nothing has been pushed or merged.
 | U8 | `19faa062` | `7d6549e6` | Independently selected secondary pyramid levels and bounded projected tiles |
 | U9 | `efbf5f3d` | `c251787a` | CIGAR-based alignment detail at letter zoom with consistent exports |
 | U10 | `01c9dca2` | `807fa9b` | Unified background jobs, cancellation, atomic outputs and process-tree shutdown |
-| U11 | `fb4f1863` | `33c39e0` | Small tardigrade quick start and verified DNA Zoo cards |
+| U11 | `fb4f1863`, `c8ae7cce` | `33c39e0`, `7299669` | Verified DNA Zoo cards and owner-selected Borrelia/yeast quick starts |
 | U12 dependencies | `59b1c666` | `1b2651a` | Sequential dependency upgrades and JVM dependency locks |
 | U12 documents | `83fc05c2` | `b486877` | Installation guide, citations, attribution, notices, API guide and platform CI |
 | U13 capabilities | `ddf14d6f` | `1865476` | Reactive resolution-dependent normalization availability |
@@ -43,6 +53,12 @@ is in `docs/release-manual-checklist.md`. Nothing has been pushed or merged.
 | U13 dialog controls | `dc40c18e` | `cb7ca73` | Reachable Close actions, contained keyboard focus and visible opening focus |
 | U13 exact scaling | `524230f0` | Unchanged | Fractional and overflow-safe resolution scaling with independent numerical checks |
 | U13 portable startup | `464eba3c` | Application UI `f069f32` | Atomic extraction and concurrent first-start cache publication |
+| U13 track repaint | `cdbb8f06` | `3caeeba` | Immediate track backgrounds on both axes and matching exports |
+| U13 source identity | `2e48a9f0` | Unchanged | Full-precision timestamps and bounded content identity across filesystem limits |
+| U13 logging check | `02391436` | Unchanged | Shutdown interruption handled by the regression fake sink |
+| U13 full graph presets | `992e999a` | `d091321` | Complete applied graphs, matching editor layouts, JSON/native libraries and atomic dependency rejection |
+| U13 alpha compatibility | `a1f7f0b8` | Unchanged | Exact serialized alpha bytes with established fractional-input behavior |
+| U13 navigation and captions | `861d9a59` | Unchanged | Exact reload pixels, both zoom endpoints and ten exported caption placements |
 
 Supervisor items 1–7, 9 and 10 retain their earlier implementations with the
 U1/U3/U4/U5/U6 corrections above. Item 8 is implemented by U8 and U9. Item 11 is
@@ -51,7 +67,7 @@ platform checks recorded here.
 
 ## Builds and regression checks
 
-The latest full JVM suite has 440 tests, zero failures, zero errors and seven optional
+The latest full JVM suite has 468 tests, zero failures, zero errors and seven optional
 skips. The compiled native-processing baseline also passes. The complete smoke
 script passes through JVM compilation/tests and WebUI type checking/build.
 The full WebUI build runs its existing source and numerical regression scripts.
@@ -420,3 +436,99 @@ Final UI lint has zero errors and 99 warnings. Existing portable run 43010279649
 now has successful native-tool jobs for all four targets and successful Windows,
 Apple Silicon macOS and Linux packaging jobs. Intel macOS packaging is still
 running at this checkpoint. Source revisions remain fd46e1fd and WebUI f0ef290.
+
+
+## Compatible final Linux artifacts
+
+The normal bundled build and smoke suite pass. These immutable artifacts contain
+JVM a1f7f0b8 and WebUI d0913212670a9ddd1c2b2b0d766b96b9d559a655.
+The later acceptance-only commit retains the same application sources.
+
+| Format | Bytes | SHA-256 |
+|---|---|---|
+| Fat JAR | 352734941 | `6d77d2bcd909a3b08d20962a68c116ff7ac61dd2664ed482fbacde5f8e658cb1` |
+| Linux .run | 580157215 | `8b886a2c3708c919462428d238a93a5309169e586de4dd386fae5fb37bb08888` |
+| AppImage | 752708088 | `0e65e9753d6d07cab27e9218175526d097c0656e369d02d0018083aeebe824e2` |
+
+The manifest is `/tmp/hict-u13-compatible-final-artifacts.json`. Normal build logs
+are `/tmp/hict-u13-compatible-final-{normal,portable,appimage}-build.log`, and the
+complete smoke result is `/tmp/hict-u13-compatible-final-smoke.log`.
+
+| First-run journey | Clicks to readable map | Readable map, seconds | Full journey, seconds | Restored signal pixels |
+|---|---|---|---|---|
+| Linux .run Borrelia | ['Help', 'Examples...', 'Open example'] | 9.056 | 12.556 | 86371 |
+| AppImage Borrelia | ['Help', 'Examples...', 'Open example'] | 9.883 | 13.366 | 86371 |
+| Linux .run yeast | ['Help', 'Examples...', 'Open example'] | 140.956 | 146.542 | 7630 |
+
+Each journey uses a fresh data folder and public downloads, then navigates,
+reverses, splits, undoes, saves, closes, restores and checks exported AGP against
+the saved assembly. Both formats also pass offline assets and native session
+reopening. Metadata uses the complete UI commit. Full-graph preset, all fourteen
+built-in preset and session snapshot repeats pass through the actual .run.
+The first temporary Borrelia invocation used an invalid catalog ID and stopped
+in argument validation. Corrected geo-borrelia invocations pass on both formats.
+
+Electron and Tauri final repeats pass native save/cancel, storage reset and
+actual raster/SVG/PDF comparisons against the final server. Evidence pointers
+are `/tmp/hict-u13-compatible-final-electron-dir` and
+`/tmp/hict-u13-compatible-final-tauri-retry-dir`. The Launcher starts the earlier
+992e999a packaged server and confirms Stop terminates its owned process tree.
+
+Read-only downloads from successful portable run 43010279649 confirm both macOS
+architectures and minimum-version checks have empty error lists. Reports are
+retained under `/tmp/hict-u13-fd46-platform-evidence/`. Their source revisions
+precede this candidate and the reports contain automated executable qualification.
+The owner-run interactive checklist remains in `release-manual-checklist.md`.
+
+
+## Final packaged navigation and memory qualification
+
+Fresh-browser and repeat-open measurements pass on 96-, 1,765- and 7,790-contig
+maps. Frame p95 is 16.7–16.8 ms, with zero long tasks. Every measured
+view-change acknowledgement is below 46 ms. These samples preserve normal JIT,
+server and OS caches. The first 96-contig sample overlapped completion of native
+wrapper validation. Its isolated repeat passes after the soak, export checks and final Launcher acceptance.
+
+The actual Linux self-extracting artifact completes 1801.010 seconds and 228 mixed
+cycles with no browser errors. The same original limits govern this run.
+
+| Measure | Final value | Limit |
+|---|---|---|
+| Browser heap slope | 0.069459 MiB/min | 0.2 MiB/min |
+| Browser heap growth | 1007012 bytes | 8 MiB |
+| Java heap slope | 0.118403 MiB/min | 0.5 MiB/min |
+| Server RSS slope | 0.359644 MiB/min | 1 MiB/min |
+| DOM nodes, early/late maximum | 693/693 | Late maximum within 100 nodes |
+| Listeners, early/late maximum | 233/233 | Late maximum within 20 listeners |
+| Frame p95 | 16.800 ms | 33 ms |
+| Acknowledgement p95 | 58.540 ms | 100 ms |
+
+Evidence is under `/tmp/hict-u13-compatible-final-soak.o87ZIy`. The run records JVM native-memory
+categories and uses the standard repeated close/GC measurement, full navigation,
+actual modal mouse/focus interactions, edits/Undo, linked sequence, source
+replacement and image export. The harness retains primitive state while its
+inspector handles are discarded. All forty browser scripts now have passing
+records across the 992e999a/d091321 sweep and a1f7f0b8 compatibility repeats.
+
+
+## Subsequent custom graph control correction
+
+The extended source/triangle audit found a generic transparency override changed
+a custom colormap's alpha during a range edit and could touch unselected targets.
+Hydration and publication now honor the configured colors of the selected
+colormaps. A fractional-alpha graph passes exact target isolation, linked styling,
+source switching and both swap round trips with pixel and contact checks. The
+full UI build and lint pass. Existing interface regressions are running. This UI
+correction requires a fresh package and full-duration soak before qualification.
+The preceding artifact hashes and successful soak describe a1f7f0b8/d091321.
+
+
+The custom-color correction is committed in WebUI b6e01ce. It also publishes
+primary styles with their graph in the existing atomic transaction and consumes
+the pending live-apply timer on Apply. The seven-case source-style gate verifies
+a single forced503 error, exact preserved options/graph/pixels, explicit retry,
+individual and linked targets, both swap controls and both actual color pickers.
+All fourteen built-ins, six full-graph cases, twelve editor cases, five track
+cases and sixteen sequence cases pass. Full lint has zero errors and99warnings.
+The interface sweep also passes after an isolated resolution-checkbox repeat.
+New packaged artifacts and a new full-duration soak remain required.

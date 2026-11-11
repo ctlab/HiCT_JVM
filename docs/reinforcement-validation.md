@@ -2082,3 +2082,59 @@ band labels. Above/Inside/Below and Left/Inside/Right positions are ordered
 independently for the known contig and scaffold. All eight workspace cases pass.
 Evidence pointers are `/tmp/hict-u13-navigation-pixels-endpoints-dir` and
 `/tmp/hict-u13-caption-side-controls-transformed-dir`.
+
+
+### U13 custom colormap targeting and alpha preservation
+
+The source/triangle audit reproduced a contrast edit changing a custom blended
+colormap's opaque minimum to transparent. Generic hydration inferred a source-wide
+transparency policy from any top-layer occurrence. Generic publication also
+rewrote top-layer colors beyond the selected target. These overrides have been
+removed. Hydration reads the target's configured colors, and publication applies
+the chosen style to the selected target set. Built-in overlay constructors retain
+their explicit transparent colors. Explicit color alpha remains editable.
+
+The new browser scenario starts with three primary colormaps and one secondary
+colormap across the two triangles. Its selected target has alpha127. An individual
+threshold edit preserves that alpha, every unselected expression and lower-triangle
+pixels. Linked editing updates the primary target set, and secondary editing
+preserves primary branches. Both source-order and triangle swap controls round
+trip the exact graph and pixels while all raw contacts retain known values.
+The focused scenario passes under `/tmp/hict-u13-preserve-target-alpha-dir`.
+The full WebUI build passes, and full lint records zero errors and99warnings.
+The interface sweep and focused overlay suites pass. A resolution-checkbox
+timeout during the parallel sweep passes on its isolated repeat with the same
+checks and timeout. Its failed record remains available for review.
+Final packages and the full-duration soak must qualify this newer UI revision.
+
+The export audit also passes source browsing and dismissal, actual overwrite of
+a disposable existing output, Refresh jobs preserving a draft and exact job IDs,
+and all eight independent Cooler contact/weight/compression oracles. Evidence is
+`/tmp/hict-u13-compatible-final-export-controls-retry-dir`.
+The sixteen-case sequence lifecycle adds exact/substitution modes, literal and
+expanded IUPAC ambiguity, forward-only and both strands. Independent scans
+match every exported BED coordinate and strand in five variants. Evidence is
+`/tmp/hict-u13-compatible-final-search-controls/`. Final Launcher acceptance and
+the isolated96-contig navigation repeat also pass.
+
+
+Primary sidebar publication now reuses the atomic options-and-graph endpoint.
+Secondary style publication retains its graph transaction. Manual Apply consumes
+its pending live-apply timer, and sidebar failures use the existing deduplicated
+notification helper with diagnostics. The forced HTTP503 case holds beyond the
+debounce interval, observes exactly one request and one error, and compares the
+unchanged server options, graph and displayed pixels before an explicit retry.
+Both actual endpoint color pickers accept fractional alpha and update precisely
+the linked primary target set, with different displayed colors and unchanged
+raw contacts. Final evidence is under
+`/tmp/hict-u13-target-alpha-color-pickers-dir`.
+
+All fourteen built-ins, six full-graph cases, twelve editor cases, five track
+cases and sixteen real-tool sequence cases pass on the final implementation.
+Results are in `/tmp/hict-u13-target-alpha-final-focused.json`. The normal build
+and full lint pass with zero errors and99warnings. The broader interface sweep
+is recorded in `/tmp/hict-u13-target-alpha-regate-{core,open-session,quad,extra}.json`,
+with the navigation repeat in `/tmp/hict-u13-target-alpha-navigation-isolated.json`.
+The matrix export extension also browses a custom identity AGP and checks every
+resulting contact independently. It passes under
+`/tmp/hict-u13-target-alpha-export-agp-dir`.

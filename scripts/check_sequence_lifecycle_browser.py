@@ -2,6 +2,7 @@
 """Sequence-search DOM test with deterministic FASTA and retained full diagnostics."""
 import argparse, functools, http.server, json, os, random, shutil, sys, threading, subprocess
 from pathlib import Path
+import time
 from playwright.sync_api import sync_playwright
 from sequence_browser_harness import HictTestServer, BrowserCheck
 
@@ -481,6 +482,117 @@ class OverlayFixture { public static void main(String[] a) {
             }""")
             (out/'minimap-clipping.json').write_text(json.dumps(state,indent=2))
             assert all(sum(c['blue'] for c in row['canvases'])>10 for row in state[-2:]),state[-2:]
+        def search_control_variants():
+            page.evaluate(
+                "args => window.__hictBenchmark.open('known.hict.hdf5', args.api, 'known.fasta')",
+                {"api": app.url},
+            )
+            check.settle()
+            original = sequence[80:104]
+            ambiguous = "N" + original[1:]
+            mutated = ("A" if original[0] != "A" else "C") + original[1:]
+            cases = [
+                ("literal-ambiguity", ambiguous, "exact", False, False, 0),
+                ("expanded-ambiguity", ambiguous, "exact", False, True, 0),
+                ("forward-only-reverse-query", reverse(original), "exact", False, False, 0),
+                ("both-strands-reverse-query", reverse(original), "exact", True, False, 0),
+                ("one-substitution", mutated, "substitutions", False, False, 1),
+            ]
+            records = []
+            for label, query, mode, both, degenerate, mismatches in cases:
+                expected = set()
+                for start in range(len(sequence) - len(query) + 1):
+                    candidate = sequence[start : start + len(query)]
+                    for strand, bases in [("+", candidate)] + (
+                        [("-", reverse(candidate))] if both else []
+                    ):
+                        differences = sum(
+                            a != b and not (degenerate and a == "N")
+                            for a, b in zip(query, bases)
+                        )
+                        if differences <= mismatches:
+                            expected.add((start, start + len(query), strand))
+                check.menu("Tools", "Find sequences in linked FASTA…")
+                dialog = page.get_by_role(
+                    "dialog", name="Find sequences in the linked FASTA", exact=True
+                )
+                page.wait_for_function(
+                    "!document.querySelector('#search-mode option[value=exact]').disabled"
+                )
+                dialog.get_by_label("FASTA records, or one DNA sequence per line").fill(query)
+                dialog.get_by_label("Search scope", exact=True).select_option("assembly")
+                dialog.get_by_label("DNA strands", exact=True).select_option(
+                    "true" if both else "false"
+                )
+                dialog.get_by_label("Matching", exact=True).select_option(mode)
+                if mode == "exact":
+                    dialog.get_by_label(
+                        "Expand IUPAC ambiguity codes in queries", exact=True
+                    ).set_checked(degenerate)
+                else:
+                    dialog.get_by_label("Maximum substitutions per match", exact=True).fill(
+                        str(mismatches)
+                    )
+                check.advanced()
+                dialog.get_by_label("Save reusable BED under DATA_DIR").check()
+                filename = "published/control-" + label + ".bed"
+                dialog.get_by_label("BED output path").fill(filename)
+                with page.expect_response(
+                    lambda response: response.url.endswith("/sequence/search/jobs")
+                ) as submitted:
+                    dialog.get_by_role("button", name="Find sequences", exact=True).click()
+                assert submitted.value.status == 202, submitted.value.text()
+                settings = submitted.value.request.post_data_json
+                assert (
+                    settings["mode"] == mode
+                    and settings["bothStrands"] == both
+                    and settings["degenerate"] == degenerate
+                ), settings
+                assert (
+                    settings["scope"] == "assembly" and settings["outputFilename"] == filename
+                ), settings
+                if mode == "substitutions":
+                    assert settings["mismatches"] == mismatches, settings
+                job_id = submitted.value.json()["jobId"]
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    job = next(
+                        j
+                        for j in json.loads(app.http("/sequence/jobs/list", {}))
+                        if j["jobId"] == job_id
+                    )
+                    if job["status"] in ("finished", "failed", "cancelled"):
+                        break
+                    page.wait_for_timeout(100)
+                assert job["status"] == "finished" and job["hits"] == len(expected), (
+                    label,
+                    expected,
+                    job,
+                )
+                bed = data / filename
+                assert bed.is_file(), (label, job)
+                lines = [
+                    line.split("\t")
+                    for line in bed.read_text().splitlines()
+                    if line and not line.startswith(("#", "track", "browser"))
+                ]
+                actual = {(int(row[1]), int(row[2]), row[5]) for row in lines}
+                assert actual == expected, (label, actual, expected)
+                if expected:
+                    dialog.wait_for(state="hidden")
+                else:
+                    dialog.get_by_role("button", name="Close", exact=True).last.click()
+                records.append(
+                    {
+                        "case": label,
+                        "expected": sorted(expected),
+                        "actual": sorted(actual),
+                        "job": job_id,
+                    }
+                )
+            (out / "search-control-variants.json").write_text(
+                json.dumps(records, indent=2) + "\n"
+            )
         def reattach_to_original_order():
             jobs = sorted([j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind']=='dotplot'], key=lambda j:j['createdAtMs'])
             filename=jobs[-1]['outputFile']
@@ -517,6 +629,7 @@ class OverlayFixture { public static void main(String[] a) {
             check.step('selection-menu-exports-and-moddotplot', selection_actions)
             check.step('selection-alignment-dotplot',alignment_dotplot)
             check.step('reattach-generated-overlay-to-original-order', reattach_to_original_order)
+            check.step('search-modes-iupac-strands-and-exact-bed-positions', search_control_variants)
             notifications = page.evaluate("()=>document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('notificationCenter').entries")
             (out / 'notifications.json').write_text(json.dumps(notifications, indent=2))
             assert not [e for e in notifications if e['level'] == 'error'], notifications

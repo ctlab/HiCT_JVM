@@ -25,6 +25,8 @@ def main():
         raise ValueError("The server fixture must be an independent physical copy")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
+    custom_agp = data / "control-custom-export.agp"
+    custom_agp.write_text("assembly\t1\t4000\t1\tW\tassembly\t1\t4000\t+\n")
     results = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -64,6 +66,30 @@ def main():
                         "heading", name="Export matrix to Cooler", exact=True
                     )
                 )
+                if not results:
+                    dialog.get_by_role(
+                        "button", name="Browse...", exact=True
+                    ).first.click()
+                    picker = page.get_by_role("dialog").filter(
+                        has=page.get_by_role(
+                            "heading", name="Select source .hict.hdf5", exact=True
+                        )
+                    )
+                    picker.get_by_role("button", name="Dismiss", exact=True).click()
+                    assert (
+                        dialog.locator("input[readonly]").first.input_value()
+                        == source.name
+                    )
+                    dialog.get_by_role(
+                        "button", name="Browse...", exact=True
+                    ).first.click()
+                    check.choose_file(source.name)
+                    picker.get_by_role("button", name="Load", exact=True).click()
+                    picker.wait_for(state="hidden")
+                    assert (
+                        dialog.locator("input[readonly]").first.input_value()
+                        == source.name
+                    )
                 selects = dialog.locator("select")
                 selects.nth(0).select_option(mode)
                 compression = selects.nth(1)
@@ -86,12 +112,62 @@ def main():
                     assert balancing.is_enabled()
                     balancing.set_checked(balance)
                 dialog.locator("#export-current-assembly").set_checked(current)
+                uses_custom_agp = mode == "hictk" and not current and level == 4
+                if uses_custom_agp:
+                    dialog.get_by_role("button", name="Browse...", exact=True).nth(
+                        1
+                    ).click()
+                    picker = page.get_by_role("dialog").filter(
+                        has=page.get_by_role(
+                            "heading", name="Select custom AGP", exact=True
+                        )
+                    )
+                    check.choose_file(custom_agp.name)
+                    picker.get_by_role("button", name="Load", exact=True).click()
+                    picker.wait_for(state="hidden")
+                    assert (
+                        dialog.locator("input[readonly]").nth(1).input_value()
+                        == custom_agp.name
+                    )
                 dialog.locator("#export-all-resolutions").set_checked(all_levels)
                 target = f"export-{mode}-{level}." + ("mcool" if all_levels else "cool")
                 dialog.get_by_placeholder("matrix.mcool", exact=True).fill(target)
                 numeric = dialog.locator("input[type=number]")
                 numeric.nth(0).fill(str(level))
                 numeric.nth(1).fill("1")
+                overwrite = not results
+                dialog.locator("#export-overwrite").set_checked(overwrite)
+                if overwrite:
+                    (data / target).write_bytes(
+                        b"Disposable overwritten export sentinel\n"
+                    )
+                with page.expect_response(
+                    lambda response: response.url.endswith("/convert/jobs/list")
+                    and response.request.method == "POST"
+                ) as refreshed:
+                    dialog.get_by_role(
+                        "button", name="Refresh jobs", exact=True
+                    ).click()
+                assert refreshed.value.ok, refreshed.value.text()
+                page.wait_for_function(
+                    "!document.querySelector('.job-history-panel button').disabled"
+                )
+                expected_jobs = {
+                    job["outputFilename"]
+                    for job in refreshed.value.json()
+                    if job["direction"] == "hict-to-mcool"
+                    or job["status"].lower() in ("queued", "running")
+                }
+                assert (
+                    set(dialog.locator(".job-history-main").all_inner_texts())
+                    == expected_jobs
+                )
+                assert (
+                    dialog.get_by_placeholder("matrix.mcool", exact=True).input_value()
+                    == target
+                )
+                assert numeric.nth(0).input_value() == str(level)
+                assert numeric.nth(1).input_value() == "1"
                 with page.expect_response(
                     lambda response: response.url.endswith("/convert/jobs")
                 ) as response:
@@ -109,6 +185,10 @@ def main():
                     and request["useCurrentAssembly"] == current
                 )
                 assert request["balanceExportedCoolers"] == balance, request
+                assert request["overwrite"] == overwrite, request
+                assert request.get("assemblyFilename") == (
+                    custom_agp.name if uses_custom_agp else None
+                ), request
                 job = response.value.json()
                 job_id = job["jobId"]
                 deadline = time.monotonic() + 180
