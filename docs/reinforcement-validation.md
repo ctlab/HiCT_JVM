@@ -1337,3 +1337,39 @@ The existing search delivery browser regression also passed, including lost-repl
 retry and slow track queries. The nine-check ModDotPlot zoom and preset gate
 passed with a maximum heartbeat gap of 69 ms. Evidence is in the directories
 named by /tmp/hict-u10-search-dir and /tmp/hict-u10-moddotplot-ready-dir.
+
+
+## Verified examples and portable heap (U11)
+
+Three candidates from DNA Zoo and GEO were presented after a search that also
+covered 4DN. The tardigrade pair was selected for its directly matching reference
+and 45,250,776-byte total download. The catalog records exact file sizes, hashes,
+provider terms and citations. All three bundled cards passed real downloads,
+conversion, main-map rendering and linked FASTA reads. The quick-start browser
+gate reached five chromosomes in 20.27 seconds with three trusted clicks and
+31,145 signal pixels in the actual main viewport. It reported no page or console
+errors. The complete large-example measurements and source references are in
+`docs/examples-catalog.md`. Large-map main-viewport signal counts were 41,693
+and 33,130 pixels. Peak sampled Java heaps were 2.41 and 1.93 GiB.
+
+Default `.mcool` pyramid imports now pass the selected resolution URI directly
+to hictk zoomify. The bundled hictk rejects the former intermediate conversion.
+A real-tool regression imports a generated multiresolution fixture. Entirely
+unmatched draft assembly layouts are rejected before publication. The two large
+example recipes open their scaffolded references directly. Downloader instances
+borrow the current Vert.x runtime when present and preserve its ownership.
+
+An initial quick-start implementation exposed unbounded updates in the existing
+toast library. A single finite preparation notification and the existing Jobs
+panel now carry progress. A fresh-browser repeat passed. Portable Linux,
+Windows, macOS and Java Launcher commands default to MaxRAMPercentage=50.0,
+providing a 4 GiB Java limit on an 8 GiB host. Explicit heap options remain
+supported. Linux syntax and Java option precedence were checked locally.
+Windows and macOS runtime checks belong to the U13 platform gate.
+
+WebUI build and checks passed. Edited-file ESLint reported zero errors and four
+existing warnings. The JVM suite passed, including the new real `.mcool`,
+assembly-layout and downloader-ownership regressions. One early large-example
+trial was invalidated by rebuilding its running JAR. All qualified trials used
+immutable JAR and WebUI copies. The evidence directories in the catalog document
+contain qualified results, source hashes, screenshots and sampled resources.

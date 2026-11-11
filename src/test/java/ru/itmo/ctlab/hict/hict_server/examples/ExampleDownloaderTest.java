@@ -117,6 +117,21 @@ class ExampleDownloaderTest {
     });
   }
 
+  @Test void closingDownloaderKeepsItsManagedVertxContextAlive() throws Exception {
+    final var vertx = io.vertx.core.Vertx.vertx();
+    try {
+      final var completed = new java.util.concurrent.CompletableFuture<Void>();
+      vertx.runOnContext(ignored -> {
+        try {
+          final var downloader = downloader();
+          downloader.close();
+          vertx.runOnContext(next -> completed.complete(null));
+        } catch (Throwable failure) { completed.completeExceptionally(failure); }
+      });
+      completed.get(5, java.util.concurrent.TimeUnit.SECONDS);
+    } finally { vertx.close().toCompletionStage().toCompletableFuture().get(5, java.util.concurrent.TimeUnit.SECONDS); }
+  }
+
   @Test void downloadsVerifiesAndWritesAManifestWithAttribution() throws Exception {
     plainServer();
     var d = downloader();

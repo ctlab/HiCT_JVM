@@ -81,7 +81,8 @@
         "agp": { "$ref": "#/$defs/id" },
         "assembly": { "$ref": "#/$defs/id" },
         "tracks": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/id" } },
-        "referenceId": { "$ref": "#/$defs/text" }
+        "referenceId": { "$ref": "#/$defs/text" },
+        "quickStart": { "type": "boolean", "default": false, "description": "Download, convert and open a matrix and FASTA recipe with default settings." }
       }
     },
     "provenance": {

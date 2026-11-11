@@ -49,14 +49,14 @@ class ExamplesCatalogTest {
     return found.isEmpty() ? "" : found.get(0).pointer();
   }
 
-  @Test void theBundledCatalogIsValidAndSeedsTwoCardsFromData() {
+  @Test void theBundledCatalogIsValidAndSeedsThreeCardsFromData() {
     var merged = ExamplesCatalog.load(null);
     assertTrue(merged.problems().isEmpty(), merged.problems().toString());
-    assertEquals(List.of("dnazoo-cheetah", "dnazoo-aedes"), merged.examples().stream().map(ExamplesCatalog.Example::id).toList());
+    assertEquals(List.of("dnazoo-tardigrade", "dnazoo-cheetah", "dnazoo-aedes"), merged.examples().stream().map(ExamplesCatalog.Example::id).toList());
     var cheetah = merged.find("dnazoo-cheetah").body();
     assertEquals("https://www.dnazoo.org/usage", cheetah.getJsonObject("attribution").getString("termsUrl"));
     assertFalse(cheetah.getJsonObject("attribution").containsKey("licenseName"), "no licence is invented for the provider");
-    assertEquals("draft", cheetah.getJsonObject("provenance").getString("reviewStatus"), "not claimed verified before it was opened");
+    assertEquals("verified", cheetah.getJsonObject("provenance").getString("reviewStatus"), "verified by the recorded end-to-end browser run");
     assertTrue(cheetah.getJsonArray("files").stream().map(o -> (JsonObject) o).anyMatch(f -> f.getString("filename").equals("aciJub1_HiC.hic") && f.getLong("bytes") == 1407754884L));
   }
 
@@ -71,7 +71,7 @@ class ExamplesCatalogTest {
     }
     var merged = ExamplesCatalog.load(data);
     assertTrue(merged.problems().isEmpty(), merged.problems().toString());
-    assertEquals(List.of("s0", "s1", "dnazoo"), merged.sections().stream().map(x -> x.getString("id")).toList(), "order comes from the data");
+    assertEquals(List.of("quick-start", "s0", "s1", "dnazoo"), merged.sections().stream().map(x -> x.getString("id")).toList(), "order comes from the data");
     var local = merged.find("local1");
     assertFalse(local.bundled());
     assertEquals("local:a.json", local.source());
@@ -89,6 +89,11 @@ class ExamplesCatalogTest {
     assertEquals("/examples/0/publications/0/doi", firstPointer(e -> e.getJsonArray("publications").getJsonObject(0).put("doi", "not a doi")));
     assertEquals("/examples/0/attribution/termsUrl", firstPointer(e -> e.getJsonObject("attribution").put("termsUrl", "javascript:alert(1)")));
     assertEquals("/examples/0/surprise", firstPointer(e -> e.put("surprise", 1)));
+  }
+
+  @Test void quickStartFlagMustBeBoolean() {
+    assertEquals("/examples/0/openingRecipe/quickStart",
+      firstPointer(e -> e.getJsonObject("openingRecipe").put("quickStart", "yes")));
   }
 
   @Test void recipesMustPointAtFilesOfTheRightRole() {
@@ -119,7 +124,7 @@ class ExamplesCatalogTest {
     Files.writeString(dir.resolve("broken.json"), "{ not json");
     Files.writeString(dir.resolve("old.json"), catalog("old", validExample("keep", "s1")).put("schemaVersion", 2).encode());
     var merged = ExamplesCatalog.load(data);
-    assertEquals(2, merged.examples().size(), "only the bundled cards remain");
+    assertEquals(3, merged.examples().size(), "only the bundled cards remain");
     assertEquals(2, merged.problems().size());
     assertTrue(merged.problems().stream().anyMatch(p -> p.message().contains("Not valid JSON")));
     assertTrue(merged.problems().stream().anyMatch(p -> p.pointer().equals("/schemaVersion")));

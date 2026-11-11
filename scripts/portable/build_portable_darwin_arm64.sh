@@ -473,6 +473,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::vector<std::string> args = {
+    "-XX:MaxRAMPercentage=50.0",
     "-Djava.io.tmpdir=" + temp_dir,
     "-jar",
     app_home + "/lib/hict.jar",

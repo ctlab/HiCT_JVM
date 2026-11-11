@@ -467,15 +467,8 @@ public final class HictkConversionPipeline {
       }
 
       emitStage(logger, stagePlan, "extract_base", 0.0d, "Preparing base .cool at resolution " + baseResolution);
-      final Path baseCoolPath;
-      if (isSingleResolutionCooler(options.inputPath())) {
-        baseCoolPath = options.inputPath();
-        emitStage(logger, stagePlan, "extract_base", 1.0d, "Using input .cool as base resolution");
-      } else {
-        baseCoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + "." + baseResolution + ".base.cool");
-        convertMcoolResolutionToCool(options, toolchain, baseResolution, baseCoolPath, tmpDirectory, logger, processSink, cancellationRequested);
-        emitStage(logger, stagePlan, "extract_base", 1.0d, "Extracted base resolution to " + baseCoolPath.getFileName());
-      }
+      final var baseCoolUri = coolerUriForResolution(options.inputPath(), baseResolution);
+      emitStage(logger, stagePlan, "extract_base", 1.0d, "Using input Cooler group " + baseCoolUri);
 
       final var generatedMcoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".pyramid.mcool");
       emitStage(logger, stagePlan, "zoomify", 0.0d, "Zoomifying base .cool to .mcool");
@@ -483,7 +476,7 @@ public final class HictkConversionPipeline {
       final var zoomifyCommand = new ArrayList<String>();
       zoomifyCommand.add(Objects.requireNonNull(toolchain.hictkCommand()).toString());
       zoomifyCommand.add("zoomify");
-      zoomifyCommand.add(baseCoolPath.toString());
+      zoomifyCommand.add(baseCoolUri);
       zoomifyCommand.add(generatedMcoolPath.toString());
       zoomifyCommand.add("--force");
       zoomifyCommand.add("--threads");
@@ -686,58 +679,6 @@ public final class HictkConversionPipeline {
     return isSingleResolutionCooler(coolerPath)
       ? coolerPath.toString()
       : coolerPath + "::/resolutions/" + resolution;
-  }
-
-  private void convertMcoolResolutionToCool(final @NotNull ConversionOptions options,
-                                            final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
-                                            final long baseResolution,
-                                            final @NotNull Path baseCoolPath,
-                                            final @NotNull Path tmpDirectory,
-                                            final @NotNull Consumer<String> logger,
-                                            final @NotNull Consumer<Process> processSink,
-                                            final @NotNull BooleanSupplier cancellationRequested) throws Exception {
-    final var hictk = Objects.requireNonNull(toolchain.hictkCommand()).toString();
-    final var uriCommand = List.of(
-      hictk,
-      "convert",
-      options.inputPath() + "::/resolutions/" + baseResolution,
-      baseCoolPath.toString(),
-      "--output-fmt",
-      "cool",
-      "--threads",
-      Integer.toString(normalizeParallelism(options.parallelism())),
-      "--compression-lvl",
-      Integer.toString(normalizeHictkCompressionLevel(options.compressionLevel())),
-      "--force"
-    );
-    try {
-      runStreamingCommand(uriCommand, tmpDirectory, logger, logger::accept, processSink, cancellationRequested);
-      return;
-    } catch (IllegalStateException uriFailure) {
-      logger.accept("WARNING: hictk could not extract " + options.inputPath().getFileName() + "::/resolutions/" + baseResolution + "; retrying with --resolutions. " + uriFailure.getMessage());
-    }
-    runStreamingCommand(
-      List.of(
-        hictk,
-        "convert",
-        options.inputPath().toString(),
-        baseCoolPath.toString(),
-        "--output-fmt",
-        "cool",
-        "--resolutions",
-        Long.toString(baseResolution),
-        "--threads",
-        Integer.toString(normalizeParallelism(options.parallelism())),
-        "--compression-lvl",
-        Integer.toString(normalizeHictkCompressionLevel(options.compressionLevel())),
-        "--force"
-      ),
-      tmpDirectory,
-      logger,
-      logger::accept,
-      processSink,
-      cancellationRequested
-    );
   }
 
   private @NotNull HicMetadata readMetadata(final @NotNull Path inputPath,

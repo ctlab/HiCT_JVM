@@ -203,6 +203,11 @@ public class McoolToHictConverter {
       .allMatch(record -> canResolveSourceChromIndex(sourceChromLayout, record.getContigName()));
     final boolean useSingleAssemblyChromosome = !allContigNamesResolve && sourceChromLayout.lengthsBp().length == 1;
     final boolean allowUnmappedJuiceboxContigs = !allContigNamesResolve && !useSingleAssemblyChromosome && isJuiceboxAssemblyLayout;
+    if (allowUnmappedJuiceboxContigs && contigRecords.stream()
+      .noneMatch(record -> canResolveSourceChromIndex(sourceChromLayout, record.getContigName()))) {
+      throw new IllegalArgumentException("The Juicebox assembly components do not match any source chromosome. "
+        + "Use a layout for this matrix reference, or omit the layout when importing an already scaffolded matrix.");
+    }
     if (!allContigNamesResolve && !useSingleAssemblyChromosome && !allowUnmappedJuiceboxContigs) {
       final var missingContigName = contigRecords.stream()
         .map(AGPProcessor.ContigAGPRecord::getContigName)

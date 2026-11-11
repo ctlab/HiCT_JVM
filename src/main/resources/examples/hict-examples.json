@@ -4,6 +4,12 @@
   "generator": "hand-curated",
   "sections": [
     {
+      "id": "quick-start",
+      "title": "Quick start",
+      "description": "A small Hi-C map with its matching FASTA reference.",
+      "order": 0
+    },
+    {
       "id": "dnazoo",
       "title": "DNA Zoo chromosome-length assemblies",
       "description": "Hi-C maps with the genome assemblies they were used to scaffold, shared by the DNA Zoo Consortium. Large downloads: check your disk space first.",
@@ -11,6 +17,78 @@
     }
   ],
   "examples": [
+    {
+      "id": "dnazoo-tardigrade",
+      "sectionId": "quick-start",
+      "title": "Tardigrade quick start",
+      "organism": "Hypsibius dujardini",
+      "assemblyIds": [
+        "nHd_3.1_HiC",
+        "GCA_002082055.1"
+      ],
+      "tags": [
+        "Hi-C",
+        "five chromosomes"
+      ],
+      "description": "A 12.6 MB Hi-C map and 32.7 MB FASTA. Open example downloads, converts and opens the five mapped chromosomes. The FASTA also includes unplaced scaffolds absent from the map.",
+      "publications": [
+        {
+          "title": "De novo assembly of the Aedes aegypti genome using Hi-C yields chromosome-length scaffolds",
+          "citation": "Dudchenko O, Batra SS, Omer AD, et al. 2017. Science 356(6333):92-95.",
+          "url": "https://doi.org/10.1126/science.aal3327",
+          "doi": "10.1126/science.aal3327",
+          "kind": "method"
+        },
+        {
+          "title": "Comparative genomics of the tardigrades Hypsibius dujardini and Ramazzottius varieornatus",
+          "citation": "Yoshida Y, Koutsovoulos G, Laetsch DR, et al. 2017. PLOS Biology 15:e2002266.",
+          "url": "https://doi.org/10.1371/journal.pbio.2002266",
+          "doi": "10.1371/journal.pbio.2002266",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "hic",
+          "url": "https://dnazoo.s3.wasabisys.com/Hypsibius_dujardini/nHd_3.1_HiC.hic",
+          "filename": "nHd_3.1_HiC.hic",
+          "required": true,
+          "bytes": 12554347,
+          "sha256": "fcc5200f8153e3565b2c0729d7b95b1c0aa3bb976fa563b402a3aec0c20f0dd6"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://dnazoo.s3.wasabisys.com/Hypsibius_dujardini/nHd_3.1_HiC.fasta.gz",
+          "filename": "nHd_3.1_HiC.fasta.gz",
+          "required": true,
+          "bytes": 32696429,
+          "sha256": "f761137971de0326e9fd9967c0fc4a4013f37c4de21ed6896eddfe613bec8706"
+        }
+      ],
+      "attribution": {
+        "provider": "DNA Zoo Consortium",
+        "url": "https://www.dnazoo.org/",
+        "termsUrl": "https://www.dnazoo.org/usage",
+        "acknowledgement": "Unpublished genome assemblies and sequencing data for Hypsibius dujardini are used with permission from the DNA Zoo Consortium (dnazoo.org).",
+        "restrictions": "The provider states no formal licence. Where a draft genome used by DNA Zoo was made by others and is unpublished, respect any restrictions set by its creators."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "nHd_3.1_HiC",
+        "quickStart": true
+      },
+      "provenance": {
+        "sourceUrl": "https://www.dnazoo.org/assemblies/hypsibius_dujardini",
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified"
+      }
+    },
     {
       "id": "dnazoo-cheetah",
       "sectionId": "dnazoo",
@@ -57,7 +135,8 @@
           "filename": "aciJub1_HiC.hic",
           "required": true,
           "bytes": 1407754884,
-          "description": "Hi-C contact map (needs conversion to HiCT format)"
+          "description": "Hi-C contact map (needs conversion to HiCT format)",
+          "sha256": "2ccb680c550c510175f1484c16278f820a412485fbb08e6ae20003f1b1701525"
         },
         {
           "id": "fasta",
@@ -67,7 +146,8 @@
           "filename": "aciJub1_HiC.fasta.gz",
           "required": true,
           "bytes": 767362474,
-          "description": "Chromosome-length assembly sequence"
+          "description": "Chromosome-length assembly sequence",
+          "sha256": "8ef579d32cb79f47cc4100d709192a49c980b2754c715dbb1d553b8063341459"
         },
         {
           "id": "assembly",
@@ -77,7 +157,8 @@
           "filename": "aciJub1_HiC.assembly",
           "required": false,
           "bytes": 473432,
-          "description": "Juicebox assembly file (scaffold layout)"
+          "description": "Original draft-component Juicebox layout. The matrix and FASTA use chromosome-length scaffold coordinates, so this layout is retained for provenance.",
+          "sha256": "2e997faa90a9d5839fddbe302ef887bcb75cc5100c17ae9dc8275f6e45fc3540"
         }
       ],
       "attribution": {
@@ -90,14 +171,13 @@
       "openingRecipe": {
         "matrix": "matrix",
         "fasta": "fasta",
-        "assembly": "assembly",
         "referenceId": "aciJub1_HiC"
       },
       "provenance": {
         "sourceUrl": "https://www.dnazoo.org/assemblies/",
-        "retrieved": "2026-11-10",
+        "retrieved": "2026-11-11",
         "origin": "curated",
-        "reviewStatus": "draft"
+        "reviewStatus": "verified"
       }
     },
     {
@@ -146,7 +226,8 @@
           "filename": "AaegL5.0.hic",
           "required": true,
           "bytes": 2780092536,
-          "description": "Hi-C contact map (needs conversion to HiCT format)"
+          "description": "Hi-C contact map (needs conversion to HiCT format)",
+          "sha256": "1f41708e0dd80412c2a4049f752ba47dd1cb9ed881b57d18f7809cb25b29e715"
         },
         {
           "id": "fasta",
@@ -156,7 +237,8 @@
           "filename": "AaegL5.0.fasta.gz",
           "required": true,
           "bytes": 410300578,
-          "description": "Chromosome-length assembly sequence"
+          "description": "Chromosome-length assembly sequence",
+          "sha256": "32abb90d0ce61a78a621313831cfc2bb04353f6ce82d195fa6757b5cf9811a31"
         },
         {
           "id": "assembly",
@@ -166,7 +248,8 @@
           "filename": "AaegL5.0.assembly",
           "required": false,
           "bytes": 71567,
-          "description": "Juicebox assembly file (scaffold layout)"
+          "description": "Original draft-component Juicebox layout. The matrix and FASTA use chromosome-length scaffold coordinates, so this layout is retained for provenance.",
+          "sha256": "c3e1b7728b0abb77bfd7ede34130dbb8cebe9b8d651b83a8a43a089e2100167a"
         }
       ],
       "attribution": {
@@ -179,14 +262,13 @@
       "openingRecipe": {
         "matrix": "matrix",
         "fasta": "fasta",
-        "assembly": "assembly",
         "referenceId": "AaegL5.0"
       },
       "provenance": {
         "sourceUrl": "https://www.dnazoo.org/assemblies/",
-        "retrieved": "2026-11-10",
+        "retrieved": "2026-11-11",
         "origin": "curated",
-        "reviewStatus": "draft"
+        "reviewStatus": "verified"
       }
     }
   ]

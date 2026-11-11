@@ -1,5 +1,8 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
+import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -15,6 +18,43 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HictkConversionPipelineTest {
   @TempDir
   Path tempDir;
+
+  @Test
+  void importsMultiResolutionCoolerThroughItsSelectedGroup() throws Exception {
+    final var manager = new ExternalToolchainManager();
+    org.junit.jupiter.api.Assumptions.assumeTrue(manager.inspect().hictkAvailable(), "hictk payload unavailable on this platform");
+    final var toolchain = manager.requireHictkToolchain();
+    final var hictk = toolchain.hictkCommand();
+    org.junit.jupiter.api.Assumptions.assumeTrue(hictk != null, "hictk payload unavailable on this platform");
+    final var chroms = Files.writeString(tempDir.resolve("chrom.sizes"), "test\t12000\n");
+    final var pixels = Files.writeString(tempDir.resolve("pixels.tsv"), "0\t0\t10\n0\t1\t5\n1\t1\t10\n2\t2\t10\n");
+    final var single = tempDir.resolve("input.cool");
+    final var multiple = tempDir.resolve("input.mcool");
+    final var log = tempDir.resolve("hictk.log");
+    for (var command : List.of(
+      List.of(hictk.toString(), "load", pixels.toString(), single.toString(), "--chrom-sizes", chroms.toString(), "--bin-size", "1000", "--format", "coo"),
+      List.of(hictk.toString(), "zoomify", single.toString(), multiple.toString(), "--resolutions", "1000", "2000")
+    )) {
+      final var process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+      try {
+        assertTrue(process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS), "hictk fixture creation timed out");
+        assertEquals(0, process.exitValue(), Files.readString(log));
+      } finally { ProcessTree.stop(process); }
+    }
+    final var output = tempDir.resolve("output.hict.hdf5");
+    new HictkConversionPipeline(manager).convertCoolerToHictWithPyramid(
+      new ConversionOptions(
+        multiple, output, List.of(1000L, 4000L), 4, 6,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        "", false, 2, true, true, false, false,
+        ConversionOptions.ExportMode.AUTO),
+      toolchain, ignored -> {}, ignored -> {}, () -> false);
+    try (var file = new ChunkedFile(
+      new ChunkedFile.ChunkedFileOptions(output, 1, 2))) {
+      assertTrue(file.getResolutionsList().containsAll(List.of(1000L, 4000L)));
+      assertEquals(12000L, file.getAssemblyInfo().contigs().getFirst().descriptor().getLengthBp());
+    }
+  }
 
   @Test
   void resolveTargetResolutionsKeepsAvailableOrderWhenNoFilterRequested() {

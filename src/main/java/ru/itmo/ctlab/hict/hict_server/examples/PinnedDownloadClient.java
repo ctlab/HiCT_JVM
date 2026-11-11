@@ -24,10 +24,18 @@ final class PinnedDownloadClient implements AutoCloseable {
   record Response(int statusCode, HttpHeaders headers, InputStream body) { }
   private volatile DownloadStream active;
   private volatile HttpClientRequest activeRequest;
-  private final Vertx vertx = Vertx.vertx();
-  private final HttpClient client = vertx.createHttpClient(new HttpClientOptions()
-    .setConnectTimeout(15_000).setIdleTimeout(60).setVerifyHost(true)
-    .setKeepAlive(false).setTryUseCompression(false));
+  private final Vertx vertx;
+  private final boolean ownsVertx;
+  private final HttpClient client;
+
+  PinnedDownloadClient() {
+    final var context = Vertx.currentContext();
+    ownsVertx = context == null;
+    vertx = ownsVertx ? Vertx.vertx() : context.owner();
+    client = vertx.createHttpClient(new HttpClientOptions()
+      .setConnectTimeout(15_000).setIdleTimeout(60).setVerifyHost(true)
+      .setKeepAlive(false).setTryUseCompression(false));
+  }
 
   Response open(URI uri, InetAddress address, long offset, String validator, java.util.concurrent.atomic.AtomicBoolean cancelled) throws IOException {
     final boolean ssl = "https".equalsIgnoreCase(uri.getScheme());
@@ -133,6 +141,6 @@ final class PinnedDownloadClient implements AutoCloseable {
   @Override public void close() {
     cancelActive();
     client.close();
-    vertx.close();
+    if (ownsVertx) vertx.close();
   }
 }

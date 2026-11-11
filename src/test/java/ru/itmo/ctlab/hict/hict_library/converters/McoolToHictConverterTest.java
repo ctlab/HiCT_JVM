@@ -251,6 +251,20 @@ class McoolToHictConverterTest {
   }
 
   @Test
+  void rejectsJuiceboxAssemblyWithNoMatchingMultiChromComponents() throws Exception {
+    final var mcool = tempDir.resolve("unrelated-layout-source.mcool");
+    final var layout = tempDir.resolve("unrelated.assembly");
+    writeSyntheticMcool(mcool);
+    Files.writeString(layout, ">differentA 1 2500\n>differentB 2 3600\n1\n2\n");
+    final var error = org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+      () -> new McoolToHictConverter().convert(new ConversionOptions(
+        mcool, tempDir.resolve("unrelated.hict.hdf5"), List.of(1000L), 64, 0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE, layout.toString(), false, 1, true,
+        ConversionOptions.ExportMode.AUTO), ignored -> {}));
+    org.junit.jupiter.api.Assertions.assertTrue(error.getMessage().contains("do not match any source chromosome"));
+  }
+
+  @Test
   void juiceboxAssemblyKeepsContigsMissingFromMultiChromSourceHidden() throws Exception {
     final var mcool = tempDir.resolve("partial-source.mcool");
     final var assembly = tempDir.resolve("partial-layout.assembly");

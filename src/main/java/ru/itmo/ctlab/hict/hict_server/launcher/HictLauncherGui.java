@@ -1320,6 +1320,7 @@ public final class HictLauncherGui {
     private List<String> buildServerCommand(final Path tempDir) {
       final var command = new ArrayList<String>();
       command.add(resolveJavaExecutable());
+      command.add("-XX:MaxRAMPercentage=50.0");
       command.add("-DAUTO_OPEN_BROWSER=false");
       command.add("-DSERVE_WEBUI=true");
       command.add("-Djava.io.tmpdir=" + tempDir);

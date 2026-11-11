@@ -537,9 +537,9 @@ if errorlevel 1 (
 set "JAVA_EXE=%APP_HOME%\runtime\bin\java.exe"
 if "%~1"=="" (
   if not defined HICT_LAUNCHER_MODE set "HICT_LAUNCHER_MODE=gui"
-  "%JAVA_EXE%" "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
+  "%JAVA_EXE%" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar"
 ) else (
-  "%JAVA_EXE%" "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
+  "%JAVA_EXE%" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=%HICT_TEMP_DIR%" %HICT_JAVA_OPTS% -jar "%APP_HOME%\lib\hict.jar" %*
 )
 set "HICT_EXIT_CODE=%ERRORLEVEL%"
 popd >nul 2>nul

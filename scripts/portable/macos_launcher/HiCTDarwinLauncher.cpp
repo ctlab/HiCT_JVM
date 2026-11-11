@@ -142,7 +142,8 @@ int main(int argc, char* argv[]) {
   }
 
   std::vector<std::string> final_args;
-  final_args.reserve(3 + trailing_args.size());
+  final_args.reserve(4 + trailing_args.size());
+  final_args.emplace_back("-XX:MaxRAMPercentage=50.0");
   final_args.emplace_back("-Djava.io.tmpdir=" + temp_dir);
   final_args.emplace_back("-jar");
   final_args.emplace_back(app_home + "/lib/hict.jar");

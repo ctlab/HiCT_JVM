@@ -281,7 +281,9 @@ public final class ExamplesCatalog {
     }
     final var r = v.objectField(e, p + "/openingRecipe", "openingRecipe");
     if (r != null) {
-      v.noExtra(r, p + "/openingRecipe", Set.of("matrix", "fasta", "agp", "assembly", "tracks", "referenceId"));
+      v.noExtra(r, p + "/openingRecipe", Set.of("matrix", "fasta", "agp", "assembly", "tracks", "referenceId", "quickStart"));
+      if (r.containsKey("quickStart") && !(r.getValue("quickStart") instanceof Boolean))
+        v.fail(p + "/openingRecipe/quickStart", "quickStart must be true or false");
       for (final var role : List.of("matrix", "fasta", "agp", "assembly")) {
         if (!r.containsKey(role)) continue;
         final var id = r.getValue(role);
