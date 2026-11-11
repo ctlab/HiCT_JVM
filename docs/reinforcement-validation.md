@@ -1508,3 +1508,20 @@ journey 26.59 seconds. Restored assembly and FASTA matched the session, and the
 AGP bytes matched its saved SHA-256. The restored main viewport contained 31,102
 signal pixels. No page or console errors occurred. Evidence is named by
 `/tmp/hict-u13-first-run-ready-dir`. Packaged repetitions and the full soak follow.
+
+## Focused editor Escape cancellation during U13
+
+The expanded workspace audit reproduced Escape being intercepted by the global
+map handler while renaming a preset. The capture-phase handler now lets focused
+inputs, textareas, selects, editable content and textbox roles handle Escape when
+there is no application dialog to dismiss. The existing dialog dismissal and
+map-tool cancellation paths stay active in their respective contexts.
+
+The full WebUI build and source checks pass. Focused ESLint reports zero errors
+and two existing warnings. The workspace gate verifies preset Enter acceptance
+and Escape cancellation, bookmark save/navigation/export/import, all eleven OSD
+field visibility choices, field order, overlay position and persisted settings.
+The menu suite again verifies all 18 surfaces and focus behavior. The standalone
+workspace gate also arms Split and verifies Escape disarms it outside an editor.
+Evidence pointers are `/tmp/hict-u13-workspace-escape-isolated-dir` and
+`/tmp/hict-u13-escape-menus-ready-dir`.
