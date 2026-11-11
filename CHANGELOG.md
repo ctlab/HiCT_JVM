@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Verify reload pixel fidelity, zoom boundaries and all exported caption positions in release checks.
+
 - Preserve fractional alpha behavior while restoring saved visualization colors exactly.
 
 - Save complete custom rendering graphs, editor layouts and lossless colors in visualization presets, JSON libraries and native sessions.

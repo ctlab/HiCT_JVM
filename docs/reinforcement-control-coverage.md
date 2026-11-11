@@ -121,9 +121,9 @@ instances to be exercised. A row with remaining assertions stays open.
 | 1–6 | Navigation audit opens all six menus with ArrowDown, closes with Escape and verifies focus return and unchanged view | Complete |
 | 7–11 | Workspace searches known contig/scaffold, verifies exact centers, independently applies row/column scopes, copies scope and queries exact 2×2 values, rejects an unknown scope | Complete for the audited contig/scaffold searches, independent scopes and absent-suggestion viewport preservation. |
 | 12 | Opening gate checks reciprocal O/E palette and Observed restoration, numeric expression and histogram suites check signal queries | Full independent Expected/O/E boundary and zero-denominator runtime matrix |
-| 13 | Navigation reload preserves exact pipeline and viewport through completed rendering | Explicit pre/post pixel comparison |
+| 13 | Navigation reload preserves exact pipeline and viewport through completed rendering | Complete. Reload now compares the rendered layer canvases byte-for-byte. |
 | 14–15 | Workspace verifies overlay persistence, ruler unit regressions verify coordinates, browser/export suites exercise ruler layouts | All three actual ruler-mode button states now cycle with exact viewport preservation. Tick coordinates and relative resets are covered by the shared ruler-layout regression suite. |
-| 16–18 | Export suites use dropdown actions, workspace uses toolbar zoom, baseline repeatedly clicks OpenLayers zoom with rendered-frame assertions | Toolbar zoom center/finest/coarsest-limit assertions |
+| 16–18 | Export suites use dropdown actions, workspace uses toolbar zoom, baseline repeatedly clicks OpenLayers zoom with rendered-frame assertions | Complete. Toolbar and native zoom controls preserve the exact center and resolution at both constrained endpoints. |
 | 19–21 | Workspace verifies all three diagonal navigation formulas | Complete |
 | 22–27, 30 | Structural suite verifies Reverse, Move, Split, Group, Ungroup, Unscaffold All and Debris with exact independent AGP and Undo/Redo/Undo | Move Escape now verifies inactive tool, hidden arrows and exact native snapshot preservation before the real move. Edited-sequence coverage beyond the existing edited-view suite remains. |
 | 28 | Edited-view suite compares downloaded selected edited FASTA with source sequence and reverse complement | Selected gap-containing FASTA fixture |
@@ -134,8 +134,8 @@ instances to be exercised. A row with remaining assertions stays open.
 | 35, 38, 125, 180, 193 | Workspace closes an actual bookmark toast and drags the actual OpenLayers thumb, menu capture records owning dialog/toast HTML, menu suite dismisses each destination with Escape | All eighteen menu destinations now pass actual dismissal, focus trapping, visible focus return and exact native AGP preservation. The zoom thumb and toast close also have separate workspace assertions. |
 | 36–37 | Sequence/review gates link real FASTA through UI and query both axes, lifecycle applies real AGP, HTTP guards retain prior map on invalid references | Complete picker cancellation and rejected import interactions on both surfaces |
 | 39–48 | Picker gate verifies relative Go/Enter, directory double-click, Tree/Explorer selection preservation, Up/Root, filter clearing, Show all, exact loaded 2×2 contacts and Dismiss/native-AGP preservation | Complete for rejected parent traversal, preserved listing, Root recovery and subsequent exact nested-file contacts. |
-| 50–52 | Baseline clicks plus/minus through twenty changes, workspace resets nonzero rotation with center preservation | Explicit finest/coarsest endpoint clicks |
-| 53–55 | Edited-view checks exact exported border stroke/outline settings | Border-panel collapse and each caption-side control through actual UI with exported placement |
+| 50–52 | Baseline clicks plus/minus through twenty changes, workspace resets nonzero rotation with center preservation | Complete. Both endpoint clicks preserve the exact view for toolbar and native zoom controls. |
+| 53–55 | Edited-view checks exact exported border stroke/outline settings | Complete. The actual border panel collapses and expands. Both caption selectors exercise Above, Below, Left, Right and Inside, with independent transformed SVG text-position comparisons. |
 | 56–60 | Workspace changes panels and remounts settings, history checks immutable restore IDs, duplicate labels, paging, branch truncation, focused native text Undo, structural suite checks exact journal round trips | Track/sequence restoration assertions for each journal action |
 | 61–69, 229 | Opening gate checks displayed/stored/rendered bound coherence, source numerical regressions exercise transforms and graph synchronization | Keyboard/drag handles, Linear/Log slider sensitivity, invalid domains, Log2/Log10 and fractional scaling pass the signal audit. Independent source/half targeting remains. |
 | 70–71 | Exact-range gate verifies independent source bounds and cache reuse after panning | Loaded-tile and exact-range buttons pass the independent known-count signal fixture. Additional independent-source extrema fixtures remain. |
@@ -173,3 +173,15 @@ Additional evidence pointers include
 `/tmp/hict-u13-navigation-workspace-regression-dir`,
 `/tmp/hict-u13-batch-conversion-valid-dir` and
 `/tmp/hict-u13-compression-actual-dir`.
+
+
+Final candidate navigation evidence is retained under
+`/tmp/hict-u13-navigation-pixels-endpoints-dir`. Its reload check compares all
+rendered layer canvases, and both toolbar/native zoom endpoints preserve the
+exact center and resolution. The eight-case workspace run under
+`/tmp/hict-u13-caption-side-controls-transformed-dir` verifies both caption
+selectors through all five placements. SVG checks select the map captions, apply
+their complete ancestor affine transforms, and independently compare above,
+below, left, right and inside positions for known contig/scaffold names.
+The existing signal-control gate also exercises actual keyboard and mouse-drag
+threshold changes with different displayed colors and unchanged exact contacts.

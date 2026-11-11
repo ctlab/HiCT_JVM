@@ -2068,3 +2068,17 @@ confirmed replacement's returned assembly.
 The full Java suite passes 468 tests with seven optional skips in
 `/tmp/hict-u13-alpha-compatible-tests.log`. Browser result records are in
 `/tmp/hict-u13-alpha-compatible-browser.json`.
+
+
+### U13 remaining navigation and caption controls
+
+The navigation gate now compares all rendered layer canvases before and after
+Reload, alongside the exact graph and viewport. Actual toolbar and native
+zoom controls preserve the constrained center and resolution at both endpoints.
+The workspace gate now collapses and expands Borders & labels and applies all
+five caption sides to contig and scaffold names. Independent SVG text coordinates
+include each ancestor affine transform and distinguish map captions from ruler
+band labels. Above/Inside/Below and Left/Inside/Right positions are ordered
+independently for the known contig and scaffold. All eight workspace cases pass.
+Evidence pointers are `/tmp/hict-u13-navigation-pixels-endpoints-dir` and
+`/tmp/hict-u13-caption-side-controls-transformed-dir`.

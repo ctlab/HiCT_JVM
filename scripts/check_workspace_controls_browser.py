@@ -3,6 +3,8 @@
 
 import argparse
 import json
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -118,6 +120,89 @@ def main():
                     .$pinia._s.get('uiSettings').rulerCoordinateMode""") == mode
                 assert view() == before_modes
                 page.screenshot(path=str(output / ("ruler-mode-" + mode + ".png")))
+
+        def caption_sides():
+            page.evaluate(
+                "window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()"
+            )
+            check.settle()
+            original = view()
+            toggle = page.locator('button[aria-controls="layers-block"]')
+            toggle.click()
+            collapsed = toggle.get_attribute("aria-expanded") == "false"
+            if not collapsed:
+                toggle.click()
+            assert not page.locator("#layers-block").is_visible()
+            toggle.click()
+            assert page.locator("#layers-block").is_visible()
+            positions = {}
+            for label, value in (
+                ("Above", "2"),
+                ("Below", "1"),
+                ("Left", "4"),
+                ("Right", "5"),
+                ("Inside", "0"),
+            ):
+                for kind in ("Contig", "Scaffold"):
+                    page.get_by_label(
+                        kind + " names caption side", exact=True
+                    ).select_option(value)
+                check.settle()
+                assert view() == original
+                with page.expect_download() as download:
+                    page.evaluate(
+                        "window.__hictBenchmark.manager().exportCurrentMapSvg(undefined,{scope:'viewport',cropToMap:false})"
+                    )
+                target = output / ("caption-side-" + label.lower() + ".svg")
+                download.value.save_as(target)
+                root = ET.parse(target).getroot()
+                positions[label] = {}
+                for name in ("two", "scf_two"):
+                    matches = [
+                        element
+                        for element in root.iter()
+                        if element.tag.endswith("}text")
+                        and element.text == name
+                        and "12px" in element.get("style", "")
+                        and element.get("fill") != "none"
+                    ]
+                    assert matches, (label, name)
+                    parents = {
+                        child: parent for parent in root.iter() for child in parent
+                    }
+                    points = set()
+                    for element in matches:
+                        x, y = float(element.attrib["x"]), float(element.attrib["y"])
+                        node = element
+                        while node is not None:
+                            transform = node.get("transform")
+                            if transform:
+                                assert transform.startswith("matrix("), transform
+                                a, b, c, d, e, f = map(
+                                    float,
+                                    re.findall(
+                                        r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", transform
+                                    ),
+                                )
+                                x, y = a * x + c * y + e, b * x + d * y + f
+                            node = parents.get(node)
+                        points.add((x, y))
+                    assert len(points) == 1, (label, name, points)
+                    positions[label][name] = list(points.pop())
+            for name in ("two", "scf_two"):
+                assert (
+                    positions["Above"][name][1]
+                    < positions["Inside"][name][1]
+                    < positions["Below"][name][1]
+                ), (name, positions)
+                assert (
+                    positions["Left"][name][0]
+                    < positions["Inside"][name][0]
+                    < positions["Right"][name][0]
+                ), (name, positions)
+            (output / "caption-positions.json").write_text(
+                json.dumps(positions, indent=2) + "\n"
+            )
 
         def scopes_and_search():
             def bounds():
@@ -649,6 +734,7 @@ def main():
             )
             check.settle()
             check.step("diagonal-navigation-and-rotation-reset", navigate)
+            check.step("border-panel-and-each-caption-side-export", caption_sides)
             check.step(
                 "independent-row-column-scopes-and-genomic-search", scopes_and_search
             )

@@ -66,16 +66,61 @@ def main():
             results.append(
                 {"test": "Menu keyboard opening and Escape restore focus and view"}
             )
+            page.evaluate("""() => {
+                window.__navigationReloadPixels = Array.from(document.querySelectorAll('.ol-layer canvas'),
+                    canvas => canvas.toDataURL());
+            }""")
             page.locator("#reload-tiles-button").click()
             check.settle()
             assert view() == before
+            assert page.evaluate("""() => {
+                const after = Array.from(document.querySelectorAll('.ol-layer canvas'),
+                    canvas => canvas.toDataURL());
+                return after.length > 0 && JSON.stringify(after) === JSON.stringify(window.__navigationReloadPixels);
+            }"""), "Reload changed rendered map pixels"
             assert (
                 page.evaluate(
                     f"async()=>await {manager}.networkManager.requestManager.getRenderPipelineConfig()"
                 )
                 == graph
             )
-            results.append({"test": "Reload preserves exact graph and viewport"})
+            results.append(
+                {"test": "Reload preserves exact graph, viewport and rendered pixels"}
+            )
+            for direction, toolbar, native in (
+                (1, "Zoom in", ".ol-zoom-in"),
+                (-1, "Zoom out", ".ol-zoom-out"),
+            ):
+                page.evaluate(
+                    """direction => {
+                    const view = window.__hictBenchmark.manager().getView();
+                    view.setZoom(view.getConstrainedZoom(view.getZoom() + direction * 1000));
+                }""",
+                    direction,
+                )
+                check.settle()
+                endpoint = view()
+                page.get_by_role("button", name=toolbar, exact=True).click()
+                check.settle()
+                assert view() == endpoint, (toolbar, endpoint, view())
+                page.locator(native).click()
+                check.settle()
+                assert view() == endpoint, (native, endpoint, view())
+            page.evaluate(
+                """state => {
+                const view = window.__hictBenchmark.manager().getView();
+                view.setResolution(state.resolution);
+                view.setCenter(state.center);
+            }""",
+                before,
+            )
+            check.settle()
+            assert view() == before
+            results.append(
+                {
+                    "test": "Toolbar and native zoom respect both constrained endpoints and preserve center"
+                }
+            )
             page.get_by_role("button", name="Hide side panel", exact=True).click()
             expect(page.locator("aside.sidebar")).to_have_class(
                 "sidebar sidebar-collapsed"
