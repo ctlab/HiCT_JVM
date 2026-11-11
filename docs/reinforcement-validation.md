@@ -2210,3 +2210,107 @@ Provenance is recorded in the [hictk fixture manifest](https://github.com/paulse
 The owner deferred Windows and macOS interactive GUI qualification on
 2026-11-11. `docs/release-manual-checklist.md` retains those internal follow-ups.
 Current platform evidence records automated CI scope and local Linux interaction.
+
+## U13 explicit performance thresholds
+
+The baseline command retains its diagnostic default and accepts `--release-gate`
+for release qualification. The explicit mode requires frame p95 at most 33 ms
+and input acknowledgement p95 at most 100 ms in both fresh-browser and repeat-open
+samples. Results retain measured values and the enforced limits. Boundary checks
+accept 33/100 ms and reject either 33.3 ms frames or 100.1 ms acknowledgement.
+Evidence is `/tmp/hict-u13-release-limit-regression.json`.
+
+The first corrected-package 7790-contig diagnostic records frame p95 of 33.30 and
+33.355 ms, with one and nine long tasks. These samples exceed the release frame
+limit and remain retained. At the time, read-only host inspection found a separate
+32 GiB-limit external JVM using approximately 33 GB RSS and nearly full 31 GiB
+host swap. The earlier 96- and 1765-contig samples recorded frame p95 of 16.8 ms.
+Repeat measurements follow the full soak under the original limits.
+
+## U13 corrected-package qualification
+
+JVM `c9b15edb` and WebUI `95866b5` pass the 24-stage sequential Linux functional
+qualifier. Both immutable packages pass public `.hic` v8/v9 source counts and
+cached reopening. The stages cover applied custom graphs, all built-in palettes,
+editor, pending/error track switches, sessions, independent matrix exports,
+metadata, selected example journeys, offline behavior, concurrent extraction,
+Launcher and actual Tauri/Electron Save/Cancel, reset and rasterized exports.
+Artifact identities are in `/tmp/hict-u13-strand-final-artifacts.json`.
+
+The full mixed soak passes 227 cycles in 1803.964 seconds with zero errors.
+Browser heap growth is 985832 bytes with a 0.056408 MiB/min slope. Java heap growth
+is 2104320 bytes with a 0.123285 MiB/min slope. RSS early/late growth is 18661376
+bytes and its regression slope is -0.554945 MiB/min. DOM and listener maxima
+remain 693/693 and 233/233. Frame p95 is 16.8 ms and acknowledgement p95 is
+58.4743 ms. Original limits remain unchanged. The separate host workload was
+closed about halfway through this soak. All raw samples remain retained under
+`/tmp/hict-u13-strand-final-soak.PXzZK3/evidence`.
+
+All three after-soak performance repetitions pass `--release-gate`. Every fresh
+and repeat sample has zero long tasks. Frame p95 is 16.7–16.8 ms and input
+acknowledgement p95 is at most 40.3 ms. The initial loaded-host 7790-contig timing
+failure remains retained. Fresh-browser/repeat-open conditions retain OS and
+server caches. Results use `/tmp/hict-u13-strand-final-release-timing-<count>-dir`.
+
+Both larger DNA Zoo cards pass fresh conversions using verified source downloads.
+Cheetah conversion/open takes 598.36 seconds and Aedes takes 302.04 seconds. Each
+has 11 levels, the expected 19/3 contigs, zero reference mismatch warnings and no
+unexpected browser errors. Independent original 2.5 Mb pixel sums match all
+576/1024 first-chromosome cells at generated 10 Mb. Coarse diagonal aggregation
+counts each upper-triangle contact once. Both first 1000 forward FASTA bases
+match exactly, all catalog source checksums match and visible signal counts are
+1398/2715. The first Cheetah oracle requested a generated level absent from its
+original `.hic`. That failed record remains preserved. The corrected oracle
+continues on the fresh converted output without repeating conversion.
+
+A test-preparation failure filled temporary storage when requested reflinks fell
+back to full copies. The redundant unused source copy and pre-launch partial
+copy were removed. Completed build payload caches were retired after matching
+embedded JAR hashes to frozen manifests. Original inputs and immutable artifacts
+remain retained. Large-card testing then used a single disposable physical copy
+moved into its isolated data directory.
+
+The retained tardigrade quick start passes its full journey in 28.63 seconds,
+reaching the map in 21.29 seconds and restoring 31289 signal pixels. The revised
+quick-start check verifies all five mapped reference names, lengths and forward
+directions and the first 1000 original FASTA bases exactly. Full source and
+reference checks are also retained for the owner-selected Borrelia and yeast.
+The updated catalog records each case's scope and timings.
+
+Current-source Java CI 43058445089 passes all four targets with 470 full-suite
+tests each plus a separate successful native baseline. Optional skips are 12 on
+Linux/macOS and 14 on Windows. Independent XML reports confirm these counts.
+The owner approved cancelling superseded portable run 43045033635 after its Linux
+prerequisite installation spent over an hour retrying mirror DNS failures.
+Current portable run 43058445223 passes Windows and Linux packaging with full
+WebUI revision `95866b5d89a7946d44de2b5bee8ec09db70637b9`. Packaged helper startup,
+AVX2/AVX512 and gapped BLAST fixtures with threads 1/2 pass on those targets.
+macOS results remain in progress at this record's creation. Source pushes remain
+owner-controlled. GitHub operations comprise read-only inspection, the explicitly approved
+superseded-run cancellation and dispatch of the current-source build-only WebUI
+CI workflow.
+
+## U13 final cross-platform result
+
+Java workflow 43058445089 and WebUI workflow 43076202090 pass all four targets at
+JVM `c9b15edb` and WebUI `95866b5`. Portable workflow 43058445223 passes all four
+native-tool jobs, all four package jobs and publication job 130725909419. Intel
+package job 130700908332 confirms the full expected UI revision and executes
+seqkit, ModDotPlot, hict-moddotplot, hictk, minimap2, AVX2 and the gapped BLAST
+fixture with one and two threads successfully.
+
+The published CI version is `2.0.252-ci1-c9b15ed`. Local stable artifacts remain
+version 2.0.0. Build provenance identifies the exact JVM source and workflow.
+All 16 aggregate checksum entries match GitHub's independently reported release
+asset digests. Downloaded provenance/checksum files also match their API digests.
+Evidence is `/tmp/hict-u13-published-ci252/verification.json`. Local delivery files
+were independently rehashed and still match their frozen artifact manifest.
+The final release report records both version families and per-platform hashes.
+
+The release decision is GO for the frozen application revisions with the
+owner’s Windows/macOS GUI checks deferred. That future checklist remains
+in `docs/release-manual-checklist.md`. Optional private-data fixtures and existing
+development dependency findings retain their documented scope. Qualification
+records and acceptance-helper updates follow the frozen application build.
+No Java, native processing or WebUI runtime source changes follow `c9b15edb` /
+`95866b5` in this validation-record package.

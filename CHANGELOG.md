@@ -2,37 +2,11 @@
 
 ## Unreleased
 
-- Preserve AGP strand orientation during matrix imports and require fresh conversion of older cached outputs.
-
-- Keep Cooler weight switches consistent while track updates are pending and restore their committed state after failure.
-
-- Preserve custom colormap alpha during contrast edits and confine changes to the selected source and triangle.
-
-- Publish primary styling atomically and report failed sidebar edits once with retryable diagnostics.
-
-- Verify reload pixel fidelity, zoom boundaries and all exported caption positions in release checks.
-
-- Preserve fractional alpha behavior while restoring saved visualization colors exactly.
-
-- Save complete custom rendering graphs, editor layouts and lossless colors in visualization presets, JSON libraries and native sessions.
-
-- Retry updated preset imports with the same filename and preserve the current visualization when a required graph input is missing.
-
-- Make shutdown logging release checks reliable under worker interruption.
-
-- Add Borrelia Hi-C and yeast Micro-C quick starts with verified matching references and automatic preparation.
-
-- Detect rapid equal-size source changes before reusing conversions and validate FASTA replacements on filesystems without file keys.
-
-- Update track backgrounds immediately on both map axes and preserve their export colors.
-
-- Use descriptive red-palette names and keep success confirmations clear of dialog actions.
-
-- Expand release validation for session recovery, offline use, native exports and analysis settings.
-
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Enforce navigation timing limits in release checks and verify public-example strand, sequence and matrix-count fidelity.
 
 - Remove Move arrows immediately when cancelling the tool with Escape.
 
@@ -69,6 +43,9 @@
 
 ### Opening and examples
 
+- Preserve AGP strand orientation during matrix imports and require fresh conversion of older cached outputs.
+- Add Borrelia Hi-C and yeast Micro-C quick starts with verified matching references and automatic preparation.
+- Detect rapid equal-size source changes before reusing conversions and validate FASTA replacements on filesystems without file keys.
 - Open native maps directly through a keyboard-accessible file picker. Use Open with options for conversion, secondary inputs and preparation. Tools show their prerequisites while a map is closed.
 - Open the small tardigrade example with matching FASTA in three clicks. Cheetah and mosquito examples have verified source hashes, complete conversion and linked-sequence checks. Catalogs preserve provider terms and citations.
 - Import `.hic`, `.cool` and `.mcool` files through the bundled native tools. Generate requested pyramids from multiresolution Cooler inputs and validate incompatible assembly layouts before publication.
@@ -86,6 +63,12 @@
 
 ### Visualization and coordinates
 
+- Preserve custom colormap alpha during contrast edits and confine changes to the selected source and triangle.
+- Publish primary styling atomically and report failed sidebar edits once with retryable diagnostics.
+- Preserve fractional alpha behavior while restoring saved visualization colors exactly.
+- Save complete custom rendering graphs, editor layouts and lossless colors in visualization presets, JSON libraries and native sessions.
+- Retry updated preset imports with the same filename and preserve the current visualization when a required graph input is missing.
+- Use descriptive red-palette names and keep success confirmations clear of dialog actions.
 - Show genome-browser rulers with round ticks at exact assembly positions, relative contig/scaffold modes, hidden-span marks and readable entity bands. Keep the tick ruler beside the map and include it in exports.
 - Anchor the map against the ruler corner, with an optional unlock. Preserve cursor-centred zoom, independent row/column scopes and exact sequence positions at letter zoom.
 - Compare layers with different resolution pyramids on the primary assembly grid. Select each layer's nearest level with hysteresis, bounded reduction, cancellation and a loading indicator.
@@ -98,6 +81,8 @@
 
 ### Sequence tools and tracks
 
+- Keep Cooler weight switches consistent while track updates are pending and restore their committed state after failure.
+- Update track backgrounds immediately on both map axes and preserve their export colors.
 - Generate alignment and ModDotPlot identity matrices and run exact, substitution or BLAST sequence searches through bundled tools. Preserve source references, analysis provenance and effective worker counts.
 - Publish reusable matrix and BED results under validated data-directory paths with overwrite protection. Retain deterministic ModDotPlot accumulation and percentage-scale display presets.
 - Project search hits and annotations through edited source coordinates. Color strands independently and mark disrupted matches. Pack overlapping features into lanes with a bounded density fallback.
@@ -106,6 +91,7 @@
 
 ### Jobs, server and performance
 
+- Make shutdown logging release checks reliable under worker interruption.
 - Follow conversion, sequence, coverage, track preparation, FASTA-only and example-download jobs in the navbar. Close busy dialogs, cancel work and open finished results from Jobs.
 - Stop native process trees and background services on shutdown. Publish completed outputs atomically and identify incomplete work. A new launch starts with fresh job state.
 - Resume verified example downloads through pinned public-host connections, including chunked partial responses. Clean conversion uploads and retain terminal results according to service TTL.
@@ -116,6 +102,8 @@
 
 ### Exports and portable applications
 
+- Verify reload pixel fidelity, zoom boundaries and all exported caption positions in release checks.
+- Expand release validation for session recovery, offline use, native exports and analysis settings.
 - Export viewport or fitted whole-map PNG, SVG and PDF with consistent crop geometry, rulers and visible letter-scale alignment detail. Preserve source images during PDF conversion and avoid duplicated SVG scenes.
 - Use typed export bytes and parented save dialogs in Electron, and asynchronous native save selection in Tauri. Preserve output preferences after cancellation or failed saves.
 - Improve narrow-window layout, scrolling tools, accessible names, modal focus and keyboard file opening. Retain compatible settings and presets across opening paths.

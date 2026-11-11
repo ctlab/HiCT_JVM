@@ -5,7 +5,7 @@ wizard. Nothing about sections, cards or files is written into the application: 
 
 ## Where catalogs live
 
-- The bundled catalog: `src/main/resources/examples/hict-examples.json` (two DNA Zoo cards).
+- The bundled catalog: `src/main/resources/examples/hict-examples.json` (three quick starts and two larger DNA Zoo examples).
 - Local additions: `<data folder>/examples/catalogs/*.json`, merged after the bundled one. A pipeline that
   discovers datasets should write its file there.
 
@@ -67,9 +67,9 @@ The client sends an example id; the server resolves everything else from its own
 `POST /examples/catalog`, `/examples/download/start` (`exampleId`), `/examples/download/status`,
 `/examples/download/cancel`. One download at a time; starting the same example again joins it.
 
-## Verified catalog examples
+## Initial catalog qualification
 
-All three bundled cards passed download, conversion, readable main-map rendering
+The initial three cards passed download, conversion, readable main-map rendering
 and linked FASTA reads in fresh Chromium contexts on 2026-11-11. Their manifests
 record source SHA-256 values. The quick-start card opens directly after preparation.
 The larger cards retain the wizard for conversion options.
@@ -204,3 +204,36 @@ the existing Jobs services. The quick-start browser gate independently compares
 all mapped chromosome names and lengths against the source MCool file, every
 prepared Borrelia record against its original GenBank bases, and the first
 1,000 linked bases against the reference.
+
+## Corrected 2.0.0 package qualification
+
+All five cards pass on JVM `c9b15edb` with WebUI `95866b5` using the actual Linux
+`.run`. Quick starts use empty data folders and fresh browser profiles. Larger
+examples reuse verified source downloads and run fresh conversion. Source
+checksums agree with every pinned catalog entry.
+
+| Example | Readable map or conversion/open | Contigs | Native levels | Independent reference checks |
+|---|---:|---:|---:|---|
+| Borrelia | 38.35 s | 19 | 13 | Every prepared FASTA record matches original bases and case, all mapped names and lengths match |
+| Yeast Micro-C | 163.37 s | 17 | 17 | All mapped names and lengths match the public FASTA, first 1000 bases match exactly |
+| Tardigrade | 21.29 s | 5 | 11 | Every mapped name, length and forward direction matches, first 1000 bases match exactly |
+| Cheetah | 598.36 s | 19 | 11 | 576 first-chromosome counts and 1000 forward-reference bases match |
+| Aedes aegypti | 302.04 s | 3 | 11 | 1024 first-chromosome counts and 1000 forward-reference bases match |
+
+Cheetah and Aedes counts compare generated 10 Mb cells against independent sums
+of original 2.5 Mb source pixels. Summation counts each upper-triangle contact
+once, including within coarse diagonal bins, before Float32 projection. Both maps
+have forward first contigs, linked FASTA without mismatch warnings, readable
+signal and zero unexpected browser errors. Optional draft-component `.assembly`
+files remain provenance downloads.
+
+The tardigrade journey completes in 28.63 seconds and restores 31289 signal
+pixels after navigation, Reverse, Split, Undo, native session Save/Close/Restore
+and matching AGP export. Borrelia and yeast journey results and both Linux-package
+checks are in `docs/release-validation-2.0.0.md`.
+
+Current evidence uses `/tmp/hict-u13-strand-final-` prefixes. Larger-card records
+are in `dnazoo-cheetah-direct.deoIcg/evidence-oracle-continuation` and
+`dnazoo-aedes-direct.h6xCK3/evidence`. The initial Cheetah conversion/open timing
+is retained in its original evidence directory. Tardigrade evidence is named by
+`/tmp/hict-u13-strand-final-tardigrade-dir`.

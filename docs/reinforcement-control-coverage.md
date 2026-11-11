@@ -1,5 +1,15 @@
 # Control coverage ledger
 
+## Current reviewed source
+
+The current WebUI review is `95866b5d89a7946d44de2b5bee8ec09db70637b9`.
+Fresh static reconciliation passes for all 232 contracts, with 227 inspected
+bindings, five historical ambiguities and 162 literal source candidates.
+`/tmp/hict-u13-final-control-reconciliation.json` records fixture digests and the
+reviewed revision. The runtime ledger below retains scenario-specific evidence.
+The release report records current application and artifact qualification.
+Earlier capture sections retain their historical revisions and scope.
+
 The historical third-pass capture contains 232 distinct DOM signatures across
 18 menu destinations and sidebar states. The preserved fixture is
 `src/test/resources/reinforcement/historical-control-signatures.json`.
@@ -197,3 +207,15 @@ on explicit retry. Sixteen real-tool sequence cases pass under
 exact/substitution/IUPAC/strand BED-coordinate comparisons. Source and custom AGP
 browsing, draft-preserving job Refresh and actual overwrite pass under
 `/tmp/hict-u13-target-alpha-export-agp-dir`.
+
+## Public hic format qualification
+
+`scripts/check_matrix_input_formats_browser.py` exercises public v8 and v9 inputs
+through File/Open, real one-thread conversion, completion, rendered signal and
+cached reopening. Both pass 625 first-chromosome source-count comparisons against
+independent hictk dumps. Both source hashes remain unchanged and reopening adds
+no conversion job. The assembly-layout regression covers all five accepted
+strand tokens, persisted direction and reopened matrix values. The cache
+regression requires fresh conversion of older outputs and preserves existing
+files. JVM `c9b15edb` includes the production correction. The release report
+records subsequent packaged evidence.

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Measure a declared browser navigation baseline on a disposable HiCT server.
 
-This is a diagnostic, not the W16 performance/release gate. Server and OS caches
-are not cleared; the two samples are a fresh browser and a repeat in that browser.
+Use --release-gate to enforce the declared frame and input acknowledgement limits.
+The two samples use a fresh browser and a repeat in that browser with retained
+server and OS caches.
 """
 import argparse
 import json
@@ -28,6 +29,10 @@ def main():
     parser.add_argument("--api", required=True)
     parser.add_argument("--filename", default="combined_ind2_4DN.hict.hdf5")
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--release-gate", action="store_true",
+        help="Require frame p95 <= 33 ms and input acknowledgement p95 <= 100 ms",
+    )
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -63,9 +68,7 @@ def main():
                 button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
                 if button.is_visible():
                     button.click()
-                # The existing opening-defaults defect can leave an almost blank
-                # map. Declare a readable raw-count graph for this controlled
-                # rendering baseline; this does not test or certify the wizard.
+                # Use a declared raw-count graph for reproducible navigation measurements.
                 page.evaluate("""async () => {
                     const m=window.__hictBenchmark.manager();
                     const color={type:'colormap',mode:'LINEAR',input:{type:'source',source:'PRIMARY'},
@@ -108,7 +111,7 @@ def main():
                     before = view(page)
                     arm_action(page, 'zoom-in' if index % 2 == 0 else 'zoom-out', before)
                     started = time.monotonic()
-                    # Actual OpenLayers buttons, independently of the known broken toolbar zoom.
+                    # Exercise the actual OpenLayers zoom controls.
                     page.locator(".ol-zoom-in" if index % 2 == 0 else ".ol-zoom-out").click()
                     click_ms = (time.monotonic() - started) * 1000
                     settle(page)
@@ -150,10 +153,31 @@ def main():
                     "rendering": "PRIMARY raw counts, linear red 0..100, both triangles", "actions": actions,
                     "frameMs": {"p50": percentile(measured["frames"], .5), "p95": percentile(measured["frames"], .95),
                                 "count": len(measured["frames"])}, "longTasksMs": measured["longTasks"],
+                    "inputAcknowledgementP95Ms": percentile(
+                        [action["browserTiming"]["firstViewChangeMs"] for action in actions], .95
+                    ),
                     "tileResources": measured["resources"],
                     "heapAfterGcBytes": metrics.get("JSHeapUsedSize"), "domNodes": metrics.get("Nodes"),
                     "eventListeners": metrics.get("JSEventListeners")})
                 page.screenshot(path=str(output / f"{label}.png"))
+            results["releaseLimits"] = {
+                "enforced": args.release_gate,
+                "frameP95Ms": 33,
+                "inputAcknowledgementP95Ms": 100,
+                "satisfied": all(
+                    run["frameMs"]["p95"] <= 33 and run["inputAcknowledgementP95Ms"] <= 100
+                    for run in results["runs"]
+                ),
+            }
+            if args.release_gate:
+                assert results["releaseLimits"]["satisfied"], [
+                    {
+                        "label": run["label"],
+                        "frameP95Ms": run["frameMs"]["p95"],
+                        "inputAcknowledgementP95Ms": run["inputAcknowledgementP95Ms"],
+                    }
+                    for run in results["runs"]
+                ]
             assert not errors, errors
             assert not http_errors, http_errors
         finally:

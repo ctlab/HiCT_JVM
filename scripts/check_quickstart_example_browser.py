@@ -168,6 +168,14 @@ with sync_playwright() as pw:
                 for name, length in chromosomes.items():
                     assert name in reference and len(reference[name]) == int(length)
                 assert sequence[:1000] == reference[chromosomes.index[0]][:1000]
+            else:
+                contigs = page.evaluate("""() => window.__hictBenchmark.manager()
+                    .contigDimensionHolder.contigDescriptors.map(c =>
+                        [c.contigName, c.contigLengthBp, c.direction])""")
+                for name, length, direction in contigs:
+                    assert name in reference and len(reference[name]) == length
+                    assert direction == 1, (name, direction)
+                assert sequence[:1000] == reference[contigs[0][0]][:1000]
         red_pixels = rendered_signal_pixels(page)
         assert red_pixels > 1000, red_pixels
         assert not errors, errors

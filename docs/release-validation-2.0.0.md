@@ -2,22 +2,31 @@
 
 ## Release decision
 
-**NO-GO for publication while current-revision CI, the remaining control audit and owner platform evidence remain open.**
-The last packaged application candidate is JVM `a1f7f0b8` and WebUI `d091321`.
-Acceptance-only commit `861d9a59` adds reload, zoom-endpoint and caption checks.
-The full Java suite passes 468 tests with seven optional skips. All forty browser scripts have passing recorded results across the final source
-sweep and focused compatible-candidate repeats. The corrected full-duration
-packaged memory soak passes its original limits. The control ledger retains its remaining
-boundary and interaction assertions.
+**GO for 2.0.0 release readiness with the owner’s Windows/macOS GUI checks deferred.**
+The qualified application source is JVM
+`c9b15edb7b55836302762c8cb1a5247d9ea27c00` and WebUI
+`95866b5d89a7946d44de2b5bee8ec09db70637b9`, on `jvm-sfx-native`, version 2.0.0.
+The full Java suite passes 470 tests with zero failures, zero errors and seven
+optional skips. Public `.hic` v8 and v9 conversions now match independent source
+counts after the assembly-strand correction.
 
-Both Linux packages pass fresh Borrelia journeys, offline use and exact metadata.
-The self-extracting package also passes a fresh yeast journey. Existing GitHub
-portable run 43010279649 passes all four targets at JVM fd46e1fd and WebUI
-f0ef290. The later Java run at 2e48a9f0 passes Windows and Intel macOS and fails
-the logging-test race on Linux and Apple Silicon. The race is fixed locally in
-02391436. Current local fixes await the owner push required by the plan.
-The Windows and macOS interactive checklist remains unverified. GitHub inspection
-has used existing runs, logs and artifacts. Nothing has been pushed or merged.
+Java workflow 43058445089 passes all four targets at `c9b15edb`. Each target
+reports 470 full-suite tests and a separate successful compiled-native baseline.
+The full suite skips 12 optional fixtures on Linux/macOS and 14 on Windows.
+Portable workflow 43058445223 passes all four native-tool jobs, all four
+platform packages and publication. Independent WebUI CI 43076202090 also passes
+all four targets at `95866b5`. Local Linux package qualification,
+the full-duration soak and all three explicitly enforced performance fixtures
+pass. Both Linux packages pass exact public `.hic` v8/v9 conversion and cached
+reopening checks.
+
+On 2026-11-11 the owner deferred Windows x86-64, macOS arm64 and macOS x86-64
+interactive GUI checks for future internal qualification. The follow-up remains
+in `docs/release-manual-checklist.md`. The current release decision uses automated
+platform CI evidence and local Linux interaction. Superseded portable run
+43045033635 was cancelled with owner approval after its Linux prerequisite step
+spent over an hour retrying Ubuntu mirror DNS failures. That cancellation freed
+the serialized current-source queue. The owner pushed both application candidates.
 
 ## Implementation traceability
 
@@ -59,488 +68,261 @@ has used existing runs, logs and artifacts. Nothing has been pushed or merged.
 | U13 full graph presets | `992e999a` | `d091321` | Complete applied graphs, matching editor layouts, JSON/native libraries and atomic dependency rejection |
 | U13 alpha compatibility | `a1f7f0b8` | Unchanged | Exact serialized alpha bytes with established fractional-input behavior |
 | U13 navigation and captions | `861d9a59` | Unchanged | Exact reload pixels, both zoom endpoints and ten exported caption placements |
+| U13 atomic styling | `ea0b44d9` | `b6e01ce` | Custom alpha, selected-target isolation and atomic primary styling with retry |
+| U13 pending weights | `8bccf8af` | `95866b5` | Shared update state, guarded switches and committed-state recovery on failure |
+| U13 import strands | `c9b15edb` | Unchanged | Correct AGP orientation and generation-3 conversion cache |
 
 Supervisor items 1–7, 9 and 10 retain their earlier implementations with the
-U1/U3/U4/U5/U6 corrections above. Item 8 is implemented by U8 and U9. Item 11 is
-implemented by U10 and U11. Item 12 depends on completing the U13 audit and the
-platform checks recorded here.
+U1/U3/U4/U5/U6 corrections above. U8 and U9 implement item 8. U10 and U11 implement
+item 11. The functional browser ledger and package gates cover item 12.
+Engineering chronology and reproduction detail are in
+`docs/reinforcement-validation.md` and `docs/reinforcement-control-coverage.md`.
 
-## Builds and regression checks
+## Platform automation
 
-The latest full JVM suite has 468 tests, zero failures, zero errors and seven optional
-skips. The compiled native-processing baseline also passes. The complete smoke
-script passes through JVM compilation/tests and WebUI type checking/build.
-The full WebUI build runs its existing source and numerical regression scripts.
-Full source ESLint, using the repository ignore paths without fixes, reports zero
-errors and 99 warnings on WebUI `0ce0314`. Focused navigation lint on `a93412c`
-reports zero errors and five existing warnings across its two changed components.
+Committed and locally qualified stable packages use version `2.0.0`. Push CI
+stamps its packages `2.0.252-ci1-c9b15ed` for workflow run 252 at the same JVM
+source. The workflow preserves an explicit stable version for release-tag builds.
+CI provenance and checksums below refer to the run-stamped packages.
+The companion WebUI build-only workflow 43076202090 was dispatched explicitly
+at `95866b5`, because its automatic branch filters exclude `jvm-sfx-native`.
+It passes dependency installation, type checking and regression builds on all
+four targets.
 
-The dependency upgrades passed their staged build and browser/export gates.
-The production npm audit has zero findings. The development dependency graph
-retains 15 findings, including three high and zero critical. No requested upgrade
-was reverted. Detailed versions and chains are in `docs/reinforcement-validation.md`.
+| Platform | Java job | Full-suite tests / skips | Native baseline | WebUI CI job | Portable package |
+|---|---|---:|---|---|---|
+| Linux x86-64 | `130654122087` | 470 / 12 | Pass | Pass, `130716556582` | Pass, job `130680978230` |
+| Windows x86-64 | `130654122432` | 470 / 14 | Pass | Pass, `130716556476` | Pass, job `130669919490` |
+| macOS arm64 | `130654122593` | 470 / 12 | Pass | Pass, `130716556431` | Pass, job `130685722626` |
+| macOS x86-64 | `130654122689` | 470 / 12 | Pass | Pass, `130716556010` | Pass, job `130700908332` |
 
-## Packaged Linux journeys
+Each full suite has zero failures and zero errors. Optional tests depend on
+private maps, source data or tools absent from Java-only CI. Windows additionally
+skips POSIX-specific unreadable-directory and process-tree fixtures. Test XML,
+artifact IDs and archive digests are retained under
+`/tmp/hict-u13-strand-java-evidence` and
+`/tmp/hict-u13-strand-java-artifacts.tsv`.
+[Java CI](https://github.com/ctlab/HiCT_JVM/actions/runs/43058445089),
+[portable CI](https://github.com/ctlab/HiCT_JVM/actions/runs/43058445223),
+[WebUI CI](https://github.com/ctlab/HiCT_WebUI/actions/runs/43076202090).
 
-On JVM `173178f3` and WebUI `1865476`, both the `.run` and AppImage passed a fresh
-profile journey through three clicks to the small example, navigation, Reverse,
-Split, Undo, session Save/Close/Restore and AGP export. The saved and restored
-assembly, linked FASTA and AGP SHA-256 agree. Each restored viewport contains
-31,102 signal pixels and has no page or console errors.
+## Published CI provenance and checksums
 
-| Package | Readable example | Complete journey |
-|---|---:|---:|
-| Linux `.run` | 20.35 s | 27.54 s |
-| Linux AppImage | 19.73 s | 26.64 s |
+Publication job `130725909419` succeeds. The published build-origin file records
+JVM `c9b15edb7b55836302762c8cb1a5247d9ea27c00`, branch `jvm-sfx-native`,
+workflow `43058445223`, attempt 1 and version `2.0.252-ci1-c9b15ed`. Each platform's
+actual build log independently confirms WebUI
+`95866b5d89a7946d44de2b5bee8ec09db70637b9`.
 
-The AppImage uses the documented `APPIMAGE_EXTRACT_AND_RUN=1` path on this host.
-Both packages also pass local map opening, editing, unsaved Close cancellation,
-Save and browser restart/session recovery with all WAN requests denied. PNG,
-SVG and PDF export and the bundled Swagger operation list work in that state.
-The evidence roots are named by `/tmp/hict-u13-run-first-journey-dir`,
-`/tmp/hict-u13-appimage-first-journey-dir`, `/tmp/hict-u13-run-offline-dir` and
-`/tmp/hict-u13-appimage-offline-dir`.
+All 16 entries in the published aggregate checksum file match the independent
+SHA-256 digests returned by GitHub's release-asset API. The downloaded origin and
+checksum files also match their API digests. Evidence is
+`/tmp/hict-u13-published-ci252/verification.json`. The table lists the executable
+packages. The aggregate also covers archives, the fat JAR and per-platform
+checksum files.
+
+| Run-stamped artifact | Bytes | SHA-256 |
+|---|---:|---|
+| Linux .run | 588171483 | `50a0c8c65d8ffb2b8b5309b09803b60fd2beabe47a5e1393399ce258919273cf` |
+| Linux AppImage | 753261048 | `d23ec98dbde93f5cc7e19dbdd28091018e2e8b438109e87e19d340a3051f3711` |
+| Windows EXE | 450147007 | `7b3a27e9de9525bfde18629c3c4f3aecbb95c695fda7ac2072b869c555108d3d` |
+| macOS arm64 .run | 638471124 | `28efe06c11c4fa041105b5efdbfed53e1d062ece451725ca88d00948cc2ae2ff` |
+| macOS x86-64 .run | 827264464 | `bdf7c4bcfd811a49bb7e234da9bb75b2a2e3d0242f5a08396366734dd6726988` |
+
+The build-origin and aggregate checksums are published with the rolling CI
+packages. These run-stamped assets qualify the same application source as the
+locally tested stable 2.0.0 Linux packages below.
+[Published CI packages](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native),
+[build provenance](https://github.com/ctlab/HiCT_JVM/releases/download/latest-jvm-sfx-native/HiCT-2.0.252-ci1-c9b15ed-build-origin.txt),
+[aggregate checksums](https://github.com/ctlab/HiCT_JVM/releases/download/latest-jvm-sfx-native/HiCT-2.0.252-ci1-c9b15ed-release-assets.sha256).
+
+## Current source regressions
+
+The 470-test suite includes AGP `+`, `-`, `?`, `0` and `na` metadata and reopened
+matrix checks. The regression fails before the correction. The cache regression
+preserves an existing output and generation-2 record while requiring a fresh
+conversion. Generation 3 prevents automatic reuse of affected cached imports.
+Affected standalone imports require regeneration from the original matrix and
+layout for corrected strand orientation.
+
+The public hictk v2.2.0 fuzzer fixtures exercise actual File/Open, batch conversion,
+completion, converted-map opening, rendered signal and cached source reopening.
+Each version matches all 625 first-chromosome RAW_COUNTS values at 10 Mb against
+an independent hictk dump. Both original SHA-256 hashes remain unchanged and
+cached reopening creates no conversion job. Fixture provenance, hashes and
+commands are in the engineering report.
+
+The complete smoke script and production WebUI build pass on the corrected
+application candidate. WebUI `95866b5` full-source ESLint reports zero errors and
+99 existing warnings using the repository ignore file without fixes. Its normal
+build includes the source and numerical regression scripts.
+
+The production npm audit has zero findings. The development graph retains 15
+findings, including three high and zero critical. All five requested dependency
+upgrades passed their staged checks. No requested upgrade was reverted.
+
+## Browser and control coverage
+
+Forty established browser scripts have passing records across the source sweep,
+focused compatible-candidate repeats and actual packaged gates. The added public
+`.hic` format script passes against both corrected Linux packages. The signal suite checks
+seven cases including selected-target fractional alpha, both swaps, linked primary
+nodes, secondary isolation, delayed debounce and exact state/pixel preservation
+after a forced HTTP 503 followed by retry. The six track cases hold real create
+requests while asserting shared busy state and restore the committed switch after
+an injected failure. All 14 built-ins, six full-graph preset cases, 12 pipeline
+editor cases and 16 real-tool sequence lifecycle cases have passing evidence.
+
+Navigation verifies exact canvas bytes after reload and both toolbar/native zoom
+endpoints. Caption exports verify ten placements using independently transformed
+SVG coordinates. Matrix export verifies eight modes against independent contact
+values, compression settings and balanced weights. Browse dismissal, custom AGP
+selection, draft-preserving refresh and actual overwrite have separate assertions.
+
+A parallel source sweep recorded one navigation timeout. The unchanged complete
+navigation suite passed in isolation. Both records remain in the evidence.
+
+The static inventory contains 232 historical signature contracts, with 227
+source-inspected bindings and five explicitly ambiguous historical signatures.
+Fresh reconciliation against WebUI `95866b5` passes and finds 162 literal source
+candidates. Runtime claims are recorded in the scenario ledger. The static
+contracts retain functional status `pending` because the reconciler validates
+source bindings. Actual dialog/toast owners and the native zoom-slider instance
+have separate runtime assertions.
+
+## Preset decisions
+
+The save control captures applied visualization options and the complete rendering
+graph from one atomic snapshot. It includes compatible editor layout and restores
+lossless colors. JSON and native session libraries retain those records. Legacy
+option-only presets remain supported. Missing graph resources reject application
+before state publication. The opening wizard labels complete-graph presets as
+source styles and uses their source-style options for its chosen presentation.
+Complete graph restoration is available from the visualization preset control.
+
+## Packaged Linux evidence
+
+The corrected JVM `c9b15edb` / WebUI `95866b5` immutable manifest is
+`/tmp/hict-u13-strand-final-artifacts.json`. Its JAR, `.run` and AppImage hashes
+are recorded below. Both package builds pass extraction, startup and tool smoke
+checks. The 24-stage functional qualifier and three explicitly enforced
+performance repetitions pass. Both larger DNA Zoo cards also pass fresh conversion and independent source/reference checks.
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| Fat JAR | 352734872 | `51fbaae03ba8b1d4063c655d78613cdcff972af63e274ad4004e4e6e4e7a4c38` |
+| Linux `.run` | 580156403 | `473cd60d7957ec0725f0b47d972de52ab7fa3f352343d254f0a76091f1e4e390` |
+| Linux AppImage | 752712184 | `a21d5000a5150a35f1970e99907ee5aecdb98488930ac0789dec6eb2074ed5b2` |
+
+All 24 corrected-candidate functional stages complete successfully. The separate
+release-timing repetitions enforce the timing thresholds for all three maps. They cover packaged signal/presets/editor,
+tracks, native sessions, independent matrix exports, exact version/UI identity,
+fresh Borrelia journeys in both packages, a fresh yeast journey in `.run`, offline
+operation, concurrent cold-cache startup, Launcher start/Stop, actual Tauri and
+Electron native Save/Cancel, storage reset and PNG/rasterized SVG/PDF exports.
+Automated Playwright and native-desktop checks run on the declared Linux host
+with private displays. GitHub-hosted runners execute platform CI. The AppImage uses
+`APPIMAGE_EXTRACT_AND_RUN=1` on this host. Disposable inputs,
+fresh browser contexts and private native displays preserve the user's data and
+desktop. Evidence pointers use `/tmp/hict-u13-strand-final-<stage>-dir`.
+
+The corrected-package first-run journeys pass navigation, Reverse, Split, Undo,
+Save/Close/Restore and AGP export. Each map opens in three clicks from a fresh
+profile with its linked FASTA and no browser errors. Timing includes public
+network downloads and preparation.
+
+| Package and example | Readable map | Complete journey | Restored signal pixels |
+|---|---:|---:|---:|
+| `.run`, Borrelia | 38.35 s | 41.92 s | 86371 |
+| `.run`, yeast | 163.37 s | 169.06 s | 7630 |
+| AppImage, Borrelia | 10.03 s | 13.63 s | 86371 |
 
 ## Performance and retention
 
-The packaged `.run` completed 232 mixed-workload cycles in 1,804.27 seconds.
-The four inputs include mixed native pyramids and maps with 96, 1,765 and 7,790
-contigs. Work includes opening, pan/zoom, secondary attachment, Reverse/Undo,
-linked-sequence comparison, viewport PNG export and close. Browser exceptions
-and unexpected console errors fail the gate.
+The first corrected-package 7790-contig diagnostic exceeds the 33 ms frame
+limit, recording 33.30/33.355 ms in fresh/repeat samples with 1/9 long tasks.
+At that time, a separate 32 GiB-limit JVM used approximately 33 GB RSS and host
+swap was nearly full. All three repeated fixtures pass the original limits after
+that workload was closed. The original measurements remain retained.
+
+The corrected packaged `.run` completes 227 mixed-workload cycles in 1803.964
+seconds on Linux 6.8.0-146-lowlatency, glibc 2.39, Ryzen 9 7900X with 24 visible
+logical CPUs and 61.955 GiB host RAM. Java uses normal JIT, `-Xmx2g` and native
+memory tracking. Inputs include mixed native pyramids and 96-, 1765- and
+7790-contig maps. Work covers opening, pan/zoom, secondary attach, Reverse/Undo,
+linked-sequence comparison, PNG export and close. The first five minutes warm up.
+Browser and Java GC precede primitive-only retention samples. Original limits
+and workload remain in force.
 
 | Measurement | Result |
 |---|---:|
-| Pan/zoom frame p95 | 16.8 ms |
-| Reverse/Undo acknowledgement p95 | 58.78 ms |
-| Post-warmup browser heap slope | 0.054 MiB/min |
-| Browser heap early/late growth | 857,612 bytes |
-| Post-warmup Java heap slope | 0.141 MiB/min |
-| Java heap early/late growth | 2,556,928 bytes |
-| Java RSS slope | -0.311 MiB/min |
-| Post-warmup DOM nodes | 675–679 |
-| Post-warmup listeners | 226–230 |
+| Frame p95 | 16.80 ms |
+| Acknowledgement p95 | 58.47 ms |
+| Browser heap slope | 0.05641 MiB/min |
+| Browser heap early/late growth | 985832 bytes |
+| Java heap slope | 0.12329 MiB/min |
+| Java heap early/late growth | 2104320 bytes |
+| RSS slope | -0.55494 MiB/min |
+| RSS early/late growth | 18661376 bytes |
+| DOM early/late maximum | 693 / 693 |
+| Listener early/late maximum | 233 / 233 |
 
-Measurements use normal JIT, one browser context, forced browser GC after close,
-console-handle disposal and Java GC before sampling. The first five minutes are
-warmup. The script checks early/late thirds and linear slopes against declared
-limits. Backend RSS varies with map size and allocator retention. Evidence is
-`/tmp/hict-u13-soak-qualified.CPPhbN/evidence/results.json` and its raw JSONL samples.
+All original thresholds pass. RSS regression slope and early/late growth are
+reported separately. The external workload was closed approximately halfway
+through the soak. Evidence is
+`/tmp/hict-u13-strand-final-soak.PXzZK3/evidence/results.json` and raw JSONL samples.
+Earlier failed and interrupted records remain in version history and the
+engineering chronology.
 
-The fresh-browser and repeat-open measurements below retain OS and server caches.
-Opening includes a declared raw-count graph configuration and settling.
+Fresh-browser and repeat-open benchmarks retain OS and server caches. These
+repetitions run after the separate high-memory workload was closed. All six
+samples explicitly enforce frame p95 at most 33 ms and input acknowledgement
+p95 at most 100 ms.
 
-| Contigs | Fresh browser open/configure | Repeat open/configure | Frame p95 fresh/repeat | Long tasks fresh/repeat |
+| Contigs | Fresh/repeat open and configure | Frame p95 fresh/repeat | Input acknowledgement p95 fresh/repeat | Long tasks fresh/repeat |
 |---|---:|---:|---:|---:|
-| 96 | 1,775.92 ms | 567.24 ms | 16.75 / 16.70 ms | 0 / 0 |
-| 1,765 | 966.53 ms | 398.16 ms | 16.70 / 16.70 ms | 0 / 0 |
-| 7,790 | 2,775.92 ms | 1,324.42 ms | 16.80 / 16.80 ms | 1 × 52 ms / 0 |
-
-The earlier controlled browser baseline had 16.7 ms frame p95 and zero long tasks
-on the 1,765-contig map. Its opening sample was 412.1/335.3 ms and used an earlier
-runtime and test setup. The timings above retain their explicit setup/cache
-conditions. The packaged p95 frame and acknowledgement limits pass.
-
-## Export and desktop evidence
-
-The alignment fixture's PNG, independently rasterized SVG and PDF each contain
-exactly 12 substitution pixels at centroid `(584.8333, 455.0)` in a 1,034 × 791
-scene. The pixel centres agree across all three formats. The CIGAR gate also
-verifies insertions, deletions, reverse complement, repeats, N/IUPAC handling,
-no-alignment guidance, Split/Reverse/Undo and stale-response cancellation.
-
-Electron and Tauri pass native Save/Cancel for viewport and whole-map PNG/SVG/PDF,
-profile persistence and storage reset on private displays. Export comparisons use
-matching raster scale and the actual asymmetric ruler margins. Electron's mean
-absolute channel errors range from 0.18 to 2.83 on a 0–255 scale. Its heatmap red
-recall ranges from 0.944 to 0.999. Full per-format metrics remain in
-`/tmp/hict-u13-electron-native-ready.xKSYy1/evidence/rasterization-results.json` and
-`/tmp/hict-u13-tauri-native-final.GbXFOI/evidence/rasterization-results.json`.
-
-Launcher reset acceptance also starts a real packaged server, reads `/version`,
-confirms Stop and verifies that the owned process exits. Evidence is
-`/tmp/hict-launcher-reset-jy8l0lgr/results.txt`.
-
-## Example data and resource decisions
-
-The selected tardigrade matrix and matching FASTA total 45,250,776 source bytes.
-The two larger DNA Zoo cards have recorded source hashes, successful conversion,
-readable signal and linked sequence. Cheetah conversion/open took 664.72 seconds
-with sampled heap 2.59 GB. Mosquito conversion/open took 348.48 seconds with sampled
-heap 2.08 GB. The portable default uses `MaxRAMPercentage=50.0`, and an explicit
-`-Xmx` overrides it. The tardigrade choice was made after presenting candidates
-and receiving no alternative selection. Full sources, terms, citations and
-measurements are in `docs/examples-catalog.md`.
-
-Both CFF files pass the official 1.2.0 schema. The deterministic aggregate notice
-manifest records 394 components and 248 unique normalized notice texts. Portable
-packages retain the aggregate and the runtime/tool-specific legal files.
-
-## Remaining qualification
-
-Windows x86-64, macOS arm64 and macOS x86-64 CI build/start and owner manual results
-remain pending. The written checklist records the required tester, revisions,
-artifact checksum and evidence. Record each target’s CI build/start and completed owner checklist.
-
-The historical control inventory has 232 signature contracts with 227 inspected
-source bindings and five merged/ambiguous signatures. Static reconciliation
-passes. Full functional outcomes need their scenario-specific runtime mapping in
-`docs/reinforcement-control-coverage.md`. The final audit continues from those recorded expectations.
-
-
-## Later candidate memory result
-
-The 30-minute run on JVM `3ee2ee6e` and WebUI `3105102` completed 232 cycles
-but failed the selected RSS slope limit. Java heap slope was 0.131876 MiB/min.
-RSS slope was 1.101863 MiB/min against a 1.0 MiB/min limit, with early/late
-median growth of 33,095,680 bytes. The earlier passing run above remains
-revision-specific evidence. The longer repeat and later packaged run below pass the original limits.
-Raw samples and the failure are retained in
-`/tmp/hict-u13-publication-soak-ready.dfwKOb/`.
-
-## Additional audited controls
-
-The compression gate verifies eight actual exports, every contact, HDF5 filter
-levels and nonuniform balancing weights. The navigation gate verifies all six
-keyboard menus, exact reload graph/view preservation, sidebar restoration and
-all eleven resolution switches with valid/reversed limit bounds. The expanded
-workspace gate verifies seven scenarios including independent scope values, names,
-presets, every OSD field, actual toast dismissal and zoom-thumb dragging. The
-picker gate verifies four scenarios with independent loaded matrix values.
-
-The runtime ledger now lists every historical control index alongside executed
-assertions and remaining checks in `docs/reinforcement-control-coverage.md`. The
-full interface audit remains open. The owner-selected full custom graph preset
-extension now passes JSON and native-session round trips, independent signals
-and rendered colors, complete editor layouts and dependency rejection checks.
-
-Batch selection and real conversion produce independently exact contacts, and
-overwrite cancellation preserves both the output hash and server job list. The
-audit also reproduced an empty active conversion list displaying Running. The
-corrected four-scenario gate passes with an actual empty server response.
-
-## Longer memory diagnosis
-
-The original 30-minute failure remains recorded above. A 60-minute repeat on JVM
-`3ee2ee6e` and WebUI `3105102` passes the same limits with normal JIT and native
-memory tracking. It completes 451 cycles in 3,603.851 s. Browser heap growth is
-1,094,108 bytes with slope 0.033488 MiB/min. Java heap slope is 0.047528 MiB/min.
-RSS slope is 0.204776 MiB/min, with median growth 30,212,096 bytes and observed
-range 634,359,808–1,334,353,920 bytes. Frame p95 is 16.7 ms and Reverse/Undo
-acknowledgement p95 is 58.752 ms. Evidence is under
-`/tmp/hict-u13-native-memory-hour-ready-dir`.
-
-A separate 30-minute allocator diagnostic uses MALLOC_ARENA_MAX=4. It completes
-228 cycles and passes with RSS slope 0.454851 MiB/min, browser heap slope 0.056031
-MiB/min, frame p95 16.8 ms and acknowledgement p95 58.530 ms. It is diagnostic
-evidence. The later packaged candidate uses the default allocator and passes a 40-minute
-qualification under `/tmp/hict-u13-final-release-soak-dir`. It completes 305 cycles
-in 2,402.853 s. Browser heap slope is 0.048470 MiB/min and Java heap slope is
-0.078346 MiB/min. RSS slope is -0.196678 MiB/min, with median growth 21,190,656
-bytes. Frame p95 is 16.7 ms and acknowledgement p95 is 58.264488 ms. Captured
-browser errors and unhandled promise rejections are empty. This run qualifies
-JVM `b674555e` and WebUI `f069f32`. Later changes retain separate evidence.
-
-## Qualified Linux artifact provenance
-
-The application JAR is built from JVM `b674555e` with WebUI
-`f069f3257bc15588b907b1234ab9cfd17e8ad979`. Its portable shell wrapper corresponds
-to `464eba3c`. The full JAR build passes 433 tests with seven optional skips and
-zero errors/failures. The complete smoke suite passes. Full source ESLint reports
-zero errors and 99 warnings. Exact artifact hashes are retained in
-`/tmp/hict-u13-safe-artifacts.json`.
-
-Two simultaneous first .run starts both enter extraction for the same cold cache
-and complete their journeys successfully. The corrected example opens in 20.277 s
-and completes its edit/save/restore/AGP journey in 28.092 s. The matching AppImage
-opens in 20.299 s and completes in 27.545 s. Each restores 31,102 signal pixels,
-exact native AGP and linked FASTA with zero browser errors. Both artifacts pass
-the offline edit/restart/session/PNG/SVG/PDF/Swagger journey. Evidence pointers
-are `/tmp/hict-u13-safe-run-journey-dir`, `/tmp/hict-u13-safe-run-offline-dir`,
-`/tmp/hict-u13-safe-appimage-journey-dir` and
-`/tmp/hict-u13-safe-appimage-offline-dir`.
-
-Four focused wrapper tests pass, including deterministic reproduction of the old
-concurrent extraction failure, cache reuse, invalid-cache recovery and failed
-extraction cleanup/retry. The final baked candidate also passes eight Cooler
-export cases, including both multi-resolution level-0 writers and native level 9.
-Every output contact, HDF5 interaction filter and requested balancing invariant is
-checked independently.
-
-## Latest committed application checks
-
-JVM `dc40c18e` and WebUI `cb7ca73ad322f3fd609bb93439226b5f1f32d85a` pass
-the full smoke suite and the normal bundled-JAR build. The JAR SHA-256 is
-`5661a4e69004fee1fdc72419c99cb84e1a629fa5be09941e2c72b524525c25af`.
-Thirty-one repeated suites pass with zero failed suites, including 151 opening
-assertions, eight Cooler exports, all eighteen modal destinations, real jobs,
-alignment, mixed pyramids, structural edits, history, picker, conversion, session
-validation and concurrency. All fifteen sequence lifecycle cases and the exact
-baked UI revision also pass. Group result files are
-`/tmp/hict-u13-dialog-regate-{core,open-session,quad,extra}.json`.
-
-The subsequent pipeline audit found that source-independent graph branches
-produced transparent source tiles. JVM `91581c50` fixes their primary-grid routing.
-All 440 JVM tests pass with seven optional skips, including four regressions
-that fail on the preceding implementation. Twelve real-browser pipeline scenarios
-pass, including exact constant values and rendered colors before and after Swap.
-Mixed-pyramid and actual ModDotPlot identity gates also pass. Final packaged
-qualification will use the corrected source revision.
-
-## Rebuilt Linux qualification and advanced controls
-
-JVM `91581c500d91776be91d2841a0723bfd90c77375` and WebUI
-`cb7ca73ad322f3fd609bb93439226b5f1f32d85a` produce the following artifacts.
-The portable staging JAR hash matches the standalone JAR exactly.
-
-| Artifact | SHA-256 |
-|---|---|
-| Fat JAR | `a3265c29015ff93837b5b4c0a3a62b6b6ba87e3517ad74e7a75c9116d5799438` |
-| Linux .run | `c75c66c3bf3091d5159cec6f2d3e978a647d39fcf73cf909660e46d4def99a08` |
-| Linux AppImage | `98c0b00c6dddef3a61dbd7a7671ab23653ce870d9e31c9bc1cae66c6c3b797c3` |
-
-Both actual packages pass the example journey and the complete WAN-denied
-edit/restart/session/export/Swagger journey. The .run opens the example in
-20.362 s and completes in 27.443 s. The AppImage takes 20.463 s and 27.750 s.
-Each restores exactly 31,102 signal pixels, linked FASTA and matching native AGP,
-with zero browser errors. Simultaneous cold .run starts also complete.
-
-Fresh/repeat packaged navigation retains OS and server caches.
-
-| Contigs | Open/configure fresh/repeat | Frame p95 fresh/repeat | Long tasks |
-|---|---:|---:|---:|
-| 96 | 1,695.71 / 678.51 ms | 16.755 / 16.700 ms | 0 / 0 |
-| 1,765 | 1,103.99 / 347.82 ms | 16.700 / 16.700 ms | 0 / 0 |
-| 7,790 | 2,737.55 / 1,238.76 ms | 16.800 / 16.800 ms | 0 / 0 |
-
-Native Tauri, Electron and Launcher gates pass on this JAR. Electron's compiled
-main and preload hashes match the shipped browser payload exactly. Evidence
-pointers are `/tmp/hict-u13-source-independent-tauri-dir`,
-`/tmp/hict-u13-source-independent-electron-dir` and
-`/tmp/hict-u13-source-independent-launcher.log`.
-
-All fifteen sequence lifecycle scenarios also pass with changed advanced
-settings. Identity settings k=15, sketch=128, delta=0.2 and workers=2 appear in
-artifact provenance. The native input step rejects delta=0.25 while preserving
-the job list. Alignment k=7, window=1, chain=5, minimum length=20, sample=50 and
-workers=2 agree with provenance. An independent scalar endpoint-sampling oracle
-counts 49 owned samples and matches all 1,600 output matrix cells. Empty
-resolution selections disable submission for both tools. Evidence is
-`/tmp/hict-u13-advanced-sequence-empty-levels/`.
-
-The 60-second packaged preflight passes eight complete mixed-workload cycles
-with repeated dialog focus checks. The full 30-minute gate completed with a failed DOM-node assertion at
-`/tmp/hict-u13-source-independent-release-soak-valid-port-dir`. The diagnosis and
-corrected measurement preflight are recorded below. Its first attempt
-used port 6566, which Chromium rejects as unsafe before any workload cycle. That
-failed record remains under `/tmp/hict-u13-source-independent-release-soak-dir`.
-The corrected run uses port 6572 and the original acceptance thresholds.
-
-The later Move-arrow visibility correction is committed in JVM `26268352` and
-WebUI `8163456`. It passes the full frontend build and all seven actual structural
-scenarios. The packaged evidence above predates that one-line UI correction.
-Final artifact qualification and the remaining control scenarios remain open.
-
-## Modal-retention measurement correction
-
-The 91581c50/cb7ca73 packaged run completes 226 cycles in 1,800.900 s. Java heap
-slope is 0.128833 MiB/min and RSS slope is 0.342719 MiB/min. Browser heap growth
-is 1,318,030 bytes with slope 0.078908 MiB/min. Frame p95 is 16.8 ms and
-acknowledgement p95 is 58.140496 ms. Browser errors are empty. The recorded result
-is failed because DOM-node and listener counts grew. The earlier harness's
-qualifiesThirtyMinutes flag recorded requested duration, and its assertion text
-was empty. The status field correctly records the failure.
-
-Focused snapshots trace the detached dialog trees to inspector Global handles.
-The same lifecycle with primitive-only waits and hit-tested mouse clicks plateaus
-at 1,787 nodes and 702 listeners. The revised harness preserves all actual mouse
-and focus assertions and the original acceptance thresholds. It saves DOM trend
-context and marks qualification false on failure. Its 120-second packaged
-preflight completes sixteen cycles with zero errors, node maxima 683/689 and
-listener maxima 229/229 across the compared sample groups. Full qualification
-remains pending. Detailed A/B evidence and the primary browser reference are in
-`docs/reinforcement-validation.md`.
-
-
-## Owner-selected examples and read-only platform evidence
-
-Borrelia Hi-C and yeast Micro-C now have quick-start cards. Both pass independent
-matrix/reference checks and full browser edit/session/export journeys. The
-existing tardigrade card is retained. The local suite passes 445 Java tests with
-seven optional skips. These source changes still need final package qualification
-and the corrected thirty-minute workload.
-
-Read-only inspection of existing GitHub Actions run 43010279561 at fd46e1fd
-finds Linux and both macOS Java jobs successful. Windows has three stale-file
-identity failures. The local correction is committed at 2e48a9f0 and passes the
-full local suite and sequence lifecycle browser tests. Windows execution of that
-correction remains unverified.
-[Java regression run](https://github.com/ctlab/HiCT_JVM/actions/runs/43010279561)
-
-Portable run 43010279649 uses WebUI f0ef29062cd37ec5f970c70975e79dcb646a67b2
-and has successful Windows native-tool and Windows portable
-ZIP/EXE jobs at this checkpoint. Its log verifies the packaged executable,
-hictk, minimap2, AVX2 alignment, sequence tools and gapped BLAST. The optional
-AVX-512 executable fails on that runner and is reported as a warning. macOS
-arm64 native tools pass, with its portable package still building. Other package
-jobs remain in progress.
-[Windows portable job](https://github.com/ctlab/HiCT_JVM/actions/runs/43010279649/job/130490068024)
-
-Existing successful run 42887896950 at 8ca65915 supplies macOS architecture and
-minimum-version compatibility records for both architectures, plus Windows native
-sequence-tool evidence. These downloaded records describe that earlier revision.
-Their contents cover executable compatibility and automated tool fixtures. The
-interactive platform checklist remains pending. Downloads are retained under
-`/tmp/hict-u13-prior-platform-evidence/`. All GitHub operations in this inspection
-read existing runs, jobs, logs or artifacts.
-[Prior successful portable run](https://github.com/ctlab/HiCT_JVM/actions/runs/42887896950)
-
-
-## Subsequent Java CI evidence at 2e48a9f0
-
-Existing run 43014849030 passes Windows and Intel macOS Java jobs, verifying the
-source identity correction on Windows. Linux and Apple Silicon macOS fail the
-fake logging sink's shutdown-interrupt race. Both JUnit artifacts show the sink
-throws before counting any of its 201 queued events. The corrected fake sink
-passes twenty repetitions
-with the original enqueue and complete-drain assertions. A workflow run containing
-this correction is still required.
-[Subsequent Java run](https://github.com/ctlab/HiCT_JVM/actions/runs/43014849030)
-
-The earlier portable run 43010279649 now passes Windows and Apple Silicon macOS
-packaging plus their native tool jobs. Linux native tools also pass. Linux
-packaging and Intel macOS native tools remain in progress at this checkpoint.
-
-
-## Complete rendering presets
-
-The owner-selected preset extension passes six real-browser scenarios covering
-complete branches and flags, custom editor layout and a disconnected inspector,
-exact signal and pixel values, non-default border styles, saved background,
-JSON and native-session libraries, stable IDs, 100 nested unary nodes and
-expected-profile restoration against independent diagonal means. Missing-input
-and malformed batch/style cases preserve the live visualization and library.
-Full-graph import adds records without changing the active visualization.
-Applied-state saving is explicit in the control. Wizard source-style choices
-identify the options component used in the selected wizard presentation.
-
-The normal UI build, native session parser checks and the current 466-test Java
-suite pass, with seven optional skips. Existing built-in preset, pipeline-editor,
-legacy-session and workspace browser gates also pass. These source changes still
-require final package qualification and the corrected full-duration soak.
-
-
-The final preset implementation also preserves every 8-bit alpha value through
-the decimal API format. All 468 local Java tests pass with seven optional skips.
-Final UI lint has zero errors and 99 warnings. Existing portable run 43010279649
-now has successful native-tool jobs for all four targets and successful Windows,
-Apple Silicon macOS and Linux packaging jobs. Intel macOS packaging is still
-running at this checkpoint. Source revisions remain fd46e1fd and WebUI f0ef290.
-
-
-## Compatible final Linux artifacts
-
-The normal bundled build and smoke suite pass. These immutable artifacts contain
-JVM a1f7f0b8 and WebUI d0913212670a9ddd1c2b2b0d766b96b9d559a655.
-The later acceptance-only commit retains the same application sources.
-
-| Format | Bytes | SHA-256 |
-|---|---|---|
-| Fat JAR | 352734941 | `6d77d2bcd909a3b08d20962a68c116ff7ac61dd2664ed482fbacde5f8e658cb1` |
-| Linux .run | 580157215 | `8b886a2c3708c919462428d238a93a5309169e586de4dd386fae5fb37bb08888` |
-| AppImage | 752708088 | `0e65e9753d6d07cab27e9218175526d097c0656e369d02d0018083aeebe824e2` |
-
-The manifest is `/tmp/hict-u13-compatible-final-artifacts.json`. Normal build logs
-are `/tmp/hict-u13-compatible-final-{normal,portable,appimage}-build.log`, and the
-complete smoke result is `/tmp/hict-u13-compatible-final-smoke.log`.
-
-| First-run journey | Clicks to readable map | Readable map, seconds | Full journey, seconds | Restored signal pixels |
-|---|---|---|---|---|
-| Linux .run Borrelia | ['Help', 'Examples...', 'Open example'] | 9.056 | 12.556 | 86371 |
-| AppImage Borrelia | ['Help', 'Examples...', 'Open example'] | 9.883 | 13.366 | 86371 |
-| Linux .run yeast | ['Help', 'Examples...', 'Open example'] | 140.956 | 146.542 | 7630 |
-
-Each journey uses a fresh data folder and public downloads, then navigates,
-reverses, splits, undoes, saves, closes, restores and checks exported AGP against
-the saved assembly. Both formats also pass offline assets and native session
-reopening. Metadata uses the complete UI commit. Full-graph preset, all fourteen
-built-in preset and session snapshot repeats pass through the actual .run.
-The first temporary Borrelia invocation used an invalid catalog ID and stopped
-in argument validation. Corrected geo-borrelia invocations pass on both formats.
-
-Electron and Tauri final repeats pass native save/cancel, storage reset and
-actual raster/SVG/PDF comparisons against the final server. Evidence pointers
-are `/tmp/hict-u13-compatible-final-electron-dir` and
-`/tmp/hict-u13-compatible-final-tauri-retry-dir`. The Launcher starts the earlier
-992e999a packaged server and confirms Stop terminates its owned process tree.
-
-Read-only downloads from successful portable run 43010279649 confirm both macOS
-architectures and minimum-version checks have empty error lists. Reports are
-retained under `/tmp/hict-u13-fd46-platform-evidence/`. Their source revisions
-precede this candidate and the reports contain automated executable qualification.
-The owner-run interactive checklist remains in `release-manual-checklist.md`.
-
-
-## Final packaged navigation and memory qualification
-
-Fresh-browser and repeat-open measurements pass on 96-, 1,765- and 7,790-contig
-maps. Frame p95 is 16.7–16.8 ms, with zero long tasks. Every measured
-view-change acknowledgement is below 46 ms. These samples preserve normal JIT,
-server and OS caches. The first 96-contig sample overlapped completion of native
-wrapper validation. Its isolated repeat passes after the soak, export checks and final Launcher acceptance.
-
-The actual Linux self-extracting artifact completes 1801.010 seconds and 228 mixed
-cycles with no browser errors. The same original limits govern this run.
-
-| Measure | Final value | Limit |
-|---|---|---|
-| Browser heap slope | 0.069459 MiB/min | 0.2 MiB/min |
-| Browser heap growth | 1007012 bytes | 8 MiB |
-| Java heap slope | 0.118403 MiB/min | 0.5 MiB/min |
-| Server RSS slope | 0.359644 MiB/min | 1 MiB/min |
-| DOM nodes, early/late maximum | 693/693 | Late maximum within 100 nodes |
-| Listeners, early/late maximum | 233/233 | Late maximum within 20 listeners |
-| Frame p95 | 16.800 ms | 33 ms |
-| Acknowledgement p95 | 58.540 ms | 100 ms |
-
-Evidence is under `/tmp/hict-u13-compatible-final-soak.o87ZIy`. The run records JVM native-memory
-categories and uses the standard repeated close/GC measurement, full navigation,
-actual modal mouse/focus interactions, edits/Undo, linked sequence, source
-replacement and image export. The harness retains primitive state while its
-inspector handles are discarded. All forty browser scripts now have passing
-records across the 992e999a/d091321 sweep and a1f7f0b8 compatibility repeats.
-
-
-## Subsequent custom graph control correction
-
-The extended source/triangle audit found a generic transparency override changed
-a custom colormap's alpha during a range edit and could touch unselected targets.
-Hydration and publication now honor the configured colors of the selected
-colormaps. A fractional-alpha graph passes exact target isolation, linked styling,
-source switching and both swap round trips with pixel and contact checks. The
-full UI build and lint pass. Existing interface regressions are running. This UI
-correction requires a fresh package and full-duration soak before qualification.
-The preceding artifact hashes and successful soak describe a1f7f0b8/d091321.
-
-
-The custom-color correction is committed in WebUI b6e01ce. It also publishes
-primary styles with their graph in the existing atomic transaction and consumes
-the pending live-apply timer on Apply. The seven-case source-style gate verifies
-a single forced503 error, exact preserved options/graph/pixels, explicit retry,
-individual and linked targets, both swap controls and both actual color pickers.
-All fourteen built-ins, six full-graph cases, twelve editor cases, five track
-cases and sixteen sequence cases pass. Full lint has zero errors and99warnings.
-The interface sweep also passes after an isolated resolution-checkbox repeat.
-New packaged artifacts and a new full-duration soak remain required.
-
-
-## Subsequent weight-switch concurrency correction
-
-The ea0b44d9/b6e01ce packages build successfully and have immutable hashes in
-`/tmp/hict-u13-style-final-artifacts.json`. Packaged graph/preset/editor checks
-pass, then the track check catches a rapid-toggle race against its dialog-local
-track list. Qualification stops before the full soak. The switches now report a
-busy state through the complete mutation and restore their committed checked
-state after success or failure. Six real-browser track cases pass with held
-primary/secondary requests, exact weights and a rejected create request.
-New packages and a new full-duration soak remain required for this correction.
+| 96 | 1596.55 / 559.11 ms | 16.70 / 16.75 ms | 30.70 / 31.00 ms | 0 / 0 |
+| 1765 | 889.72 / 381.57 ms | 16.70 / 16.80 ms | 29.87 / 30.25 ms | 0 / 0 |
+| 7790 | 2785.85 / 1275.14 ms | 16.80 / 16.80 ms | 40.30 / 31.42 ms | 0 / 0 |
+
+The original baseline records 16.7 ms frames and zero long tasks on the
+1765-contig map. Its opening sample is 412.1/335.3 ms with an earlier runtime and
+setup. Current timings include the declared raw-count graph and settling.
+Evidence pointers are `/tmp/hict-u13-strand-final-release-timing-<count>-dir`.
+
+## Examples, attribution and remaining scope
+
+Both larger DNA Zoo examples pass fresh conversion on the corrected package.
+Cheetah opens 19 contigs at 11 levels in 598.36 seconds. Aedes opens three
+contigs at 11 levels in 302.04 seconds. Original 2.5 Mb source pixels independently
+sum to all 576/1024 first-chromosome cells at the generated 10 Mb level. Both
+first 1000 forward-reference bases match exactly, every catalog source checksum
+matches, readable signal is present and unexpected browser errors are absent.
+The first Cheetah oracle's unavailable-source-level assumption is retained with
+its corrected continuation on the freshly converted output.
+
+The retained tardigrade quick start reaches its map in 21.29 seconds and completes
+the edit/session/export journey in 28.63 seconds. All five reference names,
+lengths and forward directions and the first 1000 bases match independently.
+All five catalog cards now have corrected-package evidence. One redundant-copy
+disk-space preparation failure was recovered before server launch. Engineering
+records retain that incident and the independent-oracle correction.
+
+The owner selected both Borrelia Hi-C GSM7056007 and yeast Micro-C GSM9302472.
+Borrelia's prepared FASTA preserves the original bases and case and matches all
+19 replicon names and lengths. Yeast's public UCSC sacCer3 FASTA matches all
+17 chromosomes directly. Both cards include public downloads and study citations.
+The original tardigrade and both DNA Zoo validations retain conversion, readable
+signal and linked-sequence evidence in `docs/examples-catalog.md`. The portable
+runtime defaults to `MaxRAMPercentage=50.0`, with explicit `-Xmx` taking precedence.
+
+Both CFF files pass the official 1.2.0 schema. The deterministic attribution
+manifest contains 394 components and 248 normalized notice texts. Portable
+packages include aggregate and runtime/tool legal files, including bundled BLAST.
+
+All required current-source automated, local runtime and artifact checks pass.
+Owner-run platform GUI checklists are deferred internal follow-up. Optional
+private-data integration fixtures retain their declared skips. Current public `.hic` checks cover v8 and v9 source counts and
+cache reuse. These records qualify the frozen application revisions above.
+The final validation-record update includes acceptance helpers and release-note
+consolidation after those artifacts were frozen.
