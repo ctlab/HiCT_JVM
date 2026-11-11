@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from browser_review_helpers import link_fasta
 
 
 def main():
@@ -143,8 +144,7 @@ def main():
             page.evaluate('id=>window.__hictBenchmark.manager().linearTrackManager.removeTrack(id)',track_id)
             results.append({'test':'Attach preserves viewport and styles'})
 
-            link = page.request.post(args.api+'/link_fasta', data={'fastaFilename':'quad_combined_ind2.fasta'})
-            assert link.ok, link.text()
+            link_fasta(page, 'quad_combined_ind2.fasta')
             region = page.request.post(args.api+'/sequence/region',data={'startBp':0,'endBp':100})
             assert region.ok and region.json()['linked'], region.text()
             first_contig = page.evaluate('window.__hictBenchmark.manager().getContigDimensionHolder().contigDescriptors[0].contigName')

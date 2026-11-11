@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep normalization choices current when switching resolution levels, including files with balancing weights at only some levels.
+
 - Add a five-minute example quick start, an illustrated installation guide, a user guide with shortcuts and machine-readable software citations.
 - Show the built WebUI version and source revision in About, include aggregated third-party notices in portable packages and run the complete JVM regression suite in platform CI.
 

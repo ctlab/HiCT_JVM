@@ -56,7 +56,9 @@ def main():
             page.get_by_role("link", name="File", exact=True).click()
             with page.expect_response("**/attach"):
                 page.get_by_role("link", name="Attach", exact=True).click()
-            page.wait_for_timeout(1800)
+            page.get_by_text(f"Attached to session {filename}", exact=True).wait_for()
+            page.locator('.open-progress-modal').wait_for(state='hidden')
+            page.wait_for_function("!window.__hictBenchmark.manager().getView().getAnimating()")
             prompt = page.locator(".cooler-weights-nan-modal.show .btn-close")
             if prompt.is_visible():
                 prompt.click()
@@ -81,18 +83,22 @@ def main():
             attach(b)
             assert width(b) == 2
             results.append({"test": "second browser restores first browser workspace"})
+            assert b.locator('.workspace-conflict').count() == 0, "Attach should finish without a conflict"
+            b_saves.clear()
             a.evaluate("""() => {const l=window.__hictBenchmark.manager().viewAndLayersManager,
                 p=l.getTrackStylePreset();p.contigs.width=7;l.applyTrackStylePreset(p);}""")
             latest = wait_width(7)
-            b_saves.clear()
-            b.evaluate("""() => {const v=window.__hictBenchmark.manager().getView(),c=v.getCenter();
-                v.setCenter([c[0]+30*v.getResolution(),c[1]]);}""")
+            pan = b.evaluate("""() => {const v=window.__hictBenchmark.manager().getView(),c=v.getCenter();
+                v.setResolution(v.getResolution()/2);
+                v.setCenter([c[0]+30*v.getResolution(),c[1]]);
+                return {before:c,after:v.getCenter()};}""")
+            assert pan['before'] != pan['after'], pan
             b.wait_for_timeout(6000)
             actual = stored()["workspaceState"]
             results.append({"test": "stale browser pan cannot overwrite newer styles",
-                            "expectedWidth": 7, "actualWidth": actual["trackStyles"]["contigs"]["width"]})
+                            "expectedWidth": 7, "actualWidth": actual["trackStyles"]["contigs"]["width"], "autosaveAttempts": len(b_saves)})
             assert actual == latest, "An older client replaced newer workspace settings"
-            assert len(b_saves) == 1, "A rejected autosave must not keep retrying"
+            assert len(b_saves) == 1, f"A rejected autosave must not keep retrying, observed {len(b_saves)} attempts"
             assert width(b) == 2, "Conflict must not silently replace local settings"
             b.get_by_text("Workspace settings changed in another window. Attach again to restore the latest saved view.", exact=True).wait_for()
             b.screenshot(path=str(output / "conflict-preserves-local-view.png"))

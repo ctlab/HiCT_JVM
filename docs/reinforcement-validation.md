@@ -1458,3 +1458,35 @@ passed. Edited release UI files had zero lint errors and three existing warnings
 Evidence pointers are `/tmp/hict-u12-docs-metadata-final-dir` and
 `/tmp/hict-u12-docs-menus-final-dir`. The compiled WebUI reports its own 2.0.0
 version and full source commit independently of the running server's version.
+
+
+## Full interface audit in progress (U13)
+
+The capability browser gate exposed a stale resolution-dependent normalization
+state. Raw asynchronous map callbacks replaced a plain view-state field without
+notifying computed controls. The existing shared view-state container is now
+shallow-reactive. Five capability scenarios pass, including weights present at
+one level, absent at another, secondary sources, identity sources and legacy
+unknown metadata. The full WebUI build and all 18 menu checks pass. Edited-file
+ESLint has zero errors and two existing warnings. Evidence is named by
+`/tmp/hict-u13-reactive-source-capabilities-dir` and
+`/tmp/hict-u13-reactive-menus-dir`.
+
+The audit also corrected test setup. Chromium rejects API port 6000. Embedded
+assets require an isolated server working directory because development serving
+prefers a sibling checkout. The ModDotPlot helper must discard its listener key
+instead of serializing the OpenLayers object graph. The release-review FASTA
+step now uses the user's linking flow, updating frontend capabilities before
+checking the sequence canvases. Qualified reruns passed BLAST, nine ModDotPlot
+checks, structural edits, ten job checks, the release-review journeys, rotated
+exports, exact signal bounds and histograms. Earlier setup failures remain in
+separate evidence directories. Full package and soak qualification is pending.
+
+The concurrent-client gate initially attempted a pan beyond the anchored map
+boundary, producing no view change and no save. It now waits for Attach to finish,
+zooms to a pannable view, verifies the changed centre and counts requests before
+the competing edit. The qualified run made exactly one rejected save, retained
+the newer server style and recovered through explicit Attach. Evidence is named
+by `/tmp/hict-u13-reactive-concurrent-pan-dir`. Two obsolete static control anchors
+were refreshed to the current transform and legacy-summary controls. Static
+reconciliation validates all 232 contracts and retains pending runtime status.

@@ -69,7 +69,7 @@ def main():
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
-            page.evaluate("window.__hictBenchmark.manager().getMap().on('rendercomplete', () => {})")
+            page.evaluate("() => { window.__hictBenchmark.manager().getMap().on('rendercomplete', () => {}); }")
             page.wait_for_timeout(1500)
             button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
             if button.is_visible():
