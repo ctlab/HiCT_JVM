@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update PDF export, HTTP requests, HTML sanitization, Vue and Vert.x dependencies, with rendered export and browser regression checks.
+
 - Open the 45 MB tardigrade example with its matching FASTA in three clicks. All bundled examples now have verified downloads, hashes and end-to-end opening checks.
 - Import multiresolution Cooler files with generated pyramids, and use a measured 50% RAM default in portable launchers. Explicit Java heap settings take precedence.
 

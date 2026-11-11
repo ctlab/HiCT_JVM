@@ -1373,3 +1373,51 @@ assembly-layout and downloader-ownership regressions. One early large-example
 trial was invalidated by rebuilding its running JAR. All qualified trials used
 immutable JAR and WebUI copies. The evidence directories in the catalog document
 contain qualified results, source hashes, screenshots and sampled resources.
+
+
+## Dependency upgrades (U12)
+
+The sequential upgrade targets are jsPDF 4.2.1, axios 1.21.1, DOMPurify 3.4.17,
+Vue 3.5.45 and the latest stable Vert.x 4.x BOM, 4.5.36. Versions were checked
+against npm and Maven metadata on 2026-11-11. jsPDF's dependency update supplies
+DOMPurify 3.4.17 through its existing transitive relationship. The same browser
+gate qualifies that pair. Vue required an explicit unknown type on the existing
+sequence-annotation canvas ref callback. Its handler already validates the DOM
+instance. No dependency upgrade has been reverted.
+
+Each frontend change ran the production build and all WebUI checks. The browser
+suite includes exact alignment and edits, mixed-resolution navigation, all 18
+menu destinations and a pipeline graph round trip. Export comparison independently
+rasterizes SVG with Inkscape and PDF with Poppler at 96 dpi. Each format places
+the 12 measured substitution pixels at the same centre in a 1034 by 791 image.
+The first menu attempt used a synthetic fixture without the diagonal signal its
+oracle requires. The qualified menu runs use the existing real-map fixture.
+Evidence pointers use `/tmp/hict-u12-<dependency>-<suite>-dir`, with the jsPDF
+qualified menu run named `/tmp/hict-u12-jspdf-menus-ready-dir`.
+
+Upstream version references are the [jsPDF releases](https://github.com/parallax/jsPDF/releases),
+[axios releases](https://github.com/axios/axios/releases),
+[DOMPurify releases](https://github.com/cure53/DOMPurify/releases),
+[Vue changelog](https://github.com/vuejs/core/blob/main/CHANGELOG.md) and
+[Vert.x Maven metadata](https://repo.maven.apache.org/maven2/io/vertx/vertx-stack-depchain/maven-metadata.xml).
+
+
+The Vert.x BOM selects SLF4J 2.x. The former Logback 1.2 binding prevented
+startup, which the native-startup regression caught. SLF4J 2.0.20 and Logback
+1.5.38 restore the binding. The Logback configuration uses its default shutdown
+hook, and the standalone logging test initializes its own MDC adapter. The full
+431-test JVM suite passed with seven optional-data skips after these changes.
+The asynchronous sink test still verifies nonblocking requests and shutdown drain.
+Gradle dependency locks were regenerated through dependencies --write-locks.
+
+
+Compatible transitive security updates then passed the complete WebUI build and
+the same four browser suites. Production npm audit reports zero advisories.
+The complete development graph retains 15 findings, comprising 12 moderate and
+three high findings, with zero critical findings. Affected dependency chains
+include Electron packaging, Vite and its plugins, esbuild, Vue language tooling,
+minimatch, brace-expansion and vue-template-compiler. Major development-tool
+migrations remain outside this five-dependency upgrade. Exact audit reports are
+`/tmp/hict-u12-audit-compatible.json` and `/tmp/hict-u12-audit-production.json`.
+No upgrade was reverted. Matching export substitution counts and centres passed
+again against Vert.x and the final compatible dependency graph.

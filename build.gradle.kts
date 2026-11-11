@@ -50,11 +50,11 @@ repositories {
   }
 }
 
-val vertxVersion = "4.4.1"
+val vertxVersion = "4.5.36"
 val junitJupiterVersion = "5.9.1"
 val junitPlatformVersion = "1.9.1"
-val slf4jVersion = "1.7.36"
-val logbackVersion = "1.2.13"
+val slf4jVersion = "2.0.20"
+val logbackVersion = "1.5.38"
 
 dependencyLocking {
   lockAllConfigurations()

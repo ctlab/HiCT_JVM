@@ -1,6 +1,6 @@
 <configuration>
   <!-- Drain queued diagnostics on normal JVM shutdown, including CLI System.exit. -->
-  <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook"/>
+  <shutdownHook/>
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.err</target>
     <encoder>

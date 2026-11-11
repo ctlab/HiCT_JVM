@@ -4,6 +4,7 @@ import ch.qos.logback.classic.AsyncAppender;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.util.LogbackMDCAdapter;
 import ch.qos.logback.core.ConsoleAppender;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +28,7 @@ public class AsyncLoggingTest {
   }
   @Test void slowConsoleDoesNotBlockNormalRequestsAndShutdownDrainsDiagnostics() throws Exception {
     var context = new LoggerContext();
+    context.setMDCAdapter(new LogbackMDCAdapter());
     entered = new CountDownLatch(1);
     release = new CountDownLatch(1);
     count = new AtomicInteger();
