@@ -8,7 +8,7 @@ import ch.qos.logback.classic.util.LogbackMDCAdapter;
 import ch.qos.logback.core.ConsoleAppender;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,11 +22,15 @@ public class AsyncLoggingTest {
     @Override protected void append(ILoggingEvent event) {
       entered.countDown();
       try { if (release.getCount() > 0 && !release.await(5, TimeUnit.SECONDS)) throw new AssertionError("Sink not released"); }
-      catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        // AsyncAppender interrupts its worker during stop, even after the sink is released.
+        if (release.getCount() > 0) throw new AssertionError("Sink interrupted before release", e);
+      }
       count.incrementAndGet();
     }
   }
-  @Test void slowConsoleDoesNotBlockNormalRequestsAndShutdownDrainsDiagnostics() throws Exception {
+  @RepeatedTest(20) void slowConsoleDoesNotBlockNormalRequestsAndShutdownDrainsDiagnostics() throws Exception {
     var context = new LoggerContext();
     context.setMDCAdapter(new LogbackMDCAdapter());
     entered = new CountDownLatch(1);

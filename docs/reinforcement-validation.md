@@ -1957,3 +1957,25 @@ journey at 9.098 seconds to the map and 12.646 seconds overall, with 86,371
 restored signal pixels and zero captured errors. Evidence is under
 `/tmp/hict-u13-borrelia-final-source-journey-dir`. Catalog validation also reports
 a malformed file-list JSON pointer safely when a preparation recipe is present.
+
+
+### U13 asynchronous logging CI test correction
+
+The owner-pushed 2e48a9f0 revision passes Windows and Intel macOS Java CI. Linux
+and Apple Silicon macOS fail only AsyncLoggingTest. Their downloaded JUnit
+artifacts show the fake console throws AssertionError from InterruptedException
+when AsyncAppender.stop interrupts its worker immediately after the release
+latch opens. This terminates the test worker before any of its 201 events drain.
+The production appender configuration is unchanged.
+[Java regression run](https://github.com/ctlab/HiCT_JVM/actions/runs/43014849030)
+
+The fake sink now accepts that shutdown interruption after release, preserves
+the interrupt status and continues counting delivered events. An interruption
+before release still fails. The test repeats twenty times with the same checks
+for nonblocking enqueue, zero delivery while blocked and complete delivery of
+all 201 events on stop. All repetitions pass in
+`/tmp/hict-u13-async-shutdown-repeat.log`. The current working-tree Java suite
+passes 466 tests with seven optional skips, including in-progress full-preset
+regressions, in `/tmp/hict-u13-async-shutdown-full.log`. CI execution containing
+this test correction remains pending. Existing failing artifacts are retained
+under `/tmp/hict-u13-identity-ci-junit/`. All remote inspection was read-only.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Make shutdown logging release checks reliable under worker interruption.
+
 - Add Borrelia Hi-C and yeast Micro-C quick starts with verified matching references and automatic preparation.
 
 - Detect rapid equal-size source changes before reusing conversions and validate FASTA replacements on filesystems without file keys.

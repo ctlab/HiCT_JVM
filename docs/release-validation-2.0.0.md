@@ -378,3 +378,19 @@ interactive platform checklist remains pending. Downloads are retained under
 `/tmp/hict-u13-prior-platform-evidence/`. All GitHub operations in this inspection
 read existing runs, jobs, logs or artifacts.
 [Prior successful portable run](https://github.com/ctlab/HiCT_JVM/actions/runs/42887896950)
+
+
+## Subsequent Java CI evidence at 2e48a9f0
+
+Existing run 43014849030 passes Windows and Intel macOS Java jobs, verifying the
+source identity correction on Windows. Linux and Apple Silicon macOS fail the
+fake logging sink's shutdown-interrupt race. Both JUnit artifacts show the sink
+throws before counting any of its 201 queued events. The local test correction
+preserves the production logging configuration and passes twenty repetitions
+with the original enqueue and complete-drain assertions. A workflow run containing
+this correction is still required.
+[Subsequent Java run](https://github.com/ctlab/HiCT_JVM/actions/runs/43014849030)
+
+The earlier portable run 43010279649 now passes Windows and Apple Silicon macOS
+packaging plus their native tool jobs. Linux native tools also pass. Linux
+packaging and Intel macOS native tools remain in progress at this checkpoint.
