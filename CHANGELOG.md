@@ -2,13 +2,15 @@
 
 ## Unreleased
 
-- Scale contact signals by exact resolution ratios, including non-divisible pyramid levels and very large resolutions.
-
-- Start portable Linux packages safely when multiple first launches share the same payload cache.
+- Keep dialog controls reachable, contain keyboard focus and return focus to the opening menu when dialogs close.
 
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Scale contact signals by exact resolution ratios, including non-divisible pyramid levels and very large resolutions.
+
+- Start portable Linux packages safely when multiple first launches share the same payload cache.
 
 - Preserve all presets and thresholds when an imported preset file contains an invalid item.
 

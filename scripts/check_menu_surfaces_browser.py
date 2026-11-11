@@ -25,12 +25,14 @@ def main():
         for width, height, keyboard in ((1280, 720, False), (1440, 900, True)):
             context = browser.new_context(viewport={'width': width, 'height': height})
             context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
+            context.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled menu-audit promise',e.reason))")
             context.route('http://localhost:5000/**', lambda route: route.continue_(
                 url=args.api + route.request.url.removeprefix('http://localhost:5000')))
             page = context.new_page()
             page.set_default_timeout(15000)
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
+            page.on('console', lambda message: errors.append(message.text) if message.type=='error' else None)
             try:
                 assert context.request.post(args.api + '/close', data={}).ok
                 page.goto(args.url)
@@ -100,9 +102,11 @@ def main():
         for case in cases:
             context = browser.new_context(viewport={'width': 1280, 'height': 720})
             context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
+            context.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled menu-audit promise',e.reason))")
             context.route('http://localhost:5000/**', lambda route: route.continue_(
                 url=args.api + route.request.url.removeprefix('http://localhost:5000')))
             errors, http_errors = [], []
+            context.on('console', lambda message: errors.append(message.text) if message.type=='error' else None)
             context.on('page', lambda page: page.on('pageerror', lambda error: errors.append(str(error))))
             context.on('response', lambda response: http_errors.append({'url': response.url, 'status': response.status})
                        if response.status >= 400 else None)
@@ -118,6 +122,8 @@ def main():
                 prompt = page.get_by_role('button', name='Do not use Cooler weights', exact=True)
                 if prompt.is_visible():
                     prompt.click()
+                before_agp = context.request.post(args.api + '/get_agp_for_assembly', data={})
+                assert before_agp.ok, before_agp.text()
                 if case['id'] == 'menu-08':
                     response = context.request.post(args.api + '/render_pipeline/get', data={})
                     assert response.ok
@@ -141,6 +147,8 @@ def main():
                     action.click()
                     target = page
                     target.get_by_role('heading', name=case['heading'], exact=True).wait_for(state='visible')
+                    target.wait_for_function('''() => Array.from(document.querySelectorAll('[data-sonner-toast]')).filter(e=>e.textContent.includes('excluded bins masked')).every(e=>getComputedStyle(e).visibility==='hidden')''')
+                    result['guidanceWhileOpen'] = 'excluded-bin notice yields to modal controls'
                     if case['id'] == 'menu-08':
                         target.wait_for_function("document.querySelector('#pipeline-enabled')?.checked")
                         result['pipelineEnabled'] = 'matches server'
@@ -150,6 +158,22 @@ def main():
                         submit_name = 'Find sequences' if case['id'] == 'menu-12' else case['heading']
                         assert target.get_by_role('button', name=submit_name, exact=True).is_disabled()
                         result['missingFastaGuidance'] = 'visible with computation disabled'
+                if case['heading'] is not None:
+                    dialog = target.get_by_role('dialog').filter(has=target.get_by_role('heading', name=case['heading'], exact=True))
+                    assert dialog.count() == 1, (case['id'], dialog.count())
+                    target.wait_for_function("heading => {const root=Array.from(document.querySelectorAll('[role=dialog]')).find(n=>Array.from(n.querySelectorAll('h1,h2,h3,h4,h5,h6')).some(h=>h.textContent.trim()===heading));return root && getComputedStyle(root).opacity==='1';}", arg=case['heading'])
+                    dialog.evaluate("""node => {
+                        const selector='a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+                        const items=Array.from(node.querySelectorAll(selector)).filter(n=>n.getClientRects().length);
+                        if(!items.length)throw new Error('Dialog has no focusable controls');
+                        window.__menuFocusItems=items;items.at(-1).focus();
+                    }""")
+                    target.keyboard.press('Tab')
+                    assert target.evaluate('document.activeElement===window.__menuFocusItems[0]'), (case['id'], 'Tab must wrap to first control')
+                    target.keyboard.press('Shift+Tab')
+                    assert target.evaluate('document.activeElement===window.__menuFocusItems.at(-1)'), (case['id'], 'Shift+Tab must wrap to last control')
+                    result['focusTrap'] = 'Tab and Shift+Tab stay inside this dialog'
+                    target.evaluate('delete window.__menuFocusItems')
                 controls = target.locator('button,a,input,select,summary,textarea,[role=menuitem]').evaluate_all('''es=>es.filter(e=>e.getClientRects().length).map(e=>({
                     tag:e.tagName,id:e.id,aria:e.getAttribute('aria-label'),text:(e.innerText||'').trim().slice(0,200),
                     title:e.title,type:e.type??null,disabled:!!e.disabled||e.classList.contains('disabled'),
@@ -170,6 +194,32 @@ def main():
                     target.get_by_role('button', name='Link FASTA…', exact=True).click()
                     target.get_by_role('heading', name='Select FASTA file', exact=True).wait_for(state='visible')
                     result['missingFastaRecovery'] = 'link action opens FASTA selector'
+                    child = target.get_by_role('dialog').filter(has=target.get_by_role('heading', name='Select FASTA file', exact=True))
+                    child.locator('.btn-close').first.click()
+                    target.get_by_role('heading', name='Select FASTA file', exact=True).wait_for(state='hidden')
+                    result['recoveryCancellation'] = 'FASTA picker closes and the recovery flow exits'
+                    target.get_by_role('link', name=case['menu'], exact=True).click()
+                    action.click()
+                    target.get_by_role('heading', name=case['heading'], exact=True).wait_for()
+
+                if case['heading'] is not None:
+                    close_button = dialog.locator('.btn-close').first
+                    for label in ('Close', 'Dismiss', 'Done'):
+                        candidate = dialog.get_by_role('button', name=label, exact=True)
+                        if candidate.count():
+                            close_button = candidate.last
+                            break
+                    result['dismissalControl'] = close_button.inner_text().strip() or 'header Close'
+                    close_button.click()
+                    target.get_by_role('heading', name=case['heading'], exact=True).wait_for(state='hidden')
+                    target.wait_for_function('document.activeElement!==document.body && document.activeElement.getClientRects().length>0')
+                    result['dismissal'] = 'actual Close preserves assembly and restores visible focus'
+                    result['focusReturn'] = target.evaluate('document.activeElement.outerHTML')
+                elif case['heading'] is None:
+                    target.close()
+                after_agp = context.request.post(args.api + '/get_agp_for_assembly', data={})
+                assert after_agp.ok and after_agp.text() == before_agp.text(), case['id']
+                result['assemblyPreserved'] = True
                 assert not errors, errors
                 assert not http_errors, http_errors
                 result['surfaceStatus'] = 'outcome verified'

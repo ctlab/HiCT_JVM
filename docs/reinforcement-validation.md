@@ -1724,3 +1724,31 @@ scaling at ratio 2.5. Pixel [249,185,185] changes to [246,158,158] after contras
 adjustment while raw contacts remain exact. Evidence pointers are
 `/tmp/hict-u13-signal-control-audit-dir` and
 `/tmp/hict-u13-signal-controls-fractional-fixed-dir`.
+
+## Dialog focus and notice overlap during U13
+
+The eighteen-destination audit reproduced menu-launched dialogs returning focus
+to the document body. Bootstrap can hide its focused action before a lazy dialog
+mounts. The shared focus helper now remembers the activating control weakly,
+restores its visible dropdown toggle when necessary and removes activation
+listeners when its last component owner unmounts. Resolution restriction, matrix
+conversion and the assembly FASTA prompt now use the same helper and named dialogs.
+
+The 15-second excluded-bin notice also covered footer Close buttons at 1280×720.
+Its visibility now yields to the reactive modal focus stack, preserving its normal
+action and lifetime. This applies only to this informational notice. The installed
+toast component drops supplied class attributes, so the implementation uses its
+supported style option with an inherited CSS visibility variable.
+
+The browser gate verifies all eighteen actual destinations, Tab and Shift+Tab
+containment, footer/header dismissal, visible return focus, exact native AGP
+preservation, missing-FASTA picker cancellation and zero unexpected console
+errors or unhandled rejections. Both direct-picker viewport cases pass. Evidence
+is under `/tmp/hict-u13-dialog-all-modal-verified-dir`. Seven workspace scenarios
+and the four exact signal-control scenarios pass at
+`/tmp/hict-u13-dialog-workspace-dir` and `/tmp/hict-u13-dialog-signals-dir`.
+The WebUI build and numerical/source regressions pass. Full source ESLint reports
+zero errors and the existing 99 warnings. Failed intermediate overlap attempts
+remain recorded under `/tmp/hict-u13-dialog-final-controls-dir`,
+`/tmp/hict-u13-dialog-toast-verified-dir` and
+`/tmp/hict-u13-dialog-guidance-verified-dir`.
