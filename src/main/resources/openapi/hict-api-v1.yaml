@@ -1819,6 +1819,46 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /sequence/alignment_detail:
+    post:
+      tags: [Sequence analysis]
+      summary: Start or inspect exact alignment detail for two bounded sequence intervals
+      operationId: sequenceAlignmentDetail
+      description: Runs the bundled aligner with extended CIGAR output. Coordinates are zero-based and half-open. A finished result reports an empty segment list when no alignment is found.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [jobId]
+                  properties:
+                    jobId: { type: string }
+                - type: object
+                  required: [rowStart, rowEnd, columnStart, columnEnd]
+                  properties:
+                    rowStart: { type: integer, format: int64, minimum: 0 }
+                    rowEnd: { type: integer, format: int64, minimum: 1 }
+                    columnStart: { type: integer, format: int64, minimum: 0 }
+                    columnEnd: { type: integer, format: int64, minimum: 1 }
+                    includeGaps: { type: boolean, default: false }
+                  description: Each interval contains at most 4096 bases.
+      responses:
+        '200':
+          description: Terminal alignment job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlignmentDetailResponse' }
+        '202':
+          description: Active alignment job status. Cancel through sequence/jobs/{jobId}/stop.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlignmentDetailResponse' }
+        '400': { description: Invalid sequence intervals }
+        '404': { description: Alignment job was not found or has expired }
+        '409': { description: Missing map or FASTA, or stale assembly revision }
+        '503': { description: Sequence analysis queue is full }
   /sequence/region:
     post:
       tags: [Sequence analysis]
@@ -2339,6 +2379,35 @@ components:
         state: { type: string, enum: [AVAILABLE, UNAVAILABLE, UNKNOWN] }
         reasonCode: { type: string }
         reason: { type: string }
+    AlignmentDetailResponse:
+      type: object
+      required: [jobId, kind, status]
+      properties:
+        jobId: { type: string }
+        kind: { type: string, enum: [alignment_detail] }
+        status: { type: string, enum: [submitted, running, finished, failed, cancelled] }
+        error: { type: string, nullable: true }
+        result:
+          type: object
+          required: [coordinateSystem, segments, alignmentCount]
+          properties:
+            coordinateSystem: { type: string, enum: [ASSEMBLY_BP, PADDED_SEQUENCE] }
+            alignmentCount: { type: integer, minimum: 0 }
+            message: { type: string, nullable: true }
+            segments:
+              type: array
+              maxItems: 4096
+              items:
+                type: object
+                required: [rowStart, rowEnd, columnStart, columnEnd, operation, reverse, alignment]
+                properties:
+                  rowStart: { type: integer, format: int64, minimum: 0 }
+                  rowEnd: { type: integer, format: int64, minimum: 0 }
+                  columnStart: { type: integer, format: int64, minimum: 0 }
+                  columnEnd: { type: integer, format: int64, minimum: 0 }
+                  operation: { type: string, enum: [MATCH, SUBSTITUTION, INSERTION, DELETION, AMBIGUOUS] }
+                  reverse: { type: boolean }
+                  alignment: { type: integer, minimum: 0 }
     SecondaryCompatibility:
       type: object
       properties:

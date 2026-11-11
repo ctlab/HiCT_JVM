@@ -99,7 +99,8 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
     var before = label != null && journal != null ? capture() : null;
     try {
       boolean sequenceSnapshot = ctx.normalizedPath().startsWith("/sequence/")
-        && (ctx.normalizedPath().endsWith("/jobs") || ctx.normalizedPath().equals("/sequence/region"));
+        && (ctx.normalizedPath().endsWith("/jobs") || ctx.normalizedPath().equals("/sequence/region")
+          || ctx.normalizedPath().equals("/sequence/alignment_detail"));
       if ((label != null || sequenceSnapshot || ctx.normalizedPath().equals("/session/snapshot")) && journal != null && ctx.request().getHeader("X-HiCT-History-Session") != null)
         requireVersion(ctx.request().getHeader("X-HiCT-History-Session"),
           Long.parseLong(ctx.request().getHeader("X-HiCT-History-Revision")));

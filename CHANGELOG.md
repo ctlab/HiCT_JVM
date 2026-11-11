@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show exact sequence alignments at letter zoom, including substitutions, gaps and reverse alignments. Visible detail follows assembly edits and is included in PNG, SVG and PDF exports.
+
 - Compare layers with different resolution pyramids on the same assembly grid. Each layer selects its closest available resolution, with a loading indicator during overlay changes.
 
 - Load the file picker, wizard and heavy tools on demand. Reuse versioned browser assets between visits and release map resources on close.

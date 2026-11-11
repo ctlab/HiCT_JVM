@@ -1262,3 +1262,32 @@ maximum was 11 concurrent secondary requests. The ModDotPlot gate passed nine
 checks, including real generation, the identity scale, three 5 kb/10 kb round
 trips and preservation of primary pixels. Secondary replacement and confirmation
 also passed using an actual reference-interval mismatch.
+
+## Exact alignment at letter zoom (U9)
+
+The new bounded alignment endpoint captures two windows of at most 4,096 bases
+from the active FASTA and assembly revision. The bundled aligner emits extended
+CIGAR with -c --eqx. A cancellable sequence job parses matches, substitutions,
+insertions and deletions into zero-based half-open intervals. Noncanonical bases
+are marked ambiguous. Finished results are cached by the assembly snapshot,
+FASTA identity and stamp, intervals and extracted sequence. Repeated queries
+reuse completed jobs, and the completed-job cap bounds the cache.
+
+Alignment detail appears at the measured FASTA-letter threshold. The renderer
+projects base centres through the same fractional assembly coordinate holder as
+the sequence axes. It cancels obsolete reads and discards late responses. Display
+work is limited to 8,192 bases. A missing alignment is reported explicitly.
+
+The export policy is visible-viewport detail. PNG, SVG and PDF include the same
+rendered alignment layer at letter zoom. Whole-map exports use their fitted
+scale, where the detail layer is hidden. On the synthetic substitution fixture,
+PNG and independently rasterized SVG and PDF all contained 21 substitution-color
+pixels with their centre at the same pixel.
+
+The JVM and WebUI suites passed. The real bundled aligner gate verified a known
+substitution, insertion, deletion, reverse complement, repeat and N/IUPAC bases.
+Chromium checked the substitution against its FASTA base centre, after native
+Split, Reverse and Undo, and across a matrix-level change at letter zoom. A
+deliberately delayed response was discarded after navigation into an unaligned
+region, which displayed the no-alignment message. The temporary alignment files
+were removed after completion.

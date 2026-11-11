@@ -7,6 +7,7 @@ import io.vertx.ext.web.handler.HttpException;
 import ru.itmo.ctlab.hict.hict_library.assembly.*;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
+import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.AlignmentDetailRequestDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.io.*;
 import java.nio.file.*;
@@ -19,12 +20,27 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class SequenceAnalysisHandlersHolder extends HandlersHolder implements AutoCloseable {
   private final Vertx vertx;
   private final ConcurrentHashMap<String, Job> jobs = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<AlignmentKey, String> alignmentJobs = new ConcurrentHashMap<>();
+  private static final int MAX_ALIGNMENT_SEGMENTS = 4096;
+  private static final int MAX_ALIGNMENT_RECORDS = 256;
   private final ThreadPoolExecutor workers = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
     new ArrayBlockingQueue<>(8), runnable -> { var t = new Thread(runnable, "hict-sequence-analysis"); t.setDaemon(true); return t; });
 
   public SequenceAnalysisHandlersHolder(Vertx vertx) { this.vertx = vertx; }
 
   @Override public void addHandlersToRouter(Router router) {
+    router.post("/sequence/alignment_detail").handler(ctx -> {
+      final var shared = vertx.sharedData().getLocalMap("hict_server");
+      final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (wrapper == null) {
+        ctx.fail(new IllegalStateException("Request scheduler is not initialized"));
+        return;
+      }
+      wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
+        () -> alignmentDetail(ctx.body().asJsonObject()), result -> ctx.response()
+          .setStatusCode(Set.of("submitted", "running").contains(result.getString("status")) ? 202 : 200)
+          .putHeader("content-type", "application/json").end(result.encode()));
+    });
     router.post("/sequence/region").handler(ctx -> {
       var shared = vertx.sharedData().getLocalMap("hict_server");
       var scheduler = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
@@ -100,6 +116,132 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       job.cancel();
       ctx.response().putHeader("content-type", "application/json").end(job.statusJson().encode());
     });
+  }
+
+  private record AlignmentKey(String assembly, Path fasta, Stamp stamp, AlignmentDetailRequestDTO window,
+                              String rows, String columns) { }
+
+  private JsonObject alignmentDetail(JsonObject body) throws Exception {
+    final AlignmentDetailRequestDTO request;
+    try { request = AlignmentDetailRequestDTO.fromJson(body); }
+    catch (IllegalArgumentException invalid) { throw new HttpException(400, invalid.getMessage()); }
+    if (request.jobId() != null) {
+      final var job = jobs.get(request.jobId());
+      if (job == null || !job.kind.equals("alignment_detail")) throw new HttpException(404, "Alignment job not found");
+      return alignmentStatus(job);
+    }
+    final var shared = vertx.sharedData().getLocalMap("hict_server");
+    final boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
+    final var map = (ShareableWrappers.ChunkedFileWrapper) shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile");
+    var linked = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
+    if (linked == null && !secondary) linked = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
+    if (map == null || linked == null) throw new HttpException(409, "Link the FASTA for the active assembly before viewing alignment detail");
+    final var file = map.getChunkedFile();
+    final var fasta = linked.getPath().toRealPath();
+    final var stamp = Stamp.read(fasta);
+    final var snapshot = AssemblySequenceSnapshot.capture(file);
+    final FASTAProcessor.SequenceWindow rowWindow;
+    final FASTAProcessor.SequenceWindow colWindow;
+    try {
+      rowWindow = file.getFastaProcessor().readTrackRegion(fasta, request.rowStart(), request.rowEnd(), request.includeGaps());
+      colWindow = file.getFastaProcessor().readTrackRegion(fasta, request.columnStart(), request.columnEnd(), request.includeGaps());
+    } catch (IllegalArgumentException invalid) {
+      throw new HttpException(400, invalid.getMessage());
+    }
+    stamp.check(fasta);
+    final var key = new AlignmentKey(snapshot.fingerprint(), fasta, stamp, request, rowWindow.sequence(), colWindow.sequence());
+    final var id = alignmentJobs.get(key);
+    final var previous = id == null ? null : jobs.get(id);
+    if (previous != null && previous.state.equals("finished")) return alignmentStatus(previous);
+    final var aligner = SequenceToolAvailability.requireAligner();
+    final var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    final var jobId = UUID.randomUUID().toString();
+    final var directory = Path.of(System.getProperty("java.io.tmpdir")).resolve("hict-alignment-detail-" + jobId);
+    final var job = new Job(jobId, directory, data, snapshot, body.copy()
+      .put("requestedThreads", 1).put("effectiveThreads", 1).put("threadMode", "single"),
+      file.getHdfFilePath().toString(), "alignment_detail");
+    jobs.put(job.id, job);
+    alignmentJobs.put(key, job.id);
+    try { workers.execute(() -> runAlignmentDetail(job, aligner, key, rowWindow.coordinateSystem())); }
+    catch (RejectedExecutionException full) {
+      jobs.remove(job.id);
+      alignmentJobs.remove(key, job.id);
+      throw new HttpException(503, "The sequence analysis queue is full");
+    }
+    return alignmentStatus(job);
+  }
+
+  private static JsonObject alignmentStatus(Job job) {
+    final var status = job.statusJson();
+    if (job.alignmentDetail != null) status.put("result", job.alignmentDetail);
+    return status;
+  }
+
+  private void runAlignmentDetail(Job job, Path aligner, AlignmentKey key, String coordinateSystem) {
+    final var rowPath = job.directory.resolve("row.fa");
+    final var colPath = job.directory.resolve("column.fa");
+    final var errors = job.directory.resolve("aligner.log");
+    job.thread = Thread.currentThread();
+    final long started = System.nanoTime();
+    String terminal = "finished";
+    try {
+      job.checkCancelled();
+      Files.createDirectory(job.directory);
+      Files.writeString(rowPath, ">row\n" + key.rows + "\n");
+      Files.writeString(colPath, ">column\n" + key.columns + "\n");
+      final var command = List.of(aligner.toString(), "-t", "1", "-k", "7", "-w", "3",
+        "-m", "12", "-n", "2", "-s", "12", "-P", "--dual=no", "--no-long-join", "-c", "--eqx",
+        rowPath.toString(), colPath.toString());
+      job.state = "running";
+      final var process = new ProcessBuilder(command).redirectError(errors.toFile()).start();
+      job.process = process;
+      final var segments = new JsonArray();
+      int alignments = 0;
+      try (var reader = process.inputReader()) {
+        for (String line; (line = reader.readLine()) != null; ) {
+          job.checkCancelled();
+          if (line.isBlank()) continue;
+          if (++alignments > MAX_ALIGNMENT_RECORDS || segments.size() >= MAX_ALIGNMENT_SEGMENTS) {
+            throw new IOException("The region contains too many alignments. Select a smaller interval.");
+          }
+          final var result = AlignmentDetail.parsePaf(line, key.rows, key.columns, key.window.rowStart(),
+            key.window.columnStart(), MAX_ALIGNMENT_SEGMENTS - segments.size());
+          for (var segment : result) segments.add(JsonObject.mapFrom(segment).put("alignment", alignments - 1));
+        }
+      }
+      if (process.waitFor() != 0) throw new IOException("The bundled aligner could not calculate alignment detail");
+      job.checkCancelled();
+      job.hits = alignments;
+      job.fragments = segments.size();
+      job.alignmentDetail = new JsonObject().put("coordinateSystem", coordinateSystem)
+        .put("segments", segments).put("alignmentCount", alignments)
+        .put("message", alignments == 0 ? "No alignment found in the selected intervals" : null);
+    } catch (Exception failure) {
+      terminal = job.cancelled.get() || failure instanceof InterruptedException || failure instanceof CancellationException
+        ? "cancelled" : "failed";
+      job.error = terminal.equals("failed") ? Objects.toString(failure.getMessage(), "Alignment failed") : null;
+    } finally {
+      final var process = job.process;
+      if (process != null && process.isAlive()) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+      }
+      job.process = null;
+      job.elapsedNs = System.nanoTime() - started;
+      job.thread = null;
+      job.snapshot = null;
+      for (var path : List.of(rowPath, colPath, errors, job.directory)) {
+        try { Files.deleteIfExists(path); }
+        catch (IOException ignored) { path.toFile().deleteOnExit(); }
+      }
+      synchronized (job) {
+        job.state = terminal;
+        job.finished = System.currentTimeMillis();
+      }
+      if (!terminal.equals("finished")) alignmentJobs.remove(key, job.id);
+      trimCompletedJobs();
+      Thread.interrupted();
+    }
   }
 
   private JsonObject submitSearch(JsonObject request) throws Exception {
@@ -431,6 +573,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   private void trimCompletedJobs() {
     jobs.values().stream().filter(j -> j.finished > 0).sorted(Comparator.comparingLong((Job j) -> j.finished).reversed())
       .skip(32).forEach(j -> jobs.remove(j.id, j));
+    alignmentJobs.entrySet().removeIf(entry -> !jobs.containsKey(entry.getValue()));
   }
 
   private static long exactLong(Object value, String name) {
@@ -532,6 +675,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     final ArrayDeque<String> logs = new ArrayDeque<>();
     volatile String state = "submitted", output, error;
     volatile String sourceFasta, sourceStamp, toolCommand, toolSha256, inputSha256;
+    volatile JsonObject alignmentDetail;
     volatile long finished, hits, fragments, elapsedNs;
     volatile Process process; volatile Thread thread; volatile BufferedWriter logWriter;
     Job(String id, Path directory, Path data, AssemblySequenceSnapshot snapshot, JsonObject request, String mapFilename) {
