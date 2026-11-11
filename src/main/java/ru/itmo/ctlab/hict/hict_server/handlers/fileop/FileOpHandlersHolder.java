@@ -750,38 +750,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         RequestTaskScheduler.RequestPriority.ASSEMBLY,
         null,
         () -> {
-          final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final ShareableWrappers.ChunkedFileWrapper primary;
-          final ShareableWrappers.ChunkedFileWrapper secondary;
-          final ShareableWrappers.Track1DManagerWrapper tracks;
-          synchronized (map) {
-            cancelCoverage.run();
-            primary = (ShareableWrappers.ChunkedFileWrapper) map.remove(PRIMARY_CHUNKED_FILE_KEY);
-            secondary = (ShareableWrappers.ChunkedFileWrapper) map.remove(SECONDARY_CHUNKED_FILE_KEY);
-            tracks = (ShareableWrappers.Track1DManagerWrapper) map.remove("Track1DManager");
-            map.remove(OPENED_SECONDARY_FILENAME_KEY);
-            map.remove(SECONDARY_COMPATIBILITY_KEY);
-            map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
-            map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
-            map.remove("TileStatisticHolder");
-            map.remove("openedFilename");
-            map.remove("workspaceStateStore");
-            map.remove("linkedFastaPath");
-            map.remove("linkedFastaFilename");
-            map.remove(PRIMARY_FASTA_PATH_KEY);
-            map.remove(PRIMARY_FASTA_FILENAME_KEY);
-            map.remove(SECONDARY_FASTA_PATH_KEY);
-            map.remove(SECONDARY_FASTA_FILENAME_KEY);
-            TileHandlersHolder.clearExpectedProfileCache(map);
-            scheduler.bumpAssemblyGeneration();
-          }
-          closeChunkedFileWrapper(primary);
-          closeChunkedFileWrapper(secondary);
-          if (tracks != null) {
-            tracks.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
-            tracks.getTrack1DManager().close();
-          }
-          return new io.vertx.core.json.JsonObject().put("status", "closed");
+          return closeSession();
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
@@ -1107,6 +1076,43 @@ public class FileOpHandlersHolder extends HandlersHolder {
         response -> ctx.response().end(Json.encode(response))
       );
     });
+  }
+
+  /** Release the published map and its linked sequence indexes on close or server shutdown. */
+  public io.vertx.core.json.JsonObject closeSession() {
+    final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    final var schedulerWrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) map.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+    final ShareableWrappers.ChunkedFileWrapper primary;
+    final ShareableWrappers.ChunkedFileWrapper secondary;
+    final ShareableWrappers.Track1DManagerWrapper tracks;
+    synchronized (map) {
+      cancelCoverage.run();
+      primary = (ShareableWrappers.ChunkedFileWrapper) map.remove(PRIMARY_CHUNKED_FILE_KEY);
+      secondary = (ShareableWrappers.ChunkedFileWrapper) map.remove(SECONDARY_CHUNKED_FILE_KEY);
+      tracks = (ShareableWrappers.Track1DManagerWrapper) map.remove("Track1DManager");
+      map.remove(OPENED_SECONDARY_FILENAME_KEY);
+      map.remove(SECONDARY_COMPATIBILITY_KEY);
+      map.remove(SECONDARY_SEQUENCE_METADATA_KEY);
+      map.put(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY);
+      map.remove("TileStatisticHolder");
+      map.remove("openedFilename");
+      map.remove("workspaceStateStore");
+      map.remove("linkedFastaPath");
+      map.remove("linkedFastaFilename");
+      map.remove(PRIMARY_FASTA_PATH_KEY);
+      map.remove(PRIMARY_FASTA_FILENAME_KEY);
+      map.remove(SECONDARY_FASTA_PATH_KEY);
+      map.remove(SECONDARY_FASTA_FILENAME_KEY);
+      TileHandlersHolder.clearExpectedProfileCache(map);
+      if (schedulerWrapper != null) schedulerWrapper.getRequestTaskScheduler().bumpAssemblyGeneration();
+    }
+    closeChunkedFileWrapper(primary);
+    closeChunkedFileWrapper(secondary);
+    if (tracks != null) {
+      tracks.getTrack1DManager().setLinkedFastaAliasesBySource(java.util.Map.of());
+      tracks.getTrack1DManager().close();
+    }
+    return new io.vertx.core.json.JsonObject().put("status", "closed");
   }
 
   private static void closeChunkedFileWrapper(final ShareableWrappers.ChunkedFileWrapper wrapper) {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Release open maps and their private gzip FASTA indexes when stopping the server, including primary and secondary references.
+
 - Keep normalization choices current when switching resolution levels, including files with balancing weights at only some levels.
 
 - Add a five-minute example quick start, an illustrated installation guide, a user guide with shortcuts and machine-readable software citations.

@@ -81,6 +81,7 @@ public class MainVerticle extends AbstractVerticle {
   private RequestTaskScheduler requestTaskScheduler;
   private ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder sequenceAnalysis;
   private BackgroundJobsHandlersHolder backgroundJobs;
+  private FileOpHandlersHolder fileOperations;
   private String bindHost = "0.0.0.0";
 
   public static void main(final String[] args) {
@@ -185,18 +186,26 @@ public class MainVerticle extends AbstractVerticle {
   public void stop(final Promise<Void> stopPromise) {
     vertx.<Void>executeBlocking(blocking -> {
       try {
-        if (this.backgroundJobs != null) this.backgroundJobs.close();
-        else {
-          if (this.normalization != null) this.normalization.close();
-          if (this.sequenceAnalysis != null) this.sequenceAnalysis.close();
+        try {
+          if (this.backgroundJobs != null) this.backgroundJobs.close();
+          else {
+            if (this.normalization != null) this.normalization.close();
+            if (this.sequenceAnalysis != null) this.sequenceAnalysis.close();
+          }
+        } finally {
+          try {
+            if (this.requestTaskScheduler != null) {
+              this.requestTaskScheduler.close();
+              this.requestTaskScheduler = null;
+            }
+          } finally {
+            if (this.fileOperations != null) this.fileOperations.closeSession();
+          }
         }
-      } finally {
-        if (this.requestTaskScheduler != null) {
-          this.requestTaskScheduler.close();
-          this.requestTaskScheduler = null;
-        }
+        blocking.complete();
+      } catch (Throwable failure) {
+        blocking.fail(failure);
       }
-      blocking.complete();
     }, false).onComplete(result -> {
       if (result.succeeded()) stopPromise.complete();
       else stopPromise.fail(result.cause());
@@ -423,7 +432,8 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new FSHandlersHolder(vertx));
     handlersHolders.add(new TileHandlersHolder(vertx));
     this.normalization = new NormalizationHandlersHolder(vertx);
-    handlersHolders.add(new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange));
+    this.fileOperations = new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange);
+    handlersHolders.add(this.fileOperations);
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));

@@ -3,7 +3,9 @@
 
 import argparse
 import io
+import hashlib
 import json
+import re
 import time
 from pathlib import Path
 
@@ -11,9 +13,30 @@ import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
+
+def rendered_signal_pixels(page):
+    viewport = page.evaluate_handle(
+        "() => window.__hictBenchmark.manager().getMap().getViewport()"
+    ).as_element()
+    pixels = np.array(
+        Image.open(io.BytesIO(viewport.screenshot())).convert("RGB")
+    ).astype(int)
+    return int(
+        (
+            (pixels[:, :, 0] > pixels[:, :, 1] + 20)
+            & (pixels[:, :, 0] > pixels[:, :, 2] + 20)
+        ).sum()
+    )
+
+
 parser = argparse.ArgumentParser()
 for name in ("url", "api", "output"):
     parser.add_argument("--" + name, required=True)
+parser.add_argument(
+    "--journey",
+    action="store_true",
+    help="Continue through edits, session restore and AGP export",
+)
 args = parser.parse_args()
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
@@ -84,24 +107,151 @@ with sync_playwright() as pw:
         assert (
             len(sequence) >= 1000 and sum(base in "ACGTacgt" for base in sequence) > 900
         )
-        viewport = page.evaluate_handle(
-            "() => window.__hictBenchmark.manager().getMap().getViewport()"
-        ).as_element()
-        pixels = np.array(
-            Image.open(io.BytesIO(viewport.screenshot())).convert("RGB")
-        ).astype(int)
-        red_pixels = int(
-            (
-                (pixels[:, :, 0] > pixels[:, :, 1] + 20)
-                & (pixels[:, :, 0] > pixels[:, :, 2] + 20)
-            ).sum()
-        )
+        red_pixels = rendered_signal_pixels(page)
         assert red_pixels > 1000, red_pixels
         assert not errors, errors
         assert not console_errors, console_errors
         page.screenshot(path=str(out / "quick-start.png"))
+        seconds_to_map = time.monotonic() - started
+        restored_signal_pixels = None
+        journey = []
+        if args.journey:
+            initial_resolution = page.evaluate(
+                "window.__hictBenchmark.manager().getView().getResolution()"
+            )
+            page.get_by_role("button", name="Zoom in", exact=True).click()
+            page.get_by_role("button", name="Zoom in", exact=True).click()
+            page.wait_for_function(
+                "before => window.__hictBenchmark.manager().getView().getResolution()<before",
+                arg=initial_resolution,
+            )
+            page.wait_for_timeout(600)
+            page.evaluate(
+                "() => {window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent();}"
+            )
+            page.wait_for_timeout(300)
+            journey.append("navigation changes scale and returns to the map extent")
+
+            def snapshot():
+                return page.evaluate(
+                    "async () => await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true,true)"
+                )
+
+            def file_action(name):
+                page.get_by_role("link", name="File", exact=True).click()
+                page.get_by_role("link", name=name, exact=True).click()
+
+            def point(fraction):
+                return page.evaluate(
+                    """fraction => {
+                    const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
+                    const d=l.currentViewState.resolutionDesciptor,holder=m.contigDimensionHolder;
+                    const bp=holder.contigDescriptors[0].contigLengthBp*fraction;
+                    const px=holder.getFractionalPxOfBp(bp,d.bpResolution)*d.pixelResolution;
+                    const pixel=m.getMap().getPixelFromCoordinate([px,-px]);
+                    const rect=m.getMap().getViewport().getBoundingClientRect();
+                    return {x:rect.left+pixel[0],y:rect.top+pixel[1]};
+                }""",
+                    fraction,
+                )
+
+            initial = snapshot()["primary"]
+            selected, selection_end = point(0.25), point(0.65)
+            page.keyboard.down("Shift")
+            page.mouse.move(selected["x"], selected["y"])
+            page.mouse.down()
+            page.mouse.move(selection_end["x"], selection_end["y"], steps=12)
+            page.mouse.up()
+            page.keyboard.up("Shift")
+            page.wait_for_function(
+                "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders.leftContigDescriptorInclusive!==undefined"
+            )
+            with page.expect_response(
+                "**/reverse_selection_range"
+            ) as reversed_response:
+                page.get_by_role("button", name="Reverse Selection", exact=True).click()
+            assert reversed_response.value.ok, reversed_response.value.text()
+            page.wait_for_function(
+                "!window.__hictBenchmark.manager().networkManager.requestManager.history.busy"
+            )
+            reversed_state = snapshot()["primary"]
+            assert reversed_state["agpSha256"] != initial["agpSha256"]
+            journey.append("Reverse changes the assembly")
+            page.get_by_role("button", name=re.compile("^Split contig:")).click()
+            cut = point(0.35)
+            with page.expect_response("**/split_contig_at_bin") as split_response:
+                page.mouse.dblclick(cut["x"], cut["y"])
+            assert split_response.value.ok, split_response.value.text()
+            page.wait_for_function(
+                "window.__hictBenchmark.manager().contigDimensionHolder.contig_count===6"
+            )
+            split_state = snapshot()["primary"]
+            assert len(split_state["splitEdits"]) == 1
+            with page.expect_response("**/assembly/history/restore") as undo_response:
+                page.get_by_role(
+                    "button", name="Undo assembly edit", exact=True
+                ).click()
+            assert undo_response.value.ok, undo_response.value.text()
+            page.wait_for_function(
+                "window.__hictBenchmark.manager().contigDimensionHolder.contig_count===5"
+            )
+            expected = snapshot()["primary"]
+            assert expected["agpSha256"] == reversed_state["agpSha256"]
+            journey.append(
+                "Split adds a native component and Undo restores the reversed layout"
+            )
+            with page.expect_download() as session_download:
+                file_action("Save session")
+            session_path = out / "first-run-session.json"
+            session_download.value.save_as(session_path)
+            saved = json.loads(session_path.read_text())["snapshot"]["primary"]
+            assert saved["agpSha256"] == expected["agpSha256"]
+            file_action("Close")
+            page.get_by_role(
+                "heading", name="No contact map open", exact=True
+            ).wait_for()
+            with page.expect_file_chooser() as chooser:
+                file_action("Open session")
+            chooser.value.set_files(session_path)
+            page.get_by_text(
+                "Session restored. Undo history starts from the restored assembly.",
+                exact=True,
+            ).wait_for()
+            restored = snapshot()["primary"]
+            assert restored["agpSha256"] == expected["agpSha256"]
+            assert restored["assemblyInfo"] == expected["assemblyInfo"]
+            assert restored["fastaFilename"] == state["fasta"]
+            journey.append("Save, Close and Open session retain the layout and FASTA")
+            page.get_by_role("link", name="Assembly", exact=True).click()
+            with page.expect_download() as agp_download:
+                page.get_by_role("link", name="Export to AGP", exact=True).click()
+            agp_path = out / "first-run.agp"
+            agp_download.value.save_as(agp_path)
+            components = [
+                line.split()
+                for line in agp_path.read_text().splitlines()
+                if line and not line.startswith("#")
+            ]
+            assert len(components) == 5 and all(
+                len(row) == 9 for row in components
+            ), components
+            assert (
+                hashlib.sha256(agp_path.read_bytes()).hexdigest()
+                == expected["agpSha256"]
+            )
+            journey.append("Exported AGP matches the saved assembly exactly")
+            assert not errors and not console_errors, {
+                "errors": errors,
+                "consoleErrors": console_errors,
+            }
+            page.wait_for_timeout(1000)
+            restored_signal_pixels = rendered_signal_pixels(page)
+            assert restored_signal_pixels > 1000, restored_signal_pixels
+            page.screenshot(path=str(out / "first-run-restored.png"))
         result = {
-            "secondsToMap": time.monotonic() - started,
+            "secondsToMap": seconds_to_map,
+            "totalJourneySeconds": time.monotonic() - started,
+            "restoredSignalPixels": restored_signal_pixels,
             "clicks": clicks,
             "map": state,
             "redSignalPixels": red_pixels,
@@ -109,6 +259,7 @@ with sync_playwright() as pw:
             "errors": errors,
             "consoleErrors": console_errors,
             "jobs": page.request.get(args.api + "/jobs").json(),
+            "journey": journey,
         }
         (out / "results.json").write_text(json.dumps(result, indent=2))
         print(json.dumps(result), flush=True)

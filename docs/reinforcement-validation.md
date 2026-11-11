@@ -1490,3 +1490,21 @@ the newer server style and recovered through explicit Attach. Evidence is named
 by `/tmp/hict-u13-reactive-concurrent-pan-dir`. Two obsolete static control anchors
 were refreshed to the current transform and legacy-summary controls. Static
 reconciliation validates all 232 contracts and retains pending runtime status.
+
+
+A shutdown audit found private gzip FASTA indexes surviving normal server stop
+while a map remained open. Main now closes the published session after stopping
+jobs and request pools, using the same close-session implementation as the API.
+The stop promise reports cleanup failures. Two regressions verify both native
+indexes are removed on undeploy and a failure completes shutdown exceptionally.
+The full JVM suite passes with 433 tests and seven optional skips. A real browser
+opened a gzip reference and attached a secondary reference. SIGTERM removed both
+indexes and exited with status 143. Evidence is in `/tmp/hict-u13-shutdown-p_hur22i`.
+
+The extended first-run gate downloads the small example with three trusted clicks,
+then navigates, Shift-drags a selection, reverses, splits, undoes the split, saves,
+closes, restores and exports AGP. Opening took 19.67 seconds and the complete
+journey 26.59 seconds. Restored assembly and FASTA matched the session, and the
+AGP bytes matched its saved SHA-256. The restored main viewport contained 31,102
+signal pixels. No page or console errors occurred. Evidence is named by
+`/tmp/hict-u13-first-run-ready-dir`. Packaged repetitions and the full soak follow.
