@@ -1,6 +1,7 @@
 # HiCT_JVM API Reference for Python client (`hict_jvm_api`)
 
-This document describes the endpoint subset used by the `jvm-api-v1` Python library.
+This document describes the endpoint subset used by the `jvm-api-v1` Python library
+and the interactive WebUI. The bundled OpenAPI document is the complete schema.
 All endpoints are served by HiCT_JVM API server (`start-api-server` or `start-server`).
 
 Interactive documentation is served by the backend itself:
@@ -10,10 +11,11 @@ Interactive documentation is served by the backend itself:
 
 ## Base URL
 
-Typically:
-
-- `http://localhost:5000`
-- `http://localhost:5001`
+The default API address is `http://localhost:5000`. Set `VXPORT` to select
+another port. The WebUI is served separately on `WEBUI_PORT`, default 8080.
+Set `HICT_BIND_HOST=127.0.0.1` for local access or SSH forwarding. The default
+all-interface bind and permissive CORS expose an unauthenticated editing API.
+Use a trusted host and restrict network access as described in the README.
 
 ## Core endpoints
 
@@ -103,6 +105,29 @@ Typically:
 
 `/convert/jobs` and `/convert/jobs/batch` support `overwrite` boolean.
 
+### Sequence analysis jobs
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/sequence/settings` | Read FASTA/tool readiness and sequence gap setting |
+| `POST` | `/sequence/search/jobs` | Submit exact, substitution or BLAST search |
+| `POST` | `/sequence/moddotplot/jobs` | Submit ModDotPlot identity matrix generation |
+| `POST` | `/sequence/dotplot/jobs` | Submit active-assembly alignment dotplot generation |
+| `POST` | `/sequence/jobs/list` | List sequence jobs, logs and effective worker counts |
+| `POST` | `/sequence/jobs/:jobId/stop` | Cancel a sequence job |
+| `POST` | `/sequence/cleanup` | Reclaim detached superseded managed overlays |
+
+All job requests capture immutable assembly/FASTA provenance before background
+execution. Optional `outputFilename` publishes a reusable result relative to
+`DATA_DIR`; it must end in `.bed` for search or `.hict.hdf5` for dotplots and may
+not target `processed/sequence-analysis`. `overwrite` defaults to false.
+
+Search accepts `forwardColor` and `reverseColor` as `#RRGGBB`. Dotplot and search
+thread fields use `-1` for all allocated CPUs, `0` for adaptive auto, `1` for
+single-threaded execution, or a positive requested count capped by the JVM/Slurm
+allocation. Status includes `requestedThreads`, `effectiveThreads`, and
+`threadMode`; execution counts are excluded from scientific overlay compatibility.
+
 ### Diagnostics
 
 | Method | Path | Purpose |
@@ -115,3 +140,67 @@ Typically:
 - Scaffolding operations update assembly state and bump tile generations.
 - `PIXELS` are visible pixels (hidden contigs excluded) at selected resolution.
 - For throughput-sensitive region fetches use `GET /get_tile?format=PNG_BY_PIXELS` with persistent HTTP client reuse.
+
+
+### AGP partial components and omitted sequence
+
+`POST /load_agp` accepts exact inclusive source intervals (AGP 2.1 columns 7–8).
+The importer prepares and validates the complete layout before committing it.
+It does not call the interactive scissors operation: no finest-resolution contact
+bin is deleted. A crossing bin belongs to the interval containing its start in the
+original source contig. Sequence coordinates remain exact; matrix boundaries can
+be approximate by one bin at each resolution. `importReport.warnings` describes
+splits and forward treatment of unknown orientations.
+
+When source sequence is not covered, the default `REQUIRE_CHOICE` returns
+`requiresMissingComponentsChoice: true` and an `importReport` without mutating
+state. Repeat the request with `missingComponentsPolicy: "APPEND_UNPLACED"`
+(or `"EXCLUDE"`). This choice governs the assembly and subsequent FASTA exports.
+
+AGP and assembly FASTA exports accept `preserveImportedGaps: true` (the WebUI
+sends it). This retains N/U gap annotations at surviving oriented adjacencies,
+including reversed scaffold order. New adjacencies use the scaffold gap setting.
+API clients can continue to request uniform `defaultSpacerLength` by leaving
+`preserveImportedGaps` false. AGP component names refer to source FASTA components,
+so exported split intervals can be imported into a fresh copy of the map.
+
+`POST /matrix/query` with `unit: "BINS"` includes hidden contigs; it no longer
+projects bin coordinates into a smaller visible-pixel rectangle. Response unit
+and coordinate fields/headers identify BINS (`startRowBin`, `x-hict-start-row-bin`,
+and analogous columns/ends) or PIXELS (`startRowPx`, `x-hict-start-row-px`).
+Oversized windows are rejected before matrix allocation.
+
+
+## Sessions, examples and background work
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/session/snapshot` | Save assembly lineage, inputs, tracks and visualization |
+| `POST` | `/session/restore` | Validate inputs and atomically restore a saved session |
+| `GET` | `/jobs` | Snapshot existing background services with result actions |
+| `POST` | `/jobs/cancel` | Cancel a service-prefixed job ID |
+| `POST` | `/examples/catalog` | Read the bundled and local example catalog |
+| `POST` | `/examples/download/start` | Download and verify an example |
+| `POST` | `/examples/download/status` | Read current download progress |
+| `POST` | `/examples/download/cancel` | Cancel the current download |
+| `POST` | `/sequence/alignment_detail` | Read or prepare bounded CIGAR alignment detail |
+
+Check the OpenAPI request schemas before calling these endpoints. Session
+restore validates referenced files and preserves native split lineage. Job
+snapshots retain each service's ownership and retention rules. Results carry
+open-map, track, overlay or download actions. Shutdown cancels work and native
+children. Jobs never resume automatically.
+
+## Resolution grids and normalization
+
+Secondary sources can have different available resolutions while sharing the
+primary reference intervals. Projected tiles use the primary assembly grid and
+bounded native reads. Count sources sum contributions. Identity sources average
+and presence sources combine occupancy. `gridBpResolution` and
+`gridSampleFactor` describe the requested display grid. Invalid dimensions or
+work budgets return an actionable error.
+
+Square-root coverage uses one whole-map domain per resolution. Its denominator
+is the square root of each bin's total contacts across that map. Excluded bins
+remain empty. Whole-map normalization is retained through scopes and view changes.
+See `normalization.md` for formulas and numeric parity evidence.

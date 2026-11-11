@@ -109,6 +109,7 @@ mkdir -p \
 
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
+cp "${PROJECT_DIR}/THIRD_PARTY_LICENSES.md" "${APP_DIR}/licenses/THIRD_PARTY_LICENSES.md"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"
 fi
@@ -345,11 +346,8 @@ if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
   JAVA_OPTS=(${HICT_JAVA_OPTS})
 fi
 
-if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
-  exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
-else
-  exec "${APP_HOME}/runtime/bin/java" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" -jar "${APP_HOME}/lib/hict.jar" "$@"
-fi
+exec "${APP_HOME}/runtime/bin/java" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
+
 EOF
 chmod +x "${APP_DIR}/bin/hict"
 
@@ -433,11 +431,16 @@ HiCT portable launcher
 
 Usage:
   ./HiCT-<version>-linux-x86_64.run [HiCT CLI args...]
+  ./HiCT-<version>-linux-x86_64.run toolbox hictk <hictk arguments...>
+  ./HiCT-<version>-linux-x86_64.run toolbox minimap2 <minimap2 arguments...>
+  ./HiCT-<version>-linux-x86_64.run toolbox mm2-plus <mm2-plus arguments...>
   ./HiCT-<version>-linux-x86_64.run --help
   ./HiCT-<version>-linux-x86_64.run --hict-extract-only <directory>
 
 DATA_DIR defaults to the directory containing this .run file. Set DATA_DIR
 explicitly to use a different data directory.
+The toolbox command forwards arguments to bundled/configured third-party tools
+and prints their project, license, and citation notes before launching them.
 EOU
 }
 
@@ -473,6 +476,8 @@ require_runtime_cmd xz
 require_runtime_cmd mkdir
 require_runtime_cmd touch
 require_runtime_cmd cat
+require_runtime_cmd mktemp
+require_runtime_cmd mv
 
 warn_missing_tauri_webview_dependencies() {
   if [[ "\${BUNDLED_TAURI_BROWSER}" != "1" ]]; then
@@ -582,17 +587,46 @@ fi
 if [[ "\${cache_root}" != "\${local_cache_root}" ]]; then
   export HICT_PORTABLE_NOTICE="The directory containing the .run file could not be used as an executable payload cache; using \${cache_root}."
 fi
-extract_root="\${cache_root}/\${APP_PACKAGE_NAME}-\${PAYLOAD_SHA256}"
-app_home="\${extract_root}/\${APP_PACKAGE_NAME}"
-marker_file="\${extract_root}/.payload.sha256"
+payload_ready() {
+  local root="\$1"
+  [[ -x "\${root}/\${APP_PACKAGE_NAME}/bin/hict" &&
+     -f "\${root}/.payload.sha256" &&
+     "\$(cat "\${root}/.payload.sha256" 2>/dev/null || true)" == "\${PAYLOAD_SHA256}" ]]
+}
 
-if [[ ! -x "\${app_home}/bin/hict" || ! -f "\${marker_file}" || "\$(cat "\${marker_file}" 2>/dev/null || true)" != "\${PAYLOAD_SHA256}" ]]; then
-  rm -rf "\${extract_root}"
-  mkdir -p "\${extract_root}"
+extract_base="\${cache_root}/\${APP_PACKAGE_NAME}-\${PAYLOAD_SHA256}.complete"
+extract_root="\${extract_base}"
+cache_attempt=0
+while [[ -e "\${extract_root}" || -L "\${extract_root}" ]] && ! payload_ready "\${extract_root}"; do
+  cache_attempt=\$((cache_attempt + 1))
+  extract_root="\${extract_base}.recovered.\${cache_attempt}"
+done
+
+if ! payload_ready "\${extract_root}"; then
+  staging_root="\$(mktemp -d "\${cache_root}/.\${APP_PACKAGE_NAME}-extract.XXXXXX")"
+  trap 'rm -rf -- "\${staging_root}"' EXIT
   echo "Extracting HiCT to \${extract_root}. Please wait..." >&2
-  tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\${extract_root}"
-  printf '%s\n' "\${PAYLOAD_SHA256}" > "\${marker_file}"
+  tail -n +"\${payload_line}" "\${SELF_PATH}" | xz -dc | tar -xf - -C "\${staging_root}"
+  printf '%s\n' "\${PAYLOAD_SHA256}" > "\${staging_root}/.payload.sha256"
+  if ! payload_ready "\${staging_root}"; then
+    echo "The extracted HiCT payload is incomplete." >&2
+    exit 1
+  fi
+  while ! mv -T "\${staging_root}" "\${extract_root}" 2>/dev/null; do
+    if payload_ready "\${extract_root}"; then
+      rm -rf -- "\${staging_root}"
+      break
+    fi
+    if [[ ! -e "\${extract_root}" && ! -L "\${extract_root}" ]]; then
+      echo "Cannot publish HiCT payload cache at \${extract_root}." >&2
+      exit 1
+    fi
+    cache_attempt=\$((cache_attempt + 1))
+    extract_root="\${extract_base}.recovered.\${cache_attempt}"
+  done
+  trap - EXIT
 fi
+app_home="\${extract_root}/\${APP_PACKAGE_NAME}"
 
 export HICT_PORTABLE_DATA_DIR="\${DATA_DIR:-\${SELF_DIR}}"
 exec "\${app_home}/bin/hict" "\$@"

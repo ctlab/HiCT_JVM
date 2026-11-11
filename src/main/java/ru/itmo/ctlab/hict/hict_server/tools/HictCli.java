@@ -1,11 +1,16 @@
 package ru.itmo.ctlab.hict.hict_server.tools;
 
 import io.vertx.core.Launcher;
+import ch.systemsx.cisd.hdf5.HDF5Factory;
+import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
 import hdf.hdf5lib.H5;
+import org.jetbrains.annotations.NotNull;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
+import ru.itmo.ctlab.hict.hict_library.assembly.AGPProcessor;
+import ru.itmo.ctlab.hict.hict_library.converters.HictToMcoolConverter;
 import ru.itmo.ctlab.hict.hict_library.converters.ConversionOptions;
 import ru.itmo.ctlab.hict.hict_library.converters.McoolToHictConverter;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeCpuFeatures;
@@ -13,14 +18,24 @@ import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ExternalToolchainManager;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictToMcoolExportPipeline;
+import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkLoadOptions;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.HictkConversionPipeline;
 import ru.itmo.ctlab.hict.hict_server.MainVerticle;
 import ru.itmo.ctlab.hict.hict_server.launcher.HictLauncherGui;
 
 import java.awt.GraphicsEnvironment;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
@@ -36,11 +51,32 @@ import java.util.regex.Pattern;
     HictCli.StartApiServer.class,
     HictCli.LauncherGui.class,
     HictCli.Convert.class,
-    HictCli.CheckToolchains.class
+    HictCli.CheckToolchains.class,
+    HictCli.Toolbox.class
   }
 )
 public class HictCli implements Runnable {
-  @Option(names = {"-v", "--verbose"}, description = "Enable verbose output.")
+  private static final long PROGRESS_REPEAT_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(30L);
+  private static final Set<String> BOOLEAN_OPTIONS_WITH_OPTIONAL_VALUE = Set.of(
+    "--verbose",
+    "-v",
+    "--serve-webui",
+    "--require-hictk",
+    "--require-dotplot",
+    "--require-hdf5-native",
+    "--check-available-natives",
+    "--quiet",
+    "--all-resolutions",
+    "--build-resolution-pyramid",
+    "--balance-input-coolers",
+    "--balance-exported-coolers",
+    "--apply-agp",
+    "--one-based",
+    "--count-as-float",
+    "--keep-intermediate"
+  );
+
+  @Option(names = {"-v", "--verbose"}, arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Enable verbose output.")
   boolean verbose;
 
   @Override
@@ -50,7 +86,9 @@ public class HictCli implements Runnable {
 
   public static void main(final String[] args) {
     final CommandLine commandLine = new CommandLine(new HictCli())
-      .setCaseInsensitiveEnumValuesAllowed(true);
+      .setCaseInsensitiveEnumValuesAllowed(true)
+      .setParameterExceptionHandler(HictCli::handleParameterException)
+      .setExecutionExceptionHandler(HictCli::handleExecutionException);
 
     if (args.length == 0) {
       if (shouldUseLauncherGui()) {
@@ -67,18 +105,149 @@ public class HictCli implements Runnable {
       return;
     }
 
-    final CommandLine.ParseResult parseResult = commandLine.parseArgs(args);
-    if (parseResult.hasMatchedOption("verbose")) {
+    if (isVerboseRequested(args)) {
       System.setProperty("HICT_VERBOSE", "true");
     }
-    final var subcommand = parseResult.subcommand();
-    final String subcommandName = subcommand != null ? subcommand.commandSpec().name() : "";
+    if ("toolbox".equals(args[0])) {
+      System.exit(runToolbox(Arrays.copyOfRange(args, 1, args.length)));
+      return;
+    }
+    if (isToolLikeCommand(args[0])) {
+      System.err.println("HiCT does not run external tool names as top-level commands.");
+      System.err.println("Did you mean: hict toolbox " + args[0] + " ...");
+      System.err.println();
+      printToolboxUsage(System.err);
+      System.exit(CommandLine.ExitCode.USAGE);
+      return;
+    }
 
-    final int exitCode = commandLine.execute(args);
+    final int exitCode = commandLine.execute(normalizeBooleanOptionArgs(args));
+    final var parseResult = commandLine.getParseResult();
+    final var subcommand = parseResult == null ? null : parseResult.subcommand();
+    final String subcommandName = subcommand != null ? subcommand.commandSpec().name() : "";
     if ("start-server".equals(subcommandName) || "start-api-server".equals(subcommandName)) {
       return;
     }
     System.exit(exitCode);
+  }
+
+  private static int handleParameterException(final CommandLine.ParameterException ex,
+                                              final String[] args) {
+    final var commandLine = ex.getCommandLine();
+    System.err.println("HiCT could not parse the command line:");
+    System.err.println("  " + ex.getMessage());
+    printLikelyIntent(args);
+    System.err.println();
+    System.err.println("Boolean options accept true/false, yes/no, y/n, or 1/0.");
+    System.err.println("For negatable options you can also use --no-build-resolution-pyramid, --no-balance-input-coolers, or --no-balance-exported-coolers.");
+    System.err.println();
+    commandLine.usage(System.err);
+    return CommandLine.ExitCode.USAGE;
+  }
+
+  private static int handleExecutionException(final Exception ex,
+                                              final CommandLine commandLine,
+                                              final CommandLine.ParseResult parseResult) {
+    System.err.println("HiCT command failed:");
+    System.err.println("  " + userFacingMessage(ex));
+    if (Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"))) {
+      ex.printStackTrace(System.err);
+    } else {
+      System.err.println("Run again with --verbose for a stack trace.");
+    }
+    return 1;
+  }
+
+  private static void printLikelyIntent(final String[] args) {
+    if (args == null || args.length == 0) {
+      return;
+    }
+    if (isToolLikeCommand(args[0])) {
+      System.err.println("  Did you mean: hict toolbox " + args[0] + " ...");
+    }
+  }
+
+  private static boolean isToolLikeCommand(final String raw) {
+    final var value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+    return value.equals("hictk")
+      || value.equals("minimap2")
+      || value.equals("mm2plus")
+      || value.equals("mm2-plus")
+      || value.equals("mm2plus-avx2")
+      || value.equals("mm2-plus-avx2")
+      || value.equals("mm2plus-avx512")
+      || value.equals("mm2-plus-avx512");
+  }
+
+  private static String userFacingMessage(final Throwable ex) {
+    final var message = ex.getMessage();
+    if (message != null && !message.isBlank()) {
+      return message;
+    }
+    return ex.getClass().getSimpleName();
+  }
+
+  private static boolean isVerboseRequested(final String[] args) {
+    for (int i = 0; i < args.length; i++) {
+      final var arg = args[i];
+      if ("--verbose".equals(arg) || "-v".equals(arg)) {
+        if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+          try {
+            return parseBooleanOption(args[i + 1]);
+          } catch (final CommandLine.TypeConversionException ignored) {
+            return true;
+          }
+        }
+        return true;
+      }
+      if (arg.startsWith("--verbose=")) {
+        return parseBooleanOption(arg.substring("--verbose=".length()));
+      }
+    }
+    return false;
+  }
+
+  private static String[] normalizeBooleanOptionArgs(final String[] args) {
+    final var normalized = new ArrayList<String>(args.length);
+    for (int i = 0; i < args.length; i++) {
+      final var arg = args[i];
+      if (BOOLEAN_OPTIONS_WITH_OPTIONAL_VALUE.contains(arg)
+        && i + 1 < args.length
+        && !args[i + 1].startsWith("-")) {
+        try {
+          parseBooleanOption(args[i + 1]);
+          normalized.add(arg + "=" + args[i + 1]);
+          i++;
+          continue;
+        } catch (final CommandLine.TypeConversionException ignored) {
+          normalized.add(arg);
+          normalized.add("true");
+          continue;
+        }
+      }
+      normalized.add(arg);
+    }
+    return normalized.toArray(String[]::new);
+  }
+
+  private static boolean parseBooleanOption(final String raw) {
+    if (raw == null || raw.isBlank()) {
+      return true;
+    }
+    return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+      case "true", "yes", "y", "1", "on" -> true;
+      case "false", "no", "n", "0", "off" -> false;
+      default -> throw new CommandLine.TypeConversionException(
+        "Expected one of true/false, yes/no, y/n, or 1/0, but got '" + raw + "'"
+      );
+    };
+  }
+
+  static class BooleanOptionConverter implements CommandLine.ITypeConverter<Boolean> {
+    @Override
+    public Boolean convert(final String value) {
+      return parseBooleanOption(value);
+    }
   }
 
   private static boolean shouldUseLauncherGui() {
@@ -111,7 +280,7 @@ public class HictCli implements Runnable {
     description = "Start API server with WebUI."
   )
   static class StartServer implements Callable<Integer> {
-    @Option(names = "--serve-webui", description = "Whether to serve WebUI (default: true).", defaultValue = "true")
+    @Option(names = "--serve-webui", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Whether to serve WebUI (default: true).", defaultValue = "true")
     boolean serveWebUi;
 
     @Override
@@ -158,19 +327,22 @@ public class HictCli implements Runnable {
     description = "Verify bundled or configured external conversion and dotplot tools."
   )
   static class CheckToolchains implements Callable<Integer> {
-    @Option(names = "--require-hictk", description = "Fail if hictk is not available.")
+    @Option(names = "--require-hictk", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if hictk is not available.")
     boolean requireHictk;
 
-    @Option(names = "--require-dotplot", description = "Fail if no selected dotplot aligner is available.")
+    @Option(names = "--require-dotplot", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if no selected dotplot aligner is available.")
     boolean requireDotplot;
 
-    @Option(names = "--require-hdf5-native", description = "Fail if bundled JHDF5/HDF5 native libraries cannot be initialized.")
+    @Option(names = "--require-sequence-tools", description = "Require and execute SeqKit, upstream ModDotPlot and the HiCT overlay adapter (also BLAST on Linux x86_64).")
+    boolean requireSequenceTools;
+
+    @Option(names = "--require-hdf5-native", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Fail if bundled JHDF5/HDF5 native libraries cannot be initialized.")
     boolean requireHdf5Native;
 
-    @Option(names = "--check-available-natives", description = "Smoke-test available native components without failing for absent or CPU-unsupported optional variants.")
+    @Option(names = "--check-available-natives", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Smoke-test available native components without failing for absent or CPU-unsupported optional variants.")
     boolean checkAvailableNatives;
 
-    @Option(names = "--quiet", description = "Only print errors.")
+    @Option(names = "--quiet", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Only print errors.")
     boolean quiet;
 
     @Override
@@ -192,6 +364,20 @@ public class HictCli implements Runnable {
       }
       if (requireDotplot && status.selectedDotplotAlignerCommand() == null) {
         failures.add("dotplot aligner is unavailable");
+      }
+      if (requireSequenceTools) {
+        final var tools = new ExternalToolchainManager();
+        final var names = new ArrayList<>(List.of("seqkit", "moddotplot", "hict-moddotplot"));
+        if (status.platform().equals("linux_x86_64")) names.add("blastn");
+        for (final var name : names) {
+          try {
+            final var command = tools.requireSequenceCommand(name);
+            smokeCommandIfPresent(name, command.toString(), List.of(name.equals("blastn") ? "-version" : name.equals("seqkit") ? "version" : "--help"), failures);
+            if (!quiet) System.out.println(name + ": " + command);
+          } catch (final Exception error) {
+            failures.add(name + ": " + error.getMessage());
+          }
+        }
       }
       if (requireHdf5Native) {
         try {
@@ -334,6 +520,154 @@ public class HictCli implements Runnable {
   }
 
   @Command(
+    name = "toolbox",
+    mixinStandardHelpOptions = true,
+    description = {
+      "Run bundled or configured external tools without manually extracting the portable package.",
+      "Examples:",
+      "  hict toolbox hictk --help",
+      "  hict toolbox minimap2 --help",
+      "  hict toolbox mm2-plus --help",
+      "  hict toolbox seqkit --help",
+      "  hict toolbox moddotplot --help",
+      "  hict toolbox hict-moddotplot --version"
+    }
+  )
+  static class Toolbox implements Callable<Integer> {
+    @Override
+    public Integer call() {
+      printToolboxUsage(System.out);
+      return 0;
+    }
+  }
+
+  private static int runToolbox(final String[] args) {
+    if (args.length == 0 || isHelpArgument(args[0])) {
+      printToolboxUsage(System.out);
+      return 0;
+    }
+    final var rawTool = args[0];
+    final var tool = normalizeToolName(rawTool);
+    final var manager = new ExternalToolchainManager();
+    final var status = manager.inspect();
+    final String command;
+    try {
+      command = switch (tool) {
+      case "hictk" -> status.hictkCommand();
+      case "minimap2" -> status.minimap2Command();
+      case "mm2plus" -> {
+        if (NativeCpuFeatures.supportsAvx512Core() && status.mm2PlusAvx512Command() != null && !status.mm2PlusAvx512Command().isBlank()) {
+          yield status.mm2PlusAvx512Command();
+        }
+        if (status.mm2PlusAvx2Command() != null && !status.mm2PlusAvx2Command().isBlank()) {
+          yield status.mm2PlusAvx2Command();
+        }
+        yield status.selectedDotplotAlignerCommand();
+      }
+      case "mm2plus-avx2" -> status.mm2PlusAvx2Command();
+      case "mm2plus-avx512" -> status.mm2PlusAvx512Command();
+      case "seqkit", "moddotplot", "hict-moddotplot" -> manager.requireSequenceCommand(tool).toString();
+      default -> null;
+      };
+    } catch (Exception unavailable) {
+      System.err.println("HiCT toolbox could not find '" + rawTool + "': " + userFacingMessage(unavailable));
+      return 1;
+    }
+    if (command == null || command.isBlank()) {
+      System.err.println("HiCT toolbox could not find a bundled or configured executable for '" + rawTool + "'.");
+      System.err.println(status.summary());
+      if (!status.limitations().isEmpty()) {
+        System.err.println("Limitations: " + String.join("; ", status.limitations()));
+      }
+      printToolboxUsage(System.err);
+      return 1;
+    }
+    printToolNotice(tool, command);
+    final var commandLine = new ArrayList<String>(args.length);
+    commandLine.add(command);
+    commandLine.addAll(Arrays.asList(args).subList(1, args.length));
+    try {
+      final var prepared = Set.of("hictk", "minimap2", "mm2plus", "mm2plus-avx2", "mm2plus-avx512").contains(tool)
+        ? ru.itmo.ctlab.hict.hict_server.handlers.conversion.BundledToolThreads.toolbox(commandLine, tool, System.err::println)
+        : commandLine;
+      final var process = new ProcessBuilder(prepared)
+        .inheritIO()
+        .start();
+      return process.waitFor();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      System.err.println("HiCT toolbox command was interrupted.");
+      return 130;
+    } catch (final Exception e) {
+      System.err.println("HiCT toolbox could not run '" + rawTool + "': " + userFacingMessage(e));
+      return 1;
+    }
+  }
+
+  private static boolean isHelpArgument(final String arg) {
+    return "-h".equals(arg) || "--help".equals(arg) || "help".equalsIgnoreCase(arg);
+  }
+
+  private static String normalizeToolName(final String raw) {
+    final var value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+    return switch (value) {
+      case "mm2-plus", "mm2plus", "mm2-plus-auto" -> "mm2plus";
+      case "mm2plus-avx2", "mm2-plus-avx2" -> "mm2plus-avx2";
+      case "mm2plus-avx512", "mm2-plus-avx512" -> "mm2plus-avx512";
+      default -> value;
+    };
+  }
+
+  private static void printToolboxUsage(final java.io.PrintStream out) {
+    out.println("HiCT toolbox");
+    out.println();
+    out.println("Usage:");
+    out.println("  hict toolbox hictk <hictk arguments...>");
+    out.println("  hict toolbox minimap2 <minimap2 arguments...>");
+    out.println("  hict toolbox mm2-plus <mm2-plus arguments...>");
+    out.println("  hict toolbox mm2-plus-avx2 <mm2-plus arguments...>");
+    out.println("  hict toolbox mm2-plus-avx512 <mm2-plus arguments...>");
+    out.println("  hict toolbox seqkit <SeqKit arguments...>");
+    out.println("  hict toolbox moddotplot <upstream ModDotPlot arguments...>");
+    out.println("  hict toolbox hict-moddotplot <--plan FILE | --version>");
+    out.println();
+    out.println("The command forwards all remaining arguments to the selected executable.");
+    out.println("Supported commands default to allocated CPUs; HICT_HICTK_THREADS / HICT_ALIGNMENT_THREADS override auto (-1).");
+    out.println("Explicit -t/--threads overrides the environment, bounded by the CPU/Slurm allocation.");
+  }
+
+  private static void printToolNotice(final String tool, final String command) {
+    System.err.println("HiCT toolbox is launching " + command);
+    switch (tool) {
+      case "hictk" -> {
+        System.err.println("hictk is bundled/configured as an optional .hic/.cool tool and is provided by its upstream authors under its own license.");
+        System.err.println("Project: https://github.com/paulsengroup/hictk");
+        System.err.println("Citation: Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.");
+      }
+      case "minimap2" -> {
+        System.err.println("minimap2 is bundled/configured as an optional alignment tool and is provided by its upstream authors under its own license.");
+        System.err.println("Project: https://github.com/lh3/minimap2");
+        System.err.println("Citation: Li H. Bioinformatics 2018;34(18):3094-3100.");
+      }
+      case "seqkit" -> {
+        System.err.println("SeqKit is provided under the MIT license. Project: https://github.com/shenwei356/seqkit");
+        System.err.println("Citation: Shen W et al. iMeta 2024:e191.");
+      }
+      case "moddotplot", "hict-moddotplot" -> {
+        System.err.println("ModDotPlot and ntHash are provided under the MIT license. Project: https://github.com/marbl/ModDotPlot");
+        System.err.println("Citation: Sweeten AP et al. Bioinformatics 2024;40(8):btae493.");
+      }
+      default -> {
+        System.err.println("mm2-plus is bundled/configured as an optional alignment tool and is provided by its upstream authors under its own license.");
+        System.err.println("Project: https://github.com/at-cg/mm2-plus");
+        System.err.println("Citation: Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra and Chirag Jain. bioRxiv 2024. doi:10.1101/2024.11.25.625328.");
+      }
+    }
+    System.err.println("Bundled license files, when available, are kept under toolchains/<platform>/share inside the portable package.");
+    System.err.println();
+  }
+
+  @Command(
     name = "convert",
     mixinStandardHelpOptions = true,
     description = "Run file converters.",
@@ -341,13 +675,68 @@ public class HictCli implements Runnable {
       HictCli.HictToMcool.class,
       HictCli.McoolToHict.class,
       HictCli.HicToMcool.class,
-      HictCli.HicToHict.class
+      HictCli.HicToHict.class,
+      HictCli.ScaffoldConvert.class,
+      HictCli.ValidateAgp.class,
+      HictCli.AnnotateAgp.class
     }
   )
   static class Convert implements Runnable {
     @Override
     public void run() {
       CommandLine.usage(this, System.out);
+    }
+  }
+
+  @Command(name = "validate-agp", mixinStandardHelpOptions = true,
+    description = "Validate AGP object coordinates before starting a conversion.")
+  static class ValidateAgp implements Callable<Integer> {
+    @Option(names = "--agp", required = true) Path agp;
+
+    @Override public Integer call() throws Exception {
+      try (final var reader = Files.newBufferedReader(agp)) {
+        final var records = AGPProcessor.parseRecordsFromReader(reader);
+        if (records.isEmpty()) throw new IllegalArgumentException("AGP contains no records: " + agp);
+        System.out.println("Validated AGP: " + records.size() + " records, " + agp);
+      }
+      return 0;
+    }
+  }
+
+  @Command(name = "annotate-agp", mixinStandardHelpOptions = true,
+    description = "Restore HiCT component metadata after zoomify, verifying every Cooler chromosome layout first. Does not move pixels.")
+  static class AnnotateAgp implements Callable<Integer> {
+    @Option(names = "--agp", required = true) Path agp;
+    @Option(names = "--input", required = true) Path input;
+
+    @Override public Integer call() throws Exception {
+      final List<AGPProcessor.AGPFileRecord> records;
+      try (final var reader = Files.newBufferedReader(agp)) {
+        records = AGPProcessor.parseRecordsFromReader(reader);
+      }
+      final var sizes = new LinkedHashMap<String, Long>();
+      for (final var record : records) sizes.put(record.getScaffoldName(), record.getInterScaffoldEndIncl());
+      if (sizes.isEmpty()) throw new IllegalArgumentException("AGP contains no records: " + agp);
+      if (!Files.isRegularFile(input)) throw new IllegalArgumentException("Cooler file not found: " + input);
+      HDF5LibraryInitializer.initializeHDF5Library();
+      try (final var reader = HDF5Factory.openForReading(input.toFile())) {
+        final var roots = reader.object().isGroup("/resolutions")
+          ? reader.object().getGroupMembers("/resolutions").stream().map(r -> "/resolutions/" + r).toList()
+          : List.of("");
+        if (roots.isEmpty()) throw new IllegalArgumentException("Cooler contains no resolutions");
+        for (final var root : roots) {
+          if (!Arrays.equals(sizes.keySet().toArray(String[]::new), reader.string().readArray(root + "/chroms/name"))
+            || !Arrays.equals(sizes.values().stream().mapToLong(Long::longValue).toArray(), reader.int64().readArray(root + "/chroms/length"))) {
+            throw new IllegalArgumentException("Cooler chromosome order or lengths do not match AGP at " + root + "; refusing to attach misleading metadata.");
+          }
+        }
+      }
+      try (final var writer = HDF5Factory.open(input.toFile())) {
+        HictToMcoolConverter.writeHictAgpComponentMetadata(
+          writer, records, HDF5IntStorageFeatures.createDeflation(6));
+      }
+      System.out.println("Verified AGP chromosome layout and restored component metadata: " + input);
+      return 0;
     }
   }
 
@@ -364,7 +753,7 @@ public class HictCli implements Runnable {
     @Option(
       names = "--resolutions",
       split = ",",
-      description = "Comma-separated list of resolutions to export (default: all in input)."
+      description = "Comma-separated list of resolutions to export. Export defaults to the finest available resolution unless --all-resolutions is set."
     )
     List<Long> resolutions = new ArrayList<>();
 
@@ -384,13 +773,16 @@ public class HictCli implements Runnable {
 
     @Option(
       names = "--parallelism",
-      defaultValue = "0",
-      description = "Number of worker threads (0 or -1 = auto)."
+      defaultValue = "-1",
+      description = "Worker threads (-1 or 0 = HICT_CONVERSION_THREADS or automatic CPU/Slurm allocation)."
     )
     int parallelism;
 
     @Option(
       names = "--all-resolutions",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "false",
       description = "Export all available resolutions (default: only finest resolution)."
     )
@@ -398,21 +790,33 @@ public class HictCli implements Runnable {
 
     @Option(
       names = "--build-resolution-pyramid",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "true",
+      negatable = true,
       description = "Build a hictk nice-step resolution pyramid when importing Cooler files (default: ${DEFAULT-VALUE})."
     )
     boolean buildResolutionPyramid;
 
     @Option(
       names = "--balance-input-coolers",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "true",
+      negatable = true,
       description = "Balance .cool/.mcool inputs with hictk before importing (default: ${DEFAULT-VALUE})."
     )
     boolean balanceInputCoolers;
 
     @Option(
       names = "--balance-exported-coolers",
+      arity = "0..1",
+      fallbackValue = "true",
+      converter = BooleanOptionConverter.class,
       defaultValue = "true",
+      negatable = true,
       description = "Balance hictk-assisted Cooler exports (default: ${DEFAULT-VALUE})."
     )
     boolean balanceExportedCoolers;
@@ -425,9 +829,16 @@ public class HictCli implements Runnable {
     ConversionOptions.ExportMode exportMode;
 
     ConversionOptions toOptions(String agpPath, boolean applyAgp) {
+      return toOptions(input, output, agpPath, applyAgp);
+    }
+
+    ConversionOptions toOptions(final @NotNull Path inputPath,
+                                final @NotNull Path outputPath,
+                                final String agpPath,
+                                final boolean applyAgp) {
       return new ConversionOptions(
-        input,
-        output,
+        inputPath,
+        outputPath,
         resolutions,
         chunkSize,
         compression,
@@ -445,23 +856,96 @@ public class HictCli implements Runnable {
 
     Consumer<String> stdoutLogger() {
       final boolean verboseEnabled = Boolean.parseBoolean(System.getProperty("HICT_VERBOSE", "false"));
+      final Map<String, Integer> lastLocalProgressByPhase = new HashMap<>();
+      final Map<String, Integer> lastOverallProgressByPhase = new HashMap<>();
+      final Map<String, Long> lastLocalProgressLogNanosByPhase = new HashMap<>();
+      final Map<String, Long> lastOverallProgressLogNanosByPhase = new HashMap<>();
       return message -> {
-        if (!verboseEnabled) {
-          return;
-        }
         synchronized (System.out) {
           final var overall = OVERALL_PROGRESS_PATTERN.matcher(message);
           final var local = LOCAL_PROGRESS_PATTERN.matcher(message);
-          if (overall.find()) {
+          if (verboseEnabled && overall.find()) {
             System.out.println("[TOTAL " + overall.group(1) + "%] " + message);
-          } else if (local.find()) {
+          } else if (verboseEnabled && local.find()) {
             System.out.println("[LOCAL " + local.group(1) + "%] " + message);
-          } else {
+          } else if (verboseEnabled) {
             System.out.println(message);
+          } else {
+            final var overallForDefault = OVERALL_PROGRESS_PATTERN.matcher(message);
+            final var localForDefault = LOCAL_PROGRESS_PATTERN.matcher(message);
+            if (overallForDefault.find()) {
+              final int percent = Integer.parseInt(overallForDefault.group(1));
+              final var phase = progressPhaseKey(message);
+              final int previous = lastOverallProgressByPhase.getOrDefault(phase, -1);
+              final long nowNanos = System.nanoTime();
+              final long lastPrinted = lastOverallProgressLogNanosByPhase.getOrDefault(phase, 0L);
+              if (percent != previous || nowNanos - lastPrinted >= PROGRESS_REPEAT_INTERVAL_NANOS) {
+                lastOverallProgressByPhase.put(phase, percent);
+                lastOverallProgressLogNanosByPhase.put(phase, nowNanos);
+                System.out.println("[TOTAL " + percent + "%] " + message);
+              } else {
+                return;
+              }
+            } else if (localForDefault.find()) {
+              final int percent = Integer.parseInt(localForDefault.group(1));
+              final var phase = progressPhaseKey(message);
+              final int previous = lastLocalProgressByPhase.getOrDefault(phase, -1);
+              final long nowNanos = System.nanoTime();
+              final long lastPrinted = lastLocalProgressLogNanosByPhase.getOrDefault(phase, 0L);
+              if (percent != previous || nowNanos - lastPrinted >= PROGRESS_REPEAT_INTERVAL_NANOS) {
+                lastLocalProgressByPhase.put(phase, percent);
+                lastLocalProgressLogNanosByPhase.put(phase, nowNanos);
+                System.out.println("[LOCAL " + percent + "%] " + message);
+              } else {
+                return;
+              }
+            } else if (isImportantConversionMessage(message)) {
+              System.out.println(message);
+            } else {
+              return;
+            }
           }
           System.out.flush();
         }
       };
+    }
+
+    private static @NotNull String progressPhaseKey(final @NotNull String message) {
+      final int colonIndex = message.indexOf(':');
+      return colonIndex > 0 ? message.substring(0, colonIndex) : message;
+    }
+
+    private static boolean isImportantConversionMessage(final @NotNull String message) {
+      return message.startsWith("HICT_")
+        || message.startsWith("WARNING:")
+        || message.startsWith("ERROR:")
+        || message.startsWith("Converting ")
+        || message.startsWith("Preparing ")
+        || message.startsWith("Applied AGP ")
+        || message.startsWith("Applied assembly ")
+        || message.startsWith("HiCT native processing:")
+        || message.startsWith("HiCT tool threads:")
+        || message.startsWith("HiCT tool command:")
+        || message.startsWith("HiCT tool limitation:")
+        || message.startsWith("hictk-assisted export resources:")
+        || message.startsWith("Using HiCT -> Cooler temporary directory:")
+        || message.startsWith("HiCT export COO sort batch size=")
+        || message.startsWith("Clamped HiCT export COO sort batch size")
+        || message.startsWith("Ignoring invalid HiCT export COO sort batch size")
+        || message.startsWith("Clamped HiCT export COO merge fan-in")
+        || message.startsWith("Ignoring invalid HiCT export COO merge fan-in")
+        || message.startsWith("COO sort batch size=")
+        || message.startsWith("Merging ")
+        || message.startsWith("COO merge pass ")
+        || message.startsWith("Merged sorted COO records complete:")
+        || message.matches("Resolution \\d+ .*: \\d+% .*")
+        || message.startsWith("Running hictk")
+        || message.startsWith("Skipping hictk")
+        || message.startsWith("Finished ")
+        || message.startsWith("Created ")
+        || message.contains("memory budget=")
+        || message.contains("workers=")
+        || message.contains("sortBatchSize=");
     }
 
     void initializeHdf5() {
@@ -474,15 +958,253 @@ public class HictCli implements Runnable {
   }
 
   @Command(
+    name = "scaffold",
+    mixinStandardHelpOptions = true,
+    description = "Convert supported Hi-C formats while applying an optional AGP/.assembly scaffolding layout."
+  )
+  static class ScaffoldConvert extends BaseConvert {
+    @Option(names = {"--assembly", "--agp"}, description = "Optional AGP or Juicebox .assembly layout to apply.")
+    Path assemblyPath;
+
+    @Option(names = "--fasta", description = "Optional source FASTA. Accepted for workflow compatibility; used by formats that need it in future extensions.")
+    Path fastaPath;
+
+    @Option(names = "--bin-table", description = "Bin table for Hi-C Pro .matrix or generic COO hictk load inputs.")
+    Path binTablePath;
+
+    @Option(names = "--chrom-sizes", description = "Chrom sizes file for BEDPE/bedGraph2/validPairs hictk load inputs.")
+    Path chromSizesPath;
+
+    @Option(names = "--bin-size", description = "Bin size for BEDPE/bedGraph2/validPairs hictk load inputs.")
+    Long binSize;
+
+    @Option(names = "--one-based", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Treat hictk-load input coordinates as 1-based.")
+    boolean oneBased;
+
+    @Option(names = "--count-as-float", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Load hictk text counts as floating-point values.")
+    boolean countAsFloat;
+
+    @Option(names = "--keep-intermediate", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, defaultValue = "false", description = "Keep temporary staged files for debugging.")
+    boolean keepIntermediate;
+
+    @Override
+    public Integer call() throws Exception {
+      initializeHdf5();
+      final var logger = stdoutLogger();
+      if (fastaPath != null) {
+        logger.accept("FASTA was provided for scaffold conversion: " + fastaPath + " (currently only formats requiring FASTA consume it directly).");
+      }
+      if (ConversionDirection.isHictFilename(input)) {
+        convertFromHict(input, output, logger);
+      } else if (ConversionDirection.isCoolerFilename(input)) {
+        convertFromCooler(input, output, logger);
+      } else if (ConversionDirection.isHicFilename(input)) {
+        convertFromHic(input, output, logger);
+      } else if (ConversionDirection.isHictkLoadFilename(input)) {
+        convertFromHictkLoad(input, output, logger);
+      } else {
+        throw new IllegalArgumentException("Unsupported scaffold conversion input format: " + input.getFileName());
+      }
+      return 0;
+    }
+
+    private void convertFromHict(final @NotNull Path source,
+                                 final @NotNull Path target,
+                                 final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isCoolerFilename(target)) {
+        exportHictToCooler(source, target, assemblyPath, assemblyPath != null, logger);
+        return;
+      }
+      if (ConversionDirection.isHictFilename(target)) {
+        if (assemblyPath == null) {
+          Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+          logger.accept("Copied HiCT file without assembly transform: " + target);
+          return;
+        }
+        withTempDirectory(target, tempDir -> {
+          final var stagedCooler = tempDir.resolve("scaffolded.mcool");
+          exportHictToCooler(source, stagedCooler, assemblyPath, true, logger);
+          importCoolerToHict(stagedCooler, target, null, logger);
+        });
+        return;
+      }
+      throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+    }
+
+    private void convertFromCooler(final @NotNull Path source,
+                                   final @NotNull Path target,
+                                   final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isHictFilename(target)) {
+        importCoolerToHict(source, target, assemblyPath, logger);
+        return;
+      }
+      if (ConversionDirection.isCoolerFilename(target)) {
+        withTempDirectory(target, tempDir -> {
+          final var stagedHict = tempDir.resolve("scaffolded.hict.hdf5");
+          importCoolerToHict(source, stagedHict, assemblyPath, logger);
+          exportHictToCooler(stagedHict, target, null, false, logger);
+        });
+        return;
+      }
+      throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+    }
+
+    private void convertFromHic(final @NotNull Path source,
+                                final @NotNull Path target,
+                                final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isHictFilename(target)) {
+        convertHicToHict(source, target, logger);
+        return;
+      }
+      if (ConversionDirection.isCoolerFilename(target)) {
+        withTempDirectory(target, tempDir -> {
+          final var stagedHict = tempDir.resolve("scaffolded.hict.hdf5");
+          convertHicToHict(source, stagedHict, logger);
+          exportHictToCooler(stagedHict, target, null, false, logger);
+        });
+        return;
+      }
+      throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+    }
+
+    private void convertFromHictkLoad(final @NotNull Path source,
+                                      final @NotNull Path target,
+                                      final @NotNull Consumer<String> logger) throws Exception {
+      if (ConversionDirection.isHictFilename(target) && assemblyPath == null) {
+        loadTextToHict(source, target, logger);
+        return;
+      }
+      if (!ConversionDirection.isHictFilename(target) && !ConversionDirection.isCoolerFilename(target)) {
+        throw new IllegalArgumentException("Scaffold output must be .hict.hdf5, .cool, or .mcool, got " + target.getFileName());
+      }
+      withTempDirectory(target, tempDir -> {
+        final var stagedHict = tempDir.resolve("loaded.hict.hdf5");
+        loadTextToHict(source, stagedHict, logger);
+        if (ConversionDirection.isHictFilename(target)) {
+          final var stagedCooler = tempDir.resolve("scaffolded.mcool");
+          exportHictToCooler(stagedHict, stagedCooler, assemblyPath, assemblyPath != null, logger);
+          importCoolerToHict(stagedCooler, target, null, logger);
+        } else {
+          exportHictToCooler(stagedHict, target, assemblyPath, assemblyPath != null, logger);
+        }
+      });
+    }
+
+    private void importCoolerToHict(final @NotNull Path source,
+                                    final @NotNull Path target,
+                                    final Path layoutPath,
+                                    final @NotNull Consumer<String> logger) throws Exception {
+      final var importOptions = toOptions(
+        source,
+        target,
+        layoutPath == null ? ConversionOptions.NO_AGP : layoutPath.toString(),
+        false
+      );
+      if (importOptions.buildResolutionPyramid() || importOptions.balanceInputCoolers()) {
+        final var pipeline = hictkPipeline();
+        final var toolchain = pipeline.requireToolchain();
+        pipeline.convertCoolerToHictWithPyramid(importOptions, toolchain, logger, process -> {
+        }, () -> false);
+      } else {
+        new McoolToHictConverter().convert(importOptions, logger);
+      }
+    }
+
+    private void exportHictToCooler(final @NotNull Path source,
+                                    final @NotNull Path target,
+                                    final Path layoutPath,
+                                    final boolean applyLayout,
+                                    final @NotNull Consumer<String> logger) throws Exception {
+      final var exportOptions = toOptions(
+        source,
+        target,
+        layoutPath == null ? ConversionOptions.NO_AGP : layoutPath.toString(),
+        applyLayout
+      );
+      new HictToMcoolExportPipeline(new ExternalToolchainManager()).convert(exportOptions, logger);
+    }
+
+    private void convertHicToHict(final @NotNull Path source,
+                                  final @NotNull Path target,
+                                  final @NotNull Consumer<String> logger) throws Exception {
+      final var pipeline = hictkPipeline();
+      final var toolchain = pipeline.requireToolchain();
+      pipeline.convert(
+        ConversionDirection.HIC_TO_HICT,
+        toOptions(source, target, assemblyPath == null ? ConversionOptions.NO_AGP : assemblyPath.toString(), false),
+        toolchain,
+        logger,
+        process -> {
+        },
+        () -> false
+      );
+    }
+
+    private void loadTextToHict(final @NotNull Path source,
+                                final @NotNull Path target,
+                                final @NotNull Consumer<String> logger) throws Exception {
+      final var direction = ConversionDirection.defaultForSource(source);
+      if (!direction.requiresHictkLoadToolchain()) {
+        throw new IllegalArgumentException("Input is not a hictk-loadable text matrix: " + source.getFileName());
+      }
+      final var pipeline = hictkPipeline();
+      final var toolchain = pipeline.requireToolchain();
+      pipeline.convert(
+        direction,
+        toOptions(source, target, ConversionOptions.NO_AGP, false),
+        toolchain,
+        logger,
+        process -> {
+        },
+        () -> false,
+        new HictkLoadOptions(binTablePath, chromSizesPath, binSize, oneBased, countAsFloat)
+      );
+    }
+
+    private void withTempDirectory(final @NotNull Path target,
+                                   final @NotNull TempDirectoryAction action) throws Exception {
+      final var parent = target.toAbsolutePath().getParent();
+      final var tempParent = parent == null ? Path.of(".").toAbsolutePath() : parent;
+      final var tempDir = Files.createTempDirectory(tempParent, ".hict-scaffold-");
+      try {
+        action.run(tempDir);
+      } finally {
+        if (keepIntermediate) {
+          System.out.println("Kept scaffold conversion temporary directory: " + tempDir);
+        } else {
+          deleteRecursively(tempDir);
+        }
+      }
+    }
+
+    private static void deleteRecursively(final @NotNull Path path) throws IOException {
+      if (!Files.exists(path)) {
+        return;
+      }
+      try (final var paths = Files.walk(path)) {
+        final var toDelete = paths.sorted(Comparator.reverseOrder()).toList();
+        for (final var item : toDelete) {
+          Files.deleteIfExists(item);
+        }
+      }
+    }
+
+    @FunctionalInterface
+    private interface TempDirectoryAction {
+      void run(@NotNull Path tempDir) throws Exception;
+    }
+  }
+
+  @Command(
     name = "hict-to-mcool",
     mixinStandardHelpOptions = true,
-    description = "Convert .hict.hdf5 to .mcool."
+    description = "Convert .hict.hdf5 to multi-resolution .mcool or single-resolution .cool."
   )
   static class HictToMcool extends BaseConvert {
     @Option(names = "--agp", description = "AGP file path (optional).")
     String agpPath = ConversionOptions.NO_AGP;
 
-    @Option(names = "--apply-agp", description = "Apply AGP before export.")
+    @Option(names = "--apply-agp", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class, description = "Apply AGP before export.")
     boolean applyAgp;
 
     @Override

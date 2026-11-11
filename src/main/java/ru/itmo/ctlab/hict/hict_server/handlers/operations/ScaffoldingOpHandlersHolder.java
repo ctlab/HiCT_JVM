@@ -38,8 +38,7 @@ import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.scaffolding.*;
-import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO;
-import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoWithVersionDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.response.assembly.CompactAssemblyInfoDTO;
 import ru.itmo.ctlab.hict.hict_server.handlers.fileop.FileOpHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.tiles.TileHandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.handlers.util.TileStatisticHolder;
@@ -80,9 +79,9 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().reverseSelectionRangeBp(request.startBP(), request.endBP());
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/move_selection_range").handler(ctx -> {
@@ -110,9 +109,9 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().moveSelectionRangeBp(request.startBP(), request.endBP(), request.targetStartBP());
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/split_contig_at_bin").handler(ctx -> {
@@ -141,9 +140,9 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().splitContigAtBin(splitPositionBp, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/group_contigs_into_scaffold").handler(ctx -> {
@@ -171,9 +170,9 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().scaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
     router.post("/ungroup_contigs_from_scaffold").handler(ctx -> {
@@ -201,10 +200,22 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().unscaffoldRegion(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
+    });
+    router.post("/unscaffold_all").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      final var requestJSON = ctx.body().asJsonObject();
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+        final var files = extractAssemblyChunkedFiles(map);
+        for (var file : files.operationOrder()) file.scaffoldingOperations().unscaffoldAll();
+        final var version = incrementVersionAndResetTileStats(map, files.activeChunkedFile(), scheduler);
+        return CompactAssemblyInfoDTO.response(files.activeChunkedFile(), version, requestJSON.getValue("assemblyFormat"));
+      }, dto -> ctx.response().end(Json.encodeToBuffer(dto)));
     });
     router.post("/move_selection_to_debris").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
@@ -231,9 +242,9 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
             file.scaffoldingOperations().moveRegionToDebris(request.startBP(), request.endBP(), ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
           }
           final var newVersion = incrementVersionAndResetTileStats(map, chunkedFile, scheduler);
-          return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(chunkedFile), newVersion);
+          return CompactAssemblyInfoDTO.response(chunkedFile, newVersion, requestJSON.getValue("assemblyFormat"));
         },
-        dto -> ctx.response().end(Json.encode(dto))
+        dto -> ctx.response().end(Json.encodeToBuffer(dto))
       );
     });
   }

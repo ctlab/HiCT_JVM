@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
+import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
 import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 
@@ -66,7 +67,8 @@ class NativeProcessingServiceTest {
       1.0d,
       false,
       false,
-      true
+      true,
+      CoolerWeightsNaNPolicy.REPLACE_NANS_WITH_ONE
     ));
     final var status = service.status();
     assertFalse(status.requested());
@@ -267,6 +269,42 @@ class NativeProcessingServiceTest {
       assertArrayEquals(new long[]{1L, 1L, 3L, 1L, 1L, 2L}, coolerColumnsLong);
       assertArrayEquals(new long[]{2L, 7L, 4L, 3L, 5L, 9L}, coolerLongValues);
 
+      final var compactRowsLong = new long[]{3L, 0L, 1L, 0L, 1L, 0L, 3L};
+      final var compactColumnsLong = new long[]{1L, 3L, 1L, 1L, 1L, 1L, 1L};
+      final var compactLongValues = new long[]{4L, 9L, 5L, 7L, 3L, 2L, 6L};
+      assertEquals(4, processor.sortAndCompactCoolerRecordsLong(compactRowsLong, compactColumnsLong, compactLongValues));
+      assertArrayEquals(new long[]{0L, 0L, 1L, 3L}, java.util.Arrays.copyOf(compactRowsLong, 4));
+      assertArrayEquals(new long[]{1L, 3L, 1L, 1L}, java.util.Arrays.copyOf(compactColumnsLong, 4));
+      assertArrayEquals(new long[]{9L, 9L, 8L, 10L}, java.util.Arrays.copyOf(compactLongValues, 4));
+
+      final var mappedRows = new long[]{-1L, -1L, -1L, -1L, -1L, -1L};
+      final var mappedColumns = new long[]{-1L, -1L, -1L, -1L, -1L, -1L};
+      final var mappedValues = new long[]{-1L, -1L, -1L, -1L, -1L, -1L};
+      assertEquals(
+        3,
+        processor.mapCoolerRecordsToBatch(
+          new long[]{0L, 1L, 4L, 5L, 2L},
+          new long[]{1L, 4L, 2L, 3L, 5L},
+          new long[]{10L, 20L, 30L, 40L, 50L},
+          1,
+          3,
+          0L,
+          0L,
+          mappedRows,
+          mappedColumns,
+          mappedValues,
+          2,
+          new long[]{0L, 3L},
+          new long[]{3L, 6L},
+          new long[]{10L, 20L},
+          new long[]{13L, 23L},
+          new byte[]{0, 1}
+        )
+      );
+      assertArrayEquals(new long[]{-1L, -1L, 11L, 12L, 20L, -1L}, mappedRows);
+      assertArrayEquals(new long[]{-1L, -1L, 21L, 21L, 22L, -1L}, mappedColumns);
+      assertArrayEquals(new long[]{-1L, -1L, 20L, 30L, 40L, -1L}, mappedValues);
+
       final double[][] expectedTransformInput = {
         {0.0d, 2.0d, 4.0d},
         {-1.0d, Double.NaN, 10.0d}
@@ -326,7 +364,7 @@ class NativeProcessingServiceTest {
       );
       final var finalSessionReport = processor.sessionReport();
       assertTrue(finalSessionReport.active());
-      assertTrue(finalSessionReport.operationCount() >= firstSessionReport.operationCount() + 14L);
+      assertTrue(finalSessionReport.operationCount() >= firstSessionReport.operationCount() + 15L);
       assertEquals(0L, finalSessionReport.failedOperationCount());
     } finally {
       if (previousPath == null) {

@@ -25,11 +25,27 @@
 package ru.itmo.ctlab.hict.hict_library.assembly;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class FASTAProcessorTest {
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 79, 80, 81, 2000})
+  void wholeContigAndTerminalSlicesKeepTheLastBase(int length) {
+    final var source = "A".repeat(length - 1) + "C";
+    assertEquals(source, FASTAProcessor.extractContigSliceFromSource(source, "ctg", 0,
+      length, ContigDirection.FORWARD, 0, length));
+    assertEquals("G" + "T".repeat(length - 1), FASTAProcessor.extractContigSliceFromSource(source, "ctg", 0,
+      length, ContigDirection.REVERSED, 0, length));
+    assertEquals("C", FASTAProcessor.extractContigSliceFromSource(source, "ctg", 0,
+      length, ContigDirection.FORWARD, length - 1, length));
+    assertEquals(length == 1 ? "G" : "T", FASTAProcessor.extractContigSliceFromSource(source, "ctg", 0,
+      length, ContigDirection.REVERSED, length - 1, length));
+  }
 
   @Test
   void partialSliceOfReversedContigUsesOppositeSourceEnd() {

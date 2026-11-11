@@ -58,6 +58,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.LongStream;
 
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
@@ -78,6 +79,7 @@ import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.ge
 public class ChunkedFile implements AutoCloseable {
 
   private final @NotNull Path hdfFilePath;
+  private final @NotNull SourceMetadata sourceMetadata;
   //  private final long[] blockCount;
   private final int denseBlockSize;
   private final long @NotNull [] resolutions;
@@ -92,22 +94,28 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull List<ObjectPool<HDF5FileDatasetsBundle>> datasetBundlePools;
   private final @NotNull AGPProcessor agpProcessor;
   private final @NotNull Map<String, ContigDescriptor> originalDescriptors;
-  private final @NotNull Map<Integer, String> contigNameOverrides = new ConcurrentHashMap<>();
-  private final @NotNull Map<Long, String> scaffoldNameOverrides = new ConcurrentHashMap<>();
+  private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Integer, String> contigNameOverrides = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
+  private final @NotNull ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Long, String> scaffoldNameOverrides = new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
+  private final ru.itmo.ctlab.hict.hict_library.history.VersionedMap<Integer, SplitEdit> splitEdits =
+    new ru.itmo.ctlab.hict.hict_library.history.VersionedMap<>();
   private final @NotNull Object nameOverrideLock = new Object();
   private final @NotNull TileVisualizationProcessor tileVisualizationProcessor;
+  /** Which per-bin weights are applied when a tile uses weights: the file's own, or computed coverage. */
+  private final @NotNull NormalizationWeights normalizationWeights = new NormalizationWeights();
   private final @NotNull FASTAProcessor fastaProcessor;
+  private final @NotNull AtomicLong coolerWeightsNaNCount = new AtomicLong(0L);
   @Getter
   private final AtomicInteger parallelThreadCount = new AtomicInteger(4);
 
 
   public ChunkedFile(final @NotNull ChunkedFileOptions options) {
+    final long openingStarted = System.nanoTime();
     this.hdfFilePath = options.hdfFilePath;
 
     HDF5LibraryInitializer.initializeHDF5Library();
 
     try (final var reader = HDF5Factory.openForReading(this.hdfFilePath.toFile())) {
-      final var parsedResolutions = reader.object().getAllGroupMembers("/resolutions").parallelStream().flatMap(s -> {
+      final var parsedResolutions = reader.object().getAllGroupMembers("/resolutions").stream().flatMap(s -> {
         try {
           log.debug("Trying to parse " + s + " as a resolution");
           final var parsed = Long.parseLong(s);
@@ -119,18 +127,40 @@ public class ChunkedFile implements AutoCloseable {
         }
       }).sorted().toList();
 
-      final var validResolutions = parsedResolutions.stream()
-        .filter(resolution -> isResolutionComplete(reader, resolution))
+      final var requestedResolutions = options.selectedResolutions().stream()
+        .filter(resolution -> resolution != null && resolution > 0L)
+        .distinct()
         .sorted()
         .toList();
-
-      if (validResolutions.isEmpty()) {
+      Initializers.reportProgress("Validating resolution metadata", 0.0);
+      final var effectiveResolutions = parsedResolutions.stream()
+        .filter(resolution -> requestedResolutions.isEmpty() || requestedResolutions.contains(resolution))
+        .filter(resolution -> isResolutionComplete(reader, resolution))
+        .toList();
+      Initializers.reportProgress("Validating resolution metadata", 1.0);
+      if (effectiveResolutions.isEmpty() && requestedResolutions.isEmpty()) {
         throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
       }
+      if (effectiveResolutions.isEmpty()) {
+        throw new IllegalArgumentException(
+          "No requested complete resolutions are present in " + this.hdfFilePath +
+            ". Requested " + requestedResolutions + ", resolution groups " + parsedResolutions
+        );
+      }
+      if (!requestedResolutions.isEmpty() && effectiveResolutions.size() != requestedResolutions.size()) {
+        final var missing = requestedResolutions.stream()
+          .filter(resolution -> !effectiveResolutions.contains(resolution))
+          .toList();
+        throw new IllegalArgumentException(
+          "Some requested resolutions are not present or incomplete in " + this.hdfFilePath +
+            ": " + missing + ". Resolution groups are " + parsedResolutions
+        );
+      }
 
-      this.resolutions = LongStream.concat(LongStream.of(0L), validResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+      this.resolutions = LongStream.concat(LongStream.of(0L), effectiveResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+      this.sourceMetadata = SourceMetadata.read(reader, effectiveResolutions);
 
-      this.denseBlockSize = (int) validResolutions.stream()
+      this.denseBlockSize = (int) effectiveResolutions.stream()
         .mapToLong(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size"))
         .max()
         .orElse(256L);
@@ -188,14 +218,77 @@ public class ChunkedFile implements AutoCloseable {
     this.resolutionLinearScalingCoefficient[0] = 1.0d;
     this.resolutionLinearScalingCoefficient[1] = 1.0d;
     for (int i = 2; i < this.resolutions.length; ++i) {
-      final var ratio = (this.resolutions[i] / this.resolutions[1]);
-      this.resolutionScalingCoefficient[i] = 1.0d / ((double) (ratio * ratio));
-      this.resolutionLinearScalingCoefficient[i] = 1.0d / ((double) ratio);
+      final double ratio = (double) this.resolutions[i] / this.resolutions[1];
+      this.resolutionScalingCoefficient[i] = 1.0d / (ratio * ratio);
+      this.resolutionLinearScalingCoefficient[i] = 1.0d / ratio;
+    }
+    log.info("Opened {}: {} resolutions, {} contigs in {} ms", this.hdfFilePath.getFileName(),
+      this.resolutions.length - 1, this.contigTree.getContigDescriptors().size(),
+      (System.nanoTime() - openingStarted) / 1_000_000);
+  }
+
+  /** Native split coordinates are relative to the parent in its orientation at the time of the edit. */
+  public record SplitEdit(int parentId, String sourceName, int sourceOffsetBp, long parentLengthBp,
+                          boolean reversed, long splitOffsetBp, int leftId, int rightId) {}
+
+  void recordSplit(SplitEdit split) {
+    splitEdits.put(split.leftId(), split);
+  }
+
+  public List<SplitEdit> getSplitEdits() {
+    contigTree.getRootLock().readLock().lock();
+    try {
+      return splitEdits.values().stream()
+        .sorted(java.util.Comparator.comparingInt(SplitEdit::leftId)).toList();
+    } finally {
+      contigTree.getRootLock().readLock().unlock();
+    }
+  }
+
+  /** No matrix data or tree traversal: checkpoints share persistent nodes. */
+  public record AssemblySnapshot(
+      ChunkedFile owner, ContigTree.Node contigs, ScaffoldTree.Snapshot scaffolds,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, ContigDescriptor> descriptors,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, String> contigNames,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Long, String> scaffoldNames,
+      ru.itmo.ctlab.hict.hict_library.history.VersionedMap.Version<Integer, SplitEdit> splits,
+      AGPProcessor.Annotations annotations) {}
+
+  public AssemblySnapshot snapshotAssembly() {
+    contigTree.getRootLock().readLock().lock();
+    scaffoldTree.getRootLock().readLock().lock();
+    try {
+      return new AssemblySnapshot(this, contigTree.getRoot(), scaffoldTree.snapshot(),
+        contigTree.getContigDescriptors().snapshot(), contigNameOverrides.snapshot(),
+        scaffoldNameOverrides.snapshot(), splitEdits.snapshot(), agpProcessor.snapshotAnnotations());
+    } finally {
+      scaffoldTree.getRootLock().readLock().unlock(); contigTree.getRootLock().readLock().unlock();
+    }
+  }
+
+  public void restoreAssembly(AssemblySnapshot state) {
+    if (state.owner() != this) throw new IllegalArgumentException("Assembly checkpoint belongs to another file");
+    contigTree.getRootLock().writeLock().lock();
+    scaffoldTree.getRootLock().writeLock().lock();
+    try {
+      contigTree.getContigDescriptors().restore(state.descriptors());
+      contigNameOverrides.restore(state.contigNames()); scaffoldNameOverrides.restore(state.scaffoldNames());
+      splitEdits.restore(state.splits());
+      agpProcessor.restoreAnnotations(state.annotations());
+      contigTree.commitRoot(state.contigs()); scaffoldTree.restore(state.scaffolds());
+    } finally {
+      scaffoldTree.getRootLock().writeLock().unlock(); contigTree.getRootLock().writeLock().unlock();
     }
   }
 
   private void loadNameOverrides() {
     // Name overrides are session-only and should not be loaded from the HDF5 file.
+  }
+
+  public void addCoolerWeightsNaNCount(final long count) {
+    if (count > 0L) {
+      this.coolerWeightsNaNCount.addAndGet(count);
+    }
   }
 
   private static <K> void readOverrideMap(final @NotNull String encoded, final @NotNull Map<K, String> target, final @NotNull java.util.function.Function<String, K> keyParser) {
@@ -261,7 +354,16 @@ public class ChunkedFile implements AutoCloseable {
     return Optional.ofNullable(scaffoldNameOverrides.get(scaffoldId)).orElse(getScaffoldOriginalName(scaffoldId));
   }
 
+  /** Display names are also AGP/FASTA identifiers. An empty name resets an override. */
+  public static void validateDisplayName(final @NotNull String name) {
+    if (name.length() > 4096 || name.codePoints().anyMatch(c -> Character.isWhitespace(c)
+      || Character.isSpaceChar(c) || Character.isISOControl(c))) {
+      throw new IllegalArgumentException("Names must contain no whitespace or control characters and at most 4096 characters; use underscores between words.");
+    }
+  }
+
   public void setContigNameOverride(final int contigId, final @NotNull String newName) {
+    validateDisplayName(newName);
     if (newName.isBlank() || newName.equals(getContigOriginalName(contigId))) {
       contigNameOverrides.remove(contigId);
     } else {
@@ -271,6 +373,7 @@ public class ChunkedFile implements AutoCloseable {
   }
 
   public void setScaffoldNameOverride(final long scaffoldId, final @NotNull String newName) {
+    validateDisplayName(newName);
     if (newName.isBlank() || newName.equals(getScaffoldOriginalName(scaffoldId))) {
       scaffoldNameOverrides.remove(scaffoldId);
     } else {
@@ -310,28 +413,27 @@ public class ChunkedFile implements AutoCloseable {
         }
       }
     }
+    for (final var descriptor : this.contigTree.getContigDescriptors().values()) {
+      if (contigName.equals(descriptor.getContigName())) return descriptor;
+    }
     throw new IllegalArgumentException("Unknown contig name " + contigName);
   }
 
-  private static boolean isResolutionComplete(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader, final long resolution) {
-    final String base = "/resolutions/" + resolution;
+  public static boolean isResolutionComplete(final @NotNull ch.systemsx.cisd.hdf5.IHDF5Reader reader, final long resolution) {
     try {
-      if (!reader.object().isGroup(base + "/treap_coo")) {
-        log.warn("Skipping resolution {}: missing treap_coo group", resolution);
-        return false;
+      // isDataSet() uses H5O_INFO_ALL in JHDF5 and scans potentially millions of
+      // chunk-index entries. Opening the dataspace verifies the same dataset
+      // requirement (including link targets), without reading storage statistics.
+      for (final var path : List.of(
+        getBlockLengthDatasetPath(resolution), getBlockOffsetDatasetPath(resolution),
+        getBlockRowsDatasetPath(resolution), getBlockColsDatasetPath(resolution),
+        getBlockValuesDatasetPath(resolution), getDenseBlockDatasetPath(resolution),
+        getStripeLengthsBinsDatasetPath(resolution), getStripeBinWeightsDatasetPath(resolution),
+        getContigLengthBinsDatasetPath(resolution), getContigHideTypeDatasetPath(resolution),
+        getContigsATLDatasetPath(resolution), getBasisATUDatasetPath(resolution)
+      )) {
+        reader.object().getSpaceDimensions(path);
       }
-      if (!reader.object().isDataSet(getBlockLengthDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockOffsetDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockRowsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockColsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBlockValuesDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getDenseBlockDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getStripeLengthsBinsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getStripeBinWeightsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getContigLengthBinsDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getContigHideTypeDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getContigsATLDatasetPath(resolution))) return false;
-      if (!reader.object().isDataSet(getBasisATUDatasetPath(resolution))) return false;
       return true;
     } catch (Exception e) {
       log.warn("Skipping resolution {} due to validation error: {}", resolution, e.getMessage());
@@ -365,14 +467,21 @@ public class ChunkedFile implements AutoCloseable {
 
   @Override
   public void close() {
-    for (int i = 1; i < resolutions.length; ++i) {
-      this.datasetBundlePools.get(i).close();
+    try {
+      for (int i = 1; i < resolutions.length; ++i) {
+        this.datasetBundlePools.get(i).close();
+      }
+    } finally {
+      try { this.fastaProcessor.close(); }
+      catch (IOException e) { log.warn("Could not remove temporary FASTA index", e); }
     }
   }
 
   public long convertUnits(final long position, final @NotNull @NonNull ResolutionDescriptor fromResolution, final @NotNull @NonNull QueryLengthUnit fromUnits, final @NotNull @NonNull ResolutionDescriptor toResolution, final @NotNull @NonNull QueryLengthUnit toUnits) {
     assert ((QueryLengthUnit.BASE_PAIRS.equals(fromUnits)) == (fromResolution.getResolutionOrderInArray() == 0)) : "If converting from base pairs, set fromResolution=0";
     assert ((QueryLengthUnit.BASE_PAIRS.equals(toUnits)) == (toResolution.getResolutionOrderInArray() == 0)) : "If converting from base pairs, set toResolution=0";
+
+    if (fromUnits == toUnits && fromResolution.getResolutionOrderInArray() == toResolution.getResolutionOrderInArray()) return position;
 
     final var contigTree = this.contigTree;
     final var lock = contigTree.getRootLock();
@@ -386,15 +495,28 @@ public class ChunkedFile implements AutoCloseable {
       final long leftFromUnits = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(fromUnits, fromResolution);
       final var leftToUnits = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(toUnits, toResolution);
 
+      // The terminal position is an exclusive boundary, not the first base/bin
+      // of a component. Hidden components still contribute to raw/bp totals.
+      if (position == contigTree.getLengthInUnits(fromUnits, fromResolution)) {
+        return contigTree.getLengthInUnits(toUnits, toResolution);
+      }
+      final var node = es.segment().push().updateSizes();
+      final var descriptor = node.getContigDescriptor();
+      final boolean reversed = node.getTrueDirection() == ru.itmo.ctlab.hict.hict_library.domain.ContigDirection.REVERSED;
       final var deltaFromUnits = position - leftFromUnits;
       final var deltaBp = switch (fromUnits) {
         case BASE_PAIRS -> deltaFromUnits;
-        case BINS, PIXELS -> (deltaFromUnits * fromBpResolution);
+        case BINS, PIXELS -> ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.binToBp(
+          deltaFromUnits, descriptor.getLengthBp(), descriptor.getLengthBinsAtResolution()[fromResolution.getResolutionOrderInArray()],
+          fromBpResolution, firstOwnedBinOffset(descriptor, fromResolution.getResolutionOrderInArray()), reversed);
       };
 
       final var deltaToUnits = switch (toUnits) {
         case BASE_PAIRS -> deltaBp;
-        case BINS, PIXELS -> (deltaBp / toBpResolution);
+        case BINS, PIXELS -> descriptor.getLengthInUnits(toUnits, toResolution) == 0 ? 0L
+          : ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.bpToBin(
+            deltaBp, descriptor.getLengthBp(), descriptor.getLengthBinsAtResolution()[toResolution.getResolutionOrderInArray()],
+            toBpResolution, firstOwnedBinOffset(descriptor, toResolution.getResolutionOrderInArray()), reversed);
       };
 
       return leftToUnits + deltaToUnits;
@@ -403,23 +525,90 @@ public class ChunkedFile implements AutoCloseable {
     }
   }
 
-  public void importAGP(final @NotNull Reader tsvReader) throws IOException, NoSuchFieldException {
-    final var agpFileRecords = this.agpProcessor.parseRecords(tsvReader);
-    final var contigTreeLock = this.contigTree.getRootLock().writeLock();
-    final var scaffoldTreeLock = this.scaffoldTree.getRootLock().writeLock();
-    try {
-      contigTreeLock.lock();
-      scaffoldTreeLock.lock();
-
-      this.agpProcessor.initializeContigTreeFromAGP(agpFileRecords);
-      this.agpProcessor.initializeScaffoldTreeFromAGP(agpFileRecords);
-    } finally {
-      contigTreeLock.unlock();
-      scaffoldTreeLock.unlock();
+  /** Source-coordinate origin of the first retained bin, relative to this piece.
+   * Derive it from physical ATU ownership, never from a split piece's new length. */
+  public long firstOwnedBinOffset(final ContigDescriptor descriptor, final int order) {
+    if (order == 0 || descriptor.getAtus().get(order).isEmpty()) return 0;
+    final var first = descriptor.getAtus().get(order).getFirst();
+    final int bin = first.getDirection() == ru.itmo.ctlab.hict.hict_library.domain.ATUDirection.FORWARD
+      ? first.getStartIndexInStripeIncl() : first.getEndIndexInStripeExcl() - 1;
+    final var original = originalDescriptors.get(descriptor.getContigNameInSourceFASTA());
+    if (original == descriptor) return 0;
+    if (original != null) {
+      long result = firstOwnedBinOffset(descriptor, order, first, bin, original);
+      if (result != Long.MIN_VALUE) return result;
     }
+    for (final var source : originalDescriptors.values()) {
+      if (source.getContigNameInSourceFASTA().equals(descriptor.getContigNameInSourceFASTA())) {
+        long result = firstOwnedBinOffset(descriptor, order, first, bin, source);
+        if (result != Long.MIN_VALUE) return result;
+      }
+    }
+    throw new IllegalArgumentException("Missing original contact-bin ownership for " + descriptor.getContigName());
   }
 
-  public record ChunkedFileOptions(@NotNull Path hdfFilePath, int minDatasetPoolSize, int maxDatasetPoolSize) {
+  /** Exclusive visible-bin endpoint of a nonempty half-open bp interval.
+   * A hidden component contributes no pixel, including at the interval end. */
+  public long bpRangeEndToPixels(long endBp, ResolutionDescriptor resolution) {
+    final var tree = getContigTree();
+    final var lock = tree.getRootLock().readLock();
+    lock.lock();
+    try {
+      final var bp = ResolutionDescriptor.fromResolutionOrder(0);
+      if (endBp <= 0) return 0;
+      long total = tree.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, bp);
+      if (endBp >= total) return tree.getLengthInUnits(QueryLengthUnit.PIXELS, resolution);
+      var segment = tree.expose(bp, endBp - 1, endBp, QueryLengthUnit.BASE_PAIRS).segment();
+      long pixel = convertUnits(endBp - 1, bp, QueryLengthUnit.BASE_PAIRS, resolution, QueryLengthUnit.PIXELS);
+      return pixel + (segment.getContigDescriptor().getLengthInUnits(QueryLengthUnit.PIXELS, resolution) > 0 ? 1 : 0);
+    } finally { lock.unlock(); }
+  }
 
+  private long firstOwnedBinOffset(ContigDescriptor descriptor, int order,
+                                  ru.itmo.ctlab.hict.hict_library.domain.ATUDescriptor first,
+                                  int bin, ContigDescriptor source) {
+    long ordinal = 0;
+    for (final var atu : source.getAtus().get(order)) {
+      if (atu.getStripeDescriptor().stripeId() == first.getStripeDescriptor().stripeId()
+          && bin >= atu.getStartIndexInStripeIncl() && bin < atu.getEndIndexInStripeExcl()) {
+        long offset = atu.getDirection() == ru.itmo.ctlab.hict.hict_library.domain.ATUDirection.FORWARD
+          ? bin - atu.getStartIndexInStripeIncl() : atu.getEndIndexInStripeExcl() - 1L - bin;
+        return source.getOffsetInSourceFASTA() + Math.multiplyExact(ordinal + offset, resolutions[order]) - descriptor.getOffsetInSourceFASTA();
+      }
+      ordinal += atu.getLength();
+    }
+    return Long.MIN_VALUE;
+  }
+
+  public void importAGP(final @NotNull Reader tsvReader) throws IOException, NoSuchFieldException {
+    importAGP(tsvReader, ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.EXCLUDE);
+  }
+
+  public ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGP(final @NotNull Reader tsvReader,
+      final ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy policy) throws IOException, NoSuchFieldException {
+    final var records = this.agpProcessor.parseRecords(tsvReader);
+    final var contigLock = this.contigTree.getRootLock().writeLock();
+    final var scaffoldLock = this.scaffoldTree.getRootLock().writeLock();
+    contigLock.lock();
+    scaffoldLock.lock();
+    try { return this.agpProcessor.importRecords(records, policy); }
+    finally { scaffoldLock.unlock(); contigLock.unlock(); }
+  }
+
+  public record ChunkedFileOptions(
+    @NotNull Path hdfFilePath,
+    int minDatasetPoolSize,
+    int maxDatasetPoolSize,
+    @NotNull List<Long> selectedResolutions
+  ) {
+    public ChunkedFileOptions(final @NotNull Path hdfFilePath,
+                              final int minDatasetPoolSize,
+                              final int maxDatasetPoolSize) {
+      this(hdfFilePath, minDatasetPoolSize, maxDatasetPoolSize, List.of());
+    }
+
+    public ChunkedFileOptions {
+      selectedResolutions = selectedResolutions == null ? List.of() : List.copyOf(selectedResolutions);
+    }
   }
 }

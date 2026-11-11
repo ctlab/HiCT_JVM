@@ -32,6 +32,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
+import ru.itmo.ctlab.hict.hict_library.visualization.colormap.Colormap;
 
 import java.awt.*;
 import java.awt.image.*;
@@ -39,7 +40,6 @@ import java.util.Arrays;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.DoubleStream;
-import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 @Getter
@@ -123,14 +123,18 @@ public class TileVisualizationProcessor {
       resolutionLinearScalingCoeff,
       visualizationOptions.isResolutionScaling(),
       visualizationOptions.isResolutionLinearScaling(),
-      visualizationOptions.isApplyCoolerWeights()
+      visualizationOptions.isApplyCoolerWeights(),
+      visualizationOptions.getCoolerWeightsNaNPolicy()
     );
     if (nativeBaseSignal != null) {
       return nativeBaseSignal;
     }
 
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-      final var rowWeight = (rowWeights != null) ? rowWeights[rowIndex] : 1.0;
+      final var rowWeight = sanitizeCoolerWeight(
+        (rowWeights != null) ? rowWeights[rowIndex] : 1.0d,
+        visualizationOptions.getCoolerWeightsNaNPolicy()
+      );
       final var resultRow = baseSignal[rowIndex];
       for (int colIndex = 0; colIndex < columnCount; ++colIndex) {
         var signal = input.getAsDouble(rowIndex, colIndex);
@@ -147,13 +151,21 @@ public class TileVisualizationProcessor {
           signal *= resolutionLinearScalingCoeff;
         }
         if (visualizationOptions.isApplyCoolerWeights()) {
-          final var columnWeight = (columnWeights != null && colIndex < columnWeights.length) ? columnWeights[colIndex] : 1.0d;
+          final var columnWeight = sanitizeCoolerWeight(
+            (columnWeights != null && colIndex < columnWeights.length) ? columnWeights[colIndex] : 1.0d,
+            visualizationOptions.getCoolerWeightsNaNPolicy()
+          );
           signal *= rowWeight * columnWeight;
         }
         resultRow[colIndex] = Double.isFinite(signal) ? signal : 0.0d;
       }
     }
     return baseSignal;
+  }
+
+  public static double sanitizeCoolerWeight(final double weight,
+                                            final @NotNull CoolerWeightsNaNPolicy policy) {
+    return policy.sanitize(weight);
   }
 
   public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
@@ -203,7 +215,7 @@ public class TileVisualizationProcessor {
         columnCount
       );
     }
-    if (post > 0) {
+    if (post > 0 && visualizationOptions.getSignalDisplayMode() != SignalDisplayMode.OBSERVED_OVER_EXPECTED) {
       if (!NativeProcessingService.getInstance().tryApplyPostLogInPlace(transformedSignal, post)) {
         for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
           final var row = transformedSignal[rowIndex];
@@ -265,12 +277,23 @@ public class TileVisualizationProcessor {
   public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
                                               final @NotNull SimpleVisualizationOptions options,
                                               final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    return visualizeTile(rawTile, options, expectedProfile, null);
+  }
+
+  public @NotNull BufferedImage visualizeTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                              final @NotNull SimpleVisualizationOptions options,
+                                              final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile,
+                                              final @Nullable java.util.function.Consumer<double[][]> signalObserver) {
     final var input = rawTile.matrix();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
     final var normalized = processTile(rawTile, options, expectedProfile);
+    if (signalObserver != null) signalObserver.accept(normalized.values());
     final var colormap = options.getColormap();
     if (colormap instanceof SimpleLinearGradient gradient) {
+      if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED_OVER_EXPECTED) {
+        return createRgbaImage(mapObservedOverExpectedRgba(normalized.values(), gradient), columnCount, rowCount);
+      }
       final var nativeRgbaValues = NativeProcessingService.getInstance().tryMapLinearGradientRgba(
         normalized.values(),
         gradient
@@ -279,26 +302,54 @@ public class TileVisualizationProcessor {
         return createRgbaImage(nativeRgbaValues, columnCount, rowCount);
       }
     }
-    final var boxedARGBValues = Arrays.stream(normalized.values())
-      .flatMap(arrayRow ->
-        Arrays.stream(arrayRow)
-          .mapToObj(colormap::mapSignal)
-          .flatMap(color -> Stream.of(
-              (byte) (color.getRed()), // Red
-              (byte) (color.getGreen()), // Green
-              (byte) (color.getBlue()), // Blue,
-              (byte) (color.getAlpha()) // Alpha,
-            )
-          )
-      )
-      .toArray(Byte[]::new);
+    return createRgbaImage(mapJavaRgba(normalized.values(), colormap), columnCount, rowCount);
+  }
 
-    final byte[] rgbValues = new byte[boxedARGBValues.length];
-    for (var i = 0; i < boxedARGBValues.length; ++i) {
-      rgbValues[i] = boxedARGBValues[i];
+  static byte[] mapObservedOverExpectedRgba(double[][] ratios, SimpleLinearGradient gradient) {
+    final int columns = ratios.length == 0 ? 0 : ratios[0].length;
+    final byte[] rgba = new byte[Math.multiplyExact(Math.multiplyExact(ratios.length, columns), 4)];
+    final double upper = gradient.getMaxSignal() > 1.0 ? gradient.getMaxSignal() : 2.0;
+    final double lower = gradient.getMinSignal() > 0.0 && gradient.getMinSignal() < 1.0
+      ? gradient.getMinSignal() : 1.0 / upper;
+    final double lowLog = Math.log(lower);
+    final double highLog = Math.log(upper);
+    int offset = 0;
+    for (final double[] row : ratios) {
+      for (final double ratio : row) {
+        final double strength = ratio <= lower || ratio >= upper ? 1.0
+          : Math.abs(Math.log(ratio) / (ratio < 1.0 ? lowLog : highLog));
+        final double blend = Double.isFinite(strength) ? strength : 0.0;
+        final int endpoint = ratio < 1.0 ? 0x2166ac : 0xb2182b;
+        rgba[offset++] = blendFromWhite(endpoint >> 16, blend);
+        rgba[offset++] = blendFromWhite((endpoint >> 8) & 0xff, blend);
+        rgba[offset++] = blendFromWhite(endpoint & 0xff, blend);
+        rgba[offset++] = (byte) 255;
+      }
     }
+    return rgba;
+  }
 
-    return createRgbaImage(rgbValues, columnCount, rowCount);
+  private static byte blendFromWhite(int channel, double blend) {
+    return (byte) Math.round(255 - (255 - channel) * blend);
+  }
+
+  /** Preserve the colormap's exact channel/alpha semantics without per-pixel streams or boxed bytes. */
+  static byte[] mapJavaRgba(double[][] values, Colormap colormap) {
+    final int rows = values.length;
+    final int columns = rows == 0 ? 0 : values[0].length;
+    final byte[] rgba = new byte[Math.multiplyExact(Math.multiplyExact(rows, columns), 4)];
+    int offset = 0;
+    for (final double[] row : values) {
+      if (row.length != columns) throw new IllegalArgumentException("Tile rows must have equal lengths");
+      for (final double value : row) {
+        final Color color = colormap.mapSignal(value);
+        rgba[offset++] = (byte) color.getRed();
+        rgba[offset++] = (byte) color.getGreen();
+        rgba[offset++] = (byte) color.getBlue();
+        rgba[offset++] = (byte) color.getAlpha();
+      }
+    }
+    return rgba;
   }
 
   private static @NotNull BufferedImage createRgbaImage(final byte @NotNull [] rgbValues,
@@ -308,7 +359,9 @@ public class TileVisualizationProcessor {
 
     final WritableRaster raster = Raster.createInterleavedRaster(buffer, columnCount, rowCount, 4 * columnCount, 4, new int[]{0, 1, 2, 3}, null);
     final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), true, false, Transparency.TRANSLUCENT, DataBuffer.TYPE_BYTE);
-    //final ColorModel cm = new ComponentColorModel(ColorModel.getRGBdefault().getColorSpace(), false, true, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-    return new BufferedImage(cm, raster, true, null);
+    // Both colormap paths emit straight (not alpha-premultiplied) RGBA.
+    // A mismatched flag makes BufferedImage unpremultiply every pixel, which
+    // both changes translucent colours and adds a full raster conversion.
+    return new BufferedImage(cm, raster, false, null);
   }
 }

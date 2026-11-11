@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.tracks;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
@@ -45,6 +47,24 @@ public class TrackHandlersHolder extends HandlersHolder {
 
   public TrackHandlersHolder(final Vertx vertx) {
     this.vertx = vertx;
+  }
+
+  public java.util.List<BackgroundJob> backgroundJobs() {
+    final var wrapper = (ShareableWrappers.Track1DManagerWrapper) vertx.sharedData()
+      .getLocalMap("hict_server").get("Track1DManager");
+    return wrapper == null ? java.util.List.of() : wrapper.getTrack1DManager().backgroundJobs();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    final var wrapper = (ShareableWrappers.Track1DManagerWrapper) vertx.sharedData()
+      .getLocalMap("hict_server").get("Track1DManager");
+    return wrapper != null && wrapper.getTrack1DManager().cancelBackgroundJob(id);
+  }
+
+  public void close() {
+    final var wrapper = (ShareableWrappers.Track1DManagerWrapper) vertx.sharedData()
+      .getLocalMap("hict_server").get("Track1DManager");
+    if (wrapper != null) wrapper.getTrack1DManager().close();
   }
 
   @Override

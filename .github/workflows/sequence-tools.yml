@@ -1,0 +1,108 @@
+name: Sequence tools native regressions
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        description: "Build one platform for its package job, or all for standalone validation"
+        type: string
+        required: false
+        default: all
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/sequence_analysis/**'
+      - 'scripts/toolchains/*sequence*'
+      - 'scripts/toolchains/*blast*'
+      - 'scripts/toolchains/prepare_bundled_tools.py'
+      - 'scripts/ci/linux_container_build.sh'
+      - 'scripts/ci/check_staged_linux_tools.py'
+      - 'scripts/ci/configure_centos_mirrors.py'
+      - 'scripts/ci/check_macos_compatibility.py'
+      - 'scripts/portable/macos_target.sh'
+      - 'tests/toolchains/**'
+      - 'third_party/**'
+      - '.github/workflows/sequence-tools.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(
+          inputs.platform == 'linux_x86_64' && '[{"os":"ubuntu-22.04","platform":"linux_x86_64"}]' ||
+          inputs.platform == 'windows_x86_64' && '[{"os":"windows-2022","platform":"windows_x86_64"}]' ||
+          inputs.platform == 'darwin_arm64' && '[{"os":"macos-latest","platform":"darwin_arm64"}]' ||
+          inputs.platform == 'darwin_x86_64' && '[{"os":"macos-15-intel","platform":"darwin_x86_64"}]' ||
+          '[{"os":"ubuntu-22.04","platform":"linux_x86_64"},{"os":"windows-2022","platform":"windows_x86_64"},{"os":"macos-latest","platform":"darwin_arm64"},{"os":"macos-15-intel","platform":"darwin_x86_64"}]') }}
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: '1'
+      MACOSX_DEPLOYMENT_TARGET: '12.3'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+          cache: false
+      - name: Check tool cache and archive validation
+        run: python -m unittest discover -s tests/toolchains
+      - name: Check build log encoding independently of the host locale
+        run: python -m unittest discover -s tests/toolchains -p test_sequence_build_encoding.py
+      - name: Check scripts-only Linux build staging without a Gradle wrapper
+        if: runner.os == 'Linux'
+        run: python scripts/ci/check_staged_linux_tools.py --output build/staged-linux-tools-check
+      - name: Preserve Linux staging regression logs
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: staged-linux-tools-check
+          path: build/staged-linux-tools-check/*.log
+      - name: Build and execute native fixtures on Linux glibc 2.17
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go_root="$(go env GOROOT)"
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" -v "$go_root:/opt/hict-go:ro" \
+            quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5 bash -euxc '
+              export PATH=/opt/hict-go/bin:/opt/python/cp312-cp312/bin:$PATH
+              bash scripts/toolchains/build_sequence_python_linux.sh /tmp/hict-shared-python
+              /tmp/hict-shared-python/bin/python3.12 scripts/toolchains/build_sequence_tools.py \
+                --manylinux2014 --output sequence-tools-dist/linux_x86_64
+            '
+      - name: Build and execute native fixtures on Windows or macOS
+        if: runner.os != 'Linux'
+        run: python scripts/toolchains/build_sequence_tools.py --work build/sequence-tools-${{ matrix.platform }} --output sequence-tools-dist/${{ matrix.platform }}
+      - name: Check Windows sequence tools after merge and relocation
+        if: runner.os == 'Windows'
+        run: python scripts/ci/check_windows_sequence_relocation.py --source sequence-tools-dist/windows_x86_64 --output build/windows-sequence-relocation.json
+      - name: Preserve Windows relocation evidence
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-sequence-relocation
+          path: build/windows-sequence-relocation.json
+      - name: Preserve executable modes in artifact
+        shell: bash
+        run: tar -czf sequence-tools-${{ matrix.platform }}.tar.gz -C sequence-tools-dist ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sequence-tools-${{ matrix.platform }}
+          path: sequence-tools-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
+      - name: Upload native smoke-test and build provenance
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sequence-tools-evidence-${{ matrix.platform }}
+          path: |
+            sequence-tools-dist/${{ matrix.platform }}/share/doc/sequence-analysis
+            build/sequence-tools-${{ matrix.platform }}/payload/share/doc/sequence-analysis
+            build/sequence-tools-${{ matrix.platform }}/blast-build/share/doc

@@ -28,6 +28,7 @@ import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.ByteArrayOutputStream
 import java.net.URI
+import java.security.MessageDigest
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -47,16 +48,13 @@ repositories {
   maven {
     url = uri("https://maven.scijava.org/content/repositories/public/")
   }
-  maven {
-    url = uri("https://nexus.bioviz.org/repository/maven-releases/")
-  }
 }
 
-val vertxVersion = "4.4.1"
+val vertxVersion = "4.5.36"
 val junitJupiterVersion = "5.9.1"
 val junitPlatformVersion = "1.9.1"
-val slf4jVersion = "1.7.36"
-val logbackVersion = "1.2.13"
+val slf4jVersion = "2.0.20"
+val logbackVersion = "1.5.38"
 
 dependencyLocking {
   lockAllConfigurations()
@@ -72,17 +70,19 @@ val versionFile = file("${project.projectDir}/version.txt")
 val changelogFile = file("${project.projectDir}/CHANGELOG.md")
 val webUiPackageJson = file("${project.projectDir}/../HiCT_WebUI/package.json")
 
+val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
+val explicitWebUIRef = !webUIRefOverride.isNullOrBlank() && !webUIRefOverride.trim().equals("same-as-jvm", ignoreCase = true)
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
 val localWebUIRepositoryDirectory = layout.projectDirectory.dir("../HiCT_WebUI")
 val remoteWebUIRepositoryDirectory = webUICloneDirectory.dir("HiCT_WebUI")
+val useLocalWebUI = localWebUIRepositoryDirectory.asFile.exists() && !explicitWebUIRef
 val webUIRepositoryDirectory =
-  if (localWebUIRepositoryDirectory.asFile.exists()) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
+  if (useLocalWebUI) localWebUIRepositoryDirectory else remoteWebUIRepositoryDirectory
 val webUIRepositoryAddress = "https://github.com/ctlab/HiCT_WebUI.git"
 val webUITargetDirectory = layout.projectDirectory.dir("src/main/resources/webui")
 val bundledToolchainSourceDirectory = layout.projectDirectory.dir("toolchains-dist")
 val webUIFallbackRef = "master"
 val webUISameAsJvmRefToken = "same-as-jvm"
-val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
 val npmExecutable = if (System.getProperty("os.name").lowercase().contains("windows")) "npm.cmd" else "npm"
 val requireBundledWebUI =
   (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
@@ -511,6 +511,7 @@ application {
 val lombokVersion = "1.18.34"
 
 dependencies {
+  runtimeOnly("org.webjars:swagger-ui:5.30.2") { isTransitive = false }
 //  implementation(fileTree("src/main/resources/libs"))
 //  runtimeOnly(fileTree("src/main/resources/libs/natives"))
 
@@ -582,7 +583,16 @@ dependencies {
   implementation("org.scijava:native-lib-loader:2.4.0")
   implementation("info.picocli:picocli:4.7.6")
   implementation("com.github.samtools:htsjdk:4.1.3")
-  implementation("org.broad.igv:bigwig:2.0.1")
+  // The publisher's sole Maven repository is unavailable. Retain the exact
+  // already-shipped library, with its source/license, on every release platform.
+  val bigwigJar = file("third_party/bigwig/bigwig-2.0.1.jar")
+  require(bigwigJar.isFile) { "Missing checked-in BigWig dependency: $bigwigJar" }
+  val bigwigSha256 = MessageDigest.getInstance("SHA-256")
+    .digest(bigwigJar.readBytes()).joinToString("") { "%02x".format(it) }
+  require(bigwigSha256 == "1cf8cdf2746d4160a24aa0d609343189a0d7da9ce7e9ad94caacb8cbaff5f447") {
+    "BigWig dependency checksum mismatch; restore the reviewed artifact."
+  }
+  implementation(files(bigwigJar))
 
 
 }
@@ -627,6 +637,23 @@ nativeProcessingVariants.forEach { variant ->
     val javaPlatformInclude = jniPlatformInclude?.let { javaInclude.resolve(it) }
     val compilerExecutable = nativeProcessingCompilerExecutable()
     val compilerFlavor = nativeProcessingCompilerFlavor(compilerExecutable)
+    val macosDeploymentTarget = providers.environmentVariable("MACOSX_DEPLOYMENT_TARGET")
+      .orElse(providers.environmentVariable("MACOS_DEPLOYMENT_TARGET"))
+      .orElse("12.3").get()
+    if (platformDirectory == "macos_64") {
+      require(Regex("[0-9]+\\.[0-9]+(\\.[0-9]+)?").matches(macosDeploymentTarget) &&
+        (macosDeploymentTarget.substringBefore('.').toInt() > 12 ||
+          (macosDeploymentTarget.substringBefore('.').toInt() == 12 &&
+            macosDeploymentTarget.split('.')[1].toInt() >= 3))) {
+        "HiCT requires a macOS deployment target of 12.3 or newer."
+      }
+      val legacyTarget = providers.environmentVariable("MACOS_DEPLOYMENT_TARGET").orNull
+      require(legacyTarget == null || legacyTarget == macosDeploymentTarget) {
+        "Conflicting MACOSX_DEPLOYMENT_TARGET and MACOS_DEPLOYMENT_TARGET."
+      }
+      inputs.property("macosDeploymentTarget", macosDeploymentTarget)
+      inputs.property("macosInstallName", "@rpath/${outputFile.name}")
+    }
 
     inputs.file(nativeProcessingSourceFile)
     inputs.property("platformDirectory", platformDirectory ?: "unsupported")
@@ -686,7 +713,11 @@ nativeProcessingVariants.forEach { variant ->
         "-o",
         outputFile.absolutePath,
         nativeProcessingSourceFile.asFile.absolutePath
-      ) + gnuVariantFlags + gnuOpenMpFlags
+      ) + gnuVariantFlags + gnuOpenMpFlags +
+        if (platformDirectory == "macos_64") listOf(
+          "-mmacosx-version-min=$macosDeploymentTarget",
+          "-Wl,-install_name,@rpath/${outputFile.name}"
+        ) else emptyList()
     }
     commandLine(command)
 
@@ -714,16 +745,29 @@ tasks.register("compileNativeProcessingBaseline") {
   dependsOn("compileNativeProcessingSse2")
 }
 
+val prepareBundledTools = tasks.register<Exec>("prepareBundledTools") {
+  group = "build"
+  description = "Build all bundled analysis/conversion tools; reuse only source-matched, checksummed payloads."
+  // Deliberately execute the verifier on every invocation: Gradle's output
+  // timestamps alone cannot prove that a restored external cache is complete.
+  commandLine(System.getenv("HICT_TOOL_BUILD_PYTHON") ?: if (System.getProperty("os.name").lowercase().contains("win")) "python" else "python3",
+    "scripts/toolchains/prepare_bundled_tools.py")
+}
+val completeNativeBuildRequested = gradle.startParameter.taskNames.any {
+  it.substringAfterLast(":") in listOf("natives", "prepareBundledTools", "build")
+}
+
 tasks.register("natives") {
   group = "build"
-  description = "Build every optional HiCT native processing library supported by this machine and toolchain."
+  description = "Build HiCT JNI libraries and every bundled conversion/sequence tool for this platform."
+  dependsOn(prepareBundledTools, "verifyNativeProcessingBuild")
   dependsOn(nativeProcessingVariants.map { "compileNativeProcessing${it.taskSuffix}" })
 }
 
 tasks.register("verifyNativeProcessingBuild") {
   group = "verification"
   description = "Warn when optional HiCT native processing variants were not built for the current platform."
-  dependsOn("natives")
+  dependsOn(nativeProcessingVariants.map { "compileNativeProcessing${it.taskSuffix}" })
   doLast {
     val platformDirectory = nativeProcessingPlatformDirectory()
     if (platformDirectory == null) {
@@ -745,7 +789,7 @@ tasks.register("verifyNativeProcessingBuild") {
         logger.lifecycle("HiCT native processing ${variant.id} library ready: ${outputFile.absolutePath}")
       }
     }
-    if (requireNativeProcessingVariants && missingVariants.isNotEmpty()) {
+    if ((requireNativeProcessingVariants || completeNativeBuildRequested) && missingVariants.isNotEmpty()) {
       throw GradleException(
         "Required HiCT native processing variant(s) were not built: ${missingVariants.joinToString()}"
       )
@@ -807,6 +851,21 @@ nativeProcessingVariants.forEach { variant ->
     ).forEach { propertyName ->
       System.getProperty(propertyName)?.let { systemProperty(propertyName, it) }
     }
+  }
+}
+
+tasks.register<Test>("testNativeProcessingBaseline") {
+  group = "verification"
+  description = "Load the compiled baseline JNI library and verify numeric/rendering parity."
+  dependsOn("testClasses", "compileNativeProcessingSse2")
+  testClassesDirs = sourceSets["test"].output.classesDirs
+  classpath = sourceSets["test"].runtimeClasspath
+  useJUnitPlatform()
+  filter { includeTestsMatching("*NativeProcessingServiceTest.compiledNativeLibraryMatchesJavaTileMathWhenProvided") }
+  val nativeLibrary = nativeProcessingOutputFile(nativeProcessingVariants.first())
+  systemProperty("hict.native.test.library", nativeLibrary.absolutePath)
+  doFirst {
+    if (!nativeLibrary.isFile) throw GradleException("Native parity test requires the compiled library: $nativeLibrary")
   }
 }
 
@@ -1011,7 +1070,7 @@ tasks.register("buildWebUI") {
   doLast {
     try {
       val requestedWebUIRef = resolveWebUIRef()
-      if (localWebUIRepositoryDirectory.asFile.exists()) {
+      if (useLocalWebUI) {
         println(
           "Using local HiCT_WebUI checkout at ${localWebUIRepositoryDirectory.asFile.absolutePath} " +
             "(branch/working tree will not be modified by Gradle; requested ref '${requestedWebUIRef}' is ignored)"
@@ -1063,6 +1122,7 @@ tasks.register("buildWebUI") {
         isIgnoreExitValue = true
       }
       if (checkOutResult.exitValue != 0) {
+        if (explicitWebUIRef) throw GradleException("Requested HiCT_WebUI ref '${requestedWebUIRef}' is unavailable; no fallback is allowed for an explicit pin.")
         println("Failed to checkout HiCT_WebUI ref '${requestedWebUIRef}', trying fallback '${webUIFallbackRef}'.")
         checkedOutRef = webUIFallbackRef
         checkOutResult = project.exec {
@@ -1078,11 +1138,23 @@ tasks.register("buildWebUI") {
       }
 
       println("Using HiCT_WebUI ref '${checkedOutRef}'.")
-      project.exec {
+      // Detached commit/tag pins must not follow a branch or produce a spurious pull failure.
+      val symbolicRef = project.exec {
+        commandLine("git", "symbolic-ref", "--quiet", "HEAD")
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = ByteArrayOutputStream()
+        isIgnoreExitValue = true
+      }
+      if (symbolicRef.exitValue == 0) project.exec {
         commandLine("git", "pull", "--ff-only")
         workingDir = webUIRepositoryDirectory.asFile
         standardOutput = System.out
-        isIgnoreExitValue = true
+        isIgnoreExitValue = !explicitWebUIRef
+      }
+      project.exec {
+        commandLine("git", "log", "-1", "--format=WebUI source commit: %H")
+        workingDir = webUIRepositoryDirectory.asFile
+        standardOutput = System.out
       }
 
 
@@ -1099,6 +1171,7 @@ tasks.register("buildWebUI") {
       }
       verifyWebUIConverterDtoRegression(webUIRepositoryDirectory.asFile)
     } catch (e: Exception) {
+      if (explicitWebUIRef) throw GradleException("Could not build explicitly requested HiCT_WebUI '${webUIRefOverride}'.", e)
       if (e is GradleException && e.message?.startsWith("HiCT_WebUI converter DTO regression detected") == true) {
         throw e
       }
@@ -1122,6 +1195,10 @@ tasks.named("clean") {
 }
 
 tasks.named<ProcessResources>("processResources") {
+  inputs.file(versionFile)
+  mustRunAfter("incrementPatchVersion")
+  if (completeNativeBuildRequested) dependsOn(prepareBundledTools)
+  mustRunAfter(prepareBundledTools)
   dependsOn("copyWebUI")
   dependsOn("verifyNativeProcessingBuild")
   dependsOn("prepareRuntimeJhdf5NativesArchive")
@@ -1289,6 +1366,7 @@ tasks.register("describeBundledToolchains") {
 }
 
 tasks.named("build") {
+  dependsOn("natives")
   dependsOn("copyWebUI")
   dependsOn("incrementPatchVersion")
 }
@@ -1524,6 +1602,7 @@ tasks.register("verifyBundledJhdf5Payload") {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
+  mustRunAfter("incrementPatchVersion")
   dependsOn("verifyNativeProcessingBuild")
   dependsOn(prepareRuntimeJhdf5NativesArchive)
   doFirst {
@@ -1537,5 +1616,13 @@ tasks.named<ShadowJar>("shadowJar") {
 if (requireBundledJhdf5) {
   tasks.named("build") {
     dependsOn("verifyBundledJhdf5Payload")
+  }
+}
+
+// Keep the LGPL notice and corresponding dependency source in portable JARs.
+tasks.named<ProcessResources>("processResources") {
+  from("third_party/bigwig") {
+    exclude("*.jar")
+    into("META-INF/third-party/bigwig")
   }
 }

@@ -62,14 +62,30 @@ public class Initializers {
     }
   }
 
-  private static void reportProgress(final @NotNull String stage, final double progress) {
+  static void reportProgress(final @NotNull String stage, final double progress) {
     final var reporter = PROGRESS.get();
     if (reporter != null) {
       reporter.report(stage, progress);
     }
   }
 
+  private static long syntheticLengthBins(final long lengthBp, final long resolution) {
+    if (lengthBp <= 0L || resolution <= 0L) {
+      return 0L;
+    }
+    return Math.max(1L, (lengthBp + resolution - 1L) / resolution);
+  }
+
+  private static @NotNull ContigHideType inferHideType(final long lengthBins,
+                                                       final long lengthBp,
+                                                       final long resolution) {
+    return lengthBins > 0L && lengthBp >= resolution
+      ? ContigHideType.SHOWN
+      : ContigHideType.HIDDEN;
+  }
+
   public static @NotNull List<@NotNull StripeDescriptor> readStripeDescriptors(final long resolution, final @NotNull IHDF5Reader reader) {
+    final long started = System.nanoTime();
     final List<StripeDescriptor> result = new ArrayList<>();
     final long[] stripeLengthBins;
     try (final var stripeLengthsBinsDataset = reader.object().openDataSet(getStripeLengthsBinsDatasetPath(resolution))) {
@@ -78,18 +94,22 @@ public class Initializers {
 
     try (final var stripeBinWeightsDataset = reader.object().openDataSet(getStripeBinWeightsDatasetPath(resolution))) {
       reportProgress("Reading stripe weights", 0.0);
-      final long[] dims = reader.object().getDataSetInformation(stripeBinWeightsDataset.getDataSetPath()).getDimensions();
-      final int rowLen = dims.length > 1 ? (int) dims[1] : 0;
+      final var information = reader.object().getDataSetInformation(stripeBinWeightsDataset.getDataSetPath());
+      final long[] dims = information.getDimensions();
       final int stripeCount = stripeLengthBins.length;
-      final int bytesPerRow = Math.max(1, rowLen) * Double.BYTES;
-      final int targetBlockBytes = 16 * 1024 * 1024;
-      final int maxRowsPerBlock = Math.max(1, targetBlockBytes / bytesPerRow);
-      final int blockSize = Math.min(256, Math.min(maxRowsPerBlock, stripeCount));
+      if (dims.length != 2 || dims[0] != stripeCount || dims[1] < 1 || dims[1] > Integer.MAX_VALUE) {
+        throw new IllegalArgumentException("Invalid stripe weight dimensions at resolution " + resolution + ": " + Arrays.toString(dims));
+      }
+      final int rowLen = (int) dims[1];
+      final int[] chunkSizes = information.tryGetChunkSizes();
+      final int chunkRows = chunkSizes == null ? 1 : chunkSizes[0];
+      final int blockSize = stripeWeightBlockRows(stripeCount, rowLen, chunkRows, Runtime.getRuntime().maxMemory());
+      log.debug("Reading weights at resolution {}: {} stripes, {} rows/chunk, {} rows/read", resolution, stripeCount, chunkRows, blockSize);
 
       for (int start = 0; start < stripeCount; start += blockSize) {
         final int count = Math.min(blockSize, stripeCount - start);
         final var block = reader.float64().readMDArrayBlockWithOffset(
-          stripeBinWeightsDataset.getDataSetPath(),
+          stripeBinWeightsDataset,
           new int[]{count, rowLen},
           new long[]{start, 0}
         );
@@ -108,8 +128,25 @@ public class Initializers {
       }
       reportProgress("Reading stripe weights", 1.0);
     }
-
+    log.info("Loaded stripe weights at resolution {}: {} stripes in {} ms", resolution, result.size(),
+      (System.nanoTime() - started) / 1_000_000);
     return result;
+  }
+
+  static int stripeWeightBlockRows(final int stripeCount, final int rowLength, final int chunkRows, final long maxHeap) {
+    if (stripeCount < 0 || rowLength < 1 || chunkRows < 1 || maxHeap < 1) {
+      throw new IllegalArgumentException("Invalid stripe weight read dimensions or heap size");
+    }
+    final long rowBytes = (long) rowLength * Double.BYTES;
+    // Old files may store all weights in one compressed chunk. Avoid decompressing
+    // that chunk once per 256 rows, while bounding temporary Java read buffers.
+    final long capBytes = Math.max(rowBytes, Math.min(128L << 20, maxHeap / 16));
+    final long capRows = Math.min(Integer.MAX_VALUE / (long) rowLength, capBytes / rowBytes);
+    final long targetRows = Math.max(1, Math.min(16L << 20, capBytes) / rowBytes);
+    final long alignedRows = chunkRows <= capRows
+      ? Math.max(chunkRows, targetRows / chunkRows * chunkRows)
+      : capRows;
+    return (int) Math.max(1, Math.min(stripeCount, alignedRows));
   }
 
   public static @NotNull List<@NotNull ATUDescriptor> readATL(final long resolution, final @NotNull IHDF5Reader reader, final List<StripeDescriptor> stripeDescriptors) {
@@ -138,6 +175,18 @@ public class Initializers {
 
 
     return result;
+  }
+
+  private static long countNonFiniteWeights(final @NotNull List<@NotNull StripeDescriptor> stripes) {
+    long count = 0L;
+    for (final var stripe : stripes) {
+      for (final var weight : stripe.bin_weights()) {
+        if (!Double.isFinite(weight)) {
+          count++;
+        }
+      }
+    }
+    return count;
   }
 
   public static @NotNull List<ContigTree.@NotNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
@@ -170,12 +219,27 @@ public class Initializers {
       for (int i = 1; i < resolutions.length; ++i) {
         final var stripes = readStripeDescriptors(resolutions[i], reader);
         resolutionOrderToStripes.set(i, stripes);
+        final var nonFiniteWeights = countNonFiniteWeights(stripes);
+        if (nonFiniteWeights > 0L) {
+          chunkedFile.addCoolerWeightsNaNCount(nonFiniteWeights);
+          log.debug(
+            "Detected {} non-finite Cooler weights while opening {} at resolution {}",
+            nonFiniteWeights,
+            chunkedFile.getHdfFilePath().getFileName(),
+            resolutions[i]
+          );
+        }
         chunkedFile.getStripeCount()[i] = stripes.size();
         final var atus = readATL(resolutions[i], reader, stripes);
         resolutionOrderToBasisATUs.set(i, atus);
         final var dataBundles = readContigDataBundles(resolutions[i], reader, atus);
         contigDescriptorDataBundles.set(i, dataBundles);
         reportProgress("Reading resolution metadata", (double) i / Math.max(1, resolutions.length - 1));
+      }
+      final long nonFiniteTotal = chunkedFile.getCoolerWeightsNaNCount().get();
+      if (nonFiniteTotal > 0) {
+        log.info("{} contains {} non-finite Cooler weights across resolutions; visualization provides explicit masking, replacement, or disabling policies.",
+          chunkedFile.getHdfFilePath().getFileName(), nonFiniteTotal);
       }
       reportProgress("Reading resolution metadata", 1.0);
 
@@ -233,9 +297,9 @@ public class Initializers {
         final List<List<ATUDescriptor>> syntheticAtus = new ArrayList<>(Math.max(0, resolutions.length - 1));
         for (int resolutionIdx = 1; resolutionIdx < resolutions.length; resolutionIdx++) {
           final long resolution = resolutions[resolutionIdx];
-          final long bins = Math.max(1L, (contigLengthBp[cid] + resolution - 1L) / resolution);
+          final long bins = syntheticLengthBins(contigLengthBp[cid], resolution);
           syntheticLengthBins.add(bins);
-          syntheticPresence.add(bins > 1L ? ContigHideType.SHOWN : ContigHideType.HIDDEN);
+          syntheticPresence.add(inferHideType(bins, contigLengthBp[cid], resolution));
           syntheticAtus.add(List.of());
         }
         contigDescriptor = new ContigDescriptor(
@@ -320,7 +384,8 @@ public class Initializers {
     }
 
     final var contigTree = chunkedFile.getContigTree();
-
+    reportProgress("Building contig tree", 0.0);
+    final long treeStarted = System.nanoTime();
     for (final var orderLong : contigOrder) {
       final var order = (int) orderLong;
       if (order < 0 || order >= contigs.size()) {
@@ -329,9 +394,92 @@ public class Initializers {
       }
       contigTree.appendContig(contigs.get(order).descriptor(), contigs.get(order).direction());
     }
+    reportProgress("Building contig tree", 1.0);
+    log.info("Built contig tree: {} contigs in {} ms", contigOrder.length, (System.nanoTime() - treeStarted) / 1_000_000);
   }
 
   public static void initializeScaffoldTree(final ChunkedFile chunkedFile) {
+    final var scaffoldIdPath = "/contig_info/contig_scaffold_id";
+    try (final var reader = HDF5Factory.openForReading(chunkedFile.getHdfFilePath().toFile())) {
+      final var contigScaffoldIds = reader.object().isDataSet(scaffoldIdPath)
+        ? reader.int64().readArray(scaffoldIdPath) : new long[0];
+      // Raw converted maps can include an all-negative placeholder column.
+      // Preserve actual saved layouts, including explicitly unplaced components.
+      if (contigScaffoldIds.length == 0 || (!reader.object().isDataSet("/contig_info/scaffold_name")
+          && Arrays.stream(contigScaffoldIds).filter(id -> id >= 0).distinct().count()
+            == Arrays.stream(contigScaffoldIds).filter(id -> id >= 0).count())) {
+        long position = 0;
+        for (var contig : chunkedFile.getContigTree().getOrderedContigList()) {
+          final var descriptor = contig.descriptor();
+          final long end = position + descriptor.getLengthBp();
+          if (end > position) chunkedFile.getScaffoldTree().rescaffold(position, end,
+            id -> new ScaffoldDescriptor(id, "scf_" + descriptor.getContigName(), ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()));
+          position = end;
+        }
+        return;
+      }
+      final var scaffoldNames = reader.object().isDataSet("/contig_info/scaffold_name")
+        ? reader.string().readArray("/contig_info/scaffold_name")
+        : new String[0];
+      final var scaffoldSpacerBp = reader.object().isDataSet("/contig_info/scaffold_spacer_bp")
+        ? reader.int64().readArray("/contig_info/scaffold_spacer_bp")
+        : new long[0];
+
+      final var orderedContigs = chunkedFile.getContigTree().getOrderedContigList();
+      if (orderedContigs.isEmpty()) {
+        return;
+      }
+
+      final var tree = chunkedFile.getScaffoldTree();
+      tree.unscaffold(0L, 1L + chunkedFile.getMatrixSizeBins()[0]);
+
+      long positionBp = 0L;
+      int groupStartIndex = 0;
+      while (groupStartIndex < orderedContigs.size()) {
+        final var firstDescriptor = orderedContigs.get(groupStartIndex).descriptor();
+        final int firstContigId = firstDescriptor.getContigId();
+        final long scaffoldId = firstContigId >= 0 && firstContigId < contigScaffoldIds.length
+          ? contigScaffoldIds[firstContigId]
+          : -1L;
+        final long groupStartBp = positionBp;
+        long groupLengthBp = 0L;
+        int groupEndIndex = groupStartIndex;
+        while (groupEndIndex < orderedContigs.size()) {
+          final var descriptor = orderedContigs.get(groupEndIndex).descriptor();
+          final int contigId = descriptor.getContigId();
+          final long currentScaffoldId = contigId >= 0 && contigId < contigScaffoldIds.length
+            ? contigScaffoldIds[contigId]
+            : -1L;
+          if (groupEndIndex > groupStartIndex && currentScaffoldId != scaffoldId) {
+            break;
+          }
+          groupLengthBp += descriptor.getLengthBp();
+          groupEndIndex++;
+        }
+
+        if (scaffoldId >= 0L) {
+          final var scaffoldName = scaffoldId < scaffoldNames.length && scaffoldNames[(int) scaffoldId] != null && !scaffoldNames[(int) scaffoldId].isBlank()
+            ? scaffoldNames[(int) scaffoldId]
+            : "scaffold_" + scaffoldId;
+          final long spacerBp = scaffoldId < scaffoldSpacerBp.length && scaffoldSpacerBp[(int) scaffoldId] >= 0L
+            ? scaffoldSpacerBp[(int) scaffoldId]
+            : 1000L;
+          final int groupSize = groupEndIndex - groupStartIndex;
+          if (groupSize > 1 || !scaffoldName.startsWith("unscaffolded")) {
+            tree.rescaffold(
+              groupStartBp,
+              groupStartBp + groupLengthBp,
+              id -> new ScaffoldDescriptor(scaffoldId, scaffoldName, spacerBp)
+            );
+          }
+        }
+
+        positionBp += groupLengthBp;
+        groupStartIndex = groupEndIndex;
+      }
+    } catch (Exception e) {
+      log.warn("Failed to initialize scaffold tree from stored contig scaffold metadata in {}", chunkedFile.getHdfFilePath(), e);
+    }
   }
 
   private record ContigDescriptorDataBundle(

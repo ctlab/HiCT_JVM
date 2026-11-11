@@ -1,0 +1,1185 @@
+[
+  {
+    "id": "future-version",
+    "expectedErrorPointer": "/schemaVersion",
+    "reason": "Unsupported catalog version",
+    "catalog": {
+      "schemaVersion": 9999,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "unknown-section",
+    "expectedErrorPointer": "/examples/0/sectionId",
+    "reason": "Missing section reference",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "missing",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "duplicate-example",
+    "expectedErrorPointer": "/examples/1/id",
+    "reason": "Duplicate example id",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        },
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "duplicate-file",
+    "expectedErrorPointer": "/examples/0/files/1/id",
+    "reason": "Duplicate file id within an example",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "contacts",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "missing-required-file",
+    "expectedErrorPointer": "/examples/0/openingRecipe/matrix",
+    "reason": "Recipe references an absent file",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "missing",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "path-traversal",
+    "expectedErrorPointer": "/examples/0/files/0/filename",
+    "reason": "Unsafe destination filename",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "../outside.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "invalid-size",
+    "expectedErrorPointer": "/examples/0/files/0/bytes",
+    "reason": "Size must be positive",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              },
+              "bytes": -1
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "invalid-checksum",
+    "expectedErrorPointer": "/examples/0/files/0/sha256",
+    "reason": "Checksum must contain exactly 64 hexadecimal digits",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              },
+              "sha256": "not-a-checksum"
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "agp",
+              "format": "agp",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.agp",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "assembly-is-not-agp",
+    "expectedErrorPointer": "/examples/0/openingRecipe/agp",
+    "reason": "AGP recipe must not point at a Juicebox assembly file",
+    "catalog": {
+      "schemaVersion": 1,
+      "catalogId": "synthetic-fixtures",
+      "sections": [
+        {
+          "id": "fixture-section",
+          "title": "Synthetic examples",
+          "description": "Test inputs, not downloadable scientific examples.",
+          "order": 0
+        }
+      ],
+      "examples": [
+        {
+          "id": "tiny",
+          "sectionId": "fixture-section",
+          "title": "Synthetic contact and sequence fixture",
+          "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+          "publications": [
+            {
+              "title": "Synthetic fixture specification",
+              "citation": "HiCT regression fixture; not a research publication.",
+              "url": "https://example.org/hict-fixture/specification",
+              "role": "dataset"
+            }
+          ],
+          "files": [
+            {
+              "id": "contacts",
+              "role": "matrix",
+              "format": "mcool",
+              "url": "https://example.org/hict-fixture/tiny.mcool",
+              "filename": "tiny.mcool",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "sequence",
+              "role": "fasta",
+              "format": "fasta",
+              "url": "https://example.org/hict-fixture/tiny.fa",
+              "filename": "tiny.fa",
+              "required": true,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "layout",
+              "role": "assembly",
+              "format": "assembly",
+              "url": "https://example.org/hict-fixture/tiny.agp",
+              "filename": "tiny.assembly",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            },
+            {
+              "id": "features",
+              "role": "track",
+              "format": "bed",
+              "url": "https://example.org/hict-fixture/tiny.bed",
+              "filename": "tiny.bed",
+              "required": false,
+              "attribution": {
+                "provider": "Synthetic HiCT test fixture",
+                "url": "https://example.org/hict-fixture",
+                "termsUrl": "https://example.org/hict-fixture/terms",
+                "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+              }
+            }
+          ],
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          },
+          "openingRecipe": {
+            "matrix": "contacts",
+            "fasta": "sequence",
+            "agp": "layout",
+            "referenceIdentity": "synthetic-reference-v1",
+            "tracks": [
+              {
+                "fileId": "features",
+                "type": "annotation",
+                "format": "bed",
+                "axis": "both",
+                "placement": "outside",
+                "coordinateSystem": "zero-based-half-open",
+                "assemblyReference": "synthetic-reference-v1"
+              }
+            ]
+          },
+          "provenance": {
+            "sourceUrl": "https://example.org/hict-fixture",
+            "retrievedAt": "2026-11-10",
+            "origin": "curated",
+            "reviewStatus": "synthetic-test-only"
+          }
+        }
+      ]
+    }
+  }
+]

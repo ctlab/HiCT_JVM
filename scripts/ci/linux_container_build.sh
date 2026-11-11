@@ -78,11 +78,20 @@ run_manylinux() {
     -e HICT_CONTAINER_TARGET="${ml_target}" \
     -e HICT_STATIC_MUSL="0" \
     -e HICT_STATIC_MIMALLOC="0" \
-    quay.io/pypa/manylinux2014_x86_64:latest \
+    quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5 \
     bash -s <<'MANYLINUX'
 set -euo pipefail
 
-yum install -y \
+# Resolve ownership in the container namespace. With rootless Docker, host UID
+# 1000 is container UID 0; chown to the host number produces UID 100999 outside.
+HICT_OUTPUT_OWNER=$(stat -c '%u:%g' "${GITHUB_WORKSPACE}")
+
+/usr/bin/python scripts/ci/configure_centos_mirrors.py
+
+# All bootstrap packages below are provided by CentOS base/updates. Do not
+# depend on the retired EPEL 7 mirror-list service for unrelated build tools.
+# Missing packages still fail normally; signature checks remain enabled.
+yum --disablerepo='epel*' install -y \
   autoconf automake binutils bzip2 bzip2-devel ca-certificates curl diffutils file findutils \
   gcc gcc-c++ git gzip libtool m4 make openssl-devel patch perl-core perl-IPC-Cmd pkgconfig \
   tar unzip which xz xz-devel zip zlib-devel
@@ -132,6 +141,9 @@ fi
 ln -sfn "${PYBIN}" /usr/local/bin/python3
 
 install_temurin_jdk21() {
+  # Tool-only builds use a scripts-only staging directory. Only the
+  # hict-native and fatjar targets need the Gradle wrapper.
+  chmod +x gradlew
   local jdk_root="${GITHUB_WORKSPACE}/.cache/container-jdks/temurin-21-linux-x64"
   local tmp_root="${jdk_root}.tmp"
   local tarball="/tmp/temurin-jdk21-linux-x64.tar.gz"
@@ -161,7 +173,7 @@ python3 -m ensurepip --upgrade >/dev/null 2>&1 || true
 python3 -m pip install --upgrade pip
 python3 -m pip install "cmake>=3.25" ninja "conan>=2"
 
-chmod +x gradlew \
+chmod +x \
   scripts/toolchains/build_hictk_linux.sh \
   scripts/toolchains/build_minimap2_linux.sh \
   scripts/toolchains/build_mm2plus_linux.sh
@@ -193,7 +205,7 @@ case "${HICT_CONTAINER_TARGET}" in
   *) echo "Unknown manylinux target: ${HICT_CONTAINER_TARGET}" >&2; exit 1 ;;
 esac
 
-chown -R "${HOST_UID}:${HOST_GID}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
+chown -R "${HICT_OUTPUT_OWNER}" build toolchains-dist .cache .gradle src/main/resources/webui 2>/dev/null || true
 MANYLINUX
 }
 
@@ -212,6 +224,8 @@ run_alpine_musl() {
       exec bash -s
     ' <<'ALPINE'
 set -euo pipefail
+
+HICT_OUTPUT_OWNER=$(stat -c '%u:%g' "${GITHUB_WORKSPACE}")
 
 export HICT_STATIC_MUSL=1
 export HICT_STATIC_MIMALLOC=1
@@ -264,7 +278,7 @@ for binary in toolchains-dist/linux_x86_64/bin/hictk toolchains-dist/linux_x86_6
   fi
 done
 
-chown -R "${HOST_UID}:${HOST_GID}" toolchains-dist .cache 2>/dev/null || true
+chown -R "${HICT_OUTPUT_OWNER}" toolchains-dist .cache 2>/dev/null || true
 ALPINE
 }
 

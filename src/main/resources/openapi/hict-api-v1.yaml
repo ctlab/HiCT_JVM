@@ -18,8 +18,65 @@ tags:
   - name: Scaffolding
   - name: Names
   - name: Tracks
+  - name: Normalization
   - name: Conversion
 paths:
+  /assembly/history:
+    post:
+      tags: [Scaffolding]
+      summary: Read a page of the current session edit journal
+      description: |
+        Opening or closing a map, attaching or detaching an overlay, or switching
+        assembly source starts a new journal. Each successful assembly response
+        includes X-HiCT-History, a JSON summary containing session, revision,
+        currentId, position, size, canUndo and canRedo. No contact matrices are stored.
+      operationId: getAssemblyHistory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                offset: { type: integer, minimum: 0 }
+                limit: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Summary, offset and entries (id, label, timestamp). Summary is null when closed.
+          content:
+            application/json:
+              schema: { type: object }
+  /assembly/history/restore:
+    post:
+      tags: [Scaffolding]
+      summary: Undo, redo or restore an earlier or later journal state
+      description: |
+        Restoration retains later states; a subsequent successful new edit truncates
+        the redo branch. Failed and unchanged operations retain it. A session and
+        revision guard prevents stale clients from navigating a different history.
+        Edits can send the same guard as X-HiCT-History-Session and
+        X-HiCT-History-Revision headers. Restoration invalidates tiles and tracks.
+      operationId: restoreAssemblyHistory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session, revision, action]
+              properties:
+                session: { type: string }
+                revision: { type: integer, format: int64 }
+                action: { type: string, enum: [undo, redo, restore] }
+                id: { type: integer, format: int64, description: Required for restore }
+                assemblyFormat: { type: string, enum: [compact-v1] }
+      responses:
+        '200':
+          description: Complete assemblyInfo and tile version; current journal summary in X-HiCT-History.
+          content:
+            application/json:
+              schema: { type: object }
+        '409':
+          description: Stale session or revision. Fetch the journal and retry deliberately.
   /version:
     get:
       tags: [Info]
@@ -126,6 +183,26 @@ paths:
             text/html:
               schema:
                 type: string
+  /api/v1/assets/swagger-ui.css:
+    get:
+      tags: [Info]
+      summary: Bundled Swagger UI stylesheet
+      operationId: getSwaggerStylesheet
+      responses:
+        '200':
+          description: Local stylesheet
+        '304':
+          description: Asset is unchanged
+  /api/v1/assets/swagger-ui-bundle.js:
+    get:
+      tags: [Info]
+      summary: Bundled Swagger UI JavaScript
+      operationId: getSwaggerBundle
+      responses:
+        '200':
+          description: Local JavaScript bundle
+        '304':
+          description: Asset is unchanged
   /api/v1/openapi:
     get:
       tags: [Info]
@@ -315,6 +392,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpenProgressResponse'
+  /workspace/state:
+    post:
+      tags: [Files]
+      summary: Retain frontend workspace state for attachment to the active map
+      operationId: saveWorkspaceState
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, state, expectedVersion]
+              properties:
+                filename: { type: string }
+                expectedVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
+                state:
+                  type: object
+                  required: [version]
+                  properties:
+                    version: { type: integer, enum: [1] }
+                  additionalProperties: true
+      responses:
+        '200':
+          description: State retained in memory; returned by attach. Maximum serialized size is 1 MB.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  saved: { type: boolean }
+                  workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
+        '400':
+          description: Unsupported or oversized state
+        '409':
+          description: Active map session changed or another client saved newer workspace settings; attach again before saving.
   /attach:
     post:
       tags: [Files]
@@ -389,6 +501,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SecondarySourceStatus'
+  /session/snapshot:
+    post:
+      tags: [Session]
+      summary: Capture assembly and rendering state for session construction
+      description: Read-only internal snapshot, not a portable saved session. Optional fingerprinting reads matrix, FASTA and physical track contents. Assembly verification checks reconstruction. When all three verification options are enabled, validate the serialized resource snapshot (including view and scope references), then prepare both sources, tracks, linked FASTA aliases and rendering configuration together, checking fingerprints before and after preparation without publishing the candidate. Optional X-HiCT-History-Session and X-HiCT-History-Revision headers reject stale displayed assemblies.
+      operationId: getSessionSnapshot
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verifyTrackDefinitions:
+                  type: boolean
+                  default: false
+                  description: Prepare tracks in an isolated manager, preserving IDs, order and settings, and validate bounded rendering expressions and track references without silently substituting invalid values.
+                fingerprintFiles:
+                  type: boolean
+                  default: false
+                  description: Record the identity of matrix, linked FASTA and physical track files. By default (algorithm HICT-QUICK-1) this covers the size, the first and last 4 MiB and 16 spaced blocks, so it stays fast for multi-gigabyte files. Virtual weights tracks reference their fingerprinted map source.
+                fullFingerprints:
+                  type: boolean
+                  default: false
+                  description: With fingerprintFiles, hash every byte with SHA-256 instead. May take minutes for large inputs.
+                verifyAssemblyRoundTrip:
+                  type: boolean
+                  default: false
+                  description: Open independent candidates and verify AGP, assembly descriptors and metadata without publishing them.
+      responses:
+        '200':
+          description: Detached assembly and rendering snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshotVersion, assemblyVerified, filesFingerprinted, tracksVerified, primary, assemblySource, renderPipeline, tracks, workspace]
+                properties:
+                  snapshotVersion: { type: integer, enum: [1] }
+                  filesFingerprinted: { type: boolean }
+                  tracksVerified: { type: boolean }
+                  assemblyVerified: { type: boolean, description: Whether isolated candidate assembly reconstruction succeeded for all open sources. Does not verify source content fingerprints or complete session restoration. }
+                  primary: { $ref: '#/components/schemas/SessionSourceSnapshot' }
+                  secondary:
+                    nullable: true
+                    allOf:
+                      - $ref: '#/components/schemas/SessionSourceSnapshot'
+                  assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }
+                  renderPipeline: { type: object, additionalProperties: true }
+                  tracks: { type: array, items: { type: object, additionalProperties: true } }
+                  workspace: { type: object, additionalProperties: true }
+        '404': { description: No open map }
+        '409': { description: Displayed assembly revision is stale }
+  /session/restore:
+    post:
+      tags: [Session]
+      summary: Replace the live session with a saved snapshot
+      description: Accepts the body produced by /session/snapshot with fingerprintFiles enabled. The snapshot is validated, then every resource (both sources with their edited assemblies, linked FASTA files, tracks, processing graph and visualization options) is prepared in an isolated candidate and its files are checked before and after preparation. Only a complete candidate is published, in one step, and the previous resources are closed afterwards. Any failure leaves the current session unchanged. The response has the shape of /attach plus the restored assemblySource, renderPipeline, visualizationOptions and tracks.
+      operationId: restoreSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Restored session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [filename, fastaFilename, assemblySource, secondarySource, openFileResponse, renderPipeline, visualizationOptions, tracks]
+                properties:
+                  filename: { type: string }
+                  fastaFilename: { type: string }
+                  assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }
+                  secondarySource: { $ref: '#/components/schemas/SecondarySourceStatus' }
+                  workspaceVersion: { type: object, additionalProperties: true }
+                  workspaceState: { type: object, nullable: true, additionalProperties: true }
+                  openFileResponse: { type: object, additionalProperties: true }
+                  renderPipeline: { type: object, additionalProperties: true }
+                  visualizationOptions: { type: object, additionalProperties: true }
+                  tracks: { type: array, items: { type: object, additionalProperties: true } }
+        '400': { description: Malformed snapshot or a file whose identity changed }
   /secondary/set_assembly_source:
     post:
       tags: [Secondary source]
@@ -426,6 +624,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericMap'
+        '409':
+          description: A required secondary source or track is unavailable. The supplied visualization is rejected atomically.
   /get_visualization_options:
     post:
       tags: [Rendering]
@@ -553,6 +753,21 @@ paths:
           schema: { type: integer, format: int64 }
           description: Exact bp resolution. Optional alternative to `level`.
         - in: query
+          name: source
+          required: false
+          schema: { type: string, enum: [PRIMARY, SECONDARY] }
+          description: Request one source. An omitted source returns the composed tile.
+        - in: query
+          name: gridBpResolution
+          required: false
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: For a secondary tile, project native bins onto this primary assembly level.
+        - in: query
+          name: gridSampleFactor
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 64, default: 1 }
+          description: Subdivide each projected primary grid cell by this factor along each axis.
+        - in: query
           name: level
           required: false
           schema: { type: integer }
@@ -560,21 +775,25 @@ paths:
         - in: query
           name: tile_size
           required: false
-          schema: { type: integer, default: 256 }
+          schema: { type: integer, minimum: 1, maximum: 1024, default: 256 }
           description: Tile edge size for tile-based queries.
         - in: query
           name: rows
           required: false
-          schema: { type: integer }
+          schema: { type: integer, minimum: 1, maximum: 1024 }
           description: Height in pixels for PNG_BY_PIXELS.
         - in: query
           name: cols
           required: false
-          schema: { type: integer }
+          schema: { type: integer, minimum: 1, maximum: 1024 }
           description: Width in pixels for PNG_BY_PIXELS.
       responses:
         '200':
-          description: Tile payload
+          description: Tile payload. Cancelled work returns a transparent placeholder with x-hict-cancelled=true; clients must not cache or display it as a rendered map tile.
+          headers:
+            x-hict-cancelled:
+              description: True only when superseded work was cancelled.
+              schema: { type: boolean }
           content:
             application/json:
               schema:
@@ -583,6 +802,55 @@ paths:
               schema:
                 type: string
                 format: binary
+        '400':
+          description: Invalid tile dimensions or coordinates
+        '503':
+          description: The server queue is full. Retry the request shortly.
+  /matrix/statistics:
+    post:
+      tags: [Tiles]
+      summary: Exact finite extrema of a bounded numeric-pipeline block
+      description: |
+        First request metadataOnly to obtain the current revision and full visible-pixel
+        extent of the resolution. Then visit every 512 by 512 block using that revision.
+        Both triangles and implicit zeros are included; there is no sampling or float32
+        conversion. Partial edge blocks are clipped to the map. Non-finite values are
+        excluded from count and extrema. Any rendering/assembly invalidation cancels
+        the snapshot with HTTP 409. Statistics run on the export worker pool.
+      operationId: queryMatrixStatistics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bpResolution]
+              properties:
+                bpResolution: { type: integer, format: int64, minimum: 1 }
+                metadataOnly: { type: boolean, default: false }
+                revision: { type: string }
+                startRowPx: { type: integer, format: int64, minimum: 0 }
+                startColPx: { type: integer, format: int64, minimum: 0 }
+                expression: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Snapshot metadata or exact block extrema
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision, size]
+                properties:
+                  revision: { type: string }
+                  size: { type: integer, format: int64 }
+                  rows: { type: integer }
+                  cols: { type: integer }
+                  count: { type: integer, format: int64 }
+                  min: { type: number, format: double, nullable: true }
+                  max: { type: number, format: double, nullable: true }
+        '409':
+          description: Snapshot invalidated; restart the scan
+
   /matrix/query:
     post:
       tags: [Tiles]
@@ -624,6 +892,9 @@ paths:
         '200':
           description: Matrix payload
           headers:
+            x-hict-cancelled:
+              description: True when superseded work was cancelled; the empty payload is not a zero-valued matrix.
+              schema: { type: boolean }
             x-hict-rows:
               schema: { type: integer }
             x-hict-cols:
@@ -705,6 +976,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /unscaffold_all:
+    post:
+      tags: [Assembly]
+      summary: Remove all scaffolds, leaving contigs unplaced
+      description: Undoable session edit. Ordinary ungrouping creates singleton scaffolds instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assemblyFormat:
+                  type: string
+                  enum: [compact-v1]
+      responses:
+        '200':
+          description: Updated assembly; history guards and response header apply.
+        '409':
+          description: Stale assembly revision.
   /ungroup_contigs_from_scaffold:
     post:
       tags: [Scaffolding]
@@ -809,6 +1100,13 @@ paths:
     post:
       tags: [Files]
       summary: Apply AGP to opened assembly
+      description: >-
+        Supports exact source intervals, including partial contigs. Contact bins are
+        preserved and assigned to the piece containing the bin start in the original
+        component. Import reports splitting and unknown orientations. If sequence is
+        omitted or explicitly unscaffolded (a single component object named unscaffolded_*)
+        and no policy was supplied, returns requiresMissingComponentsChoice
+        and importReport without changing the assembly; retry with an explicit policy.
       operationId: loadAgp
       requestBody:
         required: true
@@ -941,6 +1239,228 @@ paths:
       responses:
         '200':
           description: Track summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/catalog:
+    post:
+      tags: [Files]
+      summary: List the example datasets
+      description: >
+        Sections, examples (title, what it shows, citations, files with sizes, attribution, opening
+        recipe, provenance) and any problems found in catalog files, merged from the bundled catalog and
+        `<data>/examples/catalogs/*.json`. A local file that is invalid is reported with its file name and
+        the JSON pointer of the first problem and is not used. See `examples/hict-examples.schema.json`.
+      operationId: listExamples
+      responses:
+        '200':
+          description: Merged catalog
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/download/start:
+    post:
+      tags: [Files]
+      summary: Download the files of one example in the background
+      description: >
+        Takes an example id only. The server resolves addresses, names, sizes and hashes from its own
+        catalog, accepts https addresses that resolve to public hosts (each redirect is checked again),
+        resumes partial files with Range and If-Range, verifies length and sha256 when the catalog has
+        them, writes to `<data>/examples/<id>/` through a temporary name, and records a manifest with
+        the attribution. Optional files may fail. Nothing downloaded is executed.
+      operationId: startExampleDownload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exampleId]
+              properties:
+                exampleId: { type: string }
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '404':
+          description: Unknown example
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: Another example is being downloaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/download/status:
+    post:
+      tags: [Files]
+      summary: Status of the example download
+      operationId: exampleDownloadStatus
+      responses:
+        '200':
+          description: state, progress, bytes, current file, finished files, skipped optional files, error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /examples/download/cancel:
+    post:
+      tags: [Files]
+      summary: Cancel the example download
+      description: Partial files are kept so the download can resume.
+      operationId: cancelExampleDownload
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /fasta_only/start:
+    post:
+      tags: [Files]
+      summary: Build an assembly from a FASTA file alone (no contact data)
+      description: >
+        Starts one background job that reads the FASTA once and writes `fasta-only/<name>.hict.hdf5` in
+        the data directory: one contig per record, a declared SEQUENCE_ONLY source with no contacts, and
+        when `splitAtN` is set an AGP (`.agp`) that splits records at runs of at least `minNRun` N
+        (case-insensitive, default 100) and keeps the true gap lengths. Empty and all-N records are
+        skipped and listed in the warnings; duplicate names are refused. Cancelling or failing leaves
+        no output that looks finished. Open the result with the FASTA linked, then apply the AGP.
+      operationId: startFastaOnly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fastaFilename]
+              properties:
+                fastaFilename: { type: string, description: Path of the plain or gzip FASTA relative to the data directory }
+                splitAtN: { type: boolean, default: false }
+                minNRun: { type: integer, minimum: 1, maximum: 1000000, default: 100 }
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: Another FASTA is already being read
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /fasta_only/status:
+    post:
+      tags: [Files]
+      summary: Status of the FASTA-only job
+      description: >
+        state (IDLE, RUNNING, READY, FAILED, CANCELLED), progress, message, error and on READY the
+        outputFilename, agpFilename (null when nothing was split), fastaFilename, contig count, total
+        bases, warnings and whether an existing output was reused.
+      operationId: fastaOnlyStatus
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /fasta_only/cancel:
+    post:
+      tags: [Files]
+      summary: Cancel the FASTA-only job
+      operationId: cancelFastaOnly
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/coverage/prepare:
+    post:
+      tags: [Normalization]
+      summary: Start computing square-root coverage vectors for every open source
+      description: >
+        Starts one background job that reads the stored contacts of every resolution twice and builds
+        square-root coverage weights over the whole opened map. Vectors are published only when
+        all resolutions of all open sources are done. Follow a running job through the status endpoint.
+      operationId: prepareCoverageNormalization
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: No map is open, or a preparation is already running
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/coverage/status:
+    post:
+      tags: [Normalization]
+      summary: Status of the square-root coverage job
+      description: >
+        Returns state (IDLE, RUNNING, READY, FAILED, CANCELLED), progress 0..1, message, algorithm version,
+        error, whether vectors are prepared for every open source, the weights mode of the primary source
+        (FILE or SQRT_COVERAGE), whether every open source uses the same mode (consistent) and an
+        estimate of the memory the vectors take.
+      operationId: coverageNormalizationStatus
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/coverage/cancel:
+    post:
+      tags: [Normalization]
+      summary: Cancel the running square-root coverage job
+      description: Nothing is published and the maps are unchanged. Cancelling when no job runs is not an error.
+      operationId: cancelCoverageNormalization
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+  /normalization/weights:
+    post:
+      tags: [Normalization]
+      summary: Choose which per-bin weights tiles use when weights are applied
+      description: >
+        mode FILE uses the weights stored in the file. mode SQRT_COVERAGE uses the prepared coverage
+        vectors and answers 409 until every open source has them. All open sources switch together and
+        the tile version advances. This does not turn weights on or off; the render options do.
+      operationId: selectNormalizationWeights
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [FILE, SQRT_COVERAGE] }
+      responses:
+        '200':
+          description: The mode now in use and the new tile version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '400':
+          description: Unknown mode
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409':
+          description: Coverage is not prepared, or no map is open
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
@@ -1167,6 +1687,58 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List background jobs in this server session
+      operationId: listBackgroundJobs
+      responses:
+        '200':
+          description: Existing service snapshots ordered by creation time
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BackgroundJob' }
+  /jobs/cancel:
+    post:
+      tags: [Jobs]
+      summary: Cancel one background job
+      operationId: cancelBackgroundJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string, description: Service-prefixed ID from GET /jobs }
+      responses:
+        '200':
+          description: Cancellation requested
+        '400':
+          description: Invalid ID
+        '404':
+          description: Job no longer available
+  /dotplot/jobs/{jobId}/download:
+    get:
+      tags: [Conversion]
+      summary: Download a finished legacy dotplot result
+      operationId: downloadDotplotResult
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Generated matrix
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404':
+          description: Result unavailable
   /convert/jobs:
     post:
       tags: [Conversion]
@@ -1301,6 +1873,243 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /sequence/alignment_detail:
+    post:
+      tags: [Sequence analysis]
+      summary: Start or inspect exact alignment detail for two bounded sequence intervals
+      operationId: sequenceAlignmentDetail
+      description: Runs the bundled aligner with extended CIGAR output. Coordinates are zero-based and half-open. A finished result reports an empty segment list when no alignment is found.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [jobId]
+                  properties:
+                    jobId: { type: string }
+                - type: object
+                  required: [rowStart, rowEnd, columnStart, columnEnd]
+                  properties:
+                    rowStart: { type: integer, format: int64, minimum: 0 }
+                    rowEnd: { type: integer, format: int64, minimum: 1 }
+                    columnStart: { type: integer, format: int64, minimum: 0 }
+                    columnEnd: { type: integer, format: int64, minimum: 1 }
+                    includeGaps: { type: boolean, default: false }
+                  description: Each interval contains at most 4096 bases.
+      responses:
+        '200':
+          description: Terminal alignment job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlignmentDetailResponse' }
+        '202':
+          description: Active alignment job status. Cancel through sequence/jobs/{jobId}/stop.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlignmentDetailResponse' }
+        '400': { description: Invalid sequence intervals }
+        '404': { description: Alignment job was not found or has expired }
+        '409': { description: Missing map or FASTA, or stale assembly revision }
+        '503': { description: Sequence analysis queue is full }
+  /sequence/region:
+    post:
+      tags: [Sequence analysis]
+      summary: Read up to 4096 linked FASTA bases in current gap-free assembly coordinates
+      operationId: readAssemblySequenceRegion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [startBp, endBp]
+              properties:
+                startBp: { type: integer, format: int64, minimum: 0 }
+                endBp: { type: integer, format: int64, description: Exclusive end }
+      responses:
+        '200':
+          description: Linked status and, when linked, the requested oriented sequence
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  linked: { type: boolean }
+                  startBp: { type: integer, format: int64 }
+                  sequence: { type: string, maxLength: 4096 }
+        '400':
+          description: Invalid or oversized region
+  /sequence/settings:
+    post:
+      tags: [Sequence analysis]
+      summary: Read or set the default gap for new scaffolds and concatenated sequence analysis
+      operationId: sequenceSettings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkBlast: { type: boolean, default: false, description: "Resolve local BLAST availability; may extract native tools on first use" }
+                gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
+      responses:
+        '200': {description: Current defaults; imported AGP gaps and existing scaffolds remain unchanged}
+        '400': {description: Invalid gap length}
+  /sequence/cleanup:
+    post:
+      tags: [Sequence analysis]
+      summary: Reclaim superseded managed overlay matrices after successful replacement and detach
+      operationId: cleanupSequenceOverlays
+      responses:
+        '200': {description: Number of removed matrices; original data and provenance retained}
+  /sequence/search/jobs:
+    post:
+      tags: [Conversion]
+      summary: Search a frozen active-assembly sequence and create a source-anchored BED track
+      operationId: startSequenceSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [queries, scope, mode, bothStrands]
+              properties:
+                queries: { type: string, description: 'FASTA records or one DNA sequence per line' }
+                scope: { type: string, enum: [assembly, selection] }
+                mode: { type: string, enum: [exact, substitutions, blast] }
+                bothStrands: { type: boolean }
+                degenerate: { type: boolean, default: false }
+                mismatches: { type: integer, minimum: 0, default: 1 }
+                threads: { type: integer, default: -1 }
+                forwardColor: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', default: '#dc2626' }
+                reverseColor: { type: string, pattern: '^#[0-9A-Fa-f]{6}$', default: '#2563eb' }
+                outputFilename: { type: string, description: 'Optional durable .bed path relative to DATA_DIR; managed sidecar is used when omitted' }
+                overwrite: { type: boolean, default: false }
+                gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
+                evalue: {type: number, exclusiveMinimum: 0, default: 10}
+                identity: {type: number, minimum: 0, maximum: 100, default: 70}
+                coverage: {type: number, minimum: 0, maximum: 100, default: 50}
+                maxTargets: {type: integer, minimum: 1, maximum: 1000000, default: 500}
+                startBp: { type: integer, format: int64, minimum: 0, description: 'Selection start, zero-based and inclusive' }
+                endBp: { type: integer, format: int64, minimum: 1, description: 'Selection end, exclusive' }
+      responses:
+        '202':
+          description: Submitted job with captured sequence fingerprint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '400': { description: 'Invalid query, scope or matching settings' }
+        '409': { description: 'No open map or linked FASTA' }
+        '429': { description: 'Analysis queue full' }
+  /sequence/moddotplot/jobs:
+    post:
+      tags: [Sequence analysis]
+      summary: Generate or accumulate a source-anchored ModDotPlot overlay
+      operationId: startModDotPlot
+      description: Captures the active assembly, evaluates identity at each selected map resolution, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, mergeCompatible, resolutions]
+              properties:
+                scope: {type: string, enum: [assembly, selection]}
+                mergeCompatible: {type: boolean}
+                gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
+                resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
+                k: {type: integer, default: 21, minimum: 1, maximum: 65535}
+                identity: {type: number, default: 80, minimum: 0, maximum: 100}
+                sketchSize: {type: integer, default: 1000, minimum: 1, maximum: 1000000}
+                delta: {type: number, default: 0.5, minimum: 0, maximum: 1}
+                threads: {type: integer, minimum: -1, maximum: 256, default: -1, description: '-1 all allocated logical CPUs; 0 adaptive auto; 1 single-threaded; positive exact cap'}
+                outputFilename: {type: string, description: 'Optional durable .hict.hdf5 path relative to DATA_DIR'}
+                overwrite: {type: boolean, default: false}
+                region:
+                  type: object
+                  required: [rowStart, rowEnd, columnStart, columnEnd]
+                  properties:
+                    rowStart: {type: integer, format: int64, minimum: 0}
+                    rowEnd: {type: integer, format: int64, minimum: 1}
+                    columnStart: {type: integer, format: int64, minimum: 0}
+                    columnEnd: {type: integer, format: int64, minimum: 1}
+      responses:
+        '202': {description: Analysis queued; poll sequence/jobs/list for progress and outputFile}
+        '400': {description: Invalid parameters or selection}
+        '409': {description: Map or linked FASTA unavailable, or stale assembly revision}
+        '413': {description: Overlay estimate exceeds the memory or disk budget. Select a smaller region or fewer resolutions.}
+        '429': {description: Analysis queue is full}
+  /sequence/dotplot/jobs:
+    post:
+      tags: [Sequence analysis]
+      summary: Generate or accumulate a selected alignment dotplot
+      operationId: startAssemblyDotPlot
+      description: Captures the active assembly, aligns the selected sequence axes using the configured minimap2/mm2-plus and samples PAF alignments into source bins, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, mergeCompatible, resolutions]
+              properties:
+                scope: {type: string, enum: [assembly, selection]}
+                mergeCompatible: {type: boolean}
+                gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
+                resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
+                k: {type: integer, default: 15, minimum: 1, maximum: 28}
+                window: {type: integer, default: 10, minimum: 1, maximum: 255}
+                chainScore: {type: integer, default: 40, minimum: 1, maximum: 1000000}
+                sampleBp: {type: integer, default: 100, minimum: 1, maximum: 1000000}
+                minAlignmentLength: {type: integer, default: 100, minimum: 1, maximum: 100000000}
+                threads: {type: integer, default: -1, minimum: -1, maximum: 256, description: '-1 all allocated logical CPUs; 0 adaptive auto; positive exact cap'}
+                outputFilename: {type: string, description: 'Optional durable .hict.hdf5 path relative to DATA_DIR'}
+                overwrite: {type: boolean, default: false}
+                region:
+                  type: object
+                  required: [rowStart, rowEnd, columnStart, columnEnd]
+                  properties:
+                    rowStart: {type: integer, format: int64, minimum: 0}
+                    rowEnd: {type: integer, format: int64, minimum: 1}
+                    columnStart: {type: integer, format: int64, minimum: 0}
+                    columnEnd: {type: integer, format: int64, minimum: 1}
+      responses:
+        '202': {description: Analysis queued; poll sequence/jobs/list for progress and outputFile}
+        '400': {description: Invalid parameters or selection}
+        '409': {description: Map or linked FASTA unavailable, or stale assembly revision}
+        '413': {description: Overlay estimate exceeds the memory or disk budget. Select a smaller region or fewer resolutions.}
+        '429': {description: Analysis queue is full}
+  /sequence/jobs/list:
+    post:
+      tags: [Conversion]
+      summary: List sequence analysis jobs with progress, output paths and recent logs
+      operationId: listSequenceAnalysisJobs
+      responses:
+        '200':
+          description: Jobs in the current server session; full provenance is retained beside each result
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GenericMap' }
+  /sequence/jobs/{jobId}/stop:
+    post:
+      tags: [Conversion]
+      summary: Cancel a sequence job and its child process
+      operationId: stopSequenceAnalysisJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Job status; incomplete results are not attached as tracks
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '404': { description: 'Unknown job' }
   /dotplot/jobs:
     post:
       tags: [Conversion]
@@ -1377,6 +2186,32 @@ components:
             $ref: '#/components/schemas/EmptyObject'
           example: {}
   schemas:
+    BackgroundJob:
+      type: object
+      required: [id, kind, state, canCancel, outputs]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        state: { type: string, enum: [submitted, running, finished, failed, cancelled] }
+        canCancel: { type: boolean }
+        progress: { type: number, nullable: true, minimum: 0, maximum: 1 }
+        createdAtMs: { type: integer, format: int64, nullable: true }
+        startedAtMs: { type: integer, format: int64, nullable: true }
+        finishedAtMs: { type: integer, format: int64, nullable: true }
+        message: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        outputs:
+          type: array
+          items:
+            type: object
+            required: [filename, action]
+            properties:
+              filename: { type: string }
+              action: { type: string, enum: [open_map, download, open_tracks, attach_identity, attach_dotplot, fasta_only, example] }
+              fastaFilename: { type: string, nullable: true }
+              agpFilename: { type: string, nullable: true }
+              mapFilename: { type: string, nullable: true }
+
     EmptyObject:
       type: object
       additionalProperties: false
@@ -1498,16 +2333,24 @@ components:
         filename: { type: string }
         fastaFilename: { type: string }
       required: [filename]
+    WorkspaceVersion:
+      type: object
+      required: [session, revision]
+      properties:
+        session: { type: string, format: uuid }
+        revision: { type: integer, format: int64, minimum: 0 }
     OpenFileResponse:
       type: object
       properties:
         status: { type: string }
         dtype: { type: string }
         resolutions: { type: array, items: { type: integer, format: int64 } }
-        resolutionScales: { type: array, items: { type: number } }
-        denseBlockSize: { type: integer }
+        pixelResolutions: { type: array, items: { type: number } }
+        tileSize: { type: integer }
         assemblyInfo: { type: object, additionalProperties: true }
-        matrixSizeBins: { type: array, items: { type: integer } }
+        matrixSizesBins: { type: array, items: { type: integer } }
+        capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
+        workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
       required: [status, resolutions, assemblyInfo]
     OpenProgressResponse:
       type: object
@@ -1521,6 +2364,8 @@ components:
         filename: { type: string }
         fastaFilename: { type: string }
         openFileResponse: { $ref: '#/components/schemas/OpenFileResponse' }
+        workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
+        workspaceState: { type: object, nullable: true, additionalProperties: true }
 
     OpenSecondaryRequest:
       type: object
@@ -1535,9 +2380,52 @@ components:
           type: string
           enum: [PRIMARY, SECONDARY]
       required: [assemblySource]
+    SessionContentFingerprint:
+      type: object
+      required: [algorithm, sizeBytes, sha256]
+      properties:
+        algorithm: { type: string, enum: [SHA-256] }
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    SessionSourceSnapshot:
+      type: object
+      required: [filename, fastaFilename, agp, agpSha256, assemblyInfo, contigNameOverrides, scaffoldNameOverrides, capabilities]
+      properties:
+        filename: { type: string }
+        fastaFilename: { type: string }
+        agp: { type: string }
+        fileFingerprint: { $ref: '#/components/schemas/SessionContentFingerprint' }
+        fastaFingerprint: { $ref: '#/components/schemas/SessionContentFingerprint' }
+        agpSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        assemblyInfo: { type: object, additionalProperties: true }
+        contigNameOverrides: { type: object, additionalProperties: { type: string } }
+        scaffoldNameOverrides: { type: object, additionalProperties: { type: string } }
+        splitEdits:
+          type: array
+          description: Native split operations in edit order, used to recover contact-bin ownership before applying AGP.
+          items:
+            type: object
+            required: [parentId, sourceName, sourceOffsetBp, parentLengthBp, reversed, splitOffsetBp, leftId, rightId]
+            properties:
+              parentId: { type: integer, format: int32, minimum: 0 }
+              sourceName: { type: string, minLength: 1 }
+              sourceOffsetBp: { type: integer, format: int32, minimum: 0 }
+              parentLengthBp: { type: integer, format: int64, minimum: 2 }
+              reversed: { type: boolean }
+              splitOffsetBp: { type: integer, format: int64, minimum: 1 }
+              leftId: { type: integer, format: int32, minimum: 1 }
+              rightId: { type: integer, format: int32, minimum: 2 }
+        capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
     SecondarySourceStatus:
       type: object
       properties:
+        assemblyInfo:
+          description: Synchronized assembly in the primary map resolution grid after a successful secondary open. Absent from status-only and confirmation responses.
+          type: object
+          required: [contigDescriptors, scaffoldDescriptors]
+          properties:
+            contigDescriptors: { type: array, items: { type: object, additionalProperties: true } }
+            scaffoldDescriptors: { type: array, items: { type: object, additionalProperties: true } }
         attached: { type: boolean }
         filename: { type: string }
         assemblySource: { type: string, enum: [PRIMARY, SECONDARY] }
@@ -1548,12 +2436,66 @@ components:
           items: { type: string }
         compatibility:
           $ref: '#/components/schemas/SecondaryCompatibility'
+        capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
       required: [attached, filename, assemblySource]
+    SourceCapabilities:
+      type: object
+      description: Declared source semantics. Missing or unknown metadata must not be inferred from filenames or matrix values. Additive since schema version 1.
+      required: [schemaVersion, units, scoreScale, contactDataState, resolutions, importedWeightResolutions, weightMetadataComplete, contactNormalization, importedWeights]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        units: { type: string, enum: [CONTACT_COUNT, ALIGNMENT_SAMPLE_COUNT, ALIGNMENT_PRESENCE, IDENTITY_PERCENT, SEQUENCE_ONLY, UNKNOWN] }
+        scoreScale: { type: number, minimum: 0, exclusiveMinimum: true }
+        contactDataState: { type: string, enum: [PRESENT, ABSENT, UNKNOWN] }
+        resolutions: { type: array, items: { type: integer, format: int64, minimum: 1 } }
+        importedWeightResolutions: { type: array, items: { type: integer, format: int64, minimum: 1 } }
+        weightMetadataComplete: { type: boolean }
+        contactNormalization: { $ref: '#/components/schemas/CapabilityAvailability' }
+        importedWeights: { $ref: '#/components/schemas/CapabilityAvailability' }
+    CapabilityAvailability:
+      type: object
+      required: [state, reasonCode, reason]
+      properties:
+        state: { type: string, enum: [AVAILABLE, UNAVAILABLE, UNKNOWN] }
+        reasonCode: { type: string }
+        reason: { type: string }
+    AlignmentDetailResponse:
+      type: object
+      required: [jobId, kind, status]
+      properties:
+        jobId: { type: string }
+        kind: { type: string, enum: [alignment_detail] }
+        status: { type: string, enum: [submitted, running, finished, failed, cancelled] }
+        error: { type: string, nullable: true }
+        result:
+          type: object
+          required: [coordinateSystem, segments, alignmentCount]
+          properties:
+            coordinateSystem: { type: string, enum: [ASSEMBLY_BP, PADDED_SEQUENCE] }
+            alignmentCount: { type: integer, minimum: 0 }
+            message: { type: string, nullable: true }
+            segments:
+              type: array
+              maxItems: 4096
+              items:
+                type: object
+                required: [rowStart, rowEnd, columnStart, columnEnd, operation, reverse, alignment]
+                properties:
+                  rowStart: { type: integer, format: int64, minimum: 0 }
+                  rowEnd: { type: integer, format: int64, minimum: 0 }
+                  columnStart: { type: integer, format: int64, minimum: 0 }
+                  columnEnd: { type: integer, format: int64, minimum: 0 }
+                  operation: { type: string, enum: [MATCH, SUBSTITUTION, INSERTION, DELETION, AMBIGUOUS] }
+                  reverse: { type: boolean }
+                  alignment: { type: integer, minimum: 0 }
     SecondaryCompatibility:
       type: object
       properties:
         sameResolutions: { type: boolean }
         sameMatrixSizes: { type: boolean }
+        sharedReference:
+          type: boolean
+          description: The original sources declare the same named reference intervals.
         exactMatch: { type: boolean }
         primaryMaxBins: { type: integer, format: int64 }
         secondaryMaxBins: { type: integer, format: int64 }
@@ -1575,6 +2517,10 @@ components:
           type: boolean
           default: false
           description: Leave the active custom render pipeline untouched while updating stored visualization options.
+        renderPipeline:
+          description: Publish this pipeline together with the visualization options.
+          allOf:
+            - $ref: '#/components/schemas/RenderPipelineConfig'
     ExpectedProfileViewportRequest:
       type: object
       required: [bpResolution, startRowPx, endRowPx, startColPx, endColPx]
@@ -1591,6 +2537,9 @@ components:
     TileWithRangesResponse:
       type: object
       properties:
+        cancelled:
+          type: boolean
+          default: false
         image:
           type: string
           description: data:image/png;base64,...
@@ -1607,6 +2556,10 @@ components:
     MatrixQueryRequest:
       type: object
       properties:
+        expression:
+          type: object
+          additionalProperties: true
+          description: Optional numeric rendering expression for PIPELINE_SIGNAL diagnostics; does not alter the active pipeline.
         bpResolution:
           type: integer
           format: int64
@@ -1615,6 +2568,7 @@ components:
           type: string
           enum: [PIXELS, BINS, BP]
           default: PIXELS
+          description: BINS includes hidden contigs and retains the requested rectangle shape. PIXELS excludes hidden contigs; BP is projected into visible pixels.
         units:
           type: string
           enum: [PIXELS, BINS, BP]
@@ -1696,6 +2650,9 @@ components:
     MatrixQueryJsonResponse:
       type: object
       properties:
+        cancelled:
+          type: boolean
+          default: false
         rows: { type: integer }
         cols: { type: integer }
         dtype: { type: string, enum: [float64, int64] }
@@ -1758,6 +2715,15 @@ components:
     GetFastaForAssemblyRequest:
       type: object
       properties:
+        preserveImportedGaps:
+          type: boolean
+          default: false
+          description: Preserve imported gap types, lengths and evidence at unchanged oriented adjacencies. Overrides defaultSpacerLength; enabled by the WebUI.
+        defaultSpacerLength:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Output gap length in bp. Defaults to HICT_EXPORT_GAP_LENGTH_BP (1000 if unset). Zero joins components without gaps.
         source:
           type: string
           enum: [PRIMARY, SECONDARY]
@@ -1778,10 +2744,23 @@ components:
     GetAgpRequest:
       type: object
       properties:
-        defaultSpacerLength: { type: integer, format: int64, default: 1000 }
+        preserveImportedGaps:
+          type: boolean
+          default: false
+          description: Preserve imported gap types, lengths and evidence at unchanged oriented adjacencies. Overrides defaultSpacerLength; enabled by the WebUI.
+        defaultSpacerLength:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Output gap length in bp. Defaults to HICT_EXPORT_GAP_LENGTH_BP (1000 if unset). Zero omits gap rows.
     LoadAgpRequest:
       type: object
       properties:
+        missingComponentsPolicy:
+          type: string
+          enum: [REQUIRE_CHOICE, APPEND_UNPLACED, EXCLUDE, SCAFFOLDED_ONLY]
+          default: REQUIRE_CHOICE
+          description: APPEND_UNPLACED includes every region. EXCLUDE retains every AGP component but omits uncovered source intervals (legacy behavior). SCAFFOLDED_ONLY also excludes explicit unscaffolded_* singleton objects from the active matrix and FASTA. REQUIRE_CHOICE previews these counts without mutation. Ordinary single-component scaffolds remain scaffolded.
         agpFilename:
           type: string
           description: Optional AGP filename relative to DATA_DIR.
@@ -1971,7 +2950,7 @@ components:
         balanceExportedCoolers:
           type: boolean
           default: true
-        parallelism: { type: integer }
+        parallelism: { type: integer, default: -1, minimum: -1, description: "-1 or 0 uses server CPU/Slurm allocation and HICT_CONVERSION_THREADS." }
       required: [filename]
     StartBatchConversionRequest:
       type: object
@@ -1980,7 +2959,7 @@ components:
           type: array
           items: { type: string }
         parallelJobs: { type: integer, default: 1 }
-        parallelism: { type: integer }
+        parallelism: { type: integer, default: -1, minimum: -1, description: "-1 or 0 uses server CPU/Slurm allocation and HICT_CONVERSION_THREADS." }
         overwrite: { type: boolean, default: false }
         resolutions: { type: string }
         compression: { type: integer, default: 6 }
@@ -2059,8 +3038,14 @@ components:
           default: 0
         alignmentThreads:
           type: integer
+          default: -1
+          minimum: -1
+          description: "-1 or 0 uses server CPU/Slurm allocation and HICT_ALIGNMENT_THREADS."
         conversionThreads:
           type: integer
+          default: -1
+          minimum: -1
+          description: "-1 or 0 uses server CPU/Slurm allocation and HICT_CONVERSION_THREADS."
         overwrite:
           type: boolean
           default: false

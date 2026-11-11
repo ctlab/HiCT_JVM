@@ -1,5 +1,11 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
+import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
+
+import ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts;
+
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
@@ -24,7 +30,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,11 +48,13 @@ import java.util.regex.Pattern;
 
 @RequiredArgsConstructor
 @Slf4j
-public class ConversionHandlersHolder extends HandlersHolder {
+public class ConversionHandlersHolder extends HandlersHolder implements AutoCloseable {
 
     private final Vertx vertx;
+    public static final String UPLOAD_DIRECTORY_NAME = ".hict-uploads";
     private static final long MAX_UPLOAD_BYTES = 2L * 1024 * 1024 * 1024;
     private static final long JOB_TTL_MS = 60 * 60 * 1000;
+    private static final int MAX_CONVERSION_LOG_LINES = 1_000;
     private static final Pattern STAGE_PROGRESS_PATTERN = Pattern.compile(
       "HICT_STAGE stage=(\\S+) progress=([0-9.]+) overall=([0-9.]+) detail=(.*)"
     );
@@ -61,6 +71,37 @@ public class ConversionHandlersHolder extends HandlersHolder {
 
     private final ConcurrentHashMap<String, ConversionJob> jobs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConversionJobGroup> groups = new ConcurrentHashMap<>();
+
+    public List<BackgroundJob> backgroundJobs() {
+        return jobs.values().stream().map(job -> {
+            final boolean opensMap = job.dataDirectory != null && job.outputPath.startsWith(job.dataDirectory)
+              && job.outputPath.getFileName().toString().endsWith(".hict.hdf5");
+            final var outputs = "finished".equals(job.status)
+              ? List.of(new BackgroundJob.Output(
+                  opensMap ? toClientFilename(job.outputPath, job.dataDirectory) : "/convert/download/" + job.jobId,
+                  opensMap ? "open_map" : "download", null))
+              : List.<BackgroundJob.Output>of();
+            return new BackgroundJob(job.jobId, "conversion", job.status,
+              job.overallProgress, job.createdAtMs, job.startedAtMs, job.finishedAtMs,
+              job.currentStageLabel, job.error, outputs);
+        }).toList();
+    }
+
+    public boolean cancelBackgroundJob(String id) {
+        final var job = jobs.get(id);
+        if (job == null) return false;
+        job.requestCancel();
+        return true;
+    }
+
+    @Override
+    public void close() {
+        jobs.values().forEach(ConversionJob::requestCancel);
+        groups.values().forEach(group -> group.executor.shutdownNow());
+        jobs.values().stream().filter(job -> job.workerThread == null).forEach(job -> {
+            if (job.deleteSourceOnCleanup) deleteTemporaryFile(job.sourcePath);
+        });
+    }
     private final ExternalToolchainManager toolchainManager = new ExternalToolchainManager();
     private final HictkConversionPipeline hictkConversionPipeline = new HictkConversionPipeline(this.toolchainManager);
     private final HictToMcoolExportPipeline hictToMcoolExportPipeline = new HictToMcoolExportPipeline(this.toolchainManager);
@@ -111,19 +152,22 @@ public class ConversionHandlersHolder extends HandlersHolder {
                 RequestTaskScheduler.CancellationDomain.EXPORT,
                 () -> {
                     cleanupOldJobs();
+                    Path sourcePath = null;
+                    Path outputPath = null;
+                    ConversionJob job = null;
+                    boolean submitted = false;
                     try {
                         final var upload = ctx.fileUploads().stream()
                             .findFirst()
                             .orElseThrow(() -> new IllegalArgumentException("No file uploaded"));
-                        final var sourcePath = Path.of(upload.uploadedFileName());
-
-                        if (Files.size(sourcePath) > MAX_UPLOAD_BYTES) {
-                            Files.deleteIfExists(sourcePath);
+                        final var uploadPath = Path.of(upload.uploadedFileName());
+                        if (Files.size(uploadPath) > MAX_UPLOAD_BYTES) {
                             throw new IllegalArgumentException("Uploaded file is too large");
                         }
+                        final var originalName = Path.of(upload.fileName()).getFileName();
+                        if (originalName == null) throw new IllegalArgumentException("Uploaded file has no name");
                         final var req = ctx.request();
-                        final var direction = ConversionDirection.fromRequestOrSource(req.getParam("direction"), sourcePath);
-                        final var outputPath = Files.createTempFile("hict-converter-out-", direction.outputExtension());
+                        final var direction = ConversionDirection.fromRequestOrSource(req.getParam("direction"), originalName);
 
                         final var resolutionCsv = req.getParam("resolutions");
                         final var resolutions = parseResolutions(resolutionCsv);
@@ -153,6 +197,13 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var agpPath = useAgp
                           ? resolveOptionalAssemblyPath(dataDirectory, agpPathRaw).toString()
                           : ConversionOptions.NO_AGP;
+                        final var uploadDirectory = Files.createDirectories(dataDirectory.resolve(UPLOAD_DIRECTORY_NAME));
+                        final String filename = originalName.toString();
+                        final String suffix = filename.substring(Math.max(0, filename.length() - 64))
+                          .replaceAll("[^A-Za-z0-9._-]", "_");
+                        sourcePath = Files.createTempFile(uploadDirectory, "input-", "-" + suffix);
+                        Files.move(uploadPath, sourcePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        outputPath = Files.createTempFile(uploadDirectory, "output-", direction.outputExtension());
                         final var options = new ConversionOptions(
                             sourcePath,
                             outputPath,
@@ -170,11 +221,18 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             exportMode
                         );
 
-                        final var job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true, HictkLoadOptions.EMPTY);
-                        submitJob(job, options, ensureGroup("upload", 1));
+                        job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true, HictkLoadOptions.EMPTY);
+                        submitJob(job, options, ensureGroup(job.jobId, 1));
+                        submitted = true;
                         return new ConversionSubmitResponseDTO("submitted", job.jobId);
                     } catch (IOException e) {
-                        throw new RuntimeException(e);
+                        throw new java.io.UncheckedIOException(e);
+                    } finally {
+                        if (!submitted) {
+                            if (job != null) jobs.remove(job.jobId, job);
+                            deleteTemporaryFile(sourcePath);
+                            deleteTemporaryFile(outputPath);
+                        }
                     }
                 },
                 response -> ctx.response().end(Json.encode(response)),
@@ -314,6 +372,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     final ConversionJob job;
                     try {
                         job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false, loadOptions);
+                        job.overwrite = overwrite;
                     } catch (IOException e) {
                         throw new RuntimeException("Failed to create conversion job", e);
                     }
@@ -385,6 +444,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final var assemblyPathForOptions = assemblyPath == null
                           ? ConversionOptions.NO_AGP
                           : assemblyPath.toString();
+                        final var applyAgpBeforeExport = direction == ConversionDirection.HICT_TO_MCOOL && assemblyPath != null;
                         final var loadOptions = parseHictkLoadOptions(dataDirectory, requestJson);
                         final var options = new ConversionOptions(
                             sourcePath,
@@ -394,7 +454,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                             compression,
                             compressionAlgorithm,
                             assemblyPathForOptions,
-                            false,
+                            applyAgpBeforeExport,
                             parallelism,
                             exportAllResolutions,
                             buildResolutionPyramid,
@@ -405,6 +465,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                         final ConversionJob job;
                         try {
                             job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false, loadOptions);
+                        job.overwrite = overwrite;
                         } catch (IOException e) {
                             throw new RuntimeException("Failed to create conversion job for " + filename, e);
                         }
@@ -563,21 +624,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
     }
 
     private static int defaultConversionParallelism() {
-        final var configured = firstNonBlank(
-          System.getProperty("hict.conversion.threads"),
-          System.getenv("HICT_CONVERSION_THREADS"),
-          System.getenv("HICT_CONVERSION_PARALLELISM")
-        );
-        if (configured != null) {
-            try {
-                final var parsed = Integer.parseInt(configured.trim());
-                if (parsed > 0) {
-                    return parsed;
-                }
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return Runtime.getRuntime().availableProcessors();
+        return ru.itmo.ctlab.hict.hict_library.util.ProcessingThreads.resolve(-1, "HICT_CONVERSION_THREADS");
     }
 
     private static String firstNonBlank(final String... values) {
@@ -652,11 +699,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
         if (!overwrite) {
             throw new IllegalArgumentException("Output file already exists: " + outputPath.getFileName());
         }
-        try {
-            Files.delete(outputPath);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to overwrite existing output file: " + outputPath.getFileName(), e);
-        }
+
     }
 
     private static Path resolveOptionalAssemblyPath(final @NotNull Path dataDirectory, final String filename) {
@@ -685,7 +728,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
         }
         final var chunkedFile = chunkedFileWrapper.getChunkedFile();
         final var builder = new StringBuilder();
-        chunkedFile.getAgpProcessor().getAGPStream(1000L).sequential().forEach(builder::append);
+        chunkedFile.getAgpProcessor().getAGPStream().forEach(builder::append);
         try {
             final var path = Files.createTempFile("hict-current-assembly-", ".agp");
             Files.writeString(path, builder.toString(), StandardCharsets.UTF_8);
@@ -745,25 +788,41 @@ public class ConversionHandlersHolder extends HandlersHolder {
         group.executor.submit(() -> runJob(job, options, group));
     }
 
-    private void runJob(final @NotNull ConversionJob job, final @NotNull ConversionOptions options, final @NotNull ConversionJobGroup group) {
+    private void runJob(final @NotNull ConversionJob job, final @NotNull ConversionOptions requestedOptions, final @NotNull ConversionJobGroup group) {
+        if (job.cancelRequested.get()) {
+            if (job.deleteSourceOnCleanup) deleteTemporaryFile(job.sourcePath);
+            group.onJobFinished();
+            return;
+        }
         job.status = "running";
         job.startedAtMs = Instant.now().toEpochMilli();
         final java.util.function.Consumer<String> conversionLogger = message -> {
             synchronized (System.out) {
                 System.out.println(message);
             }
-            job.logs.add(message);
+            job.appendLog(message);
             parseProgress(job, message);
             job.updateOutputSize();
         };
 
+        Path staging = null;
         try {
             job.workerThread = Thread.currentThread();
+            staging = JobArtifacts.stage(job.outputPath.getParent(), job.jobId);
+            final var options = new ConversionOptions(requestedOptions.inputPath(), staging.resolve(job.outputPath.getFileName()),
+              requestedOptions.resolutions(), requestedOptions.chunkSize(), requestedOptions.compressionLevel(),
+              requestedOptions.compressionAlgorithm(), requestedOptions.agpPath(), requestedOptions.applyAgpBeforeExport(),
+              requestedOptions.parallelism(), requestedOptions.exportAllResolutions(), requestedOptions.buildResolutionPyramid(),
+              requestedOptions.balanceInputCoolers(), requestedOptions.balanceExportedCoolers(), requestedOptions.exportMode());
+            job.workingOutputPath = options.outputPath();
             if (job.direction == ConversionDirection.HICT_TO_MCOOL) {
                 this.hictToMcoolExportPipeline.convert(
                   options,
                   conversionLogger,
-                  process -> job.activeProcess = process,
+                  process -> {
+                    job.activeProcess = process;
+                    if (job.cancelRequested.get()) ProcessTree.stop(process);
+                  },
                   () -> job.cancelRequested.get()
                 );
             } else if (job.direction == ConversionDirection.MCOOL_TO_HICT) {
@@ -789,7 +848,10 @@ public class ConversionHandlersHolder extends HandlersHolder {
                           options,
                           toolchain,
                           conversionLogger,
-                          process -> job.activeProcess = process,
+                          process -> {
+                    job.activeProcess = process;
+                    if (job.cancelRequested.get()) ProcessTree.stop(process);
+                  },
                           () -> job.cancelRequested.get()
                         );
                     }
@@ -809,14 +871,19 @@ public class ConversionHandlersHolder extends HandlersHolder {
                   options,
                   toolchain,
                   conversionLogger,
-                  process -> job.activeProcess = process,
+                  process -> {
+                    job.activeProcess = process;
+                    if (job.cancelRequested.get()) ProcessTree.stop(process);
+                  },
                   () -> job.cancelRequested.get(),
                   job.loadOptions
                 );
             } else {
                 throw new IllegalArgumentException("Unknown conversion direction: " + job.direction.wireName());
             }
-            recordSuccessfulConversionIfPossible(job, options);
+            if (job.cancelRequested.get()) throw new java.util.concurrent.CancellationException();
+            JobArtifacts.publish(options.outputPath(), job.outputPath, job.overwrite);
+            recordSuccessfulConversionIfPossible(job, requestedOptions);
             job.overallProgress = 1.0d;
             job.stageProgress = 1.0d;
             job.status = job.cancelRequested.get() ? "cancelled" : "finished";
@@ -827,10 +894,15 @@ public class ConversionHandlersHolder extends HandlersHolder {
             } else {
                 job.status = "failed";
                 job.error = e.getMessage() == null ? e.toString() : e.getMessage();
-                job.logs.add("ERROR: " + job.error);
+                job.appendLog("ERROR: " + job.error);
             }
         } finally {
             job.activeProcess = null;
+            job.workerThread = null;
+            job.workingOutputPath = null;
+            try { JobArtifacts.remove(staging); }
+            catch (IOException cleanup) { log.warn("Could not remove incomplete conversion outputs", cleanup); }
+            if (job.deleteSourceOnCleanup) deleteTemporaryFile(job.sourcePath);
             job.finishedAtMs = Instant.now().toEpochMilli();
             group.onJobFinished();
         }
@@ -959,10 +1031,19 @@ public class ConversionHandlersHolder extends HandlersHolder {
         return 0L;
     }
 
+    private static void deleteTemporaryFile(Path path) {
+        if (path == null) return;
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            log.warn("Unable to remove temporary conversion file {}", path, e);
+        }
+    }
+
     private void cleanupOldJobs() {
         final var now = Instant.now().toEpochMilli();
         jobs.values().removeIf(job -> {
-            final var expired = now - job.createdAtMs > JOB_TTL_MS;
+            final boolean expired = isExpired(job.finishedAtMs, now);
             if (expired) {
                 try {
                     if (job.deleteSourceOnCleanup) {
@@ -977,6 +1058,10 @@ public class ConversionHandlersHolder extends HandlersHolder {
             }
             return expired;
         });
+    }
+
+    static boolean isExpired(long finishedAt, long now) {
+        return finishedAt > 0 && now - finishedAt > JOB_TTL_MS;
     }
 
     private RequestTaskScheduler getScheduler(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
@@ -1009,7 +1094,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
 
     private static class ConversionJob {
         private final String jobId;
-        private final long createdAtMs = Instant.now().toEpochMilli();
+        private final long createdAtMs = System.currentTimeMillis();
         private final Path sourcePath;
         private final Path outputPath;
         private final Path dataDirectory;
@@ -1020,7 +1105,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
         private final HictkLoadOptions loadOptions;
         private volatile String status = "queued";
         private volatile String error = "";
-        private final CopyOnWriteArrayList<String> logs = new CopyOnWriteArrayList<>();
+        private final Deque<String> logs = new ArrayDeque<>();
+        private long omittedLogLines = 0L;
         private volatile String currentStage = "";
         private volatile String currentStageLabel = "";
         private volatile String stageDetail = "";
@@ -1038,6 +1124,8 @@ public class ConversionHandlersHolder extends HandlersHolder {
         private volatile long finishedAtMs = 0L;
         private volatile Thread workerThread = null;
         private volatile Process activeProcess = null;
+        private volatile Path workingOutputPath;
+        private boolean overwrite;
         private volatile String toolchainSource = "";
         private volatile String toolchainSummary = "";
         private final CopyOnWriteArrayList<String> toolchainNotices = new CopyOnWriteArrayList<>();
@@ -1058,18 +1146,45 @@ public class ConversionHandlersHolder extends HandlersHolder {
 
         private void updateOutputSize() {
             try {
-                if (Files.exists(outputPath)) {
-                    outputSizeBytes = Files.size(outputPath);
-                }
+                final var current = workingOutputPath == null ? outputPath : workingOutputPath;
+                if (Files.exists(current)) outputSizeBytes = Files.size(current);
             } catch (IOException ignored) {
                 // ignore
             }
         }
 
+        private synchronized void appendLog(final @NotNull String message) {
+            while (logs.size() >= MAX_CONVERSION_LOG_LINES) {
+                logs.removeFirst();
+                omittedLogLines++;
+            }
+            logs.addLast(message);
+        }
+
+        private synchronized List<String> snapshotLogs() {
+            if (logs.isEmpty()) {
+                return List.of();
+            }
+            final var snapshot = new ArrayList<String>(logs.size() + (omittedLogLines > 0 ? 1 : 0));
+            if (omittedLogLines > 0) {
+                snapshot.add(
+                  "... omitted " + omittedLogLines + " older conversion log line(s); showing the last "
+                    + MAX_CONVERSION_LOG_LINES + " ..."
+                );
+            }
+            snapshot.addAll(logs);
+            return snapshot;
+        }
+
         private void requestCancel() {
+            if (finishedAtMs > 0) return;
             cancelRequested.set(true);
+            if (workerThread == null) {
+                status = "cancelled";
+                finishedAtMs = System.currentTimeMillis();
+            }
             if (activeProcess != null) {
-                activeProcess.destroyForcibly();
+                ProcessTree.stop(activeProcess);
             }
             if (workerThread != null) {
                 workerThread.interrupt();
@@ -1100,7 +1215,7 @@ public class ConversionHandlersHolder extends HandlersHolder {
                     toolchainSummary == null ? "" : toolchainSummary,
                     List.copyOf(toolchainNotices),
                     List.copyOf(toolchainCitations),
-                    List.copyOf(logs),
+                    snapshotLogs(),
                     error == null ? "" : error
             );
         }

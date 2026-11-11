@@ -41,7 +41,8 @@ import java.util.List;
 import java.util.Locale;
 
 public final class MatrixConversionCacheManager {
-  private static final String CACHE_VERSION = "2";
+  // Version 3 imports AGP strands using the persisted ContigDirection encoding.
+  private static final String CACHE_VERSION = "3";
 
   private final @NotNull Path dataDirectory;
   private final @NotNull Path processedDirectory;

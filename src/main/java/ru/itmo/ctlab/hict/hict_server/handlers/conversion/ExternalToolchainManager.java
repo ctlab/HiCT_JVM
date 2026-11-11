@@ -89,6 +89,54 @@ public final class ExternalToolchainManager {
     return toolchain;
   }
 
+  /** Optional sequence-analysis commands share the portable manifest/extraction path. */
+  public @NotNull Path requireSequenceCommand(String command) throws IOException {
+    if (!List.of("seqkit", "moddotplot", "hict-moddotplot", "blastn").contains(command))
+      throw new IllegalArgumentException("Unknown sequence tool: " + command);
+    String setting = switch (command) {
+      case "hict-moddotplot" -> "HICT_MODDOTPLOT_BIN";
+      case "moddotplot" -> "HICT_MODDOTPLOT_CLI_BIN";
+      default -> "HICT_" + command.toUpperCase(Locale.ROOT) + "_BIN";
+    };
+    var override = readSetting(setting);
+    if (override.isPresent()) {
+      var explicit = Path.of(override.get()).toAbsolutePath().normalize();
+      if (!isUsableCommand(explicit)) throw new IllegalStateException(setting + " is not an executable file");
+      return explicit;
+    }
+    var directory = readSetting(TOOLCHAIN_DIR_KEY);
+    if (directory.isPresent()) {
+      var root = Path.of(directory.get()).toAbsolutePath().normalize();
+      var manifestPath = root.resolve("manifest.json");
+      if (Files.isRegularFile(manifestPath)) {
+        var commands = new JsonObject(Files.readString(manifestPath)).getJsonObject("commands", new JsonObject());
+        var resolved = resolveManifestCommand(root, commands, command, Optional.empty());
+        if (resolved != null) return resolved;
+      }
+      var local = root.resolve("bin").resolve(command + (isWindows() ? ".exe" : ""));
+      if (isUsableCommand(local)) return local;
+    }
+    var platform = detectPlatform();
+    try (var stream = ExternalToolchainManager.class.getResourceAsStream(BUNDLED_ROOT + "/" + platform + "/manifest.json")) {
+      if (stream != null) {
+        var manifest = new JsonObject(new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        var root = extractBundledPayload(platform, manifest);
+        var resolved = resolveManifestCommand(root, manifest.getJsonObject("commands", new JsonObject()), command, Optional.empty());
+        if (resolved != null) return resolved;
+      }
+    }
+    var found = findOnPath(List.of(command, command + ".exe"));
+    if (found != null) return found;
+    throw new IllegalStateException(command + " is not available in this build. Configure " + setting + " or install the portable sequence-tool payload.");
+  }
+
+  public @NotNull Path requireSequenceAligner() {
+    final var toolchain = resolveAnyToolchain();
+    final var command = toolchain.selectedDotplotAlignerCommand(dotplotAlignerPreference());
+    if (command == null) throw new IllegalStateException("Configure or bundle minimap2/mm2-plus for alignment dotplots");
+    return command;
+  }
+
   public @NotNull ResolvedToolchain requireDotplotToolchain() {
     return requireDotplotToolchain(dotplotAlignerPreference());
   }
@@ -155,7 +203,7 @@ public final class ExternalToolchainManager {
 
   private @NotNull Path extractBundledPayload(final @NotNull String platform,
                                               final @NotNull JsonObject manifest) throws IOException {
-    final var manifestId = manifest.getString("id", "default");
+    final var manifestId = bundledPayloadId(manifest);
     final var extractionRoot = Path.of(
       System.getProperty("java.io.tmpdir"),
       "hict-toolchains",
@@ -164,15 +212,18 @@ public final class ExternalToolchainManager {
     ).toAbsolutePath().normalize();
     Files.createDirectories(extractionRoot);
     final var files = manifest.getJsonArray("files", new JsonArray());
+    final var commands = manifest.getJsonObject("commands", new JsonObject());
     for (int i = 0; i < files.size(); i++) {
       final var relative = files.getString(i);
       if (relative == null || relative.isBlank()) {
         continue;
       }
       final var target = extractionRoot.resolve(relative).normalize();
+      if (!target.startsWith(extractionRoot)) throw new IOException("Bundled tool path escapes extraction directory: " + relative);
+      final boolean executable = target.startsWith(extractionRoot.resolve("bin")) || commands.getMap().containsValue(relative);
       Files.createDirectories(target.getParent());
       if (Files.isRegularFile(target) && Files.size(target) > 0L) {
-        if (target.startsWith(extractionRoot.resolve("bin")) && !isWindows()) {
+        if (executable && !isWindows()) {
           target.toFile().setExecutable(true, true);
         }
         continue;
@@ -186,13 +237,34 @@ public final class ExternalToolchainManager {
           }
           throw new IOException("Missing bundled resource " + resourcePath);
         }
-        Files.copy(fileStream, target, StandardCopyOption.REPLACE_EXISTING);
+        // Multiple application processes can discover the same new payload.
+        // Publish complete files atomically so a second process never observes
+        // a nonempty but truncated Python library or native executable.
+        final var temporary = Files.createTempFile(target.getParent(), ".hict-extract-", ".pending");
+        Files.copy(fileStream, temporary, StandardCopyOption.REPLACE_EXISTING);
+        try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+        catch (java.nio.file.AtomicMoveNotSupportedException e) {
+          Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+        }
       }
-      if (target.startsWith(extractionRoot.resolve("bin")) && !isWindows()) {
+      if (executable && !isWindows()) {
         target.toFile().setExecutable(true, true);
       }
     }
     return extractionRoot;
+  }
+
+  static String bundledPayloadId(JsonObject manifest) {
+    try {
+      var hash = java.security.MessageDigest.getInstance("SHA-256").digest(
+        manifest.encode().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      // A release label can stay the same while the compiler, ABI or payload
+      // changes. Never silently reuse the previous extracted executable.
+      return manifest.getString("id", "default").replaceAll("[^A-Za-z0-9._-]", "_")
+        + "-" + java.util.HexFormat.of().formatHex(hash).substring(0, 20);
+    } catch (java.security.NoSuchAlgorithmException impossible) {
+      throw new IllegalStateException("SHA-256 unavailable", impossible);
+    }
   }
 
   private static boolean isOptionalBundledMetadata(final @NotNull String relative) {

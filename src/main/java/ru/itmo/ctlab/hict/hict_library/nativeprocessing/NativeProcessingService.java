@@ -28,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
+import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
 import ru.itmo.ctlab.hict.hict_library.visualization.DistanceExpectedNormalizer;
 import ru.itmo.ctlab.hict.hict_library.visualization.SignalDisplayMode;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
@@ -101,7 +102,8 @@ public final class NativeProcessingService {
                                                           final double resolutionLinearScalingCoeff,
                                                           final boolean applyResolutionScaling,
                                                           final boolean applyResolutionLinearScaling,
-                                                          final boolean applyCoolerWeights) {
+                                                          final boolean applyCoolerWeights,
+                                                          final @NotNull CoolerWeightsNaNPolicy coolerWeightsNaNPolicy) {
     if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
       return null;
     }
@@ -126,8 +128,8 @@ public final class NativeProcessingService {
       if (matrix instanceof MatrixQueries.DoubleMatrix doubleMatrix) {
         computed = this.nativeTileProcessor.computeBaseSignalDouble(
           flattenDoubleMatrix(doubleMatrix.values(), rows, columns),
-          safeWeights(rawTile.rowWeights(), rows),
-          safeWeights(rawTile.colWeights(), columns),
+          safeWeights(rawTile.rowWeights(), rows, coolerWeightsNaNPolicy),
+          safeWeights(rawTile.colWeights(), columns, coolerWeightsNaNPolicy),
           rows,
           columns,
           lnPreLogBase,
@@ -141,8 +143,8 @@ public final class NativeProcessingService {
       } else if (matrix instanceof MatrixQueries.LongMatrix longMatrix) {
         computed = this.nativeTileProcessor.computeBaseSignalLong(
           flattenLongMatrix(longMatrix.values(), rows, columns),
-          safeWeights(rawTile.rowWeights(), rows),
-          safeWeights(rawTile.colWeights(), columns),
+          safeWeights(rawTile.rowWeights(), rows, coolerWeightsNaNPolicy),
+          safeWeights(rawTile.colWeights(), columns, coolerWeightsNaNPolicy),
           rows,
           columns,
           lnPreLogBase,
@@ -465,6 +467,102 @@ public final class NativeProcessingService {
     }
   }
 
+  public int trySortAndCompactCoolerRecordsRowMajor(final long @NotNull [] rows,
+                                                    final long @NotNull [] columns,
+                                                    final long @NotNull [] values) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return -1;
+    }
+    if (!isNativeProcessingActive()) {
+      return -1;
+    }
+    if (rows.length != columns.length || rows.length != values.length) {
+      return -1;
+    }
+    try {
+      final var compactedLength = this.nativeTileProcessor.sortAndCompactCoolerRecordsLong(rows, columns, values);
+      if (compactedLength < 0 || compactedLength > rows.length) {
+        log.debug("Native Cooler record sort/compact rejected the input; falling back to Java implementation");
+        return -1;
+      }
+      return compactedLength;
+    } catch (final Throwable err) {
+      recordProcessingFailure("Native Cooler record sort/compact failed: " + err.getMessage());
+      log.warn("Native Cooler record sort/compact failed; falling back to Java implementation", err);
+      return -1;
+    }
+  }
+
+  public int tryMapCoolerRecordsToBatch(final long @NotNull [] sourceRows,
+                                        final long @NotNull [] sourceColumns,
+                                        final long @NotNull [] sourceValues,
+                                        final int sourceOffset,
+                                        final int length,
+                                        final long rowStripeOffset,
+                                        final long colStripeOffset,
+                                        final long @NotNull [] targetRows,
+                                        final long @NotNull [] targetColumns,
+                                        final long @NotNull [] targetValues,
+                                        final int targetOffset,
+                                        final long @NotNull [] sourceStarts,
+                                        final long @NotNull [] sourceEnds,
+                                        final long @NotNull [] targetStarts,
+                                        final long @NotNull [] targetEnds,
+                                        final byte @NotNull [] reversed) {
+    if (!this.requestedEnabled || this.disabledAfterNativeFailure) {
+      return -1;
+    }
+    if (!isNativeProcessingActive()) {
+      return -1;
+    }
+    if (sourceRows.length != sourceColumns.length || sourceRows.length != sourceValues.length) {
+      return -1;
+    }
+    if (targetRows.length != targetColumns.length || targetRows.length != targetValues.length) {
+      return -1;
+    }
+    if (sourceStarts.length != sourceEnds.length
+      || sourceStarts.length != targetStarts.length
+      || sourceStarts.length != targetEnds.length
+      || sourceStarts.length != reversed.length) {
+      return -1;
+    }
+    if (sourceOffset < 0 || length < 0 || targetOffset < 0) {
+      return -1;
+    }
+    if (sourceOffset > sourceRows.length - length || targetOffset > targetRows.length - length) {
+      return -1;
+    }
+    try {
+      final var mapped = this.nativeTileProcessor.mapCoolerRecordsToBatch(
+        sourceRows,
+        sourceColumns,
+        sourceValues,
+        sourceOffset,
+        length,
+        rowStripeOffset,
+        colStripeOffset,
+        targetRows,
+        targetColumns,
+        targetValues,
+        targetOffset,
+        sourceStarts,
+        sourceEnds,
+        targetStarts,
+        targetEnds,
+        reversed
+      );
+      if (mapped < 0 || mapped > length) {
+        log.debug("Native Cooler record mapper rejected the input; falling back to Java implementation");
+        return -1;
+      }
+      return mapped;
+    } catch (final Throwable err) {
+      log.warn("Native Cooler record mapper failed; falling back to Java implementation", err);
+      return -1;
+    }
+  }
+
   public double @Nullable [][] tryTransformExpectedSignal(final double @NotNull [][] signal,
                                                           final long startRowPx,
                                                           final long startColPx,
@@ -559,9 +657,26 @@ public final class NativeProcessingService {
   }
 
   private static double @NotNull [] safeWeights(final double @Nullable [] weights,
-                                                final int expectedLength) {
+                                                final int expectedLength,
+                                                final @NotNull CoolerWeightsNaNPolicy coolerWeightsNaNPolicy) {
     if (weights != null && weights.length >= expectedLength) {
-      return weights;
+      if (coolerWeightsNaNPolicy != CoolerWeightsNaNPolicy.DISABLE_WEIGHTS) {
+        boolean hasNonFinite = false;
+        for (int i = 0; i < expectedLength; i++) {
+          if (!Double.isFinite(weights[i])) {
+            hasNonFinite = true;
+            break;
+          }
+        }
+        if (!hasNonFinite) {
+          return weights;
+        }
+      }
+      final var sanitized = new double[expectedLength];
+      for (int i = 0; i < expectedLength; i++) {
+        sanitized[i] = coolerWeightsNaNPolicy.sanitize(weights[i]);
+      }
+      return sanitized;
     }
     final var fallback = new double[expectedLength];
     Arrays.fill(fallback, 1.0d);
@@ -648,5 +763,30 @@ public final class NativeProcessingService {
                                        long nativeOperationCount,
                                        long nativeFailedOperationCount,
                                        boolean nativeHdf5BackendAvailable) {
+    public @NotNull String summary() {
+      final var mode = available ? "available" : enabled ? "enabled-unavailable" : "disabled";
+      final var builder = new StringBuilder()
+        .append("mode=").append(mode)
+        .append(", requested=").append(requested)
+        .append(", enabled=").append(enabled)
+        .append(", available=").append(available)
+        .append(", version=").append(display(version))
+        .append(", source=").append(display(source))
+        .append(", hdf5Backend=").append(nativeHdf5BackendAvailable)
+        .append(", nativeSessionActive=").append(nativeSessionActive)
+        .append(", operations=").append(nativeOperationCount)
+        .append(", failedOperations=").append(nativeFailedOperationCount);
+      if (!reason.isBlank()) {
+        builder.append(", reason=").append(reason);
+      }
+      if (!lastFailure.isBlank()) {
+        builder.append(", lastFailure=").append(lastFailure);
+      }
+      return builder.toString();
+    }
+
+    private static @NotNull String display(final @NotNull String value) {
+      return value.isBlank() ? "n/a" : value;
+    }
   }
 }

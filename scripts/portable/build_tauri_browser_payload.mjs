@@ -33,6 +33,20 @@ const repoDir = resolve(args.webuiDir ?? process.env.HICT_WEBUI_DIR ?? join(scri
 const tauriDir = resolve(repoDir, "src-tauri");
 const tauriConfigPath = resolve(tauriDir, "tauri.conf.json");
 const platform = args.platform ?? detectPlatform();
+const macosMinimum = process.env.MACOSX_DEPLOYMENT_TARGET ??
+  process.env.MACOS_DEPLOYMENT_TARGET ?? "12.3";
+if (platform.startsWith("darwin_")) {
+  const [major, minor] = macosMinimum.split(".").map(Number);
+  if (!/^\d+\.\d+(\.\d+)?$/.test(macosMinimum) || major < 12 || (major === 12 && minor < 3)) {
+    throw new Error("HiCT's macOS browser requires a deployment target of 12.3 or newer.");
+  }
+  if (process.env.MACOSX_DEPLOYMENT_TARGET && process.env.MACOS_DEPLOYMENT_TARGET &&
+      process.env.MACOSX_DEPLOYMENT_TARGET !== process.env.MACOS_DEPLOYMENT_TARGET) {
+    throw new Error("Conflicting macOS deployment targets.");
+  }
+  // These builders invoke cargo directly, without the Tauri CLI.
+  process.env.MACOSX_DEPLOYMENT_TARGET = macosMinimum;
+}
 const outputDir = resolve(args.output ?? join(scriptDir, "..", "..", "browsers-dist", platform, "tauri"));
 const executableName = platform === "windows_x86_64" ? "hict-tauri-browser.exe" : "hict-tauri-browser";
 const cargoTargetDir = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : resolve(tauriDir, "target");
@@ -119,6 +133,7 @@ const manifest = {
     },
     macos: {
       runtime: "WKWebView",
+      minimumSystemVersion: macosMinimum,
       detection: "Built into macOS; no separate browser runtime is bundled or required."
     }
   },

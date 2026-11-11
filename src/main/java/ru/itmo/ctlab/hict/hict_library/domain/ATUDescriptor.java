@@ -45,18 +45,16 @@ public class ATUDescriptor {
 
   public static MergeResult merge(final ATUDescriptor d1, final ATUDescriptor d2) {
     if (d1.stripeDescriptor.stripeId() == d2.stripeDescriptor.stripeId() && d1.direction == d2.direction) {
-      if (d1.endIndexInStripeExcl == d2.startIndexInStripeIncl) {
-        assert (
-          d1.startIndexInStripeIncl < d2.endIndexInStripeExcl
-        ) : "L start < R end??";
+      // Merge only when concatenation preserves traversal order. Genomic
+      // adjacency alone is insufficient after a translocation.
+      if (d1.direction == ATUDirection.FORWARD && d1.endIndexInStripeExcl == d2.startIndexInStripeIncl) {
         return new MergeResult(new ATUDescriptor(
-          d1.stripeDescriptor,
-          d1.startIndexInStripeIncl,
-          d2.endIndexInStripeExcl,
-          d1.direction
+          d1.stripeDescriptor, d1.startIndexInStripeIncl, d2.endIndexInStripeExcl, d1.direction
         ), null);
-      } else if (d2.endIndexInStripeExcl == d1.startIndexInStripeIncl) {
-        return ATUDescriptor.merge(d2, d1);
+      } else if (d1.direction == ATUDirection.REVERSED && d2.endIndexInStripeExcl == d1.startIndexInStripeIncl) {
+        return new MergeResult(new ATUDescriptor(
+          d1.stripeDescriptor, d2.startIndexInStripeIncl, d1.endIndexInStripeExcl, d1.direction
+        ), null);
       }
     }
     return new MergeResult(d1, d2);

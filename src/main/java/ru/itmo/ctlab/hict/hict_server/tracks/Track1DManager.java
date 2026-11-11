@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.tracks;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import ch.systemsx.cisd.hdf5.HDF5FloatStorageFeatures;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
@@ -75,7 +77,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.zip.GZIPInputStream;
 
 @Slf4j
-public class Track1DManager {
+public class Track1DManager implements AutoCloseable {
   private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
     ".bed", ".bed.gz",
     ".vcf", ".vcf.gz",
@@ -91,11 +93,12 @@ public class Track1DManager {
   private static final int FEATURE_DIRECT_RENDER_MAX_FEATURES = 12_000;
   private static final int FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL = 6;
   private static final int FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL = 2;
+  private static final int FEATURE_DENSITY_MAX_BINS = 2_500;
   private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_PRIMARY = "__internal__/cooler_weights/PRIMARY";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_SECONDARY = "__internal__/cooler_weights/SECONDARY";
-  private static final String PRECOMPUTE_CACHE_VERSION = "1";
+  private static final String PRECOMPUTE_CACHE_VERSION = "2";
   private static final String PRECOMPUTE_META_GROUP_PATH = "/cache_meta";
   private static final long MAX_PRECOMPUTE_VISIBLE_PIXELS = 2_000_000L;
   private static final int PRECOMPUTE_JOB_THREADS = resolveThreadCount("HICT_TRACK_PRECOMPUTE_JOB_THREADS", 2);
@@ -234,6 +237,15 @@ public class Track1DManager {
       : requestedName.trim();
     final var color = normalizeColor(requestedColor, colorForIndex((int) this.trackCounter.get() - 1));
     final TrackDataSource dataSource = createDataSource(trackType, resolvedPath);
+    final var report = dataSource.importReport();
+    if (dataSource instanceof InMemoryTrackDataSource && dataSource.featureCountHint() == 0L) {
+      closeDataSourceQuietly(dataSource);
+      throw new IllegalArgumentException(
+        relativeFilename + " has no usable records"
+          + (report.skippedCount() > 0 ? " (" + String.join("; ", report.warnings()) + ")" : "")
+          + ". The track list was not changed."
+      );
+    }
     final var state = new TrackState(
       trackId,
       resolvedName,
@@ -258,7 +270,7 @@ public class Track1DManager {
     } finally {
       this.lock.writeLock().unlock();
     }
-    return state.toSummary();
+    return state.toSummary().withImportWarnings(report.warnings());
   }
 
   public @NotNull TrackSummary openCoolerWeightsTrack(final String requestedName,
@@ -358,6 +370,59 @@ public class Track1DManager {
     }
   }
 
+  /** Restore into an unpublished, empty manager without changing saved track IDs or order.
+   * Failed preparation closes every opened data source and leaves the manager unchanged.
+   */
+  public void restoreTrackDefinitions(final @NotNull List<TrackSummary> definitions) {
+    final var prepared = new LinkedHashMap<String, TrackState>();
+    this.lock.writeLock().lock();
+    try {
+      if (!this.tracks.isEmpty()) throw new IllegalStateException("Session tracks require an empty candidate manager");
+      long counter = this.trackCounter.get();
+      for (final var saved : definitions) {
+        final var id = saved.getTrackId();
+        if (id == null || !id.matches("trk_[1-9][0-9]*") || prepared.containsKey(id))
+          throw new IllegalArgumentException("Invalid session trackId: " + id);
+        final long number = Long.parseLong(id.substring(4));
+        if (number == Long.MAX_VALUE) throw new IllegalArgumentException("Session trackId exceeds supported range");
+        counter = Math.max(counter, number);
+        if (saved.getName() == null || saved.getName().isBlank()) throw new IllegalArgumentException("Session track name is required: " + id);
+        if (saved.getColor() == null || !saved.getColor().matches("^#[0-9a-fA-F]{6}$"))
+          throw new IllegalArgumentException("Invalid session track color: " + id);
+        if (!Double.isFinite(saved.getRangeMin()) || !Double.isFinite(saved.getRangeMax()) || saved.getRangeMin() >= saved.getRangeMax())
+          throw new IllegalArgumentException("Invalid session track range: " + id);
+        final var type = TrackType.valueOf(saved.getType());
+        final var renderMode = BamRenderMode.valueOf(saved.getRenderMode());
+        final var aggregation = BigWigAggregationMode.valueOf(saved.getAggregationMode());
+        final TrackDataSource source;
+        if (type == TrackType.COOLER_WEIGHTS) {
+          final String matrix;
+          if (COOLER_WEIGHTS_SOURCE_FILE.equals(saved.getSourceFile()) || COOLER_WEIGHTS_SOURCE_FILE_PRIMARY.equals(saved.getSourceFile())) matrix = "PRIMARY";
+          else if (COOLER_WEIGHTS_SOURCE_FILE_SECONDARY.equals(saved.getSourceFile())) matrix = "SECONDARY";
+          else throw new IllegalArgumentException("Invalid weights source for session track " + id);
+          source = new CoolerWeightsTrackDataSource(matrix);
+        } else {
+          final var path = resolveDataPath(saved.getSourceFile());
+          if (type == TrackType.UNSUPPORTED || TrackType.fromPath(path) != type)
+            throw new IllegalArgumentException("Session track type does not match its file: " + id);
+          source = createDataSource(type, path);
+        }
+        final var state = new TrackState(id, saved.getName(), type, saved.getSourceFile(), saved.getColor(),
+          saved.isVisible(), source, renderMode, aggregation, saved.isLogScale(), saved.isRangeAuto(), saved.getRangeMin(), saved.getRangeMax());
+        prepared.put(id, state);
+        if (!source.renderStyle().name().equals(saved.getRenderStyle()))
+          throw new IllegalArgumentException("Session track rendering style changed: " + id);
+      }
+      this.tracks.putAll(prepared);
+      this.trackCounter.set(counter);
+    } catch (RuntimeException | Error failure) {
+      prepared.values().forEach(state -> closeDataSourceQuietly(state.dataSource()));
+      throw failure;
+    } finally {
+      this.lock.writeLock().unlock();
+    }
+  }
+
   public @NotNull List<TrackSummary> listTracks() {
     try {
       this.lock.readLock().lock();
@@ -404,6 +469,14 @@ public class Track1DManager {
       if (current == null) {
         throw new IllegalArgumentException("Unknown track id " + trackId);
       }
+      final var nextRangeMin = sanitizeTrackRangeValue(rangeMin, current.rangeMin());
+      final var nextRangeMax = sanitizeTrackRangeValue(rangeMax, current.rangeMax());
+      if ((rangeMin != null || rangeMax != null) && nextRangeMax <= nextRangeMin) {
+        throw new IllegalArgumentException(
+          "Range minimum (" + nextRangeMin + ") must be less than the maximum (" + nextRangeMax
+            + "). The range was not changed."
+        );
+      }
       final var updated = current.withUpdated(
         visible == null ? current.visible : visible,
         (color == null || color.isBlank()) ? current.color : normalizeColor(color, current.color),
@@ -412,8 +485,8 @@ public class Track1DManager {
         parseBigWigAggregationMode(aggregationMode, current.bigWigAggregationMode()),
         logScale == null ? current.logScale() : logScale,
         rangeAuto == null ? current.rangeAuto() : rangeAuto,
-        sanitizeTrackRangeValue(rangeMin, current.rangeMin()),
-        sanitizeTrackRangeValue(rangeMax, current.rangeMax())
+        nextRangeMin,
+        nextRangeMax
       );
       this.tracks.put(trackId, updated);
       return updated.toSummary();
@@ -425,11 +498,12 @@ public class Track1DManager {
   public void removeTrack(final @NotNull String trackId) {
     try {
       this.lock.writeLock().lock();
+      final var runtime = this.precomputeRuntimeByTrackId.remove(trackId);
+      if (runtime != null) runtime.cancel();
       final var removed = this.tracks.remove(trackId);
       if (removed != null) {
         closeDataSourceQuietly(removed.dataSource());
       }
-      this.precomputeRuntimeByTrackId.remove(trackId);
       this.precomputedSeriesCache.keySet().removeIf(key -> key.trackId().equals(trackId));
     } finally {
       this.lock.writeLock().unlock();
@@ -458,7 +532,21 @@ public class Track1DManager {
     }
   }
 
+  @Override
   public void close() {
+    // Stop producers before closing their data sources. shutdownNow alone does
+    // not wait for a running writer; it could recreate a sidecar after close.
+    this.precomputeRuntimeByTrackId.values().forEach(TrackPrecomputeRuntime::cancel);
+    final var executors = List.of(this.precomputeJobExecutor, this.precomputeWorkerExecutor, this.precomputeWriterExecutor);
+    executors.forEach(java.util.concurrent.ExecutorService::shutdownNow);
+    boolean interrupted = false;
+    for (final var executor : executors) {
+      try {
+        if (!executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+          log.warn("A track precompute worker did not finish within the shutdown deadline");
+        }
+      } catch (final InterruptedException e) { interrupted = true; }
+    }
     try {
       this.lock.writeLock().lock();
       this.tracks.values().forEach(track -> closeDataSourceQuietly(track.dataSource()));
@@ -467,10 +555,8 @@ public class Track1DManager {
       this.precomputedSeriesCache.clear();
     } finally {
       this.lock.writeLock().unlock();
+      if (interrupted) Thread.currentThread().interrupt();
     }
-    this.precomputeJobExecutor.shutdownNow();
-    this.precomputeWorkerExecutor.shutdownNow();
-    this.precomputeWriterExecutor.shutdownNow();
   }
 
   public void setLinkedFastaAliasesBySource(final @Nullable Map<String, String> aliases) {
@@ -482,13 +568,30 @@ public class Track1DManager {
   }
 
   public void clearPrecomputeStatus() {
+    this.precomputeRuntimeByTrackId.values().forEach(TrackPrecomputeRuntime::cancel);
     this.precomputeRuntimeByTrackId.clear();
+  }
+
+  public List<BackgroundJob> backgroundJobs() {
+    return precomputeRuntimeByTrackId.values().stream().map(runtime -> {
+      final var status = runtime.toStatus();
+      return new BackgroundJob(runtime.jobId, "track_precompute",
+        status.getStatus(), status.getProgress(), runtime.createdAtMs, runtime.startedAtMs, runtime.finishedAtMs,
+        runtime.currentTask, runtime.error, List.of());
+    }).toList();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    final var runtime = precomputeRuntimeByTrackId.values().stream().filter(job -> job.jobId.equals(id)).findFirst().orElse(null);
+    if (runtime == null) return false;
+    synchronized (runtime) { runtime.cancel(); }
+    return true;
   }
 
   public @NotNull TracksPrecomputeStatus getPrecomputeStatus() {
     final var now = System.currentTimeMillis();
     this.precomputeRuntimeByTrackId.entrySet().removeIf(entry ->
-      now - entry.getValue().lastUpdatedMs() > PRECOMPUTE_STATUS_TTL_MS
+      !entry.getValue().isActive() && now - entry.getValue().lastUpdatedMs() > PRECOMPUTE_STATUS_TTL_MS
     );
     final var statuses = this.precomputeRuntimeByTrackId.values().stream()
       .sorted(Comparator.comparing(TrackPrecomputeRuntime::trackName))
@@ -846,7 +949,6 @@ public class Track1DManager {
         .forEach(track -> {
           try {
             final var trackChunkedFile = resolveChunkedFileForTrack(primaryChunkedFile, secondaryChunkedFile, track);
-            final var precomputeRuntime = maybeScheduleTrackPrecomputeFromQuery(trackChunkedFile, track);
             final var maybePrecomputed = getPrecomputedBinsIfReady(
               trackChunkedFile,
               track,
@@ -860,10 +962,15 @@ public class Track1DManager {
             );
             if (maybePrecomputed != null) {
               trackRenders.add(maybePrecomputed);
-            } else if (precomputeRuntime != null
+              return;
+            }
+            // A cache hit already includes resolution, assembly signature and
+            // track mode. Do not enqueue another all-resolution scan per pan.
+            final var precomputeRuntime = maybeScheduleTrackPrecomputeFromQuery(trackChunkedFile, track);
+            if (precomputeRuntime != null
               && precomputeRuntime.isActive()
               && track.dataSource().renderStyle() != RenderStyle.FEATURE) {
-              trackRenders.add(track.toErrorRender("Optimizing 1D track index..."));
+              trackRenders.add(track.toPendingRender("Preparing 1D track index…"));
             } else {
               trackRenders.add(track.query(
                 trackChunkedFile,
@@ -967,7 +1074,7 @@ public class Track1DManager {
   private @Nullable TrackPrecomputeRuntime maybeScheduleTrackPrecomputeFromQuery(final @NotNull ChunkedFile chunkedFile,
                                                                                  final @NotNull TrackState track) {
     final var runtime = this.precomputeRuntimeByTrackId.get(track.trackId());
-    if (runtime != null && runtime.isActive()) {
+    if (runtime != null && (runtime.isActive() || "cancelled".equals(runtime.status))) {
       return runtime;
     }
     if (track.dataSource().renderStyle() == RenderStyle.FEATURE
@@ -981,18 +1088,14 @@ public class Track1DManager {
   private void scheduleTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
                                        final @NotNull TrackState track,
                                        final boolean force) {
-    final var runtime = this.precomputeRuntimeByTrackId.computeIfAbsent(
-      track.trackId(),
-      ignored -> new TrackPrecomputeRuntime(track.trackId(), track.name())
-    );
-    synchronized (runtime) {
-      if (runtime.isActive()) {
-        return;
-      }
+    synchronized (this.precomputeRuntimeByTrackId) {
+      final var previous = this.precomputeRuntimeByTrackId.get(track.trackId());
+      if (previous != null && previous.isActive()) return;
+      final var runtime = new TrackPrecomputeRuntime(track.trackId(), track.name());
       runtime.markQueued();
+      this.precomputeRuntimeByTrackId.put(track.trackId(), runtime);
+      runtime.setJob(this.precomputeJobExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime)));
     }
-    log.info("Queued 1D track precompute: track={} name={} force={}", track.trackId(), track.name(), force);
-    this.precomputeJobExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime));
   }
 
   private void runTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
@@ -1000,6 +1103,7 @@ public class Track1DManager {
                                   final boolean force,
                                   final @NotNull TrackPrecomputeRuntime runtime) {
     try {
+      runtime.checkCancelled();
       final var cacheContext = precomputeCacheContextForTrack(chunkedFile, track);
       final var sidecarPath = cacheContext.sidecarPath();
       log.info("Starting 1D track precompute: track={} name={} sidecar={}", track.trackId(), track.name(), sidecarPath);
@@ -1024,33 +1128,52 @@ public class Track1DManager {
       final CompletionService<ComputedPrecomputeTask> completionService =
         new ExecutorCompletionService<>(this.precomputeWorkerExecutor);
       for (final var task : tasks) {
-        completionService.submit(() -> new ComputedPrecomputeTask(task, computePrecomputedSeries(chunkedFile, track, task)));
+        runtime.addTask(completionService.submit(() -> {
+          runtime.checkCancelled();
+          final var computed = new ComputedPrecomputeTask(task, computePrecomputedSeries(chunkedFile, track, task));
+          runtime.checkCancelled();
+          return computed;
+        }));
       }
 
       final var writeFutures = new ArrayList<Future<?>>(tasks.size());
       int completed = 0;
       for (int i = 0; i < tasks.size(); i++) {
+        runtime.checkCancelled();
         final var computed = completionService.take().get();
         final var task = computed.task();
         runtime.markRunning(task.bpResolution() + "bp/" + task.modeKey(), completed);
         final var key = new PrecomputedSeriesKey(track.trackId(), task.bpResolution(), task.assemblySignature(), task.modeKey());
         this.precomputedSeriesCache.put(key, computed.series());
-        writeFutures.add(this.precomputeWriterExecutor.submit(() -> persistPrecomputedSeries(sidecarPath, task, computed.series(), cacheContext)));
+        final var write = this.precomputeWriterExecutor.submit(() -> {
+          runtime.checkCancelled();
+          persistPrecomputedSeries(sidecarPath, task, computed.series(), cacheContext, runtime.cancelled);
+        });
+        runtime.addTask(write);
+        writeFutures.add(write);
         completed++;
         runtime.markTaskDone(completed);
       }
       for (final var writeFuture : writeFutures) {
         writeFuture.get();
       }
+      runtime.checkCancelled();
       runtime.markFinished();
       log.info("Finished 1D track precompute: track={} name={} tasks={}", track.trackId(), track.name(), tasks.size());
     } catch (final InterruptedException ex) {
       Thread.currentThread().interrupt();
-      runtime.markFailed("Precompute interrupted");
+      runtime.markCancelled();
       log.warn("Track precompute interrupted for track {}", track.trackId());
+    } catch (final java.util.concurrent.CancellationException cancelled) {
+      runtime.markCancelled();
     } catch (final Exception ex) {
-      runtime.markFailed(ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
-      log.error("Failed to precompute track {}", track.trackId(), ex);
+      if (runtime.cancelled.get()) runtime.markCancelled();
+      else {
+        runtime.markFailed(ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+        log.error("Failed to precompute track {}", track.trackId(), ex);
+      }
+    } finally {
+      runtime.cancelTasks();
     }
   }
 
@@ -1063,7 +1186,9 @@ public class Track1DManager {
       return List.of();
     }
     final var tasks = new ArrayList<PrecomputeTask>();
-    final var resolutions = Arrays.stream(chunkedFile.getResolutions()).boxed().sorted(Comparator.reverseOrder()).toList();
+    // Resolution zero is the internal base-pair axis, not a contact level.
+    final var resolutions = Arrays.stream(chunkedFile.getResolutions()).filter(r -> r > 0L)
+      .boxed().sorted(Comparator.reverseOrder()).toList();
     final var modeKeys = modeKeysForTrack(track);
     for (final var bpResolution : resolutions) {
       final var segmentsBuildResult = buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
@@ -1180,6 +1305,7 @@ public class Track1DManager {
     final var values = new double[totalVisiblePixels];
     final var support = new long[totalVisiblePixels];
     for (final var bin : bins) {
+      if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
       final var rawStart = bin.getStartPx() == null ? bin.getStartBp() : bin.getStartPx();
       final var rawEnd = bin.getEndPx() == null ? bin.getEndBp() : bin.getEndPx();
       final int start = (int) Math.max(0L, Math.min(rawStart, totalVisiblePixels - 1L));
@@ -1308,10 +1434,13 @@ public class Track1DManager {
     final var valuesPath = groupPath + "/values";
     final var supportPath = groupPath + "/support";
     HDF5LibraryInitializer.initializeHDF5Library();
-    try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
+    try (final var lease = SidecarAccess.read(sidecarPath);
+         final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
       if (!sidecarMetadataMatches(reader, cacheContext)) {
         return Optional.empty();
       }
+      if (reader.object().isGroup(groupPath) && reader.object().hasAttribute(groupPath, "complete")
+        && !reader.bool().getAttr(groupPath, "complete")) return Optional.empty();
       if (!reader.object().isDataSet(valuesPath) || !reader.object().isDataSet(supportPath)) {
         return Optional.empty();
       }
@@ -1334,8 +1463,10 @@ public class Track1DManager {
   private void persistPrecomputedSeries(final @NotNull Path sidecarPath,
                                         final @NotNull PrecomputeTask task,
                                         final @NotNull PrecomputedSeries series,
-                                        final @NotNull PrecomputeCacheContext cacheContext) {
+                                        final @NotNull PrecomputeCacheContext cacheContext,
+                                        final java.util.concurrent.atomic.AtomicBoolean cancelled) {
     try {
+      if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
       Files.createDirectories(sidecarPath.getParent());
       final var groupPath = precomputeGroupPath(task.bpResolution(), task.modeKey(), task.assemblySignature());
       final var valuesPath = groupPath + "/values";
@@ -1345,9 +1476,12 @@ public class Track1DManager {
         Math.min(PRECOMPUTE_DATASET_CHUNK_SIZE, Math.max(series.values().length, series.support().length))
       );
       HDF5LibraryInitializer.initializeHDF5Library();
-      try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
+      try (final var lease = SidecarAccess.write(sidecarPath);
+           final var writer = HDF5Factory.open(sidecarPath.toFile())) {
         writePrecomputeMetadata(writer, cacheContext);
         ensureGroupPath(writer, groupPath);
+        writer.bool().setAttr(groupPath, "complete", false);
+        writer.file().flushSyncBlocking();
         writer.string().setAttr(groupPath, "version", PRECOMPUTE_CACHE_VERSION);
         writer.int64().setAttr(groupPath, "bpResolution", task.bpResolution());
         writer.string().setAttr(groupPath, "mode", task.modeKey());
@@ -1381,9 +1515,13 @@ public class Track1DManager {
           series.support().length,
           0L
         );
+        if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+        writer.bool().setAttr(groupPath, "complete", true);
       }
+    } catch (final java.util.concurrent.CancellationException cancelledWrite) {
+      throw cancelledWrite;
     } catch (final Exception e) {
-      log.warn("Failed to write precomputed sidecar {}", sidecarPath, e);
+      throw new IllegalStateException("Could not write precomputed track data", e);
     }
   }
 
@@ -1392,7 +1530,8 @@ public class Track1DManager {
     try {
       Files.createDirectories(sidecarPath.getParent());
       HDF5LibraryInitializer.initializeHDF5Library();
-      try (final var writer = HDF5Factory.open(sidecarPath.toFile())) {
+      try (final var lease = SidecarAccess.write(sidecarPath);
+           final var writer = HDF5Factory.open(sidecarPath.toFile())) {
         writePrecomputeMetadata(writer, cacheContext);
       }
     } catch (final Exception e) {
@@ -1452,7 +1591,8 @@ public class Track1DManager {
       return false;
     }
     HDF5LibraryInitializer.initializeHDF5Library();
-    try (final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
+    try (final var lease = SidecarAccess.read(sidecarPath);
+         final var reader = HDF5Factory.openForReading(sidecarPath.toFile())) {
       return sidecarMetadataMatches(reader, cacheContext);
     } catch (final Exception e) {
       return false;
@@ -1584,6 +1724,7 @@ public class Track1DManager {
       hash = fnv1a(hash, segment.assemblyEnd());
       hash = fnv1a(hash, segment.visiblePxStart());
       hash = fnv1a(hash, segment.visiblePxEnd());
+      hash = fnv1a(hash, segment.firstOwnedBinOffset());
       hash = fnv1a(hash, segment.reversed() ? 1L : 0L);
     }
     return Long.toUnsignedString(hash, 16);
@@ -1675,9 +1816,9 @@ public class Track1DManager {
     if (resolutionOrder == null) {
       throw new IllegalArgumentException("Unsupported resolution for 1D track query: " + bpResolution);
     }
-    final var sourceToAssemblySegments = new HashMap<String, List<AssemblySegment>>();
-    final var orderedSegments = new ArrayList<AssemblySegment>();
     final var contigs = chunkedFile.getAssemblyInfo().contigs();
+    final var sourceToAssemblySegments = new SourceSegmentMap(contigs, chunkedFile);
+    final var orderedSegments = new ArrayList<AssemblySegment>();
     long assemblyCursor = 0L;
     long visiblePxCursor = 0L;
     for (int contigIndex = 0; contigIndex < contigs.size(); ++contigIndex) {
@@ -1700,7 +1841,8 @@ public class Track1DManager {
           assemblyEnd,
           tuple.direction() == ContigDirection.REVERSED,
           visiblePxCursor,
-          visiblePxCursor + lengthPxAtResolution
+          visiblePxCursor + lengthPxAtResolution,
+          chunkedFile.firstOwnedBinOffset(descriptor, resolutionOrder)
         );
         orderedSegments.add(segment);
         sourceToAssemblySegments.computeIfAbsent(sourceName, key -> new ArrayList<>()).add(segment);
@@ -2080,7 +2222,7 @@ public class Track1DManager {
     return new BufferedReader(new InputStreamReader(dataStream, StandardCharsets.UTF_8));
   }
 
-  private static long localPxToAssemblyBp(final @NotNull AssemblySegment segment,
+  static long localPxToAssemblyBp(final @NotNull AssemblySegment segment,
                                           final long localPx,
                                           final long bpResolution) {
     final var segmentLengthBp = segment.assemblyEnd() - segment.assemblyStart();
@@ -2089,21 +2231,12 @@ public class Track1DManager {
     }
     final var segmentLengthPx = Math.max(1L, segment.visiblePxEnd() - segment.visiblePxStart());
     final var clampedLocalPx = Math.max(0L, Math.min(localPx, segmentLengthPx - 1L));
-    final long localBp;
-    if (!segment.reversed()) {
-      localBp = clampedLocalPx * bpResolution;
-    } else {
-      final var firstBinLengthBp = segmentLengthBp % bpResolution;
-      if (clampedLocalPx <= 0L) {
-        localBp = 0L;
-      } else {
-        localBp = firstBinLengthBp + (clampedLocalPx - 1L) * bpResolution;
-      }
-    }
+    final long localBp = ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.binToBp(
+      clampedLocalPx, segmentLengthBp, segmentLengthPx, bpResolution, segment.firstOwnedBinOffset(), segment.reversed());
     return Math.max(segment.assemblyStart(), Math.min(segment.assemblyEnd() - 1L, segment.assemblyStart() + localBp));
   }
 
-  private static long assemblyBpToLocalPx(final @NotNull AssemblySegment segment,
+  static long assemblyBpToLocalPx(final @NotNull AssemblySegment segment,
                                           final long assemblyBp,
                                           final long bpResolution) {
     final var segmentLengthBp = segment.assemblyEnd() - segment.assemblyStart();
@@ -2113,17 +2246,8 @@ public class Track1DManager {
     final var segmentLengthPx = Math.max(1L, segment.visiblePxEnd() - segment.visiblePxStart());
     final var clampedBp = Math.max(segment.assemblyStart(), Math.min(assemblyBp, segment.assemblyEnd() - 1L));
     final var inContigOffsetBp = clampedBp - segment.assemblyStart();
-    final long localPx;
-    if (!segment.reversed()) {
-      localPx = inContigOffsetBp / bpResolution;
-    } else {
-      final var firstBinLengthBp = segmentLengthBp % bpResolution;
-      if (inContigOffsetBp < firstBinLengthBp) {
-        localPx = 0L;
-      } else {
-        localPx = 1L + ((inContigOffsetBp - firstBinLengthBp) / bpResolution);
-      }
-    }
+    final long localPx = ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper.bpToBin(
+      inContigOffsetBp, segmentLengthBp, segmentLengthPx, bpResolution, segment.firstOwnedBinOffset(), segment.reversed());
     return Math.max(0L, Math.min(localPx, segmentLengthPx - 1L));
   }
 
@@ -2228,6 +2352,7 @@ public class Track1DManager {
 
   private static @NotNull Optional<ProjectedFeature> projectSourceFeatureOnSegment(final @NotNull AssemblySegment segment,
                                                                                     final @NotNull FeatureRange feature,
+                                                                                    final Map<String, List<AssemblySegment>> sourceSegments,
                                                                                     final long queryStartPx,
                                                                                     final long queryEndPx,
                                                                                     final long bpResolution) {
@@ -2294,21 +2419,49 @@ public class Track1DManager {
     }
     projectedBlocks.sort(Comparator.comparingLong(ProjectedBlock::startPx));
     final var projected = projectedBase.get();
+    var attributes = feature.attributes();
+    var label = projected.label();
+    var strand = feature.strand();
+    if (segment.reversed()) strand = "+".equals(strand) ? "-" : "-".equals(strand) ? "+" : strand;
+    if (feature.searchMetadata() != null && sourceSegments instanceof SourceSegmentMap sourceMap) {
+      var metadata = feature.searchMetadata();
+      var projection = sourceMap.project(metadata, feature.attributes().get("field13"));
+      attributes = new LinkedHashMap<>(attributes);
+      attributes.remove("field13");
+      attributes.put("queryId", metadata.queryId());
+      attributes.put("query", metadata.description());
+      attributes.put("hitId", metadata.hitId());
+      attributes.put("matchStatus", projection.status().name().toLowerCase(Locale.ROOT));
+      attributes.put("sequencePreserved", Boolean.toString(projection.sequencePreserved()));
+      attributes.put("originalMatchLength", Long.toString(metadata.path().length()));
+      attributes.put("currentFragmentLength", Long.toString(Math.min(feature.end(), segment.sourceEnd()) - Math.max(feature.start(), segment.sourceStart())));
+      attributes.put("analysisSnapshot", metadata.snapshotFingerprint());
+      attributes.put("itemRgb", "+".equals(strand) ? metadata.forwardColor() : metadata.reverseColor());
+      label = metadata.description();
+      if (sourceMap.changedSince(metadata)) {
+        label = "⚠ " + label;
+        attributes.put("analysisWarning", "New matches might have formed. This track contains results from the previous assembly sequence. Edits can create new sequence at joins or remove old matches; existing hits are repositioned, but no new search runs automatically. Rerun the search to refresh all matches.");
+      }
+      if (projection.status() != ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.FeatureStatus.INTACT) {
+        label += " [part of match: " + projection.status().name().toLowerCase(Locale.ROOT) + "]";
+        attributes.put("disruptedMatch", "true");
+      }
+    }
     return Optional.of(new ProjectedFeature(
       projected.startBp(),
       projected.endBp(),
       projected.startPx(),
       projected.endPx(),
       projected.value(),
-      projected.label(),
-      feature.strand(),
+      label,
+      strand,
       thickStartBp,
       thickEndBp,
       thickStartPx,
       thickEndPx,
       feature.featureType(),
       projectedBlocks,
-      feature.attributes()
+      attributes
     ));
   }
 
@@ -3094,8 +3247,72 @@ public class Track1DManager {
     FEATURE
   }
 
+  /**
+   * What reading a track file skipped or corrected, so nothing is dropped silently. Syntax errors
+   * (a coordinate that is not an integer, or does not fit in 64 bits) reject the whole file with
+   * the line number. Records that parse but cannot be placed are skipped, and values the track
+   * model cannot hold are corrected. Both are counted and the first few are listed with line numbers.
+   */
+  static final class ParseReport {
+    static final ParseReport EMPTY = new ParseReport();
+    private static final int MAX_EXAMPLES = 5;
+    private long records;
+    private long skipped;
+    private long corrected;
+    private final Map<String, Long> reasons = new LinkedHashMap<>();
+    private final List<String> examples = new ArrayList<>();
+
+    void read() {
+      records++;
+    }
+
+    void skip(final long lineNo, final @NotNull String reason) {
+      skipped++;
+      reasons.merge("skipped: " + reason, 1L, Long::sum);
+      if (examples.size() < MAX_EXAMPLES) {
+        examples.add("line " + lineNo + " skipped: " + reason);
+      }
+    }
+
+    void correct(final long lineNo, final @NotNull String reason) {
+      corrected++;
+      reasons.merge("corrected: " + reason, 1L, Long::sum);
+      if (examples.size() < MAX_EXAMPLES) {
+        examples.add("line " + lineNo + " corrected: " + reason);
+      }
+    }
+
+    long records() {
+      return records;
+    }
+
+    long skippedCount() {
+      return skipped;
+    }
+
+    long correctedCount() {
+      return corrected;
+    }
+
+    @NotNull List<String> warnings() {
+      if (skipped == 0 && corrected == 0) {
+        return List.of();
+      }
+      final var result = new ArrayList<String>();
+      result.add(skipped + " of " + (records + skipped) + " records skipped, " + corrected + " corrected.");
+      reasons.forEach((reason, count) -> result.add(count + " x " + reason));
+      result.addAll(examples);
+      return List.copyOf(result);
+    }
+  }
+
   private interface TrackDataSource extends AutoCloseable {
     long featureCountHint();
+
+    @NotNull
+    default ParseReport importReport() {
+      return ParseReport.EMPTY;
+    }
 
     @NotNull
     Set<String> sourceNames();
@@ -3121,7 +3338,31 @@ public class Track1DManager {
                                          long featureCount,
                                          boolean hasSignalValues,
                                          boolean hasStructuredFeatures,
-                                         @NotNull RenderStyle preferredRenderStyle) implements TrackDataSource {
+                                         @NotNull RenderStyle preferredRenderStyle,
+                                         @NotNull Map<String, long[]> prefixEnds,
+                                         @NotNull ParseReport report) implements TrackDataSource {
+    private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
+                                   boolean signals, boolean structured, RenderStyle style) {
+      this(features, count, signals, structured, style, indexEnds(features), ParseReport.EMPTY);
+    }
+    private InMemoryTrackDataSource(Map<String, List<FeatureRange>> features, long count,
+                                   boolean signals, boolean structured, RenderStyle style,
+                                   ParseReport report) {
+      this(features, count, signals, structured, style, indexEnds(features), report);
+    }
+    @Override
+    public @NotNull ParseReport importReport() {
+      return report;
+    }
+    private static Map<String, long[]> indexEnds(Map<String, List<FeatureRange>> features) {
+      var result = new HashMap<String, long[]>();
+      features.forEach((source, ranges) -> {
+        var ends = new long[ranges.size()]; long maximum = 0;
+        for (int i = 0; i < ranges.size(); i++) ends[i] = maximum = Math.max(maximum, ranges.get(i).end());
+        result.put(source, ends);
+      });
+      return result;
+    }
     static @NotNull InMemoryTrackDataSource fromBed(final @NotNull Path filePath) {
       final var features = new HashMap<String, List<FeatureRange>>();
       long total = 0L;
@@ -3130,6 +3371,7 @@ public class Track1DManager {
       boolean hasStrandFeatures = false;
       boolean hasThickFeatures = false;
       boolean hasBed12Rows = false;
+      final var report = new ParseReport();
       try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
         String line;
         long lineNo = 0L;
@@ -3140,16 +3382,35 @@ public class Track1DManager {
           }
           final var fields = line.split("\t");
           if (fields.length < 3) {
+            report.skip(lineNo, "fewer than 3 tab-separated fields");
             continue;
           }
           final var sourceName = fields[0];
           final long start = parseLongOrThrow(fields[1], "BED start", lineNo);
           final long end = parseLongOrThrow(fields[2], "BED end", lineNo);
-          if (end <= start) {
+          if (start < 0) {
+            report.skip(lineNo, "negative start");
             continue;
           }
-          final var col4Numeric = fields.length >= 4 ? parseNullableDouble(fields[3]) : null;
-          final var col5Numeric = fields.length >= 5 ? parseNullableDouble(fields[4]) : null;
+          if (end <= start) {
+            report.skip(lineNo, "end is not after start");
+            continue;
+          }
+          report.read();
+          var col4Numeric = fields.length >= 4 ? parseNullableDouble(fields[3]) : null;
+          var col5Numeric = fields.length >= 5 ? parseNullableDouble(fields[4]) : null;
+          if (col4Numeric != null && !Double.isFinite(col4Numeric)) {
+            report.correct(lineNo, "non-finite value in column 4 treated as missing");
+            col4Numeric = null;
+          }
+          if (col5Numeric != null && !Double.isFinite(col5Numeric)) {
+            report.correct(lineNo, "non-finite score in column 5 treated as missing");
+            col5Numeric = null;
+          }
+          if ((fields.length == 4 && col4Numeric != null && col4Numeric < 0.0d)
+            || (fields.length > 4 && col5Numeric != null && col5Numeric < 0.0d)) {
+            report.correct(lineNo, "negative value shown as 0");
+          }
           final var hasStrand = fields.length >= 6 && isBedStrandToken(fields[5]);
           final String strand = hasStrand ? normalizeStrand(fields[5]) : null;
           final String label = (fields.length >= 4 && !fields[3].isBlank()) ? fields[3] : null;
@@ -3234,7 +3495,8 @@ public class Track1DManager {
         total,
         hasSignalValues,
         hasStructuredFeatures,
-        resolveBedRenderStyle(total, hasStrandFeatures, hasThickFeatures, hasBed12Rows)
+        resolveBedRenderStyle(total, hasStrandFeatures, hasThickFeatures, hasBed12Rows),
+        report
       );
     }
 
@@ -3407,6 +3669,7 @@ public class Track1DManager {
       if (this.renderStyle() == RenderStyle.FEATURE) {
         return queryFeatureBins(
           sourceToAssemblySegments,
+          orderedSegments,
           queryStartPx,
           queryEndPx,
           widthPx,
@@ -3482,6 +3745,7 @@ public class Track1DManager {
     }
 
     private @NotNull List<TrackBin> queryFeatureBins(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
+                                                     final @NotNull List<AssemblySegment> orderedSegments,
                                                      final long queryStartPx,
                                                      final long queryEndPx,
                                                      final int widthPx,
@@ -3510,7 +3774,42 @@ public class Track1DManager {
       if (projected.size() <= maxDirectFeatures) {
         return toBins(projected);
       }
-      return downsampleFeatureBins(projected, queryStartPx, queryEndPx, safeWidth);
+      final int structuredFeatureLimit = Math.min(MAX_FEATURES_PER_QUERY, FEATURE_DIRECT_RENDER_MAX_FEATURES);
+      if (maxDirectFeatures < structuredFeatureLimit) {
+        final var structuredProjected = new ArrayList<ProjectedFeature>(Math.min(structuredFeatureLimit, 16_384));
+        forEachProjectedFeature(
+          sourceToAssemblySegments,
+          queryStartPx,
+          queryEndPx,
+          bpResolution,
+          structuredProjected::add,
+          structuredFeatureLimit + 1
+        );
+        structuredProjected.sort(
+          Comparator.comparingLong(ProjectedFeature::startPx)
+            .thenComparingLong(ProjectedFeature::endPx)
+        );
+        if (structuredProjected.size() <= structuredFeatureLimit) {
+          return downsampleFeatureBins(structuredProjected, queryStartPx, queryEndPx, safeWidth);
+        }
+      }
+      final var densityProjected = new ArrayList<ProjectedFeature>(Math.min(MAX_FEATURES_PER_QUERY, 65_536));
+      forEachProjectedFeature(
+        sourceToAssemblySegments,
+        queryStartPx,
+        queryEndPx,
+        bpResolution,
+        densityProjected::add,
+        MAX_FEATURES_PER_QUERY
+      );
+      return aggregateFeatures(
+        densityProjected,
+        queryStartPx,
+        queryEndPx,
+        Math.min(safeWidth, FEATURE_DENSITY_MAX_BINS),
+        orderedSegments,
+        bpResolution
+      );
     }
 
     private static @NotNull List<TrackBin> downsampleFeatureBins(final @NotNull List<ProjectedFeature> projected,
@@ -3647,9 +3946,14 @@ public class Track1DManager {
             continue;
           }
           final var sourceInterval = sourceIntervalOptional.get();
-          int index = lowerBoundByStart(sourceFeatures, sourceInterval.start());
-          if (index > 0) {
-            index--;
+          // A long/nested feature can start before many short features. Searching
+          // starts and backing up by one loses it; prefix maxima retain all overlaps.
+          var ends = prefixEnds.get(sourceName);
+          int index = 0, limit = ends.length;
+          while (index < limit) {
+            int mid = (index + limit) >>> 1;
+            if (ends[mid] <= sourceInterval.start()) index = mid + 1;
+            else limit = mid;
           }
           for (int i = index; i < sourceFeatures.size(); i++) {
             final var feature = sourceFeatures.get(i);
@@ -3662,6 +3966,7 @@ public class Track1DManager {
             final var projected = projectSourceFeatureOnSegment(
               segment,
               feature,
+              sourceToAssemblySegments,
               queryStartPx,
               queryEndPx,
               bpResolution
@@ -3750,39 +4055,12 @@ public class Track1DManager {
       final double[] maxValues = new double[bucketCount];
       final long[] counts = new long[bucketCount];
 
+      // The same weights a tile would apply: the file's, or the computed coverage when that is selected.
+      final var queryWeights = chunkedFile.matrixQueries().weightsFor(atus, resolutionOrder);
       long pxCursor = queryStartPx;
-      for (final var atu : atus) {
-        final var weights = atu.getStripeDescriptor().bin_weights();
-        final var start = atu.getStartIndexInStripeIncl();
-        final var end = atu.getEndIndexInStripeExcl();
-        if (start < 0 || end <= start || end > weights.length) {
-          continue;
-        }
-        if (atu.getDirection() == ATUDirection.FORWARD) {
-          for (int i = start; i < end; i++) {
-            accumulateCoolerWeightValue(
-              pxCursor,
-              weights[i],
-              queryStartPx,
-              bucketSpan,
-              maxValues,
-              counts
-            );
-            pxCursor++;
-          }
-        } else {
-          for (int i = end - 1; i >= start; i--) {
-            accumulateCoolerWeightValue(
-              pxCursor,
-              weights[i],
-              queryStartPx,
-              bucketSpan,
-              maxValues,
-              counts
-            );
-            pxCursor++;
-          }
-        }
+      for (final double weight : queryWeights) {
+        accumulateCoolerWeightValue(pxCursor, weight, queryStartPx, bucketSpan, maxValues, counts);
+        pxCursor++;
       }
       return finalizeCoolerWeightBins(
         queryStartPx,
@@ -4289,6 +4567,49 @@ public class Track1DManager {
     SUM
   }
 
+  /** Lazily builds the canonical sequence index only for source-anchored search tracks. */
+  private static final class SourceSegmentMap extends HashMap<String, List<AssemblySegment>> {
+    private final List<ContigTree.ContigTuple> contigs;
+    private ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot snapshot;
+    private final Map<String, ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection> projections = new HashMap<>();
+    private final ChunkedFile map;
+    private final Map<Long, ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout> layouts = new HashMap<>();
+    private final Map<Long, String> layoutFingerprints = new HashMap<>();
+    SourceSegmentMap(List<ContigTree.ContigTuple> contigs, ChunkedFile map) { this.contigs = contigs; this.map = map; }
+    private ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout currentLayout(long separator) {
+      return layouts.computeIfAbsent(separator, gap -> ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout.capture(map,gap));
+    }
+    synchronized boolean changedSince(SequenceSearchMetadata metadata) {
+      String recorded = metadata.snapshotFingerprint();
+      if (recorded != null && recorded.matches("layout-v1:[0-9]+:[a-f0-9]{64}")) {
+        long separator = Long.parseLong(recorded.split(":")[1]);
+        String current = layoutFingerprints.computeIfAbsent(separator, gap ->
+          currentLayout(gap).fingerprint(gap));
+        return !current.equals(recorded);
+      }
+      return !snapshot.fingerprint().equals(recorded); // Backward-compatible saved search tracks.
+    }
+    synchronized ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection project(SequenceSearchMetadata metadata, String key) {
+      if (snapshot == null) snapshot = new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot(contigs.stream().map(tuple -> {
+        var d = tuple.descriptor();
+        return new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Fragment(d.getContigNameInSourceFASTA(),
+          d.getOffsetInSourceFASTA(), d.getOffsetInSourceFASTA() + d.getLengthBp(), tuple.direction() == ContigDirection.REVERSED);
+      }).toList());
+      return projections.computeIfAbsent(key, ignored -> {
+        var result = snapshot.project(metadata.path());
+        var recorded = metadata.snapshotFingerprint();
+        if (result.sequencePreserved() && recorded != null && recorded.matches("layout-v1:[0-9]+:[a-f0-9]{64}")) {
+          var layout = currentLayout(Long.parseLong(recorded.split(":")[1]));
+          long start = result.pieces().stream().mapToLong(p -> p.assemblyStart()).min().orElse(0);
+          long end = result.pieces().stream().mapToLong(p -> p.assemblyEnd()).max().orElse(0);
+          if (layout.hasGapBetween(start,end)) return new ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.Projection(
+            result.pieces(), ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceSnapshot.FeatureStatus.FRAGMENTED, false);
+        }
+        return result;
+      });
+    }
+  }
+
   private record SegmentBuildResult(@NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,
                                     @NotNull List<AssemblySegment> orderedSegments,
                                     long totalVisiblePixels) {
@@ -4301,13 +4622,18 @@ public class Track1DManager {
                                    boolean reversed) {
   }
 
-  private record AssemblySegment(long sourceStart,
+  record AssemblySegment(long sourceStart,
                                  long sourceEnd,
                                  long assemblyStart,
                                  long assemblyEnd,
                                  boolean reversed,
                                  long visiblePxStart,
-                                 long visiblePxEnd) {
+                                 long visiblePxEnd,
+                                 long firstOwnedBinOffset) {
+    AssemblySegment(long sourceStart, long sourceEnd, long assemblyStart, long assemblyEnd,
+                    boolean reversed, long visiblePxStart, long visiblePxEnd) {
+      this(sourceStart, sourceEnd, assemblyStart, assemblyEnd, reversed, visiblePxStart, visiblePxEnd, 0L);
+    }
   }
 
   private static final class GffTranscriptFeatureBuilder {
@@ -4494,7 +4820,15 @@ public class Track1DManager {
                               Long thickEnd,
                               String featureType,
                               @NotNull List<FeatureBlock> blocks,
-                              @NotNull Map<String, String> attributes) {
+                              @NotNull Map<String, String> attributes,
+                              SequenceSearchMetadata searchMetadata) {
+    private FeatureRange(long start, long end, double value, String label, String strand,
+                         Long thickStart, Long thickEnd, String featureType, List<FeatureBlock> blocks,
+                         Map<String, String> attributes) {
+      this(start, end, value, label, strand, thickStart, thickEnd, featureType, blocks, attributes,
+        attributes.getOrDefault("field13", "").startsWith(SequenceSearchMetadata.PREFIX)
+          ? SequenceSearchMetadata.decode(attributes.get("field13")) : null);
+    }
     private FeatureRange {
       attributes = Map.copyOf(attributes);
     }
@@ -4608,6 +4942,49 @@ public class Track1DManager {
     private volatile String currentTask;
     private volatile String error;
     private volatile long lastUpdatedMs;
+    private final String jobId = java.util.UUID.randomUUID().toString();
+    private final long createdAtMs = System.currentTimeMillis();
+    private volatile long startedAtMs;
+    private volatile long finishedAtMs;
+    private final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.List<Future<?>> tasks = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private volatile Future<?> job;
+
+    private void setJob(Future<?> future) {
+      job = future;
+      if (cancelled.get()) future.cancel(true);
+    }
+
+    private void addTask(Future<?> task) {
+      tasks.add(task);
+      if (cancelled.get()) task.cancel(true);
+    }
+
+    private void checkCancelled() {
+      if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+    }
+
+    private void cancelTasks() {
+      tasks.forEach(task -> task.cancel(true));
+      tasks.clear();
+    }
+
+    private synchronized void cancel() {
+      if (!isActive()) return;
+      cancelled.set(true);
+      final boolean queued = "queued".equals(status);
+      status = "cancelling";
+      final var active = job;
+      if (active != null) active.cancel(true);
+      cancelTasks();
+      if (queued) markCancelled();
+    }
+
+    private synchronized void markCancelled() {
+      status = "cancelled";
+      currentTask = "";
+      finishedAtMs = lastUpdatedMs = System.currentTimeMillis();
+    }
 
     private TrackPrecomputeRuntime(final @NotNull String trackId, final @NotNull String trackName) {
       this.trackId = trackId;
@@ -4621,7 +4998,7 @@ public class Track1DManager {
     }
 
     private boolean isActive() {
-      return "queued".equals(this.status) || "running".equals(this.status);
+      return "queued".equals(this.status) || "running".equals(this.status) || "cancelling".equals(this.status);
     }
 
     private void markQueued() {
@@ -4641,7 +5018,9 @@ public class Track1DManager {
       this.lastUpdatedMs = System.currentTimeMillis();
     }
 
-    private void markRunning(final @NotNull String currentTask, final int completedTasks) {
+    private synchronized void markRunning(final @NotNull String currentTask, final int completedTasks) {
+      checkCancelled();
+      if (startedAtMs == 0) startedAtMs = System.currentTimeMillis();
       this.status = "running";
       this.currentTask = currentTask;
       this.completedTasks = Math.max(0, completedTasks);
@@ -4653,7 +5032,9 @@ public class Track1DManager {
       this.lastUpdatedMs = System.currentTimeMillis();
     }
 
-    private void markFinished() {
+    private synchronized void markFinished() {
+      checkCancelled();
+      finishedAtMs = System.currentTimeMillis();
       this.status = "finished";
       this.currentTask = "";
       this.error = null;
@@ -4661,7 +5042,8 @@ public class Track1DManager {
       this.lastUpdatedMs = System.currentTimeMillis();
     }
 
-    private void markFailed(final @NotNull String error) {
+    private synchronized void markFailed(final @NotNull String error) {
+      finishedAtMs = System.currentTimeMillis();
       this.status = "failed";
       this.error = error;
       this.currentTask = "";
@@ -4725,6 +5107,13 @@ public class Track1DManager {
     private final boolean rangeAuto;
     private final double rangeMin;
     private final double rangeMax;
+    /** Records skipped or corrected while reading the file. Empty when nothing was changed. */
+    private @NotNull List<String> importWarnings = List.of();
+
+    @NotNull TrackSummary withImportWarnings(final @NotNull List<String> warnings) {
+      this.importWarnings = List.copyOf(warnings);
+      return this;
+    }
   }
 
   @Getter
@@ -4738,6 +5127,8 @@ public class Track1DManager {
     private final @NotNull List<TrackBin> bins;
     private final double maxValue;
     private final String error;
+    private String statusMessage;
+    private String analysisWarning;
   }
 
   @Getter
@@ -4917,6 +5308,13 @@ public class Track1DManager {
       );
     }
 
+    private TrackRender toPendingRender(final @NotNull String message) {
+      final var render = new TrackRender(trackId, name, type.name(), color,
+        dataSource.renderStyle().name(), List.of(), 0.0d, null);
+      render.statusMessage = message;
+      return render;
+    }
+
     private TrackRender toErrorRender(final @NotNull String message) {
       return new TrackRender(
         trackId,
@@ -4978,7 +5376,7 @@ public class Track1DManager {
         bigWigAggregationMode
       );
       final var maxValue = bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0.0d);
-      return new TrackRender(
+      var rendered = new TrackRender(
         trackId,
         name,
         type.name(),
@@ -4988,6 +5386,16 @@ public class Track1DManager {
         maxValue,
         null
       );
+      if (dataSource instanceof InMemoryTrackDataSource memory && sourceToAssemblySegments instanceof SourceSegmentMap sourceMap) {
+        var first = memory.featuresBySource().values().stream().filter(v -> !v.isEmpty()).findFirst().orElse(List.of());
+        var metadata = first.isEmpty() ? null : first.getFirst().searchMetadata();
+        if (metadata != null) {
+          sourceMap.project(metadata, metadata.hitId());
+          if (sourceMap.changedSince(metadata))
+            rendered.analysisWarning = "New matches might have formed. The assembly has changed since this search. Existing hits are repositioned and disrupted hits marked, but new joins may create matches that are absent from this track. Rerun the search to refresh results.";
+        }
+      }
+      return rendered;
     }
   }
 }

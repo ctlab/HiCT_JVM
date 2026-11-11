@@ -1,0 +1,505 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "hict-bundled",
+  "generator": "hand-curated",
+  "sections": [
+    {
+      "id": "quick-start",
+      "title": "Quick start",
+      "description": "Public Hi-C and Micro-C maps with matching FASTA references.",
+      "order": 0
+    },
+    {
+      "id": "dnazoo",
+      "title": "DNA Zoo chromosome-length assemblies",
+      "description": "Hi-C maps with the genome assemblies they were used to scaffold, shared by the DNA Zoo Consortium. Large downloads: check your disk space first.",
+      "order": 10
+    }
+  ],
+  "examples": [
+    {
+      "sectionId": "quick-start",
+      "provenance": {
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified",
+        "sourceUrl": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM7056007"
+      },
+      "id": "geo-borrelia",
+      "title": "Borrelia Hi-C quick start",
+      "organism": "Borrelia burgdorferi",
+      "assemblyIds": [
+        "GCA_000008685.2_ASM868v2",
+        "GSM7056007"
+      ],
+      "tags": [
+        "Hi-C",
+        "19 replicons"
+      ],
+      "description": "A 1.91 MB Hi-C map with its B31 reference. Reference preparation selects the 19 mapped replicons and matches their headers while preserving every original base.",
+      "publications": [
+        {
+          "title": "Organization and replicon interactions within the highly segmented genome of Borrelia burgdorferi",
+          "citation": "Ren Z, Takacs CN, Brandão HB, Jacobs-Wagner C, Wang X. 2023. PLOS Genetics 19:e1010857.",
+          "url": "https://doi.org/10.1371/journal.pgen.1010857",
+          "doi": "10.1371/journal.pgen.1010857",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "mcool",
+          "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7056nnn/GSM7056007/suppl/GSM7056007_HiC_CJW_Bb285_rep1_mapq_30.mcool",
+          "filename": "borrelia.mcool",
+          "required": true,
+          "bytes": 1907128,
+          "sha256": "c2c5be6303c2698391022c3c5bdddb34b0d7d61f9100a9b050363f188c60f5de"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/008/685/GCA_000008685.2_ASM868v2/GCA_000008685.2_ASM868v2_genomic.fna.gz",
+          "filename": "borrelia-original.fa.gz",
+          "required": true,
+          "bytes": 406111,
+          "sha256": "888961e50c4ff32e0a641853eb9cbd498a33736d9b568c364b50632dc6b5c93c"
+        }
+      ],
+      "attribution": {
+        "provider": "NCBI GEO and GenBank",
+        "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM7056007",
+        "termsUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+        "acknowledgement": "Cite Ren et al. 2023, PLOS Genetics 19:e1010857, and identify GEO GSM7056007 and reference GCA_000008685.2. Original reference bases are preserved.",
+        "restrictions": "NCBI molecular data policy applies. The source study is available under Creative Commons Attribution."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "GCA_000008685.2_ASM868v2",
+        "quickStart": true,
+        "fastaPreparation": {
+          "filename": "borrelia-matching.fa",
+          "sha256": "ca26a9bd04a3d5cbdd9e80c67a2b2a8c5c10f7c0fc98fad4163daf4716c85b94",
+          "records": [
+            {
+              "source": "AE000783.1",
+              "target": "Ch1",
+              "length": 910724
+            },
+            {
+              "source": "AE000792.1",
+              "target": "cp26",
+              "length": 26498
+            },
+            {
+              "source": "AE001575.1",
+              "target": "cp32-1",
+              "length": 30750
+            },
+            {
+              "source": "AE001576.1",
+              "target": "cp32-3",
+              "length": 30223
+            },
+            {
+              "source": "AE001577.1",
+              "target": "cp32-4",
+              "length": 30299
+            },
+            {
+              "source": "AE001578.1",
+              "target": "cp32-6",
+              "length": 29838
+            },
+            {
+              "source": "AE001579.1",
+              "target": "cp32-7",
+              "length": 30800
+            },
+            {
+              "source": "AE001580.1",
+              "target": "cp32-8",
+              "length": 30885
+            },
+            {
+              "source": "AE001581.1",
+              "target": "cp32-9",
+              "length": 30651
+            },
+            {
+              "source": "AE000793.2",
+              "target": "lp17",
+              "length": 16821
+            },
+            {
+              "source": "AE001582.2",
+              "target": "lp21",
+              "length": 18777
+            },
+            {
+              "source": "AE000785.1",
+              "target": "lp25",
+              "length": 24177
+            },
+            {
+              "source": "AE000794.2",
+              "target": "lp28-1",
+              "length": 28155
+            },
+            {
+              "source": "AE000786.1",
+              "target": "lp28-2",
+              "length": 29766
+            },
+            {
+              "source": "AE000784.1",
+              "target": "lp28-3",
+              "length": 28601
+            },
+            {
+              "source": "AE000789.1",
+              "target": "lp28-4",
+              "length": 27323
+            },
+            {
+              "source": "AE000788.1",
+              "target": "lp36",
+              "length": 36849
+            },
+            {
+              "source": "AE000787.1",
+              "target": "lp38",
+              "length": 38829
+            },
+            {
+              "source": "AE000790.2",
+              "target": "lp54",
+              "length": 53657
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sectionId": "quick-start",
+      "provenance": {
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified",
+        "sourceUrl": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM9302472"
+      },
+      "id": "geo-yeast-microc",
+      "title": "Yeast Micro-C quick start",
+      "organism": "Saccharomyces cerevisiae",
+      "assemblyIds": [
+        "sacCer3",
+        "GSM9302472"
+      ],
+      "tags": [
+        "Micro-C",
+        "17 chromosomes"
+      ],
+      "description": "A 166.94 MB wild-type Micro-C map with the 3.82 MB UCSC sacCer3 reference. All 17 chromosome names and lengths match directly. Includes 50 bp detail.",
+      "publications": [
+        {
+          "title": "Cohesin acetylation and ATPase activity control cohesion and loop architecture through distinct mechanisms",
+          "citation": "GEO series GSE310515, wild-type biological replicate 3, sample GSM9302472.",
+          "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE310515",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "mcool",
+          "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM9302nnn/GSM9302472/suppl/GSM9302472_WT3.mcool",
+          "filename": "yeast-wt3.mcool",
+          "required": true,
+          "bytes": 166935036,
+          "sha256": "11a8e588694cfd686958ab23576aa3030dcf69f0c868d760082b34fc5d918a4b"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://hgdownload.soe.ucsc.edu/goldenPath/sacCer3/bigZips/sacCer3.fa.gz",
+          "filename": "sacCer3.fa.gz",
+          "required": true,
+          "bytes": 3820548,
+          "sha256": "e3a70396853eff5a012077efbd06cb97d858e12349745d102e316bb8f620f266"
+        }
+      ],
+      "attribution": {
+        "provider": "NCBI GEO and UCSC Genome Browser",
+        "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM9302472",
+        "termsUrl": "https://hgdownload.soe.ucsc.edu/goldenPath/sacCer3/bigZips/",
+        "acknowledgement": "Identify GEO GSM9302472 and series GSE310515 and cite the associated source study. Reference sequences are from the UCSC sacCer3 assembly download.",
+        "restrictions": "NCBI molecular data policy and the UCSC sacCer3 download terms apply."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "sacCer3",
+        "quickStart": true
+      }
+    },
+    {
+      "id": "dnazoo-tardigrade",
+      "sectionId": "quick-start",
+      "title": "Tardigrade quick start",
+      "organism": "Hypsibius dujardini",
+      "assemblyIds": [
+        "nHd_3.1_HiC",
+        "GCA_002082055.1"
+      ],
+      "tags": [
+        "Hi-C",
+        "five chromosomes"
+      ],
+      "description": "A 12.6 MB Hi-C map and 32.7 MB FASTA. Open example downloads, converts and opens the five mapped chromosomes. The FASTA also includes unplaced scaffolds absent from the map.",
+      "publications": [
+        {
+          "title": "De novo assembly of the Aedes aegypti genome using Hi-C yields chromosome-length scaffolds",
+          "citation": "Dudchenko O, Batra SS, Omer AD, et al. 2017. Science 356(6333):92-95.",
+          "url": "https://doi.org/10.1126/science.aal3327",
+          "doi": "10.1126/science.aal3327",
+          "kind": "method"
+        },
+        {
+          "title": "Comparative genomics of the tardigrades Hypsibius dujardini and Ramazzottius varieornatus",
+          "citation": "Yoshida Y, Koutsovoulos G, Laetsch DR, et al. 2017. PLOS Biology 15:e2002266.",
+          "url": "https://doi.org/10.1371/journal.pbio.2002266",
+          "doi": "10.1371/journal.pbio.2002266",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "hic",
+          "url": "https://dnazoo.s3.wasabisys.com/Hypsibius_dujardini/nHd_3.1_HiC.hic",
+          "filename": "nHd_3.1_HiC.hic",
+          "required": true,
+          "bytes": 12554347,
+          "sha256": "fcc5200f8153e3565b2c0729d7b95b1c0aa3bb976fa563b402a3aec0c20f0dd6"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://dnazoo.s3.wasabisys.com/Hypsibius_dujardini/nHd_3.1_HiC.fasta.gz",
+          "filename": "nHd_3.1_HiC.fasta.gz",
+          "required": true,
+          "bytes": 32696429,
+          "sha256": "f761137971de0326e9fd9967c0fc4a4013f37c4de21ed6896eddfe613bec8706"
+        }
+      ],
+      "attribution": {
+        "provider": "DNA Zoo Consortium",
+        "url": "https://www.dnazoo.org/",
+        "termsUrl": "https://www.dnazoo.org/usage",
+        "acknowledgement": "Unpublished genome assemblies and sequencing data for Hypsibius dujardini are used with permission from the DNA Zoo Consortium (dnazoo.org).",
+        "restrictions": "The provider states no formal licence. Where a draft genome used by DNA Zoo was made by others and is unpublished, respect any restrictions set by its creators."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "nHd_3.1_HiC",
+        "quickStart": true
+      },
+      "provenance": {
+        "sourceUrl": "https://www.dnazoo.org/assemblies/hypsibius_dujardini",
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified"
+      }
+    },
+    {
+      "id": "dnazoo-cheetah",
+      "sectionId": "dnazoo",
+      "title": "Cheetah (Acinonyx jubatus)",
+      "organism": "Acinonyx jubatus",
+      "assemblyIds": [
+        "aciJub1_HiC"
+      ],
+      "tags": [
+        "mammal",
+        "2n=38",
+        "Hi-C"
+      ],
+      "description": "A chromosome-length cheetah assembly (aciJub1_HiC, 2n=38) with its Hi-C map. Shows scaffolding of a draft genome into chromosomes: contigs, scaffolds and the assembly file used to build them.",
+      "publications": [
+        {
+          "title": "De novo assembly of the Aedes aegypti genome using Hi-C yields chromosome-length scaffolds",
+          "citation": "Dudchenko O, Batra SS, Omer AD, et al. 2017. Science 356(6333):92-95.",
+          "url": "https://doi.org/10.1126/science.aal3327",
+          "doi": "10.1126/science.aal3327",
+          "kind": "method"
+        },
+        {
+          "title": "The Juicebox Assembly Tools / DNA Zoo method preprint",
+          "citation": "Dudchenko O, et al. 2018. bioRxiv 254797.",
+          "url": "https://doi.org/10.1101/254797",
+          "doi": "10.1101/254797",
+          "kind": "method"
+        },
+        {
+          "title": "Draft genome of the cheetah",
+          "citation": "Dobrynin P, et al. 2015. Genome Biology 16:277. Draft assembly GCA_001443585.1.",
+          "url": "https://doi.org/10.1186/s13059-015-0837-4",
+          "doi": "10.1186/s13059-015-0837-4",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "hic",
+          "url": "https://dnazoo.s3.wasabisys.com/Acinonyx_jubatus/revision_190807/aciJub1_HiC.hic",
+          "filename": "aciJub1_HiC.hic",
+          "required": true,
+          "bytes": 1407754884,
+          "description": "Hi-C contact map (needs conversion to HiCT format)",
+          "sha256": "2ccb680c550c510175f1484c16278f820a412485fbb08e6ae20003f1b1701525"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://dnazoo.s3.wasabisys.com/Acinonyx_jubatus/revision_190807/aciJub1_HiC.fasta.gz",
+          "filename": "aciJub1_HiC.fasta.gz",
+          "required": true,
+          "bytes": 767362474,
+          "description": "Chromosome-length assembly sequence",
+          "sha256": "8ef579d32cb79f47cc4100d709192a49c980b2754c715dbb1d553b8063341459"
+        },
+        {
+          "id": "assembly",
+          "role": "assembly",
+          "format": "assembly",
+          "url": "https://dnazoo.s3.wasabisys.com/Acinonyx_jubatus/revision_190807/aciJub1_HiC.assembly",
+          "filename": "aciJub1_HiC.assembly",
+          "required": false,
+          "bytes": 473432,
+          "description": "Original draft-component Juicebox layout. The matrix and FASTA use chromosome-length scaffold coordinates, so this layout is retained for provenance.",
+          "sha256": "2e997faa90a9d5839fddbe302ef887bcb75cc5100c17ae9dc8275f6e45fc3540"
+        }
+      ],
+      "attribution": {
+        "provider": "DNA Zoo Consortium",
+        "url": "https://www.dnazoo.org/",
+        "termsUrl": "https://www.dnazoo.org/usage",
+        "acknowledgement": "DNA Zoo asks that its 3D de novo assembly methods paper is cited and that the acknowledgments of a paper using these data include: \"Unpublished genome assemblies and sequencing data for the cheetah (Acinonyx jubatus) are used with permission from the DNA Zoo Consortium (dnazoo.org).\"",
+        "restrictions": "The provider states no formal licence. Where a draft genome used by DNA Zoo was made by others and is unpublished, respect any restrictions set by its creators."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "aciJub1_HiC"
+      },
+      "provenance": {
+        "sourceUrl": "https://www.dnazoo.org/assemblies/",
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified"
+      }
+    },
+    {
+      "id": "dnazoo-aedes",
+      "sectionId": "dnazoo",
+      "title": "Yellow fever mosquito (Aedes aegypti)",
+      "organism": "Aedes aegypti",
+      "assemblyIds": [
+        "AaegL5.0"
+      ],
+      "tags": [
+        "insect",
+        "2n=6",
+        "Hi-C"
+      ],
+      "description": "The AaegL5.0 yellow fever mosquito assembly (2n=6) and its Hi-C map, the genome that demonstrated chromosome-length scaffolding with Hi-C. Three large chromosomes make the structure easy to read.",
+      "publications": [
+        {
+          "title": "De novo assembly of the Aedes aegypti genome using Hi-C yields chromosome-length scaffolds",
+          "citation": "Dudchenko O, Batra SS, Omer AD, et al. 2017. Science 356(6333):92-95.",
+          "url": "https://doi.org/10.1126/science.aal3327",
+          "doi": "10.1126/science.aal3327",
+          "kind": "method"
+        },
+        {
+          "title": "The Juicebox Assembly Tools / DNA Zoo method preprint",
+          "citation": "Dudchenko O, et al. 2018. bioRxiv 254797.",
+          "url": "https://doi.org/10.1101/254797",
+          "doi": "10.1101/254797",
+          "kind": "method"
+        },
+        {
+          "title": "Improved reference genome of Aedes aegypti informs arbovirus vector control",
+          "citation": "Matthews BJ, et al. 2018. Nature.",
+          "url": "https://doi.org/10.1038/s41586-018-0692-z",
+          "doi": "10.1038/s41586-018-0692-z",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "hic",
+          "url": "https://dnazoo.s3.wasabisys.com/Aedes_aegypti__AaegL5.0/AaegL5.0.hic",
+          "filename": "AaegL5.0.hic",
+          "required": true,
+          "bytes": 2780092536,
+          "description": "Hi-C contact map (needs conversion to HiCT format)",
+          "sha256": "1f41708e0dd80412c2a4049f752ba47dd1cb9ed881b57d18f7809cb25b29e715"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://dnazoo.s3.wasabisys.com/Aedes_aegypti__AaegL5.0/AaegL5.0.fasta.gz",
+          "filename": "AaegL5.0.fasta.gz",
+          "required": true,
+          "bytes": 410300578,
+          "description": "Chromosome-length assembly sequence",
+          "sha256": "32abb90d0ce61a78a621313831cfc2bb04353f6ce82d195fa6757b5cf9811a31"
+        },
+        {
+          "id": "assembly",
+          "role": "assembly",
+          "format": "assembly",
+          "url": "https://dnazoo.s3.wasabisys.com/Aedes_aegypti__AaegL5.0/AaegL5.0.assembly",
+          "filename": "AaegL5.0.assembly",
+          "required": false,
+          "bytes": 71567,
+          "description": "Original draft-component Juicebox layout. The matrix and FASTA use chromosome-length scaffold coordinates, so this layout is retained for provenance.",
+          "sha256": "c3e1b7728b0abb77bfd7ede34130dbb8cebe9b8d651b83a8a43a089e2100167a"
+        }
+      ],
+      "attribution": {
+        "provider": "DNA Zoo Consortium",
+        "url": "https://www.dnazoo.org/",
+        "termsUrl": "https://www.dnazoo.org/usage",
+        "acknowledgement": "DNA Zoo asks that its 3D de novo assembly methods paper is cited and that the acknowledgments of a paper using these data include: \"Unpublished genome assemblies and sequencing data for the yellow fever mosquito (Aedes aegypti) are used with permission from the DNA Zoo Consortium (dnazoo.org).\"",
+        "restrictions": "The provider states no formal licence. Where a draft genome used by DNA Zoo was made by others and is unpublished, respect any restrictions set by its creators."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "AaegL5.0"
+      },
+      "provenance": {
+        "sourceUrl": "https://www.dnazoo.org/assemblies/",
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified"
+      }
+    }
+  ]
+}

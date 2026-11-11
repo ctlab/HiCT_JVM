@@ -1,0 +1,4 @@
+dataset,resolution_bp,side_bins,kind,query_id,chrom1,start1_bp,end1_bp,chrom2,start2_bp,end2_bp
+Anopheles,1000,1024,diagonal,0,REPLACE,0,1024000,REPLACE,0,1024000
+Rhinoceros,1000,1024,diagonal,0,REPLACE,0,1024000,REPLACE,0,1024000
+GSE286495,250,1024,diagonal,0,REPLACE,0,256000,REPLACE,0,256000

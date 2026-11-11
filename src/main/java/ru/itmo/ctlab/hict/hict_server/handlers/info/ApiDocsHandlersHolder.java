@@ -17,6 +17,7 @@ import java.util.HexFormat;
  */
 public class ApiDocsHandlersHolder extends HandlersHolder {
   private static final String OPENAPI_SPEC_PATH = "/openapi/hict-api-v1.yaml";
+  private static final String SWAGGER_ASSET_ROOT = "/META-INF/resources/webjars/swagger-ui/5.30.2/";
   private static final String OPENAPI_YAML = readResourceUtf8(OPENAPI_SPEC_PATH);
   private static final String OPENAPI_ETAG = computeWeakEtag(OPENAPI_YAML);
   private static final String DOCS_HTML = """
@@ -26,7 +27,7 @@ public class ApiDocsHandlersHolder extends HandlersHolder {
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>HiCT API v1</title>
-      <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+      <link rel="stylesheet" href="/api/v1/assets/swagger-ui.css" />
       <style>
         html, body {
           margin: 0;
@@ -41,7 +42,7 @@ public class ApiDocsHandlersHolder extends HandlersHolder {
     </head>
     <body>
       <div id="swagger-ui"></div>
-      <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+      <script src="/api/v1/assets/swagger-ui-bundle.js"></script>
       <script>
         window.ui = SwaggerUIBundle({
           url: "/api/v1/openapi.yaml",
@@ -50,6 +51,7 @@ public class ApiDocsHandlersHolder extends HandlersHolder {
           displayRequestDuration: true,
           filter: true,
           persistAuthorization: true,
+          validatorUrl: null,
           tryItOutEnabled: true
         });
       </script>
@@ -93,6 +95,34 @@ public class ApiDocsHandlersHolder extends HandlersHolder {
         .putHeader("etag", OPENAPI_ETAG)
         .end(OPENAPI_YAML);
     });
+
+    router.get("/api/v1/assets/swagger-ui.css").handler(ctx ->
+      serveAsset(ctx, SwaggerAssets.CSS, "text/css; charset=utf-8"));
+    router.get("/api/v1/assets/swagger-ui-bundle.js").handler(ctx ->
+      serveAsset(ctx, SwaggerAssets.JAVASCRIPT, "text/javascript; charset=utf-8"));
+  }
+
+  private record Asset(String body, String etag) {
+    private static Asset read(String filename) {
+      final var body = readResourceUtf8(SWAGGER_ASSET_ROOT + filename);
+      return new Asset(body, computeWeakEtag(body));
+    }
+  }
+
+  private static final class SwaggerAssets {
+    private static final Asset CSS = Asset.read("swagger-ui.css");
+    private static final Asset JAVASCRIPT = Asset.read("swagger-ui-bundle.js");
+  }
+
+  private static void serveAsset(io.vertx.ext.web.RoutingContext ctx, Asset asset, String contentType) {
+    final var response = ctx.response()
+      .putHeader("cache-control", "public, max-age=300")
+      .putHeader("etag", asset.etag());
+    if (etagMatches(ctx.request().getHeader("if-none-match"), asset.etag())) {
+      response.setStatusCode(304).end();
+      return;
+    }
+    response.putHeader("content-type", contentType).end(asset.body());
   }
 
   private static boolean etagMatches(final String ifNoneMatchHeader, final String expectedEtag) {

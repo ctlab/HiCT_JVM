@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hict.example/schemas/hict-examples.schema.json",
+  "title": "HiCT examples catalog",
+  "description": "Data-driven catalog of example datasets. Sections and examples are defined by the data, nothing is hard-coded in the application. Semantic rules that JSON Schema cannot express (unique ids, references between ids, recipe file roles) are enforced by ExamplesCatalog.",
+  "type": "object",
+  "required": ["schemaVersion", "catalogId", "sections", "examples"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "catalogId": { "$ref": "#/$defs/id" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "generator": { "type": "string", "maxLength": 200 },
+    "sections": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/section" } },
+    "examples": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/example" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "longText": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "httpsUrl": { "type": "string", "pattern": "^https://[^\\s]+$", "maxLength": 1000 },
+    "section": {
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "$ref": "#/$defs/text" },
+        "description": { "$ref": "#/$defs/longText" },
+        "order": { "type": "integer", "minimum": 0, "maximum": 100000 }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "required": ["title", "citation", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "$ref": "#/$defs/text" },
+        "citation": { "$ref": "#/$defs/longText" },
+        "url": { "$ref": "#/$defs/httpsUrl" },
+        "doi": { "type": "string", "pattern": "^10\\.\\d{4,9}/\\S+$" },
+        "kind": { "enum": ["method", "dataset"] }
+      }
+    },
+    "file": {
+      "type": "object",
+      "required": ["id", "role", "format", "url", "filename", "required"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "role": { "enum": ["matrix", "fasta", "agp", "assembly", "track"] },
+        "format": { "enum": ["hic", "mcool", "hict", "fasta", "fasta.gz", "agp", "assembly", "bed", "bigwig", "gff", "vcf"] },
+        "url": { "$ref": "#/$defs/httpsUrl" },
+        "filename": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "required": { "type": "boolean" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 1099511627776 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "description": { "$ref": "#/$defs/longText" }
+      }
+    },
+    "attribution": {
+      "type": "object",
+      "required": ["provider", "url", "termsUrl", "acknowledgement"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "$ref": "#/$defs/text" },
+        "url": { "$ref": "#/$defs/httpsUrl" },
+        "termsUrl": { "$ref": "#/$defs/httpsUrl" },
+        "acknowledgement": { "$ref": "#/$defs/longText" },
+        "licenseName": { "$ref": "#/$defs/text" },
+        "licenseUrl": { "$ref": "#/$defs/httpsUrl" },
+        "restrictions": { "$ref": "#/$defs/longText" }
+      }
+    },
+    "openingRecipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matrix": { "$ref": "#/$defs/id" },
+        "fasta": { "$ref": "#/$defs/id" },
+        "agp": { "$ref": "#/$defs/id" },
+        "assembly": { "$ref": "#/$defs/id" },
+        "tracks": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/id" } },
+        "referenceId": { "$ref": "#/$defs/text" },
+        "quickStart": { "type": "boolean", "default": false, "description": "Download, convert and open a matrix and FASTA recipe with default settings." },
+        "fastaPreparation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filename",
+            "sha256",
+            "records"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,124}\\.fa$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "records": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1000,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source",
+                  "target",
+                  "length"
+                ],
+                "properties": {
+                  "source": {
+                    "$ref": "#/$defs/text"
+                  },
+                  "target": {
+                    "$ref": "#/$defs/text"
+                  },
+                  "length": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 33554432
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceUrl": { "$ref": "#/$defs/httpsUrl" },
+        "retrieved": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "origin": { "enum": ["curated", "pipeline"] },
+        "generatorVersion": { "$ref": "#/$defs/text" },
+        "reviewStatus": { "enum": ["draft", "reviewed", "verified"] }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["id", "sectionId", "title", "description", "publications", "files", "attribution", "openingRecipe"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "sectionId": { "$ref": "#/$defs/id" },
+        "title": { "$ref": "#/$defs/text" },
+        "description": { "$ref": "#/$defs/longText" },
+        "organism": { "$ref": "#/$defs/text" },
+        "assemblyIds": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/text" } },
+        "tags": { "type": "array", "maxItems": 30, "items": { "$ref": "#/$defs/text" } },
+        "publications": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/publication" } },
+        "files": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "$ref": "#/$defs/file" } },
+        "attribution": { "$ref": "#/$defs/attribution" },
+        "openingRecipe": { "$ref": "#/$defs/openingRecipe" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    }
+  }
+}

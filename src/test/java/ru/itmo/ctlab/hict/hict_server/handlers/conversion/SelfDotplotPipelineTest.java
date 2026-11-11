@@ -149,6 +149,9 @@ class SelfDotplotPipelineTest {
 
     assertTrue(Files.isRegularFile(output));
     assertTrue(Files.size(output) > 0L);
+    try (var reader = ch.systemsx.cisd.hdf5.HDF5Factory.openForReading(output.toFile())) {
+      assertTrue(reader.object().getGroupMembers("/resolutions").containsAll(List.of("25", "50", "100")));
+    }
   }
 
   @Test

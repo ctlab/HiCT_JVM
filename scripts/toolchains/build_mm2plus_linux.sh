@@ -265,7 +265,7 @@ fi
   done
 } > "${BUILD_INFO}"
 
-python3 - "${OUTPUT_DIR}" "${REF}" <<'PY'
+python3 - "${OUTPUT_DIR}" "${REF}" "${ENABLE_STATIC_MUSL}" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1]); ref = sys.argv[2]
 commands = {}; files = []; notices = []; citations = []; limitations = []
@@ -288,7 +288,7 @@ if "mm2plus_avx2" in commands or "mm2plus_avx512" in commands:
     for p in ("share/licenses/mm2plus/LICENSE.txt", "share/licenses/mm2plus/LICENSE", "share/doc/mm2plus/README.md", "share/doc/mm2plus/build-info.txt"): add_file(p)
     notices.extend([f"This HiCT build bundles mm2-plus source builds produced from {ref}.", "HiCT self-dotplot generation can use mm2-plus as an accelerated minimap2-compatible aligner when selected.", "mm2-plus is redistributed with its upstream license file. Keep the bundled license and citation files with released artifacts."])
     citations.append("mm2-plus: Ghanshyam Chandra, Md Vasimuddin, Sanchit Misra and Chirag Jain. Accelerating whole-genome alignment in the age of complete genome assemblies. bioRxiv 2024. doi:10.1101/2024.11.25.625328.")
-    limitations.append("Static musl mm2-plus builds disable OpenMP and use a serial compatibility path to avoid host runtime dependencies.")
+    limitations.append("Static musl mm2-plus builds disable OpenMP and use a serial compatibility path to avoid host runtime dependencies." if sys.argv[3] == "1" else "This glibc mm2-plus build retains OpenMP; Linux release CI verifies its symbol floor.")
 else:
     limitations.append("No mm2-plus executable was built; HiCT self-dotplot generation will fall back to minimap2 when available.")
 manifest = {"id": f"hict-toolchain-linux-x86_64-hictk-minimap2-mm2plus-{ref}", "commands": commands, "files": files, "notices": notices, "citations": citations, "limitations": limitations + ["This payload was compiled on Linux and should only be bundled into Linux fat-JAR releases."]}

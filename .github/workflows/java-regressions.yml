@@ -1,0 +1,58 @@
+name: Java build and edit/render regressions
+
+on:
+  push:
+    branches: [jvm-sfx-native]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  java:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      # Runtime and native-parity tests need the split JHDF5 native archive.
+      # Let Gradle resolve both release assets.
+      HICT_JHDF5_SOURCE_MODE: release
+      HICT_REQUIRE_BUNDLED_JHDF5: '1'
+      MACOSX_DEPLOYMENT_TARGET: '12.3'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify pinned browser source checkout without fallback
+        run: node --test scripts/portable/check_webui_checkout.mjs
+      - name: Compile full JVM, build fat JAR, and check edit/render contracts
+        shell: bash
+        run: >-
+          bash ./gradlew test
+          testNativeProcessingBaseline shadowJar -x copyWebUI --no-daemon
+      - name: Audit macOS JNI deployment targets and relocatable install names
+        if: runner.os == 'macOS'
+        shell: bash
+        run: >-
+          python3 scripts/ci/check_macos_compatibility.py
+          build/native-processing/resources --arch "$(uname -m)" --target 12.3
+          --report build/reports/native-macos-compatibility.json
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: java-regressions-${{ matrix.os }}
+          path: |
+            build/reports/tests/
+            build/test-results/
+            build/reports/native-macos-compatibility.json

@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "synthetic-fixtures",
+  "sections": [
+    {
+      "id": "fixture-section",
+      "title": "Synthetic examples",
+      "description": "Test inputs, not downloadable scientific examples.",
+      "order": 0
+    }
+  ],
+  "examples": [
+    {
+      "id": "tiny",
+      "sectionId": "fixture-section",
+      "title": "Synthetic contact and sequence fixture",
+      "description": "Tests a zero contact row, reversed sequence and a partial terminal bin.",
+      "publications": [
+        {
+          "title": "Synthetic fixture specification",
+          "citation": "HiCT regression fixture; not a research publication.",
+          "url": "https://example.org/hict-fixture/specification",
+          "role": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "contacts",
+          "role": "matrix",
+          "format": "mcool",
+          "url": "https://example.org/hict-fixture/tiny.mcool",
+          "filename": "tiny.mcool",
+          "required": true,
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          }
+        },
+        {
+          "id": "sequence",
+          "role": "fasta",
+          "format": "fasta",
+          "url": "https://example.org/hict-fixture/tiny.fa",
+          "filename": "tiny.fa",
+          "required": true,
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          }
+        },
+        {
+          "id": "layout",
+          "role": "agp",
+          "format": "agp",
+          "url": "https://example.org/hict-fixture/tiny.agp",
+          "filename": "tiny.agp",
+          "required": false,
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          }
+        },
+        {
+          "id": "features",
+          "role": "track",
+          "format": "bed",
+          "url": "https://example.org/hict-fixture/tiny.bed",
+          "filename": "tiny.bed",
+          "required": false,
+          "attribution": {
+            "provider": "Synthetic HiCT test fixture",
+            "url": "https://example.org/hict-fixture",
+            "termsUrl": "https://example.org/hict-fixture/terms",
+            "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+          }
+        }
+      ],
+      "attribution": {
+        "provider": "Synthetic HiCT test fixture",
+        "url": "https://example.org/hict-fixture",
+        "termsUrl": "https://example.org/hict-fixture/terms",
+        "acknowledgement": "Synthetic test metadata only. No external dataset or publication is represented."
+      },
+      "openingRecipe": {
+        "matrix": "contacts",
+        "fasta": "sequence",
+        "agp": "layout",
+        "referenceIdentity": "synthetic-reference-v1",
+        "tracks": [
+          {
+            "fileId": "features",
+            "type": "annotation",
+            "format": "bed",
+            "axis": "both",
+            "placement": "outside",
+            "coordinateSystem": "zero-based-half-open",
+            "assemblyReference": "synthetic-reference-v1"
+          }
+        ]
+      },
+      "provenance": {
+        "sourceUrl": "https://example.org/hict-fixture",
+        "retrievedAt": "2026-11-10",
+        "origin": "curated",
+        "reviewStatus": "synthetic-test-only"
+      }
+    }
+  ]
+}

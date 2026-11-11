@@ -3,7 +3,10 @@ package ru.itmo.ctlab.hict.hict_library.converters;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 
 import java.nio.file.Files;
@@ -13,15 +16,135 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBasisATUDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockColsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockRowsDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getBlockValuesDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigDirectionDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigHideTypeDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigLengthBinsDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigNameDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigOrderDatasetPath;
 import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getContigsATLDatasetPath;
+import static ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getDenseBlockDatasetPath;
 
 class McoolToHictConverterTest {
   @TempDir
   Path tempDir;
+
+  @Test
+  void parallelStripesPreserveEveryPixelAndDatasetExtent() throws Exception {
+    final var input = tempDir.resolve("many-stripes.mcool");
+    final int bins = 20000;
+    final long[] ids = java.util.stream.LongStream.range(0, bins).toArray();
+    final long[] starts = java.util.stream.LongStream.range(0, bins).map(x -> 1000 * x).toArray();
+    final long[] ends = java.util.stream.LongStream.rangeClosed(1, bins).map(x -> 1000 * x).toArray();
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (var w = HDF5Factory.open(input.toFile())) {
+      w.string().writeArray("/chroms/name", new String[]{"source"});
+      w.int64().writeArray("/chroms/length", new long[]{1000L * bins});
+      String root = "/resolutions/1000/";
+      w.int64().writeArray(root + "indexes/chrom_offset", new long[]{0, bins});
+      w.int64().writeArray(root + "indexes/bin1_offset", java.util.stream.LongStream.rangeClosed(0, bins).toArray());
+      w.int64().writeArray(root + "bins/chrom", new long[bins]);
+      w.int64().writeArray(root + "bins/start", starts);
+      w.int64().writeArray(root + "bins/end", ends);
+      w.int64().writeArray(root + "pixels/bin1_id", ids);
+      w.int64().writeArray(root + "pixels/bin2_id", ids);
+      w.int64().writeArray(root + "pixels/count", java.util.stream.LongStream.rangeClosed(1, bins).toArray());
+    }
+    String old = System.getProperty("hict.import.maxStripeBatchSize");
+    System.setProperty("hict.import.maxStripeBatchSize", "16");
+    try {
+      final var output = tempDir.resolve("many-stripes.hict.hdf5");
+      new McoolToHictConverter().convert(new ConversionOptions(input, output, List.of(1000L), 128, 6,
+        ConversionOptions.CompressionAlgorithm.DEFLATE, ConversionOptions.NO_AGP, false, 4, false,
+        ConversionOptions.ExportMode.INTERNAL), ignored -> {});
+      try (var r = HDF5Factory.openForReading(output.toFile())) {
+        assertEquals(bins, r.object().getDataSetInformation(getBlockValuesDatasetPath(1000L)).getDimensions()[0]);
+        assertArrayEquals(java.util.stream.LongStream.rangeClosed(1, bins).toArray(), r.int64().readArray(getBlockValuesDatasetPath(1000L)));
+        final long[] local = java.util.stream.LongStream.range(0, bins).map(x -> x % 256).toArray();
+        assertArrayEquals(local, r.int64().readArray(getBlockRowsDatasetPath(1000L)));
+        assertArrayEquals(local, r.int64().readArray(getBlockColsDatasetPath(1000L)));
+      }
+    } finally {
+      if (old == null) System.clearProperty("hict.import.maxStripeBatchSize");
+      else System.setProperty("hict.import.maxStripeBatchSize", old);
+    }
+  }
+
+  @Test
+  void writerFailureIsReportedInsteadOfSuccessOrQueueDeadlock() throws Exception {
+    final var input = tempDir.resolve("writer-failure.mcool");
+    writeSyntheticMcool(input);
+    final var failure = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+      java.time.Duration.ofSeconds(15), () -> org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+        () -> new McoolToHictConverter().convert(new ConversionOptions(
+          input, tempDir.resolve("writer-failure.hict.hdf5"), List.of(1000L), 64, 0,
+          ConversionOptions.CompressionAlgorithm.DEFLATE, ConversionOptions.NO_AGP, false, 4, false,
+          ConversionOptions.ExportMode.INTERNAL), message -> {
+          if (Thread.currentThread().getName().startsWith("hict-writer-")) {
+            throw new IllegalStateException("Injected writer failure");
+          }
+        })));
+    org.junit.jupiter.api.Assertions.assertTrue(failure.toString().contains("Failed to write HiCT resolution"), failure.toString());
+    assertEquals("Injected writer failure", failure.getCause().getMessage());
+  }
+
+  @Test
+  void sparseBlockOrderingKeepsExactCountsAndStableDuplicates() throws Exception {
+    for (final boolean sorted : new boolean[]{true, false}) {
+      final long[] rows = sorted ? new long[]{0, 0, 0, 3} : new long[]{3, 0, 0, 0};
+      final long[] cols = sorted ? new long[]{1, 1, 7, 2} : new long[]{2, 1, 7, 1};
+      final long big = (1L << 54) + 1;
+      final long[] longs = sorted ? new long[]{big, big + 1, 7, 2} : new long[]{2, big, 7, big + 1};
+      final double[] doubles = sorted ? new double[]{.125, .25, -2.5, 8.75} : new double[]{8.75, .125, -2.5, .25};
+      for (final Object values : new Object[]{longs, doubles}) {
+        final var method = McoolToHictConverter.class.getDeclaredMethod(
+          "sortSparseBlockRowMajor", long[].class, long[].class, values.getClass());
+        method.setAccessible(true);
+        final long[] actualRows = rows.clone(), actualCols = cols.clone();
+        method.invoke(null, actualRows, actualCols, values);
+        assertArrayEquals(new long[]{0, 0, 0, 3}, actualRows);
+        assertArrayEquals(new long[]{1, 1, 7, 2}, actualCols);
+        if (values instanceof long[] result) assertArrayEquals(new long[]{big, big + 1, 7, 2}, result);
+        else assertArrayEquals(new double[]{.125, .25, -2.5, 8.75}, (double[]) values);
+      }
+    }
+  }
+
+  @Test
+  void assemblyStrandsPreserveSourceOrientationAndApplyReverseExactlyOnce() throws Exception {
+    final var input = tempDir.resolve("strand-source.mcool");
+    writeSyntheticMcool(input);
+    try (final var writer = HDF5Factory.open(input.toFile())) {
+      writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{11, 22, 33, 44, 55, 66, 77});
+    }
+    for (final var strand : List.of("+", "-", "?", "0", "na")) {
+      final var layout = tempDir.resolve("strand-" + strand.replace("?", "unknown") + ".agp");
+      final var output = tempDir.resolve(layout.getFileName() + ".hict.hdf5");
+      Files.writeString(layout, "scaffold\t1\t2500\t1\tW\tctgA\t1\t2500\t" + strand + "\n");
+      new McoolToHictConverter().convert(new ConversionOptions(
+        input, output, List.of(1000L), 64, 0, ConversionOptions.CompressionAlgorithm.DEFLATE,
+        layout.toString(), false, 1, true, ConversionOptions.ExportMode.AUTO), ignored -> {});
+      final var direction = strand.equals("-") ? ContigDirection.REVERSED : ContigDirection.FORWARD;
+      try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+        assertArrayEquals(new long[]{direction.ordinal()}, reader.int64().readArray(getContigDirectionDatasetPath()));
+      }
+      try (final var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(output, 1, 2))) {
+        assertEquals(direction, file.getAssemblyInfo().contigs().getFirst().direction());
+        final var resolution = ResolutionDescriptor.fromBpResolution(1000L, file);
+        final var matrix = (MatrixQueries.LongMatrix)
+          file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 3, 3, false).matrix();
+        final long[] diagonal = direction == ContigDirection.REVERSED
+          ? new long[]{33, 22, 11} : new long[]{11, 22, 33};
+        for (int row = 0; row < 3; row++) {
+          for (int column = 0; column < 3; column++) {
+            assertEquals(row == column ? diagonal[row] : 0, matrix.values()[row][column], strand);
+          }
+        }
+      }
+    }
+  }
 
   @Test
   void assemblyLayoutUsesExactSourceBinOffsetsInsteadOfProportionalRebinning() throws Exception {
@@ -165,6 +288,20 @@ class McoolToHictConverterTest {
   }
 
   @Test
+  void rejectsJuiceboxAssemblyWithNoMatchingMultiChromComponents() throws Exception {
+    final var mcool = tempDir.resolve("unrelated-layout-source.mcool");
+    final var layout = tempDir.resolve("unrelated.assembly");
+    writeSyntheticMcool(mcool);
+    Files.writeString(layout, ">differentA 1 2500\n>differentB 2 3600\n1\n2\n");
+    final var error = org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+      () -> new McoolToHictConverter().convert(new ConversionOptions(
+        mcool, tempDir.resolve("unrelated.hict.hdf5"), List.of(1000L), 64, 0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE, layout.toString(), false, 1, true,
+        ConversionOptions.ExportMode.AUTO), ignored -> {}));
+    org.junit.jupiter.api.Assertions.assertTrue(error.getMessage().contains("do not match any source chromosome"));
+  }
+
+  @Test
   void juiceboxAssemblyKeepsContigsMissingFromMultiChromSourceHidden() throws Exception {
     final var mcool = tempDir.resolve("partial-source.mcool");
     final var assembly = tempDir.resolve("partial-layout.assembly");
@@ -262,6 +399,105 @@ class McoolToHictConverterTest {
     }
   }
 
+  @Test
+  void noAssemblyImportCreatesIndividualScaffoldsForSourceChromosomes() throws Exception {
+    final var mcool = tempDir.resolve("sealed-source.mcool");
+    final var output = tempDir.resolve("sealed-output.hict.hdf5");
+
+    writeSyntheticMcool(mcool);
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertArrayEquals(new String[]{"ctgA", "ctgB"}, reader.string().readArray(getContigNameDatasetPath()));
+      assertArrayEquals(new long[]{0L, 1L}, reader.int64().readArray("/contig_info/contig_scaffold_id"));
+    }
+  }
+
+  @Test
+  void subResolutionContigsAreHiddenAtCoarseResolution() throws Exception {
+    final var mcool = tempDir.resolve("sub-resolution-source.mcool");
+    final var output = tempDir.resolve("sub-resolution-output.hict.hdf5");
+
+    writeSyntheticSubResolutionMcool(mcool);
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertArrayEquals(new String[]{"tiny", "visible"}, reader.string().readArray(getContigNameDatasetPath()));
+      assertArrayEquals(new long[]{1L, 2L}, reader.int64().readArray(getContigLengthBinsDatasetPath(1_000L)));
+      assertArrayEquals(new byte[]{0, 1}, reader.int8().readArray(getContigHideTypeDatasetPath(1_000L)));
+    }
+  }
+
+  @Test
+  void denseBlocksDoNotAllocateSparseDatasetsForAllNonzeroPixels() throws Exception {
+    final var mcool = tempDir.resolve("dense-block-source.mcool");
+    final var output = tempDir.resolve("dense-block-output.hict.hdf5");
+
+    writeDenseBlockMcool(mcool);
+
+    new McoolToHictConverter().convert(
+      new ConversionOptions(
+        mcool,
+        output,
+        List.of(1_000L),
+        64,
+        0,
+        ConversionOptions.CompressionAlgorithm.DEFLATE,
+        ConversionOptions.NO_AGP,
+        false,
+        1,
+        false,
+        ConversionOptions.ExportMode.AUTO
+      ),
+      ignored -> {
+      }
+    );
+
+    try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+      assertEquals(1L, reader.object().getDataSetInformation(getBlockRowsDatasetPath(1_000L)).getDimensions()[0]);
+      assertEquals(1L, reader.object().getDataSetInformation(getBlockColsDatasetPath(1_000L)).getDimensions()[0]);
+      assertEquals(1L, reader.object().getDataSetInformation(getBlockValuesDatasetPath(1_000L)).getDimensions()[0]);
+      assertArrayEquals(
+        new long[]{1L, 1L, 256L, 256L},
+        reader.object().getDataSetInformation(getDenseBlockDatasetPath(1_000L)).getDimensions()
+      );
+    }
+  }
+
   private static void writeSyntheticMcool(final Path path) {
     HDF5LibraryInitializer.initializeHDF5Library();
     try (final var writer = HDF5Factory.open(path.toFile())) {
@@ -286,6 +522,30 @@ class McoolToHictConverterTest {
     }
   }
 
+  private static void writeSyntheticSubResolutionMcool(final Path path) {
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (final var writer = HDF5Factory.open(path.toFile())) {
+      writer.object().createGroup("/chroms");
+      writer.string().writeArray("/chroms/name", new String[]{"tiny", "visible"});
+      writer.int64().writeArray("/chroms/length", new long[]{500L, 1_500L});
+
+      writer.object().createGroup("/resolutions");
+      writer.object().createGroup("/resolutions/1000");
+      writer.object().createGroup("/resolutions/1000/indexes");
+      writer.object().createGroup("/resolutions/1000/bins");
+      writer.object().createGroup("/resolutions/1000/pixels");
+
+      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset", new long[]{0L, 1L, 3L});
+      writer.int64().writeArray("/resolutions/1000/indexes/bin1_offset", new long[]{0L, 1L, 2L, 3L});
+      writer.int64().writeArray("/resolutions/1000/bins/chrom", new long[]{0L, 1L, 1L});
+      writer.int64().writeArray("/resolutions/1000/bins/start", new long[]{0L, 0L, 1_000L});
+      writer.int64().writeArray("/resolutions/1000/bins/end", new long[]{500L, 1_000L, 1_500L});
+      writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 1L, 2L});
+      writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 2L});
+      writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{1L, 1L, 1L});
+    }
+  }
+
   private static void writeSyntheticSingleAssemblyChromosomeMcool(final Path path) {
     HDF5LibraryInitializer.initializeHDF5Library();
     try (final var writer = HDF5Factory.open(path.toFile())) {
@@ -307,6 +567,56 @@ class McoolToHictConverterTest {
       writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", new long[]{0L, 1L, 2L, 3L, 4L, 5L, 6L});
       writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", new long[]{0L, 1L, 2L, 3L, 4L, 5L, 6L});
       writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{1L, 1L, 1L, 1L, 1L, 1L, 1L});
+    }
+  }
+
+  private static void writeDenseBlockMcool(final Path path) {
+    HDF5LibraryInitializer.initializeHDF5Library();
+    try (final var writer = HDF5Factory.open(path.toFile())) {
+      final int bins = 256;
+      final int pixels = bins * bins;
+      final var rows = new long[pixels];
+      final var cols = new long[pixels];
+      final var counts = new long[pixels];
+      final var rowOffsets = new long[bins + 1];
+      int cursor = 0;
+      for (int row = 0; row < bins; row++) {
+        rowOffsets[row] = cursor;
+        for (int col = 0; col < bins; col++) {
+          rows[cursor] = row;
+          cols[cursor] = col;
+          counts[cursor] = 1L;
+          cursor++;
+        }
+      }
+      rowOffsets[bins] = cursor;
+
+      final var chrom = new long[bins];
+      final var starts = new long[bins];
+      final var ends = new long[bins];
+      for (int i = 0; i < bins; i++) {
+        starts[i] = i * 1_000L;
+        ends[i] = (i + 1L) * 1_000L;
+      }
+
+      writer.object().createGroup("/chroms");
+      writer.string().writeArray("/chroms/name", new String[]{"dense"});
+      writer.int64().writeArray("/chroms/length", new long[]{bins * 1_000L});
+
+      writer.object().createGroup("/resolutions");
+      writer.object().createGroup("/resolutions/1000");
+      writer.object().createGroup("/resolutions/1000/indexes");
+      writer.object().createGroup("/resolutions/1000/bins");
+      writer.object().createGroup("/resolutions/1000/pixels");
+
+      writer.int64().writeArray("/resolutions/1000/indexes/chrom_offset", new long[]{0L, bins});
+      writer.int64().writeArray("/resolutions/1000/indexes/bin1_offset", rowOffsets);
+      writer.int64().writeArray("/resolutions/1000/bins/chrom", chrom);
+      writer.int64().writeArray("/resolutions/1000/bins/start", starts);
+      writer.int64().writeArray("/resolutions/1000/bins/end", ends);
+      writer.int64().writeArray("/resolutions/1000/pixels/bin1_id", rows);
+      writer.int64().writeArray("/resolutions/1000/pixels/bin2_id", cols);
+      writer.int64().writeArray("/resolutions/1000/pixels/count", counts);
     }
   }
 }

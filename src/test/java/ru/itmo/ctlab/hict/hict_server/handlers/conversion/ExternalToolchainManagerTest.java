@@ -24,7 +24,57 @@ class ExternalToolchainManagerTest {
     System.clearProperty("HICT_DOTPLOT_ALIGNER");
     System.clearProperty("HICT_COOLER_BIN");
     System.clearProperty("HICT_PYTHON_BIN");
+    System.clearProperty("HICT_SEQKIT_BIN");
+    System.clearProperty("HICT_MODDOTPLOT_CLI_BIN");
+    System.clearProperty("HICT_MODDOTPLOT_BIN");
     ExternalToolchainManager.setDotplotAlignerPreference("auto");
+  }
+
+  @Test
+  void resolvesDistinctSequenceToolOverrides() throws Exception {
+    final var seqkit = writeExecutable(tempDir.resolve("seqkit"));
+    final var upstream = writeExecutable(tempDir.resolve("moddotplot"));
+    final var adapter = writeExecutable(tempDir.resolve("hict-moddotplot"));
+    System.setProperty("HICT_SEQKIT_BIN", seqkit.toString());
+    System.setProperty("HICT_MODDOTPLOT_CLI_BIN", upstream.toString());
+    System.setProperty("HICT_MODDOTPLOT_BIN", adapter.toString());
+    final var manager = new ExternalToolchainManager();
+    assertEquals(seqkit.toAbsolutePath(), manager.requireSequenceCommand("seqkit"));
+    assertEquals(upstream.toAbsolutePath(), manager.requireSequenceCommand("moddotplot"));
+    assertEquals(adapter.toAbsolutePath(), manager.requireSequenceCommand("hict-moddotplot"));
+  }
+
+  @Test
+  void nestedPayloadCommandsBecomeExecutableAndPathsCannotEscape() throws Exception {
+    var oldTemp = System.getProperty("java.io.tmpdir");
+    try {
+      System.setProperty("java.io.tmpdir", tempDir.toString());
+      var manifest = new io.vertx.core.json.JsonObject().put("id", "sequence-test")
+        .put("commands", new io.vertx.core.json.JsonObject().put("seqkit", "sequence/hash/bin/seqkit"))
+        .put("files", new io.vertx.core.json.JsonArray(java.util.List.of("sequence/hash/bin/seqkit")));
+      var root = tempDir.resolve("hict-toolchains/test-platform/" + ExternalToolchainManager.bundledPayloadId(manifest));
+      var executable = root.resolve("sequence/hash/bin/seqkit");
+      Files.createDirectories(executable.getParent()); Files.writeString(executable, "fixture");
+      executable.toFile().setExecutable(false, false);
+      var method = ExternalToolchainManager.class.getDeclaredMethod("extractBundledPayload", String.class, io.vertx.core.json.JsonObject.class);
+      method.setAccessible(true);
+      assertEquals(root, method.invoke(new ExternalToolchainManager(), "test-platform", manifest));
+      assertTrue(Files.isExecutable(executable));
+      manifest.put("files", new io.vertx.core.json.JsonArray(java.util.List.of("../../../../escape")));
+      var error = org.junit.jupiter.api.Assertions.assertThrows(java.lang.reflect.InvocationTargetException.class,
+        () -> method.invoke(new ExternalToolchainManager(), "test-platform", manifest));
+      assertTrue(error.getCause() instanceof java.io.IOException);
+      assertTrue(error.getCause().getMessage().contains("escapes"));
+    } finally { restoreSystemProperty("java.io.tmpdir", oldTemp); }
+  }
+
+  @Test
+  void changedBuildWithSameReleaseLabelCannotReuseOldBinaryCache() {
+    var old = new io.vertx.core.json.JsonObject().put("id", "same-release")
+      .put("sha256", new io.vertx.core.json.JsonObject().put("bin/minimap2", "old-build"));
+    var current = old.copy().put("sha256", new io.vertx.core.json.JsonObject().put("bin/minimap2", "portable-build"));
+    org.junit.jupiter.api.Assertions.assertNotEquals(ExternalToolchainManager.bundledPayloadId(old), ExternalToolchainManager.bundledPayloadId(current));
+    assertEquals(ExternalToolchainManager.bundledPayloadId(current), ExternalToolchainManager.bundledPayloadId(current.copy()));
   }
 
   @Test

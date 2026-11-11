@@ -132,7 +132,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: portable-release-${{ github.event_name == 'push' && format('latest-{0}', github.ref_name) || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && (inputs.release_tag != '' && inputs.release_tag || format('latest-{0}', github.ref_name)) || github.run_id }}
+  group: portable-release-${{ startsWith(github.ref_name, 'fix/') && github.run_id || github.event_name == 'push' && format('latest-{0}', github.ref_name) || github.event_name == 'release' && github.event.release.tag_name || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'latest-master' && 'latest-master' || github.event_name == 'workflow_dispatch' && inputs.publish_target == 'release-tag' && (inputs.release_tag != '' && inputs.release_tag || format('latest-{0}', github.ref_name)) || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -147,7 +147,29 @@ env:
   HICT_JHDF5_NATIVES_ARCHIVE: "src/main/resources/libs/sis-jhdf5-19.04.1-natives.tar.gz"
 
 jobs:
+  # Each package waits only for its own platform payload and smoke tests.
+  sequence-tools-linux:
+    uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: linux_x86_64
+
+  sequence-tools-windows:
+    uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: windows_x86_64
+
+  sequence-tools-macos:
+    uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: darwin_arm64
+
+  sequence-tools-macos-intel:
+    uses: ./.github/workflows/sequence-tools.yml
+    with:
+      platform: darwin_x86_64
+
   linux-portable:
+    needs: sequence-tools-linux
     name: Linux portable .run
     runs-on: ubuntu-22.04
     continue-on-error: ${{ matrix.abi_mode == 'musl-static' }}
@@ -167,7 +189,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICT_LINUX_ABI_MODE: ${{ matrix.abi_mode }}
       HICT_LINUX_JHDF5_NATIVE_POLICY: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_jhdf5_native_policy || 'warn-only' }}
       HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, matrix.abi_mode) }}
@@ -183,6 +205,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Assign run-specific release version
+        run: |
+          python scripts/ci/test_release_version.py
+          python scripts/ci/set_release_version.py
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -224,6 +251,7 @@ jobs:
         run: |
           node --version
           npm --version
+          node --test scripts/portable/check_webui_checkout.mjs
 
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
@@ -457,8 +485,30 @@ jobs:
           path: toolchains-dist/linux_x86_64
           key: ${{ steps.cache-linux-toolchains.outputs.cache-primary-key }}
 
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-linux_x86_64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-linux_x86_64.tar.gz -C sequence-tools-dist
+      - name: Merge verified sequence tools
+        shell: bash
+        run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/linux_x86_64 --target toolchains-dist/linux_x86_64
+
       - name: Build fat JAR in manylinux2014
         run: scripts/ci/linux_container_build.sh fatjar
+
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Validate fat JAR
         run: scripts/ci/validate_linux_component.sh fatjar
@@ -675,13 +725,14 @@ jobs:
             scripts/ci/validate_linux_component.sh portable
           fi
   windows-portable:
+    needs: sequence-tools-windows
     name: Windows portable ZIP and EXE
     runs-on: windows-2022
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
@@ -690,6 +741,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Test resilient SDK acquisition
+        shell: pwsh
+        run: ./scripts/portable/test_download_verified.ps1
+
+      - name: Cache checksum-verified LZMA SDK
+        uses: actions/cache@v5
+        with:
+          path: .cache/lzma-sdk/*.7z
+          key: lzma-sdk-26.01-b860f17f9df3c0524dd2ef2c639ab5e43ad0006b77b8f7bb6d191bf528536885
+
+      - name: Assign run-specific release version
+        run: |
+          python scripts/ci/test_release_version.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/ci/set_release_version.py
 
       - name: Download published JHDF5 jar
         shell: pwsh
@@ -739,6 +806,7 @@ jobs:
         run: |
           node --version
           npm.cmd --version
+          node --test scripts/portable/check_webui_checkout.mjs
 
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
@@ -1089,6 +1157,20 @@ jobs:
           HICT_BROWSER_BUILD_ROOT: ${{ github.workspace }}\..
         run: .\scripts\portable\prepare_electron_browser_payload_windows.ps1
 
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-windows_x86_64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-windows_x86_64.tar.gz -C sequence-tools-dist
+      - name: Merge verified sequence tools
+        shell: bash
+        run: python scripts/toolchains/merge_sequence_payload.py --source sequence-tools-dist/windows_x86_64 --target toolchains-dist/windows_x86_64
+
       - name: Build Windows portable package and EXE
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
         shell: pwsh
@@ -1098,6 +1180,14 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_windows_exe != 'true' }}
         shell: pwsh
         run: .\scripts\portable\build_portable_windows.ps1
+
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Stop Gradle daemons
         if: ${{ always() }}
@@ -1211,17 +1301,19 @@ jobs:
           exit 0
 
   macos-portable:
+    needs: sequence-tools-macos
     name: macOS Apple Silicon portable .run
-    runs-on: macos-14
+    runs-on: macos-latest
     continue-on-error: true
     env:
       HICT_DARWIN_ARCH: arm64
+      MACOSX_DEPLOYMENT_TARGET: '12.3'
       HICT_DARWIN_PLATFORM_DIR: darwin_arm64
       HICT_DARWIN_ARTIFACT_PLATFORM: darwin-arm64
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1229,6 +1321,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Assign run-specific release version
+        run: |
+          python3 scripts/ci/test_release_version.py
+          python3 scripts/ci/test_macos_compatibility.py
+          python3 scripts/ci/set_release_version.py
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -1268,6 +1366,7 @@ jobs:
         run: |
           node --version
           npm --version
+          node --test scripts/portable/check_webui_checkout.mjs
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
         with:
@@ -1291,18 +1390,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_arm64
-          key: tauri-darwin-arm64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-arm64-${{ env.HICT_WEBUI_REF }}-
-            tauri-darwin-arm64-
+            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-arm64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
           restore-keys: |
-            hict-native-macos-arm64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+            hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Apple Silicon Tauri browser payload
@@ -1316,20 +1415,45 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_arm64
-          key: toolchain-v2-darwin-arm64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            toolchain-v2-darwin-arm64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+            toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
       - name: Restore Darwin Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_arm64
-          key: hictk-conan-v3-darwin-arm64-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            hictk-conan-v3-darwin-arm64-explicit-profile-${{ env.HICTK_REF }}-
-            hictk-conan-v3-darwin-arm64-explicit-profile-
+            hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-
+            hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-darwin_arm64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-darwin_arm64.tar.gz -C sequence-tools-dist
+
       - name: Build macOS Apple Silicon portable package
         run: ./scripts/portable/build_portable_darwin_arm64.sh
+      - name: Preserve macOS Apple Silicon compatibility audit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-arm64-compatibility
+          path: build/portable/**/share/doc/macos-compatibility.json
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
+
       - name: Upload macOS Apple Silicon HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
@@ -1434,17 +1558,19 @@ jobs:
         run: echo "::warning::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
 
   macos-intel-portable:
+    needs: sequence-tools-macos-intel
     name: macOS Intel portable .run
     runs-on: macos-15-intel
     continue-on-error: true
     env:
       HICT_DARWIN_ARCH: x86_64
+      MACOSX_DEPLOYMENT_TARGET: '12.3'
       HICT_DARWIN_PLATFORM_DIR: darwin_x86_64
       HICT_DARWIN_ARTIFACT_PLATFORM: darwin-x86_64
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1452,6 +1578,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Assign run-specific release version
+        run: |
+          python3 scripts/ci/test_release_version.py
+          python3 scripts/ci/test_macos_compatibility.py
+          python3 scripts/ci/set_release_version.py
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -1491,6 +1623,7 @@ jobs:
         run: |
           node --version
           npm --version
+          node --test scripts/portable/check_webui_checkout.mjs
       - name: Set up Temurin JDK
         uses: actions/setup-java@v5
         with:
@@ -1514,18 +1647,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_x86_64
-          key: tauri-darwin-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-x86_64-${{ env.HICT_WEBUI_REF }}-
-            tauri-darwin-x86_64-
+            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
+          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
           restore-keys: |
-            hict-native-macos-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+            hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/build_portable_darwin_x86_64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Intel Tauri browser payload
@@ -1539,20 +1672,45 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_x86_64
-          key: toolchain-v2-darwin-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            toolchain-v2-darwin-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+            toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
       - name: Restore Darwin Intel Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_x86_64
-          key: hictk-conan-v3-darwin-x86_64-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
           restore-keys: |
-            hictk-conan-v3-darwin-x86_64-explicit-profile-${{ env.HICTK_REF }}-
-            hictk-conan-v3-darwin-x86_64-explicit-profile-
+            hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-
+            hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-
+      - name: Download verified sequence tools
+        uses: actions/download-artifact@v5
+        with:
+          name: sequence-tools-darwin_x86_64
+          path: sequence-tools-archive
+      - name: Extract sequence tools
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          tar -xzf sequence-tools-archive/sequence-tools-darwin_x86_64.tar.gz -C sequence-tools-dist
+
       - name: Build macOS Intel portable package
         run: ./scripts/portable/build_portable_darwin_x86_64.sh
+      - name: Preserve macOS Intel compatibility audit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-x86_64-compatibility
+          path: build/portable/**/share/doc/macos-compatibility.json
+      - name: Verify every bundled tool in the packaged JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/toolchains/prepare_bundled_tools.py --seal
+          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
+
       - name: Upload macOS Intel HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
@@ -1655,6 +1813,7 @@ jobs:
       - name: Report non-blocking macOS Intel failure
         if: ${{ failure() }}
         run: echo "::warning::Non-blocking macOS Intel build failed; Windows/Linux release may still proceed without this artifact."
+  # Fix branches validate and upload artifacts on push without mutating releases.
   publish-release-assets:
     name: Publish release assets
     needs:
@@ -1662,18 +1821,23 @@ jobs:
       - windows-portable
       - macos-portable
       - macos-intel-portable
-    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
+    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || (github.event_name == 'push' && !startsWith(github.ref_name, 'fix/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
     runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Assign run-specific release version
+        run: |
+          python scripts/ci/test_release_version.py
+          python scripts/ci/set_release_version.py
 
       - name: Download packaged artifacts
         uses: actions/download-artifact@v6

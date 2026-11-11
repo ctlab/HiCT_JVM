@@ -1,0 +1,24 @@
+{
+  "enabled": true,
+  "swapUpperLower": false,
+  "upperExpression": {
+    "type": "log",
+    "base": 2,
+    "input": {
+      "type": "source",
+      "source": "PRIMARY"
+    }
+  },
+  "lowerExpression": {
+    "type": "binary",
+    "op": "MUL",
+    "left": {
+      "type": "source",
+      "source": "PRIMARY"
+    },
+    "right": {
+      "type": "constant",
+      "value": 7
+    }
+  }
+}

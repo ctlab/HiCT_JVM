@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""Verify the session capture API through a real attached client and stale-client conflict."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ('url', 'api', 'output'):
+        parser.add_argument('--' + name, required=True)
+    parser.add_argument('--data-dir', help='Disposable fixture directory for independent content hash checks')
+    args = parser.parse_args()
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    result = {'checks': [], 'pageErrors': []}
+    graph = json.loads((Path(__file__).resolve().parent.parent / 'src/test/resources/reinforcement/custom-pipeline.json').read_text())
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+        context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
+        context.route('http://localhost:5000/**', lambda route: route.continue_(url=args.api + route.request.url.removeprefix('http://localhost:5000')))
+        page = context.new_page()
+        page.set_default_timeout(15000)
+        page.on('pageerror', lambda error: result['pageErrors'].append(str(error)))
+        def post(path, data=None):
+            response = context.request.post(args.api + path, data=data or {})
+            assert response.ok, response.text()
+            return response.json()
+        def attach():
+            page.reload()
+            page.get_by_role('link', name='File', exact=True).click()
+            page.get_by_role('link', name='Attach', exact=True).click()
+            page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
+        def capture():
+            return page.evaluate('''async () => {
+                try {
+                    return await window.__hictBenchmark.manager().networkManager.requestManager
+                        .getSessionSnapshot(true, true, true, true);
+                } catch (error) {
+                    throw new Error(error.response?.data?.error ?? error.message);
+                }
+            }''')
+
+        def file_action(name):
+            page.get_by_role('link', name='File', exact=True).click()
+            page.get_by_role('link', name=name, exact=True).click()
+
+        def split_round_trips():
+            scenarios = (
+                ('split', False, (2,), None),
+                ('reversed split', True, (2,), None),
+                ('split then group', False, (2,), ('group_contigs_into_scaffold', 0, 13)),
+                ('split then debris', False, (2,), ('move_selection_to_debris', 0, 8)),
+                ('two splits in one contig', False, (1, 2), None),
+            )
+            for name, reverse, cuts, follow_up in scenarios:
+                post('/close')
+                post('/open', {'filename': 'tiny-primary.hict.hdf5'})
+                post('/render_pipeline/reset')
+                if reverse:
+                    post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
+                for cut in cuts:
+                    post('/split_contig_at_bin', {'splitPx': cut, 'bpResolution': 4})
+                if follow_up:
+                    route, start, end = follow_up
+                    post('/' + route, {'startBP': start, 'endBP': end})
+                attach()
+                expected = capture()['primary']
+                assert len(expected['splitEdits']) == len(cuts), (name, expected['splitEdits'])
+                with page.expect_download() as download:
+                    file_action('Save session')
+                path = output / f"{name.replace(' ', '-')}.json"
+                download.value.save_as(path)
+                saved = json.loads(path.read_text())['snapshot']['primary']
+                assert saved['agpSha256'] == expected['agpSha256'], name
+                file_action('Close')
+                page.get_by_role('heading', name='No contact map open').wait_for()
+                with page.expect_file_chooser() as chooser:
+                    file_action('Open session')
+                chooser.value.set_files(path)
+                page.get_by_text('Session restored. Undo history starts from the restored assembly.').wait_for()
+                actual = capture()['primary']
+                assert actual['agpSha256'] == expected['agpSha256'], name
+                assert actual['assemblyInfo'] == expected['assemblyInfo'], name
+                assert actual['splitEdits'] == expected['splitEdits'], name
+                result['checks'].append(f'{name} saves, closes and restores the exact assembly')
+
+        def failed_save_keeps_edits():
+            post('/close')
+            post('/open', {'filename': 'tiny-primary.hict.hdf5'})
+            attach()
+            with page.expect_response(lambda response: response.url.endswith('/split_contig_at_bin') and response.ok):
+                page.evaluate('() => window.__hictBenchmark.manager().eventManager.onClickInScissorsMode([2, 2], 4)')
+            dirty = '() => window.__hictBenchmark.manager().networkManager.requestManager.hasUnsavedAssemblyEdits()'
+            page.wait_for_function(dirty)
+            error = 'The session snapshot could not verify its assembly.'
+            page.route('**/session/snapshot', lambda route: route.fulfill(status=400, json={'error': error}))
+            try:
+                file_action('Save session')
+                dialog = page.get_by_role('alertdialog', name='Session could not be saved')
+                dialog.get_by_text(error, exact=True).wait_for()
+                assert page.evaluate(dirty)
+                dialog.get_by_role('button', name='OK').click()
+            finally:
+                page.unroute('**/session/snapshot')
+            result['checks'].append('a failed save displays the server reason and leaves the Split edit unsaved')
+
+        try:
+            post('/close')
+            empty = context.request.post(args.api + '/session/snapshot', data={})
+            assert empty.status == 404, empty.text()
+            page.goto(args.url)
+            page.wait_for_function('window.__hictBenchmark')
+            page.evaluate("api=>window.__hictBenchmark.open('tiny-primary.hict.hdf5',api)", args.api)
+            post('/secondary/open', {'filename': 'old-secondary.hict.hdf5'})
+            post('/link_fasta', {'fastaFilename': 'tiny.fa'})
+            bed = post('/tracks/open', {'filename': 'session-track.bed', 'name': 'Session track'})
+            graph['lowerExpression']['left'] = {'type': 'binary', 'op': 'ADD', 'left': graph['lowerExpression']['left'],
+                                               'right': {'type': 'track1d', 'trackId': bed['trackId'], 'axis': 'ROW'}}
+            post('/tracks/open_cooler_weights', {'source': 'PRIMARY'})
+            post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
+            attach()
+            page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
+            visualization = {
+                'preLogBase': -1, 'postLogBase': 2, 'applyCoolerWeights': True,
+                'resolutionScaling': True, 'resolutionLinearScaling': False,
+                'autoThresholdEnabled': False, 'autoThresholdQuantile': .975,
+                'signalDisplayMode': 'OBSERVED', 'coolerWeightsNaNPolicy': 'REPLACE_NANS_WITH_ZERO',
+                'colormap': {'colormapType': 'SimpleLinearGradient',
+                             'startColorRGBAString': 'rgba(10,20,30,0.5)',
+                             'endColorRGBAString': 'rgba(200,150,100,1)',
+                             'minSignal': -5, 'maxSignal': 21},
+                'preserveRenderPipeline': True,
+            }
+            post('/set_visualization_options', visualization)
+            with page.expect_response(lambda response: response.url.endswith('/workspace/state') and response.status == 200):
+                page.evaluate('''()=>{const view=window.__hictBenchmark.manager().getView();
+                    view.setResolution(view.getResolution()/2);}''')
+            history = post('/assembly/history')
+            first = capture()
+            assert first['assemblyVerified'] is True
+            assert first['filesFingerprinted'] is True
+            assert first['tracksVerified'] is True
+            assert first['renderPipeline'] == graph
+            saved_visualization = first['visualizationOptions']
+            for key in ('preLogBase', 'postLogBase', 'applyCoolerWeights', 'resolutionScaling',
+                        'resolutionLinearScaling', 'autoThresholdEnabled', 'autoThresholdQuantile',
+                        'signalDisplayMode', 'coolerWeightsNaNPolicy'):
+                assert saved_visualization[key] == visualization[key], (key, saved_visualization)
+            palette = saved_visualization['colormap']
+            assert palette['type'] == 'SimpleLinearGradient' and palette['bitDepth'] == 32
+            assert palette['minSignal'] == -5 and palette['maxSignal'] == 21
+            assert all(abs(a-b/255) < 1e-7 for a, b in zip(palette['startColor'], [10, 20, 30, 127]))
+            assert all(abs(a-b/255) < 1e-7 for a, b in zip(palette['endColor'], [200, 150, 100, 255]))
+            result['checks'].append('capture retains fallback palette RGBA components, log/scaling flags and NaN policy alongside the exact graph')
+            assert first['primary']['filename'] == 'tiny-primary.hict.hdf5'
+            assert first['primary']['fastaFilename'] == 'tiny.fa'
+            assert first['secondary']['filename'] == 'old-secondary.hict.hdf5'
+            assert first['tracks'][0]['name'] == 'Session track'
+            assert first['tracks'][0]['sourceFile'] == 'session-track.bed'
+            assert first['tracks'][1]['sourceReference'] == 'PRIMARY'
+            if args.data_dir:
+                resources = [
+                    ('tiny-primary.hict.hdf5', first['primary']['fileFingerprint']),
+                    ('old-secondary.hict.hdf5', first['secondary']['fileFingerprint']),
+                    ('tiny.fa', first['primary']['fastaFingerprint']),
+                    ('session-track.bed', first['tracks'][0]['fileFingerprint']),
+                ]
+                for filename, fingerprint in resources:
+                    content = (Path(args.data_dir) / filename).read_bytes()
+                    assert fingerprint == {'algorithm': 'SHA-256', 'sizeBytes': len(content), 'sha256': hashlib.sha256(content).hexdigest()}
+                result['checks'].append('matrix, FASTA and BED fingerprints match independent content hashes; virtual weights reference primary')
+                track_path = Path(args.data_dir) / 'session-track.bed'
+                backup = track_path.with_suffix('.snapshot-test-backup')
+                assert not backup.exists()
+                track_path.rename(backup)
+                try:
+                    failed = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.response?.status;}}''')
+                    assert failed is not None and failed >= 400, failed
+                    assert post('/assembly/history') == history
+                finally:
+                    backup.rename(track_path)
+                recovered = capture()
+                assert recovered['primary'] == first['primary']
+                assert recovered['secondary'] == first['secondary']
+                assert recovered['tracks'] == first['tracks']
+                result['checks'].append('missing resource rejects capture without changing the live assembly and recovers after restoration')
+            assert first['workspace']['workspaceState']['version'] == 1
+            assert 'axisScopes' in first['workspace']['workspaceState']
+            assert first['primary']['assemblyInfo']['contigDescriptors'][0]['contigDirection'] == 0
+            for key in ('primary', 'secondary'):
+                source = first[key]
+                assert hashlib.sha256(source['agp'].encode()).hexdigest() == source['agpSha256']
+            assert post('/assembly/history') == history
+            result['checks'].append('capture retains edited strand, both sources, FASTA and exact custom graph without adding history')
+            result['checks'].append('capture includes track definitions and the persisted browser workspace')
+            missing_reference = json.loads(json.dumps(graph))
+            missing_reference['lowerExpression']['left']['right']['trackId'] = 'trk_missing'
+            try:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', missing_reference)
+                rejected = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(false,false,true);return null;}catch(error){return error.response?.status;}}''')
+                assert rejected is not None and rejected >= 400, rejected
+                assert post('/assembly/history') == history
+            finally:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
+            result['checks'].append('track verification rejects missing graph references without changing assembly history')
+            invalid_axis = json.loads(json.dumps(graph))
+            invalid_axis['lowerExpression']['left']['right']['axis'] = 'SIDEWAYS'
+            try:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', invalid_axis)
+                rejected = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(false,false,true);return null;}catch(error){return {status:error.response?.status,body:error.response?.data};}}''')
+                assert rejected is not None and rejected['status'] >= 400, rejected
+                assert 'renderPipeline.lowerExpression.left.right.axis' in json.dumps(rejected['body']), rejected
+                assert post('/assembly/history') == history
+            finally:
+                page.evaluate('graph=>window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(graph)', graph)
+            assert capture()['renderPipeline'] == graph
+            result['checks'].append('invalid track axis is rejected with its graph field path and valid capture recovers')
+            for invalid_kind, expected_field in [('resolution', 'workspace.workspaceState.view.resolution'),
+                                                 ('scope', 'workspace.workspaceState.axisScopes.row.id')]:
+                workspace = post('/session/snapshot')['workspace']
+                original_state = workspace['workspaceState']
+                invalid_state = json.loads(json.dumps(original_state))
+                if invalid_kind == 'resolution':
+                    invalid_state['view']['resolution'] = 0
+                else:
+                    invalid_state['axisScopes']['row'] = {'kind': 'contig', 'id': 999999, 'label': 'Missing'}
+                changed = post('/workspace/state', {'filename': 'tiny-primary.hict.hdf5',
+                    'expectedVersion': workspace['workspaceVersion'], 'state': invalid_state})
+                try:
+                    rejected = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return {status:error.response?.status,body:error.response?.data};}}''')
+                    assert rejected is not None and rejected['status'] >= 400, rejected
+                    assert expected_field in json.dumps(rejected['body']), rejected
+                    assert post('/assembly/history') == history
+                finally:
+                    post('/workspace/state', {'filename': 'tiny-primary.hict.hdf5',
+                        'expectedVersion': changed['workspaceVersion'], 'state': original_state})
+                assert capture()['workspace']['workspaceState'] == original_state
+                result['checks'].append('invalid workspace ' + invalid_kind + ' is rejected with its field path and recovers without assembly changes')
+            post('/reverse_selection_range', {'startBP': 0, 'endBP': 17})
+            conflict = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.response?.status;}}''')
+            assert conflict == 409, conflict
+            result['checks'].append('stale displayed assembly cannot be captured')
+            attach()
+            second = capture()
+            assert second['primary']['assemblyInfo']['contigDescriptors'][0]['contigDirection'] == 1
+            assert second['primary']['agpSha256'] != first['primary']['agpSha256']
+            assert second['visualizationOptions'] == first['visualizationOptions']
+            result['checks'].append('fresh Attach captures the new assembly hash and strand')
+            unverified = dict(second)
+            unverified.pop('assemblyVerified')
+            def legacy_snapshot(route):
+                route.fulfill(status=200, content_type='application/json', body=json.dumps(unverified))
+            page.route('**/session/snapshot', legacy_snapshot)
+            try:
+                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.message;}}''')
+                assert message == 'Server did not verify assembly reconstruction', message
+                unverified.clear()
+                unverified.update(second)
+                unverified.pop('filesFingerprinted')
+                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.message;}}''')
+                assert message == 'Server did not fingerprint session resources', message
+                unverified.clear()
+                unverified.update(second)
+                unverified.pop('tracksVerified')
+                message = page.evaluate('''async()=>{try{await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true);return null;}catch(error){return error.message;}}''')
+                assert message == 'Server did not verify session track definitions', message
+            finally:
+                page.unroute('**/session/snapshot', legacy_snapshot)
+            result['checks'].append('explicit verification rejects an unverified older-server response')
+            result['first'], result['second'] = first, second
+            split_round_trips()
+            failed_save_keeps_edits()
+            page.screenshot(path=str(output / 'snapshot.png'))
+            assert not result['pageErrors'], result['pageErrors']
+        finally:
+            (output / 'results.json').write_text(json.dumps(result, indent=2) + '\n')
+            browser.close()
+
+
+if __name__ == '__main__':
+    main()

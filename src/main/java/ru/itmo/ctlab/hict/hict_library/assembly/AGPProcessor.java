@@ -29,7 +29,6 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.csv.CSVFormat;
 import org.jetbrains.annotations.NotNull;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDescriptor;
@@ -54,6 +53,55 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class AGPProcessor {
   private final @NotNull ChunkedFile chunkedFile;
+  // Preserve gap annotations only while the corresponding oriented adjacency survives editing.
+  private record Edge(int left, ContigDirection leftDirection, int right, ContigDirection rightDirection) {
+    Edge reversed() { return new Edge(right, flip(rightDirection), left, flip(leftDirection)); }
+    private static ContigDirection flip(ContigDirection d) { return d == ContigDirection.FORWARD ? ContigDirection.REVERSED : ContigDirection.FORWARD; }
+  }
+  private Map<Edge, List<GapAGPRecord>> importedGaps = Map.of();
+  private Map<Integer, ContigAGPRecord> importedComponents = Map.of();
+  public record Annotations(Map<Edge, List<GapAGPRecord>> gaps, Map<Integer, ContigAGPRecord> components) {}
+  public Annotations snapshotAnnotations() { return new Annotations(importedGaps, importedComponents); }
+  public void restoreAnnotations(Annotations state) {
+    importedGaps = state.gaps(); importedComponents = state.components();
+  }
+
+  private static Edge edge(ContigTree.ContigTuple left, ContigTree.ContigTuple right) {
+    return new Edge(left == null ? -1 : left.descriptor().getContigId(), left == null ? ContigDirection.FORWARD : left.direction(),
+      right == null ? -1 : right.descriptor().getContigId(), right == null ? ContigDirection.FORWARD : right.direction());
+  }
+  private void rememberAnnotations(List<AGPFileRecord> records, List<ContigTree.ContigTuple> tuples) {
+    var gaps = new HashMap<Edge, List<GapAGPRecord>>();
+    var components = new HashMap<Integer, ContigAGPRecord>();
+    var grouped = new LinkedHashMap<String, List<AGPFileRecord>>();
+    for (var record : records) grouped.computeIfAbsent(record.scaffoldName, k -> new ArrayList<>()).add(record);
+    int index = 0;
+    for (var group : grouped.values()) {
+      ContigTree.ContigTuple previous = null;
+      var pending = new ArrayList<GapAGPRecord>();
+      for (var record : group) {
+        if (record instanceof GapAGPRecord gap) { pending.add(gap); continue; }
+        var current = tuples.get(index++);
+        components.put(current.descriptor().getContigId(), (ContigAGPRecord)record);
+        gaps.put(edge(previous, current), List.copyOf(pending));
+        pending.clear(); previous = current;
+      }
+      if (previous != null) gaps.put(edge(previous, null), List.copyOf(pending));
+    }
+    importedGaps = Map.copyOf(gaps); importedComponents = Map.copyOf(components);
+  }
+  private List<GapAGPRecord> gapsBetween(ContigTree.ContigTuple left, ContigTree.ContigTuple right) {
+    var key = edge(left, right);
+    var found = importedGaps.get(key);
+    if (found != null) return found;
+    // Terminal sentinels have no orientation; normalize it when reversing the edge.
+    var reversed = key.reversed();
+    reversed = new Edge(reversed.left, reversed.left < 0 ? ContigDirection.FORWARD : reversed.leftDirection,
+      reversed.right, reversed.right < 0 ? ContigDirection.FORWARD : reversed.rightDirection);
+    found = importedGaps.get(reversed);
+    return found == null ? null : found.reversed();
+  }
+
 
 
   public List<AGPFileRecord> parseRecords(final @NotNull @NonNull Reader reader) throws IOException, NoSuchFieldException {
@@ -61,25 +109,28 @@ public class AGPProcessor {
   }
 
   public static @NotNull List<@NotNull AGPFileRecord> parseRecordsFromReader(final @NotNull @NonNull Reader reader) throws IOException, NoSuchFieldException {
-    final var csvFormat = CSVFormat.TDF.builder().setRecordSeparator(String.format("%n")).build();
-    //final var recordRows = csvFormat.parse(reader);
     final List<List<String>> recordRows = new ArrayList<>();
     try (final var br = new BufferedReader(reader)) {
       br.lines().sequential()
         .map(String::trim)
         .filter(line -> !line.isBlank() && !line.startsWith("#"))
-        .map(line -> line.split("\t", -1))
+        .map(line -> line.split("\\s+"))
         .filter(e -> e.length > 0)
-        .forEachOrdered(sp -> recordRows.add(Arrays.stream(sp).toList()));
+        .forEachOrdered(sp -> recordRows.add(new ArrayList<>(Arrays.asList(sp))));
     }
-//    final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.getRecords().size());
     final var parsedRecords = new ArrayList<AGPFileRecord>(recordRows.size());
     int rowNumber = 0;
     for (final var row : recordRows) {
       ++rowNumber;
-      if (row.size() < 9) {
-        log.error("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row);
-        throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but line " + rowNumber + " has less: " + row);
+      if (row.size() == 8 && switch (row.get(4)) {
+        case "W", "A", "D", "F", "G", "O", "P" -> true;
+        default -> false;
+      }) {
+        log.warn("AGP line " + rowNumber + " has 8 columns and omits sequence orientation; assuming '+': " + row);
+        row.add("+");
+      }
+      if (row.size() != 9) {
+        throw new NoSuchFieldException("Each AGP row must have exactly 9 columns, but record " + rowNumber + " has " + row.size());
       }
       final var objectName = row.get(0);
       final var objectBeg = Long.parseLong(row.get(1));
@@ -123,7 +174,8 @@ public class AGPProcessor {
             componentId,
             componentBeg,
             componentEnd,
-            orientation
+            orientation,
+            componentType
           );
         }
         case GAP_WITH_SPECIFIED_SIZE, GAP_OF_UNKNOWN_SIZE -> {
@@ -150,12 +202,11 @@ public class AGPProcessor {
               throw new IllegalArgumentException("Unknown AGP linkage " + row.get(7) + " at line " + rowNumber);
             }
           };
-          final var linkageEvidence = switch (row.get(8)) {
+          final var linkageEvidence = new ArrayList<LinkageEvidence>();
+          for (final var evidence : row.get(8).split(";", -1)) {
+            linkageEvidence.add(switch (evidence) {
             case "proximity_ligation" -> LinkageEvidence.PROXIMITY_LIGATION;
-            case "na" -> {
-              assert ("no".equals(row.get(7)));
-              yield LinkageEvidence.NA;
-            }
+            case "na" -> LinkageEvidence.NA;
             case "paired-ends", "paired_ends" -> LinkageEvidence.PAIRED_ENDS;
             case "align_genus" -> LinkageEvidence.ALIGN_GENUS;
             case "align_xgenus" -> LinkageEvidence.ALIGN_XGENUS;
@@ -170,7 +221,8 @@ public class AGPProcessor {
               log.error("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
               throw new IllegalArgumentException("Unknown AGP linkage evidence " + row.get(8) + " at line " + rowNumber);
             }
-          };
+            });
+          }
           yield new GapAGPRecord(
             objectName,
             objectBeg,
@@ -179,17 +231,85 @@ public class AGPProcessor {
             gapLength,
             gapType,
             linkage,
-            linkageEvidence
+            linkageEvidence,
+            componentType
           );
         }
       };
       parsedRecords.add(agpFileRecord);
     }
-    return parsedRecords.stream().sequential().toList();
+    validateLayout(parsedRecords);
+    return List.copyOf(parsedRecords);
+  }
+
+  /** Reject ambiguous coordinates before they can reorder a tree or mix contact bins. */
+  public static void validateLayout(final List<AGPFileRecord> records) {
+    final var completedObjects = new HashSet<String>();
+    String object = null;
+    long previousEnd = 0L;
+    int previousPart = 0;
+    for (int i = 0; i < records.size(); i++) {
+      final var record = records.get(i);
+      requireIdentifier(record.getScaffoldName(), "object", i + 1);
+      if (!record.getScaffoldName().equals(object)) {
+        if (object != null) completedObjects.add(object);
+        object = record.getScaffoldName();
+        if (completedObjects.contains(object)) {
+          throw new IllegalArgumentException("AGP record " + (i + 1) + ": object '" + object + "' occurs in multiple non-contiguous groups.");
+        }
+        previousEnd = 0L;
+        previousPart = 0;
+      }
+      if (record.getInterScaffoldStartIncl() != previousEnd + 1L
+        || record.getInterScaffoldEndIncl() < record.getInterScaffoldStartIncl()
+        || record.getPartNumber() != previousPart + 1) {
+        throw new IllegalArgumentException("AGP record " + (i + 1) + " for object '" + object
+          + "': expected start " + (previousEnd + 1L) + " and part " + (previousPart + 1)
+          + ", found start " + record.getInterScaffoldStartIncl() + " and part " + record.getPartNumber()
+          + ". Object coordinates must be contiguous and non-overlapping; correct the AGP before conversion.");
+      }
+      final long length = record.getInterScaffoldEndIncl() - record.getInterScaffoldStartIncl() + 1L;
+      if (record instanceof ContigAGPRecord contig
+        && (contig.getIntraContigStartBpIncl() < 1L
+          || contig.getIntraContigEndBpIncl() - contig.getIntraContigStartBpIncl() + 1L != length)) {
+        throw new IllegalArgumentException("AGP record " + (i + 1) + ": component and object lengths differ.");
+      }
+      if (record instanceof ContigAGPRecord contig) {
+        requireIdentifier(contig.getContigName(), "component", i + 1);
+      }
+      if (record instanceof GapAGPRecord gap) {
+        if (gap.getGapLength() <= 0 || gap.getGapLength() != length) {
+          throw new IllegalArgumentException("AGP record " + (i + 1) + ": gap must be positive and match the object interval.");
+        }
+        if (gap.getComponentType() == AGPComponentType.GAP_OF_UNKNOWN_SIZE && gap.getGapLength() != 100) {
+          throw new IllegalArgumentException("AGP record " + (i + 1) + ": U gaps must have length 100; use N for a specified length.");
+        }
+        final var evidence = gap.getLinkageEvidence();
+        if (evidence.isEmpty() || (gap.isLinkage() ? evidence.contains(LinkageEvidence.NA) : !evidence.equals(List.of(LinkageEvidence.NA)))) {
+          throw new IllegalArgumentException("AGP record " + (i + 1) + ": linkage=no requires evidence na; linkage=yes requires linkage evidence.");
+        }
+        final boolean invalidLinkage = switch (gap.getGapType()) {
+          case SCAFFOLD, CONTAMINATION -> !gap.isLinkage();
+          case CONTIG, CENTROMERE, SHORT_ARM, HETEROCHROMATIN, TELOMERE -> gap.isLinkage();
+          case REPEAT -> false;
+        };
+        if (invalidLinkage) throw new IllegalArgumentException("AGP record " + (i + 1) + ": invalid gap type/linkage combination.");
+      }
+      previousEnd = record.getInterScaffoldEndIncl();
+      previousPart = record.getPartNumber();
+    }
+  }
+
+  private static void requireIdentifier(final String value, final String field, final int record) {
+    if (value == null || value.isEmpty() || (field.equals("object") && value.startsWith("#"))
+      || value.chars().anyMatch(Character::isWhitespace)) {
+      throw new IllegalArgumentException("AGP record " + record + ": " + field + " identifier must be nonempty and contain no whitespace.");
+    }
   }
 
   public static void writeRecordsAsAgp(final @NotNull List<@NotNull AGPFileRecord> records,
                                        final @NotNull Path outputPath) throws IOException {
+    validateLayout(records);
     final var parent = outputPath.getParent();
     if (parent != null) {
       Files.createDirectories(parent);
@@ -202,101 +322,118 @@ public class AGPProcessor {
     }
   }
 
-  public void initializeContigTreeFromAGP(final @NotNull List<@NotNull AGPFileRecord> agpFileRecords) {
-    final var chunkedFile = this.chunkedFile;
-    final var tree = this.chunkedFile.getContigTree();
-    final var lock = tree.getRootLock();
-    try {
-      lock.writeLock().lock();
-      tree.commitRoot(null);
-      for (final var rec : agpFileRecords) {
-        if (!(rec instanceof ContigAGPRecord ctgRecord)) {
-          continue;
-        }
-        final var sourceDescriptor = chunkedFile.resolveContigDescriptorByName(ctgRecord.getContigName());
+  public AGPImportPlan.ImportReport importRecords(final List<AGPFileRecord> records,
+      final AGPImportPlan.MissingComponentsPolicy policy) {
+    return importRecords(records, policy, component ->
+      chunkedFile.resolveContigDescriptorByName(component.getContigName()));
+  }
 
-        final var componentLength = ctgRecord.getInterScaffoldEndIncl() - ctgRecord.getInterScaffoldStartIncl() + 1;
-        if (componentLength != ctgRecord.getIntraContigEndBpIncl() - ctgRecord.getIntraContigStartBpIncl() + 1) {
-          log.error("A part of scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive has length " + componentLength + " but is to be filled with contig " + ctgRecord.getContigName() + " from " + ctgRecord.getIntraContigStartBpIncl() + " bp to " + ctgRecord.getIntraContigEndBpIncl() + " bp but this region has length " + (ctgRecord.getIntraContigEndBpIncl() - ctgRecord.getIntraContigStartBpIncl() + 1));
-          throw new IllegalArgumentException("A part of scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive has length " + componentLength + " but is to be filled with contig " + ctgRecord.getContigName() + " from " + ctgRecord.getIntraContigStartBpIncl() + " bp to " + ctgRecord.getIntraContigEndBpIncl() + " bp but this region has length " + (ctgRecord.getIntraContigEndBpIncl() - ctgRecord.getIntraContigStartBpIncl() + 1));
-        }
-
-        if (componentLength > sourceDescriptor.getLengthBp()) {
-          log.error("Contig " + ctgRecord.getContigName() + " has length " + sourceDescriptor.getLengthBp() + " bp but is required to fill scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive which has length " + componentLength);
-          throw new IllegalArgumentException("Contig " + ctgRecord.getContigName() + " has length " + sourceDescriptor.getLengthBp() + " bp but is required to fill scaffold " + ctgRecord.getScaffoldName() + " from " + ctgRecord.getInterScaffoldStartIncl() + " bp to " + ctgRecord.getInterScaffoldEndIncl() + " bp inclusive which has length " + componentLength);
-        }
-
-        final ContigDescriptor selectedContigDescriptor;
-
-        if (componentLength < sourceDescriptor.getLengthBp()) {
-          log.error("Contig splitting from AGP is not yet implemented");
-          throw new RuntimeException("Contig splitting from AGP is not yet implemented");
-        }
-
-        selectedContigDescriptor = sourceDescriptor;
-
-        tree.appendContig(selectedContigDescriptor, switch (ctgRecord.getContigOrientation()) {
-          case PLUS -> ContigDirection.FORWARD;
-          case MINUS -> ContigDirection.REVERSED;
-          case UNKNOWN, IRRELEVANT -> {
-            final var autoDirection = ContigDirection.FORWARD;
-            log.warn("A contig " + ctgRecord.getContigName() + " inside scaffold " + ctgRecord.getScaffoldName() + " has orientation " + ctgRecord.getContigOrientation() + " which is automatically treated as " + autoDirection);
-            yield autoDirection;
-          }
-        });
+  private AGPImportPlan.ImportReport importRecords(List<AGPFileRecord> records,
+      AGPImportPlan.MissingComponentsPolicy policy,
+      java.util.function.Function<ContigAGPRecord, ContigDescriptor> resolveComponent) {
+    // ChunkedFile holds both write locks. No live changes until both trees are ready.
+    final var tree = chunkedFile.getContigTree();
+    int nextId = tree.getContigDescriptors().keySet().stream().mapToInt(Integer::intValue).max().orElse(-1) + 1;
+    final var plan = AGPImportPlan.prepareComponents(records, chunkedFile.getOriginalDescriptors().values(),
+      resolveComponent, chunkedFile.getResolutions(), nextId, policy);
+    if (plan.report().requiresChoice()) return plan.report();
+    // Validate the entire AGP above, including excluded rows. Only the chosen
+    // active records contribute contigs, scaffold coordinates or annotations.
+    final var unscaffolded = AGPImportPlan.unscaffoldedObjects(records);
+    final var activeRecords = policy == AGPImportPlan.MissingComponentsPolicy.SCAFFOLDED_ONLY
+      ? records.stream().filter(r -> !unscaffolded.contains(r.getScaffoldName())).toList() : records;
+    final var preparedContigs = new ContigTree();
+    for (var contig : plan.selected()) preparedContigs.appendContig(contig.descriptor(), contig.direction());
+    if (policy == AGPImportPlan.MissingComponentsPolicy.APPEND_UNPLACED)
+      for (var contig : plan.omitted()) preparedContigs.appendContig(contig.descriptor(), contig.direction());
+    long length = preparedContigs.getOrderedContigList().stream().mapToLong(c -> c.descriptor().getLengthBp()).sum();
+    final var preparedScaffolds = new ScaffoldTree(length);
+    final var grouped = new LinkedHashMap<String, List<AGPFileRecord>>();
+    for (var record : activeRecords) grouped.computeIfAbsent(record.scaffoldName, k -> new ArrayList<>()).add(record);
+    long position = 0;
+    for (var entry : grouped.entrySet()) {
+      long span = entry.getValue().stream().filter(r -> r instanceof ContigAGPRecord)
+        .mapToLong(r -> ((ContigAGPRecord)r).intraContigEndBpIncl - ((ContigAGPRecord)r).intraContigStartBpIncl + 1).sum();
+      if (span > 0 && !unscaffolded.contains(entry.getKey())) {
+        long gap = entry.getValue().stream().filter(r -> r instanceof GapAGPRecord).mapToLong(r -> ((GapAGPRecord)r).gapLength).max().orElse(0);
+        preparedScaffolds.rescaffold(position, position + span, id -> new ScaffoldDescriptor(id, entry.getKey(), gap));
       }
+      position += span;
+    }
+    rememberAnnotations(activeRecords, plan.selected());
+    tree.getContigDescriptors().putAll(preparedContigs.getContigDescriptors());
+    tree.commitRoot(preparedContigs.getRoot());
+    chunkedFile.getScaffoldTree().replaceWith(preparedScaffolds);
+    chunkedFile.getScaffoldNameOverrides().clear();
+    return plan.report();
+  }
+
+  public ContigDescriptor resolveSessionComponent(int id, String sourceName, long start, long length) {
+    final var known = chunkedFile.getContigTree().getContigDescriptors().get(id);
+    if (known != null) {
+      if (!known.getContigNameInSourceFASTA().equals(sourceName)
+        || known.getOffsetInSourceFASTA() != start || known.getLengthBp() != length) {
+        throw new IllegalArgumentException("Session component ID refers to a different source interval");
+      }
+      return known;
+    }
+    final long end = Math.addExact(start, length);
+    final var original = chunkedFile.getOriginalDescriptors().values().stream()
+      .filter(contig -> contig.getContigNameInSourceFASTA().equals(sourceName)
+        && start >= contig.getOffsetInSourceFASTA()
+        && end <= contig.getOffsetInSourceFASTA() + contig.getLengthBp())
+      .findFirst().orElseThrow(() -> new IllegalArgumentException("Session component is outside the original source interval"));
+    final long origin = original.getOffsetInSourceFASTA();
+    final var slice = AGPImportPlan.slice(original, start - origin, end - origin, id, chunkedFile.getResolutions());
+    if (slice.getContigId() != id) {
+      throw new IllegalArgumentException("Session component does not preserve the original component ID");
+    }
+    return slice;
+  }
+
+  public void importSessionRecords(Reader input, List<Integer> componentIds) throws IOException, NoSuchFieldException {
+    final var records = parseRecords(input);
+    final var components = records.stream().filter(ContigAGPRecord.class::isInstance)
+      .map(ContigAGPRecord.class::cast).toList();
+    if (components.size() != componentIds.size()) {
+      throw new IllegalArgumentException("Session AGP component count differs from the saved assembly");
+    }
+    final var ids = new IdentityHashMap<ContigAGPRecord, Integer>();
+    for (int i = 0; i < components.size(); i++) ids.put(components.get(i), componentIds.get(i));
+    final var contigLock = chunkedFile.getContigTree().getRootLock().writeLock();
+    final var scaffoldLock = chunkedFile.getScaffoldTree().getRootLock().writeLock();
+    contigLock.lock();
+    scaffoldLock.lock();
+    try {
+      importRecords(records, AGPImportPlan.MissingComponentsPolicy.EXCLUDE, component -> {
+        final long start = component.getIntraContigStartBpIncl() - 1;
+        return resolveSessionComponent(ids.get(component), component.getContigName(), start,
+          component.getIntraContigEndBpIncl() - start);
+      });
     } finally {
-      lock.writeLock().unlock();
+      scaffoldLock.unlock();
+      contigLock.unlock();
     }
   }
 
-  public void initializeScaffoldTreeFromAGP(final @NotNull List<@NotNull AGPFileRecord> agpFileRecords) {
-    final var tree = this.chunkedFile.getScaffoldTree();
-    final var lock = tree.getRootLock();
-    try {
-      lock.writeLock().lock();
-
-      tree.unscaffold(0, 1 + this.chunkedFile.getMatrixSizeBins()[0]);
-//      final var newTree = new ScaffoldTree(this.chunkedFile.getMatrixSizeBins()[0]);
-      final var scaffoldToRecords = new LinkedHashMap<String, List<AGPFileRecord>>();
-      for (final var rec : agpFileRecords) {
-        scaffoldToRecords.computeIfAbsent(rec.scaffoldName, i -> new ArrayList<>());
-        scaffoldToRecords.get(rec.scaffoldName).add(rec);
-      }
-
-      long positionBP = 0L;
-
-      for (final var entry : scaffoldToRecords.entrySet()) {
-        final var scaffoldName = entry.getKey();
-        final var elements = entry.getValue();
-        final var totalLength = elements.parallelStream().filter(r -> r instanceof ContigAGPRecord).mapToLong(r -> ((ContigAGPRecord) r).getIntraContigEndBpIncl() - ((ContigAGPRecord) r).getIntraContigStartBpIncl() + 1).sum();
-
-        if (elements.size() > 1 || !scaffoldName.startsWith("unscaffolded")) {
-          final var maxSpacerLength = elements.parallelStream().filter(r -> r instanceof GapAGPRecord).mapToLong(r -> ((GapAGPRecord) r).gapLength).max().orElse(1000L);
-          tree.rescaffold(
-            positionBP,
-            positionBP + totalLength,
-            id -> new ScaffoldDescriptor(
-              id,
-              scaffoldName,
-              maxSpacerLength
-            )
-          );
-        }
-        positionBP += totalLength;
-      }
-    } finally {
-      lock.writeLock().unlock();
-    }
+  public Stream<String> getAGPStream(final long spacerLength) {
+    return this.getAGPRecords(spacerLength).stream().map(r -> r + "\n");
   }
 
-  public Stream<String> getAGPStream(final long unscaffoldedSpacerLength) {
-    final var records = this.getAGPRecords(unscaffoldedSpacerLength);
-    return records.parallelStream().map(r -> String.format("%s%n", r));
+  public Stream<String> getAGPStream() {
+    return getAGPStream(AssemblyExportSettings.gapLengthBp());
   }
 
-  public @NotNull List<@NotNull AGPFileRecord> getAGPRecords(final long unscaffoldedSpacerLength) {
-    assert (unscaffoldedSpacerLength >= 0) : "Spacer length for unscaffolded contigs cannot be negative";
+  public @NotNull List<@NotNull AGPFileRecord> getAGPRecords(final long spacerLength) {
+    return buildAGPRecords(AssemblyExportSettings.requireGapLength(spacerLength));
+  }
+
+  /** Internal synchronization must not apply the user's export-only gap override. */
+  public @NotNull List<@NotNull AGPFileRecord> getAssemblyAGPRecords() {
+    return buildAGPRecords(null);
+  }
+
+  private @NotNull List<@NotNull AGPFileRecord> buildAGPRecords(final Long outputGapLength) {
     final var contigTree = this.chunkedFile.getContigTree();
     final var scaffoldTree = this.chunkedFile.getScaffoldTree();
 
@@ -314,49 +451,43 @@ public class AGPProcessor {
       for (final var sc : scaffoldedContigs) {
         final var scaffold = sc.scaffoldTuple().scaffoldDescriptor();
         assert (scaffold != null || (sc.contigs().size() == 1)) : "Unscaffolded contig must always represent unique unscaffolded segment";
-        final var scaffoldName = (scaffold != null) ? chunkedFile.getScaffoldDisplayName(scaffold.scaffoldId()) : String.format(
+        final var scaffoldName = (scaffold != null) ? chunkedFile.getScaffoldNameOverrides().getOrDefault(scaffold.scaffoldId(), scaffold.scaffoldName()) : String.format(
           "unscaffolded_%s",
           chunkedFile.getContigDisplayName(sc.contigs().get(0).descriptor().getContigId())
         );
 
-        final var spacerLength = ((scaffold != null) ? scaffold.spacerLength() : unscaffoldedSpacerLength);
+        final long spacerLength = outputGapLength != null ? outputGapLength : scaffold != null ? scaffold.spacerLength() : 0L;
 
         var positionBp = 1L;
         int partNumber = 1;
 
-        for (final ContigTree.ContigTuple contigTuple : sc.contigs()) {
-          final var contigDisplayName = chunkedFile.getContigDisplayName(contigTuple.descriptor().getContigId());
-          result.add(new ContigAGPRecord(
-            scaffoldName,
-            positionBp,
-            positionBp + contigTuple.descriptor().getLengthBp() - 1,
-            partNumber,
-            contigDisplayName,
-            1 + contigTuple.descriptor().getOffsetInSourceFASTA(),
-            contigTuple.descriptor().getOffsetInSourceFASTA() + contigTuple.descriptor().getLengthBp(),
-            switch (contigTuple.direction()) {
-              case FORWARD -> AGPContigOrientation.PLUS;
-              case REVERSED -> AGPContigOrientation.MINUS;
+        for (int contigIndex = 0; contigIndex <= sc.contigs().size(); contigIndex++) {
+          var previous = contigIndex == 0 ? null : sc.contigs().get(contigIndex - 1);
+          var current = contigIndex == sc.contigs().size() ? null : sc.contigs().get(contigIndex);
+          var gaps = outputGapLength == null ? gapsBetween(previous, current) : null;
+          if (gaps != null) {
+            for (var gap : gaps) {
+              result.add(new GapAGPRecord(scaffoldName, positionBp, Math.addExact(positionBp, gap.gapLength - 1),
+                partNumber++, gap.gapLength, gap.gapType, gap.linkage, gap.linkageEvidence, gap.componentType));
+              positionBp = Math.addExact(positionBp, gap.gapLength);
             }
-          ));
-          positionBp += contigTuple.descriptor().getLengthBp();
-          ++partNumber;
-          if (((partNumber - 1) / 2 < sc.contigs().size() - 1) && (spacerLength > 0)) {
-            result.add(
-              new GapAGPRecord(
-                scaffoldName,
-                positionBp,
-                positionBp + spacerLength - 1,
-                partNumber,
-                spacerLength,
-                AGPGapType.SCAFFOLD,
-                true,
-                LinkageEvidence.PROXIMITY_LIGATION
-              )
-            );
-            positionBp += spacerLength;
-            ++partNumber;
+          } else if (previous != null && current != null && spacerLength > 0) {
+            result.add(new GapAGPRecord(scaffoldName, positionBp, Math.addExact(positionBp, spacerLength - 1),
+              partNumber++, spacerLength, AGPGapType.SCAFFOLD, true, LinkageEvidence.PROXIMITY_LIGATION));
+            positionBp = Math.addExact(positionBp, spacerLength);
           }
+          if (current == null) break;
+          var descriptor = current.descriptor();
+          var annotation = importedComponents.get(descriptor.getContigId());
+          var orientation = current.direction() == ContigDirection.FORWARD ? AGPContigOrientation.PLUS : AGPContigOrientation.MINUS;
+          if (annotation != null && current.direction() == ContigDirection.FORWARD &&
+              (annotation.contigOrientation == AGPContigOrientation.UNKNOWN || annotation.contigOrientation == AGPContigOrientation.IRRELEVANT))
+            orientation = annotation.contigOrientation;
+          result.add(new ContigAGPRecord(scaffoldName, positionBp, Math.addExact(positionBp, descriptor.getLengthBp() - 1),
+            partNumber++, descriptor.getContigNameInSourceFASTA(), 1L + descriptor.getOffsetInSourceFASTA(),
+            Math.addExact(descriptor.getOffsetInSourceFASTA(), descriptor.getLengthBp()), orientation,
+            annotation == null ? AGPComponentType.WGS_CONTIG : annotation.componentType));
+          positionBp = Math.addExact(positionBp, descriptor.getLengthBp());
         }
       }
 
@@ -365,6 +496,7 @@ public class AGPProcessor {
       scaffoldTree.getRootLock().readLock().unlock();
     }
 
+    validateLayout(result);
     return result;
   }
 
@@ -534,7 +666,8 @@ public class AGPProcessor {
     private final long gapLength;
     private final @NotNull AGPGapType gapType;
     private final boolean linkage;
-    private final @NotNull LinkageEvidence linkageEvidence;
+    private final @NotNull List<LinkageEvidence> linkageEvidence;
+    private final @NotNull AGPComponentType componentType;
 
     public GapAGPRecord(
       final @NotNull String scaffoldName,
@@ -546,6 +679,15 @@ public class AGPProcessor {
       final boolean linkage,
       final @NotNull LinkageEvidence linkageEvidence
     ) {
+      this(scaffoldName, interScaffoldStartIncl, interScaffoldEndIncl, partNumber,
+        gapLength, gapType, linkage, List.of(linkageEvidence), AGPComponentType.GAP_WITH_SPECIFIED_SIZE);
+    }
+
+    public GapAGPRecord(
+      final String scaffoldName, final long interScaffoldStartIncl, final long interScaffoldEndIncl,
+      final int partNumber, final long gapLength, final AGPGapType gapType, final boolean linkage,
+      final List<LinkageEvidence> linkageEvidence, final AGPComponentType componentType
+    ) {
       super(
         scaffoldName,
         interScaffoldStartIncl,
@@ -555,7 +697,11 @@ public class AGPProcessor {
       this.gapLength = gapLength;
       this.gapType = gapType;
       this.linkage = linkage;
-      this.linkageEvidence = linkageEvidence;
+      this.linkageEvidence = List.copyOf(linkageEvidence);
+      if (componentType != AGPComponentType.GAP_WITH_SPECIFIED_SIZE && componentType != AGPComponentType.GAP_OF_UNKNOWN_SIZE) {
+        throw new IllegalArgumentException("Gap component type must be N or U");
+      }
+      this.componentType = componentType;
     }
 
     @Override
@@ -563,7 +709,7 @@ public class AGPProcessor {
       if (obj == this) return true;
       if (obj == null || obj.getClass() != this.getClass()) return false;
       var that = (GapAGPRecord) obj;
-      return this.gapLength == that.gapLength &&
+      return super.equals(that) && this.componentType == that.componentType && this.gapLength == that.gapLength &&
         Objects.equals(this.gapType, that.gapType) &&
         this.linkage == that.linkage &&
         Objects.equals(this.linkageEvidence, that.linkageEvidence);
@@ -571,18 +717,20 @@ public class AGPProcessor {
 
     @Override
     public int hashCode() {
-      return Objects.hash(gapLength, gapType, linkage, linkageEvidence);
+      return Objects.hash(super.hashCode(), componentType, gapLength, gapType, linkage, linkageEvidence);
     }
 
     @Override
     public String toString() {
       return String.format(
-        "%s\tN\t%d\t%s\t%s\t%s",
+        "%s\t%s\t%d\t%s\t%s\t%s",
         super.toString(),
+        this.componentType == AGPComponentType.GAP_OF_UNKNOWN_SIZE ? "U" : "N",
         this.gapLength,
-        this.gapType.toString().toLowerCase(),
+        this.gapType.toString().toLowerCase(Locale.ROOT),
         this.linkage ? "yes" : "no",
-        linkageEvidence.toString().toLowerCase()
+        String.join(";", linkageEvidence.stream().map(e -> e == LinkageEvidence.PAIRED_ENDS
+          ? "paired-ends" : e.name().toLowerCase(Locale.ROOT)).toList())
       );
     }
   }
@@ -593,6 +741,7 @@ public class AGPProcessor {
     private final long intraContigStartBpIncl;
     private final long intraContigEndBpIncl;
     private final @NotNull AGPContigOrientation contigOrientation;
+    private final @NotNull AGPComponentType componentType;
 
     public ContigAGPRecord(
       final @NotNull String scaffoldName,
@@ -604,6 +753,16 @@ public class AGPProcessor {
       final long intraContigEndBpIncl,
       final @NotNull AGPContigOrientation contigOrientation
     ) {
+      this(scaffoldName, interScaffoldStartIncl, interScaffoldEndIncl, partNumber, contigName,
+        intraContigStartBpIncl, intraContigEndBpIncl, contigOrientation, AGPComponentType.WGS_CONTIG);
+    }
+
+    public ContigAGPRecord(
+      final String scaffoldName, final long interScaffoldStartIncl, final long interScaffoldEndIncl,
+      final int partNumber, final String contigName, final long intraContigStartBpIncl,
+      final long intraContigEndBpIncl, final AGPContigOrientation contigOrientation,
+      final AGPComponentType componentType
+    ) {
       super(
         scaffoldName,
         interScaffoldStartIncl,
@@ -614,6 +773,10 @@ public class AGPProcessor {
       this.intraContigStartBpIncl = intraContigStartBpIncl;
       this.intraContigEndBpIncl = intraContigEndBpIncl;
       this.contigOrientation = contigOrientation;
+      if (componentType == AGPComponentType.GAP_WITH_SPECIFIED_SIZE || componentType == AGPComponentType.GAP_OF_UNKNOWN_SIZE) {
+        throw new IllegalArgumentException("Sequence component cannot have gap type N or U");
+      }
+      this.componentType = componentType;
     }
 
     @Override
@@ -621,7 +784,7 @@ public class AGPProcessor {
       if (obj == this) return true;
       if (obj == null || obj.getClass() != this.getClass()) return false;
       var that = (ContigAGPRecord) obj;
-      return Objects.equals(this.contigName, that.contigName) &&
+      return super.equals(that) && this.componentType == that.componentType && Objects.equals(this.contigName, that.contigName) &&
         this.intraContigStartBpIncl == that.intraContigStartBpIncl &&
         this.intraContigEndBpIncl == that.intraContigEndBpIncl &&
         Objects.equals(this.contigOrientation, that.contigOrientation);
@@ -629,14 +792,24 @@ public class AGPProcessor {
 
     @Override
     public int hashCode() {
-      return Objects.hash(contigName, intraContigStartBpIncl, intraContigEndBpIncl, contigOrientation);
+      return Objects.hash(super.hashCode(), componentType, contigName, intraContigStartBpIncl, intraContigEndBpIncl, contigOrientation);
     }
 
     @Override
     public String toString() {
       return String.format(
-        "%s\tW\t%s\t%d\t%d\t%s",
+        "%s\t%s\t%s\t%d\t%d\t%s",
         super.toString(),
+        switch (this.componentType) {
+          case ACTIVE_FINISHING -> "A";
+          case DRAFT_HTG -> "D";
+          case FINISHED_HTG -> "F";
+          case WHOLE_GENOME_FINISHING -> "G";
+          case OTHER_SEQUENCE -> "O";
+          case PRE_DRAFT -> "P";
+          case WGS_CONTIG -> "W";
+          default -> throw new IllegalStateException("Not a sequence component type");
+        },
         this.contigName,
         this.intraContigStartBpIncl,
         this.intraContigEndBpIncl,

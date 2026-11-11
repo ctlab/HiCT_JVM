@@ -119,8 +119,8 @@ public class NameMappingHandlersHolder extends HandlersHolder {
           final var scaffolds = chunkedFile.getScaffoldTree().getScaffoldList().stream().map(tuple ->
             new NameMappingDTO.ScaffoldNameMappingDTO(
               tuple.scaffoldDescriptor().scaffoldId(),
-              chunkedFile.getScaffoldOriginalName(tuple.scaffoldDescriptor().scaffoldId()),
-              chunkedFile.getScaffoldDisplayName(tuple.scaffoldDescriptor().scaffoldId())
+              tuple.scaffoldDescriptor().scaffoldName(),
+              chunkedFile.getScaffoldNameOverrides().getOrDefault(tuple.scaffoldDescriptor().scaffoldId(), tuple.scaffoldDescriptor().scaffoldName())
             )
           ).toList();
           return new NameMappingDTO(contigs, scaffolds);
@@ -202,7 +202,10 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     if (name == null) {
       return "";
     }
-    return name.trim();
+    final var normalized = name.trim();
+    try { ChunkedFile.validateDisplayName(normalized); }
+    catch (IllegalArgumentException invalid) { throw new io.vertx.ext.web.handler.HttpException(400, invalid.getMessage()); }
+    return normalized;
   }
 
   private void validateContigRename(final @NotNull ChunkedFile chunkedFile, final int contigId, final @NotNull String newName) {
@@ -212,7 +215,7 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     final var existingNames = new HashSet<>(chunkedFile.getAllContigDisplayNames());
     existingNames.remove(chunkedFile.getContigDisplayName(contigId));
     if (existingNames.contains(newName)) {
-      throw new IllegalArgumentException("Contig name must be unique. Name '" + newName + "' already exists.");
+      throw new io.vertx.ext.web.handler.HttpException(400, "Contig name must be unique. Name '" + newName + "' already exists.");
     }
   }
 
@@ -223,7 +226,7 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     final var existingNames = new HashSet<>(chunkedFile.getAllScaffoldDisplayNames());
     existingNames.remove(chunkedFile.getScaffoldDisplayName(scaffoldId));
     if (existingNames.contains(newName)) {
-      throw new IllegalArgumentException("Scaffold name must be unique. Name '" + newName + "' already exists.");
+      throw new io.vertx.ext.web.handler.HttpException(400, "Scaffold name must be unique. Name '" + newName + "' already exists.");
     }
   }
 
@@ -234,19 +237,19 @@ public class NameMappingHandlersHolder extends HandlersHolder {
     final var seen = new HashSet<String>();
     for (final var name : finalNames.values()) {
       if (!seen.add(name)) {
-        throw new IllegalArgumentException("Contig name must be unique. Duplicate name '" + name + "' in import.");
+        throw new io.vertx.ext.web.handler.HttpException(400, "Contig name must be unique. Duplicate name '" + name + "' in import.");
       }
     }
   }
 
   private void validateScaffoldMappingImport(final @NotNull ChunkedFile chunkedFile, final @NotNull Map<Long, String> updates) {
     final var finalNames = new HashMap<Long, String>();
-    chunkedFile.getScaffoldTree().getScaffoldList().forEach(tuple -> finalNames.put(tuple.scaffoldDescriptor().scaffoldId(), chunkedFile.getScaffoldDisplayName(tuple.scaffoldDescriptor().scaffoldId())));
+    chunkedFile.getScaffoldTree().getScaffoldList().forEach(tuple -> finalNames.put(tuple.scaffoldDescriptor().scaffoldId(), chunkedFile.getScaffoldNameOverrides().getOrDefault(tuple.scaffoldDescriptor().scaffoldId(), tuple.scaffoldDescriptor().scaffoldName())));
     updates.forEach((id, name) -> finalNames.put(id, name.isBlank() ? chunkedFile.getScaffoldOriginalName(id) : name));
     final var seen = new HashSet<String>();
     for (final var name : finalNames.values()) {
       if (!seen.add(name)) {
-        throw new IllegalArgumentException("Scaffold name must be unique. Duplicate name '" + name + "' in import.");
+        throw new io.vertx.ext.web.handler.HttpException(400, "Scaffold name must be unique. Duplicate name '" + name + "' in import.");
       }
     }
   }

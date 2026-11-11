@@ -1,0 +1,20 @@
+BigWig 2.0.1 (unmodified binary), org.broad.igv:bigwig:2.0.1
+Copyright (c) 2007-2011 The Broad Institute of MIT and Harvard.
+Repackaged by Loraine Lab. Licensed under LGPL 2.1; see LICENSE.txt.
+
+Artifact originally resolved from:
+https://nexus.bioviz.org/repository/maven-releases/org/broad/igv/bigwig/2.0.1/bigwig-2.0.1.jar
+Recovered unchanged from the previously verified Gradle dependency cache after
+the publisher's server became unavailable on 2026-10-11.
+SHA-256: 1cf8cdf2746d4160a24aa0d609343189a0d7da9ce7e9ad94caacb8cbaff5f447
+SHA-1: fa972a00ce3f7ffa1b7f628b3fe309460a28922a
+
+Source: https://bitbucket.org/lorainelab/bigwig
+Commit: 71c1f7a01c48d13f1d2b2bb5175f0b18dfb77a85 (declares version 2.0.1)
+The complete upstream source is included as bigwig-2.0.1-source.zip.
+Source archive SHA-256: e9c189613d5f7d31f11c3d1e4f0001ccc74395e8367b7d9d6f8aa0dcca707b2f
+
+This does not upgrade the library or change the benchmark runtime. The resolved
+2.0.1 Maven metadata had no transitive dependencies; HiCT already supplies
+HTSJDK 4.1.3 and SLF4J explicitly. Do not replace this artifact silently.
+The original source contains the complete per-file copyright and disclaimer.

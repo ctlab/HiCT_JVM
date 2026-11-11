@@ -12,7 +12,7 @@ case "${DARWIN_ARCH}" in
 esac
 TOOLCHAIN_PLATFORM="${HICT_DARWIN_PLATFORM_DIR:-darwin_${DARWIN_ARCH}}"
 PLATFORM="${HICT_DARWIN_ARTIFACT_PLATFORM:-darwin-${DARWIN_ARCH}}"
-MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-12.0}"
+source "${SCRIPT_DIR}/macos_target.sh"
 APP_NAME="HiCT"
 VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/version.txt")"
 APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
@@ -206,6 +206,14 @@ prepare_darwin_jhdf5_sidecar_archive() {
   echo "[darwin/portable] Bundled platform JHDF5 native archive: lib/${archive_name} (${platform_dir})"
 }
 
+HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
+if [[ -d "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" ]]; then
+  python3 "${SCRIPT_DIR}/../toolchains/merge_sequence_payload.py" \
+    --source "${PROJECT_DIR}/sequence-tools-dist/${TOOLCHAIN_PLATFORM}" \
+    --target "${PROJECT_DIR}/toolchains-dist/${TOOLCHAIN_PLATFORM}"
+fi
+
+
 if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   resolve_jhdf5_for_portable_release
   # macOS portable packages intentionally embed only the target platform's
@@ -218,7 +226,7 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   (cd "${PROJECT_DIR}" && ./gradlew -PrequireBundledWebUI=true verifyBundledJhdf5Payload shadowJar)
 fi
 
-HICT_DARWIN_ARCH="${DARWIN_ARCH}" HICT_DARWIN_PLATFORM_DIR="${TOOLCHAIN_PLATFORM}" "${SCRIPT_DIR}/../toolchains/build_darwin_toolchains.sh"
+
 
 FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
 if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
@@ -249,6 +257,7 @@ mkdir -p \
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
 prepare_darwin_jhdf5_sidecar_archive
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
+cp "${PROJECT_DIR}/THIRD_PARTY_LICENSES.md" "${APP_DIR}/licenses/THIRD_PARTY_LICENSES.md"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"
 fi
@@ -465,6 +474,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::vector<std::string> args = {
+    "-XX:MaxRAMPercentage=50.0",
     "-Djava.io.tmpdir=" + temp_dir,
     "-jar",
     app_home + "/lib/hict.jar",
@@ -566,6 +576,12 @@ RUN_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.run"
 SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}-${PLATFORM}.sha256"
 PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}.payload.tar.xz"
 
+# Audit the staged runtime, Tauri, tools, and JNI/HDF5 inside JARs/sidecars.
+# Never advertise an older OS by just rewriting a binary's deployment header.
+python3 "${PROJECT_DIR}/scripts/ci/check_macos_compatibility.py" "${APP_DIR}" \
+  --arch "${DARWIN_ARCH}" --target "${MACOS_DEPLOYMENT_TARGET}" \
+  --report "${APP_DIR}/share/doc/macos-compatibility.json"
+
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(shasum -a 256 "${PAYLOAD_PATH}" | awk '{print $1}')"
@@ -594,11 +610,16 @@ HiCT portable launcher
 
 Usage:
   ./HiCT-<version>-${PLATFORM}.run [HiCT CLI args...]
+  ./HiCT-<version>-${PLATFORM}.run toolbox hictk <hictk arguments...>
+  ./HiCT-<version>-${PLATFORM}.run toolbox minimap2 <minimap2 arguments...>
+  ./HiCT-<version>-${PLATFORM}.run toolbox mm2-plus <mm2-plus arguments...>
   ./HiCT-<version>-${PLATFORM}.run --help
   ./HiCT-<version>-${PLATFORM}.run --hict-extract-only <directory>
 
 DATA_DIR defaults to the directory containing this .run file. Set DATA_DIR
 explicitly to use a different data directory.
+The toolbox command forwards arguments to bundled/configured third-party tools
+and prints their project, license, and citation notes before launching them.
 EOU
 }
 
@@ -777,7 +798,7 @@ cleanup_run_smoke_test() {
 }
 trap cleanup_run_smoke_test EXIT
 mkdir -p "${RUN_SMOKE_TEST_DIR}/data" "${RUN_SMOKE_TEST_DIR}/cache" "${RUN_SMOKE_TEST_DIR}/tmp"
-perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 60 env \
+perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 600 env \
   DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
   HICT_PORTABLE_DATA_DIR="${RUN_SMOKE_TEST_DIR}/data" \
   XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" \

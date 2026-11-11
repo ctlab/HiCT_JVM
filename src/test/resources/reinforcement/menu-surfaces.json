@@ -1,0 +1,272 @@
+[
+  {
+    "id": "menu-01",
+    "menu": "File",
+    "action": "Open…",
+    "heading": "Open Hi-C dataset",
+    "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Open Hi-C dataset",
+    "functionalExpected": "Select a valid map and verify its assembly and matrix values; failed selection preserves the prior map.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-02",
+    "menu": "File",
+    "action": "Convert matrices",
+    "heading": "Convert matrix files for HiCT",
+    "source": "src/app/ui/components/upper_ribbon/CoolerConverter.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Convert matrix files for HiCT",
+    "functionalExpected": "Convert a tiny Cooler and verify output values, progress, cancellation and overwrite behavior.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-03",
+    "menu": "File",
+    "action": "Export matrix",
+    "heading": "Export matrix to Cooler",
+    "source": "src/app/ui/components/upper_ribbon/MatrixExportModal.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Export matrix to Cooler",
+    "functionalExpected": "Export an edited assembly and independently compare bins, contacts and weights.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-04",
+    "menu": "Assembly",
+    "action": "Link FASTA",
+    "heading": "Select FASTA file",
+    "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Select FASTA file",
+    "functionalExpected": "Link matching FASTA and verify exact displayed sequence; failed relink preserves prior sequence.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-05",
+    "menu": "Assembly",
+    "action": "Load AGP",
+    "heading": "Load AGP",
+    "source": "src/app/ui/components/upper_ribbon/UniversalFileSelector.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Load AGP",
+    "functionalExpected": "Apply a matching AGP and compare order, orientation and gaps; reject wrong-reference AGP atomically.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-06",
+    "menu": "Assembly",
+    "action": "Apply Juicebox assembly",
+    "heading": "Apply Juicebox assembly",
+    "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Apply Juicebox assembly",
+    "functionalExpected": "Apply a fixture assembly with original FASTA and verify its coordinates and exported AGP.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-07",
+    "menu": "View",
+    "action": "Tracks and layers...",
+    "heading": "Tracks and layers",
+    "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Tracks and layers",
+    "functionalExpected": "Add, reorder, hide and remove tracks; compare displayed values and restore focus on close.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-08",
+    "menu": "View",
+    "action": "Rendering pipeline...",
+    "heading": "Rendering Pipeline",
+    "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Rendering Pipeline",
+    "functionalExpected": "Edit and apply a custom graph, verify exact pixels and save/reopen without losing expressions.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-09",
+    "menu": "View",
+    "action": "OSD settings...",
+    "heading": "OSD settings",
+    "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: OSD settings",
+    "functionalExpected": "Toggle each field and placement, verify overlay contents and persistence.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-10",
+    "menu": "View",
+    "action": "Restrict Resolutions...",
+    "heading": "Restrict Resolutions",
+    "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Restrict Resolutions",
+    "functionalExpected": "Change enabled levels and verify zoom visits only enabled levels without losing secondary layers.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-11",
+    "menu": "Tools",
+    "action": "Generate dotplot from FASTA files…",
+    "heading": "Generate self-alignment dotplots",
+    "source": "src/app/ui/components/upper_ribbon/DotplotGenerator.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Generate self-alignment dotplots",
+    "functionalExpected": "Select FASTA inputs, run a job and verify alignment coordinates and non-additive overlap.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-12",
+    "menu": "Tools",
+    "action": "Find sequences in linked FASTA…",
+    "heading": "Find sequences in the linked FASTA",
+    "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Find sequences in the linked FASTA",
+    "functionalExpected": "Link FASTA and compare exact and gapped search hits with fixture intervals on both strands.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-13",
+    "menu": "Tools",
+    "action": "Generate dotplot from active assembly…",
+    "heading": "Generate dotplot from active assembly",
+    "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Generate dotplot from active assembly",
+    "functionalExpected": "Compute an edited region, verify source provenance, orientation, retry and accumulation.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-14",
+    "menu": "Tools",
+    "action": "Generate ModDotPlot…",
+    "heading": "Generate ModDotPlot",
+    "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Generate ModDotPlot",
+    "functionalExpected": "Compute identity and compare encoded values, coverage metadata and scale across resolutions.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-15",
+    "menu": "Dev",
+    "action": "Runtime statistics...",
+    "heading": "Runtime Statistics",
+    "source": "src/app/ui/components/upper_ribbon/ServerStatisticsModal.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Runtime Statistics",
+    "functionalExpected": "Verify live runtime metrics and bounded refresh after closing.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-16",
+    "menu": "Dev",
+    "action": "Worker diagnostics...",
+    "heading": "Worker Diagnostics",
+    "source": "src/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: Worker Diagnostics",
+    "functionalExpected": "Compare worker diagnostics with active jobs and verify polling stops after closing.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-17",
+    "menu": "Help",
+    "action": "API docs...",
+    "heading": null,
+    "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "New local API documentation window",
+    "functionalExpected": "Verify the new window loads the local API documentation and describes the running API.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  },
+  {
+    "id": "menu-18",
+    "menu": "Help",
+    "action": "About",
+    "heading": "HiCT",
+    "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+    "prerequisites": [
+      "Disposable server data",
+      "Open map via benchmark setup; FASTA intentionally not linked"
+    ],
+    "surfaceExpected": "Visible heading: HiCT",
+    "functionalExpected": "Verify version, source links and attribution against packaged dependencies.",
+    "coverage": "pending",
+    "scope": "Surface check only; functionalExpected requires separate evidence"
+  }
+]

@@ -48,8 +48,7 @@ public final class RenderPipelineConfig {
   private final @NotNull JsonObject lowerExpressionJson;
   private final @NotNull CompiledRootExpression upperExpression;
   private final @NotNull CompiledRootExpression lowerExpression;
-  private final @NotNull CompiledRootExpression primarySourceExpression;
-  private final @NotNull CompiledRootExpression secondarySourceExpression;
+  private final Map<String, CompiledRootExpression[]> sourceBranches;
   private final @NotNull Set<TrackBinding> requiredTrackBindings;
 
   private RenderPipelineConfig(final boolean enabled,
@@ -63,13 +62,9 @@ public final class RenderPipelineConfig {
     final var required = new HashSet<TrackBinding>();
     this.upperExpression = compileRootExpression(this.upperExpressionJson, required);
     this.lowerExpression = compileRootExpression(this.lowerExpressionJson, required);
-    this.primarySourceExpression = compileRootExpression(
-      findSourceColorExpression(this.upperExpressionJson, this.lowerExpressionJson, "PRIMARY"),
-      required
-    );
-    this.secondarySourceExpression = compileRootExpression(
-      findSourceColorExpression(this.upperExpressionJson, this.lowerExpressionJson, "SECONDARY"),
-      required
+    this.sourceBranches = Map.of(
+      "PRIMARY", new CompiledRootExpression[]{compileSourceBranch(this.upperExpressionJson, "PRIMARY", required), compileSourceBranch(this.lowerExpressionJson, "PRIMARY", required)},
+      "SECONDARY", new CompiledRootExpression[]{compileSourceBranch(this.upperExpressionJson, "SECONDARY", required), compileSourceBranch(this.lowerExpressionJson, "SECONDARY", required)}
     );
     this.requiredTrackBindings = Collections.unmodifiableSet(required);
   }
@@ -149,29 +144,27 @@ public final class RenderPipelineConfig {
   public int evaluateSourceArgb(final @NotNull String sourceName,
                                 final @NotNull MutablePixelContext context,
                                 final @NotNull SimpleVisualizationOptions options) {
-    final var root = "SECONDARY".equals(sourceName.trim().toUpperCase(Locale.ROOT))
-      ? this.secondarySourceExpression
-      : this.primarySourceExpression;
-    return root.evalArgb(context, options);
+    final var branches = this.sourceBranches.get("SECONDARY".equalsIgnoreCase(sourceName.trim()) ? "SECONDARY" : "PRIMARY");
+    final boolean upper = context.rowPx <= context.colPx;
+    final var root = branches[(this.swapUpperLower ? !upper : upper) ? 0 : 1];
+    return root == null ? 0x00000000 : root.evalArgb(context, options);
+  }
+
+  private static CompiledRootExpression compileSourceBranch(JsonObject branch, String source, Set<TrackBinding> required) {
+    if (!referencesSource(branch, source)) {
+      // Coordinate, constant and track-only expressions belong to the primary grid.
+      if ("PRIMARY".equals(source) && !referencesSource(branch, "SECONDARY")) {
+        return compileRootExpression(branch, required);
+      }
+      return null;
+    }
+    var color = findSourceColorExpressionRecursive(branch, source);
+    return compileRootExpression(color != null ? color : branch, required);
   }
 
   private @NotNull CompiledRootExpression selectRootExpression(final boolean upperTriangle) {
     final var useUpper = this.swapUpperLower ? !upperTriangle : upperTriangle;
     return useUpper ? this.upperExpression : this.lowerExpression;
-  }
-
-  private static @NotNull JsonObject findSourceColorExpression(final @NotNull JsonObject upper,
-                                                               final @NotNull JsonObject lower,
-                                                               final @NotNull String sourceName) {
-    final var upperCandidate = findSourceColorExpressionRecursive(upper, sourceName);
-    if (upperCandidate != null) {
-      return upperCandidate;
-    }
-    final var lowerCandidate = findSourceColorExpressionRecursive(lower, sourceName);
-    if (lowerCandidate != null) {
-      return lowerCandidate;
-    }
-    return colormapNode(defaultSourceNode(sourceName), "rgba(255,255,255,0.0)", "rgba(0,96,0,1.0)", 0.0d, 1.0d);
   }
 
   private static JsonObject findSourceColorExpressionRecursive(final @NotNull JsonObject node,
@@ -724,12 +717,21 @@ public final class RenderPipelineConfig {
           node.getDouble("maxSignal", 1.0d),
           requiredTrackBindings
         );
+        final var expressionKey = node.getJsonObject("input", defaultSourceNode("PRIMARY")).encode();
+        if ("MODDOTPLOT_IDENTITY".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
+          yield context -> {
+            final var value = inputExpression.eval(context);
+            if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
+            return mapIdentityColor(value, minExpression.eval(context), maxExpression.eval(context));
+          };
+        }
         final var defaultStart = new Color(255, 255, 255, 0);
         final var defaultEnd = new Color(0, 96, 0, 255);
         final var startColor = parseColor(node.getString("startColor"), defaultStart);
         final var endColor = parseColor(node.getString("endColor"), defaultEnd);
         yield context -> {
           final var value = inputExpression.eval(context);
+          if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
           final var minValue = minExpression.eval(context);
           final var maxValue = maxExpression.eval(context);
           return mapLinearColor(value, minValue, maxValue, startColor, endColor);
@@ -883,6 +885,28 @@ public final class RenderPipelineConfig {
       }
       default -> throw new IllegalArgumentException("Unsupported color expression type: " + nodeType);
     };
+  }
+
+  // ColorBrewer RdYlBu-11, reversed: low identity blue, high identity red.
+  // Attribution and license are included with the bundled ModDotPlot tools.
+  private static final int[] IDENTITY_COLORS = {0xff313695, 0xff4575b4, 0xff74add1,
+    0xffabd9e9, 0xffe0f3f8, 0xffffffbf, 0xfffee090, 0xfffdae61,
+    0xfff46d43, 0xffd73027, 0xffa50026};
+
+  private static int mapIdentityColor(double value, double minimum, double maximum) {
+    if (!Double.isFinite(value) || !Double.isFinite(minimum) || !Double.isFinite(maximum)
+        || value <= 0 || value < minimum || minimum < 0 || maximum < minimum) return 0;
+    final double fraction = maximum == minimum ? 1 : Math.min(1, (value - minimum) / (maximum - minimum));
+    final double index = fraction * (IDENTITY_COLORS.length - 1);
+    final int left = Math.min(IDENTITY_COLORS.length - 2, (int) index);
+    final double mix = index - left;
+    final int a = IDENTITY_COLORS[left], b = IDENTITY_COLORS[left + 1];
+    int result = 0xff000000;
+    for (int shift = 0; shift <= 16; shift += 8) {
+      final int channel = (int) Math.round(((a >> shift) & 255) * (1 - mix) + ((b >> shift) & 255) * mix);
+      result |= channel << shift;
+    }
+    return result;
   }
 
   private static @NotNull TrackAxis parseTrackAxis(final String axisRaw) {
@@ -1202,6 +1226,7 @@ public final class RenderPipelineConfig {
   }
 
   public static final class MutablePixelContext {
+    public TileSignalStatistics signalStatistics;
     public double primaryValue;
     public double secondaryValue;
     public double rowWeight;

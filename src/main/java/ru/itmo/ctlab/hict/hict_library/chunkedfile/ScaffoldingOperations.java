@@ -32,6 +32,7 @@ import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.*;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
+import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -91,7 +92,16 @@ public class ScaffoldingOperations {
         final var totalAssemblyLengthBp = Optional.ofNullable(contigTree.getRoot())
           .map(root -> root.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0)))
           .orElse(0L);
-        final var adjustedTargetStartBp = calculateAdjustedTargetStartBp(targetStartBp, totalAssemblyLengthBp, leftSizeBp, segmentSizeBp);
+        // Contig and scaffold trees must use exactly the same insertion boundary.
+        // A click inside an object means before that whole object.
+        long targetBp = Math.max(0, Math.min(targetStartBp, totalAssemblyLengthBp));
+        if (targetBp >= range.startBp() && targetBp <= range.endBpExcl()) return;
+        if (targetBp < totalAssemblyLengthBp) {
+          final var target = resolveSelectionWithScaffolds(targetBp, targetBp + 1, contigTree, scaffoldTree);
+          if (target != null) targetBp = target.startBp();
+        }
+        if (targetBp >= range.startBp() && targetBp <= range.endBpExcl()) return;
+        final var adjustedTargetStartBp = calculateAdjustedTargetStartBp(targetBp, totalAssemblyLengthBp, leftSizeBp, segmentSizeBp);
         final var tmp = ContigTree.Node.mergeNodes(new ContigTree.Node.SplitResult(es.less(), es.greater()));
         final var nlnr = (tmp != null)
           ? tmp.splitByLength(ResolutionDescriptor.fromResolutionOrder(0), adjustedTargetStartBp, false, QueryLengthUnit.BASE_PAIRS)
@@ -178,11 +188,33 @@ public class ScaffoldingOperations {
       final var extended = scaffoldTree.extendBordersToScaffolds(lessSize, lessSize + segmentSize);
 
       scaffoldTree.unscaffold(extended.startBP(), extended.endBP());
+      final var selected = contigTree.expose(ResolutionDescriptor.fromResolutionOrder(0),
+        extended.startBP(), extended.endBP(), QueryLengthUnit.BASE_PAIRS);
+      final long[] position = {extended.startBP()};
+      ContigTree.Node.traverseNode(selected.segment(), node -> {
+        final var descriptor = node.getContigDescriptor();
+        final long end = position[0] + descriptor.getLengthBp();
+        scaffoldTree.rescaffold(position[0], end,
+          id -> new ScaffoldDescriptor(id, "scf_" + chunkedFile.getContigDisplayName(descriptor.getContigId()), ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()));
+        position[0] = end;
+      });
 
     } finally {
       scaffoldTree.getRootLock().writeLock().unlock();
       contigTree.getRootLock().readLock().unlock();
     }
+  }
+
+  /** Explicit user command: unlike ungroup, this leaves every contig unplaced. */
+  public void unscaffoldAll() {
+    final var contigs = chunkedFile.getContigTree();
+    final var scaffolds = chunkedFile.getScaffoldTree();
+    contigs.getRootLock().readLock().lock();
+    scaffolds.getRootLock().writeLock().lock();
+    try {
+      final long length = contigs.getLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
+      if (length > 0 && !scaffolds.getScaffoldList().isEmpty()) scaffolds.unscaffold(0, length);
+    } finally { scaffolds.getRootLock().writeLock().unlock(); contigs.getRootLock().readLock().unlock(); }
   }
 
   public void moveRegionToDebris(final long startIncl, final long endExcl, final @NotNull ResolutionDescriptor resolutionDescriptor, final @NotNull QueryLengthUnit units) {
@@ -212,55 +244,15 @@ public class ScaffoldingOperations {
 
       final var range = resolveSelectionWithScaffolds(startBp, endBp, contigTree, scaffoldTree);
       if (range != null) {
-        final var totalAssemblyLengthBp = Optional.ofNullable(contigTree.getRoot())
-          .map(root -> root.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0)))
-          .orElse(0L);
-
-        scaffoldTree.unscaffold(range.startBp(), range.endBpExcl());
-
-        final var exposedForMove = contigTree.expose(
-          ResolutionDescriptor.fromResolutionOrder(0),
-          range.startBp(),
-          range.endBpExcl(),
-          QueryLengthUnit.BASE_PAIRS
-        );
-
-        if (exposedForMove.segment() == null) {
-          return;
-        }
-
-        final var leftSizeBp = Optional.ofNullable(exposedForMove.less())
-          .map(node -> node.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0)))
-          .orElse(0L);
-        final var segmentSizeBp = exposedForMove.segment().getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
-        if (segmentSizeBp <= 0) {
-          return;
-        }
-
-        final var adjustedTargetStartBp = calculateAdjustedTargetStartBp(totalAssemblyLengthBp, totalAssemblyLengthBp, leftSizeBp, segmentSizeBp);
-        final var tmp = ContigTree.Node.mergeNodes(new ContigTree.Node.SplitResult(exposedForMove.less(), exposedForMove.greater()));
-        final var nlnr = (tmp != null)
-          ? tmp.splitByLength(ResolutionDescriptor.fromResolutionOrder(0), adjustedTargetStartBp, false, QueryLengthUnit.BASE_PAIRS)
-          : new ContigTree.Node.SplitResult(null, null);
-        contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(nlnr.left(), exposedForMove.segment(), nlnr.right()));
-        scaffoldTree.moveSelectionRange(range.startBp(), range.endBpExcl(), adjustedTargetStartBp);
-
-        final var debrisStartBpIncl = totalAssemblyLengthBp - segmentSizeBp;
-        final var debrisEndBpExcl = totalAssemblyLengthBp;
-
-        final var debrisExposed = contigTree.expose(
-          ResolutionDescriptor.fromResolutionOrder(0),
-          debrisStartBpIncl,
-          debrisEndBpExcl,
-          QueryLengthUnit.BASE_PAIRS
-        );
-        if (debrisExposed.segment() != null) {
-          final var hiddenSegment = cloneSegmentWithHiddenDescriptors(debrisExposed.segment(), contigTree);
-          contigTree.commitExposedSegment(new ContigTree.Node.ExposedSegment(debrisExposed.less(), hiddenSegment, debrisExposed.greater()));
-        }
-
-        scaffoldTree.unscaffold(debrisStartBpIncl, debrisEndBpExcl);
-        scaffoldTree.rescaffold(debrisStartBpIncl, debrisEndBpExcl, id -> new ScaffoldDescriptor(id, "debris", 1000));
+        // Resolution-level HIDDEN only affects PIXELS queries. Debris must not
+        // contribute ATUs, BINS coordinates or FASTA/AGP records either. Remove
+        // it from both active roots; persistent history retains the old roots
+        // and original source descriptors for exact undo/reimport.
+        final var exposed = contigTree.expose(ResolutionDescriptor.fromResolutionOrder(0),
+          range.startBp(), range.endBpExcl(), QueryLengthUnit.BASE_PAIRS);
+        scaffoldTree.removeSegmentFromAssembly(range.startBp(), range.endBpExcl());
+        contigTree.commitRoot(ContigTree.Node.mergeNodes(
+          new ContigTree.Node.SplitResult(exposed.less(), exposed.greater())));
       }
     } finally {
       scaffoldTree.getRootLock().writeLock().unlock();
@@ -329,38 +321,62 @@ public class ScaffoldingOperations {
     return Math.max(0L, Math.min(adjustedTarget, maxTarget));
   }
 
-  private @NotNull ContigTree.Node cloneSegmentWithHiddenDescriptors(
-    final @NotNull ContigTree.Node node,
-    final @NotNull ContigTree contigTree
-  ) {
-    final var pushed = node.push();
-    final var hiddenLeft = (pushed.getLeft() != null) ? cloneSegmentWithHiddenDescriptors(pushed.getLeft(), contigTree) : null;
-    final var hiddenRight = (pushed.getRight() != null) ? cloneSegmentWithHiddenDescriptors(pushed.getRight(), contigTree) : null;
-    final var descriptor = pushed.getContigDescriptor();
-    final var resolutionCount = descriptor.getLengthBinsAtResolution().length;
-    final var hiddenDescriptor = new ContigDescriptor(
-      descriptor.getContigId(),
-      descriptor.getContigName(),
-      descriptor.getLengthBp(),
-      Arrays.stream(descriptor.getLengthBinsAtResolution()).skip(1L).boxed().toList(),
-      IntStream.range(1, resolutionCount).mapToObj(i -> ContigHideType.HIDDEN).toList(),
-      descriptor.getAtus().subList(1, resolutionCount).stream().map(ArrayList::new).map(List::copyOf).toList(),
-      descriptor.getContigNameInSourceFASTA(),
-      descriptor.getOffsetInSourceFASTA()
-    );
-    contigTree.getContigDescriptors().put(hiddenDescriptor.getContigId(), hiddenDescriptor);
-    return pushed.cloneBuilder()
-      .contigDescriptor(hiddenDescriptor)
-      .left(hiddenLeft)
-      .right(hiddenRight)
-      .build()
-      .updateSizes();
-  }
-
   private record SelectionRange(long startBp, long endBpExcl, long lengthBp) {
   }
 
   public void splitContigAtBin(final long splitPosition, final @NotNull @NonNull ResolutionDescriptor resolutionDescriptor, final @NotNull @NonNull QueryLengthUnit units) {
+    splitContigAtBin(splitPosition, resolutionDescriptor, units, null);
+  }
+
+  /** Rebuild native bins from a parent before the saved AGP applies the final layout. */
+  public void replaySplit(ChunkedFile.SplitEdit edit, ContigDescriptor parent) {
+    final var tree = chunkedFile.getContigTree();
+    final var scaffoldTree = chunkedFile.getScaffoldTree();
+    tree.getRootLock().writeLock().lock();
+    scaffoldTree.getRootLock().writeLock().lock();
+    try {
+      if (parent.getContigId() != edit.parentId() || edit.leftId() <= edit.parentId()
+        || (long) edit.leftId() + 1 != edit.rightId()
+        || tree.getContigDescriptors().containsKey(edit.leftId())
+        || tree.getContigDescriptors().containsKey(edit.rightId())) {
+        throw new IllegalArgumentException("Invalid split component IDs");
+      }
+      if (!parent.getContigNameInSourceFASTA().equals(edit.sourceName())
+        || parent.getOffsetInSourceFASTA() != edit.sourceOffsetBp()
+        || parent.getLengthBp() != edit.parentLengthBp()
+        || edit.splitOffsetBp() <= 0 || edit.splitOffsetBp() >= parent.getLengthBp()) {
+        throw new IllegalArgumentException("Invalid split parent interval");
+      }
+      final var before = chunkedFile.snapshotAssembly();
+      final ContigDescriptor left;
+      final ContigDescriptor right;
+      try {
+        tree.getContigDescriptors().put(parent.getContigId(), parent);
+        tree.commitRoot(ContigTree.Node.createNodeFromDescriptor(parent,
+          edit.reversed() ? ContigDirection.REVERSED : ContigDirection.FORWARD));
+        scaffoldTree.replaceWith(new ScaffoldTree(parent.getLengthBp()));
+        splitContigAtBin(edit.splitOffsetBp(), ResolutionDescriptor.fromResolutionOrder(0),
+          QueryLengthUnit.BASE_PAIRS, edit);
+        left = tree.getContigDescriptors().get(edit.leftId());
+        right = tree.getContigDescriptors().get(edit.rightId());
+        if (left.getLengthBp() != edit.splitOffsetBp()) {
+          throw new IllegalArgumentException("Split offset is not a native bin boundary");
+        }
+      } finally {
+        chunkedFile.restoreAssembly(before);
+      }
+      tree.getContigDescriptors().put(parent.getContigId(), parent);
+      tree.getContigDescriptors().put(edit.leftId(), left);
+      tree.getContigDescriptors().put(edit.rightId(), right);
+      chunkedFile.recordSplit(edit);
+    } finally {
+      scaffoldTree.getRootLock().writeLock().unlock();
+      tree.getRootLock().writeLock().unlock();
+    }
+  }
+
+  private void splitContigAtBin(long splitPosition, ResolutionDescriptor resolutionDescriptor,
+                                QueryLengthUnit units, ChunkedFile.SplitEdit replay) {
     assert !QueryLengthUnit.BASE_PAIRS.equals(units) || (resolutionDescriptor.getResolutionOrderInArray() == 0) : "In bp query resolution should be set to 0";
 
     final var minResolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(1);
@@ -375,8 +391,11 @@ public class ScaffoldingOperations {
       scaffoldLock.writeLock().lock();
       final var oldContigTreeRoot = contigTree.getRoot();
       final var oldAssemblyLengthBp = oldContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
-      final var splitPositionBp = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
       final var splitPositionBins = this.chunkedFile.convertUnits(splitPosition, resolutionDescriptor, units, minResolutionDescriptor, QueryLengthUnit.BINS);
+      // The sequence cut must use the same finest-resolution bin that the
+      // ATU operation removes, even when the caller supplied an interior bp.
+      final var splitPositionBp = this.chunkedFile.convertUnits(splitPositionBins, minResolutionDescriptor,
+        QueryLengthUnit.BINS, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
       final var es = contigTree.expose(minResolutionDescriptor, splitPositionBins, 1 + splitPositionBins, QueryLengthUnit.BINS);
 
       final var leftBins = (es.less() == null) ? 0L : es.less().getSubtreeLengthInUnits(QueryLengthUnit.BINS, minResolutionDescriptor);
@@ -387,6 +406,10 @@ public class ScaffoldingOperations {
       assert (oldContigNode != null) : "Split position is outside of any contig??";
 
       final var oldContigDescriptor = oldContigNode.getContigDescriptor();
+      final var parentScaffold = scaffoldTree.getScaffoldAtBp(leftBps);
+      final var parentBorders = scaffoldTree.extendBordersToScaffolds(leftBps, leftBps + oldContigDescriptor.getLengthBp());
+      final var parentName = parentScaffold == null ? "" : chunkedFile.getScaffoldDisplayName(parentScaffold.scaffoldId());
+
       final var deltaBpsFromContigStart = splitPositionBp - leftBps;
       if (deltaBpsFromContigStart <= 0L || deltaBpsFromContigStart + minBpResolution >= oldContigDescriptor.getLengthBp()) {
         throw new IllegalArgumentException("Split bin must be inside a contig and leave sequence on both sides of the removed bin.");
@@ -394,7 +417,9 @@ public class ScaffoldingOperations {
 
       final int maxContigId = contigTree.getContigDescriptors().keySet().stream().max(Integer::compareTo).orElse(0);
 
-      final var newContigIds = List.of(1 + maxContigId, 2 + maxContigId);
+      final var newContigIds = replay == null
+        ? List.of(Math.addExact(maxContigId, 1), Math.addExact(maxContigId, 2))
+        : List.of(replay.leftId(), replay.rightId());
       final var newContigLengthBps = List.of(
         deltaBpsFromContigStart,
         oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart - minBpResolution
@@ -456,9 +481,7 @@ public class ScaffoldingOperations {
           );
         }
         IntStream.range(0, 2).forEach(j -> newContigLengthsBinsAtResolution.get(j).add(newLengthsAtResolution.get(j)));
-        IntStream.range(0, 2).forEach(j -> newContigPresenceAtResolution.get(j).add((newContigLengthBps.get(j) >= bpResolution) ? ContigHideType.SHOWN : ContigHideType.HIDDEN));
-
-        final var oldATUsLengthBinsPrefixSum = oldContigDescriptor.getAtuPrefixSumLengthBins().get(i);
+        IntStream.range(0, 2).forEach(j -> newContigPresenceAtResolution.get(j).add((newLengthsAtResolution.get(j) > 0 && newContigLengthBps.get(j) >= bpResolution) ? ContigHideType.SHOWN : ContigHideType.HIDDEN));
 
         final var newLeftATUs = this.chunkedFile.matrixQueries().getATUsForRange(ResolutionDescriptor.fromResolutionOrder(i), contigStartBinsAtResolution, splitPositionBinsAtResolution, false);
         final var newRightATUs = this.chunkedFile.matrixQueries().getATUsForRange(ResolutionDescriptor.fromResolutionOrder(i), splitPositionBinsAtResolution + ((i > 1) ? 0 : 1), contigStartBinsAtResolution + oldContigLengthBinsAtResolution, false);
@@ -468,12 +491,12 @@ public class ScaffoldingOperations {
             +
             newRightATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum()
             ==
-            oldATUsLengthBinsPrefixSum[oldATUsLengthBinsPrefixSum.length - 1] - ((i > 1) ? 0 : 1)
+            oldContigLengthBinsAtResolution - ((i > 1) ? 0 : 1)
         ) : String.format(
           "ATUs total length %d + %d has changed after splitting contig with ATU length %d at resolution order %d??",
           newLeftATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum(),
           newRightATUs.parallelStream().mapToInt(ATUDescriptor::getLength).sum(),
-          oldATUsLengthBinsPrefixSum[oldATUsLengthBinsPrefixSum.length - 1],
+          oldContigLengthBinsAtResolution,
           i
         );
 
@@ -516,12 +539,28 @@ public class ScaffoldingOperations {
       scaffoldTree.unscaffold(splitPositionBp, splitPositionBp + minBpResolution);
       scaffoldTree.removeSegmentFromAssembly(splitPositionBp, splitPositionBp + minBpResolution);
       contigTree.commitExposedSegment(newExposedSegment);
+      // Keep both sides of the parent scaffold, including their other contigs.
+      // For an unplaced contig or a singleton, each new piece is a singleton.
+      final long rightStart = splitPositionBp;
+      final long rightEnd = parentBorders.endBP() - minBpResolution;
+      final boolean singleton = parentBorders.startBP() == leftBps && parentBorders.endBP() == leftBps + oldContigDescriptor.getLengthBp();
+      scaffoldTree.rescaffold(parentBorders.startBP(), rightStart, id -> new ScaffoldDescriptor(id,
+        singleton ? "scf_" + newCds.get(0).getContigName() : parentName + "_left_" + id,
+        parentScaffold == null ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp() : parentScaffold.spacerLength()));
+      scaffoldTree.rescaffold(rightStart, rightEnd, id -> new ScaffoldDescriptor(id,
+        singleton ? "scf_" + newCds.get(1).getContigName() : parentName + "_right_" + id,
+        parentScaffold == null ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp() : parentScaffold.spacerLength()));
+
 
       final var newContigTreeRoot = contigTree.getRoot();
       final var newAssemblyLengthBp = newContigTreeRoot.getSubtreeLengthInUnits(QueryLengthUnit.BASE_PAIRS, ResolutionDescriptor.fromResolutionOrder(0));
 
       assert (oldAssemblyLengthBp == (newAssemblyLengthBp + minBpResolution)) : "Assembly length has changed after splitting contig??";
-
+      chunkedFile.recordSplit(new ChunkedFile.SplitEdit(
+        oldContigDescriptor.getContigId(), oldContigDescriptor.getContigNameInSourceFASTA(),
+        oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getLengthBp(),
+        oldContigNode.getTrueDirection() == ContigDirection.REVERSED, deltaBpsFromContigStart,
+        newContigIds.get(0), newContigIds.get(1)));
     } finally {
       scaffoldLock.writeLock().unlock();
       lock.writeLock().unlock();

@@ -260,6 +260,51 @@ final class NativeTileProcessor {
     return sessionHandle != 0L && nativeSortCoolerRecordsLong(sessionHandle, rows, columns, values);
   }
 
+  int sortAndCompactCoolerRecordsLong(final long @NotNull [] rows,
+                                      final long @NotNull [] columns,
+                                      final long @NotNull [] values) {
+    final var sessionHandle = sessionHandle();
+    return sessionHandle == 0L ? -1 : nativeSortAndCompactCoolerRecordsLong(sessionHandle, rows, columns, values);
+  }
+
+  int mapCoolerRecordsToBatch(final long @NotNull [] sourceRows,
+                              final long @NotNull [] sourceColumns,
+                              final long @NotNull [] sourceValues,
+                              final int sourceOffset,
+                              final int length,
+                              final long rowStripeOffset,
+                              final long colStripeOffset,
+                              final long @NotNull [] targetRows,
+                              final long @NotNull [] targetColumns,
+                              final long @NotNull [] targetValues,
+                              final int targetOffset,
+                              final long @NotNull [] sourceStarts,
+                              final long @NotNull [] sourceEnds,
+                              final long @NotNull [] targetStarts,
+                              final long @NotNull [] targetEnds,
+                              final byte @NotNull [] reversed) {
+    final var sessionHandle = sessionHandle();
+    return sessionHandle == 0L ? -1 : nativeMapCoolerRecordsToBatch(
+      sessionHandle,
+      sourceRows,
+      sourceColumns,
+      sourceValues,
+      sourceOffset,
+      length,
+      rowStripeOffset,
+      colStripeOffset,
+      targetRows,
+      targetColumns,
+      targetValues,
+      targetOffset,
+      sourceStarts,
+      sourceEnds,
+      targetStarts,
+      targetEnds,
+      reversed
+    );
+  }
+
   boolean transformExpectedSignal(final double @NotNull [] signal,
                                   final int rows,
                                   final int columns,
@@ -618,6 +663,29 @@ final class NativeTileProcessor {
                                                             long[] rows,
                                                             long[] columns,
                                                             long[] values);
+
+  private static native int nativeSortAndCompactCoolerRecordsLong(long sessionHandle,
+                                                                  long[] rows,
+                                                                  long[] columns,
+                                                                  long[] values);
+
+  private static native int nativeMapCoolerRecordsToBatch(long sessionHandle,
+                                                          long[] sourceRows,
+                                                          long[] sourceColumns,
+                                                          long[] sourceValues,
+                                                          int sourceOffset,
+                                                          int length,
+                                                          long rowStripeOffset,
+                                                          long colStripeOffset,
+                                                          long[] targetRows,
+                                                          long[] targetColumns,
+                                                          long[] targetValues,
+                                                          int targetOffset,
+                                                          long[] sourceStarts,
+                                                          long[] sourceEnds,
+                                                          long[] targetStarts,
+                                                          long[] targetEnds,
+                                                          byte[] reversed);
 
   private static native boolean nativeTransformExpectedSignal(long sessionHandle,
                                                               double[] signal,

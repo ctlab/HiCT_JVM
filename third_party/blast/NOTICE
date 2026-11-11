@@ -1,0 +1,31 @@
+NCBI BLAST+ 2.16.0 (local blastn)
+https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.16.0/ncbi-blast-2.16.0+-src.tar.gz
+Source SHA-256: 17c93cf009721023e5aecf5753f9c6a255d157561638b91b3ad7276fd6950c2b
+NCBI code: public-domain government work; see LICENSE. Third-party code retains
+its own notices, collected by scripts/toolchains/add_blast.py into the payload.
+Citation: Camacho C et al. BMC Bioinformatics 2009;10:421.
+doi:10.1186/1471-2105-10-421
+Bundled for Linux x86_64 (source build with glibc 2.17), macOS Intel/Apple
+Silicon (source builds targeting macOS 12.3), and Windows x86_64 (official
+NCBI archive). Archive SHA-256 values are pinned in add_blast.py and
+blast_prebuilt.py and recorded in the payload's blast-smoke.json.
+HICT_BLASTN_BIN remains an optional override.
+macOS source builds backport zlib's classic-Mac-OS platform guard from
+https://github.com/madler/zlib/blob/v1.3.1/zutil.h to the bundled zlib 1.2.12.
+The altered guard is marked in the source. Original notices are retained;
+blast-source-patches.json records the header hashes and upstream reference.
+macOS source builds also repair the bundled BitMagic bulk-insert iterator's
+copy/move assignment calls to removed temporary-block methods, using the same
+block allocator API as its constructors and destructor. This local fix is
+marked in bm.h; all original copyright/license notices remain intact.
+Related upstream report: https://github.com/ncbi/ncbi-cxx-toolkit-public/issues/20
+blast-source-patches.json contains a patches array with both header records.
+Windows nghttp2.dll is upstream nghttp2 1.40.0, MIT; see nghttp2-COPYING.
+https://github.com/nghttp2/nghttp2/blob/v1.40.0/COPYING
+Windows app-local VC runtime: see Microsoft-Visual-Cpp-NOTICE.txt.
+NCBI's original license and available privacy/package metadata are retained.
+No remote database search, sequence upload, or NCBI usage reporting is enabled.
+
+Linux bundled GNU OpenMP runtime (GCC 10): GPLv3 with GCC Runtime Library Exception 3.1.
+GCC license texts: https://github.com/gcc-mirror/gcc/tree/releases/gcc-10.2.0
+SQLite is in the public domain: https://www.sqlite.org/copyright.html

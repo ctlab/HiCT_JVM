@@ -26,14 +26,53 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RenderPipelineConfigPixelBlendTest {
+  private static Stream<JsonObject> sourceIndependentSignals() {
+    return Stream.of(
+      new JsonObject().put("type", "constant").put("value", 1),
+      new JsonObject().put("type", "dynamic").put("field", "ROW_BP"),
+      new JsonObject().put("type", "track1d").put("trackId", "__builtin_cooler_weights__").put("axis", "ROW"),
+      new JsonObject().put("type", "track1d").put("trackId", "coverage").put("axis", "ROW")
+    );
+  }
+
+  @ParameterizedTest
+  @MethodSource("sourceIndependentSignals")
+  void sourceIndependentBranchesRenderOnceOnPrimaryGrid(JsonObject signal) {
+    final var upper = new JsonObject().put("type", "colormap").put("input", signal)
+      .put("startColor", "#ff0000ff").put("endColor", "#ff0000ff");
+    final var lower = new JsonObject().put("type", "colormap").put("input", signal.copy())
+      .put("startColor", "#0000ffff").put("endColor", "#0000ffff");
+    final var context = new RenderPipelineConfig.MutablePixelContext();
+    context.rowBp = 1;
+    context.rowWeight = 1;
+    context.rowTrackValuesByTrackId = Map.of("coverage", new double[]{1});
+    for (boolean swap : new boolean[]{false, true}) {
+      final var config = RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
+        .put("swapUpperLower", swap).put("upperExpression", upper).put("lowerExpression", lower));
+      for (long[] coordinates : new long[][]{{1, 2}, {2, 1}, {1, 1}}) {
+        context.rowPx = coordinates[0];
+        context.colPx = coordinates[1];
+        final boolean useUpper = (context.rowPx <= context.colPx) != swap;
+        assertEquals(1, config.evaluate(context.rowPx <= context.colPx, context));
+        assertEquals(useUpper ? 0xffff0000 : 0xff0000ff,
+          config.evaluateSourceArgb("PRIMARY", context, dummyOptions()));
+        assertEquals(0, config.evaluateSourceArgb("SECONDARY", context, dummyOptions()));
+      }
+    }
+  }
+
   private static SimpleVisualizationOptions dummyOptions() {
     return new SimpleVisualizationOptions(
       -1.0d,
@@ -166,4 +205,66 @@ class RenderPipelineConfigPixelBlendTest {
     assertEquals(0xffff0000, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
     assertEquals(0xff00ff00, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
   }
+
+  @Test
+  void missingIdentityPixelsStayTransparentOverPrimarySourceTiles() {
+    final var identity = new JsonObject()
+      .put("type", "colormap")
+      .put("mode", "MODDOTPLOT_IDENTITY")
+      .put("input", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+      .put("startColor", "#313695ff")
+      .put("endColor", "#a50026ff")
+      .put("minSignal", 800000.0d)
+      .put("maxSignal", 1000000.0d);
+    final var primary = new JsonObject()
+      .put("type", "colormap")
+      .put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+      .put("startColor", "#00000000")
+      .put("endColor", "#ff0000ff")
+      .put("minSignal", 0.0d)
+      .put("maxSignal", 1.0d);
+    final var blend = new JsonObject()
+      .put("type", "pixel_blend")
+      .put("top", identity)
+      .put("bottom", primary)
+      .put("topOpacity", 0.65d)
+      .put("bottomOpacity", 1.0d);
+    final var config = RenderPipelineConfig.fromJson(
+      new JsonObject()
+        .put("enabled", true)
+        .put("upperExpression", blend)
+        .put("lowerExpression", blend.copy())
+    );
+
+    final var ctx = new RenderPipelineConfig.MutablePixelContext();
+    ctx.rowPx = 1;
+    ctx.colPx = 2;
+    ctx.primaryValue = 1.0d;
+    ctx.secondaryValue = 0.0d;
+    assertEquals(0xffff0000, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
+    assertEquals(0x00000000, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
+
+    ctx.secondaryValue = 800000.0d;
+    assertEquals(0xff313695, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
+  }
+
+  @Test void independentSourceLayersHonorTriangleRoutingAndSwap() {
+    var primary = new JsonObject().put("type", "colormap").put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+      .put("startColor", "#ff0000ff").put("endColor", "#ff0000ff");
+    var secondary = new JsonObject().put("type", "colormap").put("input", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+      .put("startColor", "#0000ffff").put("endColor", "#0000ffff");
+    for (boolean swap : new boolean[]{false, true}) {
+      var config = RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true).put("swapUpperLower", swap)
+        .put("upperExpression", primary).put("lowerExpression", secondary));
+      var ctx = new RenderPipelineConfig.MutablePixelContext();
+      ctx.primaryValue = 1; ctx.secondaryValue = 1;
+      for (long[] pair : new long[][]{{2, 5}, {5, 2}, {4, 4}}) {
+        ctx.rowPx = pair[0]; ctx.colPx = pair[1];
+        boolean isPrimary = (ctx.rowPx <= ctx.colPx) != swap;
+        assertEquals(isPrimary ? 0xffff0000 : 0, config.evaluateSourceArgb("PRIMARY", ctx, dummyOptions()));
+        assertEquals(isPrimary ? 0 : 0xff0000ff, config.evaluateSourceArgb("SECONDARY", ctx, dummyOptions()));
+      }
+    }
+  }
+
 }

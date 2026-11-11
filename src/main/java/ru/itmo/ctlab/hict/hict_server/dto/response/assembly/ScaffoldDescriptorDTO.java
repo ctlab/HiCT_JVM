@@ -26,6 +26,7 @@ package ru.itmo.ctlab.hict.hict_server.dto.response.assembly;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import java.util.Map;
 import ru.itmo.ctlab.hict.hict_library.domain.ScaffoldDescriptor;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
@@ -38,10 +39,18 @@ public record ScaffoldDescriptorDTO(
 ) {
 
   public static @NotNull ScaffoldDescriptorDTO fromEntity(final @NotNull ScaffoldTree.ScaffoldTuple scaffoldTuple, final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile chunkedFile) {
+    return fromSnapshot(scaffoldTuple, chunkedFile.getScaffoldNameOverrides());
+  }
+
+  static @NotNull ScaffoldDescriptorDTO fromSnapshot(final @NotNull ScaffoldTree.ScaffoldTuple scaffoldTuple,
+                                                     final @NotNull Map<Long, String> nameOverrides) {
+    // The ordered assembly snapshot already contains the original name. Looking
+    // it up by ID would traverse the whole tree for each DTO (quadratic work).
+    final var descriptor = scaffoldTuple.scaffoldDescriptor();
     return new ScaffoldDescriptorDTO(
-      scaffoldTuple.scaffoldDescriptor().scaffoldId(),
-      chunkedFile.getScaffoldDisplayName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
-      chunkedFile.getScaffoldOriginalName(scaffoldTuple.scaffoldDescriptor().scaffoldId()),
+      descriptor.scaffoldId(),
+      nameOverrides.getOrDefault(descriptor.scaffoldId(), descriptor.scaffoldName()),
+      descriptor.scaffoldName(),
       scaffoldTuple.scaffoldDescriptor().spacerLength(),
       scaffoldTuple.scaffoldBordersBP()
     );

@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "filename": "tiny-primary.hict.hdf5",
+  "fastaFilename": "tiny.fa",
+  "agpFilename": "",
+  "visualizationOptions": {
+    "preLogBase": 10,
+    "postLogBase": -1,
+    "applyCoolerWeights": false,
+    "resolutionScaling": false,
+    "resolutionLinearScaling": false,
+    "autoThresholdEnabled": false,
+    "autoThresholdQuantile": 0.995,
+    "signalDisplayMode": "OBSERVED",
+    "coolerWeightsNaNPolicy": "REPLACE_NANS_WITH_ONE",
+    "coolerWeightsHaveNaNs": false,
+    "coolerWeightsNaNCount": 0,
+    "colormap": {
+      "colormapType": "SimpleLinearGradient",
+      "startColorRGBAString": "rgba(255,255,255,0)",
+      "endColorRGBAString": "rgba(255,0,0,1)",
+      "minSignal": 0,
+      "maxSignal": 11
+    }
+  },
+  "backgroundColor": "rgba(255,255,255,1)",
+  "trackStyles": {},
+  "axisTrackVisibility": {},
+  "savedLocations": [],
+  "savedVisualizationPresets": [
+    {
+      "option_id": 1,
+      "name": "Synthetic legacy pre-log",
+      "options": {
+        "preLogBase": 10,
+        "postLogBase": -1,
+        "applyCoolerWeights": false,
+        "resolutionScaling": false,
+        "resolutionLinearScaling": false,
+        "autoThresholdEnabled": false,
+        "autoThresholdQuantile": 0.995,
+        "signalDisplayMode": "OBSERVED",
+        "coolerWeightsNaNPolicy": "REPLACE_NANS_WITH_ONE",
+        "coolerWeightsHaveNaNs": false,
+        "coolerWeightsNaNCount": 0,
+        "colormap": {
+          "colormapType": "SimpleLinearGradient",
+          "startColorRGBAString": "rgba(255,255,255,0)",
+          "endColorRGBAString": "rgba(255,0,0,1)",
+          "minSignal": 0,
+          "maxSignal": 11
+        }
+      },
+      "backgroundColor": "rgba(255,255,255,1)",
+      "signalThresholds": {
+        "lowerSignalBound": 0,
+        "upperSignalBound": 11
+      }
+    }
+  ],
+  "view": {
+    "center": [
+      8,
+      -8
+    ],
+    "resolution": 1,
+    "rotation": 0,
+    "bpResolution": 4
+  }
+}

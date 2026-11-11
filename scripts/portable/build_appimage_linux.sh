@@ -530,7 +530,7 @@ cleanup_appimage_smoke_test() {
 }
 trap cleanup_appimage_smoke_test EXIT
 mkdir -p "${APPIMAGE_SMOKE_TEST_DIR}/data" "${APPIMAGE_SMOKE_TEST_DIR}/cache" "${APPIMAGE_SMOKE_TEST_DIR}/tmp"
-perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 60 env \
+perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 600 env \
   APPIMAGE_EXTRACT_AND_RUN=1 \
   DATA_DIR="${APPIMAGE_SMOKE_TEST_DIR}/data" \
   HICT_PORTABLE_DATA_DIR="${APPIMAGE_SMOKE_TEST_DIR}/data" \

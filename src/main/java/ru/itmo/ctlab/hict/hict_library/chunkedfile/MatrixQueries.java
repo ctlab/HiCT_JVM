@@ -55,7 +55,7 @@ public class MatrixQueries {
   public MatrixQueries.MatrixWithWeights getSubmatrix(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startRowIncl, final long startColIncl, final long endRowExcl, final long endColExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
-    final var totalAssemblyLength = excludeHiddenContigs ? (this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor)) : (this.chunkedFile.getMatrixSizeBins()[resolutionOrder]);
+    final var totalAssemblyLength = this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor);
     final var startRow = CommonUtils.clamp(startRowIncl, 0L, totalAssemblyLength);
     final var endRow = CommonUtils.clamp(endRowExcl, 0L, totalAssemblyLength);
     final var startCol = CommonUtils.clamp(startColIncl, 0L, totalAssemblyLength);
@@ -77,8 +77,9 @@ public class MatrixQueries {
     int deltaRow = (int) (startRow - startRowIncl);
     int deltaCol = (int) (startCol - startColIncl);
 
-    final double[] rowWeights = flattenWeights(rowATUs);
-    final double[] colWeights = symmetricQuery ? rowWeights : flattenWeights(colATUs);
+    final var weightsSnapshot = this.chunkedFile.getNormalizationWeights().snapshot();
+    final double[] rowWeights = flattenWeights(rowATUs, weightsSnapshot, resolutionOrder);
+    final double[] colWeights = symmetricQuery ? rowWeights : flattenWeights(colATUs, weightsSnapshot, resolutionOrder);
 
     final double[] paddedRowWeights = new double[queryRows];
     final double[] paddedColWeights = new double[queryCols];
@@ -249,20 +250,37 @@ public class MatrixQueries {
     return new DoubleMatrix(result);
   }
 
-  private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus) {
+  /**
+   * Weights of the bins covered by {@code atus}, in query order. They come from the file's stripes, or from
+   * the computed coverage vector when the snapshot selects it. A coverage vector is indexed by the bin's
+   * position along the source axis, so the stripe's first bin is found from the cumulative stripe lengths.
+   */
+  private double @NotNull [] flattenWeights(final @NotNull List<@NotNull ATUDescriptor> atus,
+                                            final @NotNull NormalizationWeights.Snapshot weights,
+                                            final int resolutionOrder) {
     final var totalLength = atus.stream().mapToInt(ATUDescriptor::getLength).sum();
     final var result = new double[totalLength];
+    final double[] coverage = weights.usesCoverage() ? weights.prepared().weightsByResolution()[resolutionOrder] : null;
+    final long[] stripeStarts = coverage == null ? null : stripeStartBins(resolutionOrder);
     var dst = 0;
     for (final var atu : atus) {
-      final var src = atu.getStripeDescriptor().bin_weights();
       final var start = atu.getStartIndexInStripeIncl();
       final var end = atu.getEndIndexInStripeExcl();
       final var len = end - start;
+      final double[] src;
+      final int base;
+      if (coverage == null) {
+        src = atu.getStripeDescriptor().bin_weights();
+        base = 0;
+      } else {
+        src = coverage;
+        base = (int) stripeStarts[atu.getStripeDescriptor().stripeId()];
+      }
       if (atu.getDirection() == ATUDirection.FORWARD) {
-        System.arraycopy(src, start, result, dst, len);
+        System.arraycopy(src, base + start, result, dst, len);
       } else {
         for (int i = 0; i < len; i++) {
-          result[dst + i] = src[end - 1 - i];
+          result[dst + i] = src[base + end - 1 - i];
         }
       }
       dst += len;
@@ -270,11 +288,136 @@ public class MatrixQueries {
     return result;
   }
 
+  /** The weights a tile at this resolution would use for the bins of {@code atus}, in query order. */
+  public double @NotNull [] weightsFor(final @NotNull List<@NotNull ATUDescriptor> atus, final int resolutionOrder) {
+    return flattenWeights(atus, this.chunkedFile.getNormalizationWeights().snapshot(), resolutionOrder);
+  }
+
+  private final Map<Integer, long[]> stripeStartCache = new ConcurrentHashMap<>();
+
+  /** First bin of every stripe along the source axis (cumulative stripe lengths). */
+  private long @NotNull [] stripeStartBins(final int resolutionOrder) {
+    return stripeStartCache.computeIfAbsent(resolutionOrder, order -> {
+      final var resolution = this.chunkedFile.getResolutions()[order];
+      try (final var reader = ch.systemsx.cisd.hdf5.HDF5Factory.openForReading(this.chunkedFile.getHdfFilePath().toFile())) {
+        final var lengths = reader.int64().readArray(
+          ru.itmo.ctlab.hict.hict_library.chunkedfile.util.PathGenerators.getStripeLengthsBinsDatasetPath(resolution));
+        final var starts = new long[lengths.length + 1];
+        for (int i = 0; i < lengths.length; i++) {
+          starts[i + 1] = starts[i] + lengths[i];
+        }
+        return starts;
+      }
+    });
+  }
+
+  /** Number of bins along the source axis at this resolution (the sum of the stripe lengths). */
+  public long sourceAxisBins(final int resolutionOrder) {
+    final var starts = stripeStartBins(resolutionOrder);
+    return starts[starts.length - 1];
+  }
+
+  /**
+   * Streams every stored contact at one resolution as {@code (row, col, value)} with bins numbered along
+   * the source axis. Diagonal blocks hold the upper triangle only, so each unordered pair appears once.
+   * {@code progress} receives the fraction of block rows done.
+   */
+  public void scanStoredContacts(final @NotNull ResolutionDescriptor resolutionDescriptor,
+                                 final ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.@NotNull ContactVisitor visitor,
+                                 final @NotNull java.util.function.BooleanSupplier cancelled,
+                                 final @Nullable java.util.function.DoubleConsumer progress) {
+    final int resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
+    final int stripeCount = this.chunkedFile.getStripeCount()[resolutionOrder];
+    final long[] starts = stripeStartBins(resolutionOrder);
+    final int denseBlockSize = this.chunkedFile.getDenseBlockSize();
+    final var pool = this.chunkedFile.getDatasetBundlePools().get(resolutionOrder);
+    HDF5FileDatasetsBundle dsBundle = null;
+    try {
+      dsBundle = pool.borrowObject();
+      final var reader = dsBundle.getReader();
+      for (int rowStripe = 0; rowStripe < stripeCount; rowStripe++) {
+        if (cancelled.getAsBoolean()) {
+          throw new ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException();
+        }
+        final long rowOffset = ((long) rowStripe) * stripeCount;
+        final var lengths = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockLengthDataSet(), stripeCount, rowOffset);
+        final var offsets = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockOffsetDataSet(), stripeCount, rowOffset);
+        for (int colStripe = rowStripe; colStripe < stripeCount; colStripe++) {
+          final long length = lengths[colStripe];
+          if (length <= 0L) {
+            continue;
+          }
+          final long offset = offsets[colStripe];
+          final long rowBase = starts[rowStripe];
+          final long colBase = starts[colStripe];
+          if (offset >= 0L) {
+            final var rows = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockRowsDataSet(), (int) length, offset);
+            final var cols = reader.int64().readArrayBlockWithOffset(dsBundle.getBlockColsDataSet(), (int) length, offset);
+            final var values = readNumericArrayBlockWithOffset(reader, dsBundle.getBlockValuesDataSet(), (int) length, offset);
+            for (int i = 0; i < values.length; i++) {
+              visitor.accept(rowBase + rows[i], colBase + cols[i], values[i]);
+            }
+          } else {
+            final var idx = new IndexMap().bind(0, -(offset + 1L)).bind(1, 0L);
+            final var block = readNumericDenseBlock(reader, dsBundle.getDenseBlockDataSet(), denseBlockSize, idx).toMatrix();
+            final boolean diagonal = rowStripe == colStripe;
+            for (int r = 0; r < block.length; r++) {
+              final var line = block[r];
+              for (int c = diagonal ? r : 0; c < line.length; c++) {
+                final double v = line[c];
+                if (v != 0.0d) {
+                  visitor.accept(rowBase + r, colBase + c, v);
+                }
+              }
+            }
+          }
+        }
+        if (progress != null && (rowStripe & 15) == 0) {
+          progress.accept((rowStripe + 1) / (double) stripeCount);
+        }
+      }
+      if (progress != null) {
+        progress.accept(1.0d);
+      }
+    } catch (final ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException e) {
+      throw e;
+    } catch (final Exception ex) {
+      throw new RuntimeException("Scanning contacts failed", ex);
+    } finally {
+      if (dsBundle != null) {
+        try {
+          pool.returnObject(dsBundle);
+        } catch (final Exception ignored) {
+          // The pool is closed together with the file.
+        }
+      }
+    }
+  }
+
+  // Endpoints must contribute bins in the queried coordinate system. Short
+  // contigs may have zero bins at this resolution, even in an exposed segment.
+  static ContigTree.Node nonEmptyEndpoint(final ContigTree.Node segment,
+      final ResolutionDescriptor resolution, final QueryLengthUnit units, final boolean last) {
+    var node = segment;
+    while (node != null) {
+      node = node.push();
+      final var preferred = last ? node.getRight() : node.getLeft();
+      if (preferred != null && preferred.getSubtreeLengthInUnits(units, resolution) > 0) {
+        node = preferred;
+      } else if (node.getContigDescriptor().getLengthInUnits(units, resolution) > 0) {
+        return node;
+      } else {
+        node = last ? node.getLeft() : node.getRight();
+      }
+    }
+    throw new IllegalArgumentException("No non-empty contig in query segment");
+  }
+
   // TODO: Implement
   public List<ATUDescriptor> getATUsForRange(final @NotNull ResolutionDescriptor resolutionDescriptor, final long startPxIncl, final long endPxExcl, final boolean excludeHiddenContigs) {
     final var resolutionOrder = resolutionDescriptor.getResolutionOrderInArray();
     final var units = excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
-    final var totalAssemblyLength = excludeHiddenContigs ? (this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor)) : (this.chunkedFile.getMatrixSizeBins()[resolutionOrder]);
+    final var totalAssemblyLength = this.chunkedFile.getContigTree().getLengthInUnits(units, resolutionDescriptor);
     final var startPx = CommonUtils.clamp(startPxIncl, 0L, totalAssemblyLength);
     final var endPx = CommonUtils.clamp(endPxExcl, 0L, totalAssemblyLength);
 
@@ -298,14 +441,18 @@ public class MatrixQueries {
     final List<ContigTree.Node> debugContigNodes;
     if (ASSERTIONS_ENABLED) {
       debugContigNodes = new ArrayList<>();
-      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+      if (excludeHiddenContigs) {
+        ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, debugContigNodes::add);
+      } else {
+        ContigTree.Node.traverseNode(es.segment(), debugContigNodes::add);
+      }
     } else {
       debugContigNodes = List.of();
     }
 
 
     final var deltaBetweenSegmentFirstContigAndQueryStart = startPx - lessSize;
-    final var firstContigNode = excludeHiddenContigs ? es.segment().leftmostVisibleNode(resolutionDescriptor) : es.segment().leftmost();
+    final var firstContigNode = nonEmptyEndpoint(es.segment(), resolutionDescriptor, units, false);
     final var firstContigDescriptor = firstContigNode.getContigDescriptor();
     final var firstContigATUs = firstContigDescriptor.getAtus().get(resolutionOrder);
     final var firstContigATUPrefixSum = firstContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
@@ -313,7 +460,7 @@ public class MatrixQueries {
     final var firstContigId = firstContigDescriptor.getContigId();
 
     final var deltaBetweenRightPxAndExposedSegment = (lessSize + segmentSize) - endPx;
-    final var lastContigNode = excludeHiddenContigs ? es.segment().rightmostVisibleNode(resolutionDescriptor) : es.segment().rightmost();
+    final var lastContigNode = nonEmptyEndpoint(es.segment(), resolutionDescriptor, units, true);
     final var lastContigDescriptor = lastContigNode.getContigDescriptor();
     final var lastContigATUs = lastContigDescriptor.getAtus().get(resolutionOrder);
     final var lastContigATUPrefixSum = lastContigDescriptor.getAtuPrefixSumLengthBins().get(resolutionOrder);
@@ -449,7 +596,7 @@ public class MatrixQueries {
       atus.addAll(firstContigRestATUs);
 
 
-      ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, node -> {
+      final java.util.function.Consumer<ContigTree.Node> collectIntermediateAtus = node -> {
         final var nodeContigId = node.getContigDescriptor().getContigId();
         if (nodeContigId != firstContigId && nodeContigId != lastContigId) {
           final var contigDirection = node.getTrueDirection();
@@ -466,7 +613,12 @@ public class MatrixQueries {
           };
           atus.addAll(processedATUs);
         }
-      });
+      };
+      if (excludeHiddenContigs) {
+        ContigTree.Node.traverseNodeAtResolution(es.segment(), resolutionDescriptor, collectIntermediateAtus);
+      } else {
+        ContigTree.Node.traverseNode(es.segment(), collectIntermediateAtus);
+      }
 
       final List<@NotNull ATUDescriptor> lastContigBeginningATUs = switch (lastContigDirection) {
         case FORWARD -> lastContigATUs.subList(0, indexOfATUContainingEndPx);

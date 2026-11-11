@@ -24,6 +24,9 @@
 
 package ru.itmo.ctlab.hict.hict_server;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJobsHandlersHolder;
+
+import ru.itmo.ctlab.hict.hict_server.handlers.normalization.NormalizationHandlersHolder;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import io.vertx.config.ConfigRetriever;
@@ -76,11 +79,10 @@ import java.util.Map;
 @Slf4j(topic = "MainVerticle")
 public class MainVerticle extends AbstractVerticle {
   private RequestTaskScheduler requestTaskScheduler;
+  private ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder sequenceAnalysis;
+  private BackgroundJobsHandlersHolder backgroundJobs;
+  private FileOpHandlersHolder fileOperations;
   private String bindHost = "0.0.0.0";
-
-  static {
-    HDF5LibraryInitializer.initializeHDF5Library();
-  }
 
   public static void main(final String[] args) {
     Launcher.executeCommand("run", MainVerticle.class.getName());
@@ -88,6 +90,7 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
+    javax.imageio.ImageIO.setUseCache(false);
     // set vertx logger delegate factory to slf4j
     String logFactory = System.getProperty("org.vertx.logger-delegate-factory-class-name");
     if (logFactory == null) {
@@ -100,6 +103,24 @@ public class MainVerticle extends AbstractVerticle {
 
     log.info("Logging initialized at {} level", rootLogLevel);
 
+    // Extracting/loading native libraries can take seconds on first startup.
+    // Keep it off the Vert.x event loop and propagate failures to deployment.
+    vertx.<Void>executeBlocking(loading -> {
+      try {
+        initializeNativeLibraries();
+        loading.complete();
+      } catch (Throwable failure) {
+        loading.fail(failure);
+      }
+    }, false).onSuccess(ignored -> configureAndStartServer(startPromise))
+      .onFailure(startPromise::fail);
+  }
+
+  protected void initializeNativeLibraries() {
+    HDF5LibraryInitializer.initializeHDF5Library();
+  }
+
+  private void configureAndStartServer(final Promise<Void> startPromise) {
     final ConfigStoreOptions jsonEnvConfig = new ConfigStoreOptions().setType("env")
         .setConfig(new JsonObject().put("keys",
             new JsonArray()
@@ -163,11 +184,32 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void stop(final Promise<Void> stopPromise) {
-    if (this.requestTaskScheduler != null) {
-      this.requestTaskScheduler.close();
-      this.requestTaskScheduler = null;
-    }
-    stopPromise.complete();
+    vertx.<Void>executeBlocking(blocking -> {
+      try {
+        try {
+          if (this.backgroundJobs != null) this.backgroundJobs.close();
+          else {
+            if (this.normalization != null) this.normalization.close();
+            if (this.sequenceAnalysis != null) this.sequenceAnalysis.close();
+          }
+        } finally {
+          try {
+            if (this.requestTaskScheduler != null) {
+              this.requestTaskScheduler.close();
+              this.requestTaskScheduler = null;
+            }
+          } finally {
+            if (this.fileOperations != null) this.fileOperations.closeSession();
+          }
+        }
+        blocking.complete();
+      } catch (Throwable failure) {
+        blocking.fail(failure);
+      }
+    }, false).onComplete(result -> {
+      if (result.succeeded()) stopPromise.complete();
+      else stopPromise.fail(result.cause());
+    });
   }
 
   private static @NotNull Level resolveRootLogLevel() {
@@ -343,6 +385,8 @@ public class MainVerticle extends AbstractVerticle {
     return port;
   }
 
+  private NormalizationHandlersHolder normalization;
+
   private @NotNull Router createRouter() {
     final var router = Router.router(vertx);
     final var requestStatistics = new RequestStatistics();
@@ -354,13 +398,28 @@ public class MainVerticle extends AbstractVerticle {
       .allowedHeader("Access-Control-Allow-Credentials")
       .allowedHeader("Access-Control-Allow-Origin")
       .allowedHeader("Access-Control-Allow-Headers")
-      .allowedHeader("Content-Type"));
+      .allowedHeader("Content-Type")
+      .allowedHeader("X-HiCT-History-Session")
+      .allowedHeader("X-HiCT-History-Revision")
+      .exposedHeader("X-HiCT-History")
+      .exposedHeader("X-HiCT-Cancelled")
+      .exposedHeader("X-HiCT-Rows")
+      .exposedHeader("X-HiCT-Tile-Statistics")
+      .exposedHeader("X-HiCT-Cols")
+      .exposedHeader("X-HiCT-Signal-Mode")
+      .exposedHeader("X-HiCT-Source")
+      .exposedHeader("X-HiCT-Unit"));
     router.route().handler(ctx -> {
       requestStatistics.recordStarted(ctx.normalizedPath());
       ctx.addBodyEndHandler(ignored -> requestStatistics.recordFinished());
       ctx.next();
     });
-    router.route().handler(BodyHandler.create().setUploadsDirectory("/tmp").setBodyLimit(2L * 1024 * 1024 * 1024));
+    final var dataDirectory = ((ShareableWrappers.PathWrapper)
+      vertx.sharedData().getLocalMap("hict_server").get("dataDirectory")).getPath();
+    router.route().handler(BodyHandler.create()
+      .setUploadsDirectory(dataDirectory.resolve(ConversionHandlersHolder.UPLOAD_DIRECTORY_NAME).toString())
+      .setDeleteUploadedFilesOnEnd(true)
+      .setBodyLimit(2L * 1024 * 1024 * 1024));
 
     vertx.exceptionHandler(event -> {
       log.error("An exception was caught at the top level", event);
@@ -372,21 +431,60 @@ public class MainVerticle extends AbstractVerticle {
     final List<HandlersHolder> handlersHolders = new ArrayList<>();
     handlersHolders.add(new FSHandlersHolder(vertx));
     handlersHolders.add(new TileHandlersHolder(vertx));
-    handlersHolders.add(new FileOpHandlersHolder(vertx));
+    this.normalization = new NormalizationHandlersHolder(vertx);
+    this.fileOperations = new FileOpHandlersHolder(vertx, this.normalization::cancelForMapChange);
+    handlersHolders.add(this.fileOperations);
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
+    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
-    handlersHolders.add(new ConversionHandlersHolder(vertx));
-    handlersHolders.add(new DotplotHandlersHolder(vertx));
+    final var conversions = new ConversionHandlersHolder(vertx);
+    final var dotplots = new DotplotHandlersHolder(vertx);
+    handlersHolders.add(conversions);
+    handlersHolders.add(dotplots);
+    this.sequenceAnalysis = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder(vertx);
+    handlersHolders.add(this.sequenceAnalysis);
     handlersHolders.add(new InfoHandlersHolder(vertx, requestStatistics));
     handlersHolders.add(new ApiDocsHandlersHolder());
-    handlersHolders.add(new TrackHandlersHolder(vertx));
+    final var tracks = new TrackHandlersHolder(vertx);
+    handlersHolders.add(tracks);
+    handlersHolders.add(this.normalization);
+    final var fastaOnly = new ru.itmo.ctlab.hict.hict_server.handlers.fastaonly.FastaOnlyHandlersHolder(vertx);
+    final var examples = new ru.itmo.ctlab.hict.hict_server.handlers.examples.ExamplesHandlersHolder(vertx);
+    handlersHolders.add(fastaOnly);
+    handlersHolders.add(examples);
+    this.backgroundJobs = new BackgroundJobsHandlersHolder(List.of(
+      new BackgroundJobsHandlersHolder.Service(
+        "conversion", conversions::backgroundJobs, conversions::cancelBackgroundJob, conversions::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "legacy-dotplot", dotplots::backgroundJobs, dotplots::cancelBackgroundJob, dotplots::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "sequence", sequenceAnalysis::backgroundJobs, sequenceAnalysis::cancelBackgroundJob, sequenceAnalysis::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "track", tracks::backgroundJobs, tracks::cancelBackgroundJob, tracks::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "coverage", normalization::backgroundJobs, normalization::cancelBackgroundJob, normalization::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "fasta", fastaOnly::backgroundJobs, fastaOnly::cancelBackgroundJob, fastaOnly::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "download", examples::backgroundJobs, examples::cancelBackgroundJob, examples::close)
+    ));
+    handlersHolders.add(this.backgroundJobs);
 
     router.route().failureHandler(ctx -> {
-      log.error("An exception was caught at router top-level", ctx.failure());
-      final var message = ctx.failure() != null && ctx.failure().getMessage() != null
-        ? ctx.failure().getMessage()
-        : "Request failed";
-      final int statusCode = ctx.statusCode() > 0 ? ctx.statusCode() : 500;
+      final var expected = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException httpError
+        ? httpError : null;
+      final boolean badInput = ctx.failure() instanceof IllegalArgumentException;
+      if (expected != null && expected.getStatusCode() < 500) {
+        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), expected.getStatusCode());
+      } else if (badInput) {
+        log.info("Request rejected: {} {} ({})", ctx.request().method(), ctx.request().path(), ctx.failure().getMessage());
+      } else {
+        log.error("An exception was caught at router top-level", ctx.failure());
+      }
+      final var message = failureMessage(ctx.failure());
+      final int statusCode = expected != null ? expected.getStatusCode()
+        : badInput ? 400
+        : ctx.statusCode() > 0 ? ctx.statusCode() : 500;
       ctx.response()
         .putHeader("content-type", "application/json")
         .setStatusCode(statusCode)
@@ -407,5 +505,12 @@ public class MainVerticle extends AbstractVerticle {
         log.error("WebUI verticle deployment failed", ar.cause());
       }
     });
+  }
+
+  /** Vert.x keeps the user-facing explanation in payload, not getMessage() ("Conflict"). */
+  public static String failureMessage(Throwable failure) {
+    if (failure instanceof io.vertx.ext.web.handler.HttpException http
+        && http.getPayload() != null && !http.getPayload().isBlank()) return http.getPayload();
+    return failure != null && failure.getMessage() != null ? failure.getMessage() : "Request failed";
   }
 }

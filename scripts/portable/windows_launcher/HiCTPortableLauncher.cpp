@@ -618,8 +618,13 @@ void printUsage() {
       << L"HiCT portable Windows launcher\n\n"
       << L"Usage:\n"
       << L"  HiCT-<version>-windows-x86_64.exe [HiCT CLI args...]\n"
+      << L"  HiCT-<version>-windows-x86_64.exe toolbox hictk <hictk arguments...>\n"
+      << L"  HiCT-<version>-windows-x86_64.exe toolbox minimap2 <minimap2 arguments...>\n"
+      << L"  HiCT-<version>-windows-x86_64.exe toolbox mm2-plus <mm2-plus arguments...>\n"
       << L"  HiCT-<version>-windows-x86_64.exe --hict-extract-only <directory>\n\n"
       << L"DATA_DIR defaults to the directory containing this EXE unless explicitly set.\n"
+      << L"The toolbox command forwards arguments to bundled/configured third-party tools\n"
+      << L"and prints their project, license, and citation notes before launching them.\n"
       << L"Payload cache, processed data, and temporary files default to local subdirectories there.\n";
 }
 
