@@ -82,6 +82,9 @@ class BrowserCheck:
         self.output = Path(output)
         self.rows = []
         self.errors = []
+        page.add_init_script("""window.addEventListener('unhandledrejection', event => {
+            console.error('Unhandled promise in browser acceptance check', event.reason);
+        });""")
         page.on("pageerror", lambda error: self.errors.append(str(error)))
         page.on(
             "console",

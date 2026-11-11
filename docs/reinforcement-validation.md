@@ -1660,3 +1660,21 @@ restores the exact mapping and native AGP, and Show 500 more renders exactly
 300, 800, 1,300 and 1,765 ordered contigs without duplicates. The last pagination
 button disappears and the accepted scaffold override survives pagination. Evidence
 is under `/tmp/hict-u13-entity-name-roundtrip-dir`.
+
+## Atomic preset import during U13
+
+A real malformed import reproduced a valid first preset being stored before a
+later null item failed. Imports now parse into a temporary map with fresh IDs and
+queue threshold updates. The component publishes them only after the whole batch
+parses successfully. Invalid data/list/item shapes produce one clear failure.
+Existing deduplication, normalization defaults, savedLocations aliases and unnamed
+legacy preset labels remain supported.
+
+The full frontend build and existing regressions pass. Focused ESLint has zero
+errors and five existing warnings. The seven-scenario browser gate verifies an
+invalid later item leaves the exact dropdown contents, local thresholds and server
+pipeline unchanged. Two valid items receive distinct IDs and both survive. A
+legacy unnamed savedLocations entry gets its expected default label. All existing
+workspace, navigation, bookmarks, OSD and notification scenarios also pass, with
+explicit unhandled-promise capture in the shared browser harness. Evidence is
+under `/tmp/hict-u13-atomic-preset-qualified-dir`.

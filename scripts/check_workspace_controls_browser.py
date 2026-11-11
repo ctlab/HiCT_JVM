@@ -406,6 +406,106 @@ def main():
                 and before["lowerExpression"] == after["lowerExpression"]
             ), (before, after)
 
+            labels_before = (
+                page.get_by_role("combobox", name="Visualization preset", exact=True)
+                .locator("option")
+                .all_text_contents()
+            )
+            candidate = json.loads(target.read_text())["data"][
+                "savedVisualizationPresets"
+            ][-1]
+            candidate["option_id"] = 1000000
+            candidate["name"] = "Rejected partial preset"
+            candidate["signalThresholds"] = {
+                "lowerSignalBound": 11,
+                "upperSignalBound": 13,
+            }
+            thresholds_before = page.evaluate(
+                "() => {const c=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('visualizationOptions').colormap;return [c.minSignal,c.maxSignal];}"
+            )
+            malformed = output / "malformed-presets.json"
+            malformed.write_text(
+                json.dumps(
+                    {
+                        "exportType": "visualizationOptions",
+                        "data": {"savedVisualizationPresets": [candidate, None]},
+                    }
+                )
+            )
+            with page.expect_file_chooser() as chooser:
+                group.get_by_role("button", name="Import", exact=True).click()
+            chooser.value.set_files(malformed)
+            page.locator("[data-sonner-toast]").filter(
+                has_text="Cannot import visualization options"
+            ).last.wait_for()
+            assert (
+                page.get_by_role("combobox", name="Visualization preset", exact=True)
+                .locator("option")
+                .all_text_contents()
+                == labels_before
+            )
+            assert (
+                page.evaluate(
+                    "async()=>await window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig()"
+                )
+                == after
+            )
+
+            assert (
+                page.evaluate(
+                    "() => {const c=document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('visualizationOptions').colormap;return [c.minSignal,c.maxSignal];}"
+                )
+                == thresholds_before
+            )
+            originals = json.loads(target.read_text())["data"][
+                "savedVisualizationPresets"
+            ]
+            accepted = [
+                dict(originals[-1], name="Atomic import one"),
+                dict(originals[-1], name="Atomic import two"),
+            ]
+            valid_batch = output / "two-valid-presets.json"
+            valid_batch.write_text(
+                json.dumps(
+                    {
+                        "exportType": "visualizationOptions",
+                        "data": {"savedVisualizationPresets": accepted},
+                    }
+                )
+            )
+            with page.expect_file_chooser() as chooser:
+                group.get_by_role("button", name="Import", exact=True).click()
+            chooser.value.set_files(valid_batch)
+            for label in ("Atomic import one", "Atomic import two"):
+                page.get_by_role("button", name=label, exact=True).wait_for()
+            select = page.get_by_role(
+                "combobox", name="Visualization preset", exact=True
+            )
+            assert select.locator("option").count() == len(labels_before) + 2
+            ids = select.locator("option").evaluate_all(
+                "nodes=>nodes.map(n=>n.value).filter(Boolean).map(Number)"
+            )
+            assert len(set(ids)) == len(ids)
+            legacy_id = max(ids) + 1
+            legacy_candidate = dict(originals[-1])
+            legacy_candidate.pop("name", None)
+            legacy_file = output / "legacy-unnamed-presets.json"
+            legacy_file.write_text(
+                json.dumps(
+                    {
+                        "exportType": "visualizationOptions",
+                        "data": {"savedLocations": [legacy_candidate]},
+                    }
+                )
+            )
+            with page.expect_file_chooser() as chooser:
+                group.get_by_role("button", name="Import", exact=True).click()
+            chooser.value.set_files(legacy_file)
+            page.get_by_role(
+                "button", name=f"Imported preset {legacy_id}", exact=True
+            ).wait_for()
+            assert select.locator("option").count() == len(labels_before) + 3
+
         def osd():
             check.menu("View", "OSD settings...")
             dialog = page.get_by_role(

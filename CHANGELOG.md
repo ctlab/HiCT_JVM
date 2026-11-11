@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Export contig and scaffold names through the supported API method for reliable name round trips.
+- Preserve all presets and thresholds when an imported preset file contains an invalid item.
 
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Export contig and scaffold names through the supported API method for reliable name round trips.
 
 - Navigate to contigs and scaffolds from the sidebar using their actual assembly coordinates at every zoom level.
 
