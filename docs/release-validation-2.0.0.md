@@ -314,8 +314,9 @@ resolution selections disable submission for both tools. Evidence is
 `/tmp/hict-u13-advanced-sequence-empty-levels/`.
 
 The 60-second packaged preflight passes eight complete mixed-workload cycles
-with repeated dialog focus checks. The full 30-minute gate is running at
-`/tmp/hict-u13-source-independent-release-soak-valid-port-dir`. Its first attempt
+with repeated dialog focus checks. The full 30-minute gate completed with a failed DOM-node assertion at
+`/tmp/hict-u13-source-independent-release-soak-valid-port-dir`. The diagnosis and
+corrected measurement preflight are recorded below. Its first attempt
 used port 6566, which Chromium rejects as unsafe before any workload cycle. That
 failed record remains under `/tmp/hict-u13-source-independent-release-soak-dir`.
 The corrected run uses port 6572 and the original acceptance thresholds.
@@ -324,3 +325,23 @@ The later Move-arrow visibility correction is committed in JVM `26268352` and
 WebUI `8163456`. It passes the full frontend build and all seven actual structural
 scenarios. The packaged evidence above predates that one-line UI correction.
 Final artifact qualification and the remaining control scenarios remain open.
+
+## Modal-retention measurement correction
+
+The 91581c50/cb7ca73 packaged run completes 226 cycles in 1,800.900 s. Java heap
+slope is 0.128833 MiB/min and RSS slope is 0.342719 MiB/min. Browser heap growth
+is 1,318,030 bytes with slope 0.078908 MiB/min. Frame p95 is 16.8 ms and
+acknowledgement p95 is 58.140496 ms. Browser errors are empty. The recorded result
+is failed because DOM-node and listener counts grew. The earlier harness's
+qualifiesThirtyMinutes flag recorded requested duration, and its assertion text
+was empty. The status field correctly records the failure.
+
+Focused snapshots trace the detached dialog trees to inspector Global handles.
+The same lifecycle with primitive-only waits and hit-tested mouse clicks plateaus
+at 1,787 nodes and 702 listeners. The revised harness preserves all actual mouse
+and focus assertions and the original acceptance thresholds. It saves DOM trend
+context and marks qualification false on failure. Its 120-second packaged
+preflight completes sixteen cycles with zero errors, node maxima 683/689 and
+listener maxima 229/229 across the compared sample groups. Full qualification
+remains pending. Detailed A/B evidence and the primary browser reference are in
+`docs/reinforcement-validation.md`.

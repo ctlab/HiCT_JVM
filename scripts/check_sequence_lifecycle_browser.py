@@ -256,6 +256,52 @@ class OverlayFixture { public static void main(String[] a) {
             check.settle()
             actual = json.loads(app.http('/render_pipeline/get', {}))
             assert actual['upperExpression']['top']['mode'] == 'MODDOTPLOT_IDENTITY', actual
+            query = dict(bpResolution=100, startRowPx=0, endRowPx=2,
+                         startColPx=0, endColPx=2, signalMode='RAW_COUNTS', format='JSON')
+            primary_values = json.loads(app.http('/matrix/query', {**query, 'source': 'PRIMARY'}))['values']
+            secondary_values = json.loads(app.http('/matrix/query', {**query, 'source': 'SECONDARY'}))['values']
+            preset_results = []
+            for preset in ('primary_only', 'dotplot_overlay', 'moddotplot_below', 'moddotplot_overlay'):
+                check.menu('View', 'Rendering pipeline...')
+                dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
+                dialog.locator('.pipeline-preset-select').select_option(preset)
+                before_load = json.loads(app.http('/render_pipeline/get', {}))
+                dialog.get_by_role('button', name='Load preset', exact=True).click()
+                assert json.loads(app.http('/render_pipeline/get', {})) == before_load
+                with page.expect_response(lambda response: '/render_pipeline/set' in response.url):
+                    dialog.get_by_role('button', name='Apply', exact=True).click()
+                check.settle()
+                applied = json.loads(app.http('/render_pipeline/get', {}))
+                assert applied['enabled'] and not applied['swapUpperLower'], applied
+                upper, lower = applied['upperExpression'], applied['lowerExpression']
+                if preset == 'primary_only':
+                    assert upper == lower and upper['type'] == 'colormap', applied
+                elif preset == 'dotplot_overlay':
+                    assert upper == lower and upper['type'] == 'pixel_blend', applied
+                elif preset == 'moddotplot_below':
+                    assert upper['type'] == 'colormap' and lower['mode'] == 'MODDOTPLOT_IDENTITY', applied
+                else:
+                    assert upper == lower and upper['top']['mode'] == 'MODDOTPLOT_IDENTITY', applied
+                assert json.loads(app.http('/matrix/query', {**query, 'source': 'PRIMARY'}))['values'] == primary_values
+                assert json.loads(app.http('/matrix/query', {**query, 'source': 'SECONDARY'}))['values'] == secondary_values
+                dialog.get_by_role('button', name='Close', exact=True).click()
+                dialog.wait_for(state='hidden')
+                page.wait_for_function("""()=>{
+                    const m=window.__hictBenchmark.manager(),map=m.getMap();
+                    const [left,bottom,right,top]=map.getView().getProjection().getExtent();
+                    const layers=[...m.viewAndLayersManager.layersHolder.primaryHiCDataLayers,
+                        ...m.viewAndLayersManager.layersHolder.secondaryHiCDataLayers];
+                    return Array.from({length:31},(_,i)=>(i+1)/32).some(f=>{
+                        const pixel=map.getPixelFromCoordinate([left+f*(right-left),top+f*(bottom-top)]);
+                        return layers.filter(layer=>layer.getVisible()).some(layer=>{
+                            const rgba=layer.getData(pixel);
+                            return rgba?.[3]>0 && Math.min(...rgba.slice(0,3))<240;
+                        });
+                    });
+                }""")
+                preset_results.append({'preset': preset, 'config': applied,
+                                       'primaryValues': primary_values, 'secondaryValues': secondary_values})
+            (out / 'editor-preset-results.json').write_text(json.dumps(preset_results, indent=2))
         def selection_actions():
             check.select_range()
             box = page.locator('#hic-contact-map').bounding_box()

@@ -1823,3 +1823,46 @@ The packaged soak now opens and closes a real resolution dialog on every cycle,
 checks Shift+Tab containment and returns focus to View before navigation sampling.
 Its limits and warmup remain unchanged. Raw native-memory categories, heap/RSS
 samples, retained failed results and derived metrics remain available for audit.
+
+## Preset action reachability and retention measurements during U13
+
+The full editor-preset audit reproduced success confirmations covering Apply.
+Hovering the obstruction paused its timer. Success toasts now yield while a modal
+owns focus, extending the existing targeted excluded-bin notice behavior. The
+all-four editor Load/Apply journey completes with real primary and identity
+sources, preserved input matrices and actual rendered pixels. All fifteen
+lifecycle cases, twelve graph scenarios and eighteen modal destinations pass.
+Catalog entries 3 and 4 use the descriptive names Red on white and Red on black.
+
+The new fourteen-preset browser gate checks all 25 independently known contacts,
+pre-log, imported weights, post-log, diagnostic unclamped values, colormap-clamped
+values and actual RGBA against an independent calculation. Missing-overlay
+actions preserve configuration and provide guidance. The active-source palette
+uses manual bounds for its fixed-range assertion. Automatic range calculation
+has separate numerical coverage. Evidence pointers are
+`/tmp/hict-u13-all-builtin-presets-complete-dir`,
+`/tmp/hict-u13-neutral-builtin-presets-dir`,
+`/tmp/hict-u13-all-editor-presets-fixed/` and
+`/tmp/hict-u13-modal-success-{pipeline,menus}-dir`.
+
+The expanded thirty-minute workload failed its DOM-node gate after 226 cycles
+while heap, RSS and timing limits passed. A focused twenty-dialog reproduction
+retained exactly twenty detached dialog trees. Its shortest retaining path runs
+through Global handles and DevTools console. Disposing console arguments, clearing
+logs and adding frame checkpoints retained that behavior. Removing temporary
+modal element handles from the measurement while preserving actual mouse Close,
+Shift+Tab containment and visible focus return produces a flat ten-cycle result
+of 1,787 nodes and 702 listeners. Chrome describes inspector-held objects in its
+heap-snapshot guidance. [Chrome heap-snapshot guidance](https://developer.chrome.com/docs/devtools/memory-problems/heap-snapshots)
+
+The soak now reads primitive DOM results and uses hit-tested mouse coordinates
+for modal Close. Its original limits remain intact. DOM maxima and assertion
+context are saved with the other metrics before validation. A failed run now
+sets qualifiesThirtyMinutes to false. The corrected 120-second packaged preflight
+passes sixteen mixed cycles, with early/late node maxima 683/689, listener maxima
+229/229, frame p95 16.7 ms, acknowledgement p95 56.842 ms and zero captured errors.
+The full qualification must be repeated. Focused snapshots and raw counters are
+under `/tmp/hict-u13-modal-memory-{diagnostic,console,primitives,mouse,no-handles}-dir`.
+The failed full run remains under
+`/tmp/hict-u13-source-independent-release-soak-valid-port-dir`, and the corrected
+preflight is under `/tmp/hict-u13-primitive-modal-soak-preflight-dir`.

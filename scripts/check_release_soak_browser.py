@@ -142,17 +142,34 @@ def main():
                         await m.reloadTilesFromBackend();
                     }""")
                 page.get_by_role("link", name="View", exact=True).click()
-                page.get_by_role("link", name="Restrict Resolutions...", exact=True).click()
-                dialog = page.get_by_role("dialog").filter(
-                    has=page.get_by_role("heading", name="Restrict Resolutions", exact=True)
-                )
-                dialog.wait_for(state="visible")
+                page.get_by_role(
+                    "link", name="Restrict Resolutions...", exact=True
+                ).click()
+                # Transient locator handles retain detached nodes in the inspector.
+                # Keep these memory measurements to primitive DOM results and real input.
+                page.wait_for_function("""() => {
+                    const dialog=document.querySelector('[aria-labelledby="resolution-settings-title"]');
+                    return dialog && dialog.getBoundingClientRect().width>0;
+                }""")
                 page.keyboard.press("Shift+Tab")
-                assert dialog.evaluate("element=>element.contains(document.activeElement)")
-                dialog.locator(".btn-close").click()
-                dialog.wait_for(state="hidden")
-                assert page.get_by_role("link", name="View", exact=True).evaluate(
-                    "element=>element===document.activeElement"
+                assert page.evaluate(
+                    """() => document.querySelector(
+                    '[aria-labelledby="resolution-settings-title"]').contains(document.activeElement)"""
+                )
+                close = page.evaluate("""() => {
+                    const button=document.querySelector('[aria-labelledby="resolution-settings-title"] .btn-close');
+                    const bounds=button.getBoundingClientRect();
+                    const x=bounds.x+bounds.width/2,y=bounds.y+bounds.height/2;
+                    return {x,y,hit:document.elementFromPoint(x,y)===button};
+                }""")
+                assert close["hit"], close
+                page.mouse.click(close["x"], close["y"])
+                page.wait_for_function(
+                    "!document.querySelector('[aria-labelledby=resolution-settings-title]')"
+                )
+                assert page.evaluate(
+                    """() => Array.from(document.querySelectorAll('a.nav-link'))
+                    .find(element=>element.textContent.trim()==='View')===document.activeElement"""
                 )
                 viewport = page.evaluate("""() => {
                     const r=window.__hictBenchmark.manager().getMap().getViewport().getBoundingClientRect();
@@ -340,6 +357,13 @@ def main():
             result.update(
                 status="running",
                 backendTrends=backend_trends,
+                domTrends={
+                    key: {
+                        "earlyMaximum": max(row[key] for row in early),
+                        "lateMaximum": max(row[key] for row in late),
+                    }
+                    for key in ("nodes", "listeners")
+                },
                 elapsedSeconds=time.monotonic() - started,
                 cycles=cycle,
                 heapGrowthBytes=heap_growth,
@@ -360,18 +384,20 @@ def main():
                 assert (
                     max(row["nodes"] for row in late)
                     <= max(row["nodes"] for row in early) + 100
-                )
+                ), result["domTrends"]
                 assert (
                     max(row["listeners"] for row in late)
                     <= max(row["listeners"] for row in early) + 20
-                )
+                ), result["domTrends"]
                 assert percentile(frames, 0.95) <= 33, percentile(frames, 0.95)
                 assert (
                     acknowledgements and percentile(acknowledgements, 0.95) <= 100
                 ), acknowledgements
             result["status"] = "passed"
         except BaseException as failure:
-            result.update(status="failed", failure=str(failure))
+            result.update(
+                status="failed", failure=str(failure), qualifiesThirtyMinutes=False
+            )
             raise
         finally:
             result.update(samples=samples, errors=errors)

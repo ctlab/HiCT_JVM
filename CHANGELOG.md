@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use descriptive red-palette names and keep success confirmations clear of dialog actions.
+
 - Expand release validation for session recovery, offline use, native exports and analysis settings.
 
 ## 2.0.0
