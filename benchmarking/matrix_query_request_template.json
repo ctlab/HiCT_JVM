@@ -1,0 +1,11 @@
+{
+  "bpResolution": "${resolution_bp}",
+  "unit": "BINS",
+  "startRowBin": "${row_bin}",
+  "endRowBin": "${row_end_bin}",
+  "startColBin": "${col_bin}",
+  "endColBin": "${col_end_bin}",
+  "signalMode": "RAW_COUNTS",
+  "source": "PRIMARY",
+  "format": "BINARY_INT64"
+}

@@ -1,0 +1,4 @@
+cooler>=0.10.4,<0.11
+numpy>=1.26,<3
+requests>=2.31,<3
+PyYAML>=6,<7
