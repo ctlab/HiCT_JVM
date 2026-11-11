@@ -2019,6 +2019,7 @@ paths:
               required: [scope, mergeCompatible, resolutions]
               properties:
                 scope: {type: string, enum: [assembly, selection]}
+                displayMode: {type: string, enum: [overlay, below, above, none], description: "Result presentation. Defaults to overlay for selection and below for assembly; retained in Jobs outputs."}
                 mergeCompatible: {type: boolean}
                 gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
                 resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
@@ -2058,6 +2059,7 @@ paths:
               required: [scope, mergeCompatible, resolutions]
               properties:
                 scope: {type: string, enum: [assembly, selection]}
+                displayMode: {type: string, enum: [overlay, below, above, none], description: "Result presentation. Defaults to overlay for selection and below for assembly; retained in Jobs outputs."}
                 mergeCompatible: {type: boolean}
                 gapLengthBp: {type: integer, minimum: 0, maximum: 1000000, default: 1000}
                 resolutions: {type: array, minItems: 1, items: {type: integer, format: int64, minimum: 1}}
@@ -2211,6 +2213,7 @@ components:
               fastaFilename: { type: string, nullable: true }
               agpFilename: { type: string, nullable: true }
               mapFilename: { type: string, nullable: true }
+              displayMode: { type: string, nullable: true, enum: [overlay, below, above, none] }
 
     EmptyObject:
       type: object

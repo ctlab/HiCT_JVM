@@ -7,7 +7,10 @@ import java.util.Locale;
 public record BackgroundJob(String id, String kind, String state, Double progress,
                             Long createdAtMs, Long startedAtMs, Long finishedAtMs,
                             String message, String error, List<Output> outputs) {
-  public record Output(String filename, String action, String fastaFilename, String agpFilename, String mapFilename) {
+  public record Output(String filename, String action, String fastaFilename, String agpFilename, String mapFilename, String displayMode) {
+    public Output(String filename, String action, String fastaFilename, String agpFilename, String mapFilename) {
+      this(filename, action, fastaFilename, agpFilename, mapFilename, null);
+    }
     public Output(String filename, String action, String fastaFilename) {
       this(filename, action, fastaFilename, null, null);
     }
