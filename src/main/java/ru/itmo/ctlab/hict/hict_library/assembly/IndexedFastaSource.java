@@ -8,10 +8,11 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.zip.GZIPInputStream;
+import ru.itmo.ctlab.hict.hict_library.util.QuickFileFingerprint;
 
 /** Read-only line index; gzip gets a private random-access copy in java.io.tmpdir. */
 final class IndexedFastaSource implements AutoCloseable {
-  private record Stamp(long size, java.nio.file.attribute.FileTime modified, Object key) { }
+  private record Stamp(long size, java.nio.file.attribute.FileTime modified, Object key, QuickFileFingerprint fallback) { }
   private record Run(long start, long offset, long bases, long stride, long lines) {
     long end() { return start + (long) bases * lines; }
     long physical(long position) { long p=position-start; return offset+(p/bases)*stride+p%bases; }
@@ -36,7 +37,11 @@ final class IndexedFastaSource implements AutoCloseable {
   private int sessions;
   private final LinkedHashMap<String,Sequence> sequences=new LinkedHashMap<>();
   private static Stamp stamp(Path p) throws IOException {
-    var a=Files.readAttributes(p,BasicFileAttributes.class);return new Stamp(a.size(),a.lastModifiedTime(),a.fileKey());
+    var attributes = Files.readAttributes(p, BasicFileAttributes.class);
+    // Some providers expose no file key. Content sampling also detects replacements
+    // that preserve the size and timestamp on those filesystems.
+    var fallback = attributes.fileKey() == null ? QuickFileFingerprint.compute(p) : null;
+    return new Stamp(attributes.size(), attributes.lastModifiedTime(), attributes.fileKey(), fallback);
   }
   boolean matches(Path p) throws IOException { return path.equals(p.toAbsolutePath().normalize()) && stamp.equals(stamp(p)); }
   void verify() throws IOException { if(!matches(path)) throw new IOException("Linked FASTA changed during export: "+path); }

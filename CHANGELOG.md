@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Detect rapid equal-size source changes before reusing conversions and validate FASTA replacements on filesystems without file keys.
+
 - Update track backgrounds immediately on both map axes and preserve their export colors.
 
 - Use descriptive red-palette names and keep success confirmations clear of dialog actions.

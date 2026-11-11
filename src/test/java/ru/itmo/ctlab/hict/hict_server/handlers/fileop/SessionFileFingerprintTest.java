@@ -82,6 +82,12 @@ class SessionFileFingerprintTest {
     Files.write(path, new byte[1000]);
     var modified = Files.getLastModifiedTime(path);
     var quick = SessionFileFingerprint.computeQuick(path);
+    var digest = java.security.MessageDigest.getInstance("SHA-256");
+    digest.update("HICT-QUICK-1".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+    digest.update(java.nio.ByteBuffer.allocate(Long.BYTES).putLong(1000).array());
+    digest.update(new byte[1000]);
+    assertEquals(java.util.HexFormat.of().formatHex(digest.digest()), quick.sha256(),
+      "Shared sampling must preserve fingerprints in existing session files");
     Files.setLastModifiedTime(path, java.nio.file.attribute.FileTime.fromMillis(modified.toMillis() + 60_000));
     assertEquals(quick, SessionFileFingerprint.computeQuick(path));
     var bytes = new byte[1000];

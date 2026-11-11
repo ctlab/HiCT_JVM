@@ -120,7 +120,10 @@ class MatrixConversionCacheManagerTest {
     final var manager = new MatrixConversionCacheManager(dataDir, processedDir, new FileFingerprintService());
     manager.recordSuccessfulConversion(input, output, ConversionDirection.HIC_TO_HICT);
 
+    // Reproduce providers whose timestamps cannot distinguish rapid equal-size writes.
+    final var originalModified = Files.getLastModifiedTime(input);
     Files.writeString(input, "new-hic-data");
+    Files.setLastModifiedTime(input, originalModified);
 
     final var resolution = manager.resolveOpenPath("example.hic");
 

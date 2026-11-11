@@ -31,6 +31,8 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import ru.itmo.ctlab.hict.hict_library.util.QuickFileFingerprint;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -51,12 +53,28 @@ public final class FileFingerprintService {
     }
     final var sizeBytes = attrs.size();
     final var modifiedAtMs = attrs.lastModifiedTime().toMillis();
+    final QuickFileFingerprint content;
+    try {
+      content = QuickFileFingerprint.compute(path);
+    } catch (final IOException e) {
+      throw new RuntimeException("Failed to fingerprint file " + path, e);
+    }
     final var cached = this.cache.get(path);
-    if (cached != null && cached.sizeBytes == sizeBytes && cached.modifiedAtMs == modifiedAtMs) {
+    if (cached != null && cached.modifiedAt.equals(attrs.lastModifiedTime()) && cached.content.equals(content)) {
       return cached.fingerprint;
     }
     final var computed = computeFingerprint(path, sizeBytes, modifiedAtMs);
-    this.cache.put(path, new CachedFingerprint(sizeBytes, modifiedAtMs, computed));
+    try {
+      final var after = Files.readAttributes(path, BasicFileAttributes.class);
+      if (after.size() != sizeBytes || !after.lastModifiedTime().equals(attrs.lastModifiedTime())
+          || !java.util.Objects.equals(after.fileKey(), attrs.fileKey())
+          || !content.equals(QuickFileFingerprint.compute(path))) {
+        throw new IOException("File changed while hashing: " + path);
+      }
+    } catch (final IOException e) {
+      throw new RuntimeException("Failed to fingerprint file " + path, e);
+    }
+    this.cache.put(path, new CachedFingerprint(attrs.lastModifiedTime(), content, computed));
     return computed;
   }
 
@@ -94,8 +112,8 @@ public final class FileFingerprintService {
     );
   }
 
-  private record CachedFingerprint(long sizeBytes,
-                                   long modifiedAtMs,
+  private record CachedFingerprint(@NotNull FileTime modifiedAt,
+                                   @NotNull QuickFileFingerprint content,
                                    @NotNull FileFingerprint fingerprint) {
   }
 }

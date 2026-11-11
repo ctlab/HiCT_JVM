@@ -1884,3 +1884,30 @@ precompute completion after closing the track dialog. Assembly AGP is unchanged.
 The prior background failure remains in
 `/tmp/hict-u13-track-controls-feature-count-dir`. Passing evidence is in
 `/tmp/hict-u13-track-background-fixed-dir`.
+
+
+### U13 Windows source identity regressions
+
+Existing GitHub Actions run 43010279561 at fd46e1fd passes Linux, macOS arm64
+and macOS x86-64 Java jobs. Its Windows JUnit artifact reports three failures
+in conversion-cache invalidation and plain/gzip FASTA replacement detection.
+Only existing runs, logs and artifacts were read or downloaded.
+[Java regression run](https://github.com/ctlab/HiCT_JVM/actions/runs/43010279561)
+
+Conversion cache hits now compare full-precision modification time and bounded
+content identity before reusing full SHA-256/SHA-512 results. Fresh hashes verify
+that the source remains stable before caching. FASTA stamps use the same bounded
+content check when the provider exposes no file key. HICT-QUICK-1 sampling moved
+to a shared library utility while retaining its existing session byte format.
+Large files retain the existing approximately 9 MiB sampling bound.
+
+The conversion regression explicitly restores the original timestamp after an
+equal-size write. The session regression independently checks the sampling
+format digest. All 440 local Java tests pass with seven optional skips and zero
+failures, recorded in `/tmp/hict-u13-windows-identity-full.log`. All fifteen
+sequence lifecycle browser cases pass against the corrected fat JAR, including
+FASTA linking, split/invert sequence delivery, BLAST, minimap, overlays, graph
+round trips and selected sequence exports. Evidence is under
+`/tmp/hict-u13-file-identity-lifecycle/`. Windows execution of this local correction
+remains unverified. Existing portable run 43010279649 is still in progress at
+this checkpoint.
