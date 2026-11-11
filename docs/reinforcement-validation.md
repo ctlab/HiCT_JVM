@@ -1784,3 +1784,17 @@ ModDotPlot identity suites pass. The original failed pixel audit and transparent
 RGBA sample are retained under `/tmp/hict-u13-dialog-pipeline-pixel-diagnostic-dir`.
 Focused failing-unit evidence is `/tmp/hict-u13-source-independent-before.log`.
 The full test/build log is `/tmp/hict-u13-source-independent-tests-build.log`.
+
+## Move cancellation during U13
+
+The expanded structural audit reproduced Escape disarming translocation while
+leaving its arrows visible. Shared tool deactivation now refreshes the existing
+arrow renderer immediately. The focused browser regression checks that Escape
+clears the active tool, hides every arrow layer and preserves the exact native
+assembly snapshot. It then reselects, enters Move again, crosses a native level
+and performs a real arrow move with exact Undo/Redo/Undo state checks.
+
+All seven structural scenarios pass at `/tmp/hict-u13-move-escape-fixed-dir`.
+The preceding failing regression remains under `/tmp/hict-u13-final-move-escape-dir`.
+The WebUI build and existing numerical/source regressions pass. Focused lint
+reports zero errors and three existing warnings in ContactMapManager.
