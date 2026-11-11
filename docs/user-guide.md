@@ -78,6 +78,12 @@ three formats. Whole-map exports use their fitted scale. Assembly exports are
 available through Assembly. FASTA export requires a linked sequence reference.
 Check the exported layout and sequence against your analysis requirements.
 
+File → Export matrix writes `.cool` or multiresolution `.mcool` files. Choose
+whether to export the current edited assembly or the saved source layout.
+Cooler export supports Deflate, with level 0 producing uncompressed output.
+Auto and hictk-assisted modes can balance output. The direct internal exporter
+leaves balancing unavailable.
+
 ## Keyboard and pointer actions
 
 | Action | Input |

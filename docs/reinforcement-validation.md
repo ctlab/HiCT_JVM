@@ -1525,3 +1525,22 @@ The menu suite again verifies all 18 surfaces and focus behavior. The standalone
 workspace gate also arms Split and verifies Escape disarms it outside an editor.
 Evidence pointers are `/tmp/hict-u13-workspace-escape-isolated-dir` and
 `/tmp/hict-u13-escape-menus-ready-dir`.
+
+## Cooler export capability controls during U13
+
+The audit found selectable Zstandard and LZF output modes even though the
+internal writer uses Deflate fallback and the hictk-assisted copy writer uses
+Deflate. Those unsupported choices are now visibly disabled with an explanation.
+Level 0 remains available for uncompressed output. Balancing is disabled for the
+direct internal exporter, and its request explicitly leaves balancing off while
+retaining the user's preference for supported modes.
+
+The full frontend build passes. Focused ESLint reports zero errors and one
+existing warning. The new real-browser gate reverses a known 4,000-base assembly
+and exports through internal, hictk and auto modes. Every contact equals the
+independent deterministic oracle. It checks both native resolutions in the
+internal multiresolution export, the unedited source layout through hictk,
+and edited output with finite positive generated weights through balanced auto
+export. Requests preserve the selected level, thread count and assembly policy.
+The browser reports no unexpected errors. Evidence is named by
+`/tmp/hict-u13-export-controls-dir`.

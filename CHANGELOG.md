@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Explain the available Cooler export compression and balancing modes before starting an export.
+
 - Let Escape cancel edits in focused text fields while keeping map-tool cancellation available outside editors.
 
 ## 2.0.0
