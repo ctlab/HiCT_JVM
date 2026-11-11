@@ -52,8 +52,10 @@ class VisualizationOptionsDTOTest {
       assertEquals(alpha, gradient.getStartColor().getAlpha(), "start alpha " + alpha);
       assertEquals(255 - alpha, gradient.getEndColor().getAlpha(), "end alpha " + alpha);
     }
-    assertEquals(128,
+    assertEquals(127,
       new SimpleLinearGradientDTO("rgba(12,34,56,0.5)", "rgba(232,0,0,1)", 0, 10).toEntity().getStartColor().getAlpha());
+    assertEquals(25,
+      new SimpleLinearGradientDTO("rgba(12,34,56,0.1)", "rgba(232,0,0,1)", 0, 10).toEntity().getStartColor().getAlpha());
   }
 
   @Test

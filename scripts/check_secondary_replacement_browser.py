@@ -90,7 +90,7 @@ def main():
             result['checks'].append('cancelled mismatch leaves both sources unchanged')
             accepted = choose('candidate.hict.hdf5')
             assert accepted.ok and not accepted.json()['requiresConfirmation']
-            page.get_by_text('Secondary source attached', exact=True).wait_for(state='visible')
+            page.get_by_text('Secondary source attached', exact=True).wait_for(state='attached')
             after = snapshot()
             assert after['status']['filename'] == 'candidate.hict.hdf5'
             if args.secondary_drives_assembly:
@@ -112,7 +112,7 @@ def main():
             with page.expect_response(lambda response: response.url.endswith('/secondary/open')) as confirmed:
                 page.get_by_role('button', name='Continue and Attach', exact=True).click()
             assert confirmed.value.ok, confirmed.value.text()
-            page.get_by_text('Secondary source attached with compatibility warning', exact=True).wait_for(state='visible')
+            page.get_by_text('Secondary source attached with compatibility warning', exact=True).wait_for(state='attached')
             assembly = confirmed.value.json()['assemblyInfo']['contigDescriptors']
             expected_contigs = [{'id': c['contigId'], 'name': c['contigName'], 'direction': c['contigDirection']} for c in assembly]
             client_contigs = page.evaluate('''()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors

@@ -2040,11 +2040,31 @@ supported. Final evidence is under
 `/tmp/hict-u13-full-presets-import-atomic-final-dir`, with the seven-scenario
 workspace repeat under `/tmp/hict-u13-full-presets-workspace-final-dir`.
 
-API alpha decoding now rounds valid normalized alpha to the nearest byte and
-rejects values outside zero through one before integer conversion. The previous
+API alpha decoding restores byte values within the rounding error of its
+six-decimal serialization and rejects values outside zero through one before
+integer conversion. Other fractional inputs retain their established truncation,
+including 0.5 mapping to 127 and 0.1 mapping to 25. The previous
 floor conversion could lose one alpha level when reading the API's six-decimal
 color representation. The DTO regression covers all 256 alpha values and the
 snapshot serializer covers all 256 channel values. The final Java suite passes
 468 tests with seven optional skips in
 `/tmp/hict-u13-full-preset-alpha-full.log`. Final UI lint records zero errors and
 99 warnings in `/tmp/hict-u13-full-preset-lossless-final-lint.log`.
+
+
+### U13 alpha compatibility and secondary replacement regate
+
+The full session browser regression caught a compatibility change introduced by
+general nearest-byte alpha rounding. Decoding now snaps to a byte only within
+the error bound of the API's six-decimal serializer. Existing fractional inputs
+retain truncation, including 0.5 to 127 and 0.1 to 25. All 256 serialized byte
+values still restore exactly. Finite-range validation remains in place.
+
+Secondary replacement synchronization now waits for the completed notification
+to exist while its parent modal intentionally suppresses success toasts. The
+subsequent assertions still compare both exact edited contact matrices, client
+strands, the journal, rejected/cancelled replacement preservation and the
+confirmed replacement's returned assembly.
+The full Java suite passes 468 tests with seven optional skips in
+`/tmp/hict-u13-alpha-compatible-tests.log`. Browser result records are in
+`/tmp/hict-u13-alpha-compatible-browser.json`.

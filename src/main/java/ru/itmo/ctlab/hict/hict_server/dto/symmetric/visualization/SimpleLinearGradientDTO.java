@@ -104,6 +104,13 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
     double alpha = Double.parseDouble(value.replace(',', '.'));
     if (!Double.isFinite(alpha) || alpha < 0 || alpha > 1)
       throw new IllegalArgumentException("Colormap alpha must be a finite value between zero and one");
-    return (int) Math.round(255.0d * alpha);
+    double scaledAlpha = 255.0d * alpha;
+    double nearestByte = Math.rint(scaledAlpha);
+    // The API writes six decimal places. Restore bytes within that rounding
+    // error while preserving truncation for other fractional alpha values.
+    double serializationTolerance = 255.0d * 0.5e-6;
+    if (Math.abs(scaledAlpha - nearestByte) <= serializationTolerance + Math.ulp(scaledAlpha))
+      return (int) nearestByte;
+    return (int) scaledAlpha;
   }
 }
