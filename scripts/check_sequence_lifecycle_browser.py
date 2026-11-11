@@ -3,22 +3,19 @@
 import argparse, functools, http.server, json, os, random, shutil, sys, threading, subprocess
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import HictTestServer, BrowserCheck
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--suite', required=True, help='Benchmark suite containing the fixture and BrowserCheck harness')
+    parser.add_argument('--suite', help='Optional legacy benchmark directory for its font bundle')
     parser.add_argument('--jar', required=True)
     parser.add_argument('--webui', required=True)
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
-    suite = Path(args.suite).resolve()
-    sys.path[:0] = [str(suite), str(suite / 'scripts')]
-    from bench.application import HictApplication
-    from check_g3_browser import BrowserCheck
+    suite = Path(args.suite).resolve() if args.suite else Path(__file__).resolve().parents[1]
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=False)
     data = out / 'data'; data.mkdir()
-    fixture = suite / 'prepared/fixture/known.hict.hdf5'
     # Multiple resolutions are essential: generated sidecars may contain a subset.
     import cooler, numpy as np, pandas as pd
     mcool = data / 'known.mcool'
@@ -51,13 +48,12 @@ class OverlayFixture { public static void main(String[] a) {
     fonts = Path(os.environ.get('HICT_TEST_FONTS', str(suite / 'runtime/fonts/dejavu')))
     if not fonts.is_dir(): fonts = Path('/usr/share/fonts/truetype/dejavu')
     font.write_text(f'<fontconfig><dir>{fonts}</dir><cachedir>{out}/font-cache</cachedir></fontconfig>')
-    config = dict(hict_dependency_jar=str(Path(args.jar).resolve()), hict_application_jar_only=True, java_args=['-Xmx2g'], sampling_ms=5)
-    with HictApplication(config, data / 'known.hict.hdf5', out / 'server.log') as app, sync_playwright() as pw:
+    with HictTestServer(args.jar, data, out / 'server.log') as app, sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, env={**os.environ, 'FONTCONFIG_FILE': str(font)})
         page = browser.new_page(viewport=dict(width=1440, height=1000)); page.set_default_timeout(60000)
         page.add_init_script('window.__HICT_BENCHMARK_ENABLED__ = true')
         page.route('http://localhost:5000/**', lambda route: route.continue_(url=app.url + route.request.url.removeprefix('http://localhost:5000')))
-        check = BrowserCheck(args, app, page, out); success = False
+        check = BrowserCheck(page, out); success = False
         def load_file(menu, action, name, endpoint):
             check.menu(menu, action); check.choose_file(name)
             with page.expect_response(lambda r: endpoint in r.url) as response:
@@ -111,6 +107,7 @@ class OverlayFixture { public static void main(String[] a) {
             page.get_by_label('FASTA records, or one DNA sequence per line').fill('>cross_join α\n' + motif)
             assert page.get_by_label('Search scope').input_value() == 'assembly'
             assert page.get_by_label('Matching', exact=True).input_value() == 'exact'
+            check.advanced()
             assert page.get_by_label('Forward strand color').input_value() == '#dc2626'
             assert page.get_by_label('Reverse strand color').input_value() == '#2563eb'
             page.get_by_label('Forward strand color').fill('#12ab34')
@@ -158,11 +155,23 @@ class OverlayFixture { public static void main(String[] a) {
                 page.get_by_role('link', name='Tools', exact=True).click()
                 page.get_by_role('button', name='Generate ModDotPlot…', exact=True).click()
                 dialog = page.get_by_role('dialog', name='Generate ModDotPlot', exact=True)
+                check.advanced()
                 assert page.get_by_label('Analysis scope').input_value() == 'assembly'
                 [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
+                assert dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).is_disabled()
                 dialog.locator('.resolution-options input[value="100"]').check()
                 assert page.get_by_label('Worker threads').input_value() in ('-1', '2')
                 page.get_by_label('Worker threads').fill('2')
+                page.get_by_label('k-mer length', exact=True).fill('15')
+                page.get_by_label('Target sketch size', exact=True).fill('128')
+                delta = page.get_by_label('Neighbor expansion (fraction of window)', exact=True)
+                delta.fill('0.25')
+                assert delta.evaluate('element=>element.validity.stepMismatch')
+                before_invalid = json.loads(app.http('/sequence/jobs/list', {}))
+                dialog.get_by_role('button', name='Generate ModDotPlot', exact=True).click()
+                assert json.loads(app.http('/sequence/jobs/list', {})) == before_invalid
+                delta.fill('0.2')
+                assert delta.evaluate('element=>element.checkValidity()')
                 if iteration == 0:
                     page.get_by_label('Save a reusable copy under DATA_DIR').check()
                     page.get_by_label('Output path').fill('published/moddotplot.hict.hdf5')
@@ -207,21 +216,30 @@ class OverlayFixture { public static void main(String[] a) {
                 versions.append(path)
                 with h5py.File(path, 'r') as f:
                     assert f['sequence_analysis'].attrs['complete']
+                    compatibility = json.loads(f['sequence_analysis'].attrs['compatibility'])
+                    assert compatibility['settings']['parameters'] == {
+                        'ambiguous': False, 'delta': 0.2, 'identity': 80.0, 'k': 15, 'sketch_size': 128
+                    }, compatibility
                     assert len(f['sequence_analysis/updates']) == iteration + 1
                     assert f['resolutions/100/treap_coo/block_length'][:].sum() > 0
                 if iteration == 0:
                     assert latest['outputFile'] == 'published/moddotplot.hict.hdf5' and path.is_file(), latest
-                page.get_by_role('button', name='SECONDARY', exact=True).click()
+                page.get_by_role('button', name='Secondary', exact=True).click()
                 assert page.evaluate("() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('matrixViewStore').activeVisualizationSource") == 'SECONDARY'
-                page.get_by_role('button', name='PRIMARY', exact=True).click()
+                page.get_by_role('button', name='Primary', exact=True).click()
                 if iteration:
-                    target = page.get_by_label('Rendering pipeline colormap target')
-                    assert target.count() == 1 and target.locator('option').count() >= 2
+                    # The inspector now scopes colormaps to the selected source and half.
+                    # Each blended half has one colormap for each source.
+                    link = page.get_by_role('button', name='Link upper and lower triangles', exact=True)
+                    if link.get_attribute('aria-pressed') == 'true': link.click()
+                    for half in ('Upper', 'Lower'):
+                        page.get_by_role('button', name=half + ' triangle', exact=True).click()
+                        assert page.get_by_role('button', name=half + ' triangle', exact=True).get_attribute('aria-pressed') == 'true'
             assert versions[0] != versions[1] and versions[0].exists(), versions
             assert versions[1].is_file()
             (out / 'moddotplot-jobs.json').write_text(json.dumps(jobs, indent=2))
         def identity_presets():
-            page.get_by_role('button', name='Load ModDotPlot Hi-C above identity below preset', exact=True).click()
+            page.get_by_role('combobox', name='Visualization preset', exact=True).select_option(label='ModDotPlot: Hi-C above, identity below')
             check.settle()
             expected = json.loads(app.http('/render_pipeline/get', {}))
             assert expected['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', expected
@@ -234,7 +252,7 @@ class OverlayFixture { public static void main(String[] a) {
             dialog.wait_for(state='hidden'); check.settle()
             actual = json.loads(app.http('/render_pipeline/get', {}))
             assert actual['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', actual
-            page.get_by_role('button', name='Load ModDotPlot multicolor overlay preset', exact=True).click()
+            page.get_by_role('combobox', name='Visualization preset', exact=True).select_option(label='ModDotPlot: multicolor overlay')
             check.settle()
             actual = json.loads(app.http('/render_pipeline/get', {}))
             assert actual['upperExpression']['top']['mode'] == 'MODDOTPLOT_IDENTITY', actual
@@ -292,8 +310,10 @@ class OverlayFixture { public static void main(String[] a) {
             dialog=page.get_by_role('dialog',name='Generate dotplot from active assembly',exact=True)
             assert page.get_by_label('Analysis scope').input_value()=='selection'
             [checkbox.uncheck() for checkbox in dialog.locator('.resolution-options input').all()]
+            assert dialog.get_by_role('button', name='Generate dotplot from active assembly', exact=True).is_disabled()
             dialog.locator('.resolution-options input[value="100"]').check()
-            for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20')]:
+            check.advanced()
+            for name,value in [('Minimizer k','7'),('Minimizer window','1'),('Minimum chain score','5'),('Minimum alignment length (bp)','20'),('Sample every (bp)','50'),('Alignment threads','2')]:
                 page.get_by_label(name,exact=True).fill(value)
             page.get_by_label('Save a reusable copy under DATA_DIR').check()
             page.get_by_label('Output path').fill('published/selection-dotplot.hict.hdf5')
@@ -304,15 +324,66 @@ class OverlayFixture { public static void main(String[] a) {
             jobs=[j for j in json.loads(app.http('/sequence/jobs/list',{})) if j['kind']=='dotplot']
             assert len(jobs)==1 and jobs[0]['status']=='finished',jobs
             assert jobs[0]['outputFile']=='published/selection-dotplot.hict.hdf5' and (data/jobs[0]['outputFile']).is_file(),jobs
+            assert jobs[0]['requestedThreads'] == 2 and 1 <= jobs[0]['effectiveThreads'] <= 2, jobs
             with h5py.File(data/jobs[0]['outputFile']) as f:
                 assert f['sequence_analysis'].attrs['score_unit']=='alignment_sample_count'
                 assert f['resolutions/100/treap_coo/block_length'][:].sum()>0
+                compatibility = json.loads(f['sequence_analysis'].attrs['compatibility'])
+                parameters = compatibility['settings']['parameters']
+                assert parameters == {
+                    'k': 7, 'window': 1, 'chainScore': 5, 'minAlignmentLength': 20,
+                    'sampleBp': 50, 'threads': jobs[0]['effectiveThreads']
+                }, parameters
+            # Independently count scalar endpoint samples in the captured axes.
+            # Reading the result in a separate server preserves this UI workspace.
+            import math
+            job_root = data / 'processed' / 'sequence-analysis' / jobs[0]['jobId']
+            plan = json.loads((job_root / 'analysis-plan.json').read_text())
+            level = next(level for level in plan['levels'] if level['resolution'] == 100)
+            rows, columns = level['rows'], level['columns']
+            assert all(window[0] == 0 for window in rows + columns), level
+            row_offset = min(window[2] for window in rows)
+            col_offset = min(window[2] for window in columns)
+            expected_counts = {}
+            for line in (job_root / 'alignment.paf').read_text().splitlines():
+                fields = line.split('\t')
+                query_start, query_end = int(fields[2]), int(fields[3])
+                target_start, target_end, length = int(fields[7]), int(fields[8]), int(fields[10])
+                if length < 20:
+                    continue
+                steps = max(1, length // 50)
+                for index in range(steps + 1):
+                    fraction = index / steps
+                    query = query_start + math.floor(fraction * (query_end - query_start - 1) + 0.5) + row_offset
+                    offset = math.floor(fraction * (target_end - target_start - 1) + 0.5)
+                    target = (target_start + offset if fields[4] == '+' else target_end - 1 - offset) + col_offset
+                    row = next((window[1] for window in rows if window[2] <= query < window[3]), None)
+                    column = next((window[1] for window in columns if window[2] <= target < window[3]), None)
+                    if row is not None and column is not None:
+                        pair = tuple(sorted((row, column)))
+                        expected_counts[pair] = expected_counts.get(pair, 0) + 1
+            assert expected_counts, 'Alignment produced no owned sample pairs'
+            with HictTestServer(args.jar, data, out / 'alignment-sample-reader.log') as reader:
+                reader.http('/open', {'filename': jobs[0]['outputFile']})
+                actual = json.loads(reader.http('/matrix/query', {
+                    'bpResolution': 100, 'startRowPx': 0, 'endRowPx': 40,
+                    'startColPx': 0, 'endColPx': 40, 'source': 'PRIMARY',
+                    'signalMode': 'RAW_COUNTS', 'format': 'JSON'
+                }))['values']
+            expected = [expected_counts.get(tuple(sorted((row, column))), 0)
+                        for row in range(40) for column in range(40)]
+            assert actual == expected, (actual, expected)
+            (out / 'alignment-sample-oracle.json').write_text(json.dumps({
+                'sampleBp': 50, 'ownedSamples': sum(expected_counts.values()),
+                'matrixValuesCompared': len(expected), 'values': actual
+            }, indent=2))
             (out/'dotplot-jobs.json').write_text(json.dumps(jobs,indent=2))
         def blast_search():
             page.get_by_role('link', name='Tools', exact=True).click()
             page.get_by_role('button', name='Find sequences in linked FASTA…', exact=True).click()
             page.get_by_label('FASTA records, or one DNA sequence per line').fill('>indel alignment\n' + sequence[100:190] + 'AAAAA' + sequence[190:310])
             page.get_by_label('Matching', exact=True).select_option('blast')
+            check.advanced()
             page.get_by_label('Default gap length (Ns)', exact=True).fill('1000')
             with page.expect_response(lambda r: '/sequence/search/jobs' in r.url) as response:
                 page.get_by_role('button', name='Find sequences', exact=True).click()
@@ -367,7 +438,9 @@ class OverlayFixture { public static void main(String[] a) {
         def reattach_to_original_order():
             jobs = sorted([j for j in json.loads(app.http('/sequence/jobs/list', {})) if j['kind']=='dotplot'], key=lambda j:j['createdAtMs'])
             filename=jobs[-1]['outputFile']
-            check.menu('File','Close'); check.settle()
+            check.menu('File','Close')
+            page.get_by_role('alertdialog', name='Unsaved assembly edits').get_by_role('button', name='Discard edits', exact=True).click()
+            page.get_by_role('heading', name='No contact map open', exact=True).wait_for()
             load_file('File','Open…','known.hict.hdf5','/open')
             result=page.evaluate("""async filename => {
               const m=window.__hictBenchmark.manager(), api=m.networkManager.requestManager;

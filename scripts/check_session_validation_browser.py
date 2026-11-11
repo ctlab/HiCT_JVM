@@ -33,7 +33,7 @@ def main():
             page.get_by_role('link', name='File', exact=True).click()
             page.get_by_role('link', name='Attach', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
-            page.evaluate('window.__sessionValidationManager=window.__hictBenchmark.manager()')
+            page.evaluate('() => {window.__sessionValidationManager=window.__hictBenchmark.manager();}')
 
             def snapshot():
                 return page.evaluate('''async()=>{
@@ -87,11 +87,14 @@ def main():
             page.get_by_role('link', name='File', exact=True).click()
             with page.expect_file_chooser() as chooser:
                 page.get_by_role('link', name='Open session', exact=True).click()
-            chooser.value.set_files(args.legacy_file or str(output / 'saved-session.json'))
+            legacy_path = output / 'legacy-session-v2.json'
+            legacy_path.write_text(json.dumps({'version': 2, 'filename': 'tiny-primary.hict.hdf5',
+                'view': {'center': before['center'], 'resolution': before['resolution']}}))
+            chooser.value.set_files(args.legacy_file or str(legacy_path))
             page.get_by_text('Legacy session v2 restores settings', exact=False).wait_for(state='visible')
             page.get_by_text('Session restored', exact=True).wait_for(state='visible')
             result['checks'].append('valid v2 settings restore with an explicit legacy limitation notice')
-            result['restoredFile'] = args.legacy_file or str(output / 'saved-session.json')
+            result['restoredFile'] = args.legacy_file or str(legacy_path)
             assert not result['pageErrors'], result['pageErrors']
         finally:
             (output / 'results.json').write_text(json.dumps(result, indent=2) + '\n')

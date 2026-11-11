@@ -1798,3 +1798,28 @@ All seven structural scenarios pass at `/tmp/hict-u13-move-escape-fixed-dir`.
 The preceding failing regression remains under `/tmp/hict-u13-final-move-escape-dir`.
 The WebUI build and existing numerical/source regressions pass. Focused lint
 reports zero errors and three existing warnings in ContactMapManager.
+
+## Extended release-control regressions during U13
+
+The fifteen-scenario lifecycle gate now exercises all alignment and identity
+settings through their actual dialogs. Artifact provenance records the chosen
+k-mer, window, chain, minimum length, sampling interval, sketch size, neighboring
+context and worker allocation. Empty resolution sets disable both submissions.
+An invalid identity delta step preserves the job list, then a supported value
+completes successfully. An independent scalar PAF endpoint oracle counts 49 owned
+samples and matches all 1,600 native output cells through a separate read-only
+server. Evidence is `/tmp/hict-u13-advanced-sequence-empty-levels/`.
+
+The workspace gate cycles all three ruler modes while preserving the exact view,
+then checks absent search suggestions preserve that view. The existing shared
+ruler regression suite verifies numerical tick coordinates and relative resets.
+The picker gate now attempts rejected directory traversal through Go, checks the
+inline error and preserved rows, recovers through Root and loads independently
+known matrix values. It accounts for exactly the expected Chromium 400 console
+message. Evidence pointers are `/tmp/hict-u13-final-workspace-ruler-search-dir`
+and `/tmp/hict-u13-picker-rejected-path-complete-dir`.
+
+The packaged soak now opens and closes a real resolution dialog on every cycle,
+checks Shift+Tab containment and returns focus to View before navigation sampling.
+Its limits and warmup remain unchanged. Raw native-memory categories, heap/RSS
+samples, retained failed results and derived metrics remain available for audit.

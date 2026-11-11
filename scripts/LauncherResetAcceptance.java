@@ -234,6 +234,52 @@ class LauncherResetAcceptance {
       require(!persisted().containsKey("resetBrowser.electron"), "Completed reset did not persist");
       require("true".equals(persisted().getProperty("resetBrowser.tauri")), "Electron acknowledgement consumed Tauri reset");
       results.add("Only acknowledged engine reset is consumed and persisted after completion");
+      // Exercise the actual owned server after reset checks have released their sentinels.
+      serverSentinel.destroyForcibly();
+      serverSentinel.waitFor();
+      edt(() -> {
+        var serverField = launcher.getClass().getDeclaredField("serverProcess");
+        serverField.setAccessible(true);
+        serverField.set(launcher, null);
+        ((javax.swing.JCheckBox) field("openAfterStartCheckbox")).setSelected(false);
+        fields.get("HICT_JAVA_OPTS").setText("-Xmx2g");
+        fields.get("HICT_BIND_HOST").setText("127.0.0.1");
+        invoke("startHiCT");
+        return null;
+      });
+      var client = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(1)).build();
+      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:5189/version"))
+        .timeout(java.time.Duration.ofSeconds(2)).build();
+      boolean ready = false;
+      deadline = System.nanoTime() + 30_000_000_000L;
+      while (!ready && System.nanoTime() < deadline) {
+        try { ready = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString()).statusCode() == 200; }
+        catch (java.io.IOException ex) { Thread.sleep(100); }
+      }
+      require(ready, "Launcher did not start a reachable real server");
+      var owned = (Process) field("serverProcess");
+      require(owned != null && owned.isAlive(), "Launcher lost ownership of its real server");
+      SwingUtilities.invokeLater(() -> {
+        try { ((JButton) field("stopButton")).doClick(); }
+        catch (Exception ex) { throw new RuntimeException(ex); }
+      });
+      deadline = System.nanoTime() + 10_000_000_000L;
+      JDialog stopDialog = null;
+      while (stopDialog == null && System.nanoTime() < deadline) {
+        stopDialog = edt(() -> {
+          for (var window : Window.getWindows()) {
+            if (window instanceof JDialog dialog && dialog.isShowing() && "Stop HiCT".equals(dialog.getTitle())) return dialog;
+          }
+          return null;
+        });
+        if (stopDialog == null) Thread.sleep(20);
+      }
+      require(stopDialog != null, "Stop confirmation did not appear");
+      final var confirmedStop = stopDialog;
+      edt(() -> { button(confirmedStop, "Yes").doClick(); return null; });
+      require(owned.waitFor(15, java.util.concurrent.TimeUnit.SECONDS), "Launcher Stop left the server alive");
+      require(owned.descendants().noneMatch(ProcessHandle::isAlive), "Launcher Stop left server descendants alive");
+      results.add("Launcher starts the real packaged server, serves its version, and Stop terminates the owned process tree");
       Files.write(output.resolve("results.txt"), results);
       results.forEach(System.out::println);
     } finally {

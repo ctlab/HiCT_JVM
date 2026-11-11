@@ -107,6 +107,18 @@ def main():
             assert 0 < view()["resolution"] < before["resolution"]
             assert view()["center"] == before["center"]
 
+            before_modes = view()
+            ruler = page.locator("#ruler-mode-button")
+            assert ruler.inner_text().strip() == "Ruler: Global"
+            for mode, label in (("contig", "In contig"), ("scaffold", "In scaffold"), ("global", "Global")):
+                ruler.click()
+                check.settle()
+                assert ruler.inner_text().strip() == "Ruler: " + label
+                assert page.evaluate("""() => document.querySelector('#app').__vue_app__.config.globalProperties
+                    .$pinia._s.get('uiSettings').rulerCoordinateMode""") == mode
+                assert view() == before_modes
+                page.screenshot(path=str(output / ("ruler-mode-" + mode + ".png")))
+
         def scopes_and_search():
             def bounds():
                 return page.evaluate(
@@ -195,6 +207,13 @@ def main():
             page.get_by_role("button", name="Go to", exact=True).click()
             check.settle()
             assert max(abs(a - b) for a, b in zip(view()["center"], [6000, -6000])) < 1
+            before_missing = view()
+            search.fill("__absent_contig_scaffold_feature__")
+            page.wait_for_timeout(700)
+            assert page.locator(".search-result").count() == 0
+            page.get_by_role("button", name="Go to", exact=True).click()
+            check.settle()
+            assert view() == before_missing
 
         def entity_navigation():
             page.get_by_role("button", name="Entities", exact=True).click()

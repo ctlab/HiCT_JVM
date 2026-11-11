@@ -53,7 +53,7 @@ def main():
             page.get_by_role('link', name='File', exact=True).click()
             page.get_by_role('link', name='Attach', exact=True).click()
             page.get_by_text('Attached to session tiny-primary.hict.hdf5', exact=True).wait_for(state='visible')
-            page.evaluate('window.__retainedManager=window.__hictBenchmark.manager()')
+            page.evaluate('() => {window.__retainedManager=window.__hictBenchmark.manager();}')
 
             def snapshot():
                 attached = context.request.post(args.api + '/attach', data={})
@@ -77,6 +77,7 @@ def main():
                 dialog.locator('span[title]').filter(has_text='broken.hict.hdf5').click()
                 with page.expect_response(lambda response: response.url.endswith('/open')) as failed:
                     dialog.get_by_role('button', name='Load', exact=True).click()
+                    page.get_by_role('alertdialog', name='Unsaved assembly edits').get_by_role('button', name='Discard edits', exact=True).click()
                 assert failed.value.status >= 400, failed.value.text()
                 assert snapshot() == before, 'Failed replacement changed the active server session or pixels'
                 assert page.evaluate('window.__hictBenchmark.manager()===window.__retainedManager')

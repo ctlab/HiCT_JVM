@@ -88,3 +88,87 @@ SVG names or aria-labelledby can still supply a name. Existing review findings
 about modal focus containment and debug notifications remain unresolved. Passing
 these opening checks does not establish keyboard accessibility, comfortable
 layout, every nested control, all application states, or release readiness.
+
+## Dialog and graph audit update
+
+JVM `dc40c18e` and WebUI `cb7ca73` pass all eighteen dialog destinations, actual
+Close actions, Tab/Shift+Tab containment, visible focus return, informational
+notice yielding and exact AGP preservation. The normally bundled JAR also passes
+31 repeated acceptance suites, including 151 opening assertions, eight export
+cases, real jobs and independent mixed layers. All fifteen sequence lifecycle
+cases and the exact baked UI metadata pass. Results are retained under
+`/tmp/hict-u13-dialog-regate-{core,open-session,quad,extra}.json` and
+`/tmp/hict-u13-dialog-sequence-lifecycle/summary.json`.
+
+The pipeline pixel audit then found transparent source-independent expressions.
+JVM `91581c50` corrects that rendering path. Twelve pipeline scenarios, four
+parameterized constant/coordinate/track regressions, the full 440-test JVM suite,
+mixed-pyramid rendering and actual identity overlays pass. Detailed semantics
+and evidence are in `docs/reinforcement-validation.md`.
+
+## U13 runtime evidence on 2.0.0 candidates
+
+The browser assertions below ran against disposable physical inputs. The current
+revision and packaged-artifact status are recorded in
+`docs/release-validation-2.0.0.md`. Evidence directories retain JSON, screenshots,
+server logs and gate output under `/tmp/hict-u13-publication-*` and the additional
+pointers named here. Repeated historical signatures require their applicable
+instances to be exercised. A row with remaining assertions stays open.
+
+| Historical indices | Executed browser assertions | Remaining assertions |
+|---|---|---|
+| 0 | Workspace brand click preserves exact view and native AGP hash | Complete |
+| 1–6 | Navigation audit opens all six menus with ArrowDown, closes with Escape and verifies focus return and unchanged view | Complete |
+| 7–11 | Workspace searches known contig/scaffold, verifies exact centers, independently applies row/column scopes, copies scope and queries exact 2×2 values, rejects an unknown scope | Complete for the audited contig/scaffold searches, independent scopes and absent-suggestion viewport preservation. |
+| 12 | Opening gate checks reciprocal O/E palette and Observed restoration, numeric expression and histogram suites check signal queries | Full independent Expected/O/E boundary and zero-denominator runtime matrix |
+| 13 | Navigation reload preserves exact pipeline and viewport through completed rendering | Explicit pre/post pixel comparison |
+| 14–15 | Workspace verifies overlay persistence, ruler unit regressions verify coordinates, browser/export suites exercise ruler layouts | All three actual ruler-mode button states now cycle with exact viewport preservation. Tick coordinates and relative resets are covered by the shared ruler-layout regression suite. |
+| 16–18 | Export suites use dropdown actions, workspace uses toolbar zoom, baseline repeatedly clicks OpenLayers zoom with rendered-frame assertions | Toolbar zoom center/finest/coarsest-limit assertions |
+| 19–21 | Workspace verifies all three diagonal navigation formulas | Complete |
+| 22–27, 30 | Structural suite verifies Reverse, Move, Split, Group, Ungroup, Unscaffold All and Debris with exact independent AGP and Undo/Redo/Undo | Move Escape now verifies inactive tool, hidden arrows and exact native snapshot preservation before the real move. Edited-sequence coverage beyond the existing edited-view suite remains. |
+| 28 | Edited-view suite compares downloaded selected edited FASTA with source sequence and reverse complement | Selected gap-containing FASTA fixture |
+| 29 | Workspace toolbar and sidebar bookmarks restore exact view, names survive export/import/remount and native-session reload, legacy unnamed files remain readable | Complete |
+| 31, 49, 231 | Workspace opens notifications and clears them while exact native AGP remains unchanged | Explicit badge and retained background-job checks |
+| 32 | Navigation collapses and restores sidebar with exact viewport preservation | Complete |
+| 33–34 | Opening gate exercises plain picker, options wizard and Attach, concurrency gate preserves attached state and rejects stale saves, capability gate verifies fresh-window Attach | Complete for these opening paths |
+| 35, 38, 125, 180, 193 | Workspace closes an actual bookmark toast and drags the actual OpenLayers thumb, menu capture records owning dialog/toast HTML, menu suite dismisses each destination with Escape | All eighteen menu destinations now pass actual dismissal, focus trapping, visible focus return and exact native AGP preservation. The zoom thumb and toast close also have separate workspace assertions. |
+| 36–37 | Sequence/review gates link real FASTA through UI and query both axes, lifecycle applies real AGP, HTTP guards retain prior map on invalid references | Complete picker cancellation and rejected import interactions on both surfaces |
+| 39–48 | Picker gate verifies relative Go/Enter, directory double-click, Tree/Explorer selection preservation, Up/Root, filter clearing, Show all, exact loaded 2×2 contacts and Dismiss/native-AGP preservation | Complete for rejected parent traversal, preserved listing, Root recovery and subsequent exact nested-file contacts. |
+| 50–52 | Baseline clicks plus/minus through twenty changes, workspace resets nonzero rotation with center preservation | Explicit finest/coarsest endpoint clicks |
+| 53–55 | Edited-view checks exact exported border stroke/outline settings | Border-panel collapse and each caption-side control through actual UI with exported placement |
+| 56–60 | Workspace changes panels and remounts settings, history checks immutable restore IDs, duplicate labels, paging, branch truncation, focused native text Undo, structural suite checks exact journal round trips | Track/sequence restoration assertions for each journal action |
+| 61–69, 229 | Opening gate checks displayed/stored/rendered bound coherence, source numerical regressions exercise transforms and graph synchronization | Keyboard/drag handles, Linear/Log slider sensitivity, invalid domains, Log2/Log10 and fractional scaling pass the signal audit. Independent source/half targeting remains. |
+| 70–71 | Exact-range gate verifies independent source bounds and cache reuse after panning | Loaded-tile and exact-range buttons pass the independent known-count signal fixture. Additional independent-source extrema fixtures remain. |
+| 72–82, 230 | Opening/capability gates check silent NaN policy, weight availability at changing levels, coherent pipeline, O/E palette, numerical rendering and migrated source controls | All advanced sidebar controls, policy variants and reset/apply failure interactions |
+| 83–88 | Workspace saves/renames with Enter/Escape, exports/removes/imports/applies visualization-option presets and preserves a missing-overlay graph with guidance | Explicit persisted reload of accepted rename. Malformed later-item rejection, exact local threshold/pipeline preservation, multi-item IDs and legacy unnamed imports now pass. |
+| 89–101 | ModDotPlot gate applies its ordinary preset rows and verifies primary pixels plus secondary percentage scale, opening suite checks default maps | Every built-in preset on its declared source/half with independent numerical values |
+| 102–110 | Batch gate checks hictk link target and notices, All/None/Invert/Converted/Unconverted exact filename sets and settings Back, real batch output matches independent contacts | Complete for the audited batch fixture, including exact empty active-job status |
+| 111–112 | Batch conversion completes after dialog dismissal, export suite reads completed jobs | Refresh preserves a draft and reconciles exact job IDs |
+| 113–124 | Export gate checks internal/hictk/auto modes, source versus edited layout, selected resolutions, threads request, every exported contact, actual gzip level or uncompressed pixels, nonuniform positive balanced weights | Source Browse, invalid numeric input and overwrite-cancel full interaction |
+| 126–137 | Sequence lifecycle creates/query-checks tracks, source replacement gates verify atomic rollback, capability/mixed suites verify secondary identities and geometry, jobs suite verifies track-precompute lifecycle | Track naming, weight-track toggles, backgrounds, every browse and close path through actual controls |
+| 138–148 | Pipeline gate verifies complete graph export/import, rejected unsupported node preservation, draft preview/layout persistence, server-refresh conflict and stale automatic-threshold protection | Preview, Apply, Swap, enable toggles, primary preset Load, Reload and Reset now pass exact constant-matrix and rendered-color assertions. Identity presets pass the real ModDotPlot suite. |
+| 149–163 | Workspace independently toggles all eleven OSD fields, order, position, visibility and persistence | Field values across every source/state beyond existing resolution-refresh scenarios |
+| 164–177 | Navigation verifies all eleven native level switches, final-level guard, valid interval restriction and reversed-bound rejection, completed coarse-level rendering and restoration | Complete |
+| 178–183 | Jobs and lifecycle suites exercise actual dotplot generation, missing-FASTA guidance, recovery, job completion and output delivery | Every multi-file selection and readiness-refresh path |
+| 184–194 | Lifecycle/search-delivery suites compare exact source and edited assembly hits, reverse complement, gapped search, imported track provenance and FASTA outputs | Every query-mode/IUPAC/color/scope boundary through actual controls |
+| 195–205 | Real alignment jobs and base-level detail cover chosen regions, substitutions, gaps, reverse, N, stale responses, edits/Undo and exported pixel landmarks | All six alignment settings now run through the actual UI. Provenance and worker allocation agree, and a scalar PAF oracle matches all 1,600 result contacts. Extreme values remain covered separately by backend validation. |
+| 206–211 | ModDotPlot suite computes real identity layers, verifies scale/zoom/threshold and primary isolation, jobs suite verifies output delivery/cancel | Every identity input now runs through the UI with exact k-mer/sketch/delta/worker provenance. Invalid delta step preserves the job list. Additional identity thresholds remain covered by the existing numerical identity suites. |
+| 212–218 | Metadata gate checks real backend/UI versions, exact UI commit, citation and guide URL, menu capture opens About | Complete for all three tabs and four displayed mail link targets |
+| 219–225 | Workspace verifies named bookmarks and contig/scaffold Go to, rename gate verifies native AGP override and viewport preservation | Reordered/hidden entity navigation fixtures. Name export/import/reset and all 1,765 contig pagination entries now pass. |
+| 226–228 | History suite checks 121 real journal states, Earlier/Later preserve assembly, exact immutable ID restore, independent AGP, Redo/Undo and monotonic branch ID | Sequence and graph references for restored nontrivial states |
+
+The static contracts have been aligned with the updated plan and current control
+semantics. Open map uses the plain picker. Unscaffold All is Undoable. Visualization
+presets save visualization options, and the pipeline editor exports complete custom
+graphs. The pipeline preset dropdown chooses a preset and Load preset builds its draft. Preview publishes the graph and switches the editor layout. Automatic worker
+allocation uses the supported value `-1`. These corrections remove earlier audit
+assumptions that had introduced extra UI behavior. The optional owner question
+about extending option presets to complete custom graphs remains unanswered.
+The implementation preserves the existing option-preset format.
+
+Additional evidence pointers include
+`/tmp/hict-u13-picker-complete-controls-dir`,
+`/tmp/hict-u13-navigation-controls-fixed-dir`,
+`/tmp/hict-u13-navigation-workspace-regression-dir`,
+`/tmp/hict-u13-batch-conversion-valid-dir` and
+`/tmp/hict-u13-compression-actual-dir`.

@@ -2,15 +2,17 @@
 
 ## Unreleased
 
+- Expand release validation for session recovery, offline use, native exports and analysis settings.
+
+## 2.0.0
+
+### Release preparation and cleanup
+
 - Remove Move arrows immediately when cancelling the tool with Escape.
 
 - Render custom graphs built from constants, coordinates or tracks on the primary map grid.
 
 - Keep dialog controls reachable, contain keyboard focus and return focus to the opening menu when dialogs close.
-
-## 2.0.0
-
-### Release preparation and cleanup
 
 - Scale contact signals by exact resolution ratios, including non-divisible pyramid levels and very large resolutions.
 

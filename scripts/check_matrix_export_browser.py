@@ -54,6 +54,9 @@ def main():
                 ("auto", False, True, True, 4),
                 ("internal", False, True, False, 0),
                 ("auto", False, True, True, 0),
+                ("internal", True, True, False, 0),
+                ("hictk", True, True, True, 0),
+                ("hictk", False, False, False, 9),
             ):
                 check.menu("File", "Export matrix")
                 dialog = page.get_by_role("dialog").filter(

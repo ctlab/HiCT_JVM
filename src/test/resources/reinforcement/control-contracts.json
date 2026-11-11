@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "webuiRevision": "44ca0cd4464af728611932b13274d7214642b4f0",
+  "webuiRevision": "8163456",
   "contracts": [
     {
       "id": "control-d49b728bf7f3852b",
@@ -278,7 +278,7 @@
       "source": "src/app/ui/components/toolbar/upper_blocks/ScaffoldingButtons.vue",
       "anchor": "unscaffoldAllClicked",
       "prerequisites": "Open disposable map; selection for local actions; matching FASTA for export",
-      "expectedEffect": "Unscaffold all after confirmation; cancellation preserves assembly; Undo restores scaffold grouping.",
+      "expectedEffect": "Unscaffold all and verify every scaffold becomes a singleton; Undo restores the exact previous grouping.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -336,9 +336,9 @@
       "id": "control-b09d59fc787c152c",
       "historicalIndex": 33,
       "source": "src/app/ui/MainUIComponent.vue",
-      "anchor": "Open map…",
+      "anchor": "Open map\u2026",
       "prerequisites": "No map open",
-      "expectedEffect": "Open the wizard and complete a real file selection; verify the resulting matrix and readable signal.",
+      "expectedEffect": "Open the plain picker and complete a real file selection; verify the resulting matrix and readable signal.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -873,7 +873,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptions.vue",
       "anchor": "saveOptions",
       "prerequisites": "Open map with a custom graph and existing presets",
-      "expectedEffect": "Save a named preset and restore its complete graph and settings after changing the view.",
+      "expectedEffect": "Save the current visualization options as a named preset and restore those options after changing the view.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -883,7 +883,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptions.vue",
       "anchor": "exportOptions",
       "prerequisites": "Open map with a custom graph and existing presets",
-      "expectedEffect": "Export parses as the supported preset format and preserves custom graph nodes.",
+      "expectedEffect": "Export parses as the supported visualization-option preset format and preserves the saved options. Complete custom graphs use the pipeline editor graph export.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -893,7 +893,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptions.vue",
       "anchor": "importFileBtn",
       "prerequisites": "Open map with a custom graph and existing presets",
-      "expectedEffect": "Import a valid exported preset without loss; malformed/future formats preserve existing presets.",
+      "expectedEffect": "Import a valid exported visualization-option preset without loss; malformed files preserve existing presets.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -903,7 +903,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -923,7 +923,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "$emit('remove', props.option_id)",
       "prerequisites": "Saved preset exists",
-      "expectedEffect": "Remove only the selected preset and retain all other preset graphs.",
+      "expectedEffect": "Remove only the selected preset and retain all other saved presets.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -933,7 +933,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -943,7 +943,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -953,7 +953,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -963,7 +963,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -973,7 +973,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -983,7 +983,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -993,7 +993,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1003,7 +1003,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1013,7 +1013,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1023,7 +1023,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1033,7 +1033,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1043,7 +1043,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1053,7 +1053,7 @@
       "source": "src/app/ui/components/sidebar/SavedVisualOptionsElement.vue",
       "anchor": "setOptionsPreset",
       "prerequisites": "Open map; required primary/secondary sources for this named preset",
-      "expectedEffect": "Apply this named preset and verify its full graph, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
+      "expectedEffect": "Apply this named visualization-option preset and verify its declared signal settings, source/triangle targeting and numerical pixels; missing sources produce actionable guidance.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1457,7 +1457,7 @@
       "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
       "anchor": "selectedPresetId",
       "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
-      "expectedEffect": "Selecting a preset does not replace the draft until Load preset is clicked.",
+      "expectedEffect": "Selecting a pipeline preset changes the selected choice. Load preset builds its draft before Apply.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1467,7 +1467,7 @@
       "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
       "anchor": "loadSelectedPreset",
       "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
-      "expectedEffect": "Load selected graph into draft; verify node semantics before applying.",
+      "expectedEffect": "Load the selected preset through Load preset and verify node semantics before applying.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1517,7 +1517,7 @@
       "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
       "anchor": "previewConfig",
       "prerequisites": "Rendering editor with a custom multiplier graph and both sources",
-      "expectedEffect": "Preview shows exact draft results without committing them.",
+      "expectedEffect": "Preview publishes the exact graph for rendering, hides the editor and preserves graph state when returning to the editor.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1870,7 +1870,7 @@
       "source": "src/app/ui/components/upper_ribbon/SequenceSearchModal.vue",
       "anchor": "emit('linkFasta')",
       "prerequisites": "Sequence analysis dialog with no linked FASTA",
-      "expectedEffect": "Open matching FASTA selection and return to the originating dialog after success; cancellation preserves draft.",
+      "expectedEffect": "Open matching FASTA selection and reopen the originating tool after successful linking; cancellation exits the recovery flow and preserves assembly.",
       "coverage": "inspected",
       "functionalCoverage": "pending",
       "note": "Shared control also appears in ModDotPlotModal.vue for alignment and identity modes. Test each originating dialog and preserve its draft state."
@@ -2124,7 +2124,7 @@
       "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
       "anchor": "v-model.number=\"threads\"",
       "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
-      "expectedEffect": "Worker allocation implements -1, 0 and positive counts; invalid values are rejected.",
+      "expectedEffect": "Worker allocation implements automatic -1 and positive counts; invalid values are rejected.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },

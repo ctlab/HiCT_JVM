@@ -378,8 +378,8 @@ def validate_rendered_exports(output, require_dark=True):
                             str(output / f'{scope}.pdf'), str(output / f'{scope}-pdf')],
                            stdout=log, stderr=log, check=True, timeout=120)
             reference = np.array(Image.open(output / f'{scope}.png').convert('RGB')).astype(np.int16)
-            if scope == 'whole-map':
-                assert abs(reference.shape[0] - reference.shape[1]) <= 1, reference.shape
+            # Whole-map pages include different horizontal and vertical ruler margins.
+            # Compare page dimensions and heatmap pixels across formats below.
             # Exclude the minimap, ruler labels and outside border, so those cannot
             # satisfy the content assertion when a heatmap layer is missing.
             for fmt in ('svg', 'pdf'):
