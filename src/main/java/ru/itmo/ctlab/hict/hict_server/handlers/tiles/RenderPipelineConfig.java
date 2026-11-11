@@ -151,7 +151,13 @@ public final class RenderPipelineConfig {
   }
 
   private static CompiledRootExpression compileSourceBranch(JsonObject branch, String source, Set<TrackBinding> required) {
-    if (!referencesSource(branch, source)) return null;
+    if (!referencesSource(branch, source)) {
+      // Coordinate, constant and track-only expressions belong to the primary grid.
+      if ("PRIMARY".equals(source) && !referencesSource(branch, "SECONDARY")) {
+        return compileRootExpression(branch, required);
+      }
+      return null;
+    }
     var color = findSourceColorExpressionRecursive(branch, source);
     return compileRootExpression(color != null ? color : branch, required);
   }

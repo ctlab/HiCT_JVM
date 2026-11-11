@@ -15,11 +15,19 @@ def main():
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     results, errors = [], []
+
+    def record_result(result):
+        results.append(result)
+        (out / "results.json").write_text(json.dumps(results, indent=2) + "\n")
+        print(result["test"], flush=True)
+
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(60000)
         page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+        page.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled pipeline-audit promise',e.reason))")
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__ = true")
         page.route("http://localhost:5000/**", lambda route: route.continue_(
             url=args.api + route.request.url.removeprefix("http://localhost:5000")))
@@ -80,11 +88,11 @@ def main():
         histogram_text = page.locator(".histogram-dialog").inner_text()
         assert "37" in histogram_text, histogram_text
         page.locator(".histogram-dialog").get_by_role("button", name="Close", exact=True).click()
-        results.append({"test": "import retains histogram connection to selectedMax", "histogram": histogram_text})
+        record_result({"test": "import retains histogram connection to selectedMax", "histogram": histogram_text})
         page.locator(".pipeline-root .modal-footer").get_by_role("button", name="Close", exact=True).click()
         open_editor()
         assert snapshot() == expected, (expected, snapshot())
-        results.append({"test": "close/reopen preserves disconnected inspector, layout and viewport"})
+        record_result({"test": "close/reopen preserves disconnected inspector, layout and viewport"})
         with page.expect_download() as download:
             page.get_by_role("button", name="Export graph", exact=True).click()
         path = out / "pipeline-roundtrip.json"
@@ -92,19 +100,19 @@ def main():
         imported = json.loads(path.read_text())
         import_graph(imported)
         assert snapshot() == expected
-        results.append({"test": "export/import preserves complete editor graph"})
+        record_result({"test": "export/import preserves complete editor graph"})
         page.locator(".pipeline-root .modal-footer").get_by_role("button", name="Preview", exact=True).click()
         page.locator(".pipeline-preview").wait_for(state="visible")
         page.locator(".pipeline-root .modal-header button").first.click()
         page.locator(".graph-canvas").wait_for(state="visible")
         assert snapshot() == expected
-        results.append({"test": "Preview round trip preserves inspector and layout"})
+        record_result({"test": "Preview round trip preserves inspector and layout"})
         before_invalid = snapshot()
         invalid = json.loads(json.dumps(imported))
         invalid["liteGraph"]["nodes"][0]["type"] = "basic/script"
         import_graph(invalid)
         assert snapshot() == before_invalid
-        results.append({"test": "unsupported imported node is rejected without modifying graph"})
+        record_result({"test": "unsupported imported node is rejected without modifying graph"})
         page.screenshot(path=str(out / "pipeline-restored.png"))
         page.locator(".pipeline-root .modal-footer").get_by_role("button", name="Close", exact=True).click()
         page.evaluate("""async () => {
@@ -117,7 +125,7 @@ def main():
         }""")
         open_editor()
         assert all(node['type'] != 'hict/histogram' for node in snapshot()['nodes'])
-        results.append({"test": "stale cached graph cannot replace changed server expressions"})
+        record_result({"test": "stale cached graph cannot replace changed server expressions"})
         page.locator(".pipeline-root .modal-footer").get_by_role("button", name="Close", exact=True).click()
         page.evaluate("""() => {
             const m=window.__hictBenchmark.manager(),api=m.networkManager.requestManager;
@@ -148,7 +156,130 @@ def main():
             return JSON.stringify(await api.getRenderPipelineConfig())===JSON.stringify(config);
         }""")
         assert preserved, 'Outdated automatic thresholds overwrote newer explicit settings'
-        results.append({"test": "delayed auto-threshold calculation cannot overwrite a newer pipeline"})
+        record_result({"test": "delayed auto-threshold calculation cannot overwrite a newer pipeline"})
+
+        def server_config():
+            return page.evaluate("async()=>await window.__hictBenchmark.manager().networkManager.requestManager.getRenderPipelineConfig()")
+
+        def signal_values():
+            return page.evaluate("""async()=>{
+                const m=window.__hictBenchmark.manager();
+                const bp=m.viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution;
+                return Array.from((await m.networkManager.requestManager.queryMatrixFloat32({
+                    bpResolution:bp,startRowPx:0,endRowPx:2,startColPx:0,endColPx:2,
+                    source:'PRIMARY',signalMode:'PIPELINE_SIGNAL'})).values);
+            }""")
+
+        def apply_editor():
+            with page.expect_response(lambda response: '/render_pipeline/set' in response.url and response.request.method == 'POST') as response:
+                page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Apply', exact=True).click()
+            assert response.value.ok, response.value.text()
+            page.wait_for_timeout(400)
+
+        def constant_color(value):
+            return {"type": "colormap", "mode": "LINEAR", "input": {"type": "constant", "value": value},
+                    "minSignal": 0, "maxSignal": 8, "startColor": "#ffffffff", "endColor": "#ff0000ff"}
+
+        def wait_for_branch_colors(swapped):
+            try:
+                page.wait_for_function("""swapped=>{
+                    const m=window.__hictBenchmark.manager(),map=m.getMap();
+                    const [left,bottom,right,top]=map.getView().getProjection().getExtent();
+                    const layers=m.viewAndLayersManager.layersHolder.primaryHiCDataLayers;
+                    window.__pipelineBranchSamples=[];
+                    return [[.65,.35,swapped?6:2],[.35,.65,swapped?2:6]].every(([x,y,value])=>{
+                        const pixel=map.getPixelFromCoordinate([left+x*(right-left),top+y*(bottom-top)]);
+                        return layers.filter(layer=>layer.getVisible()).some(layer=>{
+                            const rgba=layer.getData(pixel),expected=255*(1-value/8);
+                            window.__pipelineBranchSamples.push({pixel,rgba:rgba?Array.from(rgba):null,expected});
+                            return rgba?.[3]===255 && rgba[0]===255 && Math.abs(rgba[1]-expected)<=1 && Math.abs(rgba[2]-expected)<=1;
+                        });
+                    });
+                }""", arg=swapped)
+            except Exception:
+                page.screenshot(path=str(out / 'branch-colors-failure.png'))
+                (out / 'branch-colors-failure.json').write_text(json.dumps(page.evaluate('window.__pipelineBranchSamples'), indent=2) + '\n')
+                raise
+
+
+        open_editor()
+        constant_config = {"enabled": True, "swapUpperLower": False,
+                           "upperExpression": constant_color(2), "lowerExpression": constant_color(6)}
+        before_import = server_config()
+        import_graph(constant_config)
+        assert server_config() == before_import, 'Import changed the server before Preview or Apply'
+        page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Preview', exact=True).click()
+        page.locator('.pipeline-preview').wait_for(state='visible')
+        assert signal_values() == [2, 2, 6, 2]
+        wait_for_branch_colors(False)
+        page.screenshot(path=str(out / 'constant-branch-preview.png'))
+        preview_toggle = page.locator('.pipeline-root .modal-header button').first
+        assert preview_toggle.inner_text().strip() == 'Show editor'
+        preview_toggle.click()
+        page.locator('.graph-canvas').wait_for(state='visible')
+        record_result({"test": "Preview publishes exact independent constant branches and preserves the editor graph"})
+
+        page.locator('#pipeline-swap').check()
+        apply_editor()
+        assert signal_values() == [6, 6, 2, 6]
+        wait_for_branch_colors(True)
+        swapped = server_config()
+        assert swapped['swapUpperLower']
+        page.locator('#pipeline-enabled').uncheck()
+        apply_editor()
+        disabled = server_config()
+        assert not disabled['enabled']
+        for branch in ('upperExpression', 'lowerExpression'):
+            assert disabled[branch] == swapped[branch]
+        page.locator('#pipeline-enabled').check()
+        apply_editor()
+        assert signal_values() == [6, 6, 2, 6]
+        record_result({"test": "Swap selects the exact opposite numeric branches and enable toggling retains both graphs"})
+
+        before_preset = server_config()
+        page.locator('.pipeline-preset-select').select_option('primary_only')
+        assert server_config() == before_preset
+        page.get_by_role('button', name='Load preset', exact=True).click()
+        page.wait_for_timeout(300)
+        assert server_config() == before_preset
+        apply_editor()
+        primary = server_config()
+        assert primary['enabled'] and not primary['swapUpperLower']
+        assert primary['upperExpression'] == primary['lowerExpression']
+        assert any(node['type'] == 'hict/source' for node in snapshot()['nodes']), snapshot()
+        record_result({"test": "Preset selection and loading preserve server state until Apply publishes equal primary branches"})
+
+        page.evaluate("async config=>await window.__hictBenchmark.manager().networkManager.requestManager.setRenderPipelineConfig(config)", constant_config)
+        page.get_by_role('button', name='Reload', exact=True).click()
+        page.wait_for_timeout(400)
+        assert page.locator('#pipeline-enabled').is_checked()
+        assert not page.locator('#pipeline-swap').is_checked()
+        apply_editor()
+        assert signal_values() == [2, 2, 6, 2]
+        record_result({"test": "Reload fetches changed server branches without reviving the stale preset draft"})
+
+        with page.expect_response(lambda response: '/render_pipeline/reset' in response.url and response.request.method == 'POST') as response:
+            page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Reset', exact=True).click()
+        assert response.value.ok
+        reset = response.value.json()
+        page.wait_for_timeout(400)
+        assert server_config() == reset
+        assert page.locator('#pipeline-enabled').is_checked() == reset['enabled']
+        assert page.locator('#pipeline-swap').is_checked() == reset['swapUpperLower']
+        reset_signal = signal_values()
+        page.locator('.pipeline-root .modal-footer').get_by_role('button', name='Close', exact=True).click()
+        open_editor()
+        reopened = server_config()
+        (out / 'reset-roundtrip.json').write_text(json.dumps({'reset': reset, 'reopened': reopened}, indent=2) + '\n')
+        # The editor makes implicit colormap limits explicit as constant inputs.
+        for branch in ('upperExpression', 'lowerExpression'):
+            for bound, signal in (('min', 'minSignal'), ('max', 'maxSignal')):
+                connection = reopened[branch].pop(bound)
+                assert connection['type'] == 'constant'
+                assert connection['value'] == reset[branch][signal]
+        assert reopened == reset, (reset, reopened)
+        assert signal_values() == reset_signal
+        record_result({"test": "Reset publishes the server default and preserves it through close and reopen"})
         assert not errors, errors
         (out / "results.json").write_text(json.dumps(results, indent=2) + "\n")
         browser.close()

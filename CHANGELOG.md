@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Render custom graphs built from constants, coordinates or tracks on the primary map grid.
+
 - Keep dialog controls reachable, contain keyboard focus and return focus to the opening menu when dialogs close.
 
 ## 2.0.0

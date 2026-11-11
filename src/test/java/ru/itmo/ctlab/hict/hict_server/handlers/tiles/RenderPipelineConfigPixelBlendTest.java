@@ -26,14 +26,53 @@ package ru.itmo.ctlab.hict.hict_server.handlers.tiles;
 
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions;
 import ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient;
 
 import java.awt.*;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RenderPipelineConfigPixelBlendTest {
+  private static Stream<JsonObject> sourceIndependentSignals() {
+    return Stream.of(
+      new JsonObject().put("type", "constant").put("value", 1),
+      new JsonObject().put("type", "dynamic").put("field", "ROW_BP"),
+      new JsonObject().put("type", "track1d").put("trackId", "__builtin_cooler_weights__").put("axis", "ROW"),
+      new JsonObject().put("type", "track1d").put("trackId", "coverage").put("axis", "ROW")
+    );
+  }
+
+  @ParameterizedTest
+  @MethodSource("sourceIndependentSignals")
+  void sourceIndependentBranchesRenderOnceOnPrimaryGrid(JsonObject signal) {
+    final var upper = new JsonObject().put("type", "colormap").put("input", signal)
+      .put("startColor", "#ff0000ff").put("endColor", "#ff0000ff");
+    final var lower = new JsonObject().put("type", "colormap").put("input", signal.copy())
+      .put("startColor", "#0000ffff").put("endColor", "#0000ffff");
+    final var context = new RenderPipelineConfig.MutablePixelContext();
+    context.rowBp = 1;
+    context.rowWeight = 1;
+    context.rowTrackValuesByTrackId = Map.of("coverage", new double[]{1});
+    for (boolean swap : new boolean[]{false, true}) {
+      final var config = RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
+        .put("swapUpperLower", swap).put("upperExpression", upper).put("lowerExpression", lower));
+      for (long[] coordinates : new long[][]{{1, 2}, {2, 1}, {1, 1}}) {
+        context.rowPx = coordinates[0];
+        context.colPx = coordinates[1];
+        final boolean useUpper = (context.rowPx <= context.colPx) != swap;
+        assertEquals(1, config.evaluate(context.rowPx <= context.colPx, context));
+        assertEquals(useUpper ? 0xffff0000 : 0xff0000ff,
+          config.evaluateSourceArgb("PRIMARY", context, dummyOptions()));
+        assertEquals(0, config.evaluateSourceArgb("SECONDARY", context, dummyOptions()));
+      }
+    }
+  }
+
   private static SimpleVisualizationOptions dummyOptions() {
     return new SimpleVisualizationOptions(
       -1.0d,

@@ -1752,3 +1752,35 @@ zero errors and the existing 99 warnings. Failed intermediate overlap attempts
 remain recorded under `/tmp/hict-u13-dialog-final-controls-dir`,
 `/tmp/hict-u13-dialog-toast-verified-dir` and
 `/tmp/hict-u13-dialog-guidance-verified-dir`.
+
+## Source-independent rendering graphs during U13
+
+The expanded pipeline audit returned exact constant values [2,2,6,2] while the
+actual map pixels remained fully transparent. Per-source compilation discarded
+branches without an explicit contact-source node. Constant, coordinate and
+track-only expressions now render on the primary grid. Secondary source tiles
+remain transparent for these branches, so the expression is drawn once.
+
+Four parameterized regressions cover constant, row-coordinate, built-in weight
+and imported coverage-track inputs across both triangles, the diagonal and Swap.
+All four fail on the preceding implementation. The full corrected JVM suite
+passes 440 tests with seven optional skips. Existing source-specific triangle
+routing, identity transparency and blended-source tests remain green.
+
+The expanded real-browser pipeline gate passes twelve scenarios. In addition to
+the retained graph/import/histogram/conflict cases, Preview returns [2,2,6,2] and
+actual opaque red-gradient pixels at values 2/8 and 6/8. Swap returns [6,6,2,6]
+and exchanges those actual pixel colors. Enable toggling retains the expressions.
+Preset Load changes the draft, Apply publishes it, Reload fetches server changes
+and Reset survives close/reopen with identical numerical signals. The editor
+serializes implicit colormap limits as explicit constant inputs. The assertion
+checks those constants against the original limits before comparing the graph.
+Preview publishes the graph for rendering and hides the editor.
+
+Evidence pointers are `/tmp/hict-u13-source-independent-pipeline-dir`,
+`/tmp/hict-u13-source-independent-mixed-dir` and
+`/tmp/hict-u13-source-independent-identity-dir`. The mixed-pyramid and real
+ModDotPlot identity suites pass. The original failed pixel audit and transparent
+RGBA sample are retained under `/tmp/hict-u13-dialog-pipeline-pixel-diagnostic-dir`.
+Focused failing-unit evidence is `/tmp/hict-u13-source-independent-before.log`.
+The full test/build log is `/tmp/hict-u13-source-independent-tests-build.log`.
