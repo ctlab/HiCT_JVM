@@ -213,6 +213,24 @@ public final class HictToMcoolExportPipeline {
         Math.max(1L, totalSourcePixels * 2L),
         synchronizedLogger
       );
+      if (isSingleCoolerOutput(options.outputPath()) && options.compressionLevel() == 0) {
+        synchronizedLogger.accept(
+          "Using the direct writer for uncompressed Cooler interactions because hictk load requires a positive compression level."
+        );
+        new HictToMcoolConverter().convert(options, message -> {
+          checkCancelled(cancellationRequested);
+          synchronizedLogger.accept(message);
+        });
+        checkCancelled(cancellationRequested);
+        if (options.balanceExportedCoolers()) {
+          runHictkBalance(toolchain, options.outputPath().toString(), options.parallelism(),
+            tmpDirectory, synchronizedLogger, processSink, cancellationRequested);
+        }
+        appendAgpComponentMetadata(options.outputPath(), agpRecords, options, synchronizedLogger);
+        overallTracker.finish("Finished uncompressed .cool export");
+        return;
+      }
+
       if (isSingleCoolerOutput(options.outputPath())) {
         exportSingleCoolerViaHictk(
           options,
@@ -272,6 +290,7 @@ public final class HictToMcoolExportPipeline {
             chromSizesPath,
             coolPath,
             options.parallelism(),
+            options.compressionLevel(),
             resolutionTmpDir,
             options.chunkSize(),
             overallTracker,
@@ -354,6 +373,7 @@ public final class HictToMcoolExportPipeline {
                                                      final @NotNull Path chromSizesPath,
                                                      final @NotNull Path coolPath,
                                                      final int parallelism,
+                                                     final int compressionLevel,
                                                      final @NotNull Path workDirectory,
                                                      final int chunkSize,
                                                      final @NotNull OverallProgressTracker overallTracker,
@@ -377,6 +397,8 @@ public final class HictToMcoolExportPipeline {
       Integer.toString(hictkThreads),
       "--chunk-size",
       Integer.toString(hictkChunkSize),
+      "--compression-lvl",
+      Integer.toString(Math.max(1, compressionLevel)),
       "--tmpdir",
       workDirectory.toString(),
       "--force",
@@ -504,6 +526,7 @@ public final class HictToMcoolExportPipeline {
       chromSizesPath,
       options.outputPath(),
       options.parallelism(),
+      options.compressionLevel(),
       resolutionTmpDir,
       options.chunkSize(),
       overallTracker,

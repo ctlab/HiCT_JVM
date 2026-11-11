@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Preserve edited bookmark names through export, import, sidebar changes and saved-session recovery.
+- Honor the selected Cooler compression level, including uncompressed interaction data with optional balancing.
 
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Preserve edited bookmark names through export, import, sidebar changes and saved-session recovery.
 
 - Explain the available Cooler export compression and balancing modes before starting an export.
 

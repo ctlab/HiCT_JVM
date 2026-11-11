@@ -48,10 +48,12 @@ def main():
             check.settle()
             check.reverse()
             check.settle()
-            for mode, all_levels, current, balance in (
-                ("internal", True, True, False),
-                ("hictk", False, False, False),
-                ("auto", False, True, True),
+            for mode, all_levels, current, balance, level in (
+                ("internal", True, True, False, 4),
+                ("hictk", False, False, False, 4),
+                ("auto", False, True, True, 4),
+                ("internal", False, True, False, 0),
+                ("auto", False, True, True, 0),
             ):
                 check.menu("File", "Export matrix")
                 dialog = page.get_by_role("dialog").filter(
@@ -82,10 +84,10 @@ def main():
                     balancing.set_checked(balance)
                 dialog.locator("#export-current-assembly").set_checked(current)
                 dialog.locator("#export-all-resolutions").set_checked(all_levels)
-                target = f"export-{mode}." + ("mcool" if all_levels else "cool")
+                target = f"export-{mode}-{level}." + ("mcool" if all_levels else "cool")
                 dialog.get_by_placeholder("matrix.mcool", exact=True).fill(target)
                 numeric = dialog.locator("input[type=number]")
-                numeric.nth(0).fill("4")
+                numeric.nth(0).fill(str(level))
                 numeric.nth(1).fill("1")
                 with page.expect_response(
                     lambda response: response.url.endswith("/convert/jobs")
@@ -97,7 +99,7 @@ def main():
                 request = response.value.request.post_data_json
                 assert (
                     request["compressionAlgorithm"] == "deflate"
-                    and request["compression"] == 4
+                    and request["compression"] == level
                 )
                 assert (
                     request["parallelism"] == 1
@@ -150,6 +152,11 @@ def main():
                             )
                         }
                         assert actual == expected, (mode, resolution, actual, expected)
+                        interactions = group["pixels/count"]
+                        assert interactions.compression == ("gzip" if level else None)
+                        assert interactions.compression_opts == (
+                            level if level else None
+                        )
                         assert group["bins/start"].shape == (n,)
                         assert int(group["chroms/length"][:].sum()) == 4000
                         if balance:
@@ -158,10 +165,12 @@ def main():
                                 len(weights) == n
                                 and np.isfinite(weights).any()
                                 and np.nanmin(weights) > 0
+                                and np.nanmax(weights) / np.nanmin(weights) > 1.01
                             )
                 results.append(
                     {
                         "mode": mode,
+                        "compressionLevel": level,
                         "resolutions": levels,
                         "usesEditedAssembly": current,
                         "balanced": balance,

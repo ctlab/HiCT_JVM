@@ -1580,3 +1580,19 @@ The browser helper explicitly renders an idle frame before checking completion.
 This resolves a stale OpenLayers completion flag observed after Split with zero
 queued/loading tiles. Structural state, AGP and completed-frame assertions remain
 in place. The generated structural fixture passes all seven edit/Undo/Redo cases.
+
+## Exact Cooler compression during U13
+
+Independent HDF5 inspection exposed hictk-assisted output using its default gzip
+level 6 after the interface requested level 4. Streaming loads now receive the
+selected level. For uncompressed single-resolution output, the existing direct
+writer supplies interaction data and the native balancer runs when requested.
+The exporter preserves assembly metadata and cancellation checkpoints. The dialog
+explains that level 0 leaves interaction data uncompressed.
+
+The full JVM regression suite and frontend build pass. Focused dialog ESLint
+reports zero errors and warnings. The real-browser export gate passes five cases
+across internal, hictk-assisted and automatic modes. Independent h5py checks verify
+every exported contact, resolution, assembly policy, actual gzip filter level or
+absence of compression, and nonuniform positive balancing weights. Evidence is
+`/tmp/hict-u13-compression-actual.aZfFnW/evidence/`.
