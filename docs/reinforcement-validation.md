@@ -2138,3 +2138,35 @@ with the navigation repeat in `/tmp/hict-u13-target-alpha-navigation-isolated.js
 The matrix export extension also browses a custom identity AGP and checks every
 resulting contact independently. It passes under
 `/tmp/hict-u13-target-alpha-export-agp-dir`.
+
+
+### U13 pending weight-track toggle race
+
+The actual ea0b44d9/b6e01ce Linux package passed seven source-style, six full-preset,
+fourteen built-in and twelve editor scenarios. Its track gate then reproduced
+a rapid off toggle before the dialog had finished refreshing the added weight
+track. The manager's track snapshot already contained its ID while the dialog's
+local ID list remained stale. The off handler saw an empty list and retained
+the weight track. The package qualification stopped at that failure.
+
+Both weight switches now share a pending-operation state until the track list
+and precompute status refresh have completed. The dialog shows progress and
+prevents overlapping toggles while the mutation settles. Each input restores
+its committed checked state after success or failure. The existing reportFailure
+path provides the failed action's diagnostics.
+
+The six-case browser gate holds actual primary and secondary creation requests
+while asserting the switches are busy, then releases them and verifies all five
+known weight values and removal. A forced503 create response restores the
+unchecked, enabled control and removes progress while preserving the exact
+track list and feature value. The original background/export/precompute cases
+also pass. Evidence is under `/tmp/hict-u13-weight-toggle-race-complete-dir`.
+The preceding unsuccessful extended harness attempted to open Tracks while its
+completed Jobs dialog remained open. It now closes that dialog between scenarios.
+This newer UI requires its own packaged qualification and full-duration soak.
+
+The full six-case gate passes three further repetitions with all original value,
+pixel and lifecycle assertions. Results are recorded in
+`/tmp/hict-u13-weight-toggle-repetitions.json`. The complete WebUI build passes.
+The one new directive-format warning was corrected locally, preserving the
+existing full-source lint baseline.

@@ -532,3 +532,15 @@ All fourteen built-ins, six full-graph cases, twelve editor cases, five track
 cases and sixteen sequence cases pass. Full lint has zero errors and99warnings.
 The interface sweep also passes after an isolated resolution-checkbox repeat.
 New packaged artifacts and a new full-duration soak remain required.
+
+
+## Subsequent weight-switch concurrency correction
+
+The ea0b44d9/b6e01ce packages build successfully and have immutable hashes in
+`/tmp/hict-u13-style-final-artifacts.json`. Packaged graph/preset/editor checks
+pass, then the track check catches a rapid-toggle race against its dialog-local
+track list. Qualification stops before the full soak. The switches now report a
+busy state through the complete mutation and restore their committed checked
+state after success or failure. Six real-browser track cases pass with held
+primary/secondary requests, exact weights and a rejected create request.
+New packages and a new full-duration soak remain required for this correction.

@@ -162,7 +162,9 @@ def main():
                 feature["label"],
                 feature["strand"],
             ) == (0, 3, 1, "Release feature", "+"), feature
-            assert feature["count"] == 1 and feature["attributes"]["score"] == "42", feature
+            assert (
+                feature["count"] == 1 and feature["attributes"]["score"] == "42"
+            ), feature
             for orientation in ("horizontal", "vertical"):
                 assert (
                     page.evaluate(
@@ -178,9 +180,34 @@ def main():
             ).to_be_visible()
             results.append({"track": tracks[0], "feature": feature})
 
+        def add_weights_with_delayed_response(source):
+            held = []
+            control = dialog.locator("#cooler-weights-" + source.lower())
+
+            def hold(route):
+                held.append(route)
+
+            page.route("**/tracks/open_cooler_weights", hold)
+            try:
+                control.check()
+                page.wait_for_timeout(100)
+                assert len(held) == 1, held
+                expect(dialog.locator("#cooler-weights-primary")).to_be_disabled()
+                expect(dialog.locator("#cooler-weights-secondary")).to_be_disabled()
+                expect(
+                    dialog.get_by_text("Updating weight tracks…", exact=True)
+                ).to_be_visible()
+                held.pop().continue_()
+                expect(control).to_be_enabled()
+                expect(control).to_be_checked()
+            finally:
+                for route in held:
+                    route.abort()
+                page.unroute("**/tracks/open_cooler_weights", hold)
+
         def primary_weights():
             expect(dialog.locator("#cooler-weights-secondary")).to_be_disabled()
-            dialog.locator("#cooler-weights-primary").check()
+            add_weights_with_delayed_response("PRIMARY")
             page.wait_for_function(
                 """()=>window.__hictBenchmark.manager().linearTrackManager
                 .getTracksSnapshot().some(track=>track.sourceFile==='__internal__/cooler_weights/PRIMARY')"""
@@ -224,7 +251,7 @@ def main():
                 "requiresConfirmation"
             ), response.value.text()
             expect(dialog.locator("#cooler-weights-secondary")).to_be_enabled()
-            dialog.locator("#cooler-weights-secondary").check()
+            add_weights_with_delayed_response("SECONDARY")
             page.wait_for_function(
                 """()=>window.__hictBenchmark.manager().linearTrackManager
                 .getTracksSnapshot().some(track=>track.sourceFile==='__internal__/cooler_weights/SECONDARY')"""
@@ -262,6 +289,44 @@ def main():
             ), result
             assert query()["tracks"][0]["bins"][0]["value"] == 1
             results.append({"precompute": result})
+            jobs_dialog.get_by_role("button", name="Close", exact=True).click()
+            jobs_dialog.wait_for(state="hidden")
+
+        def failed_weight_toggle():
+            open_manager()
+            before = api("/tracks/list")
+            requests = []
+
+            def reject(route):
+                requests.append(route.request.post_data_json)
+                route.fulfill(
+                    status=503,
+                    json={"error": "Forced weight-track publication failure"},
+                )
+
+            page.route("**/tracks/open_cooler_weights", reject)
+            try:
+                control = dialog.locator("#cooler-weights-primary")
+                with page.expect_response("**/tracks/open_cooler_weights") as failed:
+                    control.check()
+                assert failed.value.status == 503
+                expect(control).to_be_enabled()
+                expect(control).not_to_be_checked()
+                expect(
+                    dialog.get_by_text("Updating weight tracks…", exact=True)
+                ).not_to_be_visible()
+                assert len(requests) == 1, requests
+                assert api("/tracks/list") == before
+                assert query()["tracks"][0]["bins"][0]["value"] == 1
+                expected_error = "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+                assert len(check.errors) <= 1 and all(
+                    error == expected_error for error in check.errors
+                ), check.errors
+                check.errors.clear()
+            finally:
+                page.unroute("**/tracks/open_cooler_weights", reject)
+            close_manager()
+            results.append({"weightToggleFailurePreservesTracks": True})
 
         try:
             page.goto(args.url)
@@ -280,6 +345,10 @@ def main():
             check.step("secondary-browse-attach-weights-detach", secondary_weights)
             check.step(
                 "precompute-survives-dialog-close-and-retains-values", precompute
+            )
+            check.step(
+                "failed-weight-toggle-restores-control-and-preserves-tracks",
+                failed_weight_toggle,
             )
             assert api("/get_agp_for_assembly") == before
             assert not check.errors, check.errors

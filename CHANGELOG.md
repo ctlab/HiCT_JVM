@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep Cooler weight switches consistent while track updates are pending and restore their committed state after failure.
+
 - Preserve custom colormap alpha during contrast edits and confine changes to the selected source and triangle.
 
 - Publish primary styling atomically and report failed sidebar edits once with retryable diagnostics.
