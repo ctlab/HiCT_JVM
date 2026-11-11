@@ -6,7 +6,7 @@
     {
       "id": "quick-start",
       "title": "Quick start",
-      "description": "A small Hi-C map with its matching FASTA reference.",
+      "description": "Public Hi-C and Micro-C maps with matching FASTA references.",
       "order": 0
     },
     {
@@ -17,6 +17,236 @@
     }
   ],
   "examples": [
+    {
+      "sectionId": "quick-start",
+      "provenance": {
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified",
+        "sourceUrl": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM7056007"
+      },
+      "id": "geo-borrelia",
+      "title": "Borrelia Hi-C quick start",
+      "organism": "Borrelia burgdorferi",
+      "assemblyIds": [
+        "GCA_000008685.2_ASM868v2",
+        "GSM7056007"
+      ],
+      "tags": [
+        "Hi-C",
+        "19 replicons"
+      ],
+      "description": "A 1.91 MB Hi-C map with its B31 reference. Reference preparation selects the 19 mapped replicons and matches their headers while preserving every original base.",
+      "publications": [
+        {
+          "title": "Organization and replicon interactions within the highly segmented genome of Borrelia burgdorferi",
+          "citation": "Ren Z, Takacs CN, Brandão HB, Jacobs-Wagner C, Wang X. 2023. PLOS Genetics 19:e1010857.",
+          "url": "https://doi.org/10.1371/journal.pgen.1010857",
+          "doi": "10.1371/journal.pgen.1010857",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "mcool",
+          "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM7056nnn/GSM7056007/suppl/GSM7056007_HiC_CJW_Bb285_rep1_mapq_30.mcool",
+          "filename": "borrelia.mcool",
+          "required": true,
+          "bytes": 1907128,
+          "sha256": "c2c5be6303c2698391022c3c5bdddb34b0d7d61f9100a9b050363f188c60f5de"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/008/685/GCA_000008685.2_ASM868v2/GCA_000008685.2_ASM868v2_genomic.fna.gz",
+          "filename": "borrelia-original.fa.gz",
+          "required": true,
+          "bytes": 406111,
+          "sha256": "888961e50c4ff32e0a641853eb9cbd498a33736d9b568c364b50632dc6b5c93c"
+        }
+      ],
+      "attribution": {
+        "provider": "NCBI GEO and GenBank",
+        "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM7056007",
+        "termsUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+        "acknowledgement": "Cite Ren et al. 2023, PLOS Genetics 19:e1010857, and identify GEO GSM7056007 and reference GCA_000008685.2. Original reference bases are preserved.",
+        "restrictions": "NCBI molecular data policy applies. The source study is available under Creative Commons Attribution."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "GCA_000008685.2_ASM868v2",
+        "quickStart": true,
+        "fastaPreparation": {
+          "filename": "borrelia-matching.fa",
+          "sha256": "ca26a9bd04a3d5cbdd9e80c67a2b2a8c5c10f7c0fc98fad4163daf4716c85b94",
+          "records": [
+            {
+              "source": "AE000783.1",
+              "target": "Ch1",
+              "length": 910724
+            },
+            {
+              "source": "AE000792.1",
+              "target": "cp26",
+              "length": 26498
+            },
+            {
+              "source": "AE001575.1",
+              "target": "cp32-1",
+              "length": 30750
+            },
+            {
+              "source": "AE001576.1",
+              "target": "cp32-3",
+              "length": 30223
+            },
+            {
+              "source": "AE001577.1",
+              "target": "cp32-4",
+              "length": 30299
+            },
+            {
+              "source": "AE001578.1",
+              "target": "cp32-6",
+              "length": 29838
+            },
+            {
+              "source": "AE001579.1",
+              "target": "cp32-7",
+              "length": 30800
+            },
+            {
+              "source": "AE001580.1",
+              "target": "cp32-8",
+              "length": 30885
+            },
+            {
+              "source": "AE001581.1",
+              "target": "cp32-9",
+              "length": 30651
+            },
+            {
+              "source": "AE000793.2",
+              "target": "lp17",
+              "length": 16821
+            },
+            {
+              "source": "AE001582.2",
+              "target": "lp21",
+              "length": 18777
+            },
+            {
+              "source": "AE000785.1",
+              "target": "lp25",
+              "length": 24177
+            },
+            {
+              "source": "AE000794.2",
+              "target": "lp28-1",
+              "length": 28155
+            },
+            {
+              "source": "AE000786.1",
+              "target": "lp28-2",
+              "length": 29766
+            },
+            {
+              "source": "AE000784.1",
+              "target": "lp28-3",
+              "length": 28601
+            },
+            {
+              "source": "AE000789.1",
+              "target": "lp28-4",
+              "length": 27323
+            },
+            {
+              "source": "AE000788.1",
+              "target": "lp36",
+              "length": 36849
+            },
+            {
+              "source": "AE000787.1",
+              "target": "lp38",
+              "length": 38829
+            },
+            {
+              "source": "AE000790.2",
+              "target": "lp54",
+              "length": 53657
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sectionId": "quick-start",
+      "provenance": {
+        "retrieved": "2026-11-11",
+        "origin": "curated",
+        "reviewStatus": "verified",
+        "sourceUrl": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM9302472"
+      },
+      "id": "geo-yeast-microc",
+      "title": "Yeast Micro-C quick start",
+      "organism": "Saccharomyces cerevisiae",
+      "assemblyIds": [
+        "sacCer3",
+        "GSM9302472"
+      ],
+      "tags": [
+        "Micro-C",
+        "17 chromosomes"
+      ],
+      "description": "A 166.94 MB wild-type Micro-C map with the 3.82 MB UCSC sacCer3 reference. All 17 chromosome names and lengths match directly. Includes 50 bp detail.",
+      "publications": [
+        {
+          "title": "Cohesin acetylation and ATPase activity control cohesion and loop architecture through distinct mechanisms",
+          "citation": "GEO series GSE310515, wild-type biological replicate 3, sample GSM9302472.",
+          "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE310515",
+          "kind": "dataset"
+        }
+      ],
+      "files": [
+        {
+          "id": "matrix",
+          "role": "matrix",
+          "format": "mcool",
+          "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM9302nnn/GSM9302472/suppl/GSM9302472_WT3.mcool",
+          "filename": "yeast-wt3.mcool",
+          "required": true,
+          "bytes": 166935036,
+          "sha256": "11a8e588694cfd686958ab23576aa3030dcf69f0c868d760082b34fc5d918a4b"
+        },
+        {
+          "id": "fasta",
+          "role": "fasta",
+          "format": "fasta.gz",
+          "url": "https://hgdownload.soe.ucsc.edu/goldenPath/sacCer3/bigZips/sacCer3.fa.gz",
+          "filename": "sacCer3.fa.gz",
+          "required": true,
+          "bytes": 3820548,
+          "sha256": "e3a70396853eff5a012077efbd06cb97d858e12349745d102e316bb8f620f266"
+        }
+      ],
+      "attribution": {
+        "provider": "NCBI GEO and UCSC Genome Browser",
+        "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM9302472",
+        "termsUrl": "https://hgdownload.soe.ucsc.edu/goldenPath/sacCer3/bigZips/",
+        "acknowledgement": "Identify GEO GSM9302472 and series GSE310515 and cite the associated source study. Reference sequences are from the UCSC sacCer3 assembly download.",
+        "restrictions": "NCBI molecular data policy and the UCSC sacCer3 download terms apply."
+      },
+      "openingRecipe": {
+        "matrix": "matrix",
+        "fasta": "fasta",
+        "referenceId": "sacCer3",
+        "quickStart": true
+      }
+    },
     {
       "id": "dnazoo-tardigrade",
       "sectionId": "quick-start",

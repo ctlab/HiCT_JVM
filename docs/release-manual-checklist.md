@@ -21,7 +21,7 @@ example. Use a fresh writable data folder and retain the screenshots and logs.
 - [ ] Verify the published checksum and extract or start the platform package.
 - [ ] Launch using the normal executable or wrapper and select the fresh folder.
 - [ ] Start the server. Confirm the browser opens and About displays both versions and the WebUI commit.
-- [ ] Open Help, Examples and the tardigrade card's Open example button. Confirm a readable five-chromosome map and linked FASTA.
+- [ ] Open Help, Examples and the Borrelia card's Open example button. Confirm a readable 19-replicon map and linked FASTA.
 - [ ] Confirm the bundled tool status lists conversion, alignment and sequence tools.
 
 ## Edit and preserve

@@ -5,9 +5,11 @@
 Choose **Open map…** and double-click a `.hict.hdf5` file, or select it and press
 Enter. The picker lists files inside the server's data directory. Use
 **Open with options…** for `.hic`, `.cool` and `.mcool` conversion and optional
-inputs. **Help → Examples… → Open example** prepares the small tardigrade map
-with its matching FASTA. Its download needs internet access. Completed local
-examples remain usable offline.
+inputs. **Help → Examples… → Open example** prepares Borrelia Hi-C, yeast Micro-C
+or tardigrade with matching FASTA. Borrelia downloads about 2.31 MB and yeast
+about 170.76 MB. The Borrelia preparation selects its 19 mapped replicons and
+changes their headers while preserving every original base. Downloads need
+internet access. Completed local examples remain usable offline.
 
 Opening fits the initial color range to the visible signal. Excluded weighted
 bins are masked. The one-line note offers Change when you want another policy.

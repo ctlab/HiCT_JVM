@@ -114,13 +114,15 @@ restores the download status. Species photos are neither bundled nor linked.
 ## Quick-start candidates checked on 2026-11-11
 
 The candidates were presented before adding a card, as U11 requests. Tardigrade
-was selected for its small eukaryotic map and directly matching reference.
+was initially added for its small eukaryotic map and directly matching reference.
+The owner subsequently selected both Borrelia Hi-C and yeast Micro-C. Both now
+have quick-start cards, with the existing tardigrade card retained.
 The following files were downloaded and inspected on disposable data. Sizes below are exact bytes.
 The candidates have different genome scopes and reference preparation needs.
 
 | Candidate | Matrix bytes | Reference bytes | Coordinate check |
 |---|---:|---:|---|
-| Borrelia Hi-C, GSM7056007 | 1,907,128 | 406,111 downloaded, 393,716 after preparation | All 19 mapped replicon lengths match the declared B31 reference. Select those records and give them the matrix's biological replicon names. The original nucleotide sequences are retained. |
+| Borrelia Hi-C, GSM7056007 | 1,907,128 | 406,111 downloaded, 1,477,994 prepared FASTA bytes | All 19 mapped replicon lengths match the declared B31 reference. Select those records and give them the matrix's biological replicon names. The original nucleotide sequences are retained. |
 | Yeast Micro-C, GSM9302472 | 166,935,036 | 3,820,548 | All 17 chromosome names and lengths match the UCSC sacCer3 FASTA directly. |
 | DNA Zoo tardigrade, nHd_3.1_HiC | 12,554,347 | 32,696,429 | All five mapped chromosomes match the FASTA exactly in name and length. The FASTA additionally contains unplaced scaffolds absent from this map. |
 
@@ -178,3 +180,27 @@ is absent from the checked sacCer3 FASTA.
 | Prepared Borrelia FASTA, uncompressed | `ca26a9bd04a3d5cbdd9e80c67a2b2a8c5c10f7c0fc98fad4163daf4716c85b94` |
 | GSM9302472 matrix | `11a8e588694cfd686958ab23576aa3030dcf69f0c868d760082b34fc5d918a4b` |
 | UCSC sacCer3 FASTA | `e3a70396853eff5a012077efbd06cb97d858e12349745d102e316bb8f620f266` |
+
+
+## Selected Borrelia and yeast quick-start recipes
+
+The Borrelia download retains the original pinned GenBank gzip and creates
+`borrelia-matching.fa`. Its 19 accession-to-replicon mappings, exact sequence
+lengths and output SHA-256 are recorded in `openingRecipe.fastaPreparation`.
+The prepared file is 1,477,994 uncompressed bytes. The earlier 393,716-byte figure
+is its gzip-compressed size. Preparation preserves sequence case and bases,
+orders records like the matrix and wraps lines at 60 bases. It validates every
+selected record and the complete prepared checksum before atomic publication.
+Failed preparation and cancellation preserve an existing prepared reference.
+The manifest records both the original and prepared references and their hashes.
+
+Catalog preparation supports at most 1,000 uniquely mapped records and 32 MiB
+of selected bases to bound its memory use. Source and target sequence identifiers
+and the distinct output filename are validated when loading bundled or local
+catalogs. The downloader keeps cancellation active during preparation. The
+UI uses the prepared reference through the existing example-opening flow.
+Yeast uses the original sacCer3 FASTA directly. Both download and convert through
+the existing Jobs services. The quick-start browser gate independently compares
+all mapped chromosome names and lengths against the source MCool file, every
+prepared Borrelia record against its original GenBank bases, and the first
+1,000 linked bases against the reference.

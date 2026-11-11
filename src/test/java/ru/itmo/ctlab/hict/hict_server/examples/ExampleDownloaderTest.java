@@ -102,6 +102,31 @@ class ExampleDownloaderTest {
     }
   }
 
+  @Test void publishesPreparedReferenceAndRecordsBothPinnedAndDerivedHashes() throws Exception {
+    var bytes = new java.io.ByteArrayOutputStream();
+    try (var gzip = new java.util.zip.GZIPOutputStream(bytes)) {
+      gzip.write(">accession.1 description\nAcgT\n>unused\nNNNN\n".getBytes(StandardCharsets.US_ASCII));
+    }
+    byte[] original = bytes.toByteArray();
+    byte[] prepared = ">chr1\nAcgT\n".getBytes(StandardCharsets.US_ASCII);
+    serve("/reference", exchange -> send(exchange, 200, original, original.length));
+    var example = example(file("original.fa.gz", "/reference", original.length, sha(original), true));
+    example.body().getJsonObject("openingRecipe").put("fasta", "original.fa.gz")
+      .put("fastaPreparation", new JsonObject().put("filename", "matching.fa").put("sha256", sha(prepared))
+        .put("records", new JsonArray().add(new JsonObject().put("source", "accession.1").put("target", "chr1").put("length", 4))));
+    var downloader = downloader();
+    downloader.start(example);
+    assertEquals(ExampleDownloader.State.READY, await(downloader).state());
+    var folder = data.resolve("examples/ex1");
+    assertArrayEquals(original, Files.readAllBytes(folder.resolve("original.fa.gz")));
+    assertArrayEquals(prepared, Files.readAllBytes(folder.resolve("matching.fa")));
+    var manifest = new JsonObject(Files.readString(folder.resolve("manifest.json")));
+    assertEquals(2, manifest.getJsonArray("files").size());
+    assertEquals(sha(original), manifest.getJsonArray("files").getJsonObject(0).getString("sha256"));
+    assertEquals(sha(prepared), manifest.getJsonArray("files").getJsonObject(1).getString("sha256"));
+    assertEquals(example.body().getJsonObject("openingRecipe"), manifest.getJsonObject("openingRecipe"));
+  }
+
   private void plainServer() {
     serve("/f", e -> {
       e.getResponseHeaders().add("ETag", "\"v1\"");

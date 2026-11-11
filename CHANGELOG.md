@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Borrelia Hi-C and yeast Micro-C quick starts with verified matching references and automatic preparation.
+
 - Detect rapid equal-size source changes before reusing conversions and validate FASTA replacements on filesystems without file keys.
 
 - Update track backgrounds immediately on both map axes and preserve their export colors.

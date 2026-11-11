@@ -49,10 +49,10 @@ class ExamplesCatalogTest {
     return found.isEmpty() ? "" : found.get(0).pointer();
   }
 
-  @Test void theBundledCatalogIsValidAndSeedsThreeCardsFromData() {
+  @Test void theBundledCatalogIsValidAndSeedsFiveCardsFromData() {
     var merged = ExamplesCatalog.load(null);
     assertTrue(merged.problems().isEmpty(), merged.problems().toString());
-    assertEquals(List.of("dnazoo-tardigrade", "dnazoo-cheetah", "dnazoo-aedes"), merged.examples().stream().map(ExamplesCatalog.Example::id).toList());
+    assertEquals(List.of("geo-borrelia", "geo-yeast-microc", "dnazoo-tardigrade", "dnazoo-cheetah", "dnazoo-aedes"), merged.examples().stream().map(ExamplesCatalog.Example::id).toList());
     var cheetah = merged.find("dnazoo-cheetah").body();
     assertEquals("https://www.dnazoo.org/usage", cheetah.getJsonObject("attribution").getString("termsUrl"));
     assertFalse(cheetah.getJsonObject("attribution").containsKey("licenseName"), "no licence is invented for the provider");
@@ -118,13 +118,36 @@ class ExamplesCatalogTest {
     assertTrue(merged.problems().stream().anyMatch(p -> p.source().equals("local:two.json") && p.pointer().equals("/examples/0/id")), merged.problems().toString());
   }
 
+  @Test void preparationRejectsUnsafeNamesDuplicateMappingsAndUnboundedLengths() {
+    var preparation = new JsonObject().put("filename", "prepared.fa").put("sha256", "a".repeat(64))
+      .put("records", new JsonArray().add(new JsonObject().put("source", "accession.1").put("target", "chr1").put("length", 100)));
+    var example = validExample("e", "s1");
+    example.getJsonObject("openingRecipe").put("fastaPreparation", preparation);
+    assertTrue(problems(catalog("c", example)).isEmpty());
+    preparation.put("filename", "../outside.fa");
+    assertTrue(problems(catalog("c", example)).stream().anyMatch(p -> p.pointer().endsWith("/fastaPreparation/filename")));
+    preparation.put("filename", "prepared.fa");
+    preparation.getJsonArray("records").add(preparation.getJsonArray("records").getJsonObject(0).copy());
+    assertFalse(problems(catalog("c", example)).isEmpty());
+    preparation.getJsonArray("records").remove(1);
+    preparation.getJsonArray("records").getJsonObject(0).put("length", Long.MAX_VALUE);
+    assertFalse(problems(catalog("c", example)).isEmpty());
+    preparation.getJsonArray("records").getJsonObject(0).put("length", 100);
+    preparation.put("filename", "f.fa.gz");
+    assertFalse(problems(catalog("c", example)).isEmpty());
+    preparation.put("filename", "prepared.fa");
+    example.put("files", "invalid");
+    var issues = assertDoesNotThrow(() -> problems(catalog("c", example)));
+    assertTrue(issues.stream().anyMatch(p -> p.pointer().equals("/examples/0/files")));
+  }
+
   @Test void aBadLocalCatalogKeepsTheLastValidOne() throws Exception {
     var dir = data.resolve("examples/catalogs");
     Files.createDirectories(dir);
     Files.writeString(dir.resolve("broken.json"), "{ not json");
     Files.writeString(dir.resolve("old.json"), catalog("old", validExample("keep", "s1")).put("schemaVersion", 2).encode());
     var merged = ExamplesCatalog.load(data);
-    assertEquals(3, merged.examples().size(), "only the bundled cards remain");
+    assertEquals(5, merged.examples().size(), "only the bundled cards remain");
     assertEquals(2, merged.problems().size());
     assertTrue(merged.problems().stream().anyMatch(p -> p.message().contains("Not valid JSON")));
     assertTrue(merged.problems().stream().anyMatch(p -> p.pointer().equals("/schemaVersion")));

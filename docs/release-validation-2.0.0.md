@@ -194,10 +194,9 @@ picker gate verifies four scenarios with independent loaded matrix values.
 
 The runtime ledger now lists every historical control index alongside executed
 assertions and remaining checks in `docs/reinforcement-control-coverage.md`. The
-full interface audit remains open. Visualization presets retain their existing
-option-only format. The separate pipeline graph export preserves complete custom
-graphs. The optional request for an owner preference on extending presets remains
-unanswered.
+full interface audit remains open. The owner selected full custom graph capture
+in visualization presets. That extension is pending. The current separate pipeline
+graph export preserves complete custom graphs.
 
 Batch selection and real conversion produce independently exact contacts, and
 overwrite cancellation preserves both the output hash and server job list. The
@@ -345,3 +344,37 @@ preflight completes sixteen cycles with zero errors, node maxima 683/689 and
 listener maxima 229/229 across the compared sample groups. Full qualification
 remains pending. Detailed A/B evidence and the primary browser reference are in
 `docs/reinforcement-validation.md`.
+
+
+## Owner-selected examples and read-only platform evidence
+
+Borrelia Hi-C and yeast Micro-C now have quick-start cards. Both pass independent
+matrix/reference checks and full browser edit/session/export journeys. The
+existing tardigrade card is retained. The local suite passes 445 Java tests with
+seven optional skips. These source changes still need final package qualification
+and the corrected thirty-minute workload.
+
+Read-only inspection of existing GitHub Actions run 43010279561 at fd46e1fd
+finds Linux and both macOS Java jobs successful. Windows has three stale-file
+identity failures. The local correction is committed at 2e48a9f0 and passes the
+full local suite and sequence lifecycle browser tests. Windows execution of that
+correction remains unverified.
+[Java regression run](https://github.com/ctlab/HiCT_JVM/actions/runs/43010279561)
+
+Portable run 43010279649 uses WebUI f0ef29062cd37ec5f970c70975e79dcb646a67b2
+and has successful Windows native-tool and Windows portable
+ZIP/EXE jobs at this checkpoint. Its log verifies the packaged executable,
+hictk, minimap2, AVX2 alignment, sequence tools and gapped BLAST. The optional
+AVX-512 executable fails on that runner and is reported as a warning. macOS
+arm64 native tools pass, with its portable package still building. Other package
+jobs remain in progress.
+[Windows portable job](https://github.com/ctlab/HiCT_JVM/actions/runs/43010279649/job/130490068024)
+
+Existing successful run 42887896950 at 8ca65915 supplies macOS architecture and
+minimum-version compatibility records for both architectures, plus Windows native
+sequence-tool evidence. These downloaded records describe that earlier revision.
+Their contents cover executable compatibility and automated tool fixtures. The
+interactive platform checklist remains pending. Downloads are retained under
+`/tmp/hict-u13-prior-platform-evidence/`. All GitHub operations in this inspection
+read existing runs, jobs, logs or artifacts.
+[Prior successful portable run](https://github.com/ctlab/HiCT_JVM/actions/runs/42887896950)

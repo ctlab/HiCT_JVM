@@ -281,7 +281,7 @@ public final class ExamplesCatalog {
     }
     final var r = v.objectField(e, p + "/openingRecipe", "openingRecipe");
     if (r != null) {
-      v.noExtra(r, p + "/openingRecipe", Set.of("matrix", "fasta", "agp", "assembly", "tracks", "referenceId", "quickStart"));
+      v.noExtra(r, p + "/openingRecipe", Set.of("matrix", "fasta", "agp", "assembly", "tracks", "referenceId", "quickStart", "fastaPreparation"));
       if (r.containsKey("quickStart") && !(r.getValue("quickStart") instanceof Boolean))
         v.fail(p + "/openingRecipe/quickStart", "quickStart must be true or false");
       for (final var role : List.of("matrix", "fasta", "agp", "assembly")) {
@@ -296,6 +296,7 @@ public final class ExamplesCatalog {
         if (!(tracks.getValue(i) instanceof String s) || !"track".equals(fileIds.get(s))) v.fail(p + "/openingRecipe/tracks/" + i, "Must name a file with role track");
       }
       if (r.containsKey("referenceId")) v.text(r, p + "/openingRecipe/referenceId", "referenceId", 300);
+      if (r.containsKey("fastaPreparation")) validatePreparation(v, e, r, p + "/openingRecipe/fastaPreparation");
     }
     if (e.containsKey("provenance")) {
       final var pr = v.objectField(e, p + "/provenance", "provenance");
@@ -308,6 +309,44 @@ public final class ExamplesCatalog {
         if (pr.containsKey("generatorVersion")) v.text(pr, p + "/provenance/generatorVersion", "generatorVersion", 300);
       }
     }
+  }
+
+  private static void validatePreparation(Checker v, JsonObject example, JsonObject recipe, String path) {
+    var preparation = v.objectField(recipe, path, "fastaPreparation");
+    if (preparation == null) return;
+    v.noExtra(preparation, path, Set.of("filename", "sha256", "records"));
+    var filename = preparation.getValue("filename");
+    if (!(filename instanceof String name) || !FILENAME.matcher(name).matches() || !name.endsWith(".fa"))
+      v.fail(path + "/filename", "Expected a plain .fa filename");
+    var files = example.getValue("files") instanceof JsonArray entries ? entries : new JsonArray();
+    for (var entry : files) {
+      if (entry instanceof JsonObject file && java.util.Objects.equals(filename, file.getValue("filename")))
+        v.fail(path + "/filename", "Prepared reference must have a distinct filename");
+    }
+    if (!recipe.containsKey("fasta")) v.fail(path, "Preparation requires a FASTA source");
+    if (!(preparation.getValue("sha256") instanceof String hash) || !SHA256.matcher(hash).matches())
+      v.fail(path + "/sha256", "Expected SHA-256 of the prepared reference");
+    var records = v.array(preparation, path + "/records", "records", 1000);
+    if (records == null || records.isEmpty()) { v.fail(path + "/records", "Expected selected reference records"); return; }
+    var sources = new HashSet<String>();
+    var targets = new HashSet<String>();
+    long total = 0;
+    for (int i = 0; i < records.size(); i++) {
+      var pointer = path + "/records/" + i;
+      if (!(records.getValue(i) instanceof JsonObject record)) { v.fail(pointer, "Expected a reference record"); continue; }
+      v.noExtra(record, pointer, Set.of("source", "target", "length"));
+      for (var key : List.of("source", "target")) {
+        var value = record.getValue(key);
+        var unique = key.equals("source") ? sources : targets;
+        if (!(value instanceof String id) || !FILENAME.matcher(id).matches() || !unique.add(id))
+          v.fail(pointer + "/" + key, "Expected a unique plain sequence identifier");
+      }
+      if (!(record.getValue("length") instanceof Number length) || length.longValue() < 1
+          || length.longValue() > (32L << 20) || length.doubleValue() != length.longValue())
+        v.fail(pointer + "/length", "Expected a positive bounded reference length");
+      else total += length.longValue();
+    }
+    if (total > (32L << 20)) v.fail(path + "/records", "Prepared reference exceeds 32 MiB");
   }
 
   private static String firstLine(final String text) {

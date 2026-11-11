@@ -1911,3 +1911,49 @@ round trips and selected sequence exports. Evidence is under
 `/tmp/hict-u13-file-identity-lifecycle/`. Windows execution of this local correction
 remains unverified. Existing portable run 43010279649 is still in progress at
 this checkpoint.
+
+
+### U11 owner-selected Borrelia Hi-C and yeast Micro-C
+
+Both owner-selected examples now have three-click quick-start cards. The existing
+tardigrade card remains available. Borrelia downloads a pinned 1,907,128-byte
+MCool and the original 406,111-byte GenBank FASTA gzip. Its declarative recipe
+selects 19 records, checks their exact lengths, preserves sequence case and bases,
+renames their headers and atomically publishes the checksum-pinned reference.
+The original gzip is retained. The prepared FASTA is 1,477,994 bytes uncompressed.
+The earlier 393,716-byte figure describes its compressed form. Yeast uses the
+166,935,036-byte MCool and 3,820,548-byte sacCer3 FASTA gzip directly.
+
+Focused tests cover selection, ordering, case preservation, original-file
+immutability, duplicate/missing/wrong-length records, unsafe catalog names,
+bounded memory, checksum failure, cancellation, output preservation and temporary
+cleanup. A downloader integration test verifies both original and derived hashes
+in the manifest. All 445 Java tests pass, with seven optional skips and zero
+failures. The normal WebUI build passes. Focused lint has zero errors and two
+existing explicit-any warnings.
+
+The generalized browser gate independently checks every mapped chromosome name
+and length against MCool, all prepared Borrelia records against original GenBank
+bases, the first 1,000 linked bases, rendered signal, navigation, Reverse,
+Split/Undo, Save/Close/restore and the exact exported AGP hash. Borrelia completes
+from empty data in three clicks, with map opening at 9.191 seconds and the full
+journey at 12.772 seconds. It restores 86,371 signal pixels. Evidence is under
+`/tmp/hict-u13-borrelia-journey-complete-dir`.
+
+Yeast's initial empty-data run downloads the public sources, opens and verifies
+the map and reference, then encounters the test's inherited five-contig assertion.
+Subsequent repeats also expose the five-component AGP assertion. The generalized
+checks now use each dataset's actual contig count. The passing repeat uses copied
+verified downloads, performs a fresh conversion, opens in 129.886 seconds and
+completes its journey in 135.473 seconds, restoring 7,630 signal pixels. Both
+passing journeys capture zero page or console errors. Evidence is under
+`/tmp/hict-u13-yeast-journey-complete-dir`. Failed harness runs are retained under
+`/tmp/hict-u13-{borrelia,yeast}-selected-journey-dir` and the intervening pointers.
+The split action now waits for actual loaded pixels after Reverse before double
+clicking. It also clears the preceding selection with Escape.
+
+The exact final preparation source also passes a fresh public-download Borrelia
+journey at 9.098 seconds to the map and 12.646 seconds overall, with 86,371
+restored signal pixels and zero captured errors. Evidence is under
+`/tmp/hict-u13-borrelia-final-source-journey-dir`. Catalog validation also reports
+a malformed file-list JSON pointer safely when a preparation recipe is present.

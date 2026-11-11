@@ -2,6 +2,7 @@
 """Open the public quick-start example in three clicks in a fresh browser profile."""
 
 import argparse
+import gzip
 import io
 import hashlib
 import json
@@ -37,7 +38,26 @@ parser.add_argument(
     action="store_true",
     help="Continue through edits, session restore and AGP export",
 )
+parser.add_argument(
+    "--example",
+    choices=["dnazoo-tardigrade", "geo-borrelia", "geo-yeast-microc"],
+    default="dnazoo-tardigrade",
+)
+parser.add_argument(
+    "--data-dir",
+    help="Disposable server data folder for independent reference verification",
+)
 args = parser.parse_args()
+examples = {
+    "dnazoo-tardigrade": ("nHd_3.1_HiC.hict.hdf5", 5),
+    "geo-borrelia": ("borrelia.hict.hdf5", 19),
+    "geo-yeast-microc": ("yeast-wt3.hict.hdf5", 17),
+}
+expected_matrix, expected_contigs = examples[args.example]
+if args.example != "dnazoo-tardigrade" and not args.data_dir:
+    parser.error(
+        "Selected examples require the disposable --data-dir for reference verification"
+    )
 out = Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as pw:
@@ -76,11 +96,11 @@ with sync_playwright() as pw:
         page.get_by_role("link", name="Help", exact=True).click()
         page.get_by_role("link", name="Examples...", exact=True).click()
         dialog = page.get_by_role("dialog", name="Examples", exact=True)
-        card = dialog.locator('[data-example="dnazoo-tardigrade"]')
+        card = dialog.locator(f'[data-example="{args.example}"]')
         card.get_by_role("button", name="Open example", exact=True).click()
         page.wait_for_function(
-            """() => window.__hictBenchmark.manager()?.getOptions().filename
-          ==='examples/dnazoo-tardigrade/nHd_3.1_HiC.hict.hdf5'""",
+            "expected => window.__hictBenchmark.manager()?.getOptions().filename === expected",
+            arg=f"examples/{args.example}/{expected_matrix}",
             timeout=300000,
         )
         page.wait_for_function(
@@ -98,7 +118,7 @@ with sync_playwright() as pw:
           contigs:m.contigDimensionHolder.contig_count,
           resolutions:m.viewAndLayersManager.getAllNavigationBpResolutions()};}"""
         )
-        assert state["contigs"] == 5, state
+        assert state["contigs"] == expected_contigs, state
         response = page.request.post(
             args.api + "/sequence/region", data={"startBp": 0, "endBp": 1000}
         )
@@ -107,6 +127,47 @@ with sync_playwright() as pw:
         assert (
             len(sequence) >= 1000 and sum(base in "ACGTacgt" for base in sequence) > 900
         )
+        if args.data_dir:
+            import cooler
+
+            def fasta_records(path):
+                records = {}
+                opener = gzip.open if path.suffix == ".gz" else open
+                name = None
+                with opener(path, "rt") as stream:
+                    for line in stream:
+                        if line.startswith(">"):
+                            name = line[1:].split()[0]
+                            assert name not in records
+                            records[name] = []
+                        elif name:
+                            records[name].append(line.strip())
+                return {name: "".join(parts) for name, parts in records.items()}
+
+            folder = Path(args.data_dir) / "examples" / args.example
+            manifest = json.loads((folder / "manifest.json").read_text())
+            reference = fasta_records(Path(args.data_dir) / state["fasta"])
+            preparation = manifest["openingRecipe"].get("fastaPreparation")
+            if preparation:
+                original = fasta_records(folder / "borrelia-original.fa.gz")
+                assert list(reference) == [
+                    record["target"] for record in preparation["records"]
+                ]
+                for record in preparation["records"]:
+                    assert reference[record["target"]] == original[record["source"]]
+                    assert len(reference[record["target"]]) == record["length"]
+            if args.example.startswith("geo-"):
+                matrix = folder / (
+                    "borrelia.mcool"
+                    if args.example == "geo-borrelia"
+                    else "yeast-wt3.mcool"
+                )
+                levels = cooler.fileops.list_coolers(str(matrix))
+                chromosomes = cooler.Cooler(str(matrix) + "::" + levels[0]).chromsizes
+                assert len(chromosomes) == expected_contigs
+                for name, length in chromosomes.items():
+                    assert name in reference and len(reference[name]) == int(length)
+                assert sequence[:1000] == reference[chromosomes.index[0]][:1000]
         red_pixels = rendered_signal_pixels(page)
         assert red_pixels > 1000, red_pixels
         assert not errors, errors
@@ -177,13 +238,26 @@ with sync_playwright() as pw:
             reversed_state = snapshot()["primary"]
             assert reversed_state["agpSha256"] != initial["agpSha256"]
             journey.append("Reverse changes the assembly")
+            # Clear the selection handles before choosing a split point inside it.
+            page.keyboard.press("Escape")
             page.get_by_role("button", name=re.compile("^Split contig:")).click()
             cut = point(0.35)
+            page.wait_for_function(
+                """point => {
+                    const m=window.__hictBenchmark.manager();
+                    const rect=m.getMap().getViewport().getBoundingClientRect();
+                    const pixel=[point.x-rect.left,point.y-rect.top];
+                    return !m.getView().getAnimating() &&
+                        m.viewAndLayersManager.layersHolder.hicDataLayers.some(layer=>layer.getData(pixel));
+                }""",
+                arg=cut,
+            )
             with page.expect_response("**/split_contig_at_bin") as split_response:
                 page.mouse.dblclick(cut["x"], cut["y"])
             assert split_response.value.ok, split_response.value.text()
             page.wait_for_function(
-                "window.__hictBenchmark.manager().contigDimensionHolder.contig_count===6"
+                "count => window.__hictBenchmark.manager().contigDimensionHolder.contig_count === count",
+                arg=expected_contigs + 1,
             )
             split_state = snapshot()["primary"]
             assert len(split_state["splitEdits"]) == 1
@@ -193,7 +267,8 @@ with sync_playwright() as pw:
                 ).click()
             assert undo_response.value.ok, undo_response.value.text()
             page.wait_for_function(
-                "window.__hictBenchmark.manager().contigDimensionHolder.contig_count===5"
+                "count => window.__hictBenchmark.manager().contigDimensionHolder.contig_count === count",
+                arg=expected_contigs,
             )
             expected = snapshot()["primary"]
             assert expected["agpSha256"] == reversed_state["agpSha256"]
@@ -232,7 +307,7 @@ with sync_playwright() as pw:
                 for line in agp_path.read_text().splitlines()
                 if line and not line.startswith("#")
             ]
-            assert len(components) == 5 and all(
+            assert len(components) == expected_contigs and all(
                 len(row) == 9 for row in components
             ), components
             assert (
@@ -252,6 +327,7 @@ with sync_playwright() as pw:
             "secondsToMap": seconds_to_map,
             "totalJourneySeconds": time.monotonic() - started,
             "restoredSignalPixels": restored_signal_pixels,
+            "example": args.example,
             "clicks": clicks,
             "map": state,
             "redSignalPixels": red_pixels,

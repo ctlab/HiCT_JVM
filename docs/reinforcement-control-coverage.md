@@ -145,7 +145,7 @@ instances to be exercised. A row with remaining assertions stays open.
 | 102–110 | Batch gate checks hictk link target and notices, All/None/Invert/Converted/Unconverted exact filename sets and settings Back, real batch output matches independent contacts | Complete for the audited batch fixture, including exact empty active-job status |
 | 111–112 | Batch conversion completes after dialog dismissal, export suite reads completed jobs | Refresh preserves a draft and reconciles exact job IDs |
 | 113–124 | Export gate checks internal/hictk/auto modes, source versus edited layout, selected resolutions, threads request, every exported contact, actual gzip level or uncompressed pixels, nonuniform positive balanced weights | Source Browse, invalid numeric input and overwrite-cancel full interaction |
-| 126–137 | Sequence lifecycle creates/query-checks tracks, source replacement gates verify atomic rollback, capability/mixed suites verify secondary identities and geometry, jobs suite verifies track-precompute lifecycle | Track naming, weight-track toggles, backgrounds, every browse and close path through actual controls |
+| 126–137 | Sequence lifecycle creates/query-checks tracks, source replacement gates verify atomic rollback, capability/mixed suites verify secondary identities and geometry, jobs suite verifies track-precompute lifecycle | Track controls gate now passes named BED browsing/addition, exact feature values, primary/secondary weights, secondary browsing/attachment/detachment, displayed/exported background pixels on both axes and precompute completion after closing the dialog. |
 | 138–148 | Pipeline gate verifies complete graph export/import, rejected unsupported node preservation, draft preview/layout persistence, server-refresh conflict and stale automatic-threshold protection | Preview, Apply, Swap, enable toggles, primary preset Load, Reload and Reset now pass exact constant-matrix and rendered-color assertions. All four editor presets now pass Load/Apply with real primary and identity sources, preserved input matrices and actual rendered pixels. |
 | 149–163 | Workspace independently toggles all eleven OSD fields, order, position, visibility and persistence | Field values across every source/state beyond existing resolution-refresh scenarios |
 | 164–177 | Navigation verifies all eleven native level switches, final-level guard, valid interval restriction and reversed-bound rejection, completed coarse-level rendering and restoration | Complete |
@@ -162,9 +162,9 @@ semantics. Open map uses the plain picker. Unscaffold All is Undoable. Visualiza
 presets save visualization options, and the pipeline editor exports complete custom
 graphs. The pipeline preset dropdown chooses a preset and Load preset builds its draft. Preview publishes the graph and switches the editor layout. Automatic worker
 allocation uses the supported value `-1`. These corrections remove earlier audit
-assumptions that had introduced extra UI behavior. The optional owner question
-about extending option presets to complete custom graphs remains unanswered.
-The implementation preserves the existing option-preset format.
+assumptions that had introduced extra UI behavior. The owner subsequently selected
+full custom graph capture in visualization presets. That extension and its
+compatibility checks remain pending.
 
 Additional evidence pointers include
 `/tmp/hict-u13-picker-complete-controls-dir`,

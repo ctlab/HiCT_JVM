@@ -86,7 +86,8 @@ public class ExamplesHandlersHolder extends HandlersHolder {
           return false;
         }
       }
-      return true;
+      final var preparation = example.getJsonObject("openingRecipe").getJsonObject("fastaPreparation");
+      return preparation == null || java.nio.file.Files.isRegularFile(folder.resolve(preparation.getString("filename")));
     } catch (final RuntimeException e) {
       return false;
     }

@@ -257,6 +257,9 @@ public final class ExampleDownloader {
         }
       }
       if (flag.get()) throw new CancellationException("Cancelled");
+      final var preparedReference = ExampleFastaPreparation.prepare(folder, example.body(), flag);
+      if (preparedReference != null) done.add(preparedReference);
+      if (flag.get()) throw new CancellationException("Cancelled");
       writeManifest(example, folder, done);
       synchronized (lock) {
         finishedAtMs = System.currentTimeMillis();

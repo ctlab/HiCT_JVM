@@ -75,10 +75,12 @@ picker. Generated files and downloaded examples also live there. Set
 == Five-minute quick start
 
 . Start HiCT with a writable data directory and open its browser interface.
-. Choose *Help → Examples…* and press *Open example* on *Tardigrade quick start*.
-  HiCT downloads about 45 MB, converts the contact map and links the matching
-  FASTA. This path takes three clicks from the initial page. It completed in
-  20.3 seconds in the recorded Linux browser test. Network and hardware affect timing.
+. Choose *Help → Examples…* and press *Open example* on *Borrelia Hi-C quick start*.
+  HiCT downloads about 2.31 MB, converts the contact map and prepares its matching
+  FASTA. The catalog also includes *Yeast Micro-C quick start* with 50 bp detail
+  and about 170.76 MB of downloads, plus the 45 MB tardigrade example shown below.
+  Each quick-start card downloads, converts and opens its map in three clicks
+  from the initial page. Network and hardware affect timing.
 . Use the mouse wheel to zoom and drag the map to pan. Click a contig or
   Shift-drag a range. Press Reverse, then Undo to restore it.
 . Choose *File → Save session…*. A session retains assembly edits, visualization,
