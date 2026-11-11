@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Navigate to contigs and scaffolds from the sidebar using their actual assembly coordinates at every zoom level.
+- Export contig and scaffold names through the supported API method for reliable name round trips.
 
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Navigate to contigs and scaffolds from the sidebar using their actual assembly coordinates at every zoom level.
 
 - Show an empty conversion-job list accurately after all conversions finish.
 

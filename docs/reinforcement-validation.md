@@ -1646,3 +1646,17 @@ and 200 bp levels. Existing scopes, diagonal navigation, bookmark persistence,
 option presets, focused Escape, all OSD fields and notifications pass in the same
 run. Before/fixed evidence pointers are `/tmp/hict-u13-sidebar-go-to-before-dir`
 and `/tmp/hict-u13-sidebar-go-to-fixed-dir`.
+
+## Entity name export during U13
+
+The actual sidebar Export names action failed to download because the frontend
+used POST for the existing GET /names/export route. RequestManager now specifies
+GET, matching both the server handler and OpenAPI declaration.
+
+The frontend build and focused ESLint pass with zero errors and warnings. The
+expanded real-browser rename gate verifies the download uses GET, the complete
+JSON equals the server mapping, Reset changes only the selected scaffold, import
+restores the exact mapping and native AGP, and Show 500 more renders exactly
+300, 800, 1,300 and 1,765 ordered contigs without duplicates. The last pagination
+button disappears and the accepted scaffold override survives pagination. Evidence
+is under `/tmp/hict-u13-entity-name-roundtrip-dir`.
