@@ -118,7 +118,7 @@ class SessionSnapshotDecoderTest {
   }
 
   @Test void boundsAllFieldsIncludingUnknownExtensionsBeforeCopyOrCompilation() {
-    rejects("complexity", x -> {
+    rejects("nesting", x -> {
       var nested = new JsonObject();
       var root = nested;
       for (int i = 0; i < 161; i++) { var next = new JsonObject(); nested.put("child", next); nested = next; }
@@ -126,12 +126,40 @@ class SessionSnapshotDecoderTest {
     });
     rejects("complexity", x -> {
       var array = new JsonArray();
-      for (int i = 0; i < 100001; i++) array.add(null);
+      for (int i = 0; i <= SessionSnapshotDecoder.MAX_VALUES; i++) array.add(null);
       x.put("extension", array);
     });
     rejects("8 MiB", x -> x.put("extension", "x".repeat(SessionSnapshotDecoder.MAX_BYTES + 1)));
     rejects("reserved key", x -> x.put("constructor", new JsonObject()));
     rejects("finite", x -> x.put("extension", Double.NaN));
+  }
+
+  @Test void acceptsMultiResolutionPrimaryAndSecondaryDescriptorsWithinByteBudget() {
+    var json = valid();
+    var template = contig(json).copy();
+    var assembly = json.getJsonObject("primary").getJsonObject("assemblyInfo");
+    var contigs = new JsonArray();
+    var scaffolds = new JsonArray();
+    for (int i = 0; i < 1765; i++) {
+      var bins = new JsonObject();
+      var presence = new JsonObject();
+      for (int resolution = 1; resolution <= 13; resolution++) {
+        bins.put(Integer.toString(resolution), (17 + resolution - 1) / resolution);
+        presence.put(Integer.toString(resolution), 1);
+      }
+      contigs.add(template.copy().put("contigId", i).put("contigName", "c" + i)
+        .put("contigLengthBins", bins).put("contigPresenceAtResolution", presence));
+      scaffolds.add(new JsonObject().put("scaffoldId", i).put("scaffoldName", "s" + i)
+        .put("scaffoldOriginalName", "s" + i).put("spacerLength", 1000)
+        .put("scaffoldBordersBP", new JsonObject().put("startBP", i * 17L)
+          .put("endBP", (i + 1) * 17L).put("lengthBp", 17)));
+    }
+    assembly.put("contigDescriptors", contigs).put("scaffoldDescriptors", scaffolds);
+    json.put("secondary", json.getJsonObject("primary").copy().put("filename", "identity.hict.hdf5"));
+    assertTrue(json.encode().length() < SessionSnapshotDecoder.MAX_BYTES);
+    var decoded = SessionSnapshotDecoder.decode(json);
+    assertEquals(json, JsonObject.mapFrom(decoded.snapshot()));
+    assertEquals(1765, decoded.snapshot().secondary().getJsonObject("assemblyInfo").getJsonArray("contigDescriptors").size());
   }
 
   @Test void invalidDocumentIsRejectedBeforeResolvingAnyResource() {

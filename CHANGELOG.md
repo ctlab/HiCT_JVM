@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve ModDotPlot overlays and custom graphs through Expected/O/E/Observed switches, keep primary and secondary palettes separate, and prevent subnormal threshold intervals.
+- Allow valid multi-source session snapshots beyond 100,000 values while retaining byte, nesting, graph and assembly validation limits.
+
 ## 2.0.0
 
 ### Release preparation and cleanup

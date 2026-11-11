@@ -22,6 +22,9 @@ import java.util.Set;
  */
 public final class SessionSnapshotDecoder {
   public static final int MAX_BYTES = 8 * 1024 * 1024;
+  // Descriptor maps contain a value per contig and resolution, for both sources.
+  // Keep a separate work budget without rejecting ordinary multi-map assemblies.
+  public static final int MAX_VALUES = 1_000_000;
   private static final long MAX_INTEGER = 9_007_199_254_740_991L;
   public record Decoded(SessionSnapshotDTO snapshot, List<Track1DManager.TrackSummary> tracks) {}
   private int values;
@@ -246,7 +249,8 @@ public final class SessionSnapshotDecoder {
   }
 
   private void bound(Object value, String path, int depth) {
-    if (depth > 160 || ++values > 100000) fail(path, "exceeds snapshot complexity limit");
+    if (depth > 160) fail(path, "exceeds snapshot nesting limit (160 levels)");
+    if (++values > MAX_VALUES) fail("snapshot", "exceeds snapshot complexity limit (1,000,000 values)");
     if (value instanceof JsonObject object) {
       for (String key : object.fieldNames()) {
         if (Set.of("__proto__", "constructor", "prototype").contains(key)) fail(path + "." + key, "reserved key");
