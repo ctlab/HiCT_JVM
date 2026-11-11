@@ -1535,8 +1535,8 @@ Level 0 remains available for uncompressed output. Balancing is disabled for the
 direct internal exporter, and its request explicitly leaves balancing off while
 retaining the user's preference for supported modes.
 
-The full frontend build passes. Focused ESLint reports zero errors and one
-existing warning. The new real-browser gate reverses a known 4,000-base assembly
+The full frontend build passes. Focused ESLint initially reported one formatting warning, resolved by the
+final focused formatting pass. The file now has zero errors and zero warnings. The new real-browser gate reverses a known 4,000-base assembly
 and exports through internal, hictk and auto modes. Every contact equals the
 independent deterministic oracle. It checks both native resolutions in the
 internal multiresolution export, the unedited source layout through hictk,
@@ -1544,3 +1544,11 @@ and edited output with finite positive generated weights through balanced auto
 export. Requests preserve the selected level, thread count and assembly policy.
 The browser reports no unexpected errors. Evidence is named by
 `/tmp/hict-u13-export-controls-dir`.
+
+
+## Focused release formatting during U13
+
+The export capability change introduced one Prettier warning on a multiline
+conditional tag. The separate lint pass formats that tag. Focused ESLint now
+reports zero errors and zero warnings. The change preserves template semantics.
+The complete source lint baseline retains 100 existing warnings.
