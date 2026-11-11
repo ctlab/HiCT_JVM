@@ -3,7 +3,10 @@ package ru.itmo.ctlab.hict.hict_library.converters;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 
 import java.nio.file.Files;
@@ -105,6 +108,40 @@ class McoolToHictConverterTest {
         assertArrayEquals(new long[]{1, 1, 7, 2}, actualCols);
         if (values instanceof long[] result) assertArrayEquals(new long[]{big, big + 1, 7, 2}, result);
         else assertArrayEquals(new double[]{.125, .25, -2.5, 8.75}, (double[]) values);
+      }
+    }
+  }
+
+  @Test
+  void assemblyStrandsPreserveSourceOrientationAndApplyReverseExactlyOnce() throws Exception {
+    final var input = tempDir.resolve("strand-source.mcool");
+    writeSyntheticMcool(input);
+    try (final var writer = HDF5Factory.open(input.toFile())) {
+      writer.int64().writeArray("/resolutions/1000/pixels/count", new long[]{11, 22, 33, 44, 55, 66, 77});
+    }
+    for (final var strand : List.of("+", "-", "?", "0", "na")) {
+      final var layout = tempDir.resolve("strand-" + strand.replace("?", "unknown") + ".agp");
+      final var output = tempDir.resolve(layout.getFileName() + ".hict.hdf5");
+      Files.writeString(layout, "scaffold\t1\t2500\t1\tW\tctgA\t1\t2500\t" + strand + "\n");
+      new McoolToHictConverter().convert(new ConversionOptions(
+        input, output, List.of(1000L), 64, 0, ConversionOptions.CompressionAlgorithm.DEFLATE,
+        layout.toString(), false, 1, true, ConversionOptions.ExportMode.AUTO), ignored -> {});
+      final var direction = strand.equals("-") ? ContigDirection.REVERSED : ContigDirection.FORWARD;
+      try (final var reader = HDF5Factory.openForReading(output.toFile())) {
+        assertArrayEquals(new long[]{direction.ordinal()}, reader.int64().readArray(getContigDirectionDatasetPath()));
+      }
+      try (final var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(output, 1, 2))) {
+        assertEquals(direction, file.getAssemblyInfo().contigs().getFirst().direction());
+        final var resolution = ResolutionDescriptor.fromBpResolution(1000L, file);
+        final var matrix = (MatrixQueries.LongMatrix)
+          file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 3, 3, false).matrix();
+        final long[] diagonal = direction == ContigDirection.REVERSED
+          ? new long[]{33, 22, 11} : new long[]{11, 22, 33};
+        for (int row = 0; row < 3; row++) {
+          for (int column = 0; column < 3; column++) {
+            assertEquals(row == column ? diagonal[row] : 0, matrix.values()[row][column], strand);
+          }
+        }
       }
     }
   }

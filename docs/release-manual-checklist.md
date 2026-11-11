@@ -1,8 +1,10 @@
 # Platform release checklist
 
-Run this on each Windows and macOS target after its CI package has built and
-started successfully. Allow about ten minutes per platform with the small
-example. Use a fresh writable data folder and retain the screenshots and logs.
+The owner deferred these Windows and macOS GUI checks on 2026-11-11 for future
+internal qualification work. Automated CI evidence supports the current release
+for these platforms. Complete this checklist on each target when desktop access
+is available. Allow about ten minutes per platform with the small example. Use a
+fresh writable data folder and retain the screenshots and logs.
 
 ## Evidence record
 
@@ -40,9 +42,14 @@ example. Use a fresh writable data folder and retain the screenshots and logs.
 - [ ] Start a job, then Stop or Quit the Launcher. Confirm the server and its native children exit.
 - [ ] Restart. Confirm Jobs contains no running work from the prior launch.
 
-## Current qualification
+## Deferred internal follow-up
 
-Windows x86-64, macOS arm64 and macOS x86-64 results are pending. The Linux
-validation report records local runs separately. A package's existence or a
-successful compile alone does not complete this checklist. Attach failures and
-screenshots to the evidence record before deciding release readiness.
+| Target | Status | Requested follow-up |
+|---|---|---|
+| Windows x86-64 | Deferred by owner on 2026-11-11 | Complete the interactive checklist and attach tester, revision, checksum and evidence records |
+| macOS arm64 | Deferred by owner on 2026-11-11 | Complete the interactive checklist and attach tester, revision, checksum and evidence records |
+| macOS x86-64 | Deferred by owner on 2026-11-11 | Complete the interactive checklist and attach tester, revision, checksum and evidence records |
+
+The release validation report records the current automated CI and local Linux
+results. These future checks will add platform-specific desktop interaction,
+installation and native-dialog evidence.

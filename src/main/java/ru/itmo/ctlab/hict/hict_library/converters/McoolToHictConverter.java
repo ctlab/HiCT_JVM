@@ -227,8 +227,8 @@ public class McoolToHictConverter {
       final long componentLengthBp = record.getIntraContigEndBpIncl() - record.getIntraContigStartBpIncl() + 1L;
       contigNames[i] = record.getContigName();
       contigDirections[i] = switch (record.getContigOrientation()) {
-        case PLUS, UNKNOWN, IRRELEVANT -> 0L;
-        case MINUS -> 1L;
+        case PLUS, UNKNOWN, IRRELEVANT -> ContigDirection.FORWARD.ordinal();
+        case MINUS -> ContigDirection.REVERSED.ordinal();
       };
       orderedContigIds[i] = i;
       if (useSingleAssemblyChromosome) {

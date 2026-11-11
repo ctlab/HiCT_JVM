@@ -2170,3 +2170,43 @@ pixel and lifecycle assertions. Results are recorded in
 `/tmp/hict-u13-weight-toggle-repetitions.json`. The complete WebUI build passes.
 The one new directive-format warning was corrected locally, preserving the
 existing full-source lint baseline.
+
+## U13 assembly-strand correction
+
+Public hictk v2.2.0 fuzzer inputs exposed inverted AGP orientation in the matrix
+importer. PLUS, UNKNOWN and IRRELEVANT wrote the persisted REVERSED ordinal.
+The importer now uses the named ContigDirection constants for both orientations.
+A regression fails on the previous mapping and verifies all five accepted AGP
+strand tokens, stored metadata, reopened assembly direction and every matrix cell
+of a nonuniform diagonal fixture. The full JVM suite passes 470 tests with zero
+failures, zero errors and seven optional skips.
+
+Conversion-cache generation advances from 2 to 3. Older cache records request
+fresh conversion through the existing UI. A regression verifies this decision
+and preservation of the existing output and cache record. Existing standalone
+HiCT files retain their recorded assembly. Regenerate affected imports from
+the original matrix and layout to obtain corrected strand interpretation.
+
+`scripts/check_matrix_input_formats_browser.py` uses actual browser opening,
+batch conversion with one thread, completion, converted-map opening, rendered
+signal and original-source cached reopening. Independent bundled hictk dumps
+supply all 625 first-chromosome RAW_COUNTS values at 10 Mb for each format.
+Both v8 and v9 pass, including unchanged source hashes and no extra conversion
+job on reopening. Test evidence is under
+`/tmp/hict-u13-strand-public-hic.iLrKJC/evidence`.
+
+The fixtures are the official hictk v2.2.0 fuzzer datasets. Verified downloads
+retain their original bytes with a `.hic` suffix for the normal picker.
+
+| Format | Bytes | MD5 | SHA-256 |
+|---|---|---|---|
+| v8 | 412820 | `2b946bfd2627e38fae8985df9f4a711d` | `cef8c89214b977e4ca09d08cfa58d339818aa3fddc576f7217c082e675fdeb80` |
+| v9 | 426063 | `1a5cc53b4f079e95d61c71f275fe513e` | `a710aca0fef452c367636b7d8d29bd2bf6ab4d03aba3e6eba678e7cbebf89971` |
+
+Provenance is recorded in the [hictk fixture manifest](https://github.com/paulsengroup/hictk/blob/v2.2.0/test/fuzzer/test_files.json),
+[v8 dataset](https://zenodo.org/records/13754786) and
+[v9 dataset](https://zenodo.org/records/13754808).
+
+The owner deferred Windows and macOS interactive GUI qualification on
+2026-11-11. `docs/release-manual-checklist.md` retains those internal follow-ups.
+Current platform evidence records automated CI scope and local Linux interaction.

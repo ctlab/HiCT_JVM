@@ -39,6 +39,34 @@ class MatrixConversionCacheManagerTest {
   Path tempDir;
 
   @Test
+  void requiresReconversionOfOutputsCachedBeforeTheAssemblyStrandCorrection() throws Exception {
+    final var dataDir = Files.createDirectories(tempDir.resolve("data"));
+    final var processedDir = Files.createDirectories(tempDir.resolve("processed"));
+    final var input = dataDir.resolve("example.hic");
+    final var output = dataDir.resolve("example.hict.hdf5");
+    Files.writeString(input, "source");
+    Files.writeString(output, "previous-conversion");
+    final var manager = new MatrixConversionCacheManager(dataDir, processedDir, new FileFingerprintService());
+    manager.recordSuccessfulConversion(input, output, ConversionDirection.HIC_TO_HICT);
+    final var cacheDirectory = processedDir.resolve("matrix_conversion_cache");
+    final Path metadata;
+    try (final var files = Files.list(cacheDirectory)) {
+      metadata = files.findFirst().orElseThrow();
+    }
+    final var oldKey = "2|" + input.normalize().toAbsolutePath() + "|" + ConversionDirection.HIC_TO_HICT.wireName();
+    final var oldDigest = java.security.MessageDigest.getInstance("SHA-256")
+      .digest(oldKey.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    final var oldPath = cacheDirectory.resolve(java.util.HexFormat.of().formatHex(oldDigest) + ".json");
+    Files.writeString(oldPath, new io.vertx.core.json.JsonObject(Files.readString(metadata)).put("version", "2").encode());
+    Files.delete(metadata);
+
+    assertEquals(MatrixConversionCacheManager.MatrixOpenAction.CONVERSION_REQUIRED,
+      manager.resolveOpenPath("example.hic").action());
+    assertEquals("previous-conversion", Files.readString(output));
+    assertTrue(Files.isRegularFile(oldPath));
+  }
+
+  @Test
   void reusesConvertedOutputWhenFingerprintsMatch() throws Exception {
     final var dataDir = tempDir.resolve("data");
     final var processedDir = tempDir.resolve("processed");

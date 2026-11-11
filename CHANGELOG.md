@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve AGP strand orientation during matrix imports and require fresh conversion of older cached outputs.
+
 - Keep Cooler weight switches consistent while track updates are pending and restore their committed state after failure.
 
 - Preserve custom colormap alpha during contrast edits and confine changes to the selected source and triangle.
