@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Show an empty conversion-job list accurately after all conversions finish.
+- Navigate to contigs and scaffolds from the sidebar using their actual assembly coordinates at every zoom level.
 
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Show an empty conversion-job list accurately after all conversions finish.
 
 - Close open menus with Escape and keep the last active map resolution visibly enabled.
 

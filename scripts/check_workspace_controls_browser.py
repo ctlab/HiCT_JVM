@@ -35,6 +35,18 @@ def main():
             )
 
         def navigate():
+            original = view()
+            assembly = page.evaluate(
+                "async () => (await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true)).primary.agpSha256"
+            )
+            page.locator("a.navbar-brand").click()
+            assert view() == original
+            assert (
+                page.evaluate(
+                    "async () => (await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true)).primary.agpSha256"
+                )
+                == assembly
+            )
             page.evaluate("""() => {
                 const m=window.__hictBenchmark.manager();
                 m.getView().setResolution(m.viewAndLayersManager.pixelResolutionSet[0]);
@@ -79,12 +91,145 @@ def main():
             assert scissors.get_attribute("aria-pressed") == "true"
             page.keyboard.press("Escape")
             assert scissors.get_attribute("aria-pressed") == "false"
+            before = view()
+            thumb = page.locator(".ol-zoomslider-thumb").bounding_box()
+            page.mouse.move(
+                thumb["x"] + thumb["width"] / 2, thumb["y"] + thumb["height"] / 2
+            )
+            page.mouse.down()
+            page.mouse.move(
+                thumb["x"] + thumb["width"] / 2,
+                thumb["y"] + thumb["height"] / 2 - 30,
+                steps=12,
+            )
+            page.mouse.up()
+            check.settle()
+            assert 0 < view()["resolution"] < before["resolution"]
+            assert view()["center"] == before["center"]
+
+        def scopes_and_search():
+            def bounds():
+                return page.evaluate(
+                    "window.__hictBenchmark.manager().getLayersManager().getActiveMapPixelBounds(100)"
+                )
+
+            def choose(label, query, kind, name):
+                field = page.get_by_role("textbox", name=label, exact=True)
+                field.fill(query)
+                options = field.locator("..").locator(".scope-result")
+                options.filter(has=page.get_by_text(kind, exact=True)).filter(
+                    has=page.get_by_text(name, exact=True)
+                ).click()
+                check.settle()
+
+            choose("Rows scope", "two", "Contig", "two")
+            assert bounds() == {
+                "rowStartPx": 4000,
+                "rowEndPx": 8000,
+                "colStartPx": 0,
+                "colEndPx": 16000,
+            }
+            choose("Columns scope", "one", "Contig", "one")
+            assert bounds() == {
+                "rowStartPx": 4000,
+                "rowEndPx": 8000,
+                "colStartPx": 0,
+                "colEndPx": 4000,
+            }
+            values = page.evaluate(
+                """async () => Array.from((await window.__hictBenchmark.manager().networkManager.requestManager.queryMatrixFloat32({
+                bpResolution:100,startRowPx:4000,endRowPx:4002,startColPx:0,endColPx:2,source:'PRIMARY',signalMode:'RAW_COUNTS'})).values)"""
+            )
+            assert values == [0, 0, 0, 0], values
+            page.get_by_role(
+                "button", name="Copy row scope to columns", exact=True
+            ).click()
+            check.settle()
+            assert bounds() == {
+                "rowStartPx": 4000,
+                "rowEndPx": 8000,
+                "colStartPx": 4000,
+                "colEndPx": 8000,
+            }
+            values = page.evaluate(
+                """async () => Array.from((await window.__hictBenchmark.manager().networkManager.requestManager.queryMatrixFloat32({
+                bpResolution:100,startRowPx:4000,endRowPx:4002,startColPx:4000,endColPx:4002,source:'PRIMARY',signalMode:'RAW_COUNTS'})).values)"""
+            )
+            assert values == [1, 0, 0, 2], values
+            before, before_bounds = view(), bounds()
+            row = page.get_by_role("textbox", name="Rows scope", exact=True)
+            row.fill("missing scope")
+            row.press("Enter")
+            assert bounds() == before_bounds and view() == before
+            row.press("Escape")
+            assert row.input_value() == "two"
+            for label, query in (
+                ("Rows scope", "All Rows"),
+                ("Columns scope", "All Columns"),
+            ):
+                field = page.get_by_role("textbox", name=label, exact=True)
+                field.fill(query)
+                field.locator("..").locator(".scope-result").filter(
+                    has_text=query
+                ).click()
+                check.settle()
+            assert bounds() == {
+                "rowStartPx": 0,
+                "rowEndPx": 16000,
+                "colStartPx": 0,
+                "colEndPx": 16000,
+            }
+            search = page.locator("#global-search-input")
+            search.fill("three")
+            page.locator(".search-result").filter(
+                has=page.get_by_text("Contig", exact=True)
+            ).filter(has=page.get_by_text("three", exact=True)).click()
+            check.settle()
+            assert (
+                max(abs(a - b) for a, b in zip(view()["center"], [10000, -10000])) < 1
+            )
+            search.fill("scf_two")
+            page.locator(".search-result").filter(
+                has=page.get_by_text("scf_two", exact=True)
+            ).wait_for()
+            page.get_by_role("button", name="Go to", exact=True).click()
+            check.settle()
+            assert max(abs(a - b) for a, b in zip(view()["center"], [6000, -6000])) < 1
+
+        def entity_navigation():
+            page.get_by_role("button", name="Entities", exact=True).click()
+            for level in (100, 200):
+                page.evaluate(
+                    "bp=>{const m=window.__hictBenchmark.manager();m.getView().setResolution(m.viewAndLayersManager.getPixelResolutionForBpResolution(bp));m.getView().setCenter([8000,-8000]);}",
+                    level,
+                )
+                check.settle()
+                for tab, name, button, expected in (
+                    ("contigs", "three", "Go to contig", [10000, -10000]),
+                    ("scaffolds", "scf_two", "Go to scaffold", [6000, -6000]),
+                ):
+                    page.locator(f"label[for={tab}-btn]").click()
+                    row = next(
+                        row
+                        for row in page.locator(".name-row").all()
+                        if row.locator("input").input_value() == name
+                    )
+                    row.get_by_role("button", name=button, exact=True).click()
+                    check.settle()
+                    assert (
+                        max(abs(a - b) for a, b in zip(view()["center"], expected)) < 1
+                    ), (level, name, view(), expected)
 
         def bookmarks():
+            expected = view()
+            page.get_by_role(
+                "button", name="Bookmark current location", exact=True
+            ).click()
+            toast = page.locator("[data-sonner-toast]").filter(has_text="bookmarked")
+            toast.locator("[data-close-button]").click()
+            toast.wait_for(state="detached")
             page.get_by_role("button", name="Entities", exact=True).click()
             page.locator("label[for=bookmarks-btn]").click()
-            expected = view()
-            page.get_by_title("Save current viewport", exact=True).click()
             page.get_by_role(
                 "textbox", name="Name of the saved location", exact=True
             ).fill("Release landmark")
@@ -101,6 +246,15 @@ def main():
                 and actual["resolution"] == expected["resolution"]
                 and actual["rotation"] == expected["rotation"]
             ), (expected, actual)
+            page.locator("#save-button").click()
+            go_buttons = page.locator(
+                'button[title="Go to saved location"], button[data-bs-original-title="Go to saved location"]'
+            )
+            assert go_buttons.count() == 2
+            page.locator(
+                'button[title="Remove saved location"], button[data-bs-original-title="Remove saved location"]'
+            ).last.click()
+            assert go_buttons.count() == 1
             with page.expect_download() as download:
                 page.locator(".bookmark-actions").get_by_role(
                     "button", name="Export", exact=True
@@ -149,10 +303,13 @@ def main():
             ).wait_for()
             page.reload()
             page.wait_for_function("window.__hictBenchmark")
-            assert page.evaluate(
-                "document.querySelector('#app').__vue_app__.config.globalProperties"
-                ".$pinia._s.get('sessionStore').savedLocations.length"
-            ) == 0
+            assert (
+                page.evaluate(
+                    "document.querySelector('#app').__vue_app__.config.globalProperties"
+                    ".$pinia._s.get('sessionStore').savedLocations.length"
+                )
+                == 0
+            )
             with page.expect_file_chooser() as chooser:
                 check.menu("File", "Open session")
             chooser.value.set_files(session_path)
@@ -367,6 +524,12 @@ def main():
             )
             check.settle()
             check.step("diagonal-navigation-and-rotation-reset", navigate)
+            check.step(
+                "independent-row-column-scopes-and-genomic-search", scopes_and_search
+            )
+            check.step(
+                "sidebar-entity-navigation-at-two-native-levels", entity_navigation
+            )
             check.step("bookmark-save-go-export-remove-import", bookmarks)
             check.step("preset-save-rename-cancel-export-remove-import-apply", presets)
             check.step("each-osd-field-order-position-toggle-persistence", osd)

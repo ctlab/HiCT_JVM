@@ -1630,3 +1630,19 @@ jobs matching the actual server response. Evidence is under
 `/tmp/hict-u13-batch-controls-qualified-dir`. The fixture is a standards-compliant
 Cooler generated from explicit contact values. Earlier minimal fixture metadata
 and route/method harness errors are preserved as failed runs.
+
+## Assembly-aware sidebar navigation during U13
+
+The sidebar Go to actions divided bp positions by the current view zoom factor.
+On the four-contig fixture, Go to three centered at approximately 15,530 instead
+of the independently expected coordinate 10,000. Both contig and scaffold actions
+now reuse LinearTrackManager.centerOnBpRange, matching header search and existing
+assembly-aware coordinate projection and range fitting.
+
+The full frontend build and existing regressions pass. Focused ESLint has zero
+errors and warnings. The seven-scenario browser workspace gate verifies contig
+three at coordinate 10,000 and scaffold scf_two at 6,000 from both native 100 bp
+and 200 bp levels. Existing scopes, diagonal navigation, bookmark persistence,
+option presets, focused Escape, all OSD fields and notifications pass in the same
+run. Before/fixed evidence pointers are `/tmp/hict-u13-sidebar-go-to-before-dir`
+and `/tmp/hict-u13-sidebar-go-to-fixed-dir`.
