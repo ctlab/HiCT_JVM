@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.tracks;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import ch.systemsx.cisd.hdf5.HDF5FloatStorageFeatures;
 import ch.systemsx.cisd.hdf5.HDF5Factory;
 import ch.systemsx.cisd.hdf5.HDF5IntStorageFeatures;
@@ -496,11 +498,12 @@ public class Track1DManager implements AutoCloseable {
   public void removeTrack(final @NotNull String trackId) {
     try {
       this.lock.writeLock().lock();
+      final var runtime = this.precomputeRuntimeByTrackId.remove(trackId);
+      if (runtime != null) runtime.cancel();
       final var removed = this.tracks.remove(trackId);
       if (removed != null) {
         closeDataSourceQuietly(removed.dataSource());
       }
-      this.precomputeRuntimeByTrackId.remove(trackId);
       this.precomputedSeriesCache.keySet().removeIf(key -> key.trackId().equals(trackId));
     } finally {
       this.lock.writeLock().unlock();
@@ -533,6 +536,7 @@ public class Track1DManager implements AutoCloseable {
   public void close() {
     // Stop producers before closing their data sources. shutdownNow alone does
     // not wait for a running writer; it could recreate a sidecar after close.
+    this.precomputeRuntimeByTrackId.values().forEach(TrackPrecomputeRuntime::cancel);
     final var executors = List.of(this.precomputeJobExecutor, this.precomputeWorkerExecutor, this.precomputeWriterExecutor);
     executors.forEach(java.util.concurrent.ExecutorService::shutdownNow);
     boolean interrupted = false;
@@ -564,13 +568,30 @@ public class Track1DManager implements AutoCloseable {
   }
 
   public void clearPrecomputeStatus() {
+    this.precomputeRuntimeByTrackId.values().forEach(TrackPrecomputeRuntime::cancel);
     this.precomputeRuntimeByTrackId.clear();
+  }
+
+  public List<BackgroundJob> backgroundJobs() {
+    return precomputeRuntimeByTrackId.values().stream().map(runtime -> {
+      final var status = runtime.toStatus();
+      return new BackgroundJob(runtime.jobId, "track_precompute",
+        status.getStatus(), status.getProgress(), runtime.createdAtMs, runtime.startedAtMs, runtime.finishedAtMs,
+        runtime.currentTask, runtime.error, List.of());
+    }).toList();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    final var runtime = precomputeRuntimeByTrackId.values().stream().filter(job -> job.jobId.equals(id)).findFirst().orElse(null);
+    if (runtime == null) return false;
+    synchronized (runtime) { runtime.cancel(); }
+    return true;
   }
 
   public @NotNull TracksPrecomputeStatus getPrecomputeStatus() {
     final var now = System.currentTimeMillis();
     this.precomputeRuntimeByTrackId.entrySet().removeIf(entry ->
-      now - entry.getValue().lastUpdatedMs() > PRECOMPUTE_STATUS_TTL_MS
+      !entry.getValue().isActive() && now - entry.getValue().lastUpdatedMs() > PRECOMPUTE_STATUS_TTL_MS
     );
     final var statuses = this.precomputeRuntimeByTrackId.values().stream()
       .sorted(Comparator.comparing(TrackPrecomputeRuntime::trackName))
@@ -1053,7 +1074,7 @@ public class Track1DManager implements AutoCloseable {
   private @Nullable TrackPrecomputeRuntime maybeScheduleTrackPrecomputeFromQuery(final @NotNull ChunkedFile chunkedFile,
                                                                                  final @NotNull TrackState track) {
     final var runtime = this.precomputeRuntimeByTrackId.get(track.trackId());
-    if (runtime != null && runtime.isActive()) {
+    if (runtime != null && (runtime.isActive() || "cancelled".equals(runtime.status))) {
       return runtime;
     }
     if (track.dataSource().renderStyle() == RenderStyle.FEATURE
@@ -1067,18 +1088,14 @@ public class Track1DManager implements AutoCloseable {
   private void scheduleTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
                                        final @NotNull TrackState track,
                                        final boolean force) {
-    final var runtime = this.precomputeRuntimeByTrackId.computeIfAbsent(
-      track.trackId(),
-      ignored -> new TrackPrecomputeRuntime(track.trackId(), track.name())
-    );
-    synchronized (runtime) {
-      if (runtime.isActive()) {
-        return;
-      }
+    synchronized (this.precomputeRuntimeByTrackId) {
+      final var previous = this.precomputeRuntimeByTrackId.get(track.trackId());
+      if (previous != null && previous.isActive()) return;
+      final var runtime = new TrackPrecomputeRuntime(track.trackId(), track.name());
       runtime.markQueued();
+      this.precomputeRuntimeByTrackId.put(track.trackId(), runtime);
+      runtime.setJob(this.precomputeJobExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime)));
     }
-    log.info("Queued 1D track precompute: track={} name={} force={}", track.trackId(), track.name(), force);
-    this.precomputeJobExecutor.submit(() -> runTrackPrecompute(chunkedFile, track, force, runtime));
   }
 
   private void runTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
@@ -1086,6 +1103,7 @@ public class Track1DManager implements AutoCloseable {
                                   final boolean force,
                                   final @NotNull TrackPrecomputeRuntime runtime) {
     try {
+      runtime.checkCancelled();
       final var cacheContext = precomputeCacheContextForTrack(chunkedFile, track);
       final var sidecarPath = cacheContext.sidecarPath();
       log.info("Starting 1D track precompute: track={} name={} sidecar={}", track.trackId(), track.name(), sidecarPath);
@@ -1110,33 +1128,52 @@ public class Track1DManager implements AutoCloseable {
       final CompletionService<ComputedPrecomputeTask> completionService =
         new ExecutorCompletionService<>(this.precomputeWorkerExecutor);
       for (final var task : tasks) {
-        completionService.submit(() -> new ComputedPrecomputeTask(task, computePrecomputedSeries(chunkedFile, track, task)));
+        runtime.addTask(completionService.submit(() -> {
+          runtime.checkCancelled();
+          final var computed = new ComputedPrecomputeTask(task, computePrecomputedSeries(chunkedFile, track, task));
+          runtime.checkCancelled();
+          return computed;
+        }));
       }
 
       final var writeFutures = new ArrayList<Future<?>>(tasks.size());
       int completed = 0;
       for (int i = 0; i < tasks.size(); i++) {
+        runtime.checkCancelled();
         final var computed = completionService.take().get();
         final var task = computed.task();
         runtime.markRunning(task.bpResolution() + "bp/" + task.modeKey(), completed);
         final var key = new PrecomputedSeriesKey(track.trackId(), task.bpResolution(), task.assemblySignature(), task.modeKey());
         this.precomputedSeriesCache.put(key, computed.series());
-        writeFutures.add(this.precomputeWriterExecutor.submit(() -> persistPrecomputedSeries(sidecarPath, task, computed.series(), cacheContext)));
+        final var write = this.precomputeWriterExecutor.submit(() -> {
+          runtime.checkCancelled();
+          persistPrecomputedSeries(sidecarPath, task, computed.series(), cacheContext, runtime.cancelled);
+        });
+        runtime.addTask(write);
+        writeFutures.add(write);
         completed++;
         runtime.markTaskDone(completed);
       }
       for (final var writeFuture : writeFutures) {
         writeFuture.get();
       }
+      runtime.checkCancelled();
       runtime.markFinished();
       log.info("Finished 1D track precompute: track={} name={} tasks={}", track.trackId(), track.name(), tasks.size());
     } catch (final InterruptedException ex) {
       Thread.currentThread().interrupt();
-      runtime.markFailed("Precompute interrupted");
+      runtime.markCancelled();
       log.warn("Track precompute interrupted for track {}", track.trackId());
+    } catch (final java.util.concurrent.CancellationException cancelled) {
+      runtime.markCancelled();
     } catch (final Exception ex) {
-      runtime.markFailed(ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
-      log.error("Failed to precompute track {}", track.trackId(), ex);
+      if (runtime.cancelled.get()) runtime.markCancelled();
+      else {
+        runtime.markFailed(ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+        log.error("Failed to precompute track {}", track.trackId(), ex);
+      }
+    } finally {
+      runtime.cancelTasks();
     }
   }
 
@@ -1268,6 +1305,7 @@ public class Track1DManager implements AutoCloseable {
     final var values = new double[totalVisiblePixels];
     final var support = new long[totalVisiblePixels];
     for (final var bin : bins) {
+      if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
       final var rawStart = bin.getStartPx() == null ? bin.getStartBp() : bin.getStartPx();
       final var rawEnd = bin.getEndPx() == null ? bin.getEndBp() : bin.getEndPx();
       final int start = (int) Math.max(0L, Math.min(rawStart, totalVisiblePixels - 1L));
@@ -1401,6 +1439,8 @@ public class Track1DManager implements AutoCloseable {
       if (!sidecarMetadataMatches(reader, cacheContext)) {
         return Optional.empty();
       }
+      if (reader.object().isGroup(groupPath) && reader.object().hasAttribute(groupPath, "complete")
+        && !reader.bool().getAttr(groupPath, "complete")) return Optional.empty();
       if (!reader.object().isDataSet(valuesPath) || !reader.object().isDataSet(supportPath)) {
         return Optional.empty();
       }
@@ -1423,8 +1463,10 @@ public class Track1DManager implements AutoCloseable {
   private void persistPrecomputedSeries(final @NotNull Path sidecarPath,
                                         final @NotNull PrecomputeTask task,
                                         final @NotNull PrecomputedSeries series,
-                                        final @NotNull PrecomputeCacheContext cacheContext) {
+                                        final @NotNull PrecomputeCacheContext cacheContext,
+                                        final java.util.concurrent.atomic.AtomicBoolean cancelled) {
     try {
+      if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
       Files.createDirectories(sidecarPath.getParent());
       final var groupPath = precomputeGroupPath(task.bpResolution(), task.modeKey(), task.assemblySignature());
       final var valuesPath = groupPath + "/values";
@@ -1438,6 +1480,8 @@ public class Track1DManager implements AutoCloseable {
            final var writer = HDF5Factory.open(sidecarPath.toFile())) {
         writePrecomputeMetadata(writer, cacheContext);
         ensureGroupPath(writer, groupPath);
+        writer.bool().setAttr(groupPath, "complete", false);
+        writer.file().flushSyncBlocking();
         writer.string().setAttr(groupPath, "version", PRECOMPUTE_CACHE_VERSION);
         writer.int64().setAttr(groupPath, "bpResolution", task.bpResolution());
         writer.string().setAttr(groupPath, "mode", task.modeKey());
@@ -1471,9 +1515,13 @@ public class Track1DManager implements AutoCloseable {
           series.support().length,
           0L
         );
+        if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+        writer.bool().setAttr(groupPath, "complete", true);
       }
+    } catch (final java.util.concurrent.CancellationException cancelledWrite) {
+      throw cancelledWrite;
     } catch (final Exception e) {
-      log.warn("Failed to write precomputed sidecar {}", sidecarPath, e);
+      throw new IllegalStateException("Could not write precomputed track data", e);
     }
   }
 
@@ -4894,6 +4942,49 @@ public class Track1DManager implements AutoCloseable {
     private volatile String currentTask;
     private volatile String error;
     private volatile long lastUpdatedMs;
+    private final String jobId = java.util.UUID.randomUUID().toString();
+    private final long createdAtMs = System.currentTimeMillis();
+    private volatile long startedAtMs;
+    private volatile long finishedAtMs;
+    private final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.List<Future<?>> tasks = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private volatile Future<?> job;
+
+    private void setJob(Future<?> future) {
+      job = future;
+      if (cancelled.get()) future.cancel(true);
+    }
+
+    private void addTask(Future<?> task) {
+      tasks.add(task);
+      if (cancelled.get()) task.cancel(true);
+    }
+
+    private void checkCancelled() {
+      if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+    }
+
+    private void cancelTasks() {
+      tasks.forEach(task -> task.cancel(true));
+      tasks.clear();
+    }
+
+    private synchronized void cancel() {
+      if (!isActive()) return;
+      cancelled.set(true);
+      final boolean queued = "queued".equals(status);
+      status = "cancelling";
+      final var active = job;
+      if (active != null) active.cancel(true);
+      cancelTasks();
+      if (queued) markCancelled();
+    }
+
+    private synchronized void markCancelled() {
+      status = "cancelled";
+      currentTask = "";
+      finishedAtMs = lastUpdatedMs = System.currentTimeMillis();
+    }
 
     private TrackPrecomputeRuntime(final @NotNull String trackId, final @NotNull String trackName) {
       this.trackId = trackId;
@@ -4907,7 +4998,7 @@ public class Track1DManager implements AutoCloseable {
     }
 
     private boolean isActive() {
-      return "queued".equals(this.status) || "running".equals(this.status);
+      return "queued".equals(this.status) || "running".equals(this.status) || "cancelling".equals(this.status);
     }
 
     private void markQueued() {
@@ -4927,7 +5018,9 @@ public class Track1DManager implements AutoCloseable {
       this.lastUpdatedMs = System.currentTimeMillis();
     }
 
-    private void markRunning(final @NotNull String currentTask, final int completedTasks) {
+    private synchronized void markRunning(final @NotNull String currentTask, final int completedTasks) {
+      checkCancelled();
+      if (startedAtMs == 0) startedAtMs = System.currentTimeMillis();
       this.status = "running";
       this.currentTask = currentTask;
       this.completedTasks = Math.max(0, completedTasks);
@@ -4939,7 +5032,9 @@ public class Track1DManager implements AutoCloseable {
       this.lastUpdatedMs = System.currentTimeMillis();
     }
 
-    private void markFinished() {
+    private synchronized void markFinished() {
+      checkCancelled();
+      finishedAtMs = System.currentTimeMillis();
       this.status = "finished";
       this.currentTask = "";
       this.error = null;
@@ -4947,7 +5042,8 @@ public class Track1DManager implements AutoCloseable {
       this.lastUpdatedMs = System.currentTimeMillis();
     }
 
-    private void markFailed(final @NotNull String error) {
+    private synchronized void markFailed(final @NotNull String error) {
+      finishedAtMs = System.currentTimeMillis();
       this.status = "failed";
       this.error = error;
       this.currentTask = "";

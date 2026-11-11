@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.fastaonly;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
@@ -46,6 +48,18 @@ public class FastaOnlyHandlersHolder extends HandlersHolder {
 
   public FastaOnlyHandlersHolder(final Vertx vertx) {
     this.vertx = vertx;
+  }
+
+  public java.util.List<BackgroundJob> backgroundJobs() {
+    return service.backgroundJobs();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    return service.cancelBackgroundJob(id);
+  }
+
+  public void close() {
+    service.close();
   }
 
   @Override

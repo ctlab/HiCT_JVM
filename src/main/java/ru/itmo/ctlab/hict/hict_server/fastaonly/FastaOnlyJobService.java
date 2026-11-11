@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.fastaonly;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -79,6 +81,29 @@ public final class FastaOnlyJobService {
   private final Object lock = new Object();
   private Status status = IDLE;
   private AtomicBoolean cancel = new AtomicBoolean(false);
+  private String jobId;
+  private long startedAtMs;
+  private long finishedAtMs;
+
+  public List<BackgroundJob> backgroundJobs() {
+    synchronized (lock) {
+      if (jobId == null) return List.of();
+      return List.of(new BackgroundJob(
+        jobId, "fasta_only", status.state().name(), status.progress(), startedAtMs, startedAtMs,
+        finishedAtMs, status.message(), status.error(), status.outputFilename() == null ? List.of()
+          : List.of(new BackgroundJob.Output(
+            status.outputFilename(), "fasta_only", status.fastaFilename(), status.agpFilename()))));
+    }
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    synchronized (lock) {
+      if (!java.util.Objects.equals(id, jobId)) return false;
+      cancel();
+      return true;
+    }
+  }
+
 
   public @NotNull Status status() {
     synchronized (lock) {
@@ -102,6 +127,9 @@ public final class FastaOnlyJobService {
       }
       final var flag = new AtomicBoolean(false);
       this.cancel = flag;
+      jobId = java.util.UUID.randomUUID().toString();
+      startedAtMs = System.currentTimeMillis();
+      finishedAtMs = 0;
       status = new Status(State.RUNNING, 0.0d, "Reading the FASTA", null, null, null, null, 0, 0L, List.of(), false);
       executor.execute(() -> run(dataDirectory, request, flag));
       return status;
@@ -158,17 +186,20 @@ public final class FastaOnlyJobService {
         warnings.add("No run of at least " + minRun + " N was found, so nothing was split.");
       }
       synchronized (lock) {
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.READY, 1.0d, "Ready", null, relativeOutput, finalAgp, relativeFasta, contigs,
           scan.totalBases(), List.copyOf(warnings), reuse);
       }
     } catch (final CancellationException cancelled) {
       synchronized (lock) {
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.CANCELLED, status.progress(), "Cancelled", null, null, null, null, 0, 0L, List.of(), false);
       }
     } catch (final Throwable failure) {
       log.info("FASTA-only build failed: {}", failure.getMessage());
       synchronized (lock) {
         final var message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.FAILED, status.progress(), "Failed", message, null, null, null, 0, 0L, List.of(), false);
       }
     }

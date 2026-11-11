@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Follow conversions, sequence analysis, downloads and map preparation in the navbar Jobs panel. Close a running analysis dialog and open its finished result from Jobs.
+- Stopping HiCT cancels background work and terminates its native child processes. Incomplete outputs stay identifiable, and example downloads connect to their validated address and resume chunked responses correctly.
+
 - Show exact sequence alignments at letter zoom, including substitutions, gaps and reverse alignments. Visible detail follows assembly edits and is included in PNG, SVG and PDF exports.
 
 - Compare layers with different resolution pyramids on the same assembly grid. Each layer selects its closest available resolution, with a loading indicator during overlay changes.

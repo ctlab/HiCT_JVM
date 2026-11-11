@@ -31,6 +31,7 @@ class ExampleDownloaderTest {
   String base;
   final List<String> requests = new CopyOnWriteArrayList<>();
   byte[] payload;
+  final List<ExampleDownloader> downloaders = new CopyOnWriteArrayList<>();
 
   @BeforeEach void start() throws IOException {
     payload = new byte[300_000];
@@ -40,6 +41,7 @@ class ExampleDownloaderTest {
   }
 
   @AfterEach void stop() {
+    downloaders.forEach(ExampleDownloader::close);
     server.stop(0);
   }
 
@@ -64,7 +66,9 @@ class ExampleDownloaderTest {
   }
 
   private ExampleDownloader downloader() {
-    return new ExampleDownloader(data, uri -> { }, 0L);
+    var downloader = new ExampleDownloader(data, uri -> { }, 0L);
+    downloaders.add(downloader);
+    return downloader;
   }
 
   private ExampleDownloader.Status await(ExampleDownloader d) throws Exception {
@@ -159,6 +163,40 @@ class ExampleDownloaderTest {
     assertEquals(ExampleDownloader.State.READY, s.state(), s.error());
     assertArrayEquals(payload, Files.readAllBytes(data.resolve("examples/ex1/a.bin")));
     assertTrue(requests.stream().anyMatch(r -> r.contains("range=bytes=100000-") && r.contains("ifrange=\"v1\"")), requests.toString());
+  }
+
+  @Test void resumesChunkedPartialResponseWithoutContentLength() throws Exception {
+    serve("/f", exchange -> {
+      exchange.getResponseHeaders().add("Content-Range", "bytes 100000-" + (payload.length - 1) + "/" + payload.length);
+      send(exchange, 206, java.util.Arrays.copyOfRange(payload, 100000, payload.length), 0);
+    });
+    Files.createDirectories(data.resolve("examples/ex1"));
+    Files.write(data.resolve("examples/ex1/a.bin.part"), java.util.Arrays.copyOf(payload, 100000));
+    Files.writeString(data.resolve("examples/ex1/a.bin.part.json"), new JsonObject().put("url", base + "/f").encode());
+    var downloader = downloader();
+    downloader.start(example(file("a.bin", "/f", payload.length, sha(payload), true)));
+    assertEquals(ExampleDownloader.State.READY, await(downloader).state());
+    assertArrayEquals(payload, Files.readAllBytes(data.resolve("examples/ex1/a.bin")));
+  }
+
+  @Test void connectsToPinnedAddressWithOriginHost() throws Exception {
+    serve("/f", exchange -> {
+      assertEquals("origin.invalid:" + server.getAddress().getPort(), exchange.getRequestHeaders().getFirst("Host"));
+      send(exchange, 200, payload, payload.length);
+    });
+    var policy = new ExampleDownloader.UrlPolicy() {
+      @Override public void check(URI uri) { }
+      @Override public java.net.InetAddress resolve(URI uri) throws IOException {
+        return java.net.InetAddress.getByName("127.0.0.1");
+      }
+    };
+    var downloader = new ExampleDownloader(data, policy, 0);
+    downloaders.add(downloader);
+    var spec = file("a.bin", "/f", payload.length, sha(payload), true);
+    spec.put("url", "http://origin.invalid:" + server.getAddress().getPort() + "/f");
+    downloader.start(example(spec));
+    var result = await(downloader);
+    assertEquals(ExampleDownloader.State.READY, result.state(), result.error());
   }
 
   @Test void aServerThatIgnoresRangeRestartsFromZero() throws Exception {
@@ -291,6 +329,7 @@ class ExampleDownloaderTest {
     var d = downloader();
     d.start(example(file("a.bin", "/f", payload.length, null, true)));
     assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+    for (int attempt = 0; attempt < 100 && !Files.exists(data.resolve("examples/ex1/a.bin.part")); attempt++) Thread.sleep(10);
     d.cancel();
     var s = await(d);
     assertEquals(ExampleDownloader.State.CANCELLED, s.state());

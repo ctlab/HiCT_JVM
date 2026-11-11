@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.examples;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
@@ -49,6 +51,21 @@ public class ExamplesHandlersHolder extends HandlersHolder {
 
   public ExamplesHandlersHolder(final Vertx vertx) {
     this.vertx = vertx;
+  }
+
+  public java.util.List<BackgroundJob> backgroundJobs() {
+    final var current = downloader;
+    return current == null ? java.util.List.of() : current.backgroundJobs();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    final var current = downloader;
+    return current != null && current.cancelBackgroundJob(id);
+  }
+
+  public void close() {
+    final var current = downloader;
+    if (current != null) current.close();
   }
 
   private Path dataDirectory() {

@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.handlers.normalization;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
@@ -57,6 +59,14 @@ public class NormalizationHandlersHolder extends HandlersHolder {
 
   public NormalizationHandlersHolder(final Vertx vertx) {
     this.vertx = vertx;
+  }
+
+  public List<BackgroundJob> backgroundJobs() {
+    return service.backgroundJobs();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    return service.cancelBackgroundJob(id);
   }
 
   public void cancelForMapChange() {

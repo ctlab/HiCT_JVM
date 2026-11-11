@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJobsHandlersHolder;
+
 import ru.itmo.ctlab.hict.hict_server.handlers.normalization.NormalizationHandlersHolder;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -78,6 +80,7 @@ import java.util.Map;
 public class MainVerticle extends AbstractVerticle {
   private RequestTaskScheduler requestTaskScheduler;
   private ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder sequenceAnalysis;
+  private BackgroundJobsHandlersHolder backgroundJobs;
   private String bindHost = "0.0.0.0";
 
   public static void main(final String[] args) {
@@ -180,13 +183,24 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void stop(final Promise<Void> stopPromise) {
-    if (this.normalization != null) this.normalization.close();
-    if (this.sequenceAnalysis != null) this.sequenceAnalysis.close();
-    if (this.requestTaskScheduler != null) {
-      this.requestTaskScheduler.close();
-      this.requestTaskScheduler = null;
-    }
-    stopPromise.complete();
+    vertx.<Void>executeBlocking(blocking -> {
+      try {
+        if (this.backgroundJobs != null) this.backgroundJobs.close();
+        else {
+          if (this.normalization != null) this.normalization.close();
+          if (this.sequenceAnalysis != null) this.sequenceAnalysis.close();
+        }
+      } finally {
+        if (this.requestTaskScheduler != null) {
+          this.requestTaskScheduler.close();
+          this.requestTaskScheduler = null;
+        }
+      }
+      blocking.complete();
+    }, false).onComplete(result -> {
+      if (result.succeeded()) stopPromise.complete();
+      else stopPromise.fail(result.cause());
+    });
   }
 
   private static @NotNull Level resolveRootLogLevel() {
@@ -413,16 +427,38 @@ public class MainVerticle extends AbstractVerticle {
     handlersHolders.add(new ScaffoldingOpHandlersHolder(vertx));
     handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, requestTaskScheduler));
     handlersHolders.add(new NameMappingHandlersHolder(vertx));
-    handlersHolders.add(new ConversionHandlersHolder(vertx));
-    handlersHolders.add(new DotplotHandlersHolder(vertx));
+    final var conversions = new ConversionHandlersHolder(vertx);
+    final var dotplots = new DotplotHandlersHolder(vertx);
+    handlersHolders.add(conversions);
+    handlersHolders.add(dotplots);
     this.sequenceAnalysis = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder(vertx);
     handlersHolders.add(this.sequenceAnalysis);
     handlersHolders.add(new InfoHandlersHolder(vertx, requestStatistics));
     handlersHolders.add(new ApiDocsHandlersHolder());
-    handlersHolders.add(new TrackHandlersHolder(vertx));
+    final var tracks = new TrackHandlersHolder(vertx);
+    handlersHolders.add(tracks);
     handlersHolders.add(this.normalization);
-    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.fastaonly.FastaOnlyHandlersHolder(vertx));
-    handlersHolders.add(new ru.itmo.ctlab.hict.hict_server.handlers.examples.ExamplesHandlersHolder(vertx));
+    final var fastaOnly = new ru.itmo.ctlab.hict.hict_server.handlers.fastaonly.FastaOnlyHandlersHolder(vertx);
+    final var examples = new ru.itmo.ctlab.hict.hict_server.handlers.examples.ExamplesHandlersHolder(vertx);
+    handlersHolders.add(fastaOnly);
+    handlersHolders.add(examples);
+    this.backgroundJobs = new BackgroundJobsHandlersHolder(List.of(
+      new BackgroundJobsHandlersHolder.Service(
+        "conversion", conversions::backgroundJobs, conversions::cancelBackgroundJob, conversions::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "legacy-dotplot", dotplots::backgroundJobs, dotplots::cancelBackgroundJob, dotplots::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "sequence", sequenceAnalysis::backgroundJobs, sequenceAnalysis::cancelBackgroundJob, sequenceAnalysis::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "track", tracks::backgroundJobs, tracks::cancelBackgroundJob, tracks::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "coverage", normalization::backgroundJobs, normalization::cancelBackgroundJob, normalization::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "fasta", fastaOnly::backgroundJobs, fastaOnly::cancelBackgroundJob, fastaOnly::close),
+      new BackgroundJobsHandlersHolder.Service(
+        "download", examples::backgroundJobs, examples::cancelBackgroundJob, examples::close)
+    ));
+    handlersHolders.add(this.backgroundJobs);
 
     router.route().failureHandler(ctx -> {
       final var expected = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException httpError

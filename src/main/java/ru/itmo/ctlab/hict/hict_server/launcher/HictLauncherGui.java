@@ -1733,6 +1733,7 @@ public final class HictLauncherGui {
 
       stopBundledBrowsers("before stopping HiCT");
       appendLauncherLog("Stopping HiCT server process...");
+      final var serverChildren = process.descendants().toList();
       process.destroy();
       try {
         if (!process.waitFor(5, TimeUnit.SECONDS)) {
@@ -1744,6 +1745,7 @@ public final class HictLauncherGui {
         Thread.currentThread().interrupt();
         appendLauncherLog("Interrupted while stopping HiCT.");
       } finally {
+        for (var child : serverChildren.reversed()) child.destroyForcibly();
         if (this.serverProcess == process) {
           this.serverProcess = null;
         }

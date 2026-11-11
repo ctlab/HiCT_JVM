@@ -1291,3 +1291,49 @@ Split, Reverse and Undo, and across a matrix-level change at letter zoom. A
 deliberately delayed response was discarded after navigation into an unaligned
 region, which displayed the no-alignment message. The temporary alignment files
 were removed after completion.
+
+## Background jobs and shutdown (U10)
+
+GET /jobs adapts conversion, legacy dotplot, sequence search, ModDotPlot,
+sequence dotplot, exact alignment, track precompute, coverage, FASTA-only and
+example downloads. IDs carry their service prefix. The read-only snapshot
+normalizes states, progress and timestamps and includes output actions.
+POST /jobs/cancel dispatches to the owning service. The navbar shows an active
+count, progress, failures, cancellation and finished results. Result opening uses
+the existing assembly, track and overlay entry points. Sequence results retain
+their originating map filename. The panel preserves each service's retention
+policy, including map-scoped track and coverage state and the latest FASTA and
+download job. Search, ModDotPlot and FASTA-only dialogs can close while running.
+
+Server shutdown cancels every service before closing executors. Native processes
+are killed with their descendants. Launcher Stop and Quit also retain descendant
+handles before terminating the server, covering the forced-stop fallback.
+Conversion and legacy dotplot outputs are built in job-owned incomplete folders
+and published after success. Existing conversion outputs survive a failed
+replacement. Track writers mark groups incomplete before writing and publish a
+complete marker after both arrays, with legacy marker-free caches still readable.
+Cancellation propagates to queued, compute and writer futures. Downloads retain
+explicit .part files for a user-triggered retry. Jobs never resume automatically.
+
+The downloader resolves and validates each redirect once and connects to that IP
+with the origin Host, TLS SNI and hostname verification. Streaming uses one-chunk
+backpressure. Separate connections avoid reusing a redirected response while it
+is being discarded. Cancellation resets the active request. Partial responses use
+Content-Range totals even when Content-Length is absent.
+
+The full JVM suite passed with 427 tests, including seven existing optional-data
+skips. New regressions cover pinned-host connections, chunked 206 resume, service
+ordering and shutdown failures, publication conflicts and native descendants.
+The WebUI build and checks passed. ESLint on edited files reported zero errors
+and 11 existing warnings. Chromium completed ten checks across all job kinds,
+closed the three busy dialogs, cancelled a download in the panel and opened the
+finished search track, identity overlay and FASTA-only assembly. No page errors
+occurred. Evidence is in the directory named by /tmp/hict-u10-ready-dir.
+A controlled long-running aligner executable with a child process was stopped
+through the real packaged server. Its process tree terminated, no matrix was
+published and the next launch returned an empty jobs list. Evidence is in
+/tmp/hict-u10-shutdown/results.json.
+The existing search delivery browser regression also passed, including lost-reply
+retry and slow track queries. The nine-check ModDotPlot zoom and preset gate
+passed with a maximum heartbeat gap of 69 ms. Evidence is in the directories
+named by /tmp/hict-u10-search-dir and /tmp/hict-u10-moddotplot-ready-dir.

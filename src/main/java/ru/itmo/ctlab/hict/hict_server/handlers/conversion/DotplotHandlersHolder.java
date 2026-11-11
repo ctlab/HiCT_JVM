@@ -1,5 +1,11 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
+import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
+
+import ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts;
+
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.shareddata.LocalMap;
@@ -30,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @RequiredArgsConstructor
 @Slf4j
-public class DotplotHandlersHolder extends HandlersHolder {
+public class DotplotHandlersHolder extends HandlersHolder implements AutoCloseable {
   private static final long JOB_TTL_MS = 60 * 60 * 1000L;
 
   private final @NotNull Vertx vertx;
@@ -39,8 +45,46 @@ public class DotplotHandlersHolder extends HandlersHolder {
   private final @NotNull ExternalToolchainManager toolchainManager = new ExternalToolchainManager();
   private final @NotNull SelfDotplotPipeline dotplotPipeline = new SelfDotplotPipeline();
 
+  public List<BackgroundJob> backgroundJobs() {
+    final var data = requireDataDirectory().toAbsolutePath().normalize();
+    return jobs.values().stream().map(job -> new BackgroundJob(
+      job.jobId, "legacy_dotplot", job.status, job.overallProgress, job.createdAtMs,
+      job.startedAtMs, job.finishedAtMs, job.currentStageLabel, job.error,
+      "finished".equals(job.status)
+        ? List.of(new BackgroundJob.Output(
+          job.outputPath.startsWith(data) ? data.relativize(job.outputPath).toString().replace('\\', '/')
+            : "/dotplot/jobs/" + job.jobId + "/download",
+          job.outputPath.startsWith(data) ? "open_map" : "download",
+          data.relativize(job.sourcePath).toString().replace('\\', '/')))
+        : List.of())).toList();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    final var job = jobs.get(id);
+    if (job == null) return false;
+    job.requestCancel();
+    return true;
+  }
+
+  @Override
+  public void close() {
+    jobs.values().forEach(DotplotJob::requestCancel);
+    executor.shutdownNow();
+  }
+
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
+    router.get("/dotplot/jobs/:jobId/download").handler(ctx -> {
+      final var job = jobs.get(ctx.pathParam("jobId"));
+      if (job == null || !"finished".equals(job.status) || !Files.isRegularFile(job.outputPath)) {
+        ctx.fail(new io.vertx.ext.web.handler.HttpException(404, "The dotplot output is unavailable"));
+        return;
+      }
+      ctx.response().putHeader("content-type", "application/octet-stream")
+        .putHeader("content-disposition", "attachment; filename*=UTF-8''"
+          + java.net.URLEncoder.encode(job.outputPath.getFileName().toString(), java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20"))
+        .sendFile(job.outputPath.toString());
+    });
     router.post("/dotplot/jobs").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {
@@ -148,6 +192,7 @@ public class DotplotHandlersHolder extends HandlersHolder {
     job.status = "running";
     job.workerThread = Thread.currentThread();
     job.startedAtMs = Instant.now().toEpochMilli();
+    Path staging = null;
     try {
       job.log("Starting integrated dotplot generation for " + job.sourcePath.getFileName());
       Files.createDirectories(job.outputDirectory);
@@ -173,10 +218,11 @@ public class DotplotHandlersHolder extends HandlersHolder {
       job.toolchainNotices.addAll(toolchain.notices());
       job.toolchainCitations.clear();
       job.toolchainCitations.addAll(toolchain.citations());
+      staging = JobArtifacts.stage(job.outputDirectory, job.jobId);
       final var output = dotplotPipeline.generate(
         new SelfDotplotPipeline.Options(
           job.sourcePath,
-          job.outputDirectory,
+          staging,
           prefix,
           job.options.binSize(),
           job.options.resolutions(),
@@ -201,7 +247,14 @@ public class DotplotHandlersHolder extends HandlersHolder {
         process -> job.activeProcess = process,
         () -> job.cancelRequested.get()
       );
-      job.outputPath = output;
+      if (job.cancelRequested.get()) throw new java.util.concurrent.CancellationException();
+      try (var files = Files.list(staging)) {
+        for (var file : files.filter(path -> !path.equals(output)).toList()) {
+          JobArtifacts.publish(file, job.outputDirectory.resolve(file.getFileName()), job.options.overwrite());
+        }
+      }
+      JobArtifacts.publish(output, hictPath, job.options.overwrite());
+      job.outputPath = hictPath;
       job.overallProgress = 1.0d;
       job.stageProgress = 1.0d;
       job.status = "finished";
@@ -214,6 +267,8 @@ public class DotplotHandlersHolder extends HandlersHolder {
       log.warn("Dotplot job failed", e);
     } finally {
       job.workerThread = null;
+      try { JobArtifacts.remove(staging); }
+      catch (IOException cleanup) { log.warn("Could not remove incomplete dotplot outputs", cleanup); }
       job.finishedAtMs = Instant.now().toEpochMilli();
     }
   }
@@ -405,6 +460,7 @@ public class DotplotHandlersHolder extends HandlersHolder {
     }
 
     private void requestCancel() {
+      if (finishedAtMs > 0) return;
       cancelRequested.set(true);
       if ("queued".equals(status)) {
         status = "cancelled";
@@ -415,7 +471,7 @@ public class DotplotHandlersHolder extends HandlersHolder {
       }
       final var process = activeProcess;
       if (process != null) {
-        process.destroyForcibly();
+        ProcessTree.stop(process);
       }
       final var thread = workerThread;
       if (thread != null) {

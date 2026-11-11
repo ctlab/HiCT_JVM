@@ -1,5 +1,9 @@
 package ru.itmo.ctlab.hict.hict_server.handlers.conversion;
 
+import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
+
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.*;
 import io.vertx.ext.web.Router;
@@ -27,6 +31,22 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     new ArrayBlockingQueue<>(8), runnable -> { var t = new Thread(runnable, "hict-sequence-analysis"); t.setDaemon(true); return t; });
 
   public SequenceAnalysisHandlersHolder(Vertx vertx) { this.vertx = vertx; }
+
+  public List<BackgroundJob> backgroundJobs() {
+    return jobs.values().stream().map(job -> new BackgroundJob(
+      job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
+      job.state, job.error, job.output == null ? List.of() : List.of(
+        new BackgroundJob.Output(job.output,
+          job.kind.equals("search") ? "open_tracks"
+            : job.kind.equals("moddotplot") ? "attach_identity" : "attach_dotplot", null, null, job.mapFilename)))).toList();
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    final var job = jobs.get(id);
+    if (job == null) return false;
+    job.cancel();
+    return true;
+  }
 
   @Override public void addHandlersToRouter(Router router) {
     router.post("/sequence/alignment_detail").handler(ctx -> {
@@ -445,7 +465,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var fasta = fastaWrapper.getPath().toRealPath(); var stamp = Stamp.read(fasta);
     var template = map.getHdfFilePath().toRealPath(); var templateStamp = Stamp.read(template);
     var id = UUID.randomUUID().toString(); var directory = root.resolve(id); Files.createDirectory(directory);
-    var job = new Job(id, directory, data, analysis.sequence(), request.copy(), template.toString(), alignment ? "dotplot" : "moddotplot");
+    var job = new Job(id, directory, data, analysis.sequence(), request.copy(), data.relativize(template).toString().replace('\\', '/'), alignment ? "dotplot" : "moddotplot");
     var processor = map.getFastaProcessor();
     jobs.put(id, job);
     try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings, estimate.outputBytes())); }
@@ -542,7 +562,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         }
         int code = process.waitFor();
         if (code != 0) throw new IOException("Dotplot adapter exited with code " + code + "; see job log");
-      } finally { if (process.isAlive()) { process.descendants().forEach(ProcessHandle::destroy); process.destroyForcibly(); } }
+      } finally { if (process.isAlive()) ProcessTree.stop(process); }
       stamp.check(fasta); templateStamp.check(template); job.checkCancelled();
       if (!Files.isRegularFile(output)) throw new IOException("Dotplot did not create its sidecar");
       job.elapsedNs = System.nanoTime() - timer;
@@ -686,10 +706,12 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       this.snapshotId = snapshot.fingerprint(); this.sequenceLength = snapshot.length();
     }
     void checkCancelled() { if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new CancellationException(); }
-    void cancel() {
+    synchronized void cancel() {
       if (finished > 0) return;
-      cancelled.set(true); var p = process; if (p != null) { p.descendants().forEach(ProcessHandle::destroy); p.destroyForcibly(); }
-      var t = thread; if (t != null) t.interrupt();
+      cancelled.set(true); ProcessTree.stop(process);
+      var t = thread;
+      if (t != null) t.interrupt();
+      else { state = "cancelled"; finished = System.currentTimeMillis(); }
     }
     synchronized void log(String line) {
       String bounded = line.length() > 4096 ? line.substring(0, 4096) + "…" : line;

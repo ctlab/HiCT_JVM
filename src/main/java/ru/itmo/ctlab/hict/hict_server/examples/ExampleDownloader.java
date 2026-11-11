@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.examples;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import lombok.extern.slf4j.Slf4j;
@@ -36,15 +38,11 @@ import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -85,9 +83,16 @@ public final class ExampleDownloader {
   public interface UrlPolicy {
     void check(@NotNull URI uri) throws IOException;
 
+    default InetAddress resolve(URI uri) throws IOException {
+      check(uri);
+      return InetAddress.getByName(uri.getHost());
+    }
+
     /** https only, and only public addresses. */
     static @NotNull UrlPolicy production() {
-      return uri -> {
+      return new UrlPolicy() {
+        @Override public void check(URI uri) throws IOException { resolve(uri); }
+        @Override public InetAddress resolve(URI uri) throws IOException {
         if (!"https".equalsIgnoreCase(uri.getScheme())) {
           throw new IOException("Only https addresses are allowed: " + uri.getHost());
         }
@@ -107,6 +112,8 @@ public final class ExampleDownloader {
           if (!isPublic(address)) {
             throw new IOException(uri.getHost() + " resolves to a non-public address and was refused");
           }
+        }
+        return addresses[0];
         }
       };
     }
@@ -131,7 +138,7 @@ public final class ExampleDownloader {
 
   private final Path dataDirectory;
   private final UrlPolicy policy;
-  private final HttpClient client;
+  private final PinnedDownloadClient client;
   private final long freeSpaceMargin;
   private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
     final var t = new Thread(r, "hict-example-download");
@@ -141,6 +148,29 @@ public final class ExampleDownloader {
   private final Object lock = new Object();
   private Status status = idle();
   private AtomicBoolean cancel = new AtomicBoolean(false);
+  private java.util.concurrent.Future<?> runningJob;
+  private String jobId;
+  private long startedAtMs;
+  private long finishedAtMs;
+
+  public List<BackgroundJob> backgroundJobs() {
+    synchronized (lock) {
+      if (jobId == null) return List.of();
+      return List.of(new BackgroundJob(
+        jobId, "example_download", status.state().name(), status.progress(), startedAtMs,
+        startedAtMs, finishedAtMs, status.message(), status.error(), status.state() != State.READY ? List.of()
+          : List.of(new BackgroundJob.Output(status.exampleId(), "example", null))));
+    }
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    synchronized (lock) {
+      if (!java.util.Objects.equals(jobId, id)) return false;
+      cancel();
+      return true;
+    }
+  }
+
 
   public ExampleDownloader(final @NotNull Path dataDirectory) {
     this(dataDirectory, UrlPolicy.production(), SAFETY_MARGIN);
@@ -151,7 +181,7 @@ public final class ExampleDownloader {
     this.dataDirectory = dataDirectory;
     this.policy = policy;
     this.freeSpaceMargin = freeSpaceMargin;
-    this.client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(15)).build();
+    this.client = new PinnedDownloadClient();
   }
 
   private static Status idle() {
@@ -168,6 +198,8 @@ public final class ExampleDownloader {
     synchronized (lock) {
       if (status.state() == State.RUNNING) {
         cancel.set(true);
+        client.cancelActive();
+        if (runningJob != null) runningJob.cancel(true);
       }
       return status;
     }
@@ -184,8 +216,11 @@ public final class ExampleDownloader {
       }
       final var flag = new AtomicBoolean(false);
       this.cancel = flag;
+      jobId = java.util.UUID.randomUUID().toString();
+      startedAtMs = System.currentTimeMillis();
+      finishedAtMs = 0;
       status = new Status(State.RUNNING, example.id(), 0.0d, "Starting", null, 0L, 0L, null, List.of(), List.of(), false);
-      executor.execute(() -> run(example, flag));
+      runningJob = executor.submit(() -> run(example, flag));
       return status;
     }
   }
@@ -221,20 +256,32 @@ public final class ExampleDownloader {
           skipped.add(name + " (" + failure.getMessage() + ")");
         }
       }
+      if (flag.get()) throw new CancellationException("Cancelled");
       writeManifest(example, folder, done);
       synchronized (lock) {
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.READY, example.id(), 1.0d, "Ready to open", null, finishedBytes[0], finishedBytes[0], null,
           List.copyOf(done), List.copyOf(skipped), true);
       }
     } catch (final CancellationException cancelled) {
       synchronized (lock) {
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.CANCELLED, example.id(), status.progress(), "Cancelled. Partial files are kept so the download can resume.",
           null, status.downloadedBytes(), status.totalBytes(), null, List.copyOf(done), List.copyOf(skipped), false);
       }
     } catch (final Throwable failure) {
+      if (flag.get()) {
+        synchronized (lock) {
+          finishedAtMs = System.currentTimeMillis();
+          status = new Status(State.CANCELLED, example.id(), status.progress(), "Cancelled. Partial files can be resumed.",
+            null, status.downloadedBytes(), status.totalBytes(), null, List.copyOf(done), List.copyOf(skipped), false);
+        }
+        return;
+      }
       final var message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
       log.info("Example download failed: {}", message);
       synchronized (lock) {
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.FAILED, example.id(), status.progress(), "Failed", message, status.downloadedBytes(),
           status.totalBytes(), null, List.copyOf(done), List.copyOf(skipped), false);
       }
@@ -342,7 +389,26 @@ public final class ExampleDownloader {
         Files.deleteIfExists(part);
         Files.deleteIfExists(meta);
       }
-      final long size = code == 206 ? have + length : length;
+      final long size;
+      if (code == 206) {
+        final var range = java.util.regex.Pattern.compile("bytes (\\d+)-(\\d+)/(\\d+|\\*)").matcher(contentRange);
+        if (!range.matches()) {
+          response.body().close();
+          throw new IOException("Invalid Content-Range for " + name);
+        }
+        try {
+          final long start = Long.parseLong(range.group(1));
+          final long end = Long.parseLong(range.group(2));
+          size = range.group(3).equals("*") ? -1 : Long.parseLong(range.group(3));
+          if (start != have || end < start || (size >= 0 && end >= size)
+            || (length >= 0 && Math.addExact(Math.subtractExact(end, start), 1) != length)) {
+            throw new IllegalArgumentException("Inconsistent range");
+          }
+        } catch (IllegalArgumentException | ArithmeticException invalid) {
+          response.body().close();
+          throw new IOException("Invalid Content-Range for " + name, invalid);
+        }
+      } else size = length;
       if (expected > 0 && size > 0 && size != expected) {
         response.body().close();
         throw new IOException(name + " is " + size + " bytes but the catalog says " + expected + ". Nothing was kept.");
@@ -391,6 +457,7 @@ public final class ExampleDownloader {
       }
       break;
     }
+    if (flag.get()) throw new CancellationException("Cancelled");
     if (!verified(part, expected, sha, true)) {
       Files.deleteIfExists(part);
       Files.deleteIfExists(meta);
@@ -400,25 +467,13 @@ public final class ExampleDownloader {
     Files.deleteIfExists(meta);
   }
 
-  private HttpResponse<InputStream> open(final URI first, final long have, final @Nullable String validator,
-                                         final AtomicBoolean flag) throws IOException {
+  private PinnedDownloadClient.Response open(final URI first, final long have, final @Nullable String validator,
+                                              final AtomicBoolean flag) throws IOException {
     var uri = first;
     for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      policy.check(uri);
-      final var builder = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(60)).GET();
-      if (have > 0) {
-        builder.header("Range", "bytes=" + have + "-");
-        if (validator != null) {
-          builder.header("If-Range", validator);
-        }
-      }
-      final HttpResponse<InputStream> response;
-      try {
-        response = client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new CancellationException("Interrupted");
-      }
+      if (flag.get()) throw new CancellationException("Cancelled");
+      final var address = policy.resolve(uri);
+      final var response = client.open(uri, address, have, validator, flag);
       final int code = response.statusCode();
       if (code >= 300 && code < 400 && code != 304) {
         final var location = response.headers().firstValue("Location").orElseThrow(() -> new IOException("A redirect had no Location"));
@@ -486,5 +541,6 @@ public final class ExampleDownloader {
   public void close() {
     cancel.set(true);
     executor.shutdownNow();
+    client.close();
   }
 }

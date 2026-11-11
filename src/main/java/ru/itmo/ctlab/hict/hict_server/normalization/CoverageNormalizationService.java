@@ -24,6 +24,8 @@
 
 package ru.itmo.ctlab.hict.hict_server.normalization;
 
+import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -69,6 +71,26 @@ public final class CoverageNormalizationService {
   private Status status = new Status(State.IDLE, 0.0d, "Not started", CoverageNormalizer.ALGORITHM_VERSION, null, 0L);
   private AtomicBoolean cancelFlag = new AtomicBoolean(false);
   private long nextJobId = 1L;
+  private long startedAtMs;
+  private long finishedAtMs;
+
+  public java.util.List<BackgroundJob> backgroundJobs() {
+    synchronized (lock) {
+      if (status.state() == State.IDLE) return java.util.List.of();
+      return java.util.List.of(new BackgroundJob(
+        Long.toString(status.jobId()), "coverage", status.state().name(), status.progress(),
+        startedAtMs, startedAtMs, finishedAtMs, status.message(), status.error(), java.util.List.of()));
+    }
+  }
+
+  public boolean cancelBackgroundJob(String id) {
+    synchronized (lock) {
+      if (!Long.toString(status.jobId()).equals(id)) return false;
+      cancel();
+      return true;
+    }
+  }
+
 
   public @NotNull Status status() {
     synchronized (lock) {
@@ -88,7 +110,10 @@ public final class CoverageNormalizationService {
       if (status.state() == State.RUNNING) {
         throw new AlreadyRunningException();
       }
+      startedAtMs = System.currentTimeMillis();
+      finishedAtMs = 0;
       if (files.stream().allMatch(f -> f.getNormalizationWeights().prepared() != null)) {
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.READY, 1.0d, "Already prepared", CoverageNormalizer.ALGORITHM_VERSION, null, nextJobId++);
         return status;
       }
@@ -116,7 +141,8 @@ public final class CoverageNormalizationService {
       final boolean running = status.state() == State.RUNNING;
       status = new Status(running ? State.CANCELLED : State.IDLE, 0.0d,
         running ? "Cancelled because the map changed" : "Not started",
-        CoverageNormalizer.ALGORITHM_VERSION, null, 0L);
+        CoverageNormalizer.ALGORITHM_VERSION, null, running ? status.jobId() : 0L);
+      if (running) finishedAtMs = System.currentTimeMillis();
     }
   }
 
@@ -145,22 +171,26 @@ public final class CoverageNormalizationService {
         for (int i = 0; i < files.size(); i++) {
           files.get(i).getNormalizationWeights().publish(prepared.get(i));
         }
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.READY, 1.0d, "Ready", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
       }
     } catch (final CoverageNormalizer.CancelledException cancelled) {
       synchronized (lock) {
         if (status.jobId() != jobId) return;
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.CANCELLED, status.progress(), "Cancelled", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
       }
     } catch (final Throwable failure) {
       synchronized (lock) {
         if (status.jobId() != jobId) return;
         if (cancel.get()) {
+          finishedAtMs = System.currentTimeMillis();
           status = new Status(State.CANCELLED, status.progress(), "Cancelled", CoverageNormalizer.ALGORITHM_VERSION, null, jobId);
           return;
         }
         log.warn("Coverage normalization failed", failure);
         final var message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+        finishedAtMs = System.currentTimeMillis();
         status = new Status(State.FAILED, status.progress(), "Failed", CoverageNormalizer.ALGORITHM_VERSION, message, jobId);
       }
     }

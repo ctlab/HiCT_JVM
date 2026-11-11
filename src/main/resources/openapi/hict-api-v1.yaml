@@ -1685,6 +1685,58 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List background jobs in this server session
+      operationId: listBackgroundJobs
+      responses:
+        '200':
+          description: Existing service snapshots ordered by creation time
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BackgroundJob' }
+  /jobs/cancel:
+    post:
+      tags: [Jobs]
+      summary: Cancel one background job
+      operationId: cancelBackgroundJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string, description: Service-prefixed ID from GET /jobs }
+      responses:
+        '200':
+          description: Cancellation requested
+        '400':
+          description: Invalid ID
+        '404':
+          description: Job no longer available
+  /dotplot/jobs/{jobId}/download:
+    get:
+      tags: [Conversion]
+      summary: Download a finished legacy dotplot result
+      operationId: downloadDotplotResult
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Generated matrix
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404':
+          description: Result unavailable
   /convert/jobs:
     post:
       tags: [Conversion]
@@ -2132,6 +2184,32 @@ components:
             $ref: '#/components/schemas/EmptyObject'
           example: {}
   schemas:
+    BackgroundJob:
+      type: object
+      required: [id, kind, state, canCancel, outputs]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        state: { type: string, enum: [submitted, running, finished, failed, cancelled] }
+        canCancel: { type: boolean }
+        progress: { type: number, nullable: true, minimum: 0, maximum: 1 }
+        createdAtMs: { type: integer, format: int64, nullable: true }
+        startedAtMs: { type: integer, format: int64, nullable: true }
+        finishedAtMs: { type: integer, format: int64, nullable: true }
+        message: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        outputs:
+          type: array
+          items:
+            type: object
+            required: [filename, action]
+            properties:
+              filename: { type: string }
+              action: { type: string, enum: [open_map, download, open_tracks, attach_identity, attach_dotplot, fasta_only, example] }
+              fastaFilename: { type: string, nullable: true }
+              agpFilename: { type: string, nullable: true }
+              mapFilename: { type: string, nullable: true }
+
     EmptyObject:
       type: object
       additionalProperties: false
