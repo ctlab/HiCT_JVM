@@ -338,7 +338,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           // Generated overlays intentionally contain only requested resolutions.
           // Their source contigs/ATUs and synchronized dimensions were verified
           // above. An unrelated map still requires explicit confirmation.
-          if (!compatibility.exactMatch() && !allowMismatch && !generatedOverlay) {
+          if ((!compatibility.sharedReference() || !compatibility.sameMatrixSizes()) && !allowMismatch && !generatedOverlay) {
             try {
               secondaryChunkedFile.close();
             } catch (final Exception ignored) {
@@ -1529,13 +1529,23 @@ public class FileOpHandlersHolder extends HandlersHolder {
     final var secondaryMatrixSizeBins = responseMatrixSizeBins(secondary);
     return new SecondaryCompatibility(
       Arrays.equals(primaryResolutions, secondaryResolutions),
-      SecondaryResolutionCompatibility.matchingSubset(primaryResolutions, primaryMatrixSizeBins,
+      SecondaryResolutionCompatibility.matchingSharedLevels(primaryResolutions, primaryMatrixSizeBins,
         secondaryResolutions, secondaryMatrixSizeBins),
+      referenceIntervals(primary).equals(referenceIntervals(secondary)),
       primaryResolutions,
       secondaryResolutions,
       primaryMatrixSizeBins,
       secondaryMatrixSizeBins
     );
+  }
+
+  private record ReferenceInterval(String name, long start, long length) { }
+
+  private static java.util.Set<ReferenceInterval> referenceIntervals(ChunkedFile file) {
+    return file.getOriginalDescriptors().values().stream().map(descriptor ->
+      new ReferenceInterval(descriptor.getContigNameInSourceFASTA(),
+        descriptor.getOffsetInSourceFASTA(), descriptor.getLengthBp()))
+      .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
   public static @Nullable SecondaryCompatibility refreshSecondaryCompatibility(final @NotNull LocalMap<String, Object> map) {
@@ -1602,12 +1612,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
 
   private record SecondaryCompatibility(boolean sameResolutions,
                                         boolean sameMatrixSizes,
+                                        boolean sharedReference,
                                         long[] primaryResolutions,
                                         long[] secondaryResolutions,
                                         long[] primaryMatrixSizeBins,
                                         long[] secondaryMatrixSizeBins) {
     private boolean exactMatch() {
-      return sameResolutions && sameMatrixSizes;
+      return sharedReference && sameResolutions && sameMatrixSizes;
     }
 
     private io.vertx.core.json.JsonArray warningsAsJsonArray() {
@@ -1617,6 +1628,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
       }
       if (!sameMatrixSizes) {
         warnings.add("Primary and secondary sources have different matrix sizes. Smaller source will be padded with background.");
+      }
+      if (!sharedReference) {
+        warnings.add("The sources have different reference intervals. Some positions cannot be compared directly.");
       }
       return warnings;
     }
@@ -1639,6 +1653,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       return new io.vertx.core.json.JsonObject()
         .put("sameResolutions", sameResolutions)
         .put("sameMatrixSizes", sameMatrixSizes)
+        .put("sharedReference", sharedReference)
         .put("exactMatch", exactMatch())
         .put("primaryMaxBins", primaryMaxBins)
         .put("secondaryMaxBins", secondaryMaxBins)

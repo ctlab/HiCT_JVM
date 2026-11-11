@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Compare layers with different resolution pyramids on the same assembly grid. Each layer selects its closest available resolution, with a loading indicator during overlay changes.
+
 - Load the file picker, wizard and heavy tools on demand. Reuse versioned browser assets between visits and release map resources on close.
 
 - Long conversions keep running until they finish. Upload inputs are cleaned up after conversion, and completed results stay available for download until they expire.

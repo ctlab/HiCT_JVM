@@ -751,6 +751,21 @@ paths:
           schema: { type: integer, format: int64 }
           description: Exact bp resolution. Optional alternative to `level`.
         - in: query
+          name: source
+          required: false
+          schema: { type: string, enum: [PRIMARY, SECONDARY] }
+          description: Request one source. An omitted source returns the composed tile.
+        - in: query
+          name: gridBpResolution
+          required: false
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: For a secondary tile, project native bins onto this primary assembly level.
+        - in: query
+          name: gridSampleFactor
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 64, default: 1 }
+          description: Subdivide each projected primary grid cell by this factor along each axis.
+        - in: query
           name: level
           required: false
           schema: { type: integer }
@@ -1932,6 +1947,7 @@ paths:
         '202': {description: Analysis queued; poll sequence/jobs/list for progress and outputFile}
         '400': {description: Invalid parameters or selection}
         '409': {description: Map or linked FASTA unavailable, or stale assembly revision}
+        '413': {description: Overlay estimate exceeds the memory or disk budget. Select a smaller region or fewer resolutions.}
         '429': {description: Analysis queue is full}
   /sequence/dotplot/jobs:
     post:
@@ -1971,6 +1987,7 @@ paths:
         '202': {description: Analysis queued; poll sequence/jobs/list for progress and outputFile}
         '400': {description: Invalid parameters or selection}
         '409': {description: Map or linked FASTA unavailable, or stale assembly revision}
+        '413': {description: Overlay estimate exceeds the memory or disk budget. Select a smaller region or fewer resolutions.}
         '429': {description: Analysis queue is full}
   /sequence/jobs/list:
     post:
@@ -2327,6 +2344,9 @@ components:
       properties:
         sameResolutions: { type: boolean }
         sameMatrixSizes: { type: boolean }
+        sharedReference:
+          type: boolean
+          description: The original sources declare the same named reference intervals.
         exactMatch: { type: boolean }
         primaryMaxBins: { type: integer, format: int64 }
         secondaryMaxBins: { type: integer, format: int64 }

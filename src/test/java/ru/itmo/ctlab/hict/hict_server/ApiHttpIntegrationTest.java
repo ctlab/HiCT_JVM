@@ -428,6 +428,33 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void attachesIndependentPyramidsAndRendersOnThePrimaryGrid() throws Exception {
+    final var fixture = tempDataDir;
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(fixture, "primary", java.util.List.of(4L, 10L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(fixture, "overlay", java.util.List.of(3L, 7L));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false, new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
+    final var attached = post("/secondary/open", "{\"filename\":\"overlay.hict.hdf5\"}");
+    assertEquals(200, attached.statusCode(), attached.body());
+    final var status = new JsonObject(attached.body());
+    assertTrue(status.getBoolean("attached"));
+    assertTrue(status.getJsonObject("compatibility").getBoolean("sharedReference"));
+    final var composed = get("/get_tile?bpResolution=4&tile_size=8");
+    assertEquals(200, composed.statusCode(), composed.body());
+    final var projected = get("/get_tile?source=SECONDARY&bpResolution=3&gridBpResolution=4&gridSampleFactor=2&tile_size=16");
+    assertEquals(200, projected.statusCode(), projected.body());
+    final var image = new JsonObject(projected.body()).getString("image");
+    final var png = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(
+      java.util.Base64.getDecoder().decode(image.substring("data:image/png;base64,".length()))));
+    assertEquals(16, png.getWidth());
+    assertEquals(16, png.getHeight());
+    assertEquals(400, get("/get_tile?source=SECONDARY&bpResolution=3&gridBpResolution=4&gridSampleFactor=65").statusCode());
+  }
+
+  @Test
   void rejectedFastaRelinksRetainPublishedPrimaryAndSecondaryPaths() throws Exception {
     for (String name : java.util.List.of("primary", "secondary"))
       ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, name, java.util.List.of(4L, 10L));

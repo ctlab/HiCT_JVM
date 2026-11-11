@@ -266,6 +266,12 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var map = wrapper.getChunkedFile();
     var layout = AssemblySequenceLayout.capture(map, gapLength(request));
     long length = map.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum();
+    var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    var root = data.resolve("processed/sequence-analysis"); Files.createDirectories(root);
+    if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Analysis output must remain inside DATA_DIR");
+    final long diskBudget = Files.getFileStore(root).getUsableSpace() / 2;
+    final long memoryBudget = Runtime.getRuntime().maxMemory() / 4;
+    final AssemblyAnalysisPlan.ResourceEstimate estimate;
     AssemblyAnalysisPlan analysis;
     try {
       AssemblyAnalysisPlan.Region rows, columns;
@@ -278,13 +284,19 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         rows = new AssemblyAnalysisPlan.Region(bounds.getLong("rowStart"), bounds.getLong("rowEnd"));
         columns = new AssemblyAnalysisPlan.Region(bounds.getLong("columnStart"), bounds.getLong("columnEnd"));
       } else throw new IllegalArgumentException("Unknown analysis scope");
+      estimate = AssemblyAnalysisPlan.estimate(map, resolutions, rows, columns);
+      // Window objects and their serialized form coexist during planning. The
+      // identity worker also retains one 64-bit sketch per active window.
+      final long bytesPerWindow = 256L + (alignment ? 0L : Long.BYTES * settings.getInteger("sketch_size"));
+      if (estimate.windows() > memoryBudget / bytesPerWindow || estimate.outputBytes() > diskBudget) {
+        throw new HttpException(413, "This analysis exceeds the memory or disk budget. Select a smaller region or fewer resolutions.");
+      }
       analysis = AssemblyAnalysisPlan.capture(map, resolutions, rows, columns);
+    } catch (ArithmeticException overflow) {
+      throw new HttpException(413, "This analysis is too large. Select a smaller region or fewer resolutions.");
     } catch (IllegalArgumentException | ClassCastException e) { throw new HttpException(400, e.getMessage()); }
     var executable = SequenceToolAvailability.require("hict-moddotplot");
     Path aligner = alignment ? SequenceToolAvailability.requireAligner() : null;
-    var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
-    var root = data.resolve("processed/sequence-analysis"); Files.createDirectories(root);
-    if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Analysis output must remain inside DATA_DIR");
     try { validateOutputRequest(request, data, ".hict.hdf5"); }
     catch (FileAlreadyExistsException e) { throw new HttpException(409, e.getMessage()); }
     catch (IllegalArgumentException e) { throw new HttpException(400, e.getMessage()); }
@@ -294,13 +306,14 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var job = new Job(id, directory, data, analysis.sequence(), request.copy(), template.toString(), alignment ? "dotplot" : "moddotplot");
     var processor = map.getFastaProcessor();
     jobs.put(id, job);
-    try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings)); }
+    try { workers.execute(() -> runOverlay(job, processor, fasta, stamp, template, templateStamp, executable, aligner, analysis, layout, settings, estimate.outputBytes())); }
     catch (RejectedExecutionException e) { jobs.remove(id); throw new HttpException(429, "Sequence analysis queue is full"); }
     return job.statusJson();
   }
 
   private void runOverlay(Job job, FASTAProcessor processor, Path fasta, Stamp stamp, Path template,
-                             Stamp templateStamp, Path executable, Path aligner, AssemblyAnalysisPlan analysis, AssemblySequenceLayout layout, JsonObject settings) {
+                             Stamp templateStamp, Path executable, Path aligner, AssemblyAnalysisPlan analysis,
+                             AssemblySequenceLayout layout, JsonObject settings, long estimatedOutputBytes) {
     job.thread = Thread.currentThread(); String terminal = "finished";
     try (var log = Files.newBufferedWriter(job.directory.resolve("job.log"), StandardOpenOption.CREATE_NEW)) {
       job.logWriter = log; job.checkCancelled(); stamp.check(fasta); templateStamp.check(template);
@@ -357,6 +370,11 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         if (!candidate.startsWith(job.directory.getParent()) || !Files.isRegularFile(candidate))
           throw new IOException("Previous overlay is unavailable; its index was retained. Generate a separate overlay or restore the file.");
         previous = candidate;
+      }
+      final long usable = Files.getFileStore(job.directory).getUsableSpace();
+      final long previousBytes = previous == null ? 0L : Files.size(previous);
+      if (previousBytes > usable || estimatedOutputBytes > usable - previousBytes) {
+        throw new IOException("The overlay output exceeds available disk space. Select a smaller region or use another data directory.");
       }
       var output = job.directory.resolve(job.kind + ".hict.hdf5.pending");
       var published = job.directory.resolve(job.kind + ".hict.hdf5");

@@ -1226,3 +1226,39 @@ an explicit pipeline edit. Pan and zoom ran at 16.7–16.8 ms p95 with no long t
 on the 96-, 1,765-, and 7,790-contig fixtures. In the matched before run the dense
 fixture reached 33.3 ms p95 and one 50 ms long task on repeat open. The release-wide
 timing and soak checks remain part of U13.
+
+## Independent matrix resolutions (U8)
+
+The mixed display chooses the nearest stored level per source by log-distance.
+A fresh tie goes to the finer level, and a 4% hysteresis band avoids repeated
+switching. The primary grid remains authoritative for rulers, tracks and scopes.
+Sources that declare the same original reference intervals attach directly even
+when their level sets are disjoint. Explicit confirmation remains available for
+datasets with mismatched reference intervals.
+
+The projection intersects owned native bins with the primary bin footprint in
+source base-pair coordinates. It clips partial bins and handles reverse
+orientation, hidden sequence and split offsets. Counts are summed with overlap
+fractions, identity is averaged by overlapping area of positive scores, and
+presence uses any nonzero contribution. The secondary tile uses a subdivision
+only when there is room to display it at the current scale. Outgoing imagery
+stays visible during the transition, and its source releases obsolete requests
+without scheduling new tiles. Requests use bounded matrix reads, decoded tiles
+are evicted outside the active viewport, and the server cancels work on client
+disconnect. The read guard limits a single projection to 32 million native
+cells, read in blocks of up to 128 × 128. A request outside that envelope requires
+a smaller visible region or a coarser native level.
+
+Sequence overlay planning estimates window memory and uncompressed HDF5 capacity
+before allocating the analysis. The disk estimate accounts for three int64
+columns per cell, geometric capacity growth and per-block minimum allocation.
+Checked arithmetic rejects estimates outside the representable range. The API
+offers a smaller region or fewer resolutions when a request exceeds the budget.
+
+The JVM and WebUI suites passed. Chromium verified 16 animated view landings
+across fine-only, coarse-only, interleaved and non-nested pyramids and kept the
+same landmark after Reverse, native Split and contig scoping. The measured
+maximum was 11 concurrent secondary requests. The ModDotPlot gate passed nine
+checks, including real generation, the identity scale, three 5 kb/10 kb round
+trips and preservation of primary pixels. Secondary replacement and confirmation
+also passed using an actual reference-interval mismatch.

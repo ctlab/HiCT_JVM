@@ -35,7 +35,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import ru.itmo.ctlab.hict.hict_library.assembly.AssemblyBinGrid;
+import ru.itmo.ctlab.hict.hict_library.assembly.ProjectedMatrix;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ResolutionSelection;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.visualization.CoolerWeightsNaNPolicy;
@@ -60,7 +63,9 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -69,11 +74,15 @@ import java.util.stream.IntStream;
 public class TileHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
   private final String statisticsInstance = java.util.UUID.randomUUID().toString();
+  private final Map<ChunkedFile, ProjectionGridCache> projectionGrids = new WeakHashMap<>();
   public static final String EXPECTED_PROFILE_LOCAL_MAP_KEY = "ViewportExpectedProfile";
   private static final byte[] TRANSPARENT_PNG_BYTES = createTransparentPng();
   private static final String TRANSPARENT_PNG_BASE64 = Base64.getEncoder().encodeToString(TRANSPARENT_PNG_BYTES);
   private static final int MAX_MATRIX_QUERY_ELEMENTS = Integer.getInteger("HICT_MATRIX_QUERY_MAX_ELEMENTS", 16_777_216);
   private static final int MAX_TILE_EDGE = 1024;
+  private static final int MAX_PROJECTION_GRIDS_PER_SOURCE = 8;
+
+  private record ProjectionGridCache(Object root, Map<Integer, AssemblyBinGrid> levels) { }
 
   public static void clearExpectedProfileCache(final @NotNull LocalMap<String, Object> map) {
     map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
@@ -608,8 +617,8 @@ public class TileHandlersHolder extends HandlersHolder {
     if (requestedBpResolutionParam != null) {
       final var requestedBpResolution = Long.parseLong(requestedBpResolutionParam);
       final var resolutionOrder = resolutionLookupChunkedFile.getResolutionToIndex().get(requestedBpResolution);
-      if (resolutionOrder == null) {
-        throw new RuntimeException("Requested bpResolution is not present in opened file: " + requestedBpResolution);
+      if (requestedBpResolution <= 0 || resolutionOrder == null) {
+        throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + requestedBpResolution);
       }
       level = resolutionOrder;
     } else {
@@ -636,14 +645,28 @@ public class TileHandlersHolder extends HandlersHolder {
       final var tileSignals = new TileSignalStatistics();
       final var tileRevision = statisticsInstance + ":" + getScheduler(ctx).currentGeneration(RequestTaskScheduler.CancellationDomain.TILE);
       final var selectedBpResolution = requestedChunkedFile.getResolutions()[level];
-      final var selectedMatrixWithWeights = querySourceSubmatrix(
-        requestedChunkedFile,
-        resolutionDescriptor,
-        startRowPx,
-        startColPx,
-        endRowPx,
-        endColPx
-      );
+      final var gridParam = ctx.request().getParam("gridBpResolution");
+      if (gridParam != null && (!"SECONDARY".equals(requestedSource)
+        || !(map.get("secondarySourceCompatibility") instanceof JsonObject compatibility)
+        || !compatibility.getBoolean("sharedReference", false))) {
+        throw new IllegalArgumentException("Primary-grid projection requires matching reference intervals");
+      }
+      final var gridFile = gridParam != null ? chunkedFile : requestedChunkedFile;
+      final Integer gridOrder = gridParam != null
+        ? gridFile.getResolutionToIndex().get(Long.parseLong(gridParam)) : Integer.valueOf(level);
+      if (gridOrder == null || gridOrder <= 0) {
+        throw new io.vertx.ext.web.handler.HttpException(400, "gridBpResolution must be a stored primary matrix resolution");
+      }
+      final var gridDescriptor = ResolutionDescriptor.fromResolutionOrder(gridOrder);
+      final int sampleFactor = gridParam != null
+        ? Integer.parseInt(ctx.request().getParam("gridSampleFactor", "1")) : 1;
+      if (sampleFactor < 1 || sampleFactor > 64 || sampleFactor > gridFile.getResolutions()[gridOrder]) {
+        throw new io.vertx.ext.web.handler.HttpException(400, "gridSampleFactor is outside the supported range");
+      }
+      final var selectedMatrixWithWeights = gridParam != null
+        ? queryProjectedSubmatrix(gridFile, gridDescriptor, requestedChunkedFile, resolutionDescriptor,
+          startRowPx, startColPx, endRowPx, endColPx, sampleFactor)
+        : querySourceSubmatrix(requestedChunkedFile, resolutionDescriptor, startRowPx, startColPx, endRowPx, endColPx);
       if (selectedMatrixWithWeights == null) {
         return encodeTileImage(
           new BufferedImage(Math.max(1, tileWidth), Math.max(1, tileHeight), BufferedImage.TYPE_INT_ARGB),
@@ -659,19 +682,20 @@ public class TileHandlersHolder extends HandlersHolder {
       final BufferedImage sourceImage;
       if (renderPipelineConfig.enabled()) {
         sourceImage = renderPipelineSingleSourceTile(
-          requestedChunkedFile,
+          gridFile,
           selectedMatrixWithWeights,
           options,
           renderPipelineConfig,
           requestedSource,
           track1DManager,
-          tileSignals
+          tileSignals,
+          sampleFactor
         );
       } else {
         final var selectedExpectedProfile = "PRIMARY".equals(requestedSource)
           ? resolveExpectedProfile(map, resolutionDescriptor)
           : null;
-        sourceImage = requestedChunkedFile.tileVisualizationProcessor().visualizeTile(
+        sourceImage = gridFile.tileVisualizationProcessor().visualizeTile(
           selectedMatrixWithWeights,
           options,
           selectedExpectedProfile,
@@ -696,6 +720,7 @@ public class TileHandlersHolder extends HandlersHolder {
       true
     );
     final var secondaryMatrixWithWeights = querySecondarySubmatrix(
+      chunkedFile,
       secondaryChunkedFile,
       chunkedFile.getResolutions()[resolutionDescriptor.getResolutionOrderInArray()],
       startRowPx,
@@ -717,9 +742,12 @@ public class TileHandlersHolder extends HandlersHolder {
         track1DManager
       );
     } else if (secondaryChunkedFile != null && secondaryMatrixWithWeights != null) {
+      final long primaryBp = chunkedFile.getResolutions()[level];
+      final var secondaryGridFile = secondaryChunkedFile.getResolutionToIndex().containsKey(primaryBp)
+        ? secondaryChunkedFile : chunkedFile;
       image = renderTraditionalDualSourceTile(
         chunkedFile,
-        secondaryChunkedFile,
+        secondaryGridFile,
         matrixWithWeights,
         secondaryMatrixWithWeights,
         options,
@@ -1006,7 +1034,7 @@ public class TileHandlersHolder extends HandlersHolder {
           ? secondaryChunkedFile.matrixQueries().getSubmatrix(
             ResolutionDescriptor.fromBpResolution(bpResolution, secondaryChunkedFile),
             startRowPx, startColPx, endRowPx, endColPx, false)
-          : querySecondarySubmatrix(secondaryChunkedFile, bpResolution,
+          : querySecondarySubmatrix(primaryChunkedFile, secondaryChunkedFile, bpResolution,
             matrixWithWeights.startRowIncl(), matrixWithWeights.startColIncl(),
             matrixWithWeights.startRowIncl() + rowCount, matrixWithWeights.startColIncl() + columnCount);
         // Diagnostics evaluate a supplied numeric branch without changing the
@@ -1977,7 +2005,8 @@ public class TileHandlersHolder extends HandlersHolder {
                                                                 final @NotNull RenderPipelineConfig pipelineConfig,
                                                                 final @NotNull String sourceName,
                                                                 final Track1DManager track1DManager,
-                                                                final TileSignalStatistics tileSignals) {
+                                                                final TileSignalStatistics tileSignals,
+                                                                final int sampleFactor) {
     final var values = matrixWithWeights.matrix();
     final var rowCount = values.rows();
     final var columnCount = values.cols();
@@ -2005,8 +2034,8 @@ public class TileHandlersHolder extends HandlersHolder {
     final var rowBinValues = new long[rowCount];
     final var rowBpValues = new long[rowCount];
     for (int row = 0; row < rowCount; ++row) {
-      final var rowPx = matrixWithWeights.startRowIncl() + row;
-      rowPxValues[row] = rowPx;
+      rowPxValues[row] = matrixWithWeights.startRowIncl() + row;
+      final var rowPx = Math.floorDiv(rowPxValues[row], sampleFactor);
       rowBinValues[row] = sourceChunkedFile.convertUnits(
         rowPx,
         resolutionDescriptor,
@@ -2027,8 +2056,8 @@ public class TileHandlersHolder extends HandlersHolder {
     final var colBinValues = new long[columnCount];
     final var colBpValues = new long[columnCount];
     for (int col = 0; col < columnCount; ++col) {
-      final var colPx = matrixWithWeights.startColIncl() + col;
-      colPxValues[col] = colPx;
+      colPxValues[col] = matrixWithWeights.startColIncl() + col;
+      final var colPx = Math.floorDiv(colPxValues[col], sampleFactor);
       colBinValues[col] = sourceChunkedFile.convertUnits(
         colPx,
         resolutionDescriptor,
@@ -2066,27 +2095,13 @@ public class TileHandlersHolder extends HandlersHolder {
       for (final var binding : pipelineConfig.requiredTrackBindings()) {
         if (binding.axis() == RenderPipelineConfig.TrackAxis.ROW) {
           if (!rowTrackValuesByTrackId.containsKey(binding.trackId())) {
-            final var sampled = track1DManager.sampleTrackValues(
-              sourceChunkedFile,
-              binding.trackId(),
-              matrixWithWeights.startRowIncl(),
-              matrixWithWeights.startRowIncl() + rowCount,
-              bpResolution,
-              QueryLengthUnit.PIXELS
-            );
-            rowTrackValuesByTrackId.put(binding.trackId(), normalizeTrackValues(sampled, rowCount));
+            rowTrackValuesByTrackId.put(binding.trackId(), sampleGridTrack(track1DManager, sourceChunkedFile,
+              binding.trackId(), matrixWithWeights.startRowIncl(), rowCount, bpResolution, sampleFactor));
           }
         } else {
           if (!colTrackValuesByTrackId.containsKey(binding.trackId())) {
-            final var sampled = track1DManager.sampleTrackValues(
-              sourceChunkedFile,
-              binding.trackId(),
-              matrixWithWeights.startColIncl(),
-              matrixWithWeights.startColIncl() + columnCount,
-              bpResolution,
-              QueryLengthUnit.PIXELS
-            );
-            colTrackValuesByTrackId.put(binding.trackId(), normalizeTrackValues(sampled, columnCount));
+            colTrackValuesByTrackId.put(binding.trackId(), sampleGridTrack(track1DManager, sourceChunkedFile,
+              binding.trackId(), matrixWithWeights.startColIncl(), columnCount, bpResolution, sampleFactor));
           }
         }
       }
@@ -2107,9 +2122,9 @@ public class TileHandlersHolder extends HandlersHolder {
         final var colPx = colPxValues[col];
         final var colBin = colBinValues[col];
         final var rowOutside =
-          rowPx < 0L || rowPx >= totalVisiblePixels || rowBin < 0L || rowBin >= totalBinsAtResolution;
+          rowPx < 0L || rowPx / sampleFactor >= totalVisiblePixels || rowBin < 0L || rowBin >= totalBinsAtResolution;
         final var colOutside =
-          colPx < 0L || colPx >= totalVisiblePixels || colBin < 0L || colBin >= totalBinsAtResolution;
+          colPx < 0L || colPx / sampleFactor >= totalVisiblePixels || colBin < 0L || colBin >= totalBinsAtResolution;
         if (rowOutside || colOutside) {
           rgba[pixelIndex++] = 0x00000000;
           continue;
@@ -2137,6 +2152,19 @@ public class TileHandlersHolder extends HandlersHolder {
     return image;
   }
 
+  private double[] sampleGridTrack(Track1DManager tracks, ChunkedFile grid, String trackId,
+                                   long start, int count, long resolution, int factor) {
+    final long first = Math.floorDiv(start, factor);
+    final long end = Math.floorDiv(start + count - 1, factor) + 1;
+    final var samples = normalizeTrackValues(
+      tracks.sampleTrackValues(grid, trackId, first, end, resolution, QueryLengthUnit.PIXELS),
+      Math.toIntExact(end - first));
+    if (factor == 1) return samples;
+    final var expanded = new double[count];
+    for (int i = 0; i < count; i++) expanded[i] = samples[Math.toIntExact(Math.floorDiv(start + i, factor) - first)];
+    return expanded;
+  }
+
   private double @NotNull [] normalizeTrackValues(final double[] sampled,
                                                    final int expectedLength) {
     final var safeLength = Math.max(0, expectedLength);
@@ -2155,6 +2183,7 @@ public class TileHandlersHolder extends HandlersHolder {
   }
 
   private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights querySecondarySubmatrix(
+    final @NotNull ChunkedFile primaryChunkedFile,
     final @Nullable ChunkedFile secondaryChunkedFile,
     final long bpResolution,
     final long startRowPx,
@@ -2165,18 +2194,60 @@ public class TileHandlersHolder extends HandlersHolder {
     if (secondaryChunkedFile == null) {
       return null;
     }
-    final var resolutionOrder = secondaryChunkedFile.getResolutionToIndex().get(bpResolution);
-    if (resolutionOrder == null) {
-      return null;
+    final var exactOrder = secondaryChunkedFile.getResolutionToIndex().get(bpResolution);
+    if (exactOrder != null) {
+      return querySourceSubmatrix(secondaryChunkedFile, ResolutionDescriptor.fromResolutionOrder(exactOrder),
+        startRowPx, startColPx, endRowPx, endColPx);
     }
-    return querySourceSubmatrix(
-      secondaryChunkedFile,
-      ResolutionDescriptor.fromResolutionOrder(resolutionOrder),
-      startRowPx,
-      startColPx,
-      endRowPx,
-      endColPx
-    );
+    final int nearest = ResolutionSelection.nearestOrder(secondaryChunkedFile.getResolutions(), bpResolution);
+    if (nearest < 0) return null;
+    return queryProjectedSubmatrix(primaryChunkedFile, ResolutionDescriptor.fromBpResolution(bpResolution, primaryChunkedFile),
+      secondaryChunkedFile, ResolutionDescriptor.fromResolutionOrder(nearest), startRowPx, startColPx, endRowPx, endColPx, 1);
+  }
+
+  private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights queryProjectedSubmatrix(
+    ChunkedFile primary, ResolutionDescriptor grid, ChunkedFile source, ResolutionDescriptor nativeLevel,
+    long rowStart, long colStart, long rowEnd, long colEnd, int sampleFactor
+  ) {
+    final long visible = Math.multiplyExact(primary.getContigTree().getLengthInUnits(QueryLengthUnit.PIXELS, grid), sampleFactor);
+    final long firstRow = Math.max(0, rowStart);
+    final long firstCol = Math.max(0, colStart);
+    final long lastRow = Math.min(visible, rowEnd);
+    final long lastCol = Math.min(visible, colEnd);
+    if (lastRow <= firstRow || lastCol <= firstCol || isSequenceOnly(source)) return null;
+    final var reducer = switch (source.getSourceMetadata().units()) {
+      case IDENTITY_PERCENT -> ProjectedMatrix.Reducer.IDENTITY;
+      case ALIGNMENT_PRESENCE -> ProjectedMatrix.Reducer.PRESENCE;
+      default -> ProjectedMatrix.Reducer.COUNTS;
+    };
+    return ProjectedMatrix.query(projectionGrid(primary, grid), projectionGrid(source, nativeLevel),
+      source, grid, nativeLevel, firstRow, firstCol, lastRow, lastCol, sampleFactor, reducer);
+  }
+
+  private AssemblyBinGrid projectionGrid(ChunkedFile file, ResolutionDescriptor resolution) {
+    final var tree = file.getContigTree();
+    final var lock = tree.getRootLock().readLock();
+    lock.lock();
+    try {
+      synchronized (projectionGrids) {
+        final var root = tree.getRoot();
+        var cached = projectionGrids.get(file);
+        if (cached == null || cached.root() != root) {
+          cached = new ProjectionGridCache(root, new LinkedHashMap<>(MAX_PROJECTION_GRIDS_PER_SOURCE, 0.75f, true));
+          projectionGrids.put(file, cached);
+        }
+        final var levels = cached.levels();
+        final int order = resolution.getResolutionOrderInArray();
+        final var existing = levels.get(order);
+        if (existing != null) return existing;
+        final var grid = new AssemblyBinGrid(file, resolution);
+        if (levels.size() == MAX_PROJECTION_GRIDS_PER_SOURCE) levels.remove(levels.keySet().iterator().next());
+        levels.put(order, grid);
+        return grid;
+      }
+    } finally {
+      lock.unlock();
+    }
   }
 
   private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights querySourceSubmatrix(

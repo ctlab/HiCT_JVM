@@ -26,7 +26,8 @@ public final class SequenceOverlayCompatibility {
       for (long resolution : overlay.getResolutions()) {
         if (resolution == 0) continue;
         Integer ai = primary.getResolutionToIndex().get(resolution), bi = overlay.getResolutionToIndex().get(resolution);
-        if (ai == null || a.getLengthBinsAtResolution()[ai] != b.getLengthBinsAtResolution()[bi]) throw mismatch();
+        if (ai == null) continue;
+        if (a.getLengthBinsAtResolution()[ai] != b.getLengthBinsAtResolution()[bi]) throw mismatch();
         var aa = a.getAtus().get(ai); var bb = b.getAtus().get(bi);
         if (aa.size() != bb.size()) throw mismatch();
         for (int i = 0; i < aa.size(); i++) {

@@ -69,6 +69,7 @@ def main():
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
+            page.evaluate("window.__hictBenchmark.manager().getMap().on('rendercomplete', () => {})")
             page.wait_for_timeout(1500)
             button = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
             if button.is_visible():
@@ -151,7 +152,7 @@ def main():
             assert max(identity) == 1000000 and sum(value > 0 for value in identity) >= 8, identity
             for preset, mode in (("ModDotPlot: multicolor overlay", "overlay"),
                                  ("ModDotPlot: Hi-C above, identity below", "below")):
-                page.get_by_role("button", name=preset, exact=True).click()
+                page.get_by_role("combobox", name="Visualization preset", exact=True).select_option(label=preset)
                 page.wait_for_function("""mode=>window.__hictBenchmark.manager().networkManager.requestManager
                     .getRenderPipelineConfig().then(p=>mode==='overlay'?p.upperExpression.type==='pixel_blend':p.upperExpression.type==='colormap')""", arg=mode)
                 rendered = snapshot(f"preset-{mode}")

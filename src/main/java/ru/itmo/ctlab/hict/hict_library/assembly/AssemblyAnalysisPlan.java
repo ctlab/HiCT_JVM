@@ -16,7 +16,55 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
   public record Level(long resolution, List<Window> rows, List<Window> columns) {
     public Level { rows = List.copyOf(rows); columns = List.copyOf(columns); }
   }
+  public record ResourceEstimate(long windows, long cells, long outputBytes) { }
   public AssemblyAnalysisPlan { levels = List.copyOf(levels); }
+
+  /**
+   * Upper bound before materializing windows. Each nonzero stores three int64s.
+   * Power-of-two capacities can retain less than four times the final entries
+   * across successive rewrites, with a 64-entry minimum per physical block.
+   */
+  public static ResourceEstimate estimate(ChunkedFile map, List<Long> resolutions, Region rows, Region columns) {
+    final var tuples = map.getAssemblyInfo().contigs();
+    final long length = tuples.stream().mapToLong(t -> t.descriptor().getLengthBp()).reduce(0, Math::addExact);
+    if (rows.end > length || columns.end > length) throw new IllegalArgumentException("Selection outside active assembly");
+    long windows = 0;
+    long cells = 0;
+    long outputBytes = 0;
+    for (long bp : resolutions) {
+      final var order = map.getResolutionToIndex().get(bp);
+      if (bp <= 0 || order == null) throw new IllegalArgumentException("Resolution is absent from the map: " + bp);
+      final long rowBins = estimateAxis(tuples, rows, order, bp);
+      final long colBins = rows.equals(columns) ? rowBins : estimateAxis(tuples, columns, order, bp);
+      final long levelCells = Math.multiplyExact(rowBins, colBins);
+      final long rowStripes = Math.min(rowBins, map.getStripeCount()[order]);
+      final long colStripes = Math.min(colBins, map.getStripeCount()[order]);
+      final long maxBlocks = Math.multiplyExact(rowStripes, colStripes);
+      final long bytes = Math.addExact(Math.multiplyExact(levelCells, 4L * 3 * Long.BYTES),
+        Math.multiplyExact(maxBlocks, (64L * 3 + 2) * Long.BYTES));
+      windows = Math.addExact(windows, Math.addExact(rowBins, colBins));
+      cells = Math.addExact(cells, levelCells);
+      outputBytes = Math.addExact(outputBytes, bytes);
+    }
+    return new ResourceEstimate(windows, cells, outputBytes);
+  }
+
+  private static long estimateAxis(List<ContigTree.ContigTuple> tuples, Region region, int order, long bp) {
+    long result = 0;
+    long start = 0;
+    for (var tuple : tuples) {
+      final var descriptor = tuple.descriptor();
+      final long end = Math.addExact(start, descriptor.getLengthBp());
+      final long span = Math.min(end, region.end) - Math.max(start, region.start);
+      if (span > 0) {
+        final long bound = Math.addExact((span - 1) / bp, 2);
+        result = Math.addExact(result, Math.min(bound, descriptor.getLengthBinsAtResolution()[order]));
+      }
+      if (end >= region.end) break;
+      start = end;
+    }
+    return result;
+  }
 
   /** Caller holds the assembly scheduler/read lock; jobs retain no mutable map. */
   public static AssemblyAnalysisPlan capture(ChunkedFile map, List<Long> resolutions, Region rows, Region columns) {

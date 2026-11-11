@@ -83,7 +83,7 @@ def main():
             assert failed.status >= 400, failed.text()
             assert snapshot() == before
             result['checks'].append('invalid secondary retains both exact edited matrices and journal')
-            pending = choose('tiny-disjoint.hict.hdf5')
+            pending = choose('tiny-unrelated.hict.hdf5')
             assert pending.ok and pending.json()['requiresConfirmation']
             page.get_by_role('button', name='Cancel', exact=True).click()
             assert snapshot() == before
@@ -107,7 +107,7 @@ def main():
                 result['checks'].append('accepted candidate follows reversed primary assembly with exact pixels')
             page.screenshot(path=str(output / 'replacement.png'))
             result['before'], result['after'] = before, after
-            pending = choose('tiny-disjoint.hict.hdf5')
+            pending = choose('tiny-unrelated.hict.hdf5')
             assert pending.ok and pending.json()['requiresConfirmation']
             with page.expect_response(lambda response: response.url.endswith('/secondary/open')) as confirmed:
                 page.get_by_role('button', name='Continue and Attach', exact=True).click()
@@ -118,7 +118,7 @@ def main():
             client_contigs = page.evaluate('''()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors
                 .map(c=>({id:c.contigId,name:c.contigName,direction:c.direction}))''')
             assert client_contigs == expected_contigs
-            assert post('/secondary/status')['filename'] == 'tiny-disjoint.hict.hdf5'
+            assert post('/secondary/status')['filename'] == 'tiny-unrelated.hict.hdf5'
             result['checks'].append('confirmed mismatched replacement applies the returned assembly to the client')
             dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
             for source in ('PRIMARY', 'SECONDARY'):

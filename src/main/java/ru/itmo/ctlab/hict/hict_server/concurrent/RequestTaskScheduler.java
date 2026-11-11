@@ -285,6 +285,11 @@ public final class RequestTaskScheduler implements AutoCloseable {
       // Registration can race with bumpGeneration's scan of older tasks.
       if (generationSnapshot != currentGeneration(domain)) futureTask.cancel(true);
     }
+    if (domain == CancellationDomain.TILE) {
+      ctx.response().closeHandler(ignored -> {
+        if (futureTask.cancel(true)) pool.remove(futureTask);
+      });
+    }
 
     try {
       if (!futureTask.isCancelled()) pool.execute(futureTask);
@@ -425,7 +430,7 @@ public final class RequestTaskScheduler implements AutoCloseable {
                                    final @NotNull T value,
                                    final @NotNull Consumer<T> onSuccess) {
     this.vertx.runOnContext(v -> {
-      if (ctx.response().ended()) {
+      if (ctx.response().ended() || ctx.response().closed()) {
         return;
       }
       try {
@@ -439,7 +444,7 @@ public final class RequestTaskScheduler implements AutoCloseable {
   private void dispatchFailure(final @NotNull RoutingContext ctx,
                                final @NotNull Throwable throwable) {
     this.vertx.runOnContext(v -> {
-      if (ctx.response().ended()) {
+      if (ctx.response().ended() || ctx.response().closed()) {
         return;
       }
       if (throwable instanceof io.vertx.ext.web.handler.HttpException http) ctx.fail(http.getStatusCode(), throwable);
@@ -450,7 +455,7 @@ public final class RequestTaskScheduler implements AutoCloseable {
   private void dispatchCancelled(final @NotNull RoutingContext ctx,
                                  final @Nullable Runnable onCancelled) {
     this.vertx.runOnContext(v -> {
-      if (ctx.response().ended()) {
+      if (ctx.response().ended() || ctx.response().closed()) {
         return;
       }
       if (onCancelled != null) {
