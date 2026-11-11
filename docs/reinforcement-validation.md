@@ -1614,3 +1614,19 @@ keyboard paths and focus return, exact graph/view preservation after reload,
 sidebar collapse/restore, all eleven native resolution switches, the final-level
 guard, valid bounds and rejected reversed bounds. Evidence is under the pointer
 `/tmp/hict-u13-navigation-controls-fixed-dir`.
+
+## Empty conversion list during U13
+
+The real batch audit found View current conversion jobs displaying Running after
+the server returned an empty active set. The progress surface now displays
+No active conversion jobs. when its job list is empty.
+
+The frontend build and focused ESLint pass with zero errors and warnings. The
+four-scenario browser gate checks exact All/None/Invert/Converted/Unconverted
+filename sets, settings Back, hictk attribution, a real native batch conversion
+with independent 2×2 contacts, dismissal while work completes, overwrite Cancel
+with an unchanged output SHA-256 and unchanged server job list, and empty current
+jobs matching the actual server response. Evidence is under
+`/tmp/hict-u13-batch-controls-qualified-dir`. The fixture is a standards-compliant
+Cooler generated from explicit contact values. Earlier minimal fixture metadata
+and route/method harness errors are preserved as failed runs.

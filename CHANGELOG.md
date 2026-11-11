@@ -2,13 +2,15 @@
 
 ## Unreleased
 
-- Close open menus with Escape and keep the last active map resolution visibly enabled.
-
-- Honor the selected Cooler compression level, including uncompressed interaction data with optional balancing.
+- Show an empty conversion-job list accurately after all conversions finish.
 
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Close open menus with Escape and keep the last active map resolution visibly enabled.
+
+- Honor the selected Cooler compression level, including uncompressed interaction data with optional balancing.
 
 - Preserve edited bookmark names through export, import, sidebar changes and saved-session recovery.
 
