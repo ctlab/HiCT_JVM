@@ -109,6 +109,7 @@ mkdir -p \
 
 cp "${FAT_JAR}" "${APP_DIR}/lib/hict.jar"
 cp "${PROJECT_DIR}/LICENSE" "${APP_DIR}/licenses/HiCT_JVM_LICENSE"
+cp "${PROJECT_DIR}/THIRD_PARTY_LICENSES.md" "${APP_DIR}/licenses/THIRD_PARTY_LICENSES.md"
 if [[ -f "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" ]]; then
   cp "${PROJECT_DIR}/../HiCT_WebUI/LICENSE" "${APP_DIR}/licenses/HiCT_WebUI_LICENSE"
 fi

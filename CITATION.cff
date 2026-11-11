@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "Please cite this software and the dataset and analysis tools used. Include the repository revision in your methods."
+type: software
+title: "HiCT: Hi-C scaffolding and visualization workstation"
+version: 2.0.0
+license: MIT
+repository-code: "https://github.com/ctlab/HiCT_JVM"
+url: "https://github.com/ctlab/HiCT_JVM"
+authors:
+  - family-names: Serdiukov
+    given-names: Aleksandr
+  - family-names: Zamyatin
+    given-names: Anton
+  - family-names: Sinitsyn
+    given-names: Aleksandr
+  - family-names: Dravgelis
+    given-names: Vitalii
+  - family-names: Lobanov
+    given-names: Zakhar
+  - family-names: Zheleznov
+    given-names: Nikita
+  - family-names: Avdeyev
+    given-names: Pavel
+  - family-names: Cherkasov
+    given-names: Nikolay
+  - name: "Computer Technologies Laboratory ITMO University team"

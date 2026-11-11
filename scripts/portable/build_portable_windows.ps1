@@ -358,6 +358,7 @@ New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 
 Copy-Item -Force $fatJar.FullName (Join-Path $appDir "lib\hict.jar")
 Copy-Item -Force (Join-Path $projectDir "LICENSE") (Join-Path $appDir "licenses\HiCT_JVM_LICENSE")
+Copy-Item -Force (Join-Path $projectDir "THIRD_PARTY_LICENSES.md") (Join-Path $appDir "licenses\THIRD_PARTY_LICENSES.md")
 $webUiLicense = Join-Path $projectDir "..\HiCT_WebUI\LICENSE"
 if (Test-Path $webUiLicense) {
   Copy-Item -Force $webUiLicense (Join-Path $appDir "licenses\HiCT_WebUI_LICENSE")

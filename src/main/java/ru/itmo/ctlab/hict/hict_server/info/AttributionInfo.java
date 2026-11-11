@@ -36,13 +36,14 @@ public final class AttributionInfo {
     "HDF5 and JHDF5 - matrix storage and native HDF5 access - https://www.hdfgroup.org/solutions/hdf5/ and https://unlimited.ethz.ch/spaces/JHDF/overview",
     "hictk - optional .hic conversion path - https://github.com/paulsengroup/hictk",
     "minimap2 and mm2-plus - optional FASTA self-alignment for dotplot generation - https://github.com/lh3/minimap2 and https://github.com/at-cg/mm2-plus",
+    "NCBI BLAST+ - public-domain NCBI sequence search with separately licensed bundled dependencies; Camacho et al. BMC Bioinformatics 2009, 10:421. https://doi.org/10.1186/1471-2105-10-421",
     "SeqKit - MIT-licensed sequence search; Shen W, Sipos B, Zhao L. SeqKit2. iMeta 2024, e191. https://doi.org/10.1002/imt2.191",
     "ModDotPlot and ntHash - MIT-licensed sequence identity estimation; Sweeten AP, Schatz MC, Phillippy AM. Bioinformatics 2024, btae493. https://doi.org/10.1093/bioinformatics/btae493",
     "Includes color specifications and designs developed by Cynthia Brewer (https://colorbrewer.org/), with Apache-2.0 and upstream attribution notices.",
     "HTSJDK and IGV BigWig - FASTA/sequence and genomic track support - https://github.com/samtools/htsjdk and https://github.com/igvteam/igv",
     "Apache Commons - JVM utilities - https://commons.apache.org/",
     "SLF4J, Logback and picocli - logging and command-line interface - https://www.slf4j.org/, https://logback.qos.ch/ and https://picocli.info/",
-    "Vue, Pinia, Vite, TypeScript, Bootstrap, PrimeVue, OpenLayers, igv.js, jsPDF and LiteGraph - WebUI framework, visualization and exports.",
+    "Vue, Pinia, Vite, TypeScript, Bootstrap, PrimeVue, OpenLayers, jsPDF and LiteGraph - WebUI framework, visualization and exports.",
     "Tauri and Electron - optional bundled WebUI browser runtimes - https://tauri.app/ and https://www.electronjs.org/",
     "Eclipse Temurin / OpenJDK - optional Java runtime in portable packages - https://adoptium.net/temurin/"
   );
@@ -68,7 +69,7 @@ public final class AttributionInfo {
       "Team: " + AUTHORS_LINE,
       "License: HiCT is distributed under the " + LICENSE_LINE + ".",
       "Core libraries: Eclipse Vert.x (Eclipse Foundation), HDF5/JHDF5 (The HDF Group and ETH Zurich/CISD), HTSJDK/IGV BigWig (Broad Institute/IGV team), Apache Commons, SLF4J/Logback and picocli.",
-      "WebUI libraries: Vue, Vite, Pinia, Bootstrap, OpenLayers, PrimeVue, igv.js, jsPDF, LiteGraph and contributors.",
+      "WebUI libraries: Vue, Vite, Pinia, Bootstrap, OpenLayers, PrimeVue, jsPDF, LiteGraph and contributors.",
       "Optional .hic conversion: bundled hictk builds are redistributed under the hictk MIT License; cite Rossini R, Paulsen J. Bioinformatics 2024;40(7):btae408.",
       "Optional dotplot alignment: bundled minimap2/mm2-plus builds are redistributed with upstream license files and citations.",
       "Full third-party notices are kept in package metadata, portable licenses/, runtime/legal, and toolchains/<platform>/share when bundled."

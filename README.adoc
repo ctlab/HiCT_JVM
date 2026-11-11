@@ -1,704 +1,202 @@
-= HiCT JVM Implementation
+= HiCT
+:toc:
+:toclevels: 2
 
-image:https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release.yml/badge.svg[link="https://github.com/AxisAlexNT/HiCT_JVM/actions/workflows/autobuild-release.yml"] image:https://img.shields.io/badge/vert.x-4.4.1-purple.svg[link="https://vertx.io"]
+HiCT is a desktop and browser workstation for inspecting Hi-C contact maps and
+curating genome assemblies. Select, reverse, move, split and group sequence,
+inspect linked FASTA and annotations, compare matrix layers, and export an
+assembly or publication figure. Assembly edits support Undo and Redo.
 
-= Launching pre-built version (Easiest way to try HICT yourself) 
+The JVM server stores and edits matrices. The Vue WebUI provides the interface.
+Portable packages include Java and the native tools needed for conversion,
+sequence search and dotplots. Data remain in the directory you choose.
 
-⚠️ The main way to launch HiCT is to **use pre-built** .exe file (for Windows) or .run file (for Linux). 
-These are available for download in the **Releases section**: https://github.com/ctlab/HiCT_JVM/releases/tag/latest-master. Download files that either have .exe or .run extension, and simply run them with double-click (on Linux use `chmod +x` to allow execution). This way, you won't need to install any additional dependencies or external tools, as other distributions. 
+== Install a portable package
 
-= Advanced ways to start
+Download the asset for your architecture from the
+https://github.com/ctlab/HiCT_JVM/releases[release page]. Verify its SHA-256
+against the accompanying checksum file. The release validation report records
+which artifacts have completed platform checks.
 
-Most users should download a ready-to-run package from the https://github.com/ctlab/HiCT_JVM/releases[GitHub Releases page].
-You do not need to clone this repository or build the project unless you want to develop HiCT itself.
+=== Linux x86-64
 
-Open the Releases page, choose the newest release, scroll to *Assets*, and download the file for your operating system.
-
-=== What should I download?
-
-* *Windows:* download `HiCT-<version>-windows-x86_64.exe`.
-  At first start, Windows might display a window "Windows protected your PC" and advise you not to run this file. That happens because HiCT does not have a digital signature now. Usually you can click on "More info" and the button "Run anyway" would appear.
-  If Windows or your organization blocks unsigned `.exe` files, download `HiCT-<version>-windows-x86_64-portable.zip`, unzip it, and run `HiCT.cmd`.
-* *Linux, normal desktop/server distributions:* download `HiCT-<version>-linux-x86_64.run`.
-  This is the recommended choice for recent versions Ubuntu, Debian, Fedora, RHEL, CentOS, openSUSE, Arch, and similar Linux systems.
-* *Linux, older/minimal systems or containers:* download `HiCT-<version>-x86_64.AppImage`.
-  Use this if the `.run` file does not start, if it reports a glibc/runtime error, or if you are using Alpine/musl or an old manylinux-like container.
-* *macOS Apple Silicon (M1, M2, ...):* download `HiCT-<version>-darwin-arm64.run`.
-* *macOS Intel (Core i3/i5/i7):* download `HiCT-<version>-darwin-x86_64.run`.
-  This is not a `.dmg` installer: there is no application icon to drag into Applications. Download the `.run` file, open Terminal, go to the folder with the downloaded file, unblock it if macOS asks, make it runnable, and start it from Terminal.
-
-=== Linux quick start
-
-For most Linux systems:
+Use `HiCT-<version>-linux-x86_64.run` on a supported glibc distribution.
+The launcher extracts into its cache and opens the Launcher window.
 
 [source,bash]
 ----
 chmod +x HiCT-<version>-linux-x86_64.run
-bash HiCT-<version>-linux-x86_64.run
+./HiCT-<version>-linux-x86_64.run
 ----
 
-For older/minimal Linux systems, Alpine, or containers:
+The `HiCT-<version>-x86_64.AppImage` asset offers another packaged runtime.
+Make it executable and start it. For a FUSE mount failure, use its extraction mode.
 
 [source,bash]
 ----
 chmod +x HiCT-<version>-x86_64.AppImage
-./HiCT-<version>-x86_64.AppImage
-----
-
-If the AppImage reports a FUSE or mount error, use the extraction fallback:
-
-[source,bash]
-----
 APPIMAGE_EXTRACT_AND_RUN=1 ./HiCT-<version>-x86_64.AppImage
 ----
 
-After startup, open the WebUI at `http://localhost:8080`.
+=== Windows x86-64
 
-To choose the folder where HiCT looks for `.hict.hdf5`, `.mcool`, `.cool`, `.agp`, and `.fasta` files, set `DATA_DIR`:
+Run `HiCT-<version>-windows-x86_64.exe`, choose a data folder and press Start.
+The portable ZIP can also be extracted into a writable folder and started with
+`HiCT.cmd`. Organization policies may require approval for an unsigned executable.
+
+=== macOS
+
+Choose `darwin-arm64` for Apple Silicon or `darwin-x86_64` for Intel. The `.run`
+asset extracts its portable application. In Terminal, run the matching file.
+Review any macOS security prompt using your organization's software policy.
 
 [source,bash]
 ----
-DATA_DIR=/path/to/your/data bash HiCT-<version>-linux-x86_64.run
-DATA_DIR=/path/to/your/data ./HiCT-<version>-x86_64.AppImage
+chmod +x HiCT-<version>-darwin-arm64.run
+./HiCT-<version>-darwin-arm64.run
 ----
 
-=== Linux on a remote SSH cluster
+=== Start with your own data folder
 
-If HiCT is running on a remote Linux server or compute node, start it in server mode and forward both HiCT ports to your computer.
-Run this command on your local computer:
+The Launcher lets you select the data directory. In server mode, set `DATA_DIR`.
+The browser interface uses port 8080 and its API uses port 5000 by default.
+
+[source,bash]
+----
+mkdir -p "$HOME/hict-data"
+DATA_DIR="$HOME/hict-data" HICT_BIND_HOST=127.0.0.1 \
+  ./HiCT-<version>-linux-x86_64.run start-server
+----
+
+Open `http://localhost:8080`. Existing files under `DATA_DIR` appear in the file
+picker. Generated files and downloaded examples also live there. Set
+`PROCESSED_DIR` separately when you want conversion scratch on another disk.
+
+== Five-minute quick start
+
+. Start HiCT with a writable data directory and open its browser interface.
+. Choose *Help → Examples…* and press *Open example* on *Tardigrade quick start*.
+  HiCT downloads about 45 MB, converts the contact map and links the matching
+  FASTA. This path takes three clicks from the initial page. It completed in
+  20.3 seconds in the recorded Linux browser test. Network and hardware affect timing.
+. Use the mouse wheel to zoom and drag the map to pan. Click a contig or
+  Shift-drag a range. Press Reverse, then Undo to restore it.
+. Choose *File → Save session…*. A session retains assembly edits, visualization,
+  linked inputs and the view. Keep the referenced data files available.
+. Export an AGP layout or FASTA through *Assembly*. Use *Export* above the map
+  for PNG, SVG or PDF. FASTA exports require a linked reference.
+
+image::docs/images/tardigrade-quick-start.png[Tardigrade example with five chromosomes and linked FASTA,width=1100]
+
+The catalog includes larger cheetah and mosquito examples. Each records source
+URLs, checksums, citations and provider terms. Their complete downloads and
+conversions take longer. See link:docs/examples-catalog.md[example validation].
+
+== Inputs and outputs
+
+[cols="1,3",options="header"]
+|===
+|Format |Use
+|`.hict.hdf5` |Native editable matrix storage, direct opening
+|`.cool`, `.mcool`, `.hic` |Import through the bundled converter with resolution and normalization options
+|FASTA, gzip FASTA |Linked reference sequence or FASTA-only assembly
+|AGP, `.assembly` |Assembly layouts subject to reference compatibility checks
+|BED, bedGraph, GFF, GTF, BigWig |Signal and annotation tracks
+|Session JSON |Restore edited assembly, inputs, settings and view, including split lineage
+|AGP, FASTA |Export the curated assembly
+|PNG, SVG, PDF |Visible viewport or fitted whole-map figures
+|===
+
+The file picker opens a native map directly. *Open with options…* provides the
+conversion wizard. A secondary matrix may use a different resolution pyramid
+when its reference coordinates agree. The primary assembly grid governs display.
+At letter zoom, linked sequence and bounded exact alignments follow the edited
+assembly coordinates. Whole-map figure exports use their fitted scale.
+
+== System requirements and storage
+
+Use a 64-bit desktop with a recent browser. Source builds require JDK 21 and
+Node.js. Portable packages contain their own Java runtime. An 8 GiB machine
+provides a practical starting point for the bundled examples. Larger matrices,
+parallel tools and browsers require more memory and disk.
+
+Portable launchers set Java's `MaxRAMPercentage` to 50. On an 8 GiB host this
+provides a 4 GiB Java heap. Set `HICT_JAVA_OPTS=-Xmx6g` to choose an explicit limit
+for a suitable host. Native tools and the browser use additional memory.
+
+Keep free disk for source downloads, the generated matrix, native conversion
+scratch and the uncompressed FASTA index. The recorded cheetah trial used about
+5.93 GB for final data and its FASTA index, and its sampled Java peak was 2.59 GB.
+See the example validation document for exact measurements and sampling limits.
+
+== Remote server over SSH
+
+The default services bind to all interfaces and accept browser requests through
+permissive CORS. They expose file access and assembly mutation without an
+authentication layer. Restrict access to trusted users. Set `HICT_BIND_HOST` to
+loopback and forward both ports over SSH.
+
+On your local workstation, connect with port forwarding.
 
 [source,bash]
 ----
 ssh -L 8080:127.0.0.1:8080 -L 5000:127.0.0.1:5000 user@cluster.example.org
 ----
 
-After SSH connects, run HiCT on the remote machine with `start-server` explicitly:
+In that SSH session, start the remote package.
 
 [source,bash]
 ----
-cd /path/to/HiCT
-DATA_DIR=/path/to/your/data bash HiCT-<version>-linux-x86_64.run start-server
+DATA_DIR=/path/to/data HICT_BIND_HOST=127.0.0.1 \
+  ./HiCT-<version>-linux-x86_64.run start-server
 ----
 
-For the AppImage artifact, use:
+Open `http://localhost:8080` locally. Keep the SSH session running.
+Use `VXPORT` and `WEBUI_PORT` when the default server ports are occupied, and
+configure the corresponding API address in the WebUI. Stop the server before
+removing its data or scratch directories.
+
+== Guide and API
+
+* link:docs/user-guide.md[User guide and keyboard shortcuts]
+* link:docs/jvm_api_v1.md[API guide]
+* `http://localhost:5000/api/v1/` serves the bundled offline API reference.
+* link:docs/normalization.md[Normalization] describes square-root coverage over
+  one whole-map domain and the treatment of excluded bins.
+* link:docs/reinforcement-validation.md[Validation evidence] and
+  link:docs/release-manual-checklist.md[platform checklist] record release gates.
+
+== Current limits
+
+Sessions reference their input files and validate those files on restore. Undo
+history belongs to the running editing session. FASTA-only assemblies have no
+contact signal. Split removes a finest-resolution bin, and Undo restores it.
+Alignment detail has bounded intervals and work limits. Secondary matrices need
+matching reference intervals. Native tools have platform-specific payloads.
+Windows and macOS qualification includes the platform CI results and the owner's
+manual checklist. Consult the release validation report for their current status.
+
+== Build from source
+
+Clone `HiCT_JVM` and `HiCT_WebUI` side by side. Build and test the packaged WebUI
+and JVM together with the normal Gradle entry point.
 
 [source,bash]
 ----
-cd /path/to/HiCT
-DATA_DIR=/path/to/your/data ./HiCT-<version>-x86_64.AppImage start-server
+./gradlew test shadowJar
+java -jar build/libs/hict_server-<version>-fat.jar start-server
 ----
 
-Keep the SSH session open while HiCT is running.
-Then open `http://localhost:8080` in the browser on your local computer.
-The forwarded API port is `http://localhost:5000`.
-
-=== Windows quick start
-
-Double-click the downloaded `.exe`, or start the server from Command Line/PowerShell:
-
-[source,powershell]
-----
-.\HiCT-<version>-windows-x86_64.exe
-----
-
-Then open `http://localhost:8080`.
-
-If you downloaded the `.zip`, unzip it first and run:
-
-[source,powershell]
-----
-.\HiCT.cmd
-----
-
-=== macOS quick start
-
-The macOS package is a `.run` file, not a `.dmg` installer.
-Do not look for a drag-and-drop Applications window.
-Open Terminal and run the downloaded file from the folder where it was saved.
-
-For Apple Silicon Macs (M1/M2/M3 and newer):
-
-[source,bash]
-----
-cd ~/Downloads
-chmod +x HiCT-<version>-darwin-arm64.run
-./HiCT-<version>-darwin-arm64.run
-----
-
-For Intel Macs, use `darwin-x86_64` instead:
-
-[source,bash]
-----
-cd ~/Downloads
-chmod +x HiCT-<version>-darwin-x86_64.run
-./HiCT-<version>-darwin-x86_64.run
-----
-
-If macOS says the file cannot be opened because it is from an unidentified developer or was downloaded from the Internet, unblock it first:
-
-[source,bash]
-----
-xattr -d com.apple.quarantine ./HiCT-<version>-darwin-*.run
-----
-
-Then run the `chmod +x ...` and `./HiCT-....run` commands again.
-After startup, open the WebUI at `http://localhost:8080`.
-
-=== Command-line help
-
-All portable packages accept the same HiCT commands:
-
-[source,bash]
-----
-./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run
-./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run --help
-./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run start-server --help
-./HiCT-<version>-<linux/darwin>-<x86_64/arm64>.run convert --help
-----
-
-Replace the file name with the `.AppImage`, Windows `.exe`, macOS `.run`, or `HiCT.cmd` that you downloaded.
-
-== Advanced: fat JAR distribution
-
-This section is for users who specifically need the legacy ready-to-run fat JAR from GitHub Releases.
-The portable packages above are recommended for normal use because they include the matching Java runtime and native libraries.
-You need to install Java 21+ (this project is built for Java 21 bytecode).
-Download the latest fat JAR from the https://github.com/ctlab/HiCT_JVM/releases[Releases page] (Assets section).
-**NOTE:** prebuilt native bundles are currently provided for portable Windows, Linux, and macOS release artifacts. The legacy fat JAR path can still require a compatible local Java installation and platform-specific native libraries. On Windows you might need to install https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170[Microsoft Visual C++ Redistributable].
-
-=== Quick start
-
-1. Download the latest `-fat.jar` from the Releases page (Assets) and rename it to `hict-fat.jar`.
-2. Place your `.hict.hdf5`, `.mcool`, `.cool`, `.agp`, and `.fasta` files under a single directory.
-If you have .hic files from Juicebox, you can convert them using `hictk` into Cooler format (use the finest resolution) and then use `cooler` to build zoom pyramid and compute balance weights, for example:
-```bash
-hictk convert arabiensis.hic arabiensis.1kb.cool --resolutions 1kbp
-cooler zoomify -n 8 -r 4DN --balance --balance-args '--nproc 8 --ignore-diags 3' -o arabiensis.hic.mcool arabiensis.1kb.cool
-```
-Next you can either convert that file into HiCT format through the WebUI (File -> Convert Coolers), or continue in CLI:
-```bash
-java -jar hict-fat.jar convert mcool-to-hict --input='arabiensis.hic.mcool' --output='arabiensis.hic.mcool.hict.hdf5' --compression-algorithm=DEFLATE --compression=6 --parallelism=-1
-```
-3. To start HiCT Server with WebUI execute the following command:
-+
-```bash
-java -jar hict-fat.jar start-server
-```
-+
-Directory with files is set using `DATA_DIR` environment variable, by default it scans subtree of the directory in which `hict-fat.jar` is launched from.
-In Linux you may set it as follows:
-+
-```bash
-DATA_DIR=/path/to/data/ java -jar hict-fat.jar start-server
-```
-+
-4. Open WebUI at `http://localhost:8080`.
-
-=== CLI commands (summary)
-
-```bash
-# API + WebUI (default mode, includes converters in WebUI as descibed below)
-java -jar hict-fat.jar start-server
-
-# API only (no WebUI)
-java -jar hict-fat.jar start-api-server
-
-# Convert .mcool -> .hict.hdf5 (CLI mode)
-java -jar hict-fat.jar convert mcool-to-hict \
-  --input /data/sample.mcool \
-  --output /data/sample.hict.hdf5
-
-# Convert .hict.hdf5 -> .mcool (CLI mode)
-java -jar hict-fat.jar convert hict-to-mcool \
-  --input /data/sample.hict.hdf5 \
-  --output /data/sample.mcool
-```
-
-Get full CLI help:
-
-```bash
-java -jar hict-fat.jar --help
-java -jar hict-fat.jar start-server --help
-java -jar hict-fat.jar start-api-server --help
-java -jar hict-fat.jar convert --help
-java -jar hict-fat.jar convert mcool-to-hict --help
-java -jar hict-fat.jar convert hict-to-mcool --help
-```
-
-=== WebUI conversion (Experimental / W.I.P.)
-
-WARNING: WebUI conversion is experimental and may be slower or less stable than the CLI.
-
-1. Open the WebUI.
-2. Use *File → Convert Coolers*.
-3. Track progress in the conversion window.
-
-=== API access (Experimental / W.I.P.)
-
-WARNING: The API is still evolving. Endpoints, parameters, and response formats may change.
-
-Interactive OpenAPI docs are available at:
-
-* `http://localhost:5000/api/v1/`
-
-For the Python client-oriented endpoint contract used in `jvm-api-v1`, see:
-`docs/jvm_api_v1.md`.
-
-Example (Python) for fetching a submatrix tile as an image:
-
-```python
-import requests
-
-host = "http://localhost:5000"
-params = {
-    "version": 0,
-    "bpResolution": 10000,
-    "format": "PNG_BY_PIXELS",
-    "row": 0,
-    "col": 0,
-    "rows": 512,
-    "cols": 512,
-}
-
-r = requests.get(f"{host}/get_tile", params=params)
-r.raise_for_status()
-data = r.json()
-png_data_url = data["image"]
-print(png_data_url[:64])
-```
-
-To apply visualization settings before fetching tiles:
-
-* POST `/set_visualization_options` with visualization parameters.
-* Optionally POST `/render_pipeline/set` for custom graph pipeline.
-* Then call `/get_tile` as shown above.
-
-For tensor workflows (NumPy/Torch), numeric submatrices are available via:
-
-* `POST /matrix/query`
-** units: `PIXELS`, `BINS`, `BP`
-** signal modes: `RAW_COUNTS`, `COOLER_WEIGHTED`, `TRADITIONAL_NORMALIZED`, `PIPELINE_SIGNAL`
-** binary formats for fast transfer: `BINARY_FLOAT32`, `BINARY_FLOAT64`, `BINARY_INT64`
-
-=== Supported platforms / JDK details
-
-* *OS/CPU (prebuilt libs):* Linux (glibc) and Windows, AMD64.
-* *Not bundled by default:* macOS variants and Linux ARM variants.
-* *JDK:* Java 19 or newer is required for running/building this repository.
-
-== Startup options and CLI
-
-The fat JAR is runnable and exposes a CLI with subcommands:
-
-* `start-server` -- API + WebUI (default when no args are given)
-* `start-api-server` -- API only (no WebUI)
-* `launcher` -- small graphical launcher for portable desktop use
-* `convert` -- conversion tools
-** `convert mcool-to-hict`
-** `convert hict-to-mcool`
-
-Help:
-
-```bash
-java -jar hict.jar --help
-java -jar hict.jar convert --help
-java -jar hict.jar convert mcool-to-hict --help
-```
-
-Environment variables supported by the server startup:
-
-* `DATA_DIR` -- directory that is scanned recursively for `.hict.hdf5`, `.agp`, `fasta`, `.cool`, and `.mcool` files.
-* `VXPORT` -- API gateway port, default `5000`.
-* `WEBUI_PORT` -- WebUI port, default `8080`.
-* `HICT_BIND_HOST` -- interface address for API and WebUI servers, default `0.0.0.0`; portable launchers default it to `127.0.0.1`.
-* `SERVE_WEBUI` -- `true`/`false`, default `true`.
-* `TILE_SIZE` -- default visualization tile size, default `256`.
-* `MIN_DS_POOL` / `MAX_DS_POOL` -- min/max pool sizes used when opening chunked datasets.
-* `HICT_LAUNCHER_MODE=gui` -- open the graphical launcher when the fat JAR is started without CLI arguments. Portable packages set this automatically for no-argument double-click launches.
-* `HICT_APP_HOME` / `HICT_JAR_PATH` -- portable launcher internals used to locate the extracted app and fat JAR.
-* `HICT_BROWSER_DIR` -- optional bundled browser payload root; it may contain one `manifest.json` or child directories with `manifest.json` files.
-
-=== Launch examples (fat JAR)
-
-==== Linux (bash)
-
-```bash
-DATA_DIR=/home/${USER}/hict/data java -jar hict.jar
-
-# Graphical launcher
-HICT_LAUNCHER_MODE=gui java -jar hict.jar
-java -jar hict.jar launcher
-
-# API only
-DATA_DIR=/home/${USER}/hict/data java -jar hict.jar start-api-server
-
-# Explicit server (API + WebUI)
-DATA_DIR=/home/${USER}/hict/data java -jar hict.jar start-server
-```
-
-==== Windows (cmd)
-
-```cmd
-set DATA_DIR="D:\hict\data"
-set WEBUI_PORT="8888"
-java -jar hict.jar start-server
-```
-
-==== Windows (PowerShell)
-
-```powershell
-$env:DATA_DIR = "D:\hict\data"
-$env:WEBUI_PORT = "8888"
-java -jar hict.jar start-server
-```
-
-==== Custom JVM options
-
-```bash
-DATA_DIR=/home/${USER}/hict/data java -ea -Xms512M -Xmx16G -jar hict.jar start-api-server
-```
-
-=== Launch examples (Gradle, from source)
-
-```bash
-# Default: runs HiCT CLI (equivalent to `java -jar ...`)
-./gradlew clean run
-
-# Explicit modes
-./gradlew run --args="start-server"
-./gradlew run --args="start-api-server"
-```
-
-== Converter workflows (`.mcool` ↔ `.hict.hdf5`)
-
-=== CLI commands
-
-Use the JVM CLI for both directions:
-
-```bash
-# mcool -> hict
-java -jar hict.jar convert mcool-to-hict \
-  --input /data/sample.mcool \
-  --output /data/sample.hict.hdf5
-
-# hict -> mcool
-java -jar hict.jar convert hict-to-mcool \
-  --input /data/sample.hict.hdf5 \
-  --output /data/sample.roundtrip.mcool
-```
-
-=== Web conversion API flow
-
-Typical asynchronous conversion sequence used by WebUI/integrations:
-
-1. *Upload*: `POST /api/convert/upload`
-   * Upload source file and target format metadata.
-   * Response returns a `jobId`.
-2. *Status polling*: `GET /api/convert/status/{jobId}`
-   * Poll until state becomes `DONE` or `FAILED`.
-3. *Download*: `GET /api/convert/download/{jobId}`
-   * Download converted artifact when status is `DONE`.
-
-Recommended size limits:
-
-* Keep upload limits explicit at ingress/proxy and app gateway.
-* For JVM safety, avoid unbounded request bodies in production; set max request size and timeouts.
-* For very large matrices, prefer direct local file conversion (CLI) and then load resulting artifacts through `DATA_DIR`.
-
-== Scaffolding API behavior notes
-
-Scaffolding operations are served as POST endpoints and return updated assembly information:
-
-* `/reverse_selection_range`
-* `/move_selection_range`
-* `/split_contig_at_bin`
-* `/group_contigs_into_scaffold`
-* `/ungroup_contigs_from_scaffold`
-* `/move_selection_to_debris`
-
-Important tile-version expectation:
-
-* Tile requests use `GET /get_tile?...&version=<n>`.
-* If the requested version is *older* than server-side tile version, server returns HTTP `204` (no tile body) to force client invalidation.
-* If the requested version is newer, server advances the internal version counter.
-* Practical client rule: after each scaffolding mutation, increment your tile version and refresh visible tile requests.
-
-== Startup errors and JHDF5 native library troubleshooting
-
-During startup, you may see several native-library load attempts with warnings/errors. This can be expected because different platform-specific library names are tried.
-
-If startup completes and API/WebUI are healthy, these warnings can be non-fatal.
-
-When native loading actually fails:
-
-1. Confirm architecture match (AMD64 JVM + AMD64 native bundle).
-2. Confirm OS compatibility (Linux x86_64 static-musl or macOS arm64 as appropriate).
-3. On Linux, ensure native/plugin paths are discoverable, for example:
-+
-```bash
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/path/to/hdf5/lib:/path/to/hdf5/lib/plugin"
-export HDF5_PLUGIN_PATH="/path/to/hdf5/lib/plugin"
-```
-4. On Windows, install/update Visual C++ runtime redistributables.
-5. Verify Java version (`java -version`) is 19+.
-6. If tiles fail to render but server starts, inspect logs for `UnsatisfiedLinkError` and HDF5 plugin load failures.
-
-== Production checklist (short)
-
-Before deploying to production, verify:
-
-* Logging: structured logs, retention, and centralized collection.
-* Metrics/health: request latency/error metrics and liveness/readiness checks.
-* Limits: request body size, timeouts, and JVM heap sizing are set explicitly.
-* Graceful shutdown: stop accepting traffic, finish in-flight requests, then terminate.
-* Backup/cleanup: regular backup strategy for source/converted files and periodic cleanup of temporary/intermediate artifacts.
-
-== Building `HiCT_JVM` from source
-
-To build from source:
-
-```bash
-./gradlew clean build
-```
-
-=== Dependency management workflow
-
-This project uses Gradle dependency locking (`gradle.lockfile`) to keep transitive dependency resolution reproducible.
-
-* Refresh lock state after dependency changes:
-+
-```bash
-./gradlew dependencies --write-locks
-```
-* Inspect the resolved version for a specific dependency before/after updates:
-+
-```bash
-./gradlew dependencyInsight --dependency org.slf4j:slf4j-api --configuration runtimeClasspath
-./gradlew dependencyInsight --dependency ch.qos.logback:logback-classic --configuration runtimeClasspath
-./gradlew dependencyInsight --dependency org.jetbrains:annotations --configuration compileClasspath
-```
-
-Commit both `build.gradle.kts` and `gradle.lockfile` together whenever lock state changes.
-
-Current progress on modifying HDF5 and JHDF5 configuration resides in https://github.com/AxisAlexNT/jhdf5-with-plugins-configuration-snapshot[my personal repository]. Modified configuration is necessary to rebuild native libraries (HDF5, HDF5 plugins and JHDF5 should all be build as dynamic libraries). However, prebuilt native libraries for AMD64 Windows and Linux platforms are already present in `HiCT_JVM` repository. Missing platforms are Linux on `armv7` and `aarch64` and MacOS (both `amd64` and `aarch64` variants).
-
-== Conversion tools (CLI + API)
-
-A native converter module is now available in JVM codebase with two services:
-
-* `McoolToHictConverter` (`mcool-to-hict`)
-* `HictToMcoolConverter` (`hict-to-mcool`)
-
-CLI launcher:
-
-```bash
-./gradlew runConversionCli --args="convert hict-to-mcool --input=/data/sample.hict.hdf5 --output=/data/sample.mcool --resolutions=10000,50000 --compression=4 --chunk-size=8192"
-./gradlew runConversionCli --args="convert mcool-to-hict --input=/data/sample.mcool --output=/data/sample.hict.hdf5 --resolutions=10000,50000 --parallelism=16"
-```
-
-Arguments:
-
-* `--input=<path>` source file path
-* `--output=<path>` destination file path
-* `--resolutions=<comma-separated>` optional resolution filter
-* `--compression=<0..9>` deflate level (`0` means chunked/no deflate)
-* `--chunk-size=<N>` chunk size for streaming traversal
-* `--agp=<file.agp> --apply-agp` apply AGP before `hict-to-mcool` export
-* `--parallelism=<N>` max worker threads (default: available CPU cores)
-
-Web API endpoints:
-
-* `POST /convert/upload` (multipart + query params: `direction`, `resolutions`, `compression`, `chunkSize`, `applyAgp`, `agpPath`, `parallelism`)
-* `GET /convert/jobs/:jobId`
-* `GET /convert/download/:jobId`
-
-Conversion jobs are asynchronous, include streaming logs/error details, enforce upload size limit and have temporary file cleanup TTL.
-
-== Portable runtime distributions
-
-HiCT release builds produce self-contained desktop/CLI packages for users who do not have a recent Java installation.
-These packages include the HiCT JVM fat JAR, the built HiCT WebUI resources, an extracted WebUI directory used as `WEBUI_ROOT`, and a Java runtime image created with `jlink`.
-
-=== Release artifacts
-
-* `HiCT-<version>-linux-x86_64.run` -- single-file Linux launcher with a transparent `tar.xz` payload. Double-clicking or running it starts HiCT with the bundled Java runtime.
-* `HiCT-<version>-linux-x86_64.tar.gz` -- extracted Linux app directory for environments that prefer auditable archives over `.run` launchers.
-* `HiCT-<version>-x86_64.AppImage` -- Linux AppImage built from the same portable app directory.
-* `HiCT-<version>-windows-x86_64-portable.zip` -- portable Windows app directory with bundled Java runtime and `HiCT.cmd`.
-* `HiCT-<version>-windows-x86_64.exe` -- optional single-file Windows launcher, not an MSI installer.
-
-The Windows ZIP is the most transparent portable artifact.
-The default Windows EXE mode is a small custom `asInvoker` launcher built with the static MSVC runtime.
-It embeds an official standalone 7-Zip/LZMA extractor plus the portable app payload, extracts into a stable `HiCT.portable\payloads\...` cache next to the EXE, and skips extraction on later launches when the content-addressed cache marker matches.
-The legacy official 7-Zip/LZMA SDK SFX mode (`7zSD.sfx`, `7zS.sfx`, `7zS2con.sfx`, or `7zS2.sfx`) remains available from the release workflow/manual build switch.
-No-argument double-click launches open the graphical HiCT launcher; server output is shown inside the launcher log panel.
-Avoiding Windows trust prompts for newly downloaded single-file EXE artifacts still requires Authenticode signing with a trusted code-signing certificate; launcher implementation alone is not a reliable substitute.
-Use the ZIP artifact when local policy forbids unsigned launchers.
-
-=== Portable startup behavior
-
-Linux:
-
-[source,bash]
-----
-chmod +x HiCT-<version>-linux-x86_64.run
-./HiCT-<version>-linux-x86_64.run
-./HiCT-<version>-linux-x86_64.run --help
-./HiCT-<version>-linux-x86_64.run convert --help
-----
-
-The `.run` wrapper checks for the standard Linux tools it needs before extracting (`awk`, `tail`, `tar`, `xz`, `mkdir`, `touch`, and `cat`) and prints distribution-specific install hints when any are missing.
-
-Windows portable ZIP:
-
-[source,powershell]
-----
-.\HiCT.cmd
-.\HiCT.cmd --help
-.\HiCT.cmd start-server
-.\HiCT.cmd convert --help
-----
-
-When no CLI arguments are provided, HiCT opens the graphical launcher.
-The launcher can start and stop the managed JVM server process, show API/WebUI status, edit the common environment-based settings, and open `http://localhost:8080/` in either the system browser or an optional bundled browser payload.
-All normal HiCT CLI subcommands remain available from the ZIP.
-Portable launchers enter `DATA_DIR` before Java starts, so file dialogs and relative paths begin from the portable data location rather than the shell or system directory that launched HiCT.
-They also bind API and WebUI servers to `127.0.0.1` by default, which keeps the packaged Java process local-only and reduces firewall prompts on Windows. Set `HICT_BIND_HOST=0.0.0.0` explicitly if remote machines must connect to the HiCT server.
-
-Portable `DATA_DIR` defaults:
-
-* Linux `.run`: directory containing the `.run` file.
-* Linux `.AppImage`: directory containing the AppImage.
-* Linux extracted `.tar.gz`: extracted app directory.
-* Windows portable ZIP: extracted app directory.
-* Windows custom EXE: directory containing the EXE.
-* Windows legacy 7-Zip SFX EXE: directory containing the EXE when the launcher can infer it from the parent process; otherwise the temporary extracted app directory used by the official 7-Zip/LZMA SDK SFX module.
-* Explicit `DATA_DIR` always wins.
-
-=== Building portable packages locally
-
-Linux:
-
-[source,bash]
-----
-cd HiCT_JVM
-./scripts/portable/build_portable_linux.sh
-HICT_SKIP_PORTABLE=1 ./scripts/portable/build_appimage_linux.sh
-----
-
-The Linux `.run` uses an appended `tar.xz` payload for smaller single-file releases; the companion `.tar.gz` stays available for environments that prefer direct archive extraction.
-AppImage builds use a static AppImage runtime and gzip-compressed SquashFS by default, so the AppImage can start on older or musl-based Linux systems before HiCT switches to its bundled glibc runtime.
-Set `APPIMAGE_COMPRESSION=xz` only together with a compatible AppImage runtime when smaller artifact size is more important than old-system compatibility.
-
-Windows:
-
-[source,powershell]
-----
-cd HiCT_JVM
-.\scripts\portable\build_portable_windows.ps1
-.\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe
-.\scripts\portable\build_portable_windows.ps1 -CreateSelfExtractingExe -WindowsExeMode 7zip-sfx
-----
-
-If `toolchains-dist/<platform>/` exists before packaging, Gradle embeds that platform's `hictk` payload into the fat JAR.
-Use `scripts/toolchains/build_hictk_linux.sh` or `scripts/toolchains/build_hictk_windows.ps1` first when release artifacts must include `.hic` conversion support without requiring external tools.
-When bundled hictk is enabled, HiCT release artifacts redistribute the platform-specific `hictk` executable built from the official hictk source release selected by `HICTK_REF`/workflow input.
-Portable ZIP, `.run`, AppImage, and Windows EXE packages additionally extract the platform payload under `toolchains/` and launch HiCT with `HICT_TOOLCHAIN_DIR` pointing there, so `.hic` conversion does not depend on extracting an executable from the JAR into the system temporary directory at runtime.
-
-=== Bundled browser payloads
-
-Portable packages can include a browser only when a vetted payload is prepared under `browsers-dist/<platform>/` before packaging.
-The packaging scripts copy that payload into `browsers/<platform>/`, set `HICT_BROWSER_DIR`, and let the launcher expose "Use bundled browser when available".
-The lightweight Java launcher remains the default process controller.
-When multiple payloads are present, HiCT tries the smaller Tauri WebView browser first, then Electron/Chromium, then the user's system browser.
-
-Build the default Tauri payload from a HiCT_WebUI checkout:
-
-[source,bash]
-----
-cd HiCT_JVM
-./scripts/portable/prepare_tauri_browser_payload_linux.sh
-----
-
-Windows:
-
-[source,powershell]
-----
-cd HiCT_JVM
-.\scripts\portable\prepare_tauri_browser_payload_windows.ps1
-----
-
-The Tauri payload does not bundle Chromium.
-It uses the operating system WebView runtime: WebKitGTK on Linux and Microsoft Edge WebView2 on Windows.
-Portable launchers warn before startup when a Tauri payload is present but the expected Linux WebKitGTK libraries or Windows WebView2 runtime are not detected, including distribution-specific install commands.
-This keeps the default `.run`, AppImage, and Windows EXE substantially smaller than Chromium-bundled releases while still providing a built-in WebUI path on machines with the standard WebView runtime.
-
-Build the optional Electron/Chromium payload from a HiCT_WebUI checkout only when a fully bundled Chromium fallback is needed:
-
-[source,bash]
-----
-cd HiCT_JVM
-./scripts/portable/prepare_electron_browser_payload_linux.sh
-----
-
-Windows:
-
-[source,powershell]
-----
-cd HiCT_JVM
-.\scripts\portable\prepare_electron_browser_payload_windows.ps1
-----
-
-The payload builder keeps only the `en-US` Chromium locale by default to control release size.
-Set `HICT_ELECTRON_KEEP_LOCALES=en-US,fr,de` before running the payload builder if additional locales must be redistributed.
-Set `HICT_SKIP_NPM_INSTALL=1` only for local rebuilds where the HiCT_WebUI `node_modules` tree is already known to match `package-lock.json`.
-
-Minimal manifest:
-
-[source,json]
-----
-{
-  "name": "HiCT Tauri WebView",
-  "engine": "tauri-system-webview",
-  "priority": 10,
-  "command": "bin/hict-tauri-browser",
-  "arguments": []
-}
-----
-
-Generic browser binaries are intentionally not downloaded by the HiCT packaging scripts.
-The Tauri payload builder uses the Rust/Tauri dependencies declared by HiCT_WebUI, stores Cargo dependency metadata in the payload, and relies on the user's OS WebView runtime license terms.
-The Electron payload builder uses the Electron package already declared by HiCT_WebUI, preserves `electron/LICENSE` and `electron/LICENSES.chromium.html`, flips Electron security fuses when supported by the installed Electron version, and writes a payload manifest with size and SHA-256 tree digest.
-For Firefox-family payloads, distribute only compliant unaltered official binaries or properly rebranded builds and preserve Mozilla license/trademark/update requirements.
-For Chromium-family payloads, preserve the complete third-party license and credits set for the exact binary being redistributed.
-If no vetted payload is present, the launcher uses the user's system browser.
-Electron/Chromium is intentionally optional because it materially increases portable artifact size; leave `bundle_electron_browser=false` in the manual workflow unless a Chromium fallback must be bundled.
-
-=== Redistribution and license notes
-
-The portable package scripts keep the following license and attribution material with the release:
-
-* `licenses/HiCT_JVM_LICENSE`
-* `licenses/HiCT_WebUI_LICENSE`, when the WebUI checkout is available
-* `licenses/PORTABLE_DISTRIBUTION_NOTICE.txt`
-* `licenses/SevenZip_NOTICE.txt` in Windows packages
-* `licenses/LZMA_SDK_NOTICE.txt` in Windows EXE payloads when the official LZMA SDK supplied the extractor or SFX module
-* the complete `runtime/legal/` directory generated by `jlink`
-* bundled `hictk` license/citation files inside the fat JAR resources when `toolchains-dist` was prepared before packaging
-* bundled browser license, notice, trademark, and credits files when `browsers-dist` was prepared before packaging
-
-Bundled hictk is redistributed under the upstream hictk MIT license and is invoked by HiCT for `.hic` conversion.
-Keep the bundled hictk license and citation files with release artifacts, and cite hictk when using this conversion path.
-The embedded Java runtime is produced from the JDK used by the release runner.
-The GitHub Actions workflow uses Eclipse Temurin through `actions/setup-java`; Temurin/OpenJDK runtime legal notices are preserved in `runtime/legal/`.
-Do not strip that directory from redistributed artifacts.
-
-=== GitHub Actions packaging
-
-`.github/workflows/portable-release.yml` builds Linux and Windows packages on matching runners.
-On release creation it attaches the portable artifacts and SHA-256 checksum files to the GitHub Release.
-The workflow can also be run manually and exposes toggles for bundled `hictk`, the default bundled Tauri browser, the optional bundled Electron browser, the `hictk` release tag, the HiCT_WebUI ref, the optional Windows EXE, and the Windows EXE mode (`custom` by default, `7zip-sfx` for legacy official SFX packaging).
-`bundle_tauri_browser` defaults to `true`; `bundle_electron_browser` defaults to `false`.
-The WebUI ref input defaults to `same-as-jvm`, so a manual run from a HiCT_JVM branch such as `jvm-hic-converter` first tries to bundle the same-named HiCT_WebUI ref and falls back to `master` if that ref is absent.
-For workflow downloads it publishes aggregate Linux and Windows packages plus separate single-file runnable artifacts for Linux `.run`, Linux AppImage, and Windows `.exe`.
-Prepared `toolchains-dist/<platform>` hictk payloads and the underlying Conan package homes are restored and saved explicitly by OS, hictk tag, and toolchain script hash to avoid rebuilding hictk dependencies on every release.
+During JVM-only development, `./gradlew test -x copyWebUI` reuses the existing
+WebUI resources. Packaging uses the normal bundled-WebUI build.
+
+== Citation and attribution
+
+Cite the software version and repository revision used in your analysis.
+The machine-readable author list and software citation are in
+link:CITATION.cff[CITATION.cff]. Also cite the dataset provider and native analysis
+tools used for your results. The Examples dialog preserves dataset citations.
+
+HiCT is distributed under the link:LICENSE[MIT License]. Bundled components
+retain their own terms. See link:THIRD_PARTY_LICENSES.md[third-party notices],
+the package `licenses/`, Java `runtime/legal/` and toolchain `share/licenses/`.

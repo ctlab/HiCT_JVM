@@ -1,6 +1,7 @@
 # HiCT_JVM API Reference for Python client (`hict_jvm_api`)
 
-This document describes the endpoint subset used by the `jvm-api-v1` Python library.
+This document describes the endpoint subset used by the `jvm-api-v1` Python library
+and the interactive WebUI. The bundled OpenAPI document is the complete schema.
 All endpoints are served by HiCT_JVM API server (`start-api-server` or `start-server`).
 
 Interactive documentation is served by the backend itself:
@@ -10,10 +11,11 @@ Interactive documentation is served by the backend itself:
 
 ## Base URL
 
-Typically:
-
-- `http://localhost:5000`
-- `http://localhost:5001`
+The default API address is `http://localhost:5000`. Set `VXPORT` to select
+another port. The WebUI is served separately on `WEBUI_PORT`, default 8080.
+Set `HICT_BIND_HOST=127.0.0.1` for local access or SSH forwarding. The default
+all-interface bind and permissive CORS expose an unauthenticated editing API.
+Use a trusted host and restrict network access as described in the README.
 
 ## Core endpoints
 
@@ -167,3 +169,38 @@ projects bin coordinates into a smaller visible-pixel rectangle. Response unit
 and coordinate fields/headers identify BINS (`startRowBin`, `x-hict-start-row-bin`,
 and analogous columns/ends) or PIXELS (`startRowPx`, `x-hict-start-row-px`).
 Oversized windows are rejected before matrix allocation.
+
+
+## Sessions, examples and background work
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/session/snapshot` | Save assembly lineage, inputs, tracks and visualization |
+| `POST` | `/session/restore` | Validate inputs and atomically restore a saved session |
+| `GET` | `/jobs` | Snapshot existing background services with result actions |
+| `POST` | `/jobs/cancel` | Cancel a service-prefixed job ID |
+| `POST` | `/examples/catalog` | Read the bundled and local example catalog |
+| `POST` | `/examples/download/start` | Download and verify an example |
+| `POST` | `/examples/download/status` | Read current download progress |
+| `POST` | `/examples/download/cancel` | Cancel the current download |
+| `POST` | `/sequence/alignment_detail` | Read or prepare bounded CIGAR alignment detail |
+
+Check the OpenAPI request schemas before calling these endpoints. Session
+restore validates referenced files and preserves native split lineage. Job
+snapshots retain each service's ownership and retention rules. Results carry
+open-map, track, overlay or download actions. Shutdown cancels work and native
+children. Jobs never resume automatically.
+
+## Resolution grids and normalization
+
+Secondary sources can have different available resolutions while sharing the
+primary reference intervals. Projected tiles use the primary assembly grid and
+bounded native reads. Count sources sum contributions. Identity sources average
+and presence sources combine occupancy. `gridBpResolution` and
+`gridSampleFactor` describe the requested display grid. Invalid dimensions or
+work budgets return an actionable error.
+
+Square-root coverage uses one whole-map domain per resolution. Its denominator
+is the square root of each bin's total contacts across that map. Excluded bins
+remain empty. Whole-map normalization is retained through scopes and view changes.
+See `normalization.md` for formulas and numeric parity evidence.

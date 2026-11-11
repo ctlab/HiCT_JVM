@@ -39,21 +39,6 @@ jobs:
         shell: bash
         run: >-
           bash ./gradlew test
-          --tests '*ScaffoldDescriptorDTOTest'
-          --tests '*RequestTaskSchedulerTest'
-          --tests '*TileVisualizationProcessorRgbaTest'
-          --tests '*TileSignalStatisticsTest'
-          --tests '*SequenceTrackProjectionTest'
-          --tests '*FASTAProcessorTest'
-          --tests '*ScaffoldTreeSequentialScaffoldsTest'
-          --tests '*CompactAssemblyInfoDTOTest'
-          --tests '*AGPImportPlanTest'
-          --tests '*AGPProcessorTest'
-          --tests '*SecondaryResolutionCompatibilityTest'
-          --tests '*ModDotPlotColormapTest'
-          --tests '*BinCoordinateMapperTest'
-          --tests '*Track1DManagerBinMappingTest'
-          --tests '*ScaffoldEditingInvariantTest'
           testNativeProcessingBaseline shadowJar -x copyWebUI --no-daemon
       - name: Audit macOS JNI deployment targets and relocatable install names
         if: runner.os == 'macOS'

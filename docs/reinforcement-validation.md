@@ -1421,3 +1421,40 @@ migrations remain outside this five-dependency upgrade. Exact audit reports are
 `/tmp/hict-u12-audit-compatible.json` and `/tmp/hict-u12-audit-production.json`.
 No upgrade was reverted. Matching export substitution counts and centres passed
 again against Vert.x and the final compatible dependency graph.
+
+
+## Release documents, citations and version (U12)
+
+The installation README now covers Linux, Windows, both macOS architectures,
+the 45 MB quick start, an actual example screenshot, supported formats, measured
+resource needs, SSH forwarding and bind-host restriction. The API guide documents
+session lineage, background jobs, projected grids and whole-map coverage.
+The user guide covers editing, sessions, tracks, analyses, exports and shortcuts.
+Help links to that guide. Both CFF files pass the official 1.2.0 JSON Schema.
+The author lists match existing project attribution. BLAST+ is listed in JVM
+startup and the visible WebUI attribution list.
+
+About embeds the WebUI's own package version and source commit at build time.
+Its citation block includes that version and revision. The browser gate reads
+the actual Git revision and verifies the visible metadata and citation. The
+release-version CLI accepts an explicit stable version and preserves semantic
+release tags in platform CI. Four regressions cover its prior run-specific
+behavior, explicit assignment, invalid versions and stable release tags.
+
+The aggregated third-party file contains 394 component records and 248 distinct
+upstream notices. The generator reads the installed production npm graph,
+resolved JVM runtime JARs and staged native-tool license directories. Portable
+scripts copy the aggregate into licenses alongside the original tool notices
+and runtime/legal. Generate it with scripts/generate_third_party_notices.py,
+passing the WebUI, a line-separated runtime JAR list and staged toolchain root.
+The complete Java regression workflow runs the full test task on this branch,
+including every reinforcement test class, with the required copyWebUI exclusion.
+Windows and macOS runtime/manual results remain pending in the platform checklist.
+
+
+The release-document gate passed the About revision/citation checks and the
+18 menu surfaces at both viewport sizes. The JVM suite and final WebUI build
+passed. Edited release UI files had zero lint errors and three existing warnings.
+Evidence pointers are `/tmp/hict-u12-docs-metadata-final-dir` and
+`/tmp/hict-u12-docs-menus-final-dir`. The compiled WebUI reports its own 2.0.0
+version and full source commit independently of the running server's version.
