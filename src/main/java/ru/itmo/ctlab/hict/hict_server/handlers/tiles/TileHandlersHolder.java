@@ -465,7 +465,7 @@ public class TileHandlersHolder extends HandlersHolder {
           if (response.jsonBody() != null) {
             ctx.response().end(response.jsonBody());
           } else {
-            ctx.response().end(response.binaryBody());
+            ctx.response().putHeader("Content-Encoding", "identity").end(response.binaryBody());
           }
         },
         () -> respondCancelledTile(ctx, format)
@@ -863,6 +863,7 @@ public class TileHandlersHolder extends HandlersHolder {
     }
     ctx.response()
       .putHeader("content-type", "image/png")
+      .putHeader("Content-Encoding", "identity")
       .end(Buffer.buffer(TRANSPARENT_PNG_BYTES));
   }
 

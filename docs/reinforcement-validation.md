@@ -1199,3 +1199,30 @@ FASTA-only responses, offline assets, and atomic session restore. Chromium rende
 API reference with external requests blocked, converted and downloaded a multipart
 HiCT upload, verified staged input cleanup, and confirmed that close, open and restore
 cancel a running coverage job.
+
+## Startup and map disposal (U7)
+
+Vite's dynamic chunks keep the file picker, wizard, graph editor, Plotly, PDF export,
+and other tools out of startup. The browser downloaded 1,332,060 decoded JavaScript
+bytes on an empty workspace, down from 4,365,018 bytes. Hashed assets are immutable
+for one year. HTML revalidates, and raw PNG tiles bypass HTTP gzip and ImageIO disk
+caching. The packaged-server HTTP checks verified these headers and the PNG signature.
+
+The baseline snapshot retained 30 ruler controls after 15 closes. The shortest path
+from the global handles ran through DevTools' console entry, the map manager, and a
+view listener. Removing the object log and explicitly releasing ruler listeners and
+frames eliminated that path. Tile sources also abort requests and cancel pending range
+updates on disposal. The final snapshot retained zero ruler controls. Over the 15
+post-warmup cycles with JIT disabled, forced collection left 6.52–6.79 MB of JS heap,
+1,195–1,211 DOM nodes and 328–333 listeners. With JIT enabled, nodes and listeners
+stayed flat after cycle 12. The heap still gained 0.50 MB from cycle 15 to 30. Snapshot
+comparison attributed most of that JS growth to compiled code, and also showed
+Chromium's native inspector data accumulating for recorded requests.
+
+The JVM and WebUI suites passed. The resolution table verified the existing level
+selection in bp per screen pixel. Chromium verified all 18 menu surfaces and the
+pipeline graph round trip, including a delayed threshold calculation concurrent with
+an explicit pipeline edit. Pan and zoom ran at 16.7–16.8 ms p95 with no long tasks
+on the 96-, 1,765-, and 7,790-contig fixtures. In the matched before run the dense
+fixture reached 33.3 ms p95 and one 50 ms long task on repeat open. The release-wide
+timing and soak checks remain part of U13.

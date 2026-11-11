@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Load the file picker, wizard and heavy tools on demand. Reuse versioned browser assets between visits and release map resources on close.
+
 - Long conversions keep running until they finish. Upload inputs are cleaned up after conversion, and completed results stay available for download until they expire.
 - Opening, closing or restoring a map cancels its previous coverage job. FASTA-only maps return blank contact tiles, tile requests have bounded dimensions, and the API reference works offline.
 

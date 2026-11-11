@@ -138,7 +138,8 @@ class ApiHttpIntegrationTest {
       assertTrue(started.await(5, TimeUnit.SECONDS), "Both tile workers must be occupied");
       final var requests = java.util.List.of(
         HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/get_tile?row=0&col=0&format=JSON_PNG_WITH_RANGES")).GET().build(),
-        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/get_tile?row=0&col=0&format=PNG")).GET().build(),
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/get_tile?row=0&col=0&format=PNG"))
+          .header("Accept-Encoding", "gzip").GET().build(),
         HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/matrix/query"))
           .header("content-type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{\"format\":\"JSON\"}")).build(),
         HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/matrix/query"))
@@ -158,7 +159,9 @@ class ApiHttpIntegrationTest {
       final var tile = new JsonObject(new String(responses.get(0).get().body(), StandardCharsets.UTF_8));
       assertTrue(tile.getBoolean("cancelled"));
       final var png = java.util.Base64.getDecoder().decode(tile.getString("image").substring("data:image/png;base64,".length()));
-      org.junit.jupiter.api.Assertions.assertArrayEquals(png, responses.get(1).get().body());
+      final var pngResponse = responses.get(1).get();
+      assertEquals("identity", pngResponse.headers().firstValue("content-encoding").orElse(""));
+      org.junit.jupiter.api.Assertions.assertArrayEquals(png, pngResponse.body());
       assertTransparentPng(png);
       final var matrix = new JsonObject(new String(responses.get(2).get().body(), StandardCharsets.UTF_8));
       assertTrue(matrix.getBoolean("cancelled"));

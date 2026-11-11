@@ -46,10 +46,12 @@ import java.awt.Desktop;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 
 @Slf4j
 public class WebUIVerticle extends AbstractVerticle {
 
+  private static final Pattern HASHED_ASSET = Pattern.compile("^/assets/[^/]+\\.[0-9a-f]{8,}\\.[^/]+$");
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
@@ -111,10 +113,10 @@ public class WebUIVerticle extends AbstractVerticle {
           .allowedHeader("Content-Type"));
 
         webuiRouter.route("/*").handler(ctx -> {
-          ctx.response()
-            .putHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-            .putHeader("Pragma", "no-cache")
-            .putHeader("Expires", "0");
+          final var cacheControl = HASHED_ASSET.matcher(ctx.normalizedPath()).matches()
+            ? "public, max-age=31536000, immutable"
+            : "no-cache";
+          ctx.response().putHeader("Cache-Control", cacheControl);
           ctx.next();
         });
         final var webuiStaticHandler = createWebuiStaticHandler();

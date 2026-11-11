@@ -121,6 +121,10 @@ def main():
         page.locator(".pipeline-root .modal-footer").get_by_role("button", name="Close", exact=True).click()
         page.evaluate("""() => {
             const m=window.__hictBenchmark.manager(),api=m.networkManager.requestManager;
+            const layers=m.viewAndLayersManager;
+            const histogram=layers.loadedViewportSignalRange;
+            // Force the bounded fallback query so the test can delay its response.
+            layers.loadedViewportSignalRange=()=>undefined;
             const original=api.queryMatrixFloat32.bind(api);
             window.autoRangeWaiting=false;
             api.queryMatrixFloat32=async options => {
@@ -129,7 +133,8 @@ def main():
                 await new Promise(resolve=>window.releaseAutoRange=resolve);
                 return original(options);
             };
-            window.autoRangeTask=m.visualizationManager.applyOpeningFullMapQuantileThreshold();
+            window.autoRangeTask=m.visualizationManager.applyOpeningViewportQuantileThreshold()
+                .finally(()=>layers.loadedViewportSignalRange=histogram);
         }""")
         page.wait_for_function('window.autoRangeWaiting')
         preserved = page.evaluate("""async () => {

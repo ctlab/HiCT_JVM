@@ -86,6 +86,7 @@ public class MainVerticle extends AbstractVerticle {
 
   @Override
   public void start(final Promise<Void> startPromise) throws Exception {
+    javax.imageio.ImageIO.setUseCache(false);
     // set vertx logger delegate factory to slf4j
     String logFactory = System.getProperty("org.vertx.logger-delegate-factory-class-name");
     if (logFactory == null) {
