@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Preserve all presets and thresholds when an imported preset file contains an invalid item.
+- Start portable Linux packages safely when multiple first launches share the same payload cache.
 
 ## 2.0.0
 
 ### Release preparation and cleanup
+
+- Preserve all presets and thresholds when an imported preset file contains an invalid item.
 
 - Export contig and scaffold names through the supported API method for reliable name round trips.
 

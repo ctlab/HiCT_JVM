@@ -1678,3 +1678,29 @@ legacy unnamed savedLocations entry gets its expected default label. All existin
 workspace, navigation, bookmarks, OSD and notification scenarios also pass, with
 explicit unhandled-promise capture in the shared browser harness. Evidence is
 under `/tmp/hict-u13-atomic-preset-qualified-dir`.
+
+## Concurrent portable extraction during U13
+
+Two real first starts reproduced one launcher deleting the directory while the
+other tar process extracted into it. The wrapper now extracts each candidate in
+a private directory, verifies its executable and marker, then atomically renames
+the complete directory into the cache. Concurrent losers reuse the completed
+winner. Invalid existing cache entries get a separate recovered destination.
+Failed extraction cleans its private staging directory.
+
+Four focused tests generate the exact wrapper header with a small real tar.xz
+payload. A deliberately paused tar process deterministically reproduces the old
+race. That regression fails on the old wrapper and passes on the correction.
+The other tests verify cache reuse, preservation/recovery of invalid entries and
+failed-extraction cleanup/retry. Shell syntax checks and the existing full smoke
+suite also pass.
+
+Both actual corrected .run processes begin extraction into the same cold cache
+and complete successfully. One executes the three-click example journey through
+Reverse, Split, Undo, session Save/Close/Restore and exact AGP export. The other
+executes the offline edit/restart/session/export/Swagger journey. The example
+opens in 20.277 s, the complete journey takes 28.092 s and the restored view has
+31,102 signal pixels with zero browser errors. Evidence pointers are
+`/tmp/hict-u13-safe-run-journey-dir` and `/tmp/hict-u13-safe-run-offline-dir`.
+Focused logs are `/tmp/hict-u13-portable-extraction-tests.log` and
+`/tmp/hict-u13-portable-extraction-before.log`.
