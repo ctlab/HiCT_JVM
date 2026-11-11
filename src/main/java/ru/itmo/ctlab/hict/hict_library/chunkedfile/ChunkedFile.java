@@ -218,9 +218,9 @@ public class ChunkedFile implements AutoCloseable {
     this.resolutionLinearScalingCoefficient[0] = 1.0d;
     this.resolutionLinearScalingCoefficient[1] = 1.0d;
     for (int i = 2; i < this.resolutions.length; ++i) {
-      final var ratio = (this.resolutions[i] / this.resolutions[1]);
-      this.resolutionScalingCoefficient[i] = 1.0d / ((double) (ratio * ratio));
-      this.resolutionLinearScalingCoefficient[i] = 1.0d / ((double) ratio);
+      final double ratio = (double) this.resolutions[i] / this.resolutions[1];
+      this.resolutionScalingCoefficient[i] = 1.0d / (ratio * ratio);
+      this.resolutionLinearScalingCoefficient[i] = 1.0d / ratio;
     }
     log.info("Opened {}: {} resolutions, {} contigs in {} ms", this.hdfFilePath.getFileName(),
       this.resolutions.length - 1, this.contigTree.getContigDescriptors().size(),

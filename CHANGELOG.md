@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scale contact signals by exact resolution ratios, including non-divisible pyramid levels and very large resolutions.
+
 - Start portable Linux packages safely when multiple first launches share the same payload cache.
 
 ## 2.0.0

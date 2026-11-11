@@ -1704,3 +1704,23 @@ opens in 20.277 s, the complete journey takes 28.092 s and the restored view has
 `/tmp/hict-u13-safe-run-journey-dir` and `/tmp/hict-u13-safe-run-offline-dir`.
 Focused logs are `/tmp/hict-u13-portable-extraction-tests.log` and
 `/tmp/hict-u13-portable-extraction-before.log`.
+
+## Exact resolution scaling during U13
+
+The real signal-control audit reproduced 10/4 linear scaling dividing by 2 instead
+of 2.5. ChunkedFile calculated a long integer ratio and squared it before casting.
+It now performs both division and squaring as doubles. This also removes integer
+overflow for large resolution ratios.
+
+Three real converted-fixture cases cover fractional 10/4, preserved integer 8/4
+and 10,000,000,000/1 ratios. The old code fails the fractional and overflow cases.
+The corrected full JVM suite passes 436 tests with seven optional skips.
+
+The browser gate checks 25 independently known fine-level contacts, actual slider
+keyboard/drag color changes, slider sensitivity and domain repair, loaded/exact
+ranges, log1p(x)/log(2), invalid-base preservation, panel remount and declared
+Log10 Reset. Coarse native contacts [11,0,0,11] match exact None/linear/quadratic
+scaling at ratio 2.5. Pixel [249,185,185] changes to [246,158,158] after contrast
+adjustment while raw contacts remain exact. Evidence pointers are
+`/tmp/hict-u13-signal-control-audit-dir` and
+`/tmp/hict-u13-signal-controls-fractional-fixed-dir`.

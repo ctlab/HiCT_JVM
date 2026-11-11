@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 
 import java.lang.reflect.InvocationTargetException;
@@ -28,6 +29,21 @@ class OpeningMetadataTest {
 
   @BeforeAll static void loadHdf5() {
     HDF5LibraryInitializer.initializeHDF5Library();
+  }
+
+  @ParameterizedTest
+  @CsvSource({"4,10,0.4,0.16", "4,8,0.5,0.25", "1,10000000000,1e-10,1e-20"})
+  void scalingCoefficientsUseFractionalRatiosWithoutIntegerOverflow(
+    long finest, long coarsest, double linear, double quadratic
+  ) throws Exception {
+    var path = ReinforcementHdf5Fixture.create(temp, "scaling", List.of(finest, coarsest));
+    try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(path, 1, 2))) {
+      assertArrayEquals(new long[]{0, finest, coarsest}, file.getResolutions());
+      assertEquals(1.0, file.getResolutionLinearScalingCoefficient()[1]);
+      assertEquals(1.0, file.getResolutionScalingCoefficient()[1]);
+      assertEquals(linear, file.getResolutionLinearScalingCoefficient()[2], linear * 1e-12);
+      assertEquals(quadratic, file.getResolutionScalingCoefficient()[2], quadratic * 1e-12);
+    }
   }
 
   @Test void weightReadPlanAlignsChunksAndBoundsBuffers() {
