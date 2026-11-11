@@ -1596,3 +1596,21 @@ across internal, hictk-assisted and automatic modes. Independent h5py checks ver
 every exported contact, resolution, assembly policy, actual gzip filter level or
 absence of compression, and nonuniform positive balancing weights. Evidence is
 `/tmp/hict-u13-compression-actual.aZfFnW/evidence/`.
+
+## Keyboard menus and final resolution during U13
+
+The keyboard audit reproduced Escape being consumed before Bootstrap could close
+an open menu. The global map handler now yields to the focused open dropdown.
+Focused text fields and app-dialog dismissal retain their existing routing.
+
+The same audit exposed the last enabled resolution switch displaying unchecked
+while the model retained that level. The final active switch is disabled with a
+reason, so the view and control stay consistent. Other level switches remain
+interactive.
+
+The frontend build and existing regression commands pass. Focused ESLint reports
+zero errors and five existing warnings. The browser gate checks all six menu
+keyboard paths and focus return, exact graph/view preservation after reload,
+sidebar collapse/restore, all eleven native resolution switches, the final-level
+guard, valid bounds and rejected reversed bounds. Evidence is under the pointer
+`/tmp/hict-u13-navigation-controls-fixed-dir`.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Close open menus with Escape and keep the last active map resolution visibly enabled.
+
 - Honor the selected Cooler compression level, including uncompressed interaction data with optional balancing.
 
 ## 2.0.0
