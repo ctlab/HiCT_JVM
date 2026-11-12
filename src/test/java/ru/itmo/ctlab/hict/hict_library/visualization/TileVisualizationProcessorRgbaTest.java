@@ -8,6 +8,16 @@ import java.io.ByteArrayOutputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TileVisualizationProcessorRgbaTest {
+  @Test void undefinedRatiosAreTransparentWhileMeasuredZeroIsBlue() throws Exception {
+    var bounds = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
+      32, java.awt.Color.WHITE, java.awt.Color.BLACK, 0.5, 2.0);
+    double[][] ratios = {{Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -1, 0, 1}};
+    var tile = image(TileVisualizationProcessor.mapObservedOverExpectedRgba(ratios, bounds), 6, 1);
+    for (int i = 0; i < 4; i++) assertEquals(0, tile.getRGB(i, 0));
+    assertEquals(0xff2166ac, tile.getRGB(4, 0));
+    assertEquals(0xffffffff, tile.getRGB(5, 0));
+  }
+
   @Test void observedOverExpectedUsesReciprocalBoundsAndANeutralMidpoint() throws Exception {
     var bounds = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
       32, java.awt.Color.WHITE, java.awt.Color.BLACK, 0.5, 2.0);

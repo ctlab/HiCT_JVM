@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Finish bounded redirect response bodies without resetting completed HTTP exchanges, retain connection-error causes, and stress-test redirect limits on every platform.
+
+- Keep small-genome minimaps visible when coarse pyramid levels are empty, mask undefined O/E ratios instead of coloring them as depletion, and place Map layout above source selection.
+
+- Deliver completed sequence overlays and search tracks after their progress dialogs close, and retain the chosen overlay/triangle view in Jobs.
+- Add a sidebar map-layout selector; default selection analyses to Overlay, whole-map analyses to below diagonal, and generation resolutions to finest through current.
+- Pick overlapping BED features by their rendered lanes on both axes and add “Zoom to feature” at readable FASTA scale.
+
+- Preserve ModDotPlot overlays and custom graphs through Expected/O/E/Observed switches, keep primary and secondary palettes separate, and prevent subnormal threshold intervals.
+- Allow valid multi-source session snapshots beyond 100,000 values while retaining byte, nesting, graph and assembly validation limits.
+
 ## 2.0.0
 
 ### Release preparation and cleanup

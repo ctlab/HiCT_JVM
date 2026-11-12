@@ -38,7 +38,14 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       job.state, job.error, job.output == null ? List.of() : List.of(
         new BackgroundJob.Output(job.output,
           job.kind.equals("search") ? "open_tracks"
-            : job.kind.equals("moddotplot") ? "attach_identity" : "attach_dotplot", null, null, job.mapFilename)))).toList();
+            : job.kind.equals("moddotplot") ? "attach_identity" : "attach_dotplot", null, null, job.mapFilename, job.kind.equals("search") ? null : resultDisplayMode(job.request))))).toList();
+  }
+
+  static String resultDisplayMode(JsonObject request) {
+    var value = request.getValue("displayMode", "selection".equals(request.getString("scope")) ? "overlay" : "below");
+    if (!(value instanceof String mode) || !Set.of("overlay", "below", "above", "none").contains(mode))
+      throw new IllegalArgumentException("displayMode must be overlay, below, above or none");
+    return (String) value;
   }
 
   public boolean cancelBackgroundJob(String id) {
@@ -424,7 +431,8 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var fastaWrapper = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
     if (fastaWrapper == null && !secondary) fastaWrapper = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
     if (wrapper == null || fastaWrapper == null) throw new HttpException(409, "Link the FASTA file for the active map before generating a dotplot. Use Assembly → Link FASTA, or open the map and FASTA together in the Open Wizard.");
-    request = request.copy().put("gapLengthBp", gapLength(request));
+    try { request = request.copy().put("gapLengthBp", gapLength(request)).put("displayMode", resultDisplayMode(request)); }
+    catch (IllegalArgumentException invalid) { throw new HttpException(400, invalid.getMessage()); }
     var map = wrapper.getChunkedFile();
     var layout = AssemblySequenceLayout.capture(map, gapLength(request));
     long length = map.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum();
