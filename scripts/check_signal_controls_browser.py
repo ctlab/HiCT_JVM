@@ -232,7 +232,7 @@ def main():
             apply()
             np.testing.assert_allclose(
                 query(processed=True),
-                np.log1p(np.array(known)) / math.log(10),
+                np.log1p(np.array(known)) / math.log(2),
                 rtol=1e-6,
                 atol=1e-6,
             )
@@ -253,7 +253,7 @@ def main():
                 )
             results.append(
                 {
-                    "test": "Reset uses declared Log10 and native 10/4 resolution scaling matches independent linear/quadratic formula"
+                    "test": "Reset uses declared Log2 and native 10/4 resolution scaling matches independent linear/quadratic formula"
                 }
             )
             page.evaluate(

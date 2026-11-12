@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Start log transforms at Log2, show masked bins calmly, and keep history controls in Journal so visualization starts with color controls.
+
 - Keep the automatically fitted contact-map range readable across zoom levels while preserving explicit contrast choices and separate O/E ranges.
 
 - Keep pinned hictk dependency builds available during GNU Savannah outages and resolve release JHDF5 assets strictly in Autobuild Release.

@@ -151,6 +151,8 @@ def main():
             )
 
         def button_action(name, endpoint):
+            if name in ("Undo assembly edit", "Redo assembly edit"):
+                page.get_by_role("button", name="Journal", exact=True).click()
             with page.expect_response(
                 lambda response: response.url.endswith(endpoint)
             ) as response:

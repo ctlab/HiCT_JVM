@@ -224,6 +224,7 @@ def main():
                     note.first.click()
                     page.get_by_role('button', name='Do not use Cooler weights').click()
                     measure(f'{stem}-excluded-off')
+                    page.locator('#signal-advanced > summary').click()
                     page.get_by_text('Cooler weights', exact=True).first.click()
                     for value in ('REPLACE_NANS_WITH_ONE', 'REPLACE_NANS_WITH_ZERO'):
                         page.locator('#cooler-weights-nan-policy').select_option(value)

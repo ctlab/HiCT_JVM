@@ -11,7 +11,7 @@ The source plan is protected and is not edited.
 | Package | Status | Required evidence |
 |---|---|---|
 | R1 Zoom readability | Implemented and Linux browser gate passed | Details below |
-| R2 Calm visualization | Pending | Two viewport sizes, masked weights, Log2, Journal |
+| R2 Calm visualization | Implemented and Linux browser gate passed | Two viewport sizes, masked weights, Log2, Journal |
 | R3 Quiet chrome | Pending | Default and opt-in Dev, Info, connection dialog |
 | R4 Label density | Pending | Dense assembly, entity discovery, exports |
 | R5 Naming and FASTA | Pending | Menu labels and status-chip linker |
@@ -41,6 +41,31 @@ Additional baseline comparison evidence is kept under `/tmp/hict-ux-r1/`.
 Development validation uses the current dist and existing backend JAR; R6 must
 qualify the final JAR with explicitly bundled assets, since a server launched
 from the checkout automatically detects the sibling development dist.
+
+### R2 — Calm visualization and Log2
+
+WebUI `bb427cb` puts the history toolbar and state in Journal while leaving its
+keyboard listener mounted. New/inactive log choices and Reset use Log2; a live
+custom base remains available in Advanced. Excluded bins masked with zero weights
+show a neutral count; replacement policies still request attention. The policy
+selector lives in the single Advanced section. Existing border-collapse and preset
+preferences are preserved.
+
+`npm run build:web` passed. Interactive checks at 1440×900 and 1280×720 verified
+Log2 without Advanced, no red warning after auto-mask, a working advanced base-10
+transform, collapsed borders and reachable Journal controls. Visible sidebar
+buttons/inputs/selects fell from 20 to 18 on the same fixture. No page errors.
+Screenshots/results: `/tmp/hict-ux-r2/`; build: `/tmp/hict-ux-r2-build.log`.
+Updated acceptance scripts open Journal before history buttons, reach the moved
+weight policy through Advanced, and expect Log2 Reset numerically.
+
+R1 comparison limitation: the unchanged packaged baseline also passed the
+red-diagonal pixel floor during wheel zoom. The original washed-out screenshot
+was reproduced with direct resolution changes in an off-diagonal viewport; this
+alone cannot distinguish low signal at that location from an incorrect range.
+R1 therefore establishes explicit opening-range ownership and its numerical
+regressions, but does not claim that the pixel floor by itself proves the audit's
+root-cause hypothesis. Keep this distinction in publication claims.
 
 ---
 

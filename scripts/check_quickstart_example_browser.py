@@ -269,6 +269,7 @@ with sync_playwright() as pw:
             )
             split_state = snapshot()["primary"]
             assert len(split_state["splitEdits"]) == 1
+            page.get_by_role("button", name="Journal", exact=True).click()
             with page.expect_response("**/assembly/history/restore") as undo_response:
                 page.get_by_role(
                     "button", name="Undo assembly edit", exact=True

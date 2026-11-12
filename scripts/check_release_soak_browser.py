@@ -206,6 +206,8 @@ def main():
                         ("Reverse Selection", "/reverse_selection_range"),
                         ("Undo assembly edit", "/assembly/history/restore"),
                     ]:
+                        if button == "Undo assembly edit":
+                            page.get_by_role("button", name="Journal", exact=True).click()
                         action_started = time.monotonic()
                         with page.expect_response(
                             lambda response: response.url.endswith(endpoint)
