@@ -617,7 +617,7 @@ def main():
             assert select.locator("option").count() == len(labels_before) + 3
 
         def osd():
-            check.menu("View", "OSD settings...")
+            check.menu("View", "Info settings…")
             dialog = page.get_by_role(
                 "dialog", name="On-screen display settings", exact=True
             )
@@ -644,7 +644,7 @@ def main():
             baseline = overlay.inner_text().splitlines()
             assert len(baseline) == len(fields), (baseline, fields)
             for index, field in enumerate(fields):
-                check.menu("View", "OSD settings...")
+                check.menu("View", "Info settings…")
                 dialog.locator("#" + field).uncheck()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 hover()
@@ -654,11 +654,11 @@ def main():
                     baseline,
                     actual,
                 )
-                check.menu("View", "OSD settings...")
+                check.menu("View", "Info settings…")
                 dialog.locator("#" + field).check()
                 dialog.get_by_role("button", name="Done", exact=True).click()
                 hover()
-            check.menu("View", "OSD settings...")
+            check.menu("View", "Info settings…")
             dialog.locator(".osd-field-row").first.get_by_role(
                 "button", name="Down", exact=True
             ).click()

@@ -12,7 +12,7 @@ The source plan is protected and is not edited.
 |---|---|---|
 | R1 Zoom readability | Implemented and Linux browser gate passed | Details below |
 | R2 Calm visualization | Implemented and Linux browser gate passed | Two viewport sizes, masked weights, Log2, Journal |
-| R3 Quiet chrome | Pending | Default and opt-in Dev, Info, connection dialog |
+| R3 Quiet chrome | Implemented and Linux browser gate passed | Default and opt-in Dev, Info, connection dialog |
 | R4 Label density | Pending | Dense assembly, entity discovery, exports |
 | R5 Naming and FASTA | Pending | Menu labels and status-chip linker |
 | R6 Publication gate | Pending | Packaged build, smoke, first-run journey, limitations |
@@ -66,6 +66,25 @@ alone cannot distinguish low signal at that location from an incorrect range.
 R1 therefore establishes explicit opening-range ownership and its numerical
 regressions, but does not claim that the pixel floor by itself proves the audit's
 root-cause hypothesis. Keep this distinction in publication claims.
+
+### R3 — Quiet chrome and connection access
+
+WebUI `12eb233` hides Dev unless `?dev=1` or the persisted About setting is
+selected. Reload tiles is in Dev, Info replaces OSD in visible controls, and Info
+starts off for new profiles. Existing saved visibility/fields are retained.
+Help → Connection… opens a focused, Escape-dismissible server-address dialog.
+
+`npm run build:web` passed. `/tmp/hict-ux-r3/` records clean empty/open
+screenshots, both persisted About-toggle directions, the query override, working
+connection changes, Info settings and Info refresh after zoom with no further
+pointer movement. No page errors. Navigation/cancellation checks explicitly opt
+into Dev; workspace checks use the renamed Info entry.
+
+Browser harness correction: `.ol-viewport:first` identifies the nested minimap,
+not the main map. The zoom regression now resolves the main-map viewport and a
+visible diagonal point through the manager before issuing wheel events. The R1
+minimap-wheel evidence remains valid for that path; the corrected main-map gate
+is being rerun and must pass in R6.
 
 ---
 

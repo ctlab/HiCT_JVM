@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep developer tools opt-in, move tile reload into Dev, start map Info quietly, and make server connection settings available from Help.
+
 - Start log transforms at Log2, show masked bins calmly, and keep history controls in Journal so visualization starts with color controls.
 
 - Keep the automatically fitted contact-map range readable across zoom levels while preserving explicit contrast choices and separate O/E ranges.

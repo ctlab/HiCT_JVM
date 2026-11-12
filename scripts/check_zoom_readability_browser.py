@@ -119,8 +119,19 @@ def main():
             )
 
         def wheel():
-            box = page.locator(".ol-viewport").first.bounding_box()
-            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            point = page.evaluate("""()=>{
+                const map=window.__hictBenchmark.manager().getMap(),e=map.getView().getProjection().getExtent(),r=map.getViewport().getBoundingClientRect();
+                const a=map.getPixelFromCoordinate([e[0],e[3]]),b=map.getPixelFromCoordinate([e[2],e[1]]),d=[b[0]-a[0],b[1]-a[1]];
+                let low=0,high=1;
+                for(const [origin,span,size,margin] of [[a[0],d[0],r.width,150],[a[1],d[1],r.height,90]]) {
+                  const range=[(margin-origin)/span,(size-10-origin)/span].sort((a,b)=>a-b);
+                  low=Math.max(low,range[0]);high=Math.min(high,range[1]);
+                }
+                if(high<=low) throw new Error('No diagonal in main viewport for wheel zoom');
+                const t=(low+high)/2;
+                return [r.x+a[0]+t*d[0],r.y+a[1]+t*d[1]];
+            }""")
+            page.mouse.move(*point)
             page.mouse.wheel(0, -300)
             page.wait_for_timeout(300)
 
