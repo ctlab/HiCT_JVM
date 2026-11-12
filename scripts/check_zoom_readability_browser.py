@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise real wheel zoom across pyramid levels and preserve explicit contrast.
 
-Each step is three wheel events (roughly a doubling). The gate measures red
+Each step is one wheel event on the main map (roughly a doubling). The gate measures red
 contact signal along the visible diagonal, excluding borders and entity labels.
 Fixtures must be disposable copies in the server data directory.
 """
@@ -118,7 +118,7 @@ def main():
                 resolution=state()["resolution"],
             )
 
-        def wheel():
+        def wheel(delta=-300):
             point = page.evaluate("""()=>{
                 const map=window.__hictBenchmark.manager().getMap(),e=map.getView().getProjection().getExtent(),r=map.getViewport().getBoundingClientRect();
                 const a=map.getPixelFromCoordinate([e[0],e[3]]),b=map.getPixelFromCoordinate([e[2],e[1]]),d=[b[0]-a[0],b[1]-a[1]];
@@ -132,7 +132,7 @@ def main():
                 return [r.x+a[0]+t*d[0],r.y+a[1]+t*d[1]];
             }""")
             page.mouse.move(*point)
-            page.mouse.wheel(0, -300)
+            page.mouse.wheel(0, delta)
             page.wait_for_timeout(300)
 
         try:
@@ -162,8 +162,7 @@ def main():
                     )
                     measure(stem + "-0")
                     for step in range(1, 9):
-                        for _ in range(3):
-                            wheel()
+                        wheel()
                         settle()
                         if step in (4, 8):
                             measure(stem + "-" + str(step))
@@ -211,9 +210,14 @@ def main():
                     upper.press("Tab")
                     page.get_by_role("button", name="Apply", exact=True).click()
                     settle()
+                    manual_level = state()["resolution"]
                     for _ in range(4):
-                        wheel()
+                        wheel(300)
                     settle()
+                    check(
+                        stem + " manual range crosses levels",
+                        state()["resolution"] != manual_level,
+                    )
                     check(
                         stem + " manual upper retained",
                         abs(float(upper.input_value()) - 0.123) < 1e-9,

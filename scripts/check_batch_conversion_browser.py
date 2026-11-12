@@ -49,11 +49,12 @@ def main():
     with h5py.File(matrix, "r+") as handle:
         handle.attrs["format"] = "HDF5::MCOOL"
         handle.attrs["format-version"] = 2
-    expected = {p.name for p in data.glob("*.mcool")}
+    sources = list(data.rglob("*.mcool"))
+    expected = {p.name for p in sources}
     converted = {
-        name
-        for name in expected
-        if (data / (name.removesuffix(".mcool") + ".hict.hdf5")).exists()
+        p.name
+        for p in sources
+        if p.with_name(p.name.removesuffix(".mcool") + ".hict.hdf5").exists()
     }
     assert converted and expected - converted == {"batch-new.mcool"}
     output = Path(args.output)

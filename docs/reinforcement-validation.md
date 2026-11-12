@@ -143,6 +143,40 @@ before the final go/no-go. Initial qualification setup failures are retained;
 missing fixtures, a stale shallow-file-list test and incorrect runner arguments
 are distinguished from application regressions.
 
+### R6 — Acceptance harness corrections qualified
+
+Final candidate `2.0.7-871ee09-webui_cdbe49c` is frozen at
+`/tmp/hict-ux-r6/final/hict-fat.jar` (SHA-256
+`7522516186ef87e7c5a3cdae68e2d9a2af24ad9bc92996338d1958b4ac5ad54a`).
+The bundled UI is served explicitly from its extracted `webui/` resources.
+Each acceptance suite now uses a fresh server and physical fixture copy.
+
+The corrected main-map zoom gate passed all 38 checks on both required fixtures,
+with file and square-root coverage weights: eight wheel steps, diagonal share
+floor 0.5, separate O/E bounds and restoration, explicit thresholds surviving
+coarser-level transitions, and frame p95 at most 16.8 ms. There were no page or
+console errors. Evidence: `/tmp/hict-ux-r6/final/rechecks/zoom_readability/`.
+The full manual/wizard/attach and normalization opening gate passed 103 checks.
+
+Acceptance hardening preserves the actual UI input paths: conversion expectations
+include recursive sources, toolbar actions are distinguished from same-named
+journal entries, and Split waits for a real rendered tile before double-clicking.
+The UTF-8 Tauri test page is explicitly encoded as bytes. Syntax checks passed
+for all browser/desktop scripts. Corrected Structural and Jobs gates both pass;
+initial failed runs are retained alongside the rechecks.
+
+The final UI passed R2–R5 at their required sizes. A second dense assembly,
+quad Orlando (595 contigs), shows zero whole-map name paint and working entity
+navigation in `/tmp/hict-ux-r6/final/density-extra/`. Final native Electron passed
+14 checks, Tauri passed 25, and Launcher passed its real server lifecycle and
+reset checks. Evidence is under `electron-recheck/`, `tauri-recheck/` and
+`launcher.log` in the same final-candidate directory. The 16 real-tool sequence
+lifecycle cases also passed (`sequence_lifecycle/summary.json`).
+
+The multi-hour soak and remaining browser matrix are still running. This is
+qualification progress, not a final release go/no-go. Windows/macOS interactive
+checks and hosted CI for these unpushed commits remain unqualified.
+
 ---
 
 
