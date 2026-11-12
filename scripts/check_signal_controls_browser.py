@@ -80,7 +80,7 @@ def main():
             page.locator("#normalization-mode").select_option("none")
             page.locator("#signal-transform-linear").click()
             advanced = page.locator("#signal-advanced")
-            advanced.locator("summary").click()
+            advanced.locator(":scope > summary").click()
             page.locator("#scaling-across-zoom").select_option("none")
             lower = page.get_by_role(
                 "spinbutton", name="Lower signal threshold", exact=True
@@ -227,7 +227,7 @@ def main():
             )
             advanced = page.locator("#signal-advanced")
             if advanced.get_attribute("open") is None:
-                advanced.locator("summary").click()
+                advanced.locator(":scope > summary").click()
             page.get_by_role("button", name="Reset", exact=True).click()
             apply()
             np.testing.assert_allclose(

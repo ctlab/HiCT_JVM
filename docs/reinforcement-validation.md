@@ -15,7 +15,7 @@ The source plan is protected and is not edited.
 | R3 Quiet chrome | Implemented and Linux browser gate passed | Default and opt-in Dev, Info, connection dialog |
 | R4 Label density | Implemented and Linux browser gate passed | Dense assembly, entity discovery, exports |
 | R5 Naming and FASTA | Implemented and Linux browser gate passed | Menu labels and status-chip linker |
-| R6 Publication gate | In progress | Packaged build, smoke, first-run journey, limitations |
+| R6 Publication gate | Functional gates passed, two-hour soak running | Packaged build, smoke, first-run journey, limitations |
 
 ### R1 — Opening range ownership across pyramid levels
 
@@ -176,6 +176,41 @@ lifecycle cases also passed (`sequence_lifecycle/summary.json`).
 The multi-hour soak and remaining browser matrix are still running. This is
 qualification progress, not a final release go/no-go. Windows/macOS interactive
 checks and hosted CI for these unpushed commits remain unqualified.
+
+### R6 — Functional qualification complete, soak pending
+
+All **37 distinct browser acceptance suites pass** after their documented reruns.
+`/tmp/hict-ux-r6/final/functional-gates.json` merges the initial matrix with the
+successful rechecks and retains the source manifest of every result. This includes
+all original 35 suites, Cooler matrix export, and real .hic v8/v9 import. The
+221 MB v8 input was converted with its full pyramid and balancing; 77,841 raw
+source values matched an independent hictk dump exactly. The generated v9 fixture
+matched all 25 values. Both sources retained their SHA-256 digests, rendered at
+the oracle resolution, reopened from the conversion cache without another job,
+and passed error checks. See `formats-final/matrix_input_formats/`.
+
+The format gate retains its 120-second small-fixture default and accepts an
+explicit `--job-timeout` for real large inputs (600 seconds in this run). Advanced
+selectors target their direct summary, and the ModDotPlot triangle-preservation
+case explicitly selects Below diagonal; the current selection default remains
+Overlay and has separate passing UX coverage. These are acceptance corrections,
+not weakened numerical or pixel assertions.
+
+Functional coverage includes structural edits and exact Undo/Redo, journal paging,
+normalization and O/E, all presets and graphs, tracks and histograms, bookmarks,
+row/column scopes, Info fields, error handling, offline and cancelled tiles,
+multi-client conflicts, session validation and restore, examples, real search,
+BLAST, ModDotPlot and alignment jobs, mixed pyramids, native exports, metadata and
+citation. No Java runtime source changed in this pass. JVM total: 500 tests,
+zero failures/errors, seven skips; native baseline parity and four checkout CI
+checks pass. WebUI builds and regression contracts pass.
+
+**Still pending:** the final candidate's full 7,200-second soak (started around
+01:52 Yerevan time, expected completion around 03:53), final trend assertions and
+written go/no-go. It has exceeded 45 minutes without reported errors so far.
+Windows/macOS owner GUI checks and hosted GitHub Actions on the new local commits
+remain unqualified. Both branch workflows include `jvm-sfx-native`; the new
+commits are intentionally unpushed. No merge, release publication or tag occurred.
 
 ---
 
