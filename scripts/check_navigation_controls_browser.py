@@ -130,7 +130,7 @@ def main():
             check.settle()
             assert view() == before
             results.append({"test": "Sidebar collapse and restore preserve viewport"})
-            check.menu("View", "Restrict Resolutions...")
+            check.menu("View", "Restrict Resolutions…")
             dialog = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name="Restrict Resolutions", exact=True)
             )
@@ -169,7 +169,7 @@ def main():
                 )
                 == coarsest
             )
-            check.menu("View", "Restrict Resolutions...")
+            check.menu("View", "Restrict Resolutions…")
             dialog.locator("#resolution-finest-limit").fill(str(finest))
             dialog.locator("#resolution-coarsest-limit").fill(str(coarsest))
             dialog.get_by_role("button", name="Set limits", exact=True).click()

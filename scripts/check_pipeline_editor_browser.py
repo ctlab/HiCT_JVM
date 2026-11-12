@@ -47,7 +47,7 @@ def main():
 
         def open_editor():
             page.get_by_role("link", name="View", exact=True).click()
-            page.get_by_role("link", name="Rendering pipeline...", exact=True).click()
+            page.get_by_role("link", name="Rendering pipeline…", exact=True).click()
             page.locator(".graph-canvas").wait_for(state="visible")
             page.wait_for_function("document.querySelector('.graph-canvas').data.graph._nodes.length>2")
             page.wait_for_timeout(300)

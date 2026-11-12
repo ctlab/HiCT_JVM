@@ -60,7 +60,7 @@ def main():
             )["values"]
 
         def editor_open():
-            check.menu("View", "Rendering pipeline...")
+            check.menu("View", "Rendering pipeline…")
             page.locator(".graph-canvas").wait_for(state="visible")
             page.wait_for_function(
                 "document.querySelector('.graph-canvas').data.graph._nodes.length>2"

@@ -218,7 +218,7 @@ with sync_playwright() as pw:
         }
     )
     page.get_by_role("link", name="File", exact=True).click()
-    page.get_by_role("link", name="Open FASTA only...", exact=True).click()
+    page.get_by_role("link", name="Open FASTA only…", exact=True).click()
     dialog = page.get_by_role("dialog", name="Open FASTA only", exact=True)
     dialog.get_by_label("FASTA file", exact=True).select_option("mixed.fa")
     dialog.get_by_role("button", name="Create and open", exact=True).click()

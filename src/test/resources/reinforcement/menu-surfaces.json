@@ -77,14 +77,14 @@
   {
     "id": "menu-06",
     "menu": "Assembly",
-    "action": "Apply Juicebox assembly",
-    "heading": "Apply Juicebox assembly",
+    "action": "Apply .assembly file…",
+    "heading": "Apply .assembly file",
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: Apply Juicebox assembly",
+    "surfaceExpected": "Visible heading: Apply .assembly file",
     "functionalExpected": "Apply a fixture assembly with original FASTA and verify its coordinates and exported AGP.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -92,7 +92,7 @@
   {
     "id": "menu-07",
     "menu": "View",
-    "action": "Tracks and layers...",
+    "action": "Tracks and layers…",
     "heading": "Tracks and layers",
     "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
     "prerequisites": [
@@ -107,7 +107,7 @@
   {
     "id": "menu-08",
     "menu": "View",
-    "action": "Rendering pipeline...",
+    "action": "Rendering pipeline…",
     "heading": "Rendering Pipeline",
     "source": "src/app/ui/components/upper_ribbon/RenderingPipelineModal.vue",
     "prerequisites": [
@@ -122,14 +122,14 @@
   {
     "id": "menu-09",
     "menu": "View",
-    "action": "OSD settings...",
-    "heading": "OSD settings",
+    "action": "Info settings…",
+    "heading": "Info settings",
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [
       "Disposable server data",
       "Open map via benchmark setup; FASTA intentionally not linked"
     ],
-    "surfaceExpected": "Visible heading: OSD settings",
+    "surfaceExpected": "Visible heading: Info settings",
     "functionalExpected": "Toggle each field and placement, verify overlay contents and persistence.",
     "coverage": "pending",
     "scope": "Surface check only; functionalExpected requires separate evidence"
@@ -137,7 +137,7 @@
   {
     "id": "menu-10",
     "menu": "View",
-    "action": "Restrict Resolutions...",
+    "action": "Restrict Resolutions…",
     "heading": "Restrict Resolutions",
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [
@@ -212,7 +212,7 @@
   {
     "id": "menu-15",
     "menu": "Dev",
-    "action": "Runtime statistics...",
+    "action": "Runtime statistics…",
     "heading": "Runtime Statistics",
     "source": "src/app/ui/components/upper_ribbon/ServerStatisticsModal.vue",
     "prerequisites": [
@@ -227,7 +227,7 @@
   {
     "id": "menu-16",
     "menu": "Dev",
-    "action": "Worker diagnostics...",
+    "action": "Worker diagnostics…",
     "heading": "Worker Diagnostics",
     "source": "src/app/ui/components/upper_ribbon/WorkerDiagnosticsModal.vue",
     "prerequisites": [
@@ -242,7 +242,7 @@
   {
     "id": "menu-17",
     "menu": "Help",
-    "action": "API docs...",
+    "action": "API docs…",
     "heading": null,
     "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
     "prerequisites": [

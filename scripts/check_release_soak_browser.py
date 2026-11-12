@@ -143,7 +143,7 @@ def main():
                     }""")
                 page.get_by_role("link", name="View", exact=True).click()
                 page.get_by_role(
-                    "link", name="Restrict Resolutions...", exact=True
+                    "link", name="Restrict Resolutions…", exact=True
                 ).click()
                 # Transient locator handles retain detached nodes in the inspector.
                 # Keep these memory measurements to primitive DOM results and real input.

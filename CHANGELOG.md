@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use neutral assembly-file labels and consistent menus, and make linking FASTA from its status chip easier to discover.
+
 - Reduce whole-map name clutter on dense assemblies while retaining ruler names, entity navigation and export layout.
 
 - Keep developer tools opt-in, move tile reload into Dev, start map Info quietly, and make server connection settings available from Help.

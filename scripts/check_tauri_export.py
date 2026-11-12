@@ -84,7 +84,7 @@ async function seed(){
     const clickText=(selector,text)=>{
      const element=Array.from(document.querySelectorAll(selector)).find(e=>e.textContent.trim()===text);
      if(!element)throw Error('Missing control: '+text);element.click();};
-    clickText('a','View');clickText('a','Rendering pipeline...');
+    clickText('a','View');clickText('a','Rendering pipeline…');
     await until(()=>document.querySelector('.graph-canvas')?.data?.graph._nodes.length>2);
     const graph=document.querySelector('.graph-canvas').data.graph;
     const node=graph._nodes.find(n=>n.type==='hict/source'&&n.properties.source==='PRIMARY');

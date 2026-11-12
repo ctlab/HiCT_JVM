@@ -72,7 +72,7 @@ def main():
             expected = list(reversed([1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11]))
             assert before['pixels'] == {'primary': expected, 'secondary': expected}
             page.get_by_role('link', name='View', exact=True).click()
-            page.get_by_role('link', name='Tracks and layers...', exact=True).click()
+            page.get_by_role('link', name='Tracks and layers…', exact=True).click()
             if args.secondary_drives_assembly:
                 dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
                 with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')):

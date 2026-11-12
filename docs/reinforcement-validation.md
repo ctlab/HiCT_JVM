@@ -14,7 +14,7 @@ The source plan is protected and is not edited.
 | R2 Calm visualization | Implemented and Linux browser gate passed | Two viewport sizes, masked weights, Log2, Journal |
 | R3 Quiet chrome | Implemented and Linux browser gate passed | Default and opt-in Dev, Info, connection dialog |
 | R4 Label density | Implemented and Linux browser gate passed | Dense assembly, entity discovery, exports |
-| R5 Naming and FASTA | Pending | Menu labels and status-chip linker |
+| R5 Naming and FASTA | Implemented and Linux browser gate passed | Menu labels and status-chip linker |
 | R6 Publication gate | Pending | Packaged build, smoke, first-run journey, limitations |
 
 ### R1 — Opening range ownership across pyramid levels
@@ -102,6 +102,22 @@ both from their overview resolution to resolution 1. No page errors.
 at 45/90/180 degrees, exporting PNG, SVG and PDF, independently rasterizing the
 exports and checking signal and viewport preservation. Evidence:
 `/tmp/hict-ux-r4/`, `/tmp/hict-ux-r4-export.log`.
+
+### R5 — Neutral naming and FASTA discovery
+
+WebUI `9c3e911` uses Apply .assembly file… in Assembly, neutral dialog/toast
+wording, and consistent typographic ellipses in menus. The FASTA chip already
+called the same linker as Assembly → Link FASTA; it now has a link icon and an
+explicit Link/Relink FASTA accessible name. A custom signal graph no longer
+shows an additional legacy-summary paragraph.
+
+`npm run build:web` passed. A fresh-profile browser opened Borrelia, linked its
+matching FASTA directly from the chip, compared the first 100 returned bases to
+the physical reference, verified the Relink action, opened the neutral assembly
+picker and checked menu ellipses. No page errors. Evidence:
+`/tmp/hict-ux-r5/`, `/tmp/hict-ux-r5-build.log`.
+Acceptance labels and menu-surface expectations are updated; historical control
+signature captures are preserved as historical evidence.
 
 ---
 
