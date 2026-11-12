@@ -724,7 +724,7 @@ public class TileHandlersHolder extends HandlersHolder {
         );
       } else {
         final var selectedExpectedProfile = "PRIMARY".equals(requestedSource)
-          ? resolveExpectedProfile(map, resolutionDescriptor)
+          ? resolveExpectedProfileForTile(map, gridFile, selectedMatrixWithWeights, options)
           : null;
         sourceImage = gridFile.tileVisualizationProcessor().visualizeTile(
           selectedMatrixWithWeights,
@@ -1233,6 +1233,31 @@ public class TileHandlersHolder extends HandlersHolder {
     return profile.resolutionOrder() == resolutionDescriptor.getResolutionOrderInArray()
       ? profile
       : null;
+  }
+
+  /** Never fall back to a cross-scaffold diagonal model while a viewport profile is loading. */
+  private @Nullable DistanceExpectedNormalizer.DiagonalProfile resolveExpectedProfileForTile(
+    final @NotNull LocalMap<String, Object> map,
+    final @NotNull ChunkedFile file,
+    final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrix,
+    final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options
+  ) {
+    if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) return null;
+    final var descriptor = matrix.resolutionDescriptor();
+    final var cached = resolveExpectedProfile(map, descriptor);
+    final int rows = (int) Math.max(0L, matrix.endRowExcl() - matrix.startRowIncl());
+    final int cols = (int) Math.max(0L, matrix.endColExcl() - matrix.startColIncl());
+    if (cached != null && cached.matchesResolutionWindow(matrix.startRowIncl(), matrix.startColIncl(), rows, cols)) {
+      return cached;
+    }
+    final var accumulator = DistanceExpectedNormalizer.newSegmentedAccumulator(
+      descriptor.getResolutionOrderInArray(), matrix.startRowIncl(), matrix.endRowExcl(),
+      matrix.startColIncl(), matrix.endColExcl(),
+      buildExpectedDomains(file, descriptor, matrix.startRowIncl(), matrix.endRowExcl(),
+        matrix.startColIncl(), matrix.endColExcl()));
+    accumulator.addSignal(file.tileVisualizationProcessor().prepareSignalMatrix(matrix, options),
+      matrix.startRowIncl(), matrix.startColIncl());
+    return accumulator.toProfile();
   }
 
   private DistanceExpectedNormalizer.PixelDomain @NotNull [] buildExpectedDomains(

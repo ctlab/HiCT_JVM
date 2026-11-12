@@ -33,6 +33,39 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DistanceExpectedNormalizerTest {
   @Test
+  void renderingMasksEmptyDiagonalsWithAnUnsegmentedProfile() {
+    final var profile = DistanceExpectedNormalizer.buildProfile(new double[][]{{2, 0}, {0, 2}}, 0, 0, 1);
+    final var ratios = DistanceExpectedNormalizer.transformSignal(
+      new double[][]{{0, 0}, {0, 2}}, 0, 0,
+      SignalDisplayMode.OBSERVED_OVER_EXPECTED, profile, true);
+    assertEquals(0, ratios[0][0], "Measured zero still has a defined denominator");
+    assertEquals(1, ratios[1][1]);
+    assertTrue(Double.isNaN(ratios[0][1]));
+    assertTrue(Double.isNaN(ratios[1][0]));
+  }
+
+  @Test
+  void renderingMasksUndefinedRatiosButKeepsMeasuredZeroDepletion() {
+    final var signal = new double[][]{{4, 0, 8}, {0, 4, 9}, {8, 9, 10}};
+    final var accumulator = DistanceExpectedNormalizer.newSegmentedAccumulator(
+      1, 0, 3, 0, 3, new DistanceExpectedNormalizer.PixelDomain[]{
+        new DistanceExpectedNormalizer.PixelDomain(0, 2),
+        new DistanceExpectedNormalizer.PixelDomain(2, 3)
+      });
+    accumulator.addSignal(new double[][]{{4, 2, 8}, {2, 4, 9}, {8, 9, 10}}, 0, 0);
+    final var profile = accumulator.toProfile();
+    final var rendered = DistanceExpectedNormalizer.transformSignal(
+      signal, 0, 0, SignalDisplayMode.OBSERVED_OVER_EXPECTED, profile, true);
+    assertEquals(0, rendered[0][1]);
+    assertEquals(1, rendered[0][0]);
+    assertTrue(Double.isNaN(rendered[0][2]));
+    assertTrue(Double.isNaN(rendered[2][0]));
+    final var numeric = DistanceExpectedNormalizer.transformSignal(
+      signal, 0, 0, SignalDisplayMode.OBSERVED_OVER_EXPECTED, profile);
+    assertEquals(0, numeric[0][2], "Existing numeric API remains finite");
+  }
+
+  @Test
   void expectedModeUsesAbsoluteDiagonalMeans() {
     final var signal = new double[][]{
       {10.0d, 2.0d, 1.0d},

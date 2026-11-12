@@ -110,6 +110,16 @@ public final class DistanceExpectedNormalizer {
                                                      final long startColPx,
                                                      final @NotNull SignalDisplayMode displayMode,
                                                      final @Nullable DiagonalProfile profile) {
+    return transformSignal(signal, startRowPx, startColPx, displayMode, profile, false);
+  }
+
+  /** Rendering may distinguish an undefined ratio from a measured zero; numeric APIs retain zero. */
+  public static double @NotNull [][] transformSignal(final double @NotNull [][] signal,
+                                                     final long startRowPx,
+                                                     final long startColPx,
+                                                     final @NotNull SignalDisplayMode displayMode,
+                                                     final @Nullable DiagonalProfile profile,
+                                                     final boolean maskUndefinedRatios) {
     if (signal.length == 0 || displayMode == SignalDisplayMode.OBSERVED) {
       return signal;
     }
@@ -131,6 +141,14 @@ public final class DistanceExpectedNormalizer {
       diagonalMeans
     );
     if (nativeResult != null) {
+      if (maskUndefinedRatios && displayMode == SignalDisplayMode.OBSERVED_OVER_EXPECTED) {
+        for (int row = 0; row < rowCount; row++) {
+          for (int col = 0; col < columnCount; col++) {
+            final double expected = diagonalMeans.expectedValueForCoordinates(startRowPx + row, startColPx + col);
+            if (!(expected > 1e-12d) || !Double.isFinite(expected)) nativeResult[row][col] = Double.NaN;
+          }
+        }
+      }
       return nativeResult;
     }
     final var result = new double[rowCount][columnCount];
@@ -149,7 +167,7 @@ public final class DistanceExpectedNormalizer {
           result[row][col] =
             expected > 1e-12d && Double.isFinite(expected)
               ? observed / expected
-              : 0.0d;
+              : maskUndefinedRatios ? Double.NaN : 0.0d;
         }
       }
     }

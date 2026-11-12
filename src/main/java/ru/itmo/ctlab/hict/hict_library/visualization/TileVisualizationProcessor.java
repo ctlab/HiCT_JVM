@@ -171,6 +171,13 @@ public class TileVisualizationProcessor {
   public TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
                                      final @NotNull SimpleVisualizationOptions visualizationOptions,
                                      final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    return processTile(rawTile, visualizationOptions, expectedProfile, false);
+  }
+
+  private TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                     final @NotNull SimpleVisualizationOptions visualizationOptions,
+                                     final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile,
+                                     final boolean maskUndefinedRatios) {
     final var rowWeights = rawTile.rowWeights();
     final var columnWeights = rawTile.colWeights();
     final var rowCount = rawTile.matrix().rows();
@@ -194,7 +201,8 @@ public class TileVisualizationProcessor {
         rawTile.startRowIncl(),
         rawTile.startColIncl(),
         visualizationOptions.getSignalDisplayMode(),
-        expectedProfile
+        expectedProfile,
+        maskUndefinedRatios
       );
     } else {
       final var croppedSignal = cropTopLeftWindow(
@@ -207,7 +215,8 @@ public class TileVisualizationProcessor {
         rawTile.startRowIncl(),
         rawTile.startColIncl(),
         visualizationOptions.getSignalDisplayMode(),
-        expectedProfile
+        expectedProfile,
+        maskUndefinedRatios
       );
       transformedSignal = restoreTopLeftWindow(
         transformedCroppedSignal,
@@ -287,7 +296,7 @@ public class TileVisualizationProcessor {
     final var input = rawTile.matrix();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
-    final var normalized = processTile(rawTile, options, expectedProfile);
+    final var normalized = processTile(rawTile, options, expectedProfile, true);
     if (signalObserver != null) signalObserver.accept(normalized.values());
     final var colormap = options.getColormap();
     if (colormap instanceof SimpleLinearGradient gradient) {
@@ -316,6 +325,10 @@ public class TileVisualizationProcessor {
     int offset = 0;
     for (final double[] row : ratios) {
       for (final double ratio : row) {
+        if (!Double.isFinite(ratio) || ratio < 0.0d) {
+          offset += 4; // Undefined O/E remains transparent, never false depletion.
+          continue;
+        }
         final double strength = ratio <= lower || ratio >= upper ? 1.0
           : Math.abs(Math.log(ratio) / (ratio < 1.0 ? lowLog : highLog));
         final double blend = Double.isFinite(strength) ? strength : 0.0;
