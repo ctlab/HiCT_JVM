@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep the automatically fitted contact-map range readable across zoom levels while preserving explicit contrast choices and separate O/E ranges.
+
 - Keep pinned hictk dependency builds available during GNU Savannah outages and resolve release JHDF5 assets strictly in Autobuild Release.
 
 - Finish bounded redirect response bodies without resetting completed HTTP exchanges, retain connection-error causes, and stress-test redirect limits on every platform.

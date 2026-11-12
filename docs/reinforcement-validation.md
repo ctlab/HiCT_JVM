@@ -1,5 +1,50 @@
 # Reinforcement implementation evidence
 
+## Current publication pass — 2026-11-13
+
+The current R1–R6 packages supersede the historical W/U status below.
+Both repositories remain on `jvm-sfx-native`. No push, merge or tag is authorized
+by this execution plan. The initial dirty paths and hashes are recorded in
+`/tmp/hict-reinforcement-session/baseline.json` and are excluded from commits.
+The source plan is protected and is not edited.
+
+| Package | Status | Required evidence |
+|---|---|---|
+| R1 Zoom readability | Implemented and Linux browser gate passed | Details below |
+| R2 Calm visualization | Pending | Two viewport sizes, masked weights, Log2, Journal |
+| R3 Quiet chrome | Pending | Default and opt-in Dev, Info, connection dialog |
+| R4 Label density | Pending | Dense assembly, entity discovery, exports |
+| R5 Naming and FASTA | Pending | Menu labels and status-chip linker |
+| R6 Publication gate | Pending | Packaged build, smoke, first-run journey, limitations |
+
+### R1 — Opening range ownership across pyramid levels
+
+WebUI `8cdbc65` fits the opening-owned upper threshold from loaded viewport
+histograms when the pyramid resolution changes. Panning within a level keeps
+contrast stable. An explicit option, range or graph edit relinquishes ownership;
+Expected/O/E suspend it and retain their separate ranges. Async fits reject a
+newer pipeline or options snapshot. The options and pipeline remain synchronized.
+
+`npm run build:web` and the production-manager ownership regression passed.
+`scripts/check_zoom_readability_browser.py` passed 26 checks on disposable physical
+copies of `combined_ind2_4DN` and `arabiensis.0`, each with file weights and
+square-root coverage. Each run performs 24 real wheel events across eight steps,
+checks red contact signal along the diagonal at steps 0/4/8 (floor 0.5), and
+verifies an explicit Upper value survives further zoom. Shares were 0.815–1.0;
+all four runs reached 1 kb and pan/zoom p95 was 16.7–16.8 ms. No page or console
+errors. A separate interactive O/E check verified ratio bounds 0.5–2 and exact
+Observed palette/range restoration. Evidence: `/tmp/hict-ux-r1/fixed/`,
+`/tmp/hict-ux-r1/gate.log`, build log in the same directory.
+
+The browser gate accepts `--browser-executable` for the installed Chromium.
+Additional baseline comparison evidence is kept under `/tmp/hict-ux-r1/`.
+Development validation uses the current dist and existing backend JAR; R6 must
+qualify the final JAR with explicitly bundled assets, since a server launched
+from the checkout automatically detects the sibling development dist.
+
+---
+
+
 ## Scope and status
 
 Started from `plan-reinforce-final.md`, in its prescribed W0-first order.
