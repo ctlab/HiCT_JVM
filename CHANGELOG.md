@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reduce whole-map name clutter on dense assemblies while retaining ruler names, entity navigation and export layout.
+
 - Keep developer tools opt-in, move tile reload into Dev, start map Info quietly, and make server connection settings available from Help.
 
 - Start log transforms at Log2, show masked bins calmly, and keep history controls in Journal so visualization starts with color controls.

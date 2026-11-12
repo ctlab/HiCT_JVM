@@ -13,7 +13,7 @@ The source plan is protected and is not edited.
 | R1 Zoom readability | Implemented and Linux browser gate passed | Details below |
 | R2 Calm visualization | Implemented and Linux browser gate passed | Two viewport sizes, masked weights, Log2, Journal |
 | R3 Quiet chrome | Implemented and Linux browser gate passed | Default and opt-in Dev, Info, connection dialog |
-| R4 Label density | Pending | Dense assembly, entity discovery, exports |
+| R4 Label density | Implemented and Linux browser gate passed | Dense assembly, entity discovery, exports |
 | R5 Naming and FASTA | Pending | Menu labels and status-chip linker |
 | R6 Publication gate | Pending | Packaged build, smoke, first-run journey, limitations |
 
@@ -85,6 +85,23 @@ not the main map. The zoom regression now resolves the main-map viewport and a
 visible diagonal point through the manager before issuing wheel events. The R1
 minimap-wheel evidence remains valid for that path; the corrected main-map gate
 is being rerun and must pass in R6.
+
+### R4 — Whole-map label density
+
+WebUI `27f414c` suppresses on-map contig/scaffold name paint when the median
+contig span is below roughly three screen pixels. Collapsed contigs participate
+in density; the linear pass avoids sorting large assemblies. Ruler bands and
+entity lookup remain available. Export calls without a viewport preserve their
+requested name layout and existing collision/clipping rules.
+
+`npm run build:web` passed, including density, collision and export geometry
+regressions. Interactive whole-map screenshots show zero painted names on
+combined_ind2 and one on arabiensis. Entities → Contigs → Go to contig navigated
+both from their overview resolution to resolution 1. No page errors.
+`check_rotated_export_browser.py` passed all four viewport/whole-map scenarios
+at 45/90/180 degrees, exporting PNG, SVG and PDF, independently rasterizing the
+exports and checking signal and viewport preservation. Evidence:
+`/tmp/hict-ux-r4/`, `/tmp/hict-ux-r4-export.log`.
 
 ---
 
