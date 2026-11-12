@@ -212,6 +212,18 @@ Windows/macOS owner GUI checks and hosted GitHub Actions on the new local commit
 remain unqualified. Both branch workflows include `jvm-sfx-native`; the new
 commits are intentionally unpushed. No merge, release publication or tag occurred.
 
+### R6 — First-run readability audit
+
+The final example journey now checks main-heatmap readability after each of its
+two real toolbar zooms, excluding ruler/minimap chrome from the red-pixel oracle.
+Both intermediate views exceeded 1,000 signal pixels and have retained screenshots.
+The same fresh-profile run completed Reverse, Split/Undo, session save/close/restore
+and exact AGP export with zero page or console errors. The restored heatmap had
+65,893 signal pixels. This closes the gap between checking opening/restoration
+and proving the navigation portion of the first-run journey. Evidence:
+`/tmp/hict-ux-r6/final/journey-audit/quickstart_example/`; the merged functional
+manifest now references this stronger run. No application source changed.
+
 ---
 
 
