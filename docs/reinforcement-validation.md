@@ -15,7 +15,7 @@ The source plan is protected and is not edited.
 | R3 Quiet chrome | Implemented and Linux browser gate passed | Default and opt-in Dev, Info, connection dialog |
 | R4 Label density | Implemented and Linux browser gate passed | Dense assembly, entity discovery, exports |
 | R5 Naming and FASTA | Implemented and Linux browser gate passed | Menu labels and status-chip linker |
-| R6 Publication gate | Pending | Packaged build, smoke, first-run journey, limitations |
+| R6 Publication gate | In progress | Packaged build, smoke, first-run journey, limitations |
 
 ### R1 — Opening range ownership across pyramid levels
 
@@ -118,6 +118,30 @@ picker and checked menu ellipses. No page errors. Evidence:
 `/tmp/hict-ux-r5/`, `/tmp/hict-ux-r5-build.log`.
 Acceptance labels and menu-surface expectations are updated; historical control
 signature captures are preserved as historical evidence.
+
+### R6 — Qualification in progress and notification follow-up
+
+The first packaged candidate passed the full smoke suite (500 JVM tests, zero
+failures/errors, seven skips), WebUI build/regressions, native baseline parity and
+all four pinned-WebUI checkout CI checks. Candidate version
+`2.0.6-871ee09-webui_9c3e911` and its immutable JAR/evidence are under
+`/tmp/hict-ux-r6/`. The public Borrelia three-click journey passed Reverse,
+Split/Undo, Save/Close/Restore and exact AGP export with no page/console errors.
+Real background-job checks passed search, ModDotPlot, conversion, legacy and
+current dotplots, coverage, track precompute, alignment detail and FASTA-only.
+The real Swing Launcher reset, cancellation, persisted settings, packaged-server
+start and process-tree Stop checks passed on private Xvfb.
+
+The 1280×720 packaged check found notification stacks intercepting the Log2
+control. Hovering a toast prevented its expiry, making this a real interaction
+failure. The follow-up moves notifications to bottom-center, clear of the sidebar
+and left toolbar. `npm run build:web` and the two-size interaction check passed
+without forced clicks or dismissing notifications. Evidence:
+`/tmp/hict-ux-r6/toast-webbuild.log`, `toast-interaction.log` and
+`toast-interaction/`. A new packaged candidate and multi-hour soak are required
+before the final go/no-go. Initial qualification setup failures are retained;
+missing fixtures, a stale shallow-file-list test and incorrect runner arguments
+are distinguished from application regressions.
 
 ---
 
