@@ -479,9 +479,27 @@ public final class ExampleDownloader {
       final var response = client.open(uri, address, have, validator, flag);
       final int code = response.statusCode();
       if (code >= 300 && code < 400 && code != 304) {
-        final var location = response.headers().firstValue("Location").orElseThrow(() -> new IOException("A redirect had no Location"));
-        response.body().close();
-        uri = uri.resolve(location);
+        try (final var body = response.body()) {
+          final var location = response.headers().firstValue("Location")
+            .orElseThrow(() -> new IOException("A redirect had no Location"));
+          uri = uri.resolve(location);
+          // Finish ordinary redirect responses instead of resetting a live HTTP/1
+          // exchange immediately before opening the next connection. Bound ignored
+          // content so a redirect cannot force an unbounded download.
+          final var ignoredBody = new byte[4096];
+          int remaining = 64 * 1024;
+          try {
+            while (remaining > 0) {
+              if (flag.get()) throw new CancellationException("Cancelled");
+              final int read = body.read(ignoredBody, 0, Math.min(remaining, ignoredBody.length));
+              if (read < 0) break;
+              remaining -= read;
+            }
+          } catch (IOException discardedBodyFailure) {
+            // Location remains usable even if the optional redirect body is truncated.
+            log.debug("Discarding incomplete redirect response body", discardedBodyFailure);
+          }
+        }
         if (flag.get()) {
           throw new CancellationException("Cancelled");
         }

@@ -70,7 +70,10 @@ final class PinnedDownloadClient implements AutoCloseable {
       throw new java.util.concurrent.CancellationException("Download interrupted");
     } catch (Exception failure) {
       cancelActive();
-      throw new IOException("Could not download from " + uri.getHost(), failure);
+      final Throwable cause = failure instanceof java.util.concurrent.ExecutionException && failure.getCause() != null
+        ? failure.getCause() : failure;
+      throw new IOException("Could not download from " + uri.getHost() + ": "
+        + cause.getClass().getSimpleName() + (cause.getMessage() == null ? "" : " (" + cause.getMessage() + ")"), cause);
     }
   }
 
@@ -82,12 +85,16 @@ final class PinnedDownloadClient implements AutoCloseable {
     private byte[] current;
     private int position;
     private volatile boolean ended;
+    private volatile boolean responseComplete;
 
     DownloadStream(HttpClientRequest request, HttpClientResponse response) {
       this.request = request;
       this.response = response;
       response.exceptionHandler(error -> events.offer(error));
-      response.endHandler(ignored -> events.offer(END));
+      response.endHandler(ignored -> {
+        responseComplete = true;
+        events.offer(END);
+      });
       response.handler(buffer -> events.offer(buffer));
     }
 
@@ -125,7 +132,9 @@ final class PinnedDownloadClient implements AutoCloseable {
       ended = true;
       if (active == this) active = null;
       if (activeRequest == request) activeRequest = null;
-      request.reset();
+      // EOF releases a completed exchange normally. Resetting it races the next
+      // redirect connection on Windows; only abandoned/unfinished bodies need reset.
+      if (!responseComplete) request.reset();
       events.clear();
       events.offer(END);
     }

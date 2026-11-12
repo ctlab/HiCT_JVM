@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Finish bounded redirect response bodies without resetting completed HTTP exchanges, retain connection-error causes, and stress-test redirect limits on every platform.
+
 - Keep small-genome minimaps visible when coarse pyramid levels are empty, mask undefined O/E ratios instead of coloring them as depletion, and place Map layout above source selection.
 
 - Deliver completed sequence overlays and search tracks after their progress dialogs close, and retain the chosen overlay/triangle view in Jobs.

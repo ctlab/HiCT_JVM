@@ -290,7 +290,7 @@ class ExampleDownloaderTest {
     assertArrayEquals(payload, Files.readAllBytes(data.resolve("examples/ex1/a.bin")));
   }
 
-  @Test void redirectsAreFollowedAndTheirLimitIsEnforced() throws Exception {
+  @org.junit.jupiter.api.RepeatedTest(20) void redirectsAreFollowedAndTheirLimitIsEnforced() throws Exception {
     serve("/", e -> {
       var path = e.getRequestURI().getPath();
       if (path.equals("/start")) { e.getResponseHeaders().add("Location", "/final"); send(e, 302, null, -1); }
@@ -299,12 +299,47 @@ class ExampleDownloaderTest {
     });
     var d = downloader();
     d.start(example(file("a.bin", "/start", payload.length, null, true)));
-    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    var followed = await(d);
+    assertEquals(ExampleDownloader.State.READY, followed.state(), followed.error());
+    assertArrayEquals(payload, Files.readAllBytes(data.resolve("examples/ex1/a.bin")));
     var loop = downloader();
     loop.start(example(file("b.bin", "/loop", 0, null, true)));
     var s = await(loop);
     assertEquals(ExampleDownloader.State.FAILED, s.state());
     assertTrue(s.error().contains("Too many redirects"), s.error());
+    assertEquals(6, requests.stream().filter(r -> r.contains(" /loop")).count(), requests.toString());
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(ints = {0, 32, 131072, -1})
+  void redirectBodiesAreDiscardedWithoutContaminatingTheDownloadedFile(int bodySize) throws Exception {
+    final var redirectBody = new byte[bodySize < 0 ? 10000 : bodySize];
+    serve("/", exchange -> {
+      if (exchange.getRequestURI().getPath().equals("/start")) {
+        exchange.getResponseHeaders().add("Location", "/final");
+        send(exchange, 302, redirectBody, bodySize == 0 ? -1 : bodySize < 0 ? 0 : bodySize);
+      } else send(exchange, 200, payload, payload.length);
+    });
+    var downloader = downloader();
+    downloader.start(example(file("a.bin", "/start", payload.length, sha(payload), true)));
+    var result = await(downloader);
+    assertEquals(ExampleDownloader.State.READY, result.state(), result.error());
+    assertArrayEquals(payload, Files.readAllBytes(data.resolve("examples/ex1/a.bin")));
+  }
+
+  @Test void aMissingRedirectLocationFailsWithoutBreakingTheNextDownload() throws Exception {
+    serve("/", exchange -> {
+      if (exchange.getRequestURI().getPath().equals("/bad")) send(exchange, 302, null, -1);
+      else send(exchange, 200, payload, payload.length);
+    });
+    var downloader = downloader();
+    downloader.start(example(file("bad.bin", "/bad", 0, null, true)));
+    var failed = await(downloader);
+    assertEquals(ExampleDownloader.State.FAILED, failed.state());
+    assertTrue(failed.error().contains("no Location"), failed.error());
+    downloader.start(example(file("good.bin", "/good", payload.length, sha(payload), true)));
+    var retried = await(downloader);
+    assertEquals(ExampleDownloader.State.READY, retried.state(), retried.error());
   }
 
   @Test void theUrlPolicyChecksEveryAddress() {
