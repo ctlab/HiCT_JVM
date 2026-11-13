@@ -2005,33 +2005,46 @@ jobs:
           release_body_lines+=("See \`HiCT-${version}-build-origin.txt\` and \`HiCT-${version}-release-assets.sha256\` for provenance and checksums.")
           printf '%s\n' "${release_body_lines[@]}" > release-body.md
 
-      - name: Clear previous rolling release assets
+      - name: Check rolling release publication safeguards
+        run: node --test scripts/ci/rolling_release.test.cjs
+
+      - name: Inspect rolling release without deleting assets
+        id: rolling-release
         if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if gh release view "${HICT_PORTABLE_RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release view "${HICT_PORTABLE_RELEASE_TAG}" --json assets -q '.assets[].name' |
-              while IFS= read -r asset; do
-                [[ -n "${asset}" ]] && gh release delete-asset "${HICT_PORTABLE_RELEASE_TAG}" "${asset}" -y
-              done
-          else
-            echo "Rolling release ${HICT_PORTABLE_RELEASE_TAG} does not exist yet; the publish step may create it without force-moving an existing tag."
-          fi
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { prepare } = require('./scripts/ci/rolling_release.cjs');
+            await prepare({ github, context, core, tag: process.env.HICT_PORTABLE_RELEASE_TAG });
 
       - name: Publish rolling release
         if: ${{ steps.collect-assets.outputs.rolling_release == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.collect-assets.outputs.release_tag }}
+          target_commitish: ${{ steps.rolling-release.outputs.target_commitish }}
           name: Latest ${{ github.ref_name }} portable build
           body_path: release-body.md
           prerelease: true
           files: release-dist/*
           fail_on_unmatched_files: true
-          overwrite_files: true
+          # Never delete an existing same-name download before its replacement
+          # uploads. The following step verifies skipped files by SHA-256 too.
+          overwrite_files: false
+
+      - name: Prune obsolete automated assets after successful rolling upload
+        if: ${{ success() && steps.collect-assets.outputs.rolling_release == 'true' }}
+        uses: actions/github-script@v8
+        env:
+          HICT_PREVIOUS_RELEASE_ASSETS: ${{ steps.rolling-release.outputs.previous_assets }}
+          HICT_PREVIOUS_RELEASE_ID: ${{ steps.rolling-release.outputs.release_id }}
+        with:
+          script: |
+            const { prune } = require('./scripts/ci/rolling_release.cjs');
+            await prune({ github, context, tag: process.env.HICT_PORTABLE_RELEASE_TAG,
+              releaseId: process.env.HICT_PREVIOUS_RELEASE_ID,
+              previousAssets: JSON.parse(process.env.HICT_PREVIOUS_RELEASE_ASSETS),
+              directory: 'release-dist' });
 
       - name: Attach assets to release event
         if: ${{ github.event_name == 'release' }}

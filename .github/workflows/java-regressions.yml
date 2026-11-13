@@ -33,8 +33,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
-      - name: Verify pinned browser source checkout without fallback
-        run: node --test scripts/portable/check_webui_checkout.mjs
+      - name: Verify pinned browser checkout and release safeguards
+        run: node --test scripts/portable/check_webui_checkout.mjs scripts/ci/rolling_release.test.cjs
       - name: Compile full JVM, build fat JAR, and check edit/render contracts
         shell: bash
         run: >-

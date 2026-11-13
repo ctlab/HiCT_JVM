@@ -21,6 +21,7 @@
 
 ### Packaging and reliability
 
+- Keep rolling-release downloads available when publication fails, and update release metadata without reusing obsolete workflow targets.
 - Complete bounded redirect responses reliably, preserve connection-error causes, and exercise redirect limits on every platform.
 - Keep pinned tool builds available during GNU Savannah outages and resolve release JHDF5 assets strictly in Autobuild Release.
 
