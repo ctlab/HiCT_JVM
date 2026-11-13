@@ -318,7 +318,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64-${{ env.HICT_LINUX_ABI_MODE }}
-          key: hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh') }}
+          key: hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git') }}
           restore-keys: |
             hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-
             hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
@@ -367,7 +367,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}
+          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}
           restore-keys: |
             toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
             toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
@@ -1415,7 +1415,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_arm64
-          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
           restore-keys: |
             toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
       - name: Restore Darwin Conan cache
@@ -1423,7 +1423,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_arm64
-          key: hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
           restore-keys: |
             hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-
             hictk-conan-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-
@@ -1672,7 +1672,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_x86_64
-          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
           restore-keys: |
             toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
       - name: Restore Darwin Intel Conan cache
@@ -1680,7 +1680,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/darwin_x86_64
-          key: hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh') }}
+          key: hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
           restore-keys: |
             hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-${{ env.HICTK_REF }}-
             hictk-conan-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-explicit-profile-

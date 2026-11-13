@@ -142,7 +142,7 @@ class OverlayFixture { public static void main(String[] a) {
             page.get_by_role('button', name=f'Hide {name} horizontally', exact=True).click()
             hidden = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
             assert not hidden
-            check.menu('View', 'Tracks and layers...')
+            check.menu('View', 'Tracks and layers…')
             dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
             dialog.get_by_role('button', name=f'Show {name} horizontally', exact=True).click()
             restored = page.evaluate("trackId => window.__hictBenchmark.manager().linearTrackManager.isTrackVisibleOnAxis(trackId, 'horizontal')", search_track_id)
@@ -245,7 +245,7 @@ class OverlayFixture { public static void main(String[] a) {
             expected = json.loads(app.http('/render_pipeline/get', {}))
             assert expected['lowerExpression']['mode'] == 'MODDOTPLOT_IDENTITY', expected
             # Editing and reapplying the graph must not silently downgrade it to LINEAR.
-            check.menu('View', 'Rendering pipeline...')
+            check.menu('View', 'Rendering pipeline…')
             dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
             with page.expect_response(lambda r: '/render_pipeline/set' in r.url):
                 dialog.get_by_role('button', name='Apply', exact=True).click()
@@ -263,7 +263,7 @@ class OverlayFixture { public static void main(String[] a) {
             secondary_values = json.loads(app.http('/matrix/query', {**query, 'source': 'SECONDARY'}))['values']
             preset_results = []
             for preset in ('primary_only', 'dotplot_overlay', 'moddotplot_below', 'moddotplot_overlay'):
-                check.menu('View', 'Rendering pipeline...')
+                check.menu('View', 'Rendering pipeline…')
                 dialog = page.get_by_role('dialog').filter(has=page.get_by_role('heading', name='Rendering Pipeline', exact=True))
                 dialog.locator('.pipeline-preset-select').select_option(preset)
                 before_load = json.loads(app.http('/render_pipeline/get', {}))

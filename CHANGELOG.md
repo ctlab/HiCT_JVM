@@ -2,16 +2,27 @@
 
 ## Unreleased
 
-- Finish bounded redirect response bodies without resetting completed HTTP exchanges, retain connection-error causes, and stress-test redirect limits on every platform.
+### Navigation and visualization
 
-- Keep small-genome minimaps visible when coarse pyramid levels are empty, mask undefined O/E ratios instead of coloring them as depletion, and place Map layout above source selection.
+- Keep notification stacks away from visualization controls on smaller windows.
 
-- Deliver completed sequence overlays and search tracks after their progress dialogs close, and retain the chosen overlay/triangle view in Jobs.
-- Add a sidebar map-layout selector; default selection analyses to Overlay, whole-map analyses to below diagonal, and generation resolutions to finest through current.
-- Pick overlapping BED features by their rendered lanes on both axes and add “Zoom to feature” at readable FASTA scale.
+- Keep opening-fitted contrast readable across pyramid levels, preserve explicit thresholds and separate O/E ranges, and show small-genome minimaps even when coarse levels are empty.
+- Start log transforms at Log2, show masked bins without a permanent alarm, and keep history controls in Journal.
+- Make developer tools opt-in, move tile reload into Dev, and provide quiet map Info and Help → Connection….
+- Reduce dense whole-map name clutter while retaining ruler names, entity navigation and export layout.
+- Use neutral assembly-file labels, consistent menus and a discoverable FASTA link action in its status chip.
 
-- Preserve ModDotPlot overlays and custom graphs through Expected/O/E/Observed switches, keep primary and secondary palettes separate, and prevent subnormal threshold intervals.
-- Allow valid multi-source session snapshots beyond 100,000 values while retaining byte, nesting, graph and assembly validation limits.
+### Sequence analysis and sessions
+
+- Deliver completed overlays and search tracks through Jobs even after progress dialogs close, retain overlay/triangle choices, and default generation levels from finest through current.
+- Keep primary and secondary palettes and custom graphs intact through Observed/Expected/O/E changes, mask undefined O/E ratios, and prevent unusably narrow threshold intervals.
+- Pick overlapping track features by their displayed lanes and offer Zoom to feature at readable FASTA scale.
+- Restore valid multi-source sessions beyond 100,000 values while retaining validation limits.
+
+### Packaging and reliability
+
+- Complete bounded redirect responses reliably, preserve connection-error causes, and exercise redirect limits on every platform.
+- Keep pinned tool builds available during GNU Savannah outages and resolve release JHDF5 assets strictly in Autobuild Release.
 
 ## 2.0.0
 

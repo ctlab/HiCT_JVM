@@ -151,10 +151,12 @@ def main():
             )
 
         def button_action(name, endpoint):
+            if name in ("Undo assembly edit", "Redo assembly edit"):
+                page.get_by_role("button", name="Journal", exact=True).click()
             with page.expect_response(
                 lambda response: response.url.endswith(endpoint)
             ) as response:
-                page.get_by_role("button", name=name, exact=True).click()
+                page.locator('button[aria-label=' + json.dumps(name) + ']').click()
             assert response.value.ok, response.value.text()
             check.settle()
 
@@ -341,6 +343,12 @@ def main():
                     const p=m.getMap().getPixelFromCoordinate([px,-px]),r=m.getMap().getViewport().getBoundingClientRect();
                     return [r.left+p[0],r.top+p[1]];
                 }""")
+                page.wait_for_function("""point => {
+                    const m=window.__hictBenchmark.manager(),r=m.getMap().getViewport().getBoundingClientRect();
+                    const pixel=[point[0]-r.left,point[1]-r.top];
+                    return !m.getView().getAnimating() &&
+                      m.viewAndLayersManager.layersHolder.hicDataLayers.some(layer=>layer.getVisible() && layer.getData(pixel));
+                }""", arg=target)
                 with page.expect_response("**/split_contig_at_bin") as response:
                     page.mouse.dblclick(*target)
                 assert response.value.ok, response.value.text()

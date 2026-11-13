@@ -35,7 +35,7 @@ def main():
         if nan.is_visible():
             nan.click()
         page.get_by_role("link", name="View", exact=True).click()
-        page.get_by_role("link", name="Rendering pipeline...", exact=True).click()
+        page.get_by_role("link", name="Rendering pipeline…", exact=True).click()
         page.wait_for_function("document.querySelector('.graph-canvas')?.data?.graph._nodes.length>2")
 
         # Inspector-only nodes do not alter either rendering branch.

@@ -263,7 +263,9 @@ if [[ "${#conan_build_args[@]}" -eq 0 ]]; then
   conan_build_args+=(--build=missing)
 fi
 
-conan install \
+# Savannah can return HTTP 500 for gnu-config. Use its Git mirror while keeping
+# Conan's exact commit and patches, scoped to this dependency installation.
+HICTK_CONAN_REAL_GIT="$(command -v git)" PATH="${SCRIPT_DIR}/conan-git:${PATH}" conan install \
   "${conan_build_args[@]}" \
   -pr:h "${CONAN_HOST_PROFILE}" \
   -pr:b default \

@@ -1,5 +1,192 @@
 # Reinforcement implementation evidence
 
+## Publication qualification — 2026-11-13
+
+This R1–R6 record supersedes the archived W/U progress below. Both repositories
+remain on `jvm-sfx-native`. The execution plan prohibits push and merge and
+leaves tagging to the owner. None occurred. All initially dirty paths remain
+excluded from these commits.
+Their original hashes are recorded in
+`/tmp/hict-reinforcement-session/baseline.json`. The source plan was not edited.
+
+**Verdict:** **GO for the qualified Linux publication/demo workflows and artifact.**
+Cross-platform GUI and hosted CI qualification remain partial as detailed below.
+
+Qualified runtime source and acceptance revisions:
+
+- JVM `ccd98404a14265e376fb6f859f7ad3a2bf708314`.
+- WebUI `cdbe49c50487882db7938983db38dc7911f7742c`.
+- Frozen package `2.0.7-871ee09-webui_cdbe49c`,
+  `/tmp/hict-ux-r6/final/hict-fat.jar`.
+- JAR SHA-256: `7522516186ef87e7c5a3cdae68e2d9a2af24ad9bc92996338d1958b4ac5ad54a`.
+
+The final qualification commit only updates this evidence. It does not change
+runtime sources, version or the tested artifact. The bundled WebUI was extracted
+and served explicitly; checkout development assets were not used for final gates.
+
+### R1 — Zoom readability
+
+WebUI `8cdbc65` makes the opening-owned range follow visible-tile histograms
+across pyramid levels until the user edits the range, options or pipeline.
+Panning within a level keeps contrast stable. Expected/O/E retain their own
+ranges, and stale async fits cannot overwrite a newer options/pipeline snapshot.
+
+The final main-map wheel gate passed **38 checks** on `combined_ind2_4DN` and
+`arabiensis.0`, each with file weights and square-root coverage. Eight real wheel
+steps retain diagonal signal above the stated 0.5 floor at steps 0/4/8. Screenshots
+show meaningful slider positions, separate O/E bounds 0.5–2, exact Observed
+restoration, and a manual Upper of 0.123 surviving further level changes.
+Pan/zoom p95 was at most 16.8 ms; no page or console errors. The separate opening
+gate passed **103 checks** across manual, wizard, attach and normalization paths.
+
+Evidence: `/tmp/hict-ux-r6/final/rechecks/zoom_readability/` and
+`/tmp/hict-ux-r6/final/opening_readable/`. The corrected gate targets the main map;
+the earlier first-viewport locator selected the minimap. The unchanged baseline
+also passed the diagonal pixel floor. The original off-diagonal washout audit's
+root-cause hypothesis is therefore not conclusively established by that floor.
+Do not claim otherwise. Zooming into a single empty/masked bin can legitimately
+produce a white view; it is distinct from the eight-step gate on contact signal.
+
+### R2 — Calm Visualization and Log2
+
+WebUI `bb427cb` moves history controls to Journal while retaining keyboard
+shortcuts, uses Log2 for enabling/resetting the transform, keeps custom log bases
+in one Advanced section, and shows a neutral masked-bin count after automatic
+masking. New-profile borders remain collapsed; existing preferences are retained.
+
+Final packaged checks at 1440×900 and 1280×720 pass Log2, custom base 10,
+masked-weight handling, collapsed borders and reachable Journal controls.
+Visible sidebar buttons/inputs/selects fell from 20 to 18 on the same fixture.
+A real small-window interaction failure from overlapping notifications was fixed
+by WebUI `cdbe49c`, which moves toasts to bottom-center. The corrected gate uses
+normal clicks without dismissing toasts. Evidence: final `publication-r2/` and
+`/tmp/hict-ux-r6/toast-interaction/`.
+
+### R3 — Quiet chrome
+
+WebUI `12eb233` hides Dev unless `?dev=1` or the persisted About toggle is enabled,
+keeps Reload tiles under Dev, renames OSD controls to Info, and defaults Info off
+for new profiles. Saved preferences remain effective. Help → Connection… provides
+the address dialog with modal focus and Escape handling.
+
+Final empty/open screenshots show calm defaults. Both persisted toggle directions,
+the query override, connection changes and Info refresh after wheel zoom without
+further pointer movement pass. Evidence: final `publication-r3/`.
+
+### R4 — Dense labels
+
+WebUI `27f414c` suppresses on-map name paint when median contig span is below
+roughly three pixels, including collapsed contigs. Density calculation is linear;
+rulers and entity navigation remain available. Exports without a viewport keep
+their requested label layout and collision/clipping rules.
+
+Whole-map checks pass on combined_ind2, arabiensis and the 595-contig quad Orlando
+assembly. Dense cases show zero painted names and working entity navigation.
+Rotated PNG/SVG/PDF exports pass independently rasterized signal and viewport
+checks at 45/90/180 degrees. Evidence: final `publication-r4/`, `density-extra/`
+and the rotated-export suite in `functional-gates.json`.
+
+### R5 — Neutral naming and FASTA link
+
+WebUI `9c3e911` uses Apply .assembly file… and consistent menu ellipses. The FASTA
+status chip opens the existing linker and exposes Link/Relink FASTA labels with
+a link icon. Custom/legacy pipelines have one summary.
+
+Final packaged checks verify neutral menus, the status-chip linker, Relink and
+exact first-100-base equality against the physical reference. Evidence: final
+`publication-r5/`. Native acceptance pages explicitly encode their Unicode text
+as UTF-8; Electron and Tauri then pass the renamed menu paths.
+
+### R6 — Packaged functional and endurance gates
+
+All **37 distinct browser acceptance suites pass**. The authoritative merged
+manifest `/tmp/hict-ux-r6/final/functional-gates.json` points to every successful
+run and its source manifest. Earlier setup/stale-selector failures and rechecks
+are retained rather than discarded. Coverage includes structural edits and exact
+Undo/Redo, Group, journal paging, session save/restore and validation, multi-client
+conflicts, normalization and O/E, presets and graphs, tracks/histograms, bookmarks,
+scopes, errors, offline/cancelled tiles, mixed pyramids, native exports, metadata,
+citation, examples, real search, BLAST, ModDotPlot and alignment detail.
+
+The fresh-profile Borrelia journey opens in three clicks, verifies more than
+1,000 main-heatmap signal pixels after each of two real toolbar zooms, and passes
+Reverse, Split/Undo, save/close/restore and exact AGP export. Restored signal:
+65,893 pixels. No page or console errors. See final `journey-audit/quickstart_example/`.
+
+The real 221 MB .hic v8 conversion includes the full pyramid and balancing;
+77,841 raw values match an independent hictk dump exactly. The v9 fixture matches
+all 25 values. Both inputs retain their SHA-256, render at the queried resolution,
+and reopen from conversion cache without another job. The format runner retains
+its 120-second default and uses explicit `--job-timeout 600` for this large input.
+See final `formats-final/matrix_input_formats/`. ModDotPlot triangle preservation
+explicitly selects Below diagonal; the current Overlay selection default has its
+own passing UX gate. Numerical/pixel assertions were not relaxed.
+
+- Full smoke/build: **500 JVM tests, zero failures/errors, seven skips**;
+  WebUI regression contracts, typecheck and production build pass.
+- Native baseline parity passes; pinned-WebUI checkout CI checks pass **4/4**.
+- Linux native Electron **14 checks**, Tauri **25 checks**, and real Swing Launcher
+  reset/settings/minimum-window/start/Stop process-tree checks pass.
+- **16 real-tool sequence lifecycle cases** pass, including BLAST, ModDotPlot,
+  overlay accumulation, search/IUPAC/strands/exact BED, alignment and missing tools.
+
+Evidence: final `electron-recheck/`, `tauri-recheck/`, `launcher.log`,
+`sequence_lifecycle/summary.json` and the merged functional manifest. The packaged
+build used `scripts/run_smoke_tests.sh` and
+`./gradlew testNativeProcessingBaseline shadowJar`; checkout checks used
+`node --test scripts/portable/check_webui_checkout.mjs`. No Java runtime source
+changed during this R1–R6 pass. Builds used Java 21 and installed Chromium 156
+with Playwright 1.65 on Linux; native GUI checks ran on private Xvfb.
+
+The **full two-hour soak passed**: 7200.312 seconds, 933 completed
+cycles, 933 samples, zero page/console errors and driver exit 0. It alternates
+combined_ind2, arabiensis and mixed-primary with linked sequence/secondary data;
+cycles exercise navigation, resolution menus, edits/Undo, sequence, exports and
+close. A single browser context and normal JIT are retained throughout. Memory
+samples follow close and explicit GC; these are retained-memory measurements,
+not claims of maximum active workload memory.
+
+| Final post-warmup metric | Measured | Gate |
+|---|---:|---:|
+| Browser retained-heap growth | 1.148 MiB | ≤8 MiB |
+| Browser heap slope | 0.0212 MiB/min | ≤0.2 MiB/min |
+| JVM heap slope | 0.0273 MiB/min | ≤0.5 MiB/min |
+| JVM RSS slope | -3.6665 MiB/min | ≤1 MiB/min |
+| DOM early/late maxima | 594 / 595 | increase ≤100 |
+| Listener early/late maxima | 215 / 215 | increase ≤20 |
+| Frame p95 | 16.8 ms | ≤33 ms |
+| Action acknowledgement p95 | 56.46 ms | ≤100 ms |
+
+Sampled JVM heap ranged from 33.15 to 38.79 MiB. Sampled process RSS ranged from
+213.73 to 1444.96 MiB, including native allocations;
+the falling RSS trend must not be read as negligible peak memory use. JVM native
+categories were recorded using `-XX:NativeMemoryTracking=summary`.
+All thresholds were retained. Evidence: final `soak/results.json`,
+`soak/samples.jsonl`, `soak.log` and `run-soak.py`. The runner invokes
+`scripts/check_release_soak_browser.py` with `--duration-seconds 7200`,
+`--server-pid` and `--native-memory`; it uses disposable physical fixture copies
+and the explicitly extracted bundled UI. The owned server and browser were
+closed when the driver finished.
+
+### Limits and owner release actions
+
+This is Linux qualification of the identified artifact and exercised workflows,
+not proof of every possible dataset, UI state or operating system. Windows/macOS
+interactive checks in `docs/release-manual-checklist.md` remain owner-deferred by
+the plan. Hosted GitHub Actions for these local commits remain unverified because
+the plan prohibits pushing; both branch workflows include `jvm-sfx-native`, and
+local build/regression/checkout checks passed. Do not describe hosted CI as green.
+No release was published or tagged. Tag/version choice and cross-platform owner
+checks remain external release actions. No comparative performance claim is made.
+
+---
+
+## Archived reinforcement progress
+
+The sections below describe earlier W/U increments and their historical status;
+they do not override the current qualification above.
+
+
 ## Scope and status
 
 Started from `plan-reinforce-final.md`, in its prescribed W0-first order.

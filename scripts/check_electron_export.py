@@ -123,7 +123,7 @@ def main():
                 # Exercise the lazy Plotly bundle under the actual Electron CSP,
                 # including zero accounting and axis changes without server work.
                 page.get_by_role('link', name='View', exact=True).click()
-                page.get_by_role('link', name='Rendering pipeline...', exact=True).click()
+                page.get_by_role('link', name='Rendering pipeline…', exact=True).click()
                 page.wait_for_function("document.querySelector('.graph-canvas')?.data?.graph._nodes.length>2")
                 histogram_queries = []
                 def count_query(request):

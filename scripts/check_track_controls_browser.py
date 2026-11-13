@@ -52,7 +52,7 @@ def main():
             return response.text()
 
         def open_manager():
-            check.menu("View", "Tracks and layers...")
+            check.menu("View", "Tracks and layers…")
             dialog.wait_for(state="visible")
 
         def close_manager():

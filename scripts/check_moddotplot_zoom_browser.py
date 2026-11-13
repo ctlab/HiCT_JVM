@@ -104,6 +104,9 @@ def main():
                 page.get_by_role("button", name="Generate ModDotPlot…", exact=True).click()
                 dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
                 page.get_by_label("Analysis scope").select_option("selection")
+                # This check isolates the primary triangle; selection analyses
+                # otherwise default to an intentional overlay on both halves.
+                dialog.get_by_label("Display completed result", exact=True).select_option("below")
                 for checkbox in dialog.locator(".resolution-options input").all():
                     checkbox.uncheck()
                 dialog.locator('.resolution-options input[value="5000"]').check()

@@ -35,7 +35,7 @@ def main():
             page.on('console', lambda message: errors.append(message.text) if message.type=='error' else None)
             try:
                 assert context.request.post(args.api + '/close', data={}).ok
-                page.goto(args.url)
+                page.goto(args.url + ("&" if "?" in args.url else "?") + "dev=1")
                 page.get_by_role('heading', name='No contact map open').wait_for()
                 assert page.locator('#global-search-input').is_disabled()
                 assert page.locator('#export-dropdown-toggle').is_disabled()
@@ -116,7 +116,7 @@ def main():
                       'surfaceStatus': 'pending', 'functionalStatus': 'pending', 'errors': errors,
                       'httpErrors': http_errors}
             try:
-                page.goto(args.url)
+                page.goto(args.url + ("&" if "?" in args.url else "?") + "dev=1")
                 page.wait_for_function('window.__hictBenchmark')
                 page.evaluate('args=>window.__hictBenchmark.open(args.file,args.api)', vars(args))
                 prompt = page.get_by_role('button', name='Do not use Cooler weights', exact=True)

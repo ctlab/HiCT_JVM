@@ -21,6 +21,8 @@ def main():
         "--files", nargs="+", default=["public-hic8.hic", "public-hic9.hic"]
     )
     parser.add_argument("--resolution", type=int, default=10000000)
+    parser.add_argument("--job-timeout", type=float, default=120,
+                        help="Seconds allowed for conversion including balancing; increase for large real inputs")
     args = parser.parse_args()
     data = Path(args.data_dir).absolute()
     if data != data.resolve() or not data.is_relative_to("/tmp"):
@@ -93,7 +95,7 @@ def main():
                     assert started.value.ok, started.value.text()
                     job_ids = started.value.json()["jobIds"]
                     assert len(job_ids) == 1
-                    deadline = time.monotonic() + 120
+                    deadline = time.monotonic() + args.job_timeout
                     while time.monotonic() < deadline:
                         response = context.request.get(
                             args.api + "/convert/jobs/" + job_ids[0]
@@ -199,7 +201,7 @@ def main():
                     page.locator("#signal-transform-linear").click()
                     advanced = page.locator("#signal-advanced")
                     if advanced.get_attribute("open") is None:
-                        advanced.locator("summary").click()
+                        advanced.locator(":scope > summary").click()
                     page.locator("#scaling-across-zoom").select_option("none")
                     page.get_by_role(
                         "spinbutton", name="Lower signal threshold", exact=True
@@ -208,6 +210,14 @@ def main():
                         "spinbutton", name="Upper signal threshold", exact=True
                     ).fill(str(float(expected.max())))
                     page.get_by_role("button", name="Apply", exact=True).click()
+                    check.settle()
+                    # Compare rendered pixels at the same native level as the
+                    # independent numerical oracle, even for multi-level real inputs.
+                    page.evaluate("""resolution => {
+                        const m=window.__hictBenchmark.manager(),l=m.getLayersManager();
+                        l.setEnabledBpResolutions([resolution]);
+                        l.fitViewToActiveExtent();
+                    }""", args.resolution)
                     check.settle()
                     strongest = np.unravel_index(int(expected.argmax()), expected.shape)
                     point = {

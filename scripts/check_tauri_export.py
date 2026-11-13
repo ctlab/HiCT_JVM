@@ -20,7 +20,7 @@ import threading
 import time
 from urllib.parse import urlsplit, unquote
 
-PAGE = br"""<!doctype html><meta charset="utf-8"><title>HiCT native acceptance</title>
+PAGE = r"""<!doctype html><meta charset="utf-8"><title>HiCT native acceptance</title>
 <h1>HiCT native export acceptance</h1><script>
 const report=value=>fetch('/event',{method:'POST',body:JSON.stringify(value)});
 let ticks=0;setInterval(()=>ticks++,100);
@@ -84,7 +84,7 @@ async function seed(){
     const clickText=(selector,text)=>{
      const element=Array.from(document.querySelectorAll(selector)).find(e=>e.textContent.trim()===text);
      if(!element)throw Error('Missing control: '+text);element.click();};
-    clickText('a','View');clickText('a','Rendering pipeline...');
+    clickText('a','View');clickText('a','Rendering pipeline…');
     await until(()=>document.querySelector('.graph-canvas')?.data?.graph._nodes.length>2);
     const graph=document.querySelector('.graph-canvas').data.graph;
     const node=graph._nodes.find(n=>n.type==='hict/source'&&n.properties.source==='PRIMARY');
@@ -117,7 +117,7 @@ async function seed(){
    await report({saved:c.name,result,ticks:ticks-start});
   }catch(error){await report({error:String(error)});}
  }
-})();</script>"""
+})();</script>""".encode("utf-8")
 
 
 def main():

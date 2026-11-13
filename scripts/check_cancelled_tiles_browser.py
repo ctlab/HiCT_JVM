@@ -68,7 +68,7 @@ def main():
             return np.array(Image.open(io.BytesIO(raw)).convert("RGB"))[50:-30, 60:-30]
 
         try:
-            page.goto(args.url)
+            page.goto(args.url + ("&" if "?" in args.url else "?") + "dev=1")
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate("api=>window.__hictBenchmark.open('combined_ind2_4DN.hict.hdf5',api)", args.api)
             page.wait_for_timeout(1500)

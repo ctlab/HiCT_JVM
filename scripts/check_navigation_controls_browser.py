@@ -42,7 +42,7 @@ def main():
             )
 
         try:
-            page.goto(args.url)
+            page.goto(args.url + ("&" if "?" in args.url else "?") + "dev=1")
             page.wait_for_function("window.__hictBenchmark")
             page.evaluate(
                 "async a=>{await window.__hictBenchmark.open(a.file,a.api)}", vars(args)
@@ -70,6 +70,7 @@ def main():
                 window.__navigationReloadPixels = Array.from(document.querySelectorAll('.ol-layer canvas'),
                     canvas => canvas.toDataURL());
             }""")
+            page.get_by_role("link", name="Dev", exact=True).click()
             page.locator("#reload-tiles-button").click()
             check.settle()
             assert view() == before
@@ -129,7 +130,7 @@ def main():
             check.settle()
             assert view() == before
             results.append({"test": "Sidebar collapse and restore preserve viewport"})
-            check.menu("View", "Restrict Resolutions...")
+            check.menu("View", "Restrict Resolutions…")
             dialog = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name="Restrict Resolutions", exact=True)
             )
@@ -168,7 +169,7 @@ def main():
                 )
                 == coarsest
             )
-            check.menu("View", "Restrict Resolutions...")
+            check.menu("View", "Restrict Resolutions…")
             dialog.locator("#resolution-finest-limit").fill(str(finest))
             dialog.locator("#resolution-coarsest-limit").fill(str(coarsest))
             dialog.get_by_role("button", name="Set limits", exact=True).click()

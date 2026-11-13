@@ -113,7 +113,7 @@ build_hictk() {
   # cache and may still contain removed conf keys such as tools.apple:deployment_target.
   # The deployment target is represented by the supported Macos os.version
   # setting and by MACOSX_DEPLOYMENT_TARGET/CMAKE_OSX_DEPLOYMENT_TARGET.
-  conan install --build=missing -pr:h "${conan_host_profile}" -pr:b "${conan_build_profile}" --output-folder="${build_dir}" "${SOURCE_HICTK}"
+  HICTK_CONAN_REAL_GIT="$(command -v git)" PATH="${SCRIPT_DIR}/conan-git:${PATH}" conan install --build=missing -pr:h "${conan_host_profile}" -pr:b "${conan_build_profile}" --output-folder="${build_dir}" "${SOURCE_HICTK}"
   rm -rf "${stage_dir}"
   cmake_args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${build_dir}" -DHICTK_ENABLE_TESTING=OFF -DHICTK_ENABLE_FUZZY_TESTING=OFF -DHICTK_BUILD_BENCHMARKS=OFF -DHICTK_BUILD_EXAMPLES=OFF -DHICTK_BUILD_TOOLS=ON -DHICTK_DOWNLOAD_TEST_DATASET=OFF -DHICTK_WITH_ARROW=OFF -DHICTK_WITH_EIGEN=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_COMPILER="${CC}" -DCMAKE_CXX_COMPILER="${CXX}" -DCMAKE_OSX_ARCHITECTURES="${DARWIN_ARCH}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET}" -G Ninja -S "${SOURCE_HICTK}" -B "${build_dir}")
   [[ -f "${build_dir}/conan_toolchain.cmake" ]] && cmake_args+=(-DCMAKE_TOOLCHAIN_FILE="${build_dir}/conan_toolchain.cmake")

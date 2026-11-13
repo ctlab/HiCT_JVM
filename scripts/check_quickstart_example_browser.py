@@ -22,6 +22,8 @@ def rendered_signal_pixels(page):
     pixels = np.array(
         Image.open(io.BytesIO(viewport.screenshot())).convert("RGB")
     ).astype(int)
+    # Exclude ruler/minimap chrome: only heatmap pixels can prove readability.
+    pixels = pixels[90:, 150:]
     return int(
         (
             (pixels[:, :, 0] > pixels[:, :, 1] + 20)
@@ -94,7 +96,7 @@ with sync_playwright() as pw:
         page.wait_for_function("window.__hictBenchmark")
         started = time.monotonic()
         page.get_by_role("link", name="Help", exact=True).click()
-        page.get_by_role("link", name="Examples...", exact=True).click()
+        page.get_by_role("link", name="Examples…", exact=True).click()
         dialog = page.get_by_role("dialog", name="Examples", exact=True)
         card = dialog.locator(f'[data-example="{args.example}"]')
         card.get_by_role("button", name="Open example", exact=True).click()
@@ -185,16 +187,20 @@ with sync_playwright() as pw:
         restored_signal_pixels = None
         journey = []
         if args.journey:
-            initial_resolution = page.evaluate(
-                "window.__hictBenchmark.manager().getView().getResolution()"
-            )
-            page.get_by_role("button", name="Zoom in", exact=True).click()
-            page.get_by_role("button", name="Zoom in", exact=True).click()
-            page.wait_for_function(
-                "before => window.__hictBenchmark.manager().getView().getResolution()<before",
-                arg=initial_resolution,
-            )
-            page.wait_for_timeout(600)
+            for step in range(1, 3):
+                before_zoom = page.evaluate(
+                    "window.__hictBenchmark.manager().getView().getResolution()"
+                )
+                page.get_by_role("button", name="Zoom in", exact=True).click()
+                page.wait_for_function(
+                    "before => window.__hictBenchmark.manager().getView().getResolution()<before",
+                    arg=before_zoom,
+                )
+                page.wait_for_timeout(600)
+                assert (
+                    rendered_signal_pixels(page) > 1000
+                ), f"Example washed out after toolbar zoom {step}"
+                page.screenshot(path=str(out / f"first-run-zoom-{step}.png"))
             page.evaluate(
                 "() => {window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent();}"
             )
@@ -269,6 +275,7 @@ with sync_playwright() as pw:
             )
             split_state = snapshot()["primary"]
             assert len(split_state["splitEdits"]) == 1
+            page.get_by_role("button", name="Journal", exact=True).click()
             with page.expect_response("**/assembly/history/restore") as undo_response:
                 page.get_by_role(
                     "button", name="Undo assembly edit", exact=True

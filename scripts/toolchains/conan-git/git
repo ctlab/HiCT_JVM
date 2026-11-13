@@ -1,0 +1,11 @@
+#!/bin/sh
+# Scoped to hictk's Conan install; never write runner/user Git configuration.
+# Conan still fetches and checks out its pinned upstream commit and applies its
+# original patches. The mirror changes transport only, not dependency versions.
+# A wrapper also works with manylinux2014's Git 1.8 (no GIT_CONFIG_COUNT support).
+set -eu
+: "${HICTK_CONAN_REAL_GIT:?Set HICTK_CONAN_REAL_GIT to the original Git executable}"
+exec "${HICTK_CONAN_REAL_GIT}" \
+  -c url.https://github.com/chipp/gnu-config.git.insteadOf=https://https.git.savannah.gnu.org/git/config.git \
+  -c url.https://github.com/chipp/gnu-config.git.insteadOf=https://git.savannah.gnu.org/git/config.git \
+  "$@"

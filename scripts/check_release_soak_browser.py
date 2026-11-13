@@ -143,7 +143,7 @@ def main():
                     }""")
                 page.get_by_role("link", name="View", exact=True).click()
                 page.get_by_role(
-                    "link", name="Restrict Resolutions...", exact=True
+                    "link", name="Restrict Resolutions…", exact=True
                 ).click()
                 # Transient locator handles retain detached nodes in the inspector.
                 # Keep these memory measurements to primitive DOM results and real input.
@@ -206,6 +206,8 @@ def main():
                         ("Reverse Selection", "/reverse_selection_range"),
                         ("Undo assembly edit", "/assembly/history/restore"),
                     ]:
+                        if button == "Undo assembly edit":
+                            page.get_by_role("button", name="Journal", exact=True).click()
                         action_started = time.monotonic()
                         with page.expect_response(
                             lambda response: response.url.endswith(endpoint)

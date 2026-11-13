@@ -91,7 +91,7 @@ def main():
             results.append({'test': 'numeric expression query', 'values': len(numeric['raw'])})
 
             page.get_by_role('link', name='View', exact=True).click()
-            page.get_by_role('link', name='Rendering pipeline...', exact=True).click()
+            page.get_by_role('link', name='Rendering pipeline…', exact=True).click()
             page.locator('.graph-canvas').wait_for(state='visible')
             page.wait_for_timeout(500)
             graph = page.evaluate('''() => {const c=document.querySelector('.graph-canvas').data;
