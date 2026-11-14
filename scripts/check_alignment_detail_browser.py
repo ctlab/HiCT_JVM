@@ -71,13 +71,13 @@ with sync_playwright() as pw:
     )
     detail = page.evaluate("""()=>{
       const m=window.__hictBenchmark.manager(),l=m.alignmentDetail;
-      const colors=l.source.getFeatures().map(f=>f.getStyle().getImage()?.getFill().getColor());
+      const colors=l.source.getFeatures().map(f=>decodeURIComponent(f.getStyle().getImage()?.getSrc() ?? ""));
       const holder=m.contigDimensionHolder,d=m.viewAndLayersManager.getActiveVectorResolutionDescriptor();
       return {colors,point:m.getMap().getPixelFromCoordinate([
         holder.getFractionalPxOfBp(1100.5,d.bpResolution)*d.pixelResolution,
         -holder.getFractionalPxOfBp(100.5,d.bpResolution)*d.pixelResolution])};
     }""")
-    assert "#c2410c" in detail["colors"], detail
+    assert any("#c2410c" in svg for svg in detail["colors"]), detail
     shot = page.locator("#hic-contact-map").screenshot()
     (out / "substitution.png").write_bytes(shot)
     im = np.array(Image.open(io.BytesIO(shot)).convert("RGB"))
@@ -157,7 +157,7 @@ with sync_playwright() as pw:
         page.wait_for_function(
             """()=> {
           const l=window.__hictBenchmark.manager().alignmentDetail;
-          return l.source.getFeatures().some(f=>f.getStyle().getImage()?.getFill().getColor()==='#c2410c')
+          return l.source.getFeatures().some(f=>decodeURIComponent(f.getStyle().getImage()?.getSrc() ?? '').includes('#c2410c'))
             && l.state.message.value==='';
         }""",
             timeout=30000,
@@ -280,7 +280,7 @@ with sync_playwright() as pw:
     page.wait_for_function(
         """()=>{
       const l=window.__hictBenchmark.manager().alignmentDetail;
-      return l.source.getFeatures().length===0 && l.state.message.value==='No alignment found in the selected intervals';
+      return l.source.getFeatures().length===0 && l.state.message.value.startsWith('No alignment reported for these visible regions.');
     }""",
         timeout=30000,
     )
