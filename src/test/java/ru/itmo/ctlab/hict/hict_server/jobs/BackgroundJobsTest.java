@@ -2,6 +2,7 @@ package ru.itmo.ctlab.hict.hict_server.jobs;
 
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.io.TempDir;
 import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
 
@@ -60,11 +61,11 @@ class BackgroundJobsTest {
     assertFalse(Files.exists(staging));
   }
 
-  @Test void stopsNativeChildProcessTree() throws Exception {
+  @RepeatedTest(20) void stopsNativeChildProcessTree() throws Exception {
     org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")));
     var process = new ProcessBuilder("/bin/sh", "-c", "sleep 120 & wait").start();
+    List<ProcessHandle> children = List.of();
     try {
-      List<ProcessHandle> children = List.of();
       for (int attempt = 0; attempt < 100 && children.isEmpty(); attempt++) {
         children = process.descendants().toList();
         Thread.sleep(10);
@@ -73,11 +74,30 @@ class BackgroundJobsTest {
       ProcessTree.stop(process);
       assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));
       for (var child : children) {
-        // Unix can retain a dead child as a zombie until init reaps it.
-        if (child.isAlive() && Files.isRegularFile(Path.of("/proc", Long.toString(child.pid()), "stat"))) {
-          assertEquals("Z", Files.readString(Path.of("/proc", Long.toString(child.pid()), "stat")).split(" ")[2]);
-        } else assertFalse(child.isAlive());
+        // destroyForcibly requests termination; waiting for the parent does not
+        // imply every descendant has already exited on another CPU.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (!hasExited(child) && System.nanoTime() < deadline) Thread.sleep(10);
+        assertTrue(hasExited(child), "Child still running after cancellation: " + child.pid());
       }
-    } finally { ProcessTree.stop(process); }
+    } finally {
+      // Retain handles because an exited parent no longer reports its children.
+      for (var child : children) child.destroyForcibly();
+      ProcessTree.stop(process);
+    }
+  }
+
+  private static boolean hasExited(ProcessHandle child) {
+    if (!child.isAlive()) return true;
+    // Unix can retain a terminated child as a zombie until init reaps it.
+    var stat = Path.of("/proc", Long.toString(child.pid()), "stat");
+    try {
+      var status = Files.readString(stat);
+      return status.substring(status.lastIndexOf(')') + 2).startsWith("Z ");
+    } catch (java.io.IOException ignored) {
+      // Linux can report ENOENT or ESRCH while reaping; macOS has no /proc.
+      // A failed status read alone is never accepted as proof of termination.
+      return !child.isAlive();
+    }
   }
 }
