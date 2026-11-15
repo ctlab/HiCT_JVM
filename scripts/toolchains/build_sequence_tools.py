@@ -106,8 +106,31 @@ def copy_go_notices(source, dest, env):
     return records
 
 
+def audit_payload(payload, docs, manylinux, suffix=''):
+    if sys.platform == 'darwin':
+        run([sys.executable, ROOT / 'scripts/ci/check_macos_compatibility.py', payload,
+             '--target', macos_target(), '--arch', platform.machine(),
+             '--report', docs / ('macos-compatibility' + suffix + '.json')])
+    if manylinux:
+        abi = {}
+        for file in payload.rglob('*'):
+            if not file.is_file():
+                continue
+            with file.open('rb') as stream:
+                if stream.read(4) != b'\x7fELF':
+                    continue
+            info = run(['readelf', '--version-info', file], capture_output=True, text=True).stdout
+            versions = {tuple(map(int, v.split('.'))) for v in re.findall(r'GLIBC_(\d+(?:\.\d+)+)', info)}
+            maximum = max(versions, default=(0,))
+            if maximum > (2, 17):
+                raise RuntimeError(f'{file} requires GLIBC {maximum}, newer than manylinux2014')
+            abi[str(file.relative_to(payload))] = '.'.join(map(str, maximum))
+        (docs / ('glibc-abi' + suffix + '.json')).write_text(json.dumps(abi, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--component', choices=('all', 'sequence', 'blast'), default='all')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--work', type=Path)
     parser.add_argument('--seqkit-source')
@@ -136,6 +159,21 @@ def main():
     docs.mkdir(parents=True)
     notices = payload / 'share/licenses/sequence-analysis'
     notices.mkdir(parents=True)
+    if args.component == 'blast':
+        from add_blast import add_blast
+        command = add_blast(payload, work, args.manylinux2014)
+        if not command:
+            raise RuntimeError('BLAST is required for this platform')
+        audit_payload(payload, docs, args.manylinux2014, '-blast')
+        files = sorted(p.relative_to(payload).as_posix() for p in payload.rglob('*') if p.is_file())
+        manifest = dict(platform=sys.platform, commands={'blastn': command}, files=files,
+                        sha256={p: digest(payload / p) for p in files},
+                        notices=['NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only.'],
+                        citations=['Camacho C et al. BMC Bioinformatics 2009;10:421. doi:10.1186/1471-2105-10-421.'])
+        (payload / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(payload, args.output)
+        return
     seq, mod = work / 'seqkit', work / 'moddotplot'
     checkout('https://github.com/shenwei356/seqkit.git', SEQ, seq, args.seqkit_source)
     checkout('https://github.com/marbl/ModDotPlot.git', MOD, mod, args.moddotplot_source)
@@ -208,26 +246,8 @@ for dist in im.distributions():
          '--moddotplot', payload / upstream_cli, '--adapter', payload / adapter,
          '--output', docs / 'smoke-test.json'])
     from add_blast import add_blast
-    blast_command = add_blast(payload, work, args.manylinux2014)
-    if sys.platform == 'darwin':
-        run([sys.executable, ROOT / 'scripts/ci/check_macos_compatibility.py', payload,
-             '--target', macos_target(), '--arch', platform.machine(),
-             '--report', docs / 'macos-compatibility.json'])
-    if args.manylinux2014:
-        abi = {}
-        for file in payload.rglob('*'):
-            if not file.is_file():
-                continue
-            with file.open('rb') as stream:
-                if stream.read(4) != b'\x7fELF':
-                    continue
-            info = run(['readelf', '--version-info', file], capture_output=True, text=True).stdout
-            versions = {tuple(map(int, v.split('.'))) for v in re.findall(r'GLIBC_(\d+(?:\.\d+)+)', info)}
-            maximum = max(versions, default=(0,))
-            if maximum > (2, 17):
-                raise RuntimeError(f'{file} requires GLIBC {maximum}, newer than manylinux2014')
-            abi[str(file.relative_to(payload))] = '.'.join(map(str, maximum))
-        (docs / 'glibc-abi.json').write_text(json.dumps(abi, indent=2))
+    blast_command = add_blast(payload, work, args.manylinux2014) if args.component == 'all' else None
+    audit_payload(payload, docs, args.manylinux2014)
     info = dict(schema='hict-sequence-tools-v1', seqkitCommit=SEQ, moddotplotCommit=MOD,
                 python=platform.python_version(), go=go_version, platform=platform.platform(),
                 linuxAbi='manylinux2014' if args.manylinux2014 else 'host-development' if sys.platform == 'linux' else None,

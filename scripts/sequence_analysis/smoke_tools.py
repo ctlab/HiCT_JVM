@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 import h5py
 import numpy as np
-from moddotplot_kernel import Settings, WindowSketch, calculate_blocks
 
 
 def main():
@@ -16,6 +15,7 @@ def main():
     parser.add_argument('--adapter', type=Path, required=True)
     parser.add_argument('--moddotplot', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--packaged-only', action='store_true', help='Test frozen executables without importing a build checkout')
     args = parser.parse_args()
     work = Path(tempfile.mkdtemp(prefix='hict-sequence-smoke-'))
     fasta = work / 'search.fa'
@@ -28,16 +28,18 @@ def main():
     upstream = subprocess.run([str(args.moddotplot.resolve()), '--help'], check=True,
                               capture_output=True, text=True, timeout=30)
     assert 'moddotplot' in (upstream.stdout + upstream.stderr).lower()
-    sketches = [
-        WindowSketch(np.array([1, 2], dtype=np.uint64), np.array([1, 2], dtype=np.uint64), (0, 1)),
-        WindowSketch(np.array([2, 3], dtype=np.uint64), np.array([2, 3], dtype=np.uint64), (1, 2)),
-    ]
     parallel_blocks = []
-    calculate_blocks(sketches, sketches, Settings(k=1, identity=0, sketch_size=2, delta=0),
-                     lambda row, column, values: parallel_blocks.append((row, column, values.shape)),
-                     block_size=1, workers=2)
-    assert parallel_blocks == [(0, 0, (1, 1)), (0, 1, (1, 1)),
-                               (1, 0, (1, 1)), (1, 1, (1, 1))], parallel_blocks
+    if not args.packaged_only:
+        from moddotplot_kernel import Settings, WindowSketch, calculate_blocks
+        sketches = [
+            WindowSketch(np.array([1, 2], dtype=np.uint64), np.array([1, 2], dtype=np.uint64), (0, 1)),
+            WindowSketch(np.array([2, 3], dtype=np.uint64), np.array([2, 3], dtype=np.uint64), (1, 2)),
+        ]
+        calculate_blocks(sketches, sketches, Settings(k=1, identity=0, sketch_size=2, delta=0),
+                         lambda row, column, values: parallel_blocks.append((row, column, values.shape)),
+                         block_size=1, workers=2)
+        assert parallel_blocks == [(0, 0, (1, 1)), (0, 1, (1, 1)),
+                                   (1, 0, (1, 1)), (1, 1, (1, 1))], parallel_blocks
     template = work / 'template.hdf5'
     with h5py.File(template, 'w') as f:
         info = f.create_group('contig_info')

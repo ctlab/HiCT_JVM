@@ -32,19 +32,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(
+        component: [sequence, blast]
+        target: ${{ fromJSON(
           inputs.platform == 'linux_x86_64' && '[{"os":"ubuntu-22.04","platform":"linux_x86_64"}]' ||
           inputs.platform == 'windows_x86_64' && '[{"os":"windows-2022","platform":"windows_x86_64"}]' ||
           inputs.platform == 'darwin_arm64' && '[{"os":"macos-latest","platform":"darwin_arm64"}]' ||
           inputs.platform == 'darwin_x86_64' && '[{"os":"macos-15-intel","platform":"darwin_x86_64"}]' ||
           '[{"os":"ubuntu-22.04","platform":"linux_x86_64"},{"os":"windows-2022","platform":"windows_x86_64"},{"os":"macos-latest","platform":"darwin_arm64"},{"os":"macos-15-intel","platform":"darwin_x86_64"}]') }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.target.os }}
     env:
       PYTHONUTF8: '1'
       MACOSX_DEPLOYMENT_TARGET: '12.3'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
+        id: python
         with:
           python-version: '3.12'
       - uses: actions/setup-go@v5
@@ -62,10 +64,28 @@ jobs:
         if: always() && runner.os == 'Linux'
         uses: actions/upload-artifact@v6
         with:
-          name: staged-linux-tools-check
+          name: staged-linux-tools-check-${{ matrix.component }}
           path: build/staged-linux-tools-check/*.log
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      # Exact keys only: never accept a payload built from older sources/config.
+      - name: Restore verified sequence payload
+        id: sequence-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}
+          key: sequence-payload-v2-${{ matrix.component }}-${{ matrix.target.os }}-${{ matrix.target.platform }}-${{ steps.runner-image.outputs.identity }}-python-${{ steps.python.outputs.python-version }}-go-1.25.5-${{ hashFiles('.github/workflows/sequence-tools.yml', 'scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', 'tests/toolchains/**') }}
+      - name: Discard any non-exact cache restoration
+        if: steps.sequence-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}', ignore_errors=True)"
+      - name: Verify restored payload checksums
+        if: steps.sequence-cache.outputs.cache-hit == 'true'
+        run: python scripts/ci/verify_sequence_cache.py sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }} --component ${{ matrix.component }}
       - name: Build and execute native fixtures on Linux glibc 2.17
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.sequence-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -75,34 +95,95 @@ jobs:
               export PATH=/opt/hict-go/bin:/opt/python/cp312-cp312/bin:$PATH
               bash scripts/toolchains/build_sequence_python_linux.sh /tmp/hict-shared-python
               /tmp/hict-shared-python/bin/python3.12 scripts/toolchains/build_sequence_tools.py \
-                --manylinux2014 --output sequence-tools-dist/linux_x86_64
+                --component ${{ matrix.component }} --manylinux2014 --output sequence-tools-dist/linux_x86_64-${{ matrix.component }}
             '
       - name: Build and execute native fixtures on Windows or macOS
-        if: runner.os != 'Linux'
-        run: python scripts/toolchains/build_sequence_tools.py --work build/sequence-tools-${{ matrix.platform }} --output sequence-tools-dist/${{ matrix.platform }}
+        if: runner.os != 'Linux' && steps.sequence-cache.outputs.cache-hit != 'true'
+        run: python scripts/toolchains/build_sequence_tools.py --component ${{ matrix.component }} --work build/sequence-tools-${{ matrix.target.platform }}-${{ matrix.component }} --output sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}
+      - name: Exercise restored payload on Linux glibc 2.17
+        if: runner.os == 'Linux' && steps.sequence-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" \
+            quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5 bash -euxc '
+              /opt/python/cp312-cp312/bin/python -m pip install numpy==1.26.4 h5py==3.12.1
+              /opt/python/cp312-cp312/bin/python scripts/ci/smoke_sequence_cache.py sequence-tools-dist/linux_x86_64-${{ matrix.component }}
+            '
+      - name: Exercise restored Windows or macOS payload
+        if: runner.os != 'Linux' && steps.sequence-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          python -m pip install numpy==1.26.4 h5py==3.12.1
+          python scripts/ci/smoke_sequence_cache.py sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}
       - name: Check Windows sequence tools after merge and relocation
-        if: runner.os == 'Windows'
-        run: python scripts/ci/check_windows_sequence_relocation.py --source sequence-tools-dist/windows_x86_64 --output build/windows-sequence-relocation.json
+        if: runner.os == 'Windows' && matrix.component == 'sequence'
+        run: python scripts/ci/check_windows_sequence_relocation.py --source sequence-tools-dist/windows_x86_64-sequence --output build/windows-sequence-relocation.json
       - name: Preserve Windows relocation evidence
-        if: always() && runner.os == 'Windows'
+        if: always() && runner.os == 'Windows' && matrix.component == 'sequence'
         uses: actions/upload-artifact@v6
         with:
           name: windows-sequence-relocation
           path: build/windows-sequence-relocation.json
+      - name: Verify complete sequence payload
+        run: python scripts/ci/verify_sequence_cache.py sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }} --component ${{ matrix.component }}
+      - name: Save verified sequence payload
+        if: success() && steps.sequence-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}
+          key: ${{ steps.sequence-cache.outputs.cache-primary-key }}
       - name: Preserve executable modes in artifact
         shell: bash
-        run: tar -czf sequence-tools-${{ matrix.platform }}.tar.gz -C sequence-tools-dist ${{ matrix.platform }}
+        run: tar -czf sequence-tools-${{ matrix.target.platform }}-${{ matrix.component }}.tar.gz -C sequence-tools-dist ${{ matrix.target.platform }}-${{ matrix.component }}
       - uses: actions/upload-artifact@v6
         with:
-          name: sequence-tools-${{ matrix.platform }}
-          path: sequence-tools-${{ matrix.platform }}.tar.gz
+          name: sequence-tools-${{ matrix.target.platform }}-${{ matrix.component }}
+          path: sequence-tools-${{ matrix.target.platform }}-${{ matrix.component }}.tar.gz
           if-no-files-found: error
       - name: Upload native smoke-test and build provenance
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: sequence-tools-evidence-${{ matrix.platform }}
+          name: sequence-tools-evidence-${{ matrix.target.platform }}-${{ matrix.component }}
           path: |
-            sequence-tools-dist/${{ matrix.platform }}/share/doc/sequence-analysis
-            build/sequence-tools-${{ matrix.platform }}/payload/share/doc/sequence-analysis
-            build/sequence-tools-${{ matrix.platform }}/blast-build/share/doc
+            sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}/share/doc/sequence-analysis
+            build/sequence-tools-${{ matrix.target.platform }}-${{ matrix.component }}/payload/share/doc/sequence-analysis
+            build/sequence-tools-${{ matrix.target.platform }}-${{ matrix.component }}/blast-build/share/doc
+
+  assemble:
+    needs: native
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(
+          inputs.platform == 'linux_x86_64' && '[{"os":"ubuntu-22.04","platform":"linux_x86_64"}]' ||
+          inputs.platform == 'windows_x86_64' && '[{"os":"windows-2022","platform":"windows_x86_64"}]' ||
+          inputs.platform == 'darwin_arm64' && '[{"os":"macos-latest","platform":"darwin_arm64"}]' ||
+          inputs.platform == 'darwin_x86_64' && '[{"os":"macos-15-intel","platform":"darwin_x86_64"}]' ||
+          '[{"os":"ubuntu-22.04","platform":"linux_x86_64"},{"os":"windows-2022","platform":"windows_x86_64"},{"os":"macos-latest","platform":"darwin_arm64"},{"os":"macos-15-intel","platform":"darwin_x86_64"}]') }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: sequence-tools-${{ matrix.platform }}-*
+          path: components
+          merge-multiple: true
+      - name: Assemble verified components
+        shell: bash
+        run: |
+          mkdir -p sequence-tools-dist
+          for component in sequence blast; do
+            tar -xzf "components/sequence-tools-${{ matrix.platform }}-${component}.tar.gz" -C sequence-tools-dist
+          done
+          python scripts/ci/assemble_sequence_components.py sequence-tools-dist/${{ matrix.platform }}
+          tar -czf sequence-tools-${{ matrix.platform }}.tar.gz -C sequence-tools-dist ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sequence-tools-${{ matrix.platform }}
+          path: sequence-tools-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
