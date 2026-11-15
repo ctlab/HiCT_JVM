@@ -6,6 +6,8 @@
 
 - Keep notification stacks away from visualization controls on smaller windows.
 
+- Show contig and scaffold names on the map whenever the contigs in view are wide enough to read. Small contigs elsewhere in the assembly no longer hide the names of large ones on screen.
+
 - Keep opening-fitted contrast readable across pyramid levels, preserve explicit thresholds and separate O/E ranges, and show small-genome minimaps even when coarse levels are empty.
 - Start log transforms at Log2, show masked bins without a permanent alarm, and keep history controls in Journal.
 - Make developer tools opt-in, move tile reload into Dev, and provide quiet map Info and Help → Connection….
