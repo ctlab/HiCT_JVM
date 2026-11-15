@@ -5,6 +5,7 @@ on:
     branches: [jvm-sfx-native]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -34,7 +35,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify pinned browser checkout and release safeguards
-        run: node --test scripts/portable/check_webui_checkout.mjs scripts/ci/rolling_release.test.cjs
+        run: node --test scripts/portable/check_webui_checkout.mjs scripts/ci/rolling_release.test.cjs scripts/ci/portable_workflow.test.cjs
       - name: Compile full JVM, build fat JAR, and check edit/render contracts
         shell: bash
         run: >-

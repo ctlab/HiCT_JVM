@@ -7,6 +7,11 @@ on:
     branches: ["**"]
   workflow_dispatch:
     inputs:
+      publish_before_tests:
+        description: "Publish before JVM regression tests finish (tests still run; default requires success)"
+        type: boolean
+        required: false
+        default: false
       bundle_hictk:
         description: "Build and bundle hictk before packaging"
         required: true
@@ -205,6 +210,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Assign run-specific release version
         run: |
@@ -335,9 +349,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**', 'scripts/ci/linux_container_build.sh') }}
-          restore-keys: |
-            hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
 
       - name: Build HiCT native libraries in manylinux2014
         if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
@@ -367,10 +384,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}
-          restore-keys: |
-            toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
-            toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
+          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
+
+      - name: Discard non-exact compiled cache
+        if: steps.cache-linux-toolchains.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/linux_x86_64', ignore_errors=True)"
 
       - name: Inspect Linux bundled toolchain cache
         id: inspect-linux-toolchain
@@ -477,6 +496,10 @@ jobs:
           path: .cache/hictk-conan/linux_x86_64-${{ env.HICT_LINUX_ABI_MODE }}
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save Linux bundled toolchain cache
         if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-linux-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -741,6 +764,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Test resilient SDK acquisition
         shell: pwsh
@@ -823,9 +855,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
-          restore-keys: |
-            hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
 
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -853,23 +888,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/windows_x86_64
-          key: toolchain-v3-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1') }}
-          restore-keys: |
-            toolchain-v3-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+          key: toolchain-v4-windows-x86_64-mm2plus-${{ env.MM2PLUS_REF }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1', 'scripts/toolchains/build_mm2plus_windows.ps1') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
 
-      - name: Restore bundled mm2-plus cache
-        id: cache-mm2plus
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
-            toolchains-dist/windows_x86_64/share/licenses/mm2plus
-            toolchains-dist/windows_x86_64/share/doc/mm2plus
-          key: toolchain-mm2plus-v2-windows-x86_64-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_windows.ps1') }}
-          restore-keys: |
-            toolchain-mm2plus-v2-windows-x86_64-${{ env.MM2PLUS_REF }}-
+      - name: Discard non-exact compiled cache
+        if: steps.cache-hictk.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/windows_x86_64', ignore_errors=True)"
 
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
@@ -1117,6 +1141,10 @@ jobs:
           path: .cache/hictk-conan/windows_x86_64
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save bundled toolchain cache
         if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -1124,18 +1152,6 @@ jobs:
         with:
           path: toolchains-dist/windows_x86_64
           key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
-
-      - name: Save bundled mm2-plus cache
-        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: |
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
-            toolchains-dist/windows_x86_64/share/licenses/mm2plus
-            toolchains-dist/windows_x86_64/share/doc/mm2plus
-          key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
       - name: Install 7-Zip for portable EXE
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
@@ -1304,7 +1320,6 @@ jobs:
     needs: sequence-tools-macos
     name: macOS Apple Silicon portable .run
     runs-on: macos-latest
-    continue-on-error: true
     env:
       HICT_DARWIN_ARCH: arm64
       MACOSX_DEPLOYMENT_TARGET: '12.3'
@@ -1321,6 +1336,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Assign run-specific release version
         run: |
@@ -1399,9 +1423,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
-          restore-keys: |
-            hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
+
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Apple Silicon Tauri browser payload
@@ -1415,9 +1442,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_arm64
-          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
-          restore-keys: |
-            toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/darwin_arm64', ignore_errors=True)"
+
       - name: Restore Darwin Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
@@ -1532,6 +1562,10 @@ jobs:
             [[ -f "$(dirname "${launcher}")/../browsers/darwin_arm64/tauri/manifest.json" ]] || { echo "::error::Packaged macOS arm64 app is missing Tauri browser payload."; exit 1; }
             codesign -dv --verbose=2 "$(dirname "${launcher}")/../browsers/darwin_arm64/tauri/bin/hict-tauri-browser" 2>&1 || { echo "::error::Packaged macOS arm64 Tauri browser is not ad-hoc signed."; exit 1; }
           fi
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save Darwin toolchain cache
         if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -1553,15 +1587,14 @@ jobs:
         with:
           path: build/native-processing/resources
           key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
-      - name: Report non-blocking macOS Apple Silicon failure
+      - name: Report macOS Apple Silicon failure
         if: ${{ failure() }}
-        run: echo "::warning::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
+        run: echo "::error::macOS Apple Silicon build failed; publication is blocked."
 
   macos-intel-portable:
     needs: sequence-tools-macos-intel
     name: macOS Intel portable .run
     runs-on: macos-15-intel
-    continue-on-error: true
     env:
       HICT_DARWIN_ARCH: x86_64
       MACOSX_DEPLOYMENT_TARGET: '12.3'
@@ -1578,6 +1611,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Assign run-specific release version
         run: |
@@ -1656,9 +1698,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
-          restore-keys: |
-            hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
+
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/build_portable_darwin_x86_64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Intel Tauri browser payload
@@ -1672,9 +1717,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_x86_64
-          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
-          restore-keys: |
-            toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/darwin_x86_64', ignore_errors=True)"
+
       - name: Restore Darwin Intel Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
@@ -1789,6 +1837,10 @@ jobs:
             [[ -f "$(dirname "${launcher}")/../browsers/darwin_x86_64/tauri/manifest.json" ]] || { echo "::error::Packaged macOS Intel app is missing Tauri browser payload."; exit 1; }
             codesign -dv --verbose=2 "$(dirname "${launcher}")/../browsers/darwin_x86_64/tauri/bin/hict-tauri-browser" 2>&1 || { echo "::error::Packaged macOS Intel Tauri browser is not ad-hoc signed."; exit 1; }
           fi
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save Darwin Intel toolchain cache
         if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -1810,18 +1862,30 @@ jobs:
         with:
           path: build/native-processing/resources
           key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
-      - name: Report non-blocking macOS Intel failure
+      - name: Report macOS Intel failure
         if: ${{ failure() }}
-        run: echo "::warning::Non-blocking macOS Intel build failed; Windows/Linux release may still proceed without this artifact."
+        run: echo "::error::macOS Intel build failed; publication is blocked."
+
+  regression-gate:
+    needs: [linux-portable, windows-portable, macos-portable, macos-intel-portable]
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish_before_tests) }}
+    uses: ./.github/workflows/java-regressions.yml
+
+  regression-after-early-publication:
+    needs: [linux-portable, windows-portable, macos-portable, macos-intel-portable]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_before_tests }}
+    uses: ./.github/workflows/java-regressions.yml
+
   # Fix branches validate and upload artifacts on push without mutating releases.
   publish-release-assets:
     name: Publish release assets
     needs:
+      - regression-gate
       - linux-portable
       - windows-portable
       - macos-portable
       - macos-intel-portable
-    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || (github.event_name == 'push' && !startsWith(github.ref_name, 'fix/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
+    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && needs.macos-portable.result == 'success' && needs.macos-intel-portable.result == 'success' && (needs.regression-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.publish_before_tests)) && (github.event_name == 'release' || (github.event_name == 'push' && !startsWith(github.ref_name, 'fix/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
     runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
