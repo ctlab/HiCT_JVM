@@ -87,3 +87,30 @@ class ComponentTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Checksum'):
                 self.assembler()(target)
             self.assertFalse(target.exists())
+
+
+class PublishedPayloadTests(unittest.TestCase):
+    def test_manifest_covers_materialized_framework_directory_links(self):
+        spec = importlib.util.spec_from_file_location('sequence_builder', Path(__file__).resolve().parents[2] / 'scripts/toolchains/build_sequence_tools.py')
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        with tempfile.TemporaryDirectory() as tmp:
+            source, target = Path(tmp) / 'source', Path(tmp) / 'target'
+            framework = source / 'Python.framework/Versions/3.12'
+            framework.mkdir(parents=True)
+            (framework / 'Python').write_bytes(b'framework-binary')
+            try:
+                (framework.parent / 'Current').symlink_to('3.12', target_is_directory=True)
+            except OSError:
+                self.skipTest('Directory symlinks require privileges on this host')
+            command = 'Python.framework/Versions/3.12/Python'
+            manifest = dict(platform='darwin', commands={key: command for key in ('seqkit', 'moddotplot', 'hict-moddotplot')})
+            builder.publish_payload(source, target, manifest)
+            cache.verify(target, 'sequence')
+            delivered = json.loads((target / 'manifest.json').read_text())
+            alias = 'Python.framework/Versions/Current/Python'
+            self.assertIn(alias, delivered['files'])
+            self.assertEqual(delivered['sha256'][command], delivered['sha256'][alias])
+            (target / alias).write_bytes(b'corrupt expanded framework')
+            with self.assertRaisesRegex(ValueError, 'Checksum'):
+                cache.verify(target, 'sequence')

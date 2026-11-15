@@ -16,7 +16,8 @@ def verify(root, component='all'):
         raise ValueError('Checksum inventory differs')
     actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
     if actual != set(files) | {'manifest.json'}:
-        raise ValueError('Missing or unlisted payload files')
+        expected = set(files) | {'manifest.json'}
+        raise ValueError(f'Payload inventory differs: missing={sorted(expected - actual)[:20]}, unlisted={sorted(actual - expected)[:20]}')
     for name in files:
         path = root / name
         if Path(name).is_absolute() or '..' in Path(name).parts or not path.resolve().is_relative_to(root):

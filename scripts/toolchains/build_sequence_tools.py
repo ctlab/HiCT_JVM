@@ -128,6 +128,16 @@ def audit_payload(payload, docs, manylinux, suffix=''):
         (docs / ('glibc-abi' + suffix + '.json')).write_text(json.dumps(abi, indent=2))
 
 
+def publish_payload(payload, output, manifest):
+    # copytree materializes framework directory symlinks on macOS. Inventory
+    # the delivered tree, including those expanded files, rather than its source.
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(payload, output)
+    files = sorted(p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file())
+    manifest.update(files=files, sha256={name: digest(output / name) for name in files})
+    (output / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--component', choices=('all', 'sequence', 'blast'), default='all')
@@ -165,14 +175,10 @@ def main():
         if not command:
             raise RuntimeError('BLAST is required for this platform')
         audit_payload(payload, docs, args.manylinux2014, '-blast')
-        files = sorted(p.relative_to(payload).as_posix() for p in payload.rglob('*') if p.is_file())
-        manifest = dict(platform=sys.platform, commands={'blastn': command}, files=files,
-                        sha256={p: digest(payload / p) for p in files},
+        manifest = dict(platform=sys.platform, commands={'blastn': command},
                         notices=['NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only.'],
                         citations=['Camacho C et al. BMC Bioinformatics 2009;10:421. doi:10.1186/1471-2105-10-421.'])
-        (payload / 'manifest.json').write_text(json.dumps(manifest, indent=2))
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(payload, args.output)
+        publish_payload(payload, args.output, manifest)
         return
     seq, mod = work / 'seqkit', work / 'moddotplot'
     checkout('https://github.com/shenwei356/seqkit.git', SEQ, seq, args.seqkit_source)
@@ -254,10 +260,8 @@ for dist in im.distributions():
                 cpuPolicy='baseline; CGO_DISABLED Go runtime and upstream ntHash kernel; no artificial AVX variants',
                 goModules=modules)
     (docs / 'build-info.json').write_text(json.dumps(info, indent=2))
-    files = sorted(str(p.relative_to(payload)).replace('\\', '/') for p in payload.rglob('*') if p.is_file())
     manifest = dict(platform=sys.platform, commands={'seqkit': 'bin/seqkit' + suffix,
-                    'moddotplot': upstream_cli, 'hict-moddotplot': adapter}, files=files,
-                    sha256={p: digest(payload / p) for p in files},
+                    'moddotplot': upstream_cli, 'hict-moddotplot': adapter},
                     notices=['SeqKit (MIT) and ModDotPlot/ntHash (MIT), with third-party notices under share/licenses/sequence-analysis.',
                              'Includes the upstream ModDotPlot plotting CLI and HiCT computational adapter as distinct commands.'],
                     citations=['Sweeten AP et al. Bioinformatics 2024;40(8):btae493. doi:10.1093/bioinformatics/btae493.',
@@ -266,9 +270,7 @@ for dist in im.distributions():
         manifest['commands']['blastn'] = blast_command
         manifest['notices'].append('NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only. Native payload for this platform.')
         manifest['citations'].append('Camacho C et al. BMC Bioinformatics 2009;10:421. doi:10.1186/1471-2105-10-421.')
-    (payload / 'manifest.json').write_text(json.dumps(manifest, indent=2))
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(payload, args.output)
+    publish_payload(payload, args.output, manifest)
     print('Verified sequence payload:', args.output, flush=True)
 
 
