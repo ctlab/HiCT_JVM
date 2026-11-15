@@ -495,7 +495,7 @@ adhoc_sign_macho_tree() {
   [[ -d "${root}" ]] || return 0
   while IFS= read -r -d '' f; do
     if file "${f}" | grep -q 'Mach-O'; then
-      codesign -s - --force --timestamp=none "${f}" >/dev/null 2>&1 || {
+      codesign -s - --force --timestamp=none "${f}" || {
         echo "Failed to ad-hoc sign ${f}" >&2
         return 1
       }
@@ -504,7 +504,11 @@ adhoc_sign_macho_tree() {
 }
 
 adhoc_sign_macho_tree "${APP_DIR}/runtime"
-adhoc_sign_macho_tree "${APP_DIR}/toolchains"
+# Tool builders/PyInstaller already prepare executable code. Re-signing their
+# copied framework layout can fail, and mutating any binary invalidates the
+# manifest shared with the JAR. Verify the delivered bytes instead.
+python3 "${SCRIPT_DIR}/verify_copied_tools.py" \
+  --directory "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}" --platform "${TOOLCHAIN_PLATFORM}"
 adhoc_sign_macho_tree "${APP_DIR}/browsers"
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
@@ -804,7 +808,7 @@ perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 600 env \
   XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" \
   TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
   HICT_LAUNCHER_MODE=cli \
-  "${RUN_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+  "${RUN_PATH}" check-toolchains --require-hictk --require-dotplot --require-sequence-tools --require-hdf5-native --check-available-natives --quiet
 rm -rf "${RUN_SMOKE_TEST_DIR}"
 trap - EXIT
 
