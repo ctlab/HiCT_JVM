@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { test } = require('node:test');
-const workflow = fs.readFileSync('.github/workflows/portable-release.yml', 'utf8');
+const workflow = fs.readFileSync('.github/workflows/portable-release.yml', 'utf8').replace(/\r\n/g, '\n');
 const platforms = ['linux-portable', 'windows-portable', 'macos-portable', 'macos-intel-portable'];
 function job(name) {
   const start = workflow.indexOf(`\n  ${name}:\n`);
