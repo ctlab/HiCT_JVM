@@ -5,6 +5,7 @@ import functools
 import hashlib
 import http.server
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -40,7 +41,7 @@ with h5py.File(sys.argv[1],'r+') as f:
         def log_message(self,*_):pass
     web=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Quiet,directory=str(Path(args.webui).resolve())))
     threading.Thread(target=web.serve_forever,daemon=True).start();url=f'http://127.0.0.1:{web.server_port}/'
-    rows=[];geometry=[]
+    rows=[];geometry=[];coverage_oracle={}
     try:
         with HictTestServer(jar,data,out/'server.log') as api:
             # Existing numeric/feature/background/precompute/error acceptance remains independent.
@@ -218,8 +219,36 @@ with h5py.File(sys.argv[1],'r+') as f:
                         page.screenshot(path=str(out/'coverage-manager.png'))
                         values=json.loads(api.http('/tracks/query_1d',{'unit':'BP','startBP':0,'endBP':20,'widthPx':5,'bpResolution':4}))
                         weight=next(t for t in values['tracks'] if t['trackId']==next(t['trackId'] for t in json.loads(api.http('/tracks/list',{})) if t['sourceFile']=='__internal__/cooler_weights/PRIMARY'))
-                        assert [b['value'] for b in weight['bins']]!=[2,3,4,5,6]
-                        close();page.screenshot(path=str(out/'coverage-map.png'));page.locator('#normalization-mode').select_option('file')
+                        raw=[[1,3,0,0,0],[3,0,7,0,0],[0,7,0,0,0],[0,0,0,0,0],[0,0,0,0,11]]
+                        row_sums=[sum(row) for row in raw];total=sum(row_sums)
+                        unscaled=sum(raw[i][j]/math.sqrt(row_sums[i]*row_sums[j]) for i in range(5) for j in range(5) if row_sums[i]>0 and row_sums[j]>0)
+                        scale=total/unscaled
+                        expected_weights=[math.sqrt(scale/r) for r in row_sums if r>0]
+                        actual_weights=[b['value'] for b in weight['bins']]
+                        assert len(actual_weights)==len(expected_weights)==4,actual_weights
+                        assert all(math.isclose(a,b,rel_tol=1e-12) for a,b in zip(actual_weights,expected_weights)),(actual_weights,expected_weights)
+                        for source in ['PRIMARY','SECONDARY']:
+                            queries=page.evaluate("""async source=>{const q={bpResolution:4,startRowPx:0,endRowPx:5,startColPx:0,endColPx:5,source},api=window.__hictBenchmark.manager().networkManager.requestManager;
+                                return {raw:Array.from((await api.queryMatrixFloat32({...q,signalMode:'RAW_COUNTS'})).values),normalized:Array.from((await api.queryMatrixFloat32({...q,signalMode:'COOLER_WEIGHTED'})).values)};}""",source)
+                            assert queries['raw']==[v for row in raw for v in row],queries
+                            assert len(queries['normalized'])==25,queries
+                            expected=[scale*raw[i][j]/math.sqrt(row_sums[i]*row_sums[j]) if row_sums[i]>0 and row_sums[j]>0 else 0 for i in range(5) for j in range(5)]
+                            assert all(math.isclose(a,b,rel_tol=1e-6,abs_tol=1e-6) for a,b in zip(queries['normalized'],expected)),queries
+                            assert math.isclose(sum(queries['normalized']),total,rel_tol=1e-6),queries
+                            coverage_oracle[source]=queries
+                        coverage_oracle.update(rowSums=row_sums,total=total,scale=scale,weights=actual_weights)
+                        close()
+                        explanation=page.locator('.coverage-explanation');summary=explanation.locator('summary')
+                        expect(page.locator('#normalization-help')).to_be_visible()
+                        summary.focus();page.keyboard.press('Enter');expect(explanation).to_have_attribute('open','')
+                        for width,height in [(1440,1000),(800,600)]:
+                            page.set_viewport_size({'width':width,'height':height});explanation.scroll_into_view_if_needed()
+                            assert explanation.evaluate("e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}"),width
+                            page.screenshot(path=str(out/f'coverage-explanation-{width}.png'))
+                        summary.focus();page.keyboard.press('Enter');expect(explanation).not_to_have_attribute('open','')
+                        page.set_viewport_size({'width':1440,'height':1000})
+                        page.screenshot(path=str(out/'coverage-map.png'));page.locator('#normalization-mode').select_option('file')
+                        expect(explanation).to_have_count(0)
                         page.wait_for_function("window.__hictBenchmark.manager().networkManager.requestManager.normalizationWeightsMode==='FILE'")
                         check.settle();manager();dialog.get_by_label('Add track',exact=True).select_option('weights')
                         expect(dialog.get_by_text('Stored Cooler weights from the selected map.',exact=False)).to_be_visible()
@@ -263,7 +292,7 @@ with h5py.File(sys.argv[1],'r+') as f:
                     assert not check.errors,check.errors
                     assert all(hashlib.sha256((data/name).read_bytes()).hexdigest()==digest for name,digest in hashes.items())
                     rows=check.rows
-                    (out/'results.json').write_text(json.dumps({'status':'ok','checks':rows,'geometry':geometry,'sourceHashes':hashes,'pageErrors':check.errors,'windowErrors':window_errors},indent=2))
+                    (out/'results.json').write_text(json.dumps({'status':'ok','checks':rows,'geometry':geometry,'coverageOracle':coverage_oracle,'sourceHashes':hashes,'pageErrors':check.errors,'windowErrors':window_errors},indent=2))
                 except Exception:
                     page.screenshot(path=str(out/'failed.png'));raise
                 finally:browser.close()

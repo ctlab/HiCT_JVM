@@ -18,6 +18,8 @@ sources with unknown provenance retain the legacy option.
 The track follows the weight source: stored Cooler weights, or computed
 square-root coverage weights when that mode is selected. Its hint identifies the
 active source. Matrix normalization is configured in **Visualization → Normalization**.
+[Square-root coverage](coverage-normalization.md) explains row sums, the scale
+factor and the treatment of shared bins after exact cuts.
 
 **Sources and layers** contains secondary-map attachment and the assembly source
 selector. Changing the assembly source starts a new edit journal. Earlier undo

@@ -3736,3 +3736,58 @@ assets separately. Final combined-SFX/native packages, other platforms, retina,
 touch, broader accessibility, real dense files, navigation latency and mixed soak
 remain pending. P4 and the full publication release remain in progress. Protected
 files/plans are untouched. Nothing was pushed, merged or tagged.
+
+## Coverage explanation and independent source totals — 2026-11-16
+
+Advisor item 20 now has a whole-map row/column-sum definition with the diagonal
+counted once, a sentence explaining when to use coverage normalization, and an
+optional keyboard-accessible formula disclosure. It explains the single
+source/resolution scale factor, both symmetric halves in the matrix total,
+inter-contig contacts, zero-coverage support and additional signal transforms.
+The short definition remains visible only with square-root coverage selected;
+the formula starts collapsed. docs/coverage-normalization.md adds a worked
+2x2 example and explains repeated source references after exact cuts.
+
+The existing track acceptance now replaces a weak inequality check with an
+independent numerical oracle. Enumerated raw rows yield [4,10,7,0,11], total 32
+and scale C=8.264455657238736. It verifies the four valid weight-track values to
+1e-12 relative tolerance and all 25 weighted matrix values for both PRIMARY and
+SECONDARY to 1e-6. Each normalized Float32 matrix sums to 32.00000047683716,
+within that tolerance of 32. Both raw matrices and source hashes are unchanged.
+The disclosure opens/closes using Enter and fits 1440/800 px screenshots.
+
+Final evidence: /tmp/hict-coverage-help-tracks-02/results.json records 13 manager,
+source, resize and coverage scenarios, its coverageOracle contains the numerical
+values, and controls/results.json adds six existing track scenarios.
+/tmp/hict-coverage-help-responsive-02/results.json adds 15 window/menu/range/panel
+scenarios at six sizes down to 640 px. All 34 pass with successful process exits;
+page and capture-phase window-error lists are empty. Final screenshots were
+reviewed, including coverage-explanation-800.png. Controlled-chooser and benchmark
+setup substitutions remain as described in the preceding records.
+
+npm run build:web passes (/tmp/hict-coverage-help-web-02.log), with the existing
+large-chunk warning. Prettier check and Python compile pass. A formatting-only
+rebuild changed the WebUI byte hash, so both browser suites were rerun on the final
+assets; the -01 runs are preliminary. There are no Java runtime changes. The
+unchanged backend's full 586-test result (zero failures/errors, seven optional
+skips) remains recorded in the tracks section; it was not rerun for help text.
+
+Test backend JAR hict_server-2.0.28-5e7edd4-webui_a1839b7-fat.jar SHA-256:
+dff6d37370a077b375d071cc7779d25ed7728db127e3e83018e50b3bc444e090.
+Final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+eaf7bf9ef352a27c089d7339eaed6c926f86cc5d3563e16433bfc17bf21b0c3b.
+The JAR embeds the preceding interface; browser acceptance serves the final
+matching assets separately. Combined packages, platforms and broader release
+qualification remain pending. Protected files/plans remain untouched.
+
+P6 audit also establishes the next work, rather than treating existing controls
+as completion. /tmp/hict-oe-range-repro-01/results.json reproduces a real UI
+round trip: set O/E range to [0.25,4], switch to Observed, switch back to O/E,
+and read [0.5,2] with no page errors. VisualizationManager.setSignalDisplayMode
+contains that reset. TileHandlersHolder bypasses the enabled graph for non-observed
+modes, and TileVisualizationProcessor uses a dedicated O/E color path; therefore
+ordinary sidebar color pickers alone do not satisfy advisor item 19. The current
+inline range refresh also waits 250 ms and only aggregates loaded tile limits;
+it does not satisfy the requested viewport histogram, levels/midpoint or 150 ms
+pan gate (item 22). Those items remain pending. P6 and the full goal stay active.
+Nothing was pushed, merged or tagged.

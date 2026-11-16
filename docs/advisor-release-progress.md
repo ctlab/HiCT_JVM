@@ -26,7 +26,7 @@ describe earlier releases; they must not override the decisions below.
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
-| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
+| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: row-sum/diagonal definition, optional formula and worked coverage guide implemented and primary Chromium verified against both sources; O/E pipeline colors/persistence and inline histogram levels pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
@@ -443,6 +443,23 @@ Visual inspection covers narrow Selection/Dev menus, workspace controls and the
 empty state. Exact evidence and hashes are in reinforcement-validation.md.
 This resolves that specific follow-up; P4's broader format, native-platform,
 accessibility and performance gates and P6–P9 remain open.
+
+
+## Coverage explanation and P6 audit
+
+Advisor item 20 now explains total contacts as a whole-map row/column sum with
+its diagonal counted once. An optional formula and the coverage-normalization.md
+worked guide explain the total-preserving factor and shared source-bin references.
+Independent browser oracles verify both sources' coverage weights and all 25
+normalized matrix values, with symmetric total 32 preserved within Float32 error.
+The explanation is keyboard accessible and fits 1440/800 px. WebUI checks and
+34 track/control/responsive scenarios pass on the final assets.
+
+O/E settings and viewport levels remain pending. A real O/E → Observed → O/E
+round trip loses a chosen [0.25,4] range and returns [0.5,2]. The audit identifies
+the standard-renderer bypass and dedicated O/E color path, plus the current
+250 ms limits-only refresh. Evidence is in reinforcement-validation.md; these
+existing paths cannot qualify items 19/22 or the publication release.
 
 ## Mandatory release gates
 

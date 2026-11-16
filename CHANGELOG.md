@@ -4,6 +4,8 @@
 
 ### Navigation and visualization
 
+- Explain square-root coverage with the row-sum definition, diagonal convention and whole-map scale factor, with an optional formula and worked guide.
+
 - Keep menus, Jobs and file badges within narrow windows, and make the stacked sidebar scrollable with usable signal controls.
 
 - Separate 1D tracks from map sources, add source weights through Add, and preserve typed settings and panel alignment across refreshes and resizing.
