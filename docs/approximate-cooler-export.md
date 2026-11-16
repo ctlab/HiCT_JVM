@@ -73,9 +73,13 @@ semantics and do not inherit contact-estimation labels from a template.
 The optional API `capabilities.approximation` object describes this provenance.
 Its absence means no approximation was declared, rather than proving that values
 are original observations. Reimport does not recover original shared-bin contacts
-or read positions. Ordinary floating-point re-export is still an open release
-gate; the existing internal and hictk-assisted exporters reject that path rather
-than rounding the values.
+or read positions. Ordinary re-export now preserves stored float64 values through
+bin remapping, without applying this estimation model again. Mixed pyramids retain
+integer levels as int64, including counts above 2^53. Original estimation provenance
+remains attached. Genuine source weights follow bin ordering; known filler weights
+are omitted. Auto mode needs no external tool when export balancing is disabled.
+Optional hictk balancing remains separate and requires tool/platform qualification.
+Failure or cancellation preserves an existing destination until successful publication.
 
 ## Command line and API
 

@@ -18,6 +18,9 @@
 
 ### Sequence analysis and sessions
 
+- Preserve stored fractional values and genuine weights in ordinary Cooler re-export, retain int64 counts in mixed pyramids, and report cis totals separately from interchromosomal contacts.
+- Preserve existing export destinations on failure or cancellation, with explicit overflow and invalid-value errors.
+
 - Preserve estimation provenance and fractional values when reopening approximate Cooler files, label estimated primary/secondary sources, and retain their declaration in sessions.
 - Clamp export chunks to small map dimensions so default settings work with short assemblies.
 

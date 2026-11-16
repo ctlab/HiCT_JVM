@@ -58,6 +58,18 @@ class ApproximationReimportTest {
       }
       final var secondLayout = directory.resolve("second.agp");
       Files.writeString(secondLayout,String.join("",file.getAgpProcessor().getAGPStream().toList()));
+      final var storedExport = directory.resolve("stored.mcool");
+      new HictToMcoolConverter().convert(options(imported,storedExport,null,false), ignored -> {});
+      try (var stored = HDF5Factory.openForReading(storedExport.toFile())) {
+        assertEquals(provenance, ApproximationProvenance.read(stored,List.of(4L,10L)));
+        for (long r : List.of(4L,10L)) {
+          final String root = "/resolutions/"+r;
+          assertArrayEquals(cooler.float64().readArray(root+"/pixels/count"),stored.float64().readArray(root+"/pixels/count"));
+          assertArrayEquals(cooler.int64().readArray(root+"/pixels/bin1_id"),stored.int64().readArray(root+"/pixels/bin1_id"));
+          assertArrayEquals(cooler.int64().readArray(root+"/pixels/bin2_id"),stored.int64().readArray(root+"/pixels/bin2_id"));
+          assertFalse(stored.object().exists(root+"/bins/weight"));
+        }
+      }
       final var second = directory.resolve("second.mcool");
       new HictToMcoolConverter().convert(options(imported,second,secondLayout,true), ignored -> {});
       try(var output=HDF5Factory.openForReading(second.toFile())) {

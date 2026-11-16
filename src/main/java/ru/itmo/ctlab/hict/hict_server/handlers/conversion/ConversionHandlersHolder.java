@@ -1005,6 +1005,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             case "approximate_scan" -> "Estimating contacts";
             case "approximate_merge" -> "Writing approximate Cooler";
             case "approximate_export" -> "Approximate Cooler export";
+            case "export_float" -> "Writing matrix values";
             default -> stageName.replace('_', ' ');
         };
     }

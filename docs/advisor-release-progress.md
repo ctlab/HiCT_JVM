@@ -113,9 +113,11 @@ from the original input; sequence-derived overlays do not inherit a contact
 template's estimation label. Direct `.mcool` reimport is browser/Cooler verified;
 the original-input preparation bridge has a single-Cooler-root regression, with
 tool-backed preparation qualification still pending. A subsequent approximate export records already-
-estimated input. Ordinary internal/hictk floating-point re-export remains an
-explicitly unsupported path and a required release fix, alongside large-map
-performance and final native/package qualification. Each stored resolution is estimated independently,
+estimated input. Ordinary float re-export now preserves stored float64 pixels
+without another estimation step; mixed integer levels remain int64. Browser Jobs
+and packaged CLI outputs match independent Cooler reads exactly. Existing outputs
+survive failed/cancelled exports. Optional tool-backed balancing, large-map
+performance and final native/package qualification remain pending. Each stored resolution is estimated independently,
 not asserted to be an exact aggregation of the finest estimated level.
 
 The scissors still use the historical endpoint. Before switching the UI, finish

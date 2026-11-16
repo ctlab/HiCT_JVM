@@ -97,9 +97,51 @@ public final class HictToMcoolExportPipeline {
                       final @NotNull Consumer<String> logger,
                       final @NotNull Consumer<Process> processSink,
                       final @NotNull BooleanSupplier cancellationRequested) throws Exception {
+    checkCancelled(cancellationRequested);
+    try(var staged=new ru.itmo.ctlab.hict.hict_library.converters.StagedConversionOutput(options)) {
+      convertUnstaged(staged.options(),logger,processSink,cancellationRequested);
+      checkCancelled(cancellationRequested);staged.publish();
+    }
+  }
+
+  private void convertUnstaged(ConversionOptions options, Consumer<String> logger, Consumer<Process> processSink,
+      BooleanSupplier cancellationRequested) throws Exception {
     if (options.approximateRebin()) {
       logger.accept("Using the internal approximate float64 exporter; native source contacts remain unchanged.");
       new ru.itmo.ctlab.hict.hict_library.converters.ApproximateCoolerExporter().export(options, logger, cancellationRequested);
+      return;
+    }
+    if (HictToMcoolConverter.hasFloatingPointValues(options)) {
+      ExternalToolchainManager.ResolvedToolchain balancingToolchain = null;
+      if (options.balanceExportedCoolers() && options.exportMode() != ConversionOptions.ExportMode.INTERNAL) {
+        try { balancingToolchain = toolchainManager.requireHictkToolchain(); }
+        catch (IllegalStateException unavailable) {
+          if (options.exportMode() == ConversionOptions.ExportMode.HICTK) throw unavailable;
+          logger.accept("WARNING: hictk balancing is unavailable; stored floating-point values will be exported unbalanced.");
+        }
+      }
+      logger.accept("Writing stored floating-point values without rounding or approximate rebinning.");
+      new HictToMcoolConverter().convert(options, logger, cancellationRequested);
+      if (balancingToolchain != null) {
+        final boolean single = isSingleCoolerOutput(options.outputPath());
+        final List<Long> levels;
+        try (var reader = HDF5Factory.openForReading(options.outputPath().toFile())) {
+          levels = single ? List.of(reader.int64().getAttr("/", "bin-size"))
+            : reader.object().getAllGroupMembers("/resolutions").stream().map(Long::parseLong).sorted().toList();
+        }
+        for (long level : levels) {
+          checkCancelled(cancellationRequested);
+          String root = single ? "/" : "/resolutions/" + level;
+          if (runHictkBalance(balancingToolchain, options.outputPath() + (single ? "" : "::" + root), options.parallelism(),
+              options.outputPath().toAbsolutePath().getParent(), logger, processSink, cancellationRequested)) {
+            try (var writer = HDF5Factory.open(options.outputPath().toFile())) {
+              if (writer.object().isDataSet(single ? "/bins/weight" : root + "/bins/weight"))
+                writer.string().setAttr(root, ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.WEIGHTS, "PRESENT");
+            }
+          }
+        }
+      } else if (options.balanceExportedCoolers() && options.exportMode() == ConversionOptions.ExportMode.INTERNAL)
+        logger.accept("WARNING: Direct internal Cooler exporter cannot run Cooler balancing; output retains only genuine source weights.");
       return;
     }
     final var effectiveMode = resolveEffectiveMode(options);
@@ -572,7 +614,7 @@ public final class HictToMcoolExportPipeline {
     }
   }
 
-  private static void runHictkBalance(final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
+  private static boolean runHictkBalance(final @NotNull ExternalToolchainManager.ResolvedToolchain toolchain,
                                       final @NotNull String coolerUri,
                                       final int parallelism,
                                       final @NotNull Path workDirectory,
@@ -599,8 +641,10 @@ public final class HictToMcoolExportPipeline {
         processSink,
         cancellationRequested
       );
+      return true;
     } catch (IllegalStateException balanceFailure) {
       logger.accept("WARNING: hictk balance failed for exported Cooler; output remains unbalanced. " + balanceFailure.getMessage());
+      return false;
     }
   }
 

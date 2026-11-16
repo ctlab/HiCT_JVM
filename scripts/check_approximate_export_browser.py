@@ -191,12 +191,44 @@ def main():
             secondary_chip.wait_for()
             assert json.loads(app.http('/attach',{}))['openFileResponse']['capabilities']['approximation']==caps['approximation']
             page.screenshot(path=str(output/'reopened-estimated-session.png'))
+            # Ordinary export preserves these stored estimates without applying another model.
+            check.menu('File','Export matrix')
+            dialog = page.get_by_role('dialog').filter(has=page.get_by_text('Export matrix to Cooler',exact=True))
+            assert not dialog.locator('#export-approximate-rebin').is_checked()
+            dialog.locator('#export-balance-coolers').uncheck()
+            dialog.locator('#export-all-resolutions').check()
+            ordinary_name = 'stored-'+output.name+'.mcool'
+            dialog.locator('input[placeholder="matrix.mcool"]').fill(ordinary_name)
+            with page.expect_response('**/convert/jobs') as submitted:
+                dialog.get_by_role('button',name='Export Cooler',exact=True).click()
+            assert submitted.value.ok, submitted.value.text()
+            ordinary_id = submitted.value.json()['jobId']
+            assert submitted.value.request.post_data_json.get('approximateRebin',False) is False
+            dialog.get_by_role('button',name='Dismiss',exact=True).click()
+            page.locator('.jobs-button').click()
+            deadline = time.monotonic()+60
+            while time.monotonic()<deadline:
+                ordinary_result = json.loads(app.http('/convert/jobs/'+ordinary_id))
+                if ordinary_result['status'] in ('finished','failed','cancelled'):
+                    break
+                page.wait_for_timeout(100)
+            assert ordinary_result['status']=='finished',ordinary_result
+            ordinary_row = page.locator('.job-row').filter(has=page.get_by_text(ordinary_name,exact=True))
+            with page.expect_download() as download:
+                ordinary_row.get_by_role('link',name='Download result',exact=True).click()
+            ordinary_artifact = output/'stored.mcool'; download.value.save_as(ordinary_artifact)
+            page.screenshot(path=str(output/'stored-export-job.png'))
+            subprocess.run([args.cooler_python,str(Path(__file__).with_name('check_stored_float_cooler.py')),
+                '--original',str(artifact),'--exported',str(ordinary_artifact),
+                '--session',str(imported_session),
+                '--output',str(output/'stored-parity.json')],check=True)
             assert not check.errors,check.errors
             assert hashlib.sha256(source.read_bytes()).hexdigest()==digest
             (output/'results.json').write_text(json.dumps({'status':'ok','jobId':job_id,'sourceSha256':digest,
                 'checks':['explicit opt-in','balanced output disabled','staged job flag propagation','Jobs delivery after dialog dismissal',
                           'actual result download','independent Cooler/base-endpoint parity','native file unchanged','batch opt-in and default unbalanced output',
-                          'Jobs open imported result','primary and secondary estimated labels','fractional reimport parity','session provenance save/restore'],
+                          'Jobs open imported result','primary and secondary estimated labels','fractional reimport parity','session provenance save/restore',
+                          'ordinary export without another approximation','exact stored float Cooler parity'],
                 'pageErrors':check.errors},indent=2))
             browser.close()
     finally:

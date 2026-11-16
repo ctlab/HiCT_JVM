@@ -2764,3 +2764,47 @@ export engines, as reproduced in `/tmp/hict-reimport-audit/export.log`; it does
 not silently round the values. Closing that path remains required, together with
 shared-bin expected/histogram accounting, sequence-scale geometry and final
 release/publication qualification. The full goal is still active.
+
+
+## Ordinary floating-point Cooler export (2026-11-16)
+
+Closed the floating-point re-export gate identified above. The ordinary exporter
+selects float64 or int64 independently per stored resolution and remaps source
+bin identities without applying the approximate endpoint model again. Mixed
+pyramids preserve integer counts above 2^53. Source units, estimation provenance
+and genuine weights survive; reversing native bins or an AGP component reverses
+weights consistently. Known absent filler vectors are omitted. Integer output
+now uses int64 instead of narrowing to int32. Integer aggregate/duplicate overflow
+is rejected, including by bypassing unchecked native compaction for large counts.
+Both writers now distinguish cis totals from interchromosomal contacts.
+
+Ordinary library and job/CLI exports stage output beside the destination, publish
+only after success, and remove private files after failure/cancellation. Tests
+cancel after axes are emitted and inject a NaN source value; existing destinations
+and source bytes remain unchanged. Auto mode with balancing disabled uses the
+internal mixed-type writer without requiring hictk. Optional hictk balancing after
+this writer is implemented but remains a tool/platform qualification gate.
+
+`./gradlew test shadowJar -x copyWebUI --offline` passed: 560 tests, zero
+failures/errors, seven optional skips. Focused tests cover `.cool`/`.mcool`,
+both native/AGP reversal, mixed types, large counts, real two-chromosome cis
+accounting, overflow and reimport/ordinary re-export provenance. WebUI production
+code was unchanged. `git diff --check` passed for the owned increment.
+
+The extended Chromium journey passed all fourteen checks, with no page errors:
+explicit approximate export, actual Jobs download, independent base-endpoint
+oracle, import/Open result, primary/secondary Estimated labels, save/close/restore,
+then ordinary export with approximate rebinning off. Python Cooler compares every
+stored pixel/index and dense cell exactly at 4/10 bp. Both retain total 22, float64
+counts and estimation provenance, with no invented weights. Current-assembly
+chromosome names are checked against saved AGP because singleton scaffold names
+can differ from input chromosome names. A separate packaged CLI export in auto
+mode, without approximation or balancing, also matches exactly.
+
+Evidence: `/tmp/hict-stored-float-qualified/{results,stored-parity,cli-parity}.json`;
+`stored-export-job.png` was visually inspected. Immutable server SHA-256:
+`caea851620538947cd5273ea9091ed2ad8701d0f5fa3731108654fe470b08238`
+(`server.artifact.sha256`). This qualifies tiny-fixture correctness and Jobs delivery;
+it does not establish large-map latency, optional balancing or final package UX.
+Shared-bin expected/histogram accounting, sequence-scale geometry and the main
+scissors transition remain outstanding P1 dependencies. The goal remains active.
