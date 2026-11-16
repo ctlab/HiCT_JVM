@@ -193,6 +193,12 @@ def main():
                     },
                 )
                 # Observe the real normalization operation, without changing it.
+                # Opening can finish with an unweighted default preset. Establish
+                # the opposite policy so selecting None always performs a change.
+                page.evaluate(
+                    "async()=>{const v=window.__hictBenchmark.manager().visualizationManager;await v.waitForPendingOptionRequests();await v.applyCoolerWeightsPolicy('REPLACE_NANS_WITH_ONE',true);await v.waitForPendingOptionRequests();}"
+                )
+                expect(page.locator("#normalization-mode")).to_have_value("file")
                 page.evaluate(
                     """()=>{const v=window.__hictBenchmark.manager().visualizationManager,f=v.applyCoolerWeightsPolicy.bind(v);v.applyCoolerWeightsPolicy=(...args)=>(window.__normalizationOperation=f(...args));}"""
                 )

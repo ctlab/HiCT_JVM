@@ -102,6 +102,74 @@ class ExampleDownloaderTest {
     }
   }
 
+  @Test void jobsRetainNamedCompletedAttemptsAndExposeTheExactDownloadIdentity() throws Exception {
+    serve("/f", exchange -> send(exchange, 200, payload, payload.length));
+    var d = downloader();
+    var first = d.start(example(file("first.bin", "/f", payload.length, sha(payload), true)));
+    assertNotNull(first.jobId());
+    assertEquals(first.jobId(), await(d).jobId());
+    var entry = example(file("second.bin", "/f", payload.length, sha(payload), true));
+    var secondEntry = new ExamplesCatalog.Example("ex2", entry.sectionId(), entry.source(), entry.bundled(),
+      entry.body().copy().put("id", "ex2").put("title", "Second dataset"));
+    var second = d.start(secondEntry);
+    assertNotEquals(first.jobId(), second.jobId());
+    assertEquals(second.jobId(), await(d).jobId());
+    var jobs = d.backgroundJobs();
+    assertEquals(2, jobs.size());
+    assertEquals(first.jobId(), jobs.get(0).id());
+    assertEquals("finished", jobs.get(0).state());
+    assertEquals("T", jobs.get(0).details().title());
+    assertEquals(payload.length, jobs.get(0).details().completedBytes());
+    assertEquals("ex1", jobs.get(0).outputs().get(0).filename());
+    assertEquals("Second dataset", jobs.get(1).details().title());
+    assertEquals(jobs.get(1).details(), jobs.get(1).withId("examples/" + second.jobId()).details());
+    assertFalse(d.cancelBackgroundJob(first.jobId()));
+    assertFalse(d.cancelBackgroundJob(second.jobId()));
+  }
+
+  @Test void exampleJobHistoryHasABoundedSessionLifetime() throws Exception {
+    payload = new byte[]{1};
+    serve("/f", exchange -> send(exchange, 200, payload, payload.length));
+    var d = downloader();
+    String first = null, last = null;
+    for (int index = 0; index < 52; index++) {
+      var status = d.start(example(file("one.bin", "/f", 1, sha(payload), true)));
+      if (first == null) first = status.jobId();
+      last = status.jobId();
+      assertEquals(ExampleDownloader.State.READY, await(d).state());
+    }
+    var jobs = d.backgroundJobs();
+    assertEquals(50, jobs.size());
+    assertNotEquals(first, jobs.get(0).id());
+    assertEquals(last, jobs.get(jobs.size() - 1).id());
+    assertEquals("finished", jobs.get(jobs.size() - 1).state());
+  }
+
+  @Test void chunkedUnknownLengthDoesNotPresentBytesSoFarAsTheTotal() throws Exception {
+    var release = new java.util.concurrent.CountDownLatch(1);
+    serve("/chunked", exchange -> {
+      try {
+        exchange.sendResponseHeaders(200, 0);
+        exchange.getResponseBody().write(payload, 0, 131072);
+        exchange.getResponseBody().flush();
+        release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        exchange.getResponseBody().write(payload, 131072, payload.length-131072);
+      } catch (Exception failure) { throw new RuntimeException(failure); }
+    });
+    var d = downloader();
+    try {
+      d.start(example(file("chunked.bin", "/chunked", 0, sha(payload), true)));
+      for (int count=0; count<100 && d.status().downloadedBytes()==0; count++) Thread.sleep(20);
+      assertTrue(d.status().downloadedBytes()>0);
+      assertEquals(ExampleDownloader.State.RUNNING, d.status().state());
+      assertEquals(0, d.status().totalBytes());
+      assertEquals(0, d.status().progress());
+      assertNull(d.backgroundJobs().get(0).progress());
+    } finally { release.countDown(); }
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertEquals(payload.length, d.status().totalBytes());
+  }
+
   @Test void publishesPreparedReferenceAndRecordsBothPinnedAndDerivedHashes() throws Exception {
     var bytes = new java.io.ByteArrayOutputStream();
     try (var gzip = new java.util.zip.GZIPOutputStream(bytes)) {
@@ -381,6 +449,7 @@ class ExampleDownloaderTest {
     var s = await(d);
     assertEquals(ExampleDownloader.State.READY, s.state(), s.error());
     assertEquals(1, s.skippedOptional().size());
+    assertEquals(s.skippedOptional(), d.backgroundJobs().get(0).details().warnings());
     var d2 = downloader();
     d2.start(example(file("c.bin", "/missing", 0, null, true)));
     assertEquals(ExampleDownloader.State.FAILED, await(d2).state());

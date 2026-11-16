@@ -4279,3 +4279,81 @@ Browser acceptance serves these new assets separately from the JAR's older embed
 interface. Combined SFX/native/platform, dense-map/soak/non-default-gamma performance,
 wider graph/NaN provenance and the remaining release/publication gates stay open.
 Protected plans/owner files are unchanged. Nothing pushed, merged or tagged.
+
+## Jobs-first example downloads and recovery (2026-11-17)
+
+This increment implements the download handoff portion of P7. The catalog, real
+downloader, HTTP job routes and actual Jobs controls are exercised together using
+a controlled local TLS provider. The provider serves a checksum-pinned valid HDF
+fixture, supports Range/ETag resume, can pause transfers, fail required/optional
+files and omit Content-Length. A test-only constructor policy permits its owned
+TLS port; production URL validation, bind/CORS and bundled catalogs are unchanged.
+The fixture class and main API server run from frozen JAR snapshots; browser tests
+serve the new WebUI assets separately. This qualifies a development pair, not a
+combined SFX, native wrapper or public example provider.
+
+Final evidence:
+
+- `/tmp/hict-example-jobs-web-08.log`: WebUI build, type checking and existing
+  numerical/DTO/streaming checks pass. All six changed/new UI files pass Prettier;
+  the three changed/new Python browser scripts pass Black checking.
+- `/tmp/hict-example-jobs-jvm-full-08.log`: 597 tests, zero failures/errors and
+  seven optional skips. Added tests cover retained attempt identities, scoped
+  cancellation, bounded history, warnings and truly unknown transfer totals.
+- `/tmp/hict-example-jobs-ui-06/results.json`: 11 browser cases, plus missing-ID
+  HTTP 400, unknown-ID HTTP 404 and stale-cancellation HTTP 404 assertions. Cases
+  cover catalog Retry, focused named byte progress, checksum-verified map opening
+  exactly once with known raw tensor cells, closure preserving transfer without
+  auto-opening, failed attempts/retry under new identities, actual Range resume,
+  indeterminate totals, workspace changes, late start replies, optional warnings
+  and 640 px scrolling/keyboard access. `/tmp/hict-example-jobs-ui-07/results.json`
+  independently repeats all 11 with successful exit.
+- `/tmp/hict-example-jobs-other-05/browser/results.json`: ten existing service and
+  FASTA-only cases. Its controlled file chooser replaces obsolete test selectors.
+  FASTA-only Create/Open from Jobs followed by the actual AGP export downloads a
+  complete 12,017 bp component row. Source hashes remain unchanged. The optional
+  public DNA Zoo download block is explicitly skipped; the dedicated TLS suite
+  covers example downloads without external-provider variability.
+- `/tmp/hict-example-jobs-responsive-02/results.json`: 15 cases;
+  `/tmp/hict-example-jobs-files-02/results.json`: 14 destination/cancellation cases.
+- `/tmp/hict-example-jobs-transactions-03/results.json`: 16 delayed normalization,
+  read/write, source/preset/session/editor cases. An earlier repeat timed out
+  because the opening preset had already selected None; choosing None again
+  correctly performed no operation. The driver now explicitly establishes and
+  asserts weighted initial state before intercepting the opposite change. The
+  original race and pixel assertions remain intact. The incomplete run is not
+  counted.
+- `/tmp/hict-example-jobs-midpoint-02/results.json`: 13 midpoint cases.
+  `/tmp/hict-example-jobs-oe-02/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 O/E/mode/signal cases.
+  `/tmp/hict-example-jobs-tracks-02/{results.json,controls/results.json}`: 13+8
+  track/source cases. `/tmp/hict-example-jobs-exact-02/results.json`: ten exact
+  whole-map signal scan/cancellation cases.
+- `/tmp/hict-example-jobs-observed-02/browser/results.json`: 12 graph-editor cases;
+  `/tmp/hict-example-jobs-legacy-02/browser/results.json`: four detailed histogram
+  cases. Both physical real-map copies remain unchanged at 154,317,488 bytes,
+  SHA-256 `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+
+Final screenshot review covers the named byte-progress card and 640 px scrolled
+history with the fixed Close header and retained optional-file warning. Browser
+window-error captures are empty; deliberately injected provider failures remain
+confined to their failure scenarios. Earlier fixture/driver diagnostics included
+Java source-launch classloader access, an attribute assertion and obsolete
+FASTA-only selectors; corrected final compiled-fixture runs pass. Scientific
+sequence/cut suites were not rerun for this increment.
+
+Frozen WebUI dist SHA-256 (sorted relative paths/NUL/bytes, excluding its electron subtree):
+`b59b81795e75504e9f59d2ff1a6daf1b9b4472e8175e107555449957959812ee`.
+Development JAR `hict_server-2.0.37-44f1f5b-webui_28ba7f9-fat.jar` SHA-256:
+`0d362f66754de88b9f0b3739170914c7c04f361780caa09a44b11407b4423098`.
+Subsequent conversion/wizard phases, cache/catalog integrity provenance, public
+provider availability, OSD resolution/diagonal checks, other platforms and final
+release/publication gates remain open. Protected plans and owner files are
+unchanged. Nothing pushed, merged or tagged.
+
+`/tmp/hict-example-jobs-hist-01/results.json` adds 13 final inline histogram cases
+with unchanged inputs, empty window errors and image-transfer peak four. Isolated
+pan acknowledgements are 15.7–17.4 ms; sampled pans are 24.0–26.1 ms against the
+150 ms fixture gate. This does not qualify dense maps or native packages. Together
+the final development pair passes 169 browser scenarios plus the independent
+11-case download repeat, all with successful process exits.

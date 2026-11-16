@@ -6,7 +6,22 @@ import java.util.Locale;
 /** Common read-only representation of an existing job service. */
 public record BackgroundJob(String id, String kind, String state, Double progress,
                             Long createdAtMs, Long startedAtMs, Long finishedAtMs,
-                            String message, String error, List<Output> outputs) {
+                            String message, String error, List<Output> outputs,
+                            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) Details details) {
+  public record Details(String title, Long completedBytes, Long totalBytes, String currentFile,
+                        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<String> warnings,
+                        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String exampleId) {
+    public Details { warnings = warnings == null ? List.of() : List.copyOf(warnings); }
+    public Details(String title, Long completedBytes, Long totalBytes, String currentFile) {
+      this(title, completedBytes, totalBytes, currentFile, List.of(), null);
+    }
+  }
+
+  public BackgroundJob(String id, String kind, String state, Double progress,
+                       Long createdAtMs, Long startedAtMs, Long finishedAtMs,
+                       String message, String error, List<Output> outputs) {
+    this(id, kind, state, progress, createdAtMs, startedAtMs, finishedAtMs, message, error, outputs, null);
+  }
   public record Output(String filename, String action, String fastaFilename, String agpFilename, String mapFilename, String displayMode,
                        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String displayName) {
     public Output(String filename, String action, String fastaFilename, String agpFilename, String mapFilename, String displayMode) {
@@ -42,7 +57,7 @@ public record BackgroundJob(String id, String kind, String state, Double progres
   }
 
   public BackgroundJob withId(String globalId) {
-    return new BackgroundJob(globalId, kind, state, progress, createdAtMs, startedAtMs, finishedAtMs, message, error, outputs);
+    return new BackgroundJob(globalId, kind, state, progress, createdAtMs, startedAtMs, finishedAtMs, message, error, outputs, details);
   }
 
   private static Long timestamp(Long value) {

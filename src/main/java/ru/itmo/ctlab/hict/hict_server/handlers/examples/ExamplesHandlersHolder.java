@@ -108,13 +108,16 @@ public class ExamplesHandlersHolder extends HandlersHolder {
   public void addHandlersToRouter(final @NotNull Router router) {
     router.post("/examples/catalog").handler(ctx -> {
       final var root = dataDirectory();
-      final var json = ExamplesCatalog.load(root).toJson();
-      // An example counts as downloaded when its manifest exists and every required file is on disk.
-      for (final var entry : json.getJsonArray("examples")) {
-        final var example = (io.vertx.core.json.JsonObject) entry;
-        example.put("downloaded", root != null && isDownloaded(root, example));
-      }
-      ctx.response().putHeader("content-type", "application/json").end(json.encode());
+      vertx.executeBlocking(() -> {
+        final var json = ExamplesCatalog.load(root).toJson();
+        // An example counts as downloaded when its manifest exists and every required file is on disk.
+        for (final var entry : json.getJsonArray("examples")) {
+          final var example = (io.vertx.core.json.JsonObject) entry;
+          example.put("downloaded", root != null && isDownloaded(root, example));
+        }
+        return json;
+      }, false).onSuccess(json -> ctx.response().putHeader("content-type", "application/json").end(json.encode()))
+        .onFailure(ctx::fail);
     });
     router.post("/examples/download/start").handler(ctx -> {
       final var body = ctx.body().asJsonObject();
@@ -124,16 +127,17 @@ public class ExamplesHandlersHolder extends HandlersHolder {
         ctx.fail(new HttpException(400, "exampleId is required"));
         return;
       }
-      final var example = ExamplesCatalog.load(root).find(id);
-      if (example == null) {
-        ctx.fail(new HttpException(404, "Unknown example " + id));
-        return;
-      }
-      try {
-        ctx.response().putHeader("content-type", "application/json").end(Json.encode(downloader(root).start(example)));
-      } catch (final IllegalStateException busy) {
-        ctx.fail(new HttpException(409, busy.getMessage()));
-      }
+      vertx.executeBlocking(() -> ExamplesCatalog.load(root).find(id), false).map(example -> {
+        if (example == null) {
+          throw new HttpException(404, "Unknown example " + id);
+        }
+        try {
+          return Json.encode(downloader(root).start(example));
+        } catch (final IllegalStateException busy) {
+          throw new HttpException(409, busy.getMessage());
+        }
+      }).onSuccess(json -> ctx.response().putHeader("content-type", "application/json").end(json))
+        .onFailure(ctx::fail);
     });
     router.post("/examples/download/status").handler(ctx -> {
       final var root = dataDirectory();

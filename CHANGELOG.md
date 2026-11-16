@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Follow example downloads in Jobs with dataset names, honest byte progress, retained results, optional-file warnings and focused recovery, while keeping automatic opening tied to the user's current intent.
+- Keep Jobs controls reachable while scrolling, move catalog disk checks off the HTTP event loop, and make final example verification cancellable.
+
 - Adjust ordinary gradient colors with a draggable and keyboard-accessible midpoint, retaining independent source curves through sessions, presets and Rendering Pipeline.
 - Wait for preview changes when saving a user preset and keep Secondary presets scoped to that source in the single-map layout.
 

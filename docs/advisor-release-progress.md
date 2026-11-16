@@ -27,7 +27,7 @@ describe earlier releases; they must not override the decisions below.
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
-| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
+| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first example downloads, retained attempt history, byte/indeterminate progress, scoped cancellation, recovery and opening intent implemented; primary Chromium workflows and FASTA-only AGP verified; subsequent conversion/opening phases, cache provenance, OSD/resolution and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
@@ -646,3 +646,39 @@ non-default-gamma performance, wider graph/NaN provenance, accessibility, native
 platforms, P7–P9 and release/publication artifacts still need qualification or
 implementation. P6 and the overall goal remain active. Protected plans/owner files
 are unchanged; nothing pushed, merged or tagged.
+
+## Example downloads in Jobs and recovery
+
+Starting an example download now hands progress to Jobs, focused on the named
+dataset. Known totals show bytes/percentage; unknown totals remain indeterminate.
+Reference preparation and cancellable verification have explicit messages. Optional
+file warnings remain on the result. The server retains at most 50 attempts, each
+with its own identity. Cancelling an older attempt cannot cancel its replacement.
+Failure/cancellation offers a return to the matching example card for retry or
+compatible HTTP Range resume. Catalog errors have a separate Retry action.
+
+Quick-start automatic opening belongs to the accepted download attempt. Closing
+Jobs, changing workspace, failure or cancellation revokes that intent. A late start
+reply after catalog closure cannot reopen Jobs. Completed results remain available
+explicitly. Jobs polling rejects stale host/lifecycle replies and its fixed header
+keeps Close reachable while scrolling long histories. Catalog filesystem checks
+run off the HTTP event loop. Existing API clients and other job services retain
+their response behavior; optional job details extend the shared DTO.
+
+Real Chromium controls exercise the actual download handlers and downloader against
+a controlled TLS provider, with pinned checksums, a valid HDF matrix, interrupted
+Range transfers, failure/retry, unknown-length bodies, optional warnings and
+independent attempt identities. This does not change the production URL policy.
+FASTA-only Create/Open from Jobs followed by Assembly Export to AGP preserves all
+12,017 sequence bases in the regression fixture. The WebUI build and 597 JVM tests
+pass, with zero failures/errors and seven optional skips. Detailed final browser
+evidence, artifact hashes and diagnostics are in reinforcement-validation.md;
+user guidance is example-jobs.md.
+
+P7 remains in progress: conversion/wizard phases keep their existing workflow;
+cache readiness currently checks manifest/file existence rather than proving a
+current-catalog fingerprint and rehashing cached content. Public example providers,
+OSD resolution transitions and diagonal provenance require their wider checks.
+P8/P9, other package qualification, accessibility, dense-map performance, native
+platforms and publication/release artifacts remain open. The goal stays active.
+Protected plans/owner files are unchanged; nothing pushed, merged or tagged.

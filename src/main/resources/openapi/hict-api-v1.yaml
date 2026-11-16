@@ -1451,6 +1451,11 @@ paths:
     post:
       tags: [Files]
       summary: Status of the example download
+      description: >-
+        Includes the local jobId, whose /jobs identifier is download/{jobId}.
+        A zero totalBytes means that the transfer size is unknown; progress in
+        /jobs is null until a reliable total is available. Cancellation via
+        /jobs/cancel is scoped to this exact download attempt.
       operationId: exampleDownloadStatus
       responses:
         '200':
@@ -1853,6 +1858,11 @@ paths:
     get:
       tags: [Jobs]
       summary: List background jobs in this server session
+      description: >-
+        Example download attempts retain at most 50 entries, including the current
+        job. Named download details include bytes received, a known total (zero
+        when unknown), current file and optional-file warnings. Terminal history
+        is read-only and cannot cancel a later download.
       operationId: listBackgroundJobs
       responses:
         '200':
@@ -2400,6 +2410,16 @@ components:
         finishedAtMs: { type: integer, format: int64, nullable: true }
         message: { type: string, nullable: true }
         error: { type: string, nullable: true }
+        details:
+          type: object
+          nullable: true
+          properties:
+            title: { type: string, nullable: true }
+            completedBytes: { type: integer, format: int64, minimum: 0, nullable: true }
+            totalBytes: { type: integer, format: int64, minimum: 0, nullable: true, description: Zero means an unknown transfer size. }
+            currentFile: { type: string, nullable: true }
+            warnings: { type: array, items: { type: string } }
+            exampleId: { type: string, nullable: true, description: Catalog entry to focus when resuming an example. }
         outputs:
           type: array
           items:
