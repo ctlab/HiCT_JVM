@@ -2975,3 +2975,58 @@ migration, large-map performance and packaged-platform/soak qualification.
 Quantitative tracks still sample native bins before mapping their positions to
 the base axis. No production/release/publication-complete claim follows from this
 tiny-fixture qualification.
+
+## Feature-edge cuts and feature navigation — 2026-11-16
+
+GTF/GFF feature context menus now offer exact cuts at projected assembly start/end
+boundaries. Both axes and both biological strands use zero-based, half-open bounds.
+Existing joins/assembly endpoints are disabled. Targets retain their opening
+session/revision and are revalidated before a command; busy/read-only/exporting,
+disposed or changed assemblies cannot execute a stale target. The shared exact-cut
+path preserves the current BP center while updating native reference axes. Failed
+requests do not clear selection or apply a response; refresh failures are reported.
+
+Advisor item 9 exposed two actual navigation defects: Center used a helper that
+changed resolution, and Zoom calculated native pixel coordinates before entering
+the base grid. Center now retains scale; Zoom restores a BP midpoint at measured
+letter scale. General BP-range navigation uses the coordinate model too, with no
+single-bin-scale cap for large ranges. The old copied-coordinate grouping was
+explicit `toLocaleString("en-US")`; copied loci/ranges now use ASCII digits without
+grouping. Display rulers keep their existing formatting.
+
+`npm run build:web` passed, including type checks, existing regressions and the new
+default `scripts/check-feature-edge-cuts.mjs` checks. Those exercise oriented offsets,
+boundary validation, stale session/revision/menu targets, busy/read-only/export/
+disposal guards, rejected requests, preserved BP views, Center/Zoom scale semantics
+and large-range arithmetic. Existing clipboard/fallback checks pass with ungrouped
+loci. JVM `./gradlew test shadowJar -x copyWebUI --offline` passed: 571 tests, zero
+failures/errors, seven optional skips. Logs: `/tmp/hict-feature-actions-copy-web.log`
+and `/tmp/hict-feature-cuts-jvm.log`. The known large WebUI chunk warning remains.
+
+`scripts/check_feature_edge_cuts_browser.py` creates fresh physical 4 kb contacts,
+IUPAC FASTA, GTF and GFF3 inputs. Real horizontal GTF menu clicks cut the 4–6 inclusive
+source feature at assembly boundaries 3/6. After undo/reversal, vertical menu clicks
+cut its projected boundaries 3994/3997. GFF3 source feature 1–1 is one retained base;
+its reversed start creates a one-base terminal contig and its assembly-end cut is
+disabled. Final lengths are 3994/3/2/1. A captured target becomes stale after undo
+and sends no request. Every cut preserves its BP center exactly in this fixture,
+including the first native-scale cut. History, full reverse-complement sequence,
+save/close/restore, disabled joins and unchanged native bytes pass.
+
+Actual Center and Zoom actions after a native cut both target BP 1049.5. Center
+retains native resolution 0.006; Zoom reaches the visible FASTA letters at
+0.000505050505050505 and the same BP midpoint. Real clipboard output is
+`tiny_3_4000:1031-1063` (one-based inclusive, no separators). All 15 checks pass
+without page errors. Evidence: `/tmp/hict-feature-actions-browser-02/results.json`
+and screenshots, visually inspected. The existing scissors/wheel/overview/figure/
+session workflow also passes all 17 checks:
+`/tmp/hict-feature-actions-sequence-browser/results.json`.
+
+Immutable server SHA-256:
+`a42db34371d4cb70d29a3078de8889980593622131a297e08221662d53c60540`.
+Separately served WebUI distribution SHA-256 (same sorted-path/NUL/bytes method):
+`ae94799078646e2daab7a165234f7dade0cb46ab2251e627bf6756e4e9e4514f`.
+Final embedded-package/platform, all annotation formats, secondary/disjoint levels,
+all entity-navigation callers and large-map performance are not qualified here.
+The feature-zoom screenshot also exposes sidebar control overflow to address in
+P4 layout work. P1/P4 and the complete release/publication goal remain active.

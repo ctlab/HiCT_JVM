@@ -81,6 +81,19 @@ exact-cut API. All sequence and original source-bin references remain available.
 Native raster extents are refreshed when a cut adds a shared reference. Older
 servers retain their existing endpoint and its explicit bin-removal warning.
 The guide and actual exact-cut request use the same boundary convention.
+Feature context menus also offer **Cut at feature start/end** at their projected
+assembly boundaries, independent of biological strand. These are zero-based,
+half-open boundaries, distinct from the one-based inclusive coordinates copied
+to the clipboard. Existing contig boundaries are disabled. Targets capture the
+current session/revision and are revalidated before sending an edit; stale,
+read-only, busy, exporting or disposed views cannot run a delayed cut. Both
+scissors and feature cuts preserve the visible BP locus while native reference
+axes are rebuilt.
+
+**Center on feature** keeps the current resolution; **Zoom to feature** uses the
+measured letter scale. Both carry BP destinations across coordinate transitions.
+Range navigation likewise uses BP destinations and fits large ranges without a
+single-bin-scale cap. Copied loci use ungrouped ASCII digits on every locale.
 
 Sequence-scale viewport diagnostics sample native BINS, rather than treating
 expanded base colors as new matrix observations. Expected-profile requests accept
@@ -94,7 +107,12 @@ workflow, real cuts producing a one-base fragment, reversal, keyboard history,
 wheel zoom to letters, overview navigation, viewport PNG/SVG/PDF and session
 save/close/restore. See `scripts/check_sequence_view_browser.py` and the validation
 ledger. This does not yet qualify the full secondary/disjoint-pyramid UI matrix,
-all track formats, hidden/no-bin 1D features, feature-edge cut menus, selection and
+all track formats, hidden/no-bin 1D features, selection and
 whole-map exports, or native desktop platforms. Quantitative 1D tracks still sample
 stored native bins before their positions are mapped onto the base axis; full
 base-scale quantitative and hidden-component track behavior remains P1/P4 work.
+The additional primary GTF/GFF3 browser workflow checks both feature edges on
+forward/reversed contigs, vertical/horizontal menus, a one-base feature, disabled
+joins, delayed actions after undo, BP view preservation, actual clipboard output,
+distinct Center/Zoom actions and restored sessions. It does not qualify feature
+edits on every track format or secondary-source assembly combination.

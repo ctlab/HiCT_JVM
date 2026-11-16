@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Cut exactly at GTF/GFF feature edges with stale-menu guards, preserve the BP view after cuts, and make Center/Zoom actions distinct across native/base scales.
+- Copy genome coordinates without thousands separators; fit BP navigation ranges through the active coordinate model.
+
 - Add a uniform base-scale map with explicit native-bin labels, aligned FASTA/features, pointer-anchored zoom and portable saved view coordinates.
 - Use sequence-preserving exact scissors on capable servers, refresh raster extents after cuts, and separate native-bin expected profiles from visible-bin profiles.
 

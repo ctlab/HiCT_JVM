@@ -21,10 +21,10 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary cuts/FASTA/BED6/wheel/overview/viewport exports/session workflow verified; feature-edge cuts, broader tracks/secondary/selection coverage and release qualification pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
-| P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
+| P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: feature Center/Zoom corrected and copied-coordinate grouping removed, browser verified after exact cuts; track/source UI separation, resize and broader track qualification pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | Pending; existing wheel-to-letters verified |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
@@ -157,7 +157,7 @@ independent oracle exactly: `/tmp/hict-shared-expected-bins-browser-03/results.j
 
 This is a qualified primary workflow, not completion of P1. Quantitative 1D
 tracks still sample stored bins, and hidden/no-bin track components, the full
-secondary/disjoint-pyramid UI matrix, feature-edge cutting, selection/whole-map
+secondary/disjoint-pyramid UI matrix, selection/whole-map
 exports, saved-bookmark migration, large-map latency and platform/package gates
 remain open. The browser served the current WebUI distribution separately from
 the JVM artifact; final embedded-package qualification is still required.
@@ -170,6 +170,22 @@ validates nested cuts past 2.5 Gb, both-strand historical cut replay, AGP slices
 compact responses and actual session save/close/reopen. Large-FASTA I/O remains
 unqualified. Native-level displays retain reference bins; sequence-scale displays
 clip short fragments to their retained base widths. P1 is not complete.
+
+Primary GTF/GFF3 feature menus now cut at projected start/end boundaries, with
+session/revision snapshots and revalidation. Existing joins are disabled, and
+undo makes a captured target stale without sending a cut. Cuts preserve the
+visible BP locus at native and base scales. Center keeps the current zoom;
+Zoom reaches readable letters at the same feature across a grid transition.
+Copied coordinates use ungrouped digits (the old commas came from explicit
+`toLocaleString("en-US")` calls). Real clipboard output after a cut is
+`tiny_3_4000:1031-1063`, one-based inclusive. Evidence:
+`/tmp/hict-feature-actions-browser-02/results.json` (15 checks, no page errors).
+All 4,000 IUPAC bases and native bytes remain unchanged. The existing 17-case
+sequence-view/export/session workflow also passes:
+`/tmp/hict-feature-actions-sequence-browser/results.json`.
+Broad track/source, entity navigation, layout and packaged release gates remain
+open. A sidebar control overflow seen in the feature-zoom screenshot belongs in
+the pending layout work; this increment does not qualify every responsive layout.
 
 ## Mandatory release gates
 
