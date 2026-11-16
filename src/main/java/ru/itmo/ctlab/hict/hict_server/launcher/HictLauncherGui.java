@@ -1719,6 +1719,18 @@ public final class HictLauncherGui {
             this.frame.dispose();
             this.closed.countDown();
           });
+        } else {
+          SwingUtilities.invokeLater(() -> {
+            // Do not hide a failed shutdown behind the ready-to-start card.
+            if ((this.serverProcess == null || !this.serverProcess.isAlive())
+              && this.browserProcesses.stream().noneMatch(Process::isAlive)) {
+              showActivityCard();
+              ((CardLayout) this.logCardsPanel.getLayout()).show(this.logCardsPanel, "start");
+              this.logCardsPanel.revalidate();
+              this.logCardsPanel.repaint();
+              updateButtons();
+            }
+          });
         }
       });
     }

@@ -259,6 +259,7 @@ class LauncherResetAcceptance {
       require(ready, "Launcher did not start a reachable real server");
       var owned = (Process) field("serverProcess");
       require(owned != null && owned.isAlive(), "Launcher lost ownership of its real server");
+      edt(() -> { invoke("toggleConfiguration"); return null; });
       SwingUtilities.invokeLater(() -> {
         try { ((JButton) field("stopButton")).doClick(); }
         catch (Exception ex) { throw new RuntimeException(ex); }
@@ -280,6 +281,14 @@ class LauncherResetAcceptance {
       require(owned.waitFor(15, java.util.concurrent.TimeUnit.SECONDS), "Launcher Stop left the server alive");
       require(owned.descendants().noneMatch(ProcessHandle::isAlive), "Launcher Stop left server descendants alive");
       results.add("Launcher starts the real packaged server, serves its version, and Stop terminates the owned process tree");
+      deadline = System.nanoTime() + 10_000_000_000L;
+      while (!edt(() -> ((javax.swing.JPanel) field("logCardsPanel")).getComponent(0).isShowing()) && System.nanoTime() < deadline) Thread.sleep(20);
+      require(edt(() -> !((javax.swing.JPanel) field("configurationPanel")).isVisible()), "Stop left configuration open");
+      require(edt(() -> ((javax.swing.JPanel) field("logCardsPanel")).getComponent(0).isShowing()), "Stop did not restore the simple start card");
+      require(edt(() -> !((javax.swing.JTextArea) field("logArea")).isShowing()), "Stop left the log card visible");
+      require(edt(() -> ((JButton) field("configureButton")).getText().equals("Show Configuration")), "Stop left the configuration toggle stale");
+      ImageIO.write(new Robot().createScreenCapture(edt(() -> frame.getBounds())), "png", output.resolve("after-stop.png").toFile());
+      results.add("Stop returns to the simple launcher with configuration and logs hidden");
       Files.write(output.resolve("results.txt"), results);
       results.forEach(System.out::println);
     } finally {

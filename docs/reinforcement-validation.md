@@ -2501,3 +2501,18 @@ development dependency findings retain their documented scope. Qualification
 records and acceptance-helper updates follow the frozen application build.
 No Java, native processing or WebUI runtime source changes follow `c9b15edb` /
 `95866b5` in this validation-record package.
+# Advisor item 1: launcher return after Stop (2026-11-16)
+
+Stop now restores the activity/start card on the Swing event-dispatch thread only
+after owned server and browser processes have stopped. Configuration and logs
+are hidden without clearing settings or log contents. Close-after-stop retains
+its separate close behavior. Full JVM suite: 519 tests, zero failures/errors,
+seven optional skips. Extended `scripts/check_launcher_reset.py` passed against
+the rebuilt fat JAR on private Xvfb: a real server starts and serves `/version`,
+Stop from the configuration view terminates it, the simple card is visible, the
+log is hidden and the configuration toggle reads Show Configuration. Screenshot
+visually inspected: `/tmp/hict-launcher-reset-blgi6lri/after-stop.png`.
+Full native-wrapper/platform/repeated-start matrix remains pending; this check
+does not qualify Windows or macOS. One premature acceptance invocation overlapped
+JAR rebuilding and failed reading the incomplete archive; rerun after build
+completion passed without changing application behavior.
