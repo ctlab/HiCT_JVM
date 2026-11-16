@@ -371,13 +371,16 @@ public final class RenderPipelineConfig {
       maxSignal = gradient.getMaxSignal();
     }
 
-    return colormapNode(
+    final var colorNode = colormapNode(
       signalExpression,
       colorToHex(startColor),
       colorToHex(endColor),
       minSignal,
       maxSignal
     );
+    if (options.getColormap() instanceof SimpleLinearGradient gradient && gradient.getGamma() != 1.0d)
+      colorNode.put("gamma", gradient.getGamma());
+    return colorNode;
   }
 
   private static @NotNull JsonObject defaultColdHotExpression() {
@@ -723,6 +726,8 @@ public final class RenderPipelineConfig {
           requiredTrackBindings
         );
         final var expressionKey = node.getJsonObject("input", defaultSourceNode("PRIMARY")).encode();
+        final double gamma = node.getDouble("gamma", 1.0d);
+        SimpleLinearGradient.validateGamma(gamma);
         if ("MODDOTPLOT_IDENTITY".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
           yield context -> {
             final var value = inputExpression.eval(context);
@@ -749,7 +754,7 @@ public final class RenderPipelineConfig {
           if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
           final var minValue = minExpression.eval(context);
           final var maxValue = maxExpression.eval(context);
-          return mapLinearColor(value, minValue, maxValue, startColor, endColor);
+          return mapLinearColor(value, minValue, maxValue, startColor, endColor, gamma);
         };
       }
       case "RGB" -> {
@@ -939,11 +944,12 @@ public final class RenderPipelineConfig {
                                     final double minValue,
                                     final double maxValue,
                                     final @NotNull Color startColor,
-                                    final @NotNull Color endColor) {
+                                    final @NotNull Color endColor, final double gamma) {
     final var safeMin = Double.isFinite(minValue) ? minValue : 0.0d;
     final var safeMaxCandidate = Double.isFinite(maxValue) ? maxValue : 1.0d;
     final var safeMax = safeMaxCandidate > safeMin ? safeMaxCandidate : safeMin + 1.0d;
-    final var standardized = Math.max(0.0d, Math.min((value - safeMin) / (safeMax - safeMin), 1.0d));
+    final var linear = Math.max(0.0d, Math.min((value - safeMin) / (safeMax - safeMin), 1.0d));
+    final var standardized = gamma == 1.0d ? linear : Math.pow(linear, gamma);
     final var red = interpolateColor(startColor.getRed(), endColor.getRed(), standardized);
     final var green = interpolateColor(startColor.getGreen(), endColor.getGreen(), standardized);
     final var blue = interpolateColor(startColor.getBlue(), endColor.getBlue(), standardized);

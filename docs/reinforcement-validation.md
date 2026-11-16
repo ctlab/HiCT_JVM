@@ -4196,3 +4196,86 @@ Browser tests serve these new assets separately from the embedded older interfac
 Combined/native package, dense-map profile memory/first-pass duration, broader
 custom graphs, midpoint/gamma and the other release/publication gates remain open.
 Protected plans and owner files are unchanged. Nothing pushed, merged or tagged.
+
+## Ordinary color midpoint and gamma persistence
+
+WebUI commit `28ba7f9`; matching version `2.0.37-44f1f5b-webui_28ba7f9`.
+
+SimpleLinearGradient now carries optional gamma (0.05–100, default 1). Ordinary
+RGBA transfer uses pow(clamp((signal-min)/(max-min),0,1),gamma); the midpoint is the
+signal whose blend is one half. This does not modify numeric input, thresholds,
+normalization or samples. The diamond supports pointer, keyboard/fine/page/Home/End
+adjustment and reset, with distinct space when thresholds are close. The rail
+evaluates the curve on its linear/log adjustment axis. O/E neutral remains 1 and
+identity palettes keep their own mapping, without an ordinary midpoint handle.
+
+The native path transforms its copied flat color buffer before calling the existing
+linear kernel; original arrays and the native ABI are unchanged. Java and LINEAR
+pipeline colors use the same power transfer. Non-default gamma survives DTO,
+session, source/global preset, editor, derived palette memory and export metadata
+paths. Default gamma is omitted where legacy representations omitted it. Saving a
+user preset waits for pending visualization changes. A real browser case exposed
+the existing Secondary-selected/single-layout preset path resetting Primary; that
+path now uses the captured Secondary scope.
+This applies to numeric/colormap settings; preset background and track styles
+remain shared scene settings.
+
+Final evidence:
+
+- `/tmp/hict-midpoint-web-05.log`: build, type check, all existing numerical/DTO/
+  streaming checks and expanded field-draft tests pass. New midpoint inverse tests
+  prove the half-color relation and known square/square-root cases, and retain a
+  newer gamma draft over an older acknowledgement. Prettier passes for all 17
+  changed/new WebUI files; the new Python driver passes Black checking.
+- `/tmp/hict-midpoint-jvm-full-03.log`: 594 tests, zero failures/errors, seven optional
+  skips. Four new ColorGammaTest cases cover known RGBA interpolation/endpoints,
+  finite bounds, legacy/explicit DTO encoding, lossless session transfer, graph/
+  traditional color agreement with unchanged numeric graph values, and native/Java
+  agreement within one channel byte without modifying input. The native gamma
+  test executes successfully, not as another optional skip.
+- `/tmp/hict-midpoint-ui-05/results.json`: 13 real-control cases. They assert gamma
+  against actual PNG colors and unchanged numeric inputs/other-source graph,
+  pointer position, thresholds/log-axis/reset, close handles, independent source/
+  Expected curves and fixed O/E neutral, source preset scope, portable graph
+  presets, immediate Save then exported user preset, graph-editor close, byte-
+  identical tiles after session restore, and 640 px keyboard endpoints.
+  `/tmp/hict-midpoint-ui-06/results.json` independently repeats all 13 and captures
+  the actual crowded-handle state before Focus range resets the domain.
+- `/tmp/hict-midpoint-transactions-01/results.json`: 16 previous delayed read/write,
+  normalization/source/preset/session/editor cases. `/tmp/hict-midpoint-exact-01/
+  results.json`: ten whole-map signal-scan, profile, cache/cancel and stale-mode cases.
+- `/tmp/hict-midpoint-oe-02/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 O/E/mode/signal cases.
+- `/tmp/hict-midpoint-responsive-01/results.json`: 15 responsive cases.
+  `/tmp/hict-midpoint-tracks-01/{results.json,controls/results.json}`: 13+8 track/
+  source/control cases.
+- `/tmp/hict-midpoint-observed-01/browser/results.json`: 12 Observed graph-editor
+  cases. `/tmp/hict-midpoint-legacy-01/browser/results.json`: four detailed histogram
+  cases. Both 154,317,488 byte physical real-map copies remain unchanged, SHA-256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- `/tmp/hict-midpoint-hist-01/results.json`: 13 inline histogram cases. Isolated
+  pan acknowledgements 13.2–22.9 ms; sampled pans 29.3–30.5 ms; image-transfer peak
+  four. This default-gamma fixture meets the 150 ms gate; dense-map/non-default-gamma
+  performance and packaged builds remain unqualified.
+
+Together: 134 final-build passing browser scenarios, plus the independent 13-case
+repeat, all with successful process exits and empty window-error captures. Existing
+injected 503s remain limited to explicit failure cases. Final screenshots reviewed
+include desktop pointer/curve controls, the truly crowded-handle lane in -06, and
+640 px controls. Earlier diagnostics found the real source-preset bug and missing
+gamma in two serialization paths. Initial driver runs also needed the Save tooltip
+locator (the icon changes its accessible text) and exact Rendering pipeline… menu
+label. Those incomplete runs are not counted. An early TypeScript check caught an
+overbroad edit to a percentile argument; the corrected final build passes. The
+first new graph unit assertion assumed raw rather than the existing clamped
+numeric-root semantics; the corrected independent expected clamp is unchanged by
+gamma. Scientific sequence/cut/file suites were not rerun for this increment.
+
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+`63ddfd5e36526536175b624ef58896ff1c2ad30bf4acc35af5f7ddae2dae87c8`.
+Development JAR `hict_server-2.0.36-5381e0b-webui_9aea0ec-fat.jar` SHA-256:
+`fde4daf84a2c4db269d6263b2eec0caa64fbe0f70b194dc17fec10385b7aecbc`.
+Browser acceptance serves these new assets separately from the JAR's older embedded
+interface. Combined SFX/native/platform, dense-map/soak/non-default-gamma performance,
+wider graph/NaN provenance and the remaining release/publication gates stay open.
+Protected plans/owner files are unchanged. Nothing pushed, merged or tagged.

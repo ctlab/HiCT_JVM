@@ -26,7 +26,7 @@ describe earlier releases; they must not override the decisions below.
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
-| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, inline viewport histogram/percentile fitting and protection of newer visualization drafts during normalization implemented and Chromium verified; draggable midpoint, broader native/performance and final qualification pending |
+| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
@@ -610,3 +610,39 @@ fit adds a full pass; dense-map resource/latency qualification remains required.
 Draggable midpoint/gamma, wider graph/NaN provenance, accessibility, platform/native
 packages, P7–P9 and final release/publication deliverables remain pending. The full
 goal is active; protected plans and owner files are unchanged.
+
+## Color midpoint across rendering and persistence
+
+Ordinary Observed/Expected gradients now offer a draggable diamond marking the
+half-RGBA blend signal. Keyboard arrows, fine steps, Home/End and Reset midpoint
+work without changing thresholds, input expressions or histogram samples. The
+rail previews the actual curve on the chosen slider axis. Close threshold handles
+get a separate midpoint lane. O/E retains neutral 1 and identity palettes retain
+their fixed mapping, without the ordinary midpoint control.
+
+The optional gamma parameter persists through DTOs, draft revisions, derived-mode
+memory, source/whole-graph/user presets, session restore, graph-editor round trips
+and export metadata. Legacy omitted/default gamma keeps the original appearance
+and representation. The native renderer applies the color curve to its own flat
+buffer, leaving numeric data intact and preserving its ABI. Rendering Pipeline
+uses the same ordinary colormap parameter. Saving user presets now flushes pending
+changes. Browser testing also found and fixed a Secondary preset resetting Primary
+in the single-map layout; Secondary stays scoped to its selected source.
+
+Final WebUI build/type checks and all 594 JVM tests pass (zero failures/errors,
+seven optional skips). Final Chromium acceptance has 134 passing scenarios plus
+an independent 13-case midpoint repeat. It includes actual PNG colors, unchanged
+numeric inputs and other-source state, pointer/keyboard/close-handle interactions,
+presets/export, graph editor and identical pixels after session restore. Existing
+O/E, transactions, exact scans, responsive, tracks and histogram workflows pass.
+Fixture sampled-pan acknowledgements are 29.3–30.5 ms with image-transfer peak four;
+this default-curve fixture result does not qualify dense-map gamma performance or
+native packages. Final visual review covers the separate crowded-handle lane and
+640 px controls. Details/hashes are in reinforcement-validation.md; user guidance
+is color-midpoint.md.
+
+The midpoint portion of item 22 is implemented. Dense-map/soak/profile-memory and
+non-default-gamma performance, wider graph/NaN provenance, accessibility, native
+platforms, P7–P9 and release/publication artifacts still need qualification or
+implementation. P6 and the overall goal remain active. Protected plans/owner files
+are unchanged; nothing pushed, merged or tagged.

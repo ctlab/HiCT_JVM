@@ -48,8 +48,8 @@ Navigation, source/processing changes and raster revisions refresh the chart.
 Obsolete queries are cancelled and cannot replace newer data. A failed refresh
 clears the stale curve, disables Fit levels, and offers **Retry**. The detailed
 histogram inspector in Rendering Pipeline remains available for axis and binning
-controls. A draggable color midpoint is still planned separately; the O/E neutral
-point must remain at 1.
+controls. The ordinary gradient's [color midpoint](color-midpoint.md) adjusts its
+color transfer without changing histogram samples; O/E neutral remains at 1.
 
 **Slider limits & data → Scan whole map** is a separate exact operation. In
 Expected/O/E it uses a whole-resolution fit, independently of this viewport's fit.

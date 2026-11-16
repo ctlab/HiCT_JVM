@@ -2745,6 +2745,13 @@ components:
 
     VisualizationOptionsRequest:
       type: object
+      description: >-
+        SimpleLinearGradient colormaps optionally accept gamma (finite, 0.05 through
+        100, default 1). Ordinary gradient colors interpolate with
+        pow(clamp((signal-minSignal)/(maxSignal-minSignal),0,1),gamma).
+        Gamma affects RGBA only, not numeric signals, histograms or thresholds.
+        O/E retains its neutral-at-1 ratio palette and identity palettes retain
+        their fixed mapping. Legacy payloads without gamma keep their appearance.
       additionalProperties: true
       properties:
         preserveRenderPipeline:
@@ -2775,6 +2782,10 @@ components:
         negative ratios are transparent. This palette does not fit an expected
         profile. Expected/O/E view selection retains its separate primary-map
         processing and uses the same palette mapping for O/E.
+        LINEAR colormap nodes optionally accept gamma in [0.05,100], default 1,
+        applying the same color-only power curve as ordinary gradient options.
+        Gamma does not alter the node input or numeric diagnostics and has no
+        effect on O/E or identity palette mappings.
       additionalProperties: true
 
     TileWithRangesResponse:

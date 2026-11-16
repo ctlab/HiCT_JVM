@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Adjust ordinary gradient colors with a draggable and keyboard-accessible midpoint, retaining independent source curves through sessions, presets and Rendering Pipeline.
+- Wait for preview changes when saving a user preset and keep Secondary presets scoped to that source in the single-map layout.
+
 - Scan the selected Expected/O/E signal with one independent whole-map profile across all blocks, preserving the viewport fit and distinguishing unsupported ratios from measured zeros.
 - Cancel exact-limit scans, reject obsolete responses, and keep completed slider limits steady while panning.
 
