@@ -30,3 +30,9 @@ End for the largest allowed size. Panel sizes are constrained when the workspace
 shrinks. Track appearance is under **Track appearance**. Optional advance
 preparation is under **Preparation**; ongoing work also appears in **Jobs**.
 Map weights are read directly and need no preparation.
+
+On narrow windows, file badges wrap onto another row. Hover a truncated badge to
+read its full filename. Menus stay within the window and scroll when necessary.
+Below 700 px, the side panel sits below the map; scroll the workspace to reach
+it. The collapse button points up/down there. HiCT remembers your explicit
+choice to show or hide the panel across window changes and restarts.

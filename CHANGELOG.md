@@ -4,6 +4,8 @@
 
 ### Navigation and visualization
 
+- Keep menus, Jobs and file badges within narrow windows, and make the stacked sidebar scrollable with usable signal controls.
+
 - Separate 1D tracks from map sources, add source weights through Add, and preserve typed settings and panel alignment across refreshes and resizing.
 - Identify file versus coverage weights and keep weight tracks current when normalization changes, including after precompute.
 

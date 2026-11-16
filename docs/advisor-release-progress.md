@@ -428,6 +428,22 @@ and soak qualification remain open. At 800 px after explicitly opening the
 sidebar, main-workspace controls still crop; responsive sidebar/ribbon work is
 a recorded follow-up. The manager modal itself fits that width. The full publication release is not complete.
 
+
+## Responsive workspace follow-up
+
+The recorded 800 px clipping is resolved. File badges wrap without displacing
+menus/Jobs, all seven dropdowns stay inside narrow windows, and signal controls
+fit the sidebar. Below 700 px the stacked panel keeps its content height and
+scrolls through the workspace. Explicit panel choices remain saved.
+
+Final WebUI checks pass. Chromium passes 145 scenarios, including six window
+sizes from 1440 to 640 px, actual range-to-pixel changes with unchanged raw
+contacts, menu reachability, panel-choice reload and the existing 130 workflows.
+Visual inspection covers narrow Selection/Dev menus, workspace controls and the
+empty state. Exact evidence and hashes are in reinforcement-validation.md.
+This resolves that specific follow-up; P4's broader format, native-platform,
+accessibility and performance gates and P6–P9 remain open.
+
 ## Mandatory release gates
 
 Each change needs a focused regression, applicable existing checks, and actual

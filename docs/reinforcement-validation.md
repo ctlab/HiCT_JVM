@@ -3677,3 +3677,62 @@ controls remain cropped;
 that main-workspace responsiveness issue is a follow-up. The manager itself fits
 that width. P4 and the publication release remain in progress. Protected
 files/plans are untouched.
+
+## Responsive navigation and sidebar — 2026-11-16
+
+Resolves the main-workspace clipping follow-up in the preceding tracks record.
+With two long map names and linked FASTA, the old navigation had a 1307 px
+scroll width at 800/900/1024 px. Fixed-width signal selectors stretched the
+sidebar's implicit grid column past its right edge. At 640 px the stacked
+sidebar shrank to 15 px high. Navigation now wraps metadata, preserves full
+filenames in titles, keeps Jobs available, and positions/scrolls dropdowns within
+the viewport. This includes the separately rendered Selection dropdown. Signal
+controls shrink or wrap; the narrow stacked sidebar receives its content height
+and a vertical collapse indicator. Explicit saved panel choices remain intact.
+Dev, the wizard, OSD and backend bind/CORS behavior are preserved.
+
+`npm run build:web` passes on the final sources:
+`/tmp/hict-responsive-web-03.log`. The existing large-chunk warning remains.
+There are no Java runtime changes; the unchanged backend's full 586-test result
+(zero failures/errors, seven optional skips) is recorded in the preceding section.
+The new Python acceptance driver was formatted with an identical AST and compiles.
+
+Final Chromium evidence, on disposable data at DPR 1 on the same Linux host:
+
+- `/tmp/hict-responsive-ui-06/results.json`: 15 scenarios. Six viewport sizes,
+  1440x1000, 1280x900, 1024x768, 900x700, 800x600 and 640x800, have no horizontal
+  root overflow or out-of-bounds sidebar controls. All seven menus fit and their
+  last enabled item can be reached; Escape closes each. Primary, secondary,
+  FASTA and annotation data are present. Actual range inputs/Apply change sampled
+  matrix pixels while the independent 25-cell raw-contact oracle stays identical.
+  Automatic alignment is disabled through its View control for this pixel test
+  so alignment lines cannot mask the matrix color. Explicit panel show/hide
+  survives viewport changes/reload; a fresh narrow context starts collapsed and
+  can open its empty panel. Source hashes are unchanged. Page and capture-phase
+  window errors are empty across reloads. Screenshots reviewed include the
+  800 px workspace, both 640 px Selection/Dev menus and the empty narrow view.
+- `/tmp/hict-responsive-tracks-02/results.json` and `controls/results.json`:
+  13 manager/source/resize/live-weight cases plus six track-control scenarios.
+- `/tmp/hict-responsive-source-regressions-02/{secondary-primary,secondary-owner,
+  failure-reporting,source-capabilities}/results.json`: 5+5+6+5 scenarios. The
+  capability run uses the disposable legacy-provenance clone described above.
+- `/tmp/hict-responsive-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-02/results.json`:
+  all 90 established sequence, selection, alignment, exact-cut and save scenarios.
+
+Together these are 145 passing scenarios. The established controlled-chooser and
+benchmark setup substitutions remain in force; intentional injected console/HTTP
+failures are expected only in their failure scenarios. Early runs with disabled
+menu-item hit tests, an alignment-covered sample, an implicit rather than explicit
+panel choice, and an interrupted wrapper are diagnostic runs, not acceptance.
+The final groups completed with successful process exits.
+
+Backend JAR `hict_server-2.0.28-5e7edd4-webui_a1839b7-fat.jar` SHA-256:
+`dff6d37370a077b375d071cc7779d25ed7728db127e3e83018e50b3bc444e090`.
+Final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+`0f55a55520de2d76643b96a2ebf8d8981b688dee7934c70bc19231cd40f77fef`.
+The JAR embeds the preceding WebUI; this acceptance serves the matching final
+assets separately. Final combined-SFX/native packages, other platforms, retina,
+touch, broader accessibility, real dense files, navigation latency and mixed soak
+remain pending. P4 and the full publication release remain in progress. Protected
+files/plans are untouched. Nothing was pushed, merged or tagged.
