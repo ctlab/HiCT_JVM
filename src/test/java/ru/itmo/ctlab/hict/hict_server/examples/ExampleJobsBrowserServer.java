@@ -42,7 +42,10 @@ public final class ExampleJobsBrowserServer {
     var cooler = Files.readAllBytes(data.resolve("valid-example.mcool"));
     var coolerPayload = java.util.Arrays.copyOf(cooler, cooler.length + 4 * 1024 * 1024);
     var reference = ">tiny\nACGTACGTACGTACGTA\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    var assembly = "recipe-scaffold\t1\t17\t1\tW\ttiny\t1\t17\t-\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    var track = "tiny\t0\t3\tRecipe feature\t42\t+\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     java.util.function.Function<String,byte[]> contentFor = name -> name.startsWith("reference-") ? reference
+      : name.equals("assembly-wizard") ? assembly : name.equals("track-wizard") ? track
       : name.equals("convert-fail") ? "Not a Cooler file".getBytes(java.nio.charset.StandardCharsets.US_ASCII)
       : name.startsWith("convert-") ? coolerPayload : payload;
     var paused = new AtomicBoolean(true);
@@ -78,7 +81,7 @@ public final class ExampleJobsBrowserServer {
     var catalog = new JsonObject().put("schemaVersion",1).put("catalogId","jobs-fixture")
       .put("sections", new JsonArray().add(new JsonObject().put("id","jobs-fixture").put("title","Download workflow fixtures").put("order",0)));
     var examples = new JsonArray();
-    for (var id : List.of("automatic","manual","cancel","failure","unknown","changed","starting","convert-auto","convert-close","convert-change","convert-late","convert-fail","convert-cancel")) {
+    for (var id : List.of("automatic","manual","cancel","failure","unknown","changed","starting","convert-auto","convert-close","convert-change","convert-late","convert-fail","convert-cancel","wizard")) {
       boolean converting = id.startsWith("convert-");
       var filePayload = contentFor.apply(id);
       var fileHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(filePayload));
@@ -92,6 +95,20 @@ public final class ExampleJobsBrowserServer {
           .put("url",base + "/payload/reference-" + id).put("required",true).put("bytes",reference.length)
           .put("sha256",HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(reference))));
         recipe.put("fasta","reference");
+      }
+      if (id.equals("wizard")) {
+        for (var auxiliary : List.of("reference", "assembly", "track")) {
+          var content = contentFor.apply(auxiliary + "-wizard");
+          var name = auxiliary.equals("reference") ? "example.fa" : auxiliary.equals("assembly") ? "example.agp" : "annotations.bed";
+          files.add(new JsonObject().put("id", auxiliary).put("role", auxiliary.equals("reference") ? "fasta" : auxiliary.equals("assembly") ? "agp" : "track")
+            .put("format", auxiliary.equals("reference") ? "fasta" : auxiliary.equals("assembly") ? "agp" : "bed").put("filename", name)
+            .put("url", base + "/payload/" + auxiliary + "-wizard").put("required", true).put("bytes", content.length)
+            .put("sha256", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content))));
+        }
+        files.add(new JsonObject().put("id", "optional-track").put("role", "track").put("format", "bed")
+          .put("filename", "unavailable.bed").put("url", base + "/payload/optional").put("required", false));
+        recipe.put("quickStart", false).put("fasta", "reference").put("agp", "assembly")
+          .put("tracks", new JsonArray().add("track").add("optional-track"));
       }
       if (id.equals("manual")) files.add(new JsonObject().put("id","optional").put("role","track").put("format","bed")
         .put("url",base+"/payload/optional").put("filename","optional.bed").put("required",false));

@@ -4551,3 +4551,68 @@ Broader rendering, sequence, cut, performance and platform suites were not rerun
 Wider wizard/public example qualification, catalog/session provenance transfer,
 P8/P9 and remaining release/publication gates remain open. Protected plans and
 owner files are unchanged; nothing pushed, merged or tagged.
+
+
+### Example recipe tracks and recorded source/session provenance
+
+The existing wizard previously omitted openingRecipe.tracks. It now preselects
+available declared tracks in order, keeps selections stable through asynchronous
+probes and omits unavailable optional files identified by downloadedFiles in the
+cached catalog response. A removed entry is not restored by its late real probe.
+Screenshot review also found AGP:none after successful wizard AGP loading; the
+wizard now updates that status after the successful load.
+
+Source wrappers own frozen, copied example records. Capture associates a declared
+ready HDF matrix or a current converted input/output cache. Snapshot/restore retain
+these records per source. Restore validates the recorded catalog through its
+existing schema, fingerprint, required/pinned file hashes/sizes and source binding;
+it does not read the live catalog or execute any recorded recipe/URL. Four new
+JUnit tests cover capture, catalog independence, converted cache validity,
+malformed/coerced metadata and unrelated maps. Final
+`/tmp/hict-provenance-jvm-full-02.log` and XML: 607 tests, zero failures/errors,
+seven optional skips. WebUI `/tmp/hict-provenance-web-02.log` build/type/numerical
+checks pass; four WebUI files pass Prettier and two Python drivers pass Black.
+
+Final `/tmp/hict-provenance-ui-03/results.json` passes 34 cases with empty errors,
+exit zero, including the existing example/cancellation journeys. New cases save
+converted-source provenance, download/configure a non-quick-start matrix/FASTA/
+AGP/BED recipe, omit a genuinely failed optional track, remove a selection while
+its actual probe replies are held, and complete the wizard. Assembly FASTA equals
+TACGTACGTACGTACGT, the 17-base reverse complement. Saved metadata remains identical
+after live catalog edits; an ordinary replacement has no example metadata. The
+saved session restores assembly/track/provenance after catalog removal. A mismatched
+record receives HTTP 400 before map replacement. `recipe-input-integrity.json`
+independently rehashes all four downloaded payloads and matches their recorded
+sizes/hashes after the complete journey. Screenshots were inspected for selected
+tracks, omitted optional files, removal, reversed sequence/feature placement,
+correct AGP chip and restored state.
+
+Final `/tmp/hict-provenance-tracks-02/{results.json,controls/results.json}` adds
+13+8 cases; transactions-02 adds 16; other-01/browser adds ten; failures-01/browser
+adds six, all under `/tmp/hict-provenance-`, all exit zero. Total: 87 browser cases.
+Expected injected failures remain confined to the failure-reporting suite. Fresh
+physical-copy `/tmp/hict-provenance-sources-01/results.json` adds five HTTP cases:
+independent Primary/Secondary datasets; restore without catalog; rejected Secondary
+binding without replacing either source; detach retaining Primary; ordinary
+replacement without inherited attribution. All copied HDF hashes remain unchanged.
+The new check_example_provenance_api.py reproduces those cases from the browser
+fixture data via --jar, --source-dir and --output.
+
+Incomplete ui-01 used the quick-start button label for a wizard-only example;
+the driver now exercises its actual Download/Open result and cached Open in HiCT
+flows. Ui-02 passed the earlier pair but screenshot review exposed the AGP header
+issue; only ui-03 qualifies the final pair. Transactions-01 lacked the explicit
+HDF Python and failed with ModuleNotFoundError:h5py before browser execution;
+transactions-02 uses the correct --hdf-python. Incomplete runs are excluded.
+
+Frozen dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`83c4fb7b1a002b1b45e7760a5df2ea87aa0dd2b9663c417116d9f77738cd28fd`.
+Development JAR `hict_server-2.0.42-9ea9009-webui_dbf4e75-fat.jar` SHA-256:
+`fa72657f5d70a73bbce1ba6c7c4766529d21381dd44d63b66e78468e436f9d62`.
+Separately served assets qualify a development pair, not embedded assets or a
+combined SFX/native release. The records preserve historical declarations/cache
+hashes, not session authenticity or fresh full-file verification on every open.
+Broader public-example/wizard/source/format and native/performance qualification,
+restored-layout status presentation, provenance viewing/figure metadata and
+remaining release/publication packages remain open. Protected plans and owner
+files are unchanged; nothing pushed, merged or tagged.

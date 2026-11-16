@@ -94,7 +94,9 @@ public class ExamplesHandlersHolder extends HandlersHolder {
         // Discovery only: opening rehashes cached data through Jobs.
         for (final var entry : json.getJsonArray("examples")) {
           final var example = (io.vertx.core.json.JsonObject) entry;
-          example.put("downloaded", root != null && ru.itmo.ctlab.hict.hict_server.examples.ExampleCache.available(root, example));
+          var files = ru.itmo.ctlab.hict.hict_server.examples.ExampleCache.readyFiles(root, example);
+          example.put("downloaded", files != null);
+          if (files != null) example.put("downloadedFiles", files);
         }
         return json;
       }, false).onSuccess(json -> ctx.response().putHeader("content-type", "application/json").end(json.encode()))

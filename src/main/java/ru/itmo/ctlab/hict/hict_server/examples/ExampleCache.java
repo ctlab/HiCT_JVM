@@ -23,6 +23,7 @@ public final class ExampleCache {
     declaration.remove("downloaded");
     declaration.remove("source");
     declaration.remove("bundled");
+    declaration.remove("downloadedFiles");
     try {
       return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
         .digest(Json.encode(canonical(declaration)).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
@@ -115,6 +116,20 @@ public final class ExampleCache {
         recordedFile(manifest, preparation.getString("filename")));
     } catch (IOException | RuntimeException invalid) {
       return false;
+    }
+  }
+
+  /** Names verified by cache metadata, for omitting unavailable optional recipe files. */
+  public static JsonArray readyFiles(Path root, JsonObject example) {
+    try {
+      if (root == null || !available(root, example)) return null;
+      var manifest = matchingManifest(root.resolve("examples").resolve(example.getString("id")), example);
+      if (manifest == null) return null;
+      var names = new JsonArray();
+      for (var file : manifest.getJsonArray("files")) names.add(((JsonObject) file).getString("filename"));
+      return names;
+    } catch (RuntimeException changed) {
+      return null;
     }
   }
 

@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Preselect example recipe tracks in the opening wizard, omit unavailable optional tracks, keep removed tracks from reappearing after a late probe, and show the loaded AGP in the header.
+- Retain each example source's recorded citations, attribution, recipe and file hashes through session save and restore, independently of later catalog changes.
+
 - Show numeric overall progress for example conversions, accounting for later stages rather than reaching 100% after each stage.
 - Treat cancelled example conversions as an expected outcome, keep downloaded inputs, and provide a direct retry without a failure alert.
 

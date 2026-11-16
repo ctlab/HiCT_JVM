@@ -256,3 +256,13 @@ offsets 0–1 are empty. The 500 bp diagonal is populated. HiCT raw counts match
 669,584 checked cells exactly. The card now identifies this source property;
 [Info and Micro-C diagonal](info-and-microc-diagonal.md) explains the resolution
 dependence, validation and limits of attributing an upstream filter.
+
+## Recipe files and session provenance
+
+Available recipe tracks are preselected alongside the matrix, FASTA and assembly
+in the opening wizard. Cached catalog responses include `downloadedFiles` to
+identify available files; missing optional tracks are omitted without changing
+the recorded recipe. Each opened example source retains its original declaration
+and recorded file hashes in saved sessions. See
+[Example recipes and session provenance](example-session-provenance.md) for the
+recorded fields, conversion association, restore behavior and verification limits.

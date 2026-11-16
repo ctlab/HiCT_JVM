@@ -2643,6 +2643,28 @@ components:
               rightId: { type: integer, format: int32, minimum: 2 }
               exact: { type: boolean, default: false, description: With snapshot v2, retain every base and reference crossing source bins in both children. Absent or false replays the historical bin-removing operation. }
         capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
+        exampleProvenance:
+          type: object
+          description: Optional frozen example declaration and recorded cache hashes, captured when opening a declared matrix or a current converted result. Restore preserves this historical metadata without consulting the live catalog, fetching URLs or executing its recipe. These records do not authenticate a session or replace the source file fingerprints.
+          required: [schemaVersion, capturedAt, catalogSource, catalogFingerprint, catalogExample, files, matrixInputFilename, matrixOpenedFilename, matrixAssociation]
+          properties:
+            schemaVersion: { type: integer, enum: [1] }
+            capturedAt: { type: string, format: date-time }
+            catalogSource: { type: string, maxLength: 8192 }
+            catalogFingerprint: { type: string, pattern: '^[0-9a-f]{64}$' }
+            catalogExample: { type: object, additionalProperties: true, description: Recorded example validated against the catalog schema. }
+            files:
+              type: array
+              items:
+                type: object
+                required: [filename, bytes, sha256]
+                properties:
+                  filename: { type: string }
+                  bytes: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                  sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+            matrixInputFilename: { type: string }
+            matrixOpenedFilename: { type: string }
+            matrixAssociation: { type: string, enum: [DECLARED_HICT, CURRENT_CONVERSION_CACHE] }
     SecondarySourceStatus:
       type: object
       properties:

@@ -15,6 +15,10 @@ public record SessionSnapshotDTO(int snapshotVersion, boolean assemblyVerified, 
                                  String assemblySource, JsonObject renderPipeline, JsonArray tracks,
                                  JsonObject workspace, JsonObject visualizationOptions) {
   public static JsonObject source(ChunkedFile file, String filename, String fastaFilename) {
+    return source(file, filename, fastaFilename, null);
+  }
+
+  public static JsonObject source(ChunkedFile file, String filename, String fastaFilename, JsonObject exampleProvenance) {
     var agp = file.getAgpProcessor().getAssemblyAGPRecords().stream()
       .map(Object::toString).collect(Collectors.joining("\n", "", "\n"));
     final String hash;
@@ -30,6 +34,7 @@ public record SessionSnapshotDTO(int snapshotVersion, boolean assemblyVerified, 
       .put("contigNameOverrides", JsonObject.mapFrom(file.getContigNameOverrides()))
       .put("scaffoldNameOverrides", JsonObject.mapFrom(file.getScaffoldNameOverrides()))
       .put("capabilities", JsonObject.mapFrom(SourceCapabilitiesDTO.fromFile(file)));
+    if (exampleProvenance != null) source.put("exampleProvenance", exampleProvenance.copy());
     final var splits = file.getSplitEdits();
     if (!splits.isEmpty()) {
       final var replay = new JsonArray();

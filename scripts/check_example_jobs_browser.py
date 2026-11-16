@@ -22,6 +22,11 @@ def main():
         action="store_true",
         help="Linux: pause an owned, real hictk child to qualify running-job cancellation",
     )
+    parser.add_argument(
+        "--recipe-provenance",
+        action="store_true",
+        help="Exercise wizard recipe files and portable recorded provenance",
+    )
     args = parser.parse_args()
     data, out = Path(args.data_dir).absolute(), Path(args.output).absolute()
     if any(p != p.resolve() or not p.is_relative_to("/tmp") for p in (data, out)):
@@ -751,10 +756,34 @@ def main():
                         )
                         assert bases == "ACGTACGTACGTACGTA", response.text()
 
+                    def save_session(name):
+                        with page.expect_download() as download:
+                            check.menu("File", "Save session")
+                        target = out / (name + ".json")
+                        download.value.save_as(target)
+                        return target, json.loads(target.read_text())
+
                     automatic_conversion = begin_conversion("convert-auto")
                     converted = converted_job(automatic_conversion)
                     await_file("convert-auto")
                     assert_reference("convert-auto")
+                    if args.recipe_provenance:
+                        _, converted_session = save_session("converted-example-session")
+                        provenance = converted_session["snapshot"]["primary"][
+                            "exampleProvenance"
+                        ]
+                        assert (
+                            provenance["matrixAssociation"]
+                            == "CURRENT_CONVERSION_CACHE"
+                        )
+                        assert provenance["catalogExample"]["id"] == "jobs-convert-auto"
+                        assert {f["filename"] for f in provenance["files"]} == {
+                            "example.mcool",
+                            "example.fa",
+                        }
+                        record(
+                            "converted-example-session-retains-the-recorded-source-recipe-and-hashes"
+                        )
                     assert converted["outputs"][0]["action"] == "example"
                     assert converted["outputs"][0]["filename"] == "jobs-convert-auto"
                     assert converted["details"]["title"] == "Workflow convert-auto"
@@ -1087,6 +1116,220 @@ def main():
                         record(
                             "cancelled-example-retries-as-a-new-job-and-opens-its-reference"
                         )
+                    if args.recipe_provenance:
+                        held_track_probes = []
+
+                        def hold_track_probe(route):
+                            response = route.fetch(
+                                url=api.url + urlparse(route.request.url).path
+                            )
+                            held_track_probes.append((route, response))
+
+                        for endpoint in (
+                            "**/tracks/probe",
+                            "**/tracks/precompute/probe",
+                        ):
+                            page.route(endpoint, hold_track_probe)
+
+                        def open_wizard():
+                            control(paused=False)
+                            dialog = open_catalog()
+                            dataset = card(dialog, "wizard")
+                            open_ready = dataset.get_by_role(
+                                "button", name="Open in HiCT", exact=True
+                            )
+                            if open_ready.count():
+                                open_ready.click()
+                            else:
+                                dataset.get_by_role(
+                                    "button", name="Download", exact=True
+                                ).click()
+                                progress = panel(True)
+                                ready = await_state("READY")
+                                progress.locator(
+                                    '[data-job-id="download/' + ready["jobId"] + '"]'
+                                ).get_by_role(
+                                    "button", name="Open result", exact=True
+                                ).click()
+                            wizard = page.get_by_role(
+                                "dialog", name="Open File Wizard", exact=True
+                            )
+                            expect(wizard).to_be_visible(timeout=60000)
+                            return wizard
+
+                        wizard = open_wizard()
+                        wizard.get_by_role(
+                            "button", name=re.compile(r"1D tracks$")
+                        ).click()
+                        expect(wizard.locator(".wizard-track-item")).to_have_count(1)
+                        expect(wizard.locator(".wizard-track-item")).to_contain_text(
+                            "annotations.bed"
+                        )
+                        expect(wizard).not_to_contain_text("unavailable.bed")
+                        catalog_entry = next(
+                            e
+                            for e in api_json(fx, "/examples/catalog", {})["examples"]
+                            if e["id"] == "jobs-wizard"
+                        )
+                        assert set(catalog_entry["downloadedFiles"]) == {
+                            "example.hict.hdf5",
+                            "example.fa",
+                            "example.agp",
+                            "annotations.bed",
+                        }
+                        record(
+                            "wizard-prefills-declared-tracks-and-omits-unavailable-optional-files"
+                        )
+                        deadline = time.monotonic() + 30
+                        while len(held_track_probes) < 2:
+                            assert time.monotonic() < deadline
+                            page.wait_for_timeout(25)
+                        wizard.get_by_role("button", name="Remove", exact=True).click()
+                        for route, response in held_track_probes:
+                            route.fulfill(response=response)
+                        held_track_probes.clear()
+                        for endpoint in (
+                            "**/tracks/probe",
+                            "**/tracks/precompute/probe",
+                        ):
+                            page.unroute(endpoint, hold_track_probe)
+                        page.evaluate(
+                            "()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))"
+                        )
+                        expect(wizard.locator(".wizard-track-item")).to_have_count(0)
+                        expect(wizard).to_contain_text("No tracks selected.")
+                        record(
+                            "late-real-track-probes-cannot-resurrect-a-removed-wizard-track"
+                        )
+                        wizard.get_by_role("button", name="Cancel", exact=True).click()
+                        wizard = open_wizard()
+                        wizard.get_by_role(
+                            "button", name=re.compile(r"Final checks$")
+                        ).click()
+                        finish = wizard.get_by_role("button", name="Finish", exact=True)
+                        expect(finish).to_be_enabled()
+                        finish.click()
+                        expect(wizard).to_have_count(0, timeout=90000)
+                        await_file("wizard")
+                        check.settle()
+                        expect(
+                            page.get_by_role(
+                                "button", name="AGP: example.agp", exact=True
+                            )
+                        ).to_be_visible()
+                        response = page.request.post(
+                            api.url + "/get_fasta_for_assembly", data={}
+                        )
+                        bases = "".join(
+                            line.strip()
+                            for line in response.text().splitlines()
+                            if not line.startswith(">")
+                        )
+                        assert (
+                            response.ok and bases == "TACGTACGTACGTACGT"
+                        ), response.text()
+                        tracks = page.evaluate(
+                            "()=>window.__hictBenchmark.manager().linearTrackManager.getTracksSnapshot()"
+                        )
+                        assert (
+                            len(tracks) == 1
+                            and tracks[0]["sourceFile"]
+                            == "examples/jobs-wizard/annotations.bed"
+                        ), tracks
+                        saved_path, saved_session = save_session(
+                            "wizard-example-session"
+                        )
+                        primary = saved_session["snapshot"]["primary"]
+                        provenance = primary["exampleProvenance"]
+                        assert provenance["matrixAssociation"] == "DECLARED_HICT"
+                        assert provenance["catalogExample"]["openingRecipe"][
+                            "tracks"
+                        ] == ["track", "optional-track"]
+                        assert len(provenance["files"]) == 4
+                        assert "recipe-scaffold" in primary["agp"] and primary[
+                            "agp"
+                        ].rstrip().endswith("-")
+                        record("wizard-applies-the-recorded-fasta-agp-and-track-recipe")
+                        catalog_file = data / "examples/catalogs/jobs-fixture.json"
+                        original_catalog = catalog_file.read_text()
+                        try:
+                            changed = json.loads(original_catalog)
+                            entry = next(
+                                e
+                                for e in changed["examples"]
+                                if e["id"] == "jobs-wizard"
+                            )
+                            entry["title"] = "Changed live catalog title"
+                            entry["attribution"][
+                                "acknowledgement"
+                            ] = "Changed after opening"
+                            catalog_file.write_text(json.dumps(changed))
+                            _, still_open = save_session("wizard-after-catalog-change")
+                            assert (
+                                still_open["snapshot"]["primary"]["exampleProvenance"]
+                                == provenance
+                            )
+                            record(
+                                "saving-an-open-source-keeps-its-original-provenance-after-catalog-change"
+                            )
+                            page.evaluate(
+                                "async api=>await window.__hictBenchmark.open('tiny-fine.hict.hdf5',api)",
+                                api.url,
+                            )
+                            _, ordinary = save_session("ordinary-without-example")
+                            assert (
+                                "exampleProvenance"
+                                not in ordinary["snapshot"]["primary"]
+                            )
+                            record(
+                                "ordinary-map-opening-does-not-inherit-an-examples-attribution"
+                            )
+                            catalog_file.unlink()
+                            with page.expect_file_chooser() as chooser:
+                                check.menu("File", "Open session")
+                            chooser.value.set_files(saved_path)
+                            page.get_by_text(
+                                "Session restored. Undo history starts from the restored assembly.",
+                                exact=True,
+                            ).wait_for()
+                            await_file("wizard")
+                            _, restored = save_session("wizard-restored-session")
+                            assert (
+                                restored["snapshot"]["primary"]["exampleProvenance"]
+                                == provenance
+                            )
+                            assert (
+                                restored["snapshot"]["primary"]["agpSha256"]
+                                == primary["agpSha256"]
+                            )
+                            assert len(restored["snapshot"]["tracks"]) == 1
+                            record(
+                                "session-restores-frozen-provenance-and-recipe-results-without-the-live-catalog"
+                            )
+                            bad = saved_session["snapshot"].copy()
+                            bad["primary"] = dict(bad["primary"])
+                            bad["primary"]["exampleProvenance"] = json.loads(
+                                json.dumps(provenance)
+                            )
+                            bad["primary"]["exampleProvenance"][
+                                "matrixOpenedFilename"
+                            ] = "unrelated.hict.hdf5"
+                            rejected = page.request.post(
+                                api.url + "/session/restore", data=bad
+                            )
+                            assert (
+                                rejected.status == 400
+                                and "exampleProvenance" in rejected.text()
+                            ), rejected.text()
+                            assert (
+                                filename() == "examples/jobs-wizard/example.hict.hdf5"
+                            )
+                            record(
+                                "mismatched-session-provenance-is-rejected-before-replacing-the-map"
+                            )
+                        finally:
+                            catalog_file.write_text(original_catalog)
+
                     page.get_by_role(
                         "button", name="Open notifications", exact=True
                     ).click()

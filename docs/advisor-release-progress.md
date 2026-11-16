@@ -27,7 +27,7 @@ describe earlier releases; they must not override the decisions below.
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
-| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads and quick-start conversions, guarded opening, cache integrity and recipe-preserving results implemented; Info transitions and independent yeast diagonal provenance verified; wider wizard/public examples, provenance transfer and release qualification pending |
+| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
@@ -784,3 +784,41 @@ P7 remains active for wider wizard/public examples and catalog/session provenanc
 transfer. P8/P9 and remaining scientific, performance, native and publication/release
 qualification remain open. Protected plans and owner files remain unchanged;
 nothing pushed, merged or tagged.
+
+## Example recipe files and frozen per-source provenance
+
+Examples routed to the existing wizard now preselect their declared annotation
+tracks alongside matrix/FASTA/assembly. Cached catalog responses identify available
+files so missing optional recipe tracks do not break opening; download warnings
+remain in Jobs. Track selections are inserted before probes complete, and an
+obsolete probe cannot resurrect a removed track or update a replacement entry.
+The wizard also updates the AGP header after actually loading a layout.
+
+A source wrapper owns a frozen copy of its example declaration, citation,
+attribution, recipe and recorded cache hashes. Only a ready matching declaration,
+or a converted result with a current input/output conversion cache, is associated.
+Primary and Secondary carry independent records. Session snapshots preserve them;
+restore validates version, catalog schema/fingerprint, file records and source
+binding without consulting the current catalog, fetching URLs or executing a
+recipe. Older sessions remain supported, and ordinary maps inherit no attribution.
+These records do not authenticate a session or imply fresh full-file hashing.
+See example-session-provenance.md and the extended session API schema.
+
+Final validation: 607 JVM tests, zero failures/errors, seven optional skips; the
+WebUI build/type/numerical checks; 87 actual-control browser cases; five further
+HTTP acceptance cases on fresh physical copies. The full controlled recipe loads
+FASTA, reversed AGP and BED, exports the expected 17-base reverse complement,
+retains provenance after catalog edits/removal and restores its actual assembly
+and track. All four downloaded recipe inputs retain their recorded hashes.
+Primary/Secondary restore and rejection/detach/replacement cases preserve source
+identity and leave native HDF files unchanged. Screenshots caught and verified the
+AGP header correction. Exact evidence and artifact hashes are recorded in
+reinforcement-validation.md.
+
+P7 remains active for broader wizard/source/format combinations and current public
+examples. The restored-session layout status chip still needs a source-aware
+presentation rather than implying that no saved layout exists; source metadata
+viewing and figure provenance belong to subsequent publication work. P8/P9 and
+remaining scientific, performance, native/platform and release/publication gates
+remain open. Protected plans and owner files remain unchanged; nothing pushed,
+merged or tagged.

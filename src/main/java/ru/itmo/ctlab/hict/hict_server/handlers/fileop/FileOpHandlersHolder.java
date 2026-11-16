@@ -183,6 +183,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final Track1DManager candidateTracks;
           final TileStatisticHolder candidateStatistics;
           final io.vertx.core.json.JsonObject response;
+          final io.vertx.core.json.JsonObject exampleProvenance;
           try {
             response = io.vertx.core.json.JsonObject.mapFrom(generateOpenFileResponse(chunkedFile))
               .put("workspaceVersion", workspace.version());
@@ -192,6 +193,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
               ? processedDirectoryWrapper.getPath()
               : dataDirectory.resolve("processed").normalize().toAbsolutePath();
             candidateTracks = new Track1DManager(dataDirectory, processedDirectory);
+            exampleProvenance = ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.capture(
+              dataDirectory, processedDirectory, requestedFilePath,
+              new ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService());
           } catch (Exception failure) {
             closeChunkedFileWrapper(new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
             map.put("openProgress", new io.vertx.core.json.JsonObject()
@@ -203,7 +207,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var oldTracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
           synchronized (map) {
             cancelCoverage.run();
-            map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
+            map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(chunkedFile, exampleProvenance));
             map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(candidateTracks));
             map.put("openedFilename", requestedFilename);
             map.put("workspaceStateStore", workspace);
@@ -395,7 +399,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw failure;
           }
           final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
-          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
+          final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+          final var exampleProvenance = ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.capture(
+            dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath(), filePath,
+            new ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService());
+          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile, exampleProvenance));
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
           map.put(SECONDARY_COMPATIBILITY_KEY, synchronizedCompatibility.toJson());
           if (sequenceMetadata != null) map.put(SECONDARY_SEQUENCE_METADATA_KEY, sequenceMetadata);
@@ -547,10 +555,10 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(2, verify, fingerprintFiles, verifyTracks,
           ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
             String.valueOf(map.getOrDefault("openedFilename", "")),
-            String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, ""))),
+            String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, "")), primary.getExampleProvenance()),
           secondary == null ? null : ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(
             secondary.getChunkedFile(), String.valueOf(map.getOrDefault(OPENED_SECONDARY_FILENAME_KEY, "")),
-            String.valueOf(map.getOrDefault(SECONDARY_FASTA_FILENAME_KEY, ""))),
+            String.valueOf(map.getOrDefault(SECONDARY_FASTA_FILENAME_KEY, "")), secondary.getExampleProvenance()),
           String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)),
           pipeline == null ? RenderPipelineConfig.disabled().toJson() : pipeline.getRenderPipelineConfig().toJson(),
           new io.vertx.core.json.JsonArray(tracks == null ? java.util.List.of() : tracks.getTrack1DManager().listTracks()
@@ -656,7 +664,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final String secondaryFasta = saved.secondary() == null ? "" : saved.secondary().getString("fastaFilename", "");
         synchronized (map) {
           cancelCoverage.run();
-          map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.primary()));
+          map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.primary(), saved.primary().getJsonObject("exampleProvenance")));
           map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(owned.tracks()));
           map.put("openedFilename", primaryName);
           map.put("workspaceStateStore", workspace);
@@ -664,7 +672,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put(RenderPipelineConfig.LOCAL_MAP_KEY, new ShareableWrappers.RenderPipelineConfigWrapper(owned.pipeline()));
           map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(owned.visualization()));
           if (owned.secondary() != null) {
-            map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.secondary()));
+            map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.secondary(), saved.secondary().getJsonObject("exampleProvenance")));
             map.put(OPENED_SECONDARY_FILENAME_KEY, saved.secondary().getString("filename"));
             map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
           } else {

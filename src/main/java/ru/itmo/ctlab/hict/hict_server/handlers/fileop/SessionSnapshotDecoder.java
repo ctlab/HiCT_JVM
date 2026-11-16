@@ -146,6 +146,9 @@ public final class SessionSnapshotDecoder {
   }
 
   private static void source(JsonObject source, String path, int snapshotVersion) {
+    if (source.containsKey("exampleProvenance"))
+      ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.validate(
+        object(source, "exampleProvenance", path), source.getString("filename"));
     string(source, "filename", path, false);
     String fasta = string(source, "fastaFilename", path, true);
     fingerprint(object(source, "fileFingerprint", path), path + ".fileFingerprint");
