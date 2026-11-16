@@ -368,6 +368,23 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void coordinateDownloadsRejectStaleDisplayedVersionsBeforeWriting() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir,"export",List.of(4L,10L));
+    Files.writeString(tempDataDir.resolve("reference.fa"),">tiny\nACGTRYMKSWBDHVNAC\n");
+    startServerWithInfoAndFileHandlers(router -> new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx,scheduler).addHandlersToRouter(router));
+    assertEquals(200,post("/open","{\"filename\":\"export.hict.hdf5\"}").statusCode());
+    assertEquals(200,post("/link_fasta","{\"fastaFilename\":\"reference.fa\"}").statusCode());
+    final var summary=new JsonObject(post("/assembly/history","{}").body()).getJsonObject("summary");
+    final var current=Map.of("X-HiCT-History-Session",summary.getString("session"),"X-HiCT-History-Revision",summary.getLong("revision").toString());
+    final var stale=Map.of("X-HiCT-History-Session",summary.getString("session"),"X-HiCT-History-Revision",Long.toString(summary.getLong("revision")+1));
+    for (String endpoint : List.of("/get_fasta_for_assembly","/get_fasta_for_selection","/get_agp_for_assembly")) {
+      final var body=endpoint.endsWith("selection")?"{\"fromBpX\":0,\"toBpX\":4,\"fromBpY\":0,\"toBpY\":4}":"{}";
+      assertEquals(409,post(endpoint,body,stale).statusCode(),endpoint);
+      assertEquals(200,post(endpoint,body,current).statusCode(),endpoint);
+    }
+  }
+
+  @Test
   void fastaOnlySourcesReturnBlankTilesAndRejectContactNormalization() throws Exception {
     final var fasta = tempDataDir.resolve("reference.fa");
     Files.writeString(fasta, ">sequence\nACGTACGTACGT\n");

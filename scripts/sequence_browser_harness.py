@@ -105,6 +105,20 @@ class HictTestServer:
 
 class BrowserCheck:
     def __init__(self, page, output):
+        # Normal map/sequence checks use a writable picker backed by browser downloads.
+        # File-destination acceptance overrides it to exercise cancel/failure/fallback paths.
+        page.add_init_script('''(() => {
+          window.showOpenFilePicker=undefined;
+          window.showSaveFilePicker=async options=>{
+            let content;
+            return {name:options.suggestedName,
+              getFile:async()=>new File([content],options.suggestedName,{type:content.type}),
+              createWritable:async()=>({write:async blob=>{content=blob;},close:async()=>{
+                const a=document.createElement('a'),url=URL.createObjectURL(content);
+                a.href=url;a.download=options.suggestedName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+              },abort:async()=>{}})};
+          };
+        })();''')
         self.page = page
         self.output = Path(output)
         self.rows = []

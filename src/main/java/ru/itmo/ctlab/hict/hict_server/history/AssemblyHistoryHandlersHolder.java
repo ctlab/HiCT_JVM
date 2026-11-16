@@ -117,7 +117,8 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
         && (ctx.normalizedPath().endsWith("/jobs") || ctx.normalizedPath().equals("/sequence/region")
           || ctx.normalizedPath().equals("/sequence/alignment_detail")
           || ctx.normalizedPath().equals("/sequence/repeat_period"));
-      if ((label != null || sequenceSnapshot || ctx.normalizedPath().equals("/session/snapshot")) && journal != null && ctx.request().getHeader("X-HiCT-History-Session") != null)
+      boolean coordinateExport = Set.of("/get_fasta_for_assembly","/get_fasta_for_selection","/get_agp_for_assembly").contains(ctx.normalizedPath());
+      if ((label != null || sequenceSnapshot || coordinateExport || ctx.normalizedPath().equals("/session/snapshot")) && journal != null && ctx.request().getHeader("X-HiCT-History-Session") != null)
         requireVersion(ctx.request().getHeader("X-HiCT-History-Session"),
           Long.parseLong(ctx.request().getHeader("X-HiCT-History-Revision")));
       var result = action.get();

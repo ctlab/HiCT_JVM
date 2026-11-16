@@ -1138,12 +1138,28 @@ paths:
       tags: [Files]
       summary: Export FASTA for current full assembly
       operationId: exportFastaAssembly
+      description: >-
+        Optional X-HiCT-History-Session and X-HiCT-History-Revision headers
+        reject a stale displayed assembly before export. Layout metadata is
+        captured on the assembly queue before background materialization.
+        Cancellation returns 409 rather than an empty successful download.
+      parameters:
+        - in: header
+          name: X-HiCT-History-Session
+          schema: { type: string }
+          description: Displayed history session identity, paired with revision.
+        - in: header
+          name: X-HiCT-History-Revision
+          schema: { type: integer, format: int64 }
+          description: Applied displayed revision, paired with session identity.
       requestBody:
         required: false
         content:
           application/json:
             schema: { $ref: '#/components/schemas/GetFastaForAssemblyRequest' }
       responses:
+        '409':
+          description: Displayed assembly is stale or export was cancelled; refresh and retry.
         '200':
           description: FASTA text
           content:
@@ -1155,12 +1171,28 @@ paths:
       tags: [Files]
       summary: Export FASTA for current selection
       operationId: exportFastaSelection
+      description: >-
+        Optional X-HiCT-History-Session and X-HiCT-History-Revision headers
+        reject a stale displayed assembly before export. Layout metadata is
+        captured on the assembly queue before background materialization.
+        Cancellation returns 409 rather than an empty successful download.
+      parameters:
+        - in: header
+          name: X-HiCT-History-Session
+          schema: { type: string }
+          description: Displayed history session identity, paired with revision.
+        - in: header
+          name: X-HiCT-History-Revision
+          schema: { type: integer, format: int64 }
+          description: Applied displayed revision, paired with session identity.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/FastaSelectionRequest' }
       responses:
+        '409':
+          description: Displayed assembly is stale or export was cancelled; refresh and retry.
         '200':
           description: FASTA text
           content:
@@ -1172,12 +1204,28 @@ paths:
       tags: [Files]
       summary: Export AGP for current assembly
       operationId: exportAgpAssembly
+      description: >-
+        Optional X-HiCT-History-Session and X-HiCT-History-Revision headers
+        reject a stale displayed assembly before export. Layout metadata is
+        captured on the assembly queue before background materialization.
+        Cancellation returns 409 rather than an empty successful download.
+      parameters:
+        - in: header
+          name: X-HiCT-History-Session
+          schema: { type: string }
+          description: Displayed history session identity, paired with revision.
+        - in: header
+          name: X-HiCT-History-Revision
+          schema: { type: integer, format: int64 }
+          description: Applied displayed revision, paired with session identity.
       requestBody:
         required: false
         content:
           application/json:
             schema: { $ref: '#/components/schemas/GetAgpRequest' }
       responses:
+        '409':
+          description: Displayed assembly is stale or export was cancelled; refresh and retry.
         '200':
           description: AGP text
           content:

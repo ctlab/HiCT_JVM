@@ -60,6 +60,22 @@ validates referenced files before replacing the current map. Keep those files
 available. Undo history belongs to the live session. Export AGP to preserve an
 assembly layout and export FASTA to materialize the curated sequence.
 
+Where supported, saving opens a destination chooser. Cancelling or failing to
+write leaves your edits unsaved. If you make more edits while a session is being
+written, save again to include them. The success notification offers **Open saved
+session**; **File → Open session** also restores a file you choose.
+Browsers without a writable-file picker use their download settings. Enable
+“Ask where to save” there to choose each destination. HiCT reports **Download
+started** and keeps edits marked unsaved because it cannot confirm completion.
+Check the downloaded session before choosing Discard edits to close the map.
+
+Map and FASTA input choosers remember their last selected folder/file separately
+for each server. A remembered file is highlighted when it still exists; click
+Load to confirm it. These inputs are on the HiCT server, whereas browser session
+files and downloads are on your computer. Use **File → Open Examples** to open
+the existing example chooser. See [file-destinations.md](file-destinations.md)
+for supported save behavior and remaining platform qualification.
+
 ## Signal and layers
 
 Use the Visualization sidebar to change the color range, signal transform and

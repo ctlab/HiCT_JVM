@@ -23,7 +23,7 @@ describe earlier releases; they must not override the decisions below.
 |---|---|---|
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
-| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
+| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed session state, frozen revision-guarded FASTA/AGP, per-purpose file memory and File Examples implemented and primary Chromium verified; native dialogs, large-file streaming and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
@@ -290,6 +290,39 @@ Standalone SVG/PDF outputs were rendered and visually inspected; PNG/PDF orange
 substitution bounds agree within one pixel in the inspected fixture. Broader
 source/platform, accessibility, dense-window latency and embedded-package gates
 remain open. P5 and the publication release are not complete.
+
+## P3 destinations and confirmed session saves
+
+Sessions, assembly/selection FASTA, AGP, figures and local settings exports share
+explicit saved/cancelled/download-started outcomes. Browser pickers retain click
+activation and do not fall back after denial. Desktop adapters remember separate
+successful folders by purpose and stage disk writes before replacement. Session
+state becomes saved only after confirmed completion of the captured revision;
+later edits remain dirty. Save-from-close failures stay in the original dialog.
+Download-only browsers receive honest completion guidance and retain the guard.
+File exposes Open Examples; session opening and the success action use existing
+validated restore. Server input selectors remember/preselect previous files by
+server and purpose without opening them automatically.
+
+FASTA/AGP exports now capture immutable metadata on the assembly queue under the
+displayed-revision guard, then perform I/O on the export worker. A real HTTP
+regression exposed that EXPORT-priority requests previously bypassed the assembly
+interceptor. The two-phase dispatch fixes this; cancellation returns 409 instead
+of an empty successful file. Frozen export tests retain the original sequence
+after exact cuts/reversal. Method and limits: [file-destinations.md](file-destinations.md).
+
+Full JVM checks pass with 585 tests, zero failures/errors and seven optional skips;
+full WebUI build/regressions and Electron compilation pass. Ninety Chromium
+checks pass on the final WebUI build, including 14 new file workflows and all 76
+existing alignment/measurement/map/selection/track/feature checks. File workflows
+use controlled picker outcomes; other suites use a controlled writer producing
+real downloadable output. These do not qualify OS dialogs. Electron's actual IPC
+handler passes real-disk failure/replacement tests; the actual Tauri filesystem
+routine passes an isolated Rust test. Full Tauri compilation is blocked by host
+Rust 1.75 versus lockfile v4/project Rust 1.88 requirements. Native GUI/platform
+qualification, bounded-memory large exports, remaining chooser/secondary-source
+routes, accessibility, restart and large-directory coverage remain open. P3 and
+the publication release are not complete.
 
 ## Mandatory release gates
 

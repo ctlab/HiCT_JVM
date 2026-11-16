@@ -3279,3 +3279,70 @@ Short-seed matches are exploratory sequence comparisons, not significance/homolo
 calls or an exhaustive alignment enumeration. Broader secondary/source/platform,
 accessibility, dense-window latency and final embedded-package qualification
 remain open. Plan files and protected initial changes remain untouched.
+
+## File destinations and frozen downloads — 2026-11-16
+
+The shared WebUI save service requests a browser destination synchronously from
+the click, separates confirmed/cancelled/download-started outcomes and propagates
+failed writes. Picker denial does not trigger an unwanted download. Browser
+handles remember successful destinations per purpose. Electron/Tauri persist
+separate purpose directories only after staged write/sync/close/rename succeeds.
+Sessions mark only the captured revision saved after confirmation; later edits
+stay dirty. Cancellation/failure/download fallback cannot release the close
+guard. Errors within that guard render inline. File → Open Examples and validated
+session reopening are available; input selectors retain server/purpose folder
+and file choices and require an explicit Load click.
+
+New real HTTP tests first exposed that export-priority dispatch bypassed the
+assembly history interceptor. FASTA/AGP now perform short revision-checked capture
+on the assembly queue, then materialize immutable records/layout on the export
+pool. Cancellation is 409 with retry guidance, never a successful empty file.
+Frozen-layout tests export the original interval after real exact cut/reversal
+and verify unchanged source bytes. Legacy clients without history headers remain
+supported. External FASTA mutation during a download is not newly qualified.
+
+Full JVM test/shadowJar checks pass with 585 tests, zero failures/errors and seven
+optional skips (`/tmp/hict-file-save-qualified-jvm.log`). Full WebUI checks pass
+(`/tmp/hict-file-save-final-web-02.log`), retaining the known large-chunk warning.
+Electron compilation passes (`/tmp/hict-file-save-electron-types.log`). Actual
+Electron IPC real-disk tests include typed-array offsets, separate remembered
+directories, cancellation, injected rename failure, old-file preservation and
+temporary-file cleanup (`/tmp/hict-file-save-native-destination.log`). The actual
+Tauri filesystem function is extracted, compiled and executed unchanged by
+`scripts/check-tauri-export.mjs` (`/tmp/hict-file-save-tauri-function.log`). Full
+Tauri compilation fails before source compilation: installed Rust 1.75 cannot
+parse Cargo lockfile v4; the project requires 1.88
+(`/tmp/hict-file-save-tauri.log`). This is an environment qualification limit,
+not a passing native-wrapper build.
+
+Ninety Chromium scenarios pass, with fresh physical disposable fixtures:
+
+- File workflow (14): `/tmp/hict-file-save-final-browser/results.json`.
+- Alignment (12): `/tmp/hict-file-save-alignment-browser/results.json`.
+- Feature actions (15): `/tmp/hict-file-save-feature-browser/results.json`.
+- Hidden/binless tracks (13): `/tmp/hict-file-save-tracks-browser/results.json`.
+- Sequence view/exports/session (17): `/tmp/hict-file-save-final-sequence_view-browser/results.json`.
+- Independent selections (7): `/tmp/hict-file-save-final-selection_modes-browser/results.json`.
+- FASTA measurement (12): `/tmp/hict-file-save-final-fasta_measurement-browser/results.json`.
+
+The new workflow checks cover real session JSON/restore, cancellation, denied
+picker, write-close failure, inline guard failure, readback/open action, newer
+edits during close, assembly and exact-region FASTA bytes, AGP, stale picker-delayed
+selection rejected with 409, three figure formats, download-only dirty guards,
+and distinct server map/FASTA folder/file memory. Native input bytes are unchanged.
+The expected stale-selection HTTP 409 console message is recorded explicitly;
+there are no unexpected page errors. Failure/fallback/remembered-file screenshots
+were visually inspected. Save-picker outcomes are controlled fixtures, not
+native dialogs. Other suites now use a controlled writable handle that emits real
+downloads; their output checks remain active. This intentionally models confirmed
+writes separately from the dedicated unconfirmed-browser-download scenarios.
+
+Immutable server SHA-256:
+`d325099dffc264de6f8d060e6e6f09a21bdf670fb19103b529c01984f69fb572`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`e291ad29fcbc438052a7d8c2be07058bc28972cca803a0d65febda164e9ac9e9`.
+The API documentation update after these runs describes the tested guards; it
+does not change the qualified Java implementation. Final embedded/package,
+native-dialog/platform, streaming/large-memory, all chooser routes, secondary
+sources, accessibility, restart and large-directory gates remain open. Plan files
+and protected initial changes remain untouched. See [file-destinations.md](file-destinations.md).

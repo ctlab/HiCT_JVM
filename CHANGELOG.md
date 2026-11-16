@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Choose destinations for sessions, FASTA/AGP, figures and settings exports, remember file choices by purpose, and expose File → Open Examples.
+- Mark sessions saved only after a confirmed write, preserve newer edits and failed-save guards, and freeze FASTA/AGP export layouts under the displayed-revision check.
+
 - Draw continuous alignment runs through letter boundaries, with distinct substitutions, reverse matches and indels in the map and vector exports.
 - Recover short tandem-repeat alignments with a bounded short-window profile, verify CIGAR labels against source bases, and cancel obsolete preview jobs without losing their IDs.
 

@@ -91,6 +91,15 @@ Use a trusted host and restrict network access as described in the README.
 | `POST` | `/get_agp_for_assembly` | Export AGP |
 | `POST` | `/load_agp` | Import AGP and update assembly state |
 
+FASTA and AGP download requests accept the optional displayed-assembly headers
+`X-HiCT-History-Session` and `X-HiCT-History-Revision`. The WebUI sends its captured
+applied revision, including when a destination chooser delays submission. A
+stale version returns HTTP 409 before writing. Legacy clients may omit the guard.
+The assembly queue validates the revision and captures immutable AGP records or
+selection layout; the export worker then materializes that captured layout.
+Cancellation returns HTTP 409 with retry guidance, rather than a successful empty
+file. This does not make external mutation of a linked FASTA safe during export.
+
 ### Conversion jobs
 
 | Method | Path | Purpose |
