@@ -62,6 +62,21 @@ Use native HiCT data and the saved session when the original observations and ex
 source references are required. The export does not apply the current visualization
 pipeline, O/E colors or display transforms.
 
+Reimport retains fractional values and declared approximation provenance. Primary
+and secondary map chips show **Estimated**, with the method in their tooltip;
+saved sessions retain the same declaration. Import preparation restores provenance
+from the original Cooler if external preparation drops its root attributes.
+An approximate export whose input was already estimated records
+`upstream_approximate=true`. Sequence-derived overlays retain their own score
+semantics and do not inherit contact-estimation labels from a template.
+
+The optional API `capabilities.approximation` object describes this provenance.
+Its absence means no approximation was declared, rather than proving that values
+are original observations. Reimport does not recover original shared-bin contacts
+or read positions. Ordinary floating-point re-export is still an open release
+gate; the existing internal and hictk-assisted exporters reject that path rather
+than rounding the values.
+
 ## Command line and API
 
 With the packaged launcher (replace the JAR name with the downloaded artifact):

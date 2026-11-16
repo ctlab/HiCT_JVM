@@ -10,7 +10,9 @@ import java.util.List;
 public record SourceCapabilitiesDTO(int schemaVersion, SourceMetadata.Units units, double scoreScale,
                                     SourceMetadata.ContactDataState contactDataState, List<Long> resolutions,
                                     List<Long> importedWeightResolutions, boolean weightMetadataComplete, Availability contactNormalization,
-                                    Availability importedWeights) {
+                                    Availability importedWeights,
+                                    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                                    ru.itmo.ctlab.hict.hict_library.chunkedfile.ApproximationProvenance.Summary approximation) {
   public enum State { AVAILABLE, UNAVAILABLE, UNKNOWN }
   public record Availability(State state, String reasonCode, String reason) { }
 
@@ -33,6 +35,6 @@ public record SourceCapabilitiesDTO(int schemaVersion, SourceMetadata.Units unit
           : new Availability(State.UNKNOWN, "LEGACY_WEIGHT_METADATA", "This file does not record whether its weight vectors were imported or filled with ones.");
     return new SourceCapabilitiesDTO(1, units, metadata.scoreScale(), metadata.contactDataState(),
       Arrays.stream(file.getResolutions()).filter(r -> r > 0).boxed().toList(),
-      metadata.importedWeightResolutions(), metadata.weightMetadataComplete(), contact, weights);
+      metadata.importedWeightResolutions(), metadata.weightMetadataComplete(), contact, weights, file.getApproximationProvenance());
   }
 }

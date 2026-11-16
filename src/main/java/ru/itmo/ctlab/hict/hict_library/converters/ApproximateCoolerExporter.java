@@ -69,7 +69,10 @@ public final class ApproximateCoolerExporter {
           writer.string().setAttrVL("/", "format", "HDF5::MCOOL");
           writer.int64().setAttr("/", "format-version", 2);
         }
-        writer.bool().setAttr("/", "hict-approximate-export", true);
+        ru.itmo.ctlab.hict.hict_library.chunkedfile.ApproximationProvenance.mark(writer,
+          new ru.itmo.ctlab.hict.hict_library.chunkedfile.ApproximationProvenance.Summary(1,
+            ApproximateContactProjection.METHOD, "independent_stored_levels", "Estimated values from sequence-overlap rebinning.",
+            file.getApproximationProvenance() != null));
         writer.string().writeVL("/hict/approximate_export/agp", records.stream().map(Object::toString).collect(Collectors.joining("\n", "", "\n")));
         writer.string().setAttrVL("/hict/approximate_export", "method", ApproximateContactProjection.METHOD);
         int level = 0;
@@ -79,13 +82,14 @@ public final class ApproximateCoolerExporter {
           logger.accept("HICT_STAGE stage=approximate_grid progress=0 overall=" + (level / (double) selected.size()) + " detail=Preparing " + resolution + " bp grid");
           logger.accept("Approximate rebinning at " + resolution + " bp (" + ApproximateContactProjection.METHOD + ")");
           final var projection = ApproximateContactProjection.prepare(file, records, resolution);
+          final int levelChunk = (int) Math.max(1, Math.min(chunk, projection.targetBinCount()));
           final long budget = Math.min(HictToMcoolConverter.resolveExportMemoryLimitBytes(logger), Runtime.getRuntime().maxMemory() / 2);
           final long indexBytes = Math.multiplyExact(Math.addExact(projection.targetBinCount(), 1), Long.BYTES);
           if (indexBytes > budget / 2 || projection.targetBinCount() >= Integer.MAX_VALUE || budget < 16384)
             throw new IllegalArgumentException("Approximate export index exceeds the memory budget; use a coarser resolution or increase the export memory/Java heap limit");
           final int capacity = (int) Math.min(100000, Math.max(16, (budget - indexBytes) / 256));
           final String root = multi ? "/resolutions/" + resolution : "/";
-          writeAxes(writer, root, projection, records, chunk, integerStorage, floatStorage, cancelled);
+          writeAxes(writer, root, projection, records, levelChunk, integerStorage, floatStorage, cancelled);
           final var sourceTotal = new Sum(); final var retainedTotal = new Sum(); final var absoluteTotal = new Sum();
           final int[] lastProgress = {-5};
           try (var sorter = new FractionalContactSorter(output.getParent(), capacity, 32, cancelled)) {
@@ -105,7 +109,7 @@ public final class ApproximateCoolerExporter {
                   + ((currentLevel + .65 * progress) / selected.size()) + " detail=Resolution " + resolution + " bp");
               }
             });
-            final var pixels = new PixelWriter(writer, root, projection, chunk, integerStorage, floatStorage);
+            final var pixels = new PixelWriter(writer, root, projection, levelChunk, integerStorage, floatStorage);
             logger.accept("HICT_STAGE stage=approximate_merge progress=0 overall=" + ((level + .65) / selected.size()) + " detail=Sorting fractional contacts at " + resolution + " bp");
             sorter.finish(pixels::accept); pixels.finish();
             final double tolerance = Math.max(128 * Math.ulp(absoluteTotal.value), 1e-10 * absoluteTotal.value);
@@ -118,6 +122,7 @@ public final class ApproximateCoolerExporter {
               .put("source_contact_total", sourceTotal.value).put("expected_retained_contact_total", retainedTotal.value)
               .put("exported_contact_total", pixels.total.value).put("conservation_tolerance", tolerance)
               .put("native_contacts_modified", false).put("omitted_sequence_renormalized", false)
+              .put("upstream_approximate", file.getApproximationProvenance() != null)
               .put("sequence_coverage_column", "hict_sequence_fraction");
             writeMetadata(writer, root, projection, pixels, metadata);
             logger.accept("Approximate " + resolution + " bp complete: " + pixels.count + " pixels, retained contacts=" + pixels.total.value);

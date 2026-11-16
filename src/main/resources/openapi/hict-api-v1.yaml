@@ -2517,6 +2517,16 @@ components:
         weightMetadataComplete: { type: boolean }
         contactNormalization: { $ref: '#/components/schemas/CapabilityAvailability' }
         importedWeights: { $ref: '#/components/schemas/CapabilityAvailability' }
+        approximation:
+          type: object
+          description: Explicit estimation provenance, preserved when an approximate Cooler is reopened or saved in a session. Absent means no declared approximation provenance; it does not prove original observations.
+          required: [schemaVersion, method, resolutionPolicy, description, upstreamApproximate]
+          properties:
+            schemaVersion: { type: integer, enum: [1] }
+            method: { type: string }
+            resolutionPolicy: { type: string }
+            description: { type: string }
+            upstreamApproximate: { type: boolean, description: The input to the most recent approximate export was already estimated. }
     CapabilityAvailability:
       type: object
       required: [state, reasonCode, reason]

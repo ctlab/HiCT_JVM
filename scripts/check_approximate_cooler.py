@@ -11,9 +11,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ('artifact', 'oracle', 'output'):
         parser.add_argument('--' + key, required=True)
+    parser.add_argument('--reopened-json')
     args = parser.parse_args()
     oracle = json.loads(Path(args.oracle).read_text())
     results = []
+    reopened = json.loads(Path(args.reopened_json).read_text()) if args.reopened_json else None
     for resolution, source in oracle['contacts'].items():
         resolution = int(resolution)
         matrix = cooler.Cooler(f'{args.artifact}::/resolutions/{resolution}')
@@ -56,6 +58,11 @@ def main():
             actual[pixel.bin1_id,pixel.bin2_id] = pixel.count
         np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(matrix.matrix(balance=False)[:], expected+expected.T-np.diag(np.diag(expected)), rtol=1e-12, atol=1e-12)
+        if reopened is not None:
+            native = reopened[str(resolution)]
+            assert native['dtype'] == 'float64'
+            np.testing.assert_allclose(np.array(native['values']).reshape(native['rows'],native['cols']),
+                matrix.matrix(balance=False)[:], rtol=0, atol=0)
         metadata = matrix.info['metadata']
         if isinstance(metadata,str):
             metadata = json.loads(metadata)

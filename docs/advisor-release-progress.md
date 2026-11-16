@@ -106,8 +106,16 @@ batch export. Independent Python Cooler/base-endpoint oracles matched every
 exported cell at 4/10 bp and retained the total 22. Evidence:
 `/tmp/hict-approximate-export-qualified/results.json`. Multi-stripe, all-interior-cut,
 both-strand, gap, partial-retention, empty-output and cleanup tests also pass.
-Large-map performance, reimport provenance and final native/package qualification
-remain separate release gates. Each stored resolution is estimated independently,
+Reimport now retains fractional cells, original estimation AGP/level metadata and
+an optional capabilities declaration. Primary/secondary chips label the data as
+estimated, including after session restoration. Preparation restores provenance
+from the original input; sequence-derived overlays do not inherit a contact
+template's estimation label. Direct `.mcool` reimport is browser/Cooler verified;
+the original-input preparation bridge has a single-Cooler-root regression, with
+tool-backed preparation qualification still pending. A subsequent approximate export records already-
+estimated input. Ordinary internal/hictk floating-point re-export remains an
+explicitly unsupported path and a required release fix, alongside large-map
+performance and final native/package qualification. Each stored resolution is estimated independently,
 not asserted to be an exact aggregation of the finest estimated level.
 
 The scissors still use the historical endpoint. Before switching the UI, finish

@@ -80,6 +80,7 @@ public class ChunkedFile implements AutoCloseable {
 
   private final @NotNull Path hdfFilePath;
   private final @NotNull SourceMetadata sourceMetadata;
+  private final @org.jetbrains.annotations.Nullable ApproximationProvenance.Summary approximationProvenance;
   //  private final long[] blockCount;
   private final int denseBlockSize;
   private final long @NotNull [] resolutions;
@@ -159,6 +160,7 @@ public class ChunkedFile implements AutoCloseable {
 
       this.resolutions = LongStream.concat(LongStream.of(0L), effectiveResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
       this.sourceMetadata = SourceMetadata.read(reader, effectiveResolutions);
+      this.approximationProvenance = ApproximationProvenance.read(reader, effectiveResolutions);
 
       this.denseBlockSize = (int) effectiveResolutions.stream()
         .mapToLong(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size"))

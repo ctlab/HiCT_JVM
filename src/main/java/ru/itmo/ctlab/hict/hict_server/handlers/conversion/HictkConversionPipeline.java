@@ -602,6 +602,8 @@ public final class HictkConversionPipeline {
       ),
       createWrappedImportLogger(logger, stagePlan, "import_hict")
     );
+    ru.itmo.ctlab.hict.hict_library.chunkedfile.ApproximationProvenance.copyOriginalInput(
+      options.inputPath(), options.outputPath(), resolutions);
   }
 
   private static @NotNull String resolveHicImportAgpPath(final @NotNull ConversionOptions options,

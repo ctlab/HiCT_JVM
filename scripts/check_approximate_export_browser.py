@@ -131,10 +131,72 @@ def main():
             shutil.copyfile(data/'tiny-primary.mcool',batch_artifact)
             subprocess.run([args.cooler_python,str(Path(__file__).with_name('check_approximate_cooler.py')),
                 '--artifact',str(batch_artifact),'--oracle',str(oracle),'--output',str(output/'batch-cooler-parity.json')],check=True)
+            # Reopen the real exported file, then save and restore its provenance.
+            page.get_by_role('dialog',name='Background jobs').get_by_role('button',name='Close',exact=True).click()
+            with page.expect_download() as saved_before_import:
+                check.menu('File','Save session')
+            saved_before_import.value.save_as(output/'before-reimport-session.json')
+            imported_name = 'reopened-'+output.name+'.hict.hdf5'
+            imported_job = json.loads(app.http('/convert/jobs',{'filename':name,'outputFilename':imported_name,
+                'direction':'mcool-to-hict','exportAllResolutions':True,'buildResolutionPyramid':False,
+                'balanceInputCoolers':False}))['jobId']
+            page.locator('.jobs-button').click()
+            reopened_row = page.locator('.job-row').filter(has=page.get_by_role('button',name='Open result',exact=True))
+            deadline = time.monotonic()+60
+            while time.monotonic()<deadline:
+                imported_result = json.loads(app.http('/convert/jobs/'+imported_job))
+                if imported_result['status'] in ('finished','failed','cancelled'):
+                    break
+                page.wait_for_timeout(100)
+            assert imported_result['status']=='finished',imported_result
+            reopened_row.get_by_role('button',name='Open result',exact=True).click()
+            estimated_chip = page.locator('.file-chip--static').filter(has_text='Estimated:').first
+            estimated_chip.wait_for()
+            assert imported_name in estimated_chip.get_attribute('title')
+            assert 'uniform-independent-endpoints-v1' in estimated_chip.get_attribute('title')
+            check.settle()
+            opened = json.loads(app.http('/attach',{}))['openFileResponse']
+            caps = opened['capabilities']
+            assert caps['approximation']['method']=='uniform-independent-endpoints-v1'
+            assert caps['approximation']['upstreamApproximate'] is False
+            reopened_values = {}
+            for resolution in original:
+                count = sum(d['contigLengthBins'][str(resolution)] for d in opened['assemblyInfo']['contigDescriptors'])
+                reopened_values[resolution] = json.loads(app.http('/matrix/query',{'bpResolution':resolution,
+                    'unit':'BINS','rows':count,'cols':count,'signalMode':'RAW_COUNTS','format':'JSON'}))
+            reopened_json = output/'reopened-values.json'; reopened_json.write_text(json.dumps(reopened_values))
+            subprocess.run([args.cooler_python,str(Path(__file__).with_name('check_approximate_cooler.py')),
+                '--artifact',str(artifact),'--oracle',str(oracle),'--reopened-json',str(reopened_json),
+                '--output',str(output/'reimport-parity.json')],check=True)
+            secondary_name = 'secondary-'+imported_name
+            assert not (data/secondary_name).exists()
+            shutil.copyfile(data/imported_name,data/secondary_name)
+            app.http('/secondary/open',{'filename':secondary_name})
+            page.reload(); check.menu('File','Attach'); check.settle()
+            secondary_chip = page.locator('.file-chip--static').filter(has_text='Secondary (estimated):')
+            secondary_chip.wait_for()
+            assert 'uniform-independent-endpoints-v1' in secondary_chip.get_attribute('title')
+            with page.expect_download() as downloaded_session:
+                check.menu('File','Save session')
+            imported_session = output/'reopened-session.json'; downloaded_session.value.save_as(imported_session)
+            saved_caps = json.loads(imported_session.read_text())['snapshot']['primary']['capabilities']
+            assert saved_caps['approximation']==caps['approximation']
+            assert json.loads(imported_session.read_text())['snapshot']['secondary']['capabilities']['approximation']==caps['approximation']
+            check.menu('File','Close')
+            with page.expect_file_chooser() as chooser:
+                check.menu('File','Open session')
+            chooser.value.set_files(imported_session)
+            page.get_by_text('Session restored. Undo history starts from the restored assembly.',exact=True).last.wait_for()
+            estimated_chip.wait_for(); check.settle()
+            secondary_chip.wait_for()
+            assert json.loads(app.http('/attach',{}))['openFileResponse']['capabilities']['approximation']==caps['approximation']
+            page.screenshot(path=str(output/'reopened-estimated-session.png'))
+            assert not check.errors,check.errors
             assert hashlib.sha256(source.read_bytes()).hexdigest()==digest
             (output/'results.json').write_text(json.dumps({'status':'ok','jobId':job_id,'sourceSha256':digest,
                 'checks':['explicit opt-in','balanced output disabled','staged job flag propagation','Jobs delivery after dialog dismissal',
-                          'actual result download','independent Cooler/base-endpoint parity','native file unchanged','batch opt-in and default unbalanced output'],
+                          'actual result download','independent Cooler/base-endpoint parity','native file unchanged','batch opt-in and default unbalanced output',
+                          'Jobs open imported result','primary and secondary estimated labels','fractional reimport parity','session provenance save/restore'],
                 'pageErrors':check.errors},indent=2))
             browser.close()
     finally:

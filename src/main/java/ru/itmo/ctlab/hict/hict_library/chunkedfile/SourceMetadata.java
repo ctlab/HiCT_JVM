@@ -92,6 +92,7 @@ public record SourceMetadata(Units units, double scoreScale, ContactDataState co
       String root = "/resolutions/" + resolution;
       target.string().setAttr(root, WEIGHTS, source.object().isDataSet(root + "/bins/weight") ? "PRESENT" : "ABSENT");
     }
+    ApproximationProvenance.copy(source, target, resolutions);
   }
 
   private static String attribute(IHDF5Reader reader, String object, String name) {

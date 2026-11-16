@@ -2716,3 +2716,51 @@ Remaining P1 gates include shared-bin expected/histogram accounting, uniform
 sequence-scale geometry, scissors/feature actions, larger-map performance and
 reimport provenance qualification. Neither P1 nor the publication release is
 claimed complete by this increment.
+
+## Advisor P1 estimated-source reimport provenance (2026-11-16)
+
+Reopening an approximate Cooler previously retained fractional values but lost
+its approximation marker. The importer now preserves the declared method,
+resolution policy, estimation AGP and level metadata in the native file. A new
+optional capability summary labels primary and secondary sources as Estimated
+without inventing their signal units or changing normalization availability.
+Session save/restore recomputes the declaration from the source file and retains
+it in the capture. Further approximate export marks already-estimated input.
+Sequence-derived overlays ignore contact-template estimation provenance.
+
+The hictk preparation path restores provenance from the original input after
+importing a prepared Cooler, since external preparation can drop root attributes.
+A single-Cooler-root regression covers this bridge independently of its optional
+group. Full tool-backed preparation still needs package qualification. The new
+round-trip regression also caught a small-map HDF5 assertion when default chunks
+exceeded axis dimensions; export chunks are now clamped to the level's bin count.
+
+All 552 JVM tests passed with zero failures/errors and seven optional skips.
+WebUI build and capability parser regressions passed. Focused ESLint has zero
+errors and three pre-existing unused-handler warnings in NavigationBar.vue.
+Tests check every fractional cell on both native levels with exact equality,
+the saved source capabilities, incomplete declarations, preparation restoration,
+already-estimated input and exclusion of sequence-derived score templates.
+
+The extended Chromium journey exports and downloads the file, reimports it as a
+background job, opens it through Jobs, attaches an estimated secondary source,
+and saves/closes/restores the session. All twelve checks passed with zero page
+errors. An independent Python Cooler reader confirms exact equality between the
+reopened BINS query and the actual export, including hidden contigs; its separate
+base-endpoint oracle still agrees to 8.9e-16. Evidence:
+`/tmp/hict-reimport-immutable/{results,reimport-parity}.json`; the final screenshot
+showing both Estimated labels was inspected. This does not qualify uniform
+sequence-scale geometry or sub-resolution contig visibility.
+
+One earlier browser run was invalidated by rebuilding its live JAR, causing JVM
+class-loading failures. It is excluded from the evidence. The common browser
+harness now snapshots the JAR before launch, rejects a source modified during
+copying, records its SHA-256 and removes the owned copy after shutdown. The final
+run used SHA-256 `b2a6e6b01b04b3597648ac5bef03c50887e1f174bf14c28685970e574abc4b92`
+(`server.artifact.sha256`) with no class-loading errors and no leftover owned JAR.
+
+Ordinary floating-point re-export remains explicitly unsupported by both legacy
+export engines, as reproduced in `/tmp/hict-reimport-audit/export.log`; it does
+not silently round the values. Closing that path remains required, together with
+shared-bin expected/histogram accounting, sequence-scale geometry and final
+release/publication qualification. The full goal is still active.

@@ -1,6 +1,8 @@
 """Owned local server and explicit UI actions for sequence lifecycle acceptance."""
 
 import json
+import hashlib
+import tempfile
 import os
 from pathlib import Path
 import re
@@ -18,6 +20,7 @@ class HictTestServer:
         self.log = Path(log).resolve()
         self.process = None
         self.stream = None
+        self.artifact = None
 
     def __enter__(self):
         with socket.socket() as reservation:
@@ -32,16 +35,17 @@ class HictTestServer:
             "HICT_BIND_HOST": "127.0.0.1",
             "SERVE_WEBUI": "false",
         }
-        self.stream = self.log.open("w")
-        self.process = subprocess.Popen(
-            ["java", "-Xmx2g", "-jar", str(self.jar), "start-server"],
-            cwd=self.log.parent,
-            env=environment,
-            stdout=self.stream,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+        self.artifact = self._snapshot_artifact()
         try:
+            self.stream = self.log.open("w")
+            self.process = subprocess.Popen(
+                ["java", "-Xmx2g", "-jar", str(self.artifact), "start-server"],
+                cwd=self.log.parent,
+                env=environment,
+                stdout=self.stream,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
                 if self.process.poll() is not None:
@@ -55,6 +59,27 @@ class HictTestServer:
         except BaseException:
             self.__exit__(None, None, None)
             raise
+
+    def _snapshot_artifact(self):
+        # Never execute a JAR that a later build can overwrite underneath the JVM.
+        before = self.jar.stat()
+        digest = hashlib.sha256()
+        with tempfile.NamedTemporaryFile(prefix=".hict-test-server-", suffix=".jar",
+                                         dir=self.log.parent, delete=False) as target:
+            artifact = Path(target.name)
+            try:
+                with self.jar.open("rb") as source:
+                    while block := source.read(1024 * 1024):
+                        target.write(block)
+                        digest.update(block)
+                after = self.jar.stat()
+                if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+                    raise RuntimeError("Server artifact changed while copying; finish the build before launching acceptance")
+                self.log.with_suffix(".artifact.sha256").write_text(digest.hexdigest()+"  "+self.jar.name+"\n")
+            except BaseException:
+                artifact.unlink(missing_ok=True)
+                raise
+        return artifact
 
     def http(self, path, payload=None):
         body = None if payload is None else json.dumps(payload).encode()
@@ -74,6 +99,8 @@ class HictTestServer:
                 self.process.wait(timeout=10)
         if self.stream is not None:
             self.stream.close()
+        if self.artifact is not None:
+            self.artifact.unlink(missing_ok=True)
 
 
 class BrowserCheck:

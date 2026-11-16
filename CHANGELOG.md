@@ -18,6 +18,9 @@
 
 ### Sequence analysis and sessions
 
+- Preserve estimation provenance and fractional values when reopening approximate Cooler files, label estimated primary/secondary sources, and retain their declaration in sessions.
+- Clamp export chunks to small map dimensions so default settings work with short assemblies.
+
 - Export sequence-cut assemblies to Cooler with explicit approximate rebinning, labeled fractional values and conserved retained contacts, while preserving native HiCT data.
 - Retrieve completed exports from Jobs with readable result filenames after dismissing the export dialog.
 
