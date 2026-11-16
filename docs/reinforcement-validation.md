@@ -3429,3 +3429,89 @@ The server artifact contains the preceding embedded WebUI; these runs explicitly
 serve the new WebUI separately. Final embedded/platform qualification is pending.
 Plans, manuscript and protected initial changes remain untouched. P3 and the
 full production/publication release remain incomplete.
+
+## Electron native streaming and graceful quit — 2026-11-16
+
+The current Electron adapter sends only a guarded coordinate-export request through
+IPC: URL, JSON options, captured journal identity and operation ID. The main
+process validates trusted-local URLs/read endpoints, rejects redirects and
+unexpected content, opens the native destination chooser, and sequentially writes
+fetch chunks to a uniquely owned sibling file. It synchronizes/closes before
+rename and remembers a destination only after that commit. Native file bytes
+never cross renderer IPC. Legacy/Tauri/download adapters remain compatible and
+buffered; their genome-scale memory qualification is still pending.
+
+One transfer belongs to each window. Matching operation IDs permit cancellation;
+other windows/tokens cannot cancel it. Navigation, destruction and renderer loss
+abort owned work. Graceful quit waits for transfer cleanup before retrying quit;
+unanswered choosers own no file and cannot start I/O after cancellation. Window
+IDs are captured before destruction. Streamed results advertise no browser file
+readback; Blob-backed sessions keep that capability. Permission/quota failures
+have actionable messages, and preload errors omit IPC internals.
+
+Full WebUI checks pass (`/tmp/hict-native-stream-web-final.log`), including the real
+HTTP/filesystem service tests. Focused checks after the final native-only changes
+also pass: `/tmp/hict-native-stream-api-final.log`,
+`/tmp/hict-native-stream-unit-last.log`,
+`/tmp/hict-native-stream-legacy-last.log` and
+`/tmp/hict-native-stream-electron-qualified.log`. Tests transfer and independently hash
+128 MiB, validate frozen headers, reject stale/HTML/truncated/redirected responses,
+exercise cancellation before/after chooser completion, ownership, overlapping
+operations, failed replacement, shutdown during I/O and a pending chooser, and
+verify previous files/preferences and temporary-file cleanup. Native bridge tests
+assert request-only payloads, cancellation IDs, stream bypass and readable errors.
+JVM test/shadowJar checks pass with 585 tests, zero failures/errors and seven
+optional skips (`/tmp/hict-native-stream-jvm.log`). Java production code is unchanged.
+
+`check_native_coordinate_exports.py` passes nine checks using real Electron
+41.10.7 preload/IPC, the built Linux payload and actual GTK save/cancel dialogs on
+an owned Xvfb display. It verifies 512 Mb FASTA (518,400,010 output bytes), exact
+selected FASTA, AGP, chooser cancellation without a fetch, in-progress cancellation,
+a real filesystem permission failure, session cancellation/confirmed v4 save and
+readback restore, navigation cancellation and last-window close during staged I/O.
+The latter asserts exit code zero and proves that graceful quit leaves no owned staging file. Original
+FASTA/HDF5 input hashes remain unchanged; no page errors occur. Native dialogs and
+saved/error notices were visually inspected. Evidence:
+`/tmp/hict-native-coordinate-08/results.json`, `native-dialog.png`, `saved.png`,
+`failed.png`, native exports and `chosen/session.json`.
+
+A test-only forwarding proxy delivers actual JVM responses, throttles transfer
+for cancellation, and gates a response so directory permission can change after
+the chooser. It preserves journal and cancellation response headers. Earlier
+proxy omissions blocked session capture and generated unsafe-header warnings;
+those runs were not accepted as final evidence. No production CORS policy changed.
+The final run uses localhost to reach the IPv4-bound proxy, exercising the native
+fetch resolver. Renderer observation records zero coordinate-download requests.
+The exported sequence hash matches an independently generated IUPAC reference.
+Main-process RSS grows from 202,498,048 to 303,726,592 bytes while transferring
+518,400,010 bytes; this is sampled natural RSS on the same Ryzen 9 7900X/64 GB Linux
+host, not a dense-map latency or universal scaling benchmark. The driver uses a
+private X display, disables GPU and uses the payload's Linux no-sandbox flag.
+It verifies isolated preload/no renderer Node globals, not OS sandbox qualification.
+
+All 90 existing browser scenarios also pass on the final WebUI assets:
+`/tmp/hict-native-qualified-{sequence_view,selection_modes,fasta_measurement,alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-browser/results.json`.
+They retain their documented controlled writable-picker fixtures. The final browser build includes the HTTP-compatible random operation IDs.
+Native main/preload lifecycle and error reporting use the same compiled tree
+qualified by the payload acceptance. This adds nine genuine native-dialog workflows.
+
+Immutable server SHA-256:
+`404e9a29fe6e6bcbbdcee6bafab644539c49aa4d4c724a0a00eb209872260ab0`.
+WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding `dist/electron`):
+`32f370a33022c1df640e3faec0d96030ade579b6b16173458cbeb9d925f4fae4`.
+Compiled Electron tree SHA-256 (same method, rooted at `dist/electron`):
+`b976c790c8accce73a9f282dadadb3d2e758e020fcb1f898920ef6d55a9ea809`.
+Built payload: `/tmp/hict-native-stream-payload-04`; its manifest tree SHA-256 is
+`bbf7198733a664d9ff9b0c1f900718beabab5f3dc62c5ec5d147f11acb9a6e14`.
+The packaged main/preload/module match the compiled files; the existing builder
+copies the complete main directory. The online UI is served separately from the
+matching current WebUI assets. The JAR still embeds the preceding WebUI, so this
+is not final combined-SFX qualification.
+
+Tauri's Rust 1.88/WebKit SDK setup and streaming, download-only browser streaming,
+other advertised platforms, portals/Wayland, multi-cycle and dense-map performance,
+hard-crash/legacy-Blob shutdown, accessibility and final combined packages remain
+open. Static inspection also found that the packaged Electron fallback path needs
+separate offline-start qualification/fix (`fallbackFileUrl` assumes the development
+layout). P3 and the full publication release are not complete. Protected files,
+plans and manuscript remain untouched.

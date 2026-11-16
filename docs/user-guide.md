@@ -79,8 +79,11 @@ for supported save behavior and remaining platform qualification.
 FASTA and AGP exports stream directly to writable browser destinations. The
 Exporting notice offers Cancel while preparing or transferring the file, then
 shows the result. A cancelled or failed transfer does not confirm a saved file.
-Desktop wrappers and download-only browsers currently use the buffered transfer
-path; their large-file memory qualification remains pending.
+The current Electron desktop window also streams FASTA/AGP to the native
+destination you choose. Cancelling its chooser starts no transfer. Navigation
+cancels an active transfer, and closing the last window waits for partial-file
+cleanup. Older desktop engines, Tauri and download-only browsers still use a
+buffered path; their large-file memory qualification remains pending.
 
 ## Signal and layers
 

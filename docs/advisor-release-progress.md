@@ -23,7 +23,7 @@ describe earlier releases; they must not override the decisions below.
 |---|---|---|
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
-| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed session state, frozen revision-guarded FASTA/AGP, browser streaming/cancellation, per-purpose file memory and File Examples implemented; primary workflows and 512 Mb browser transfer verified; native dialogs, desktop/download streaming and wider chooser coverage pending |
+| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
@@ -351,6 +351,35 @@ lifecycle. Reused toast IDs and manual dismiss/replacement caused a rendering
 loop during development and are excluded by focused tests and real UI checks.
 P3 still needs desktop/download streaming, OS-dialog/platform, wider source/input
 and release-package qualification. No publication-release claim is made.
+
+## Electron native request transfers
+
+Current Electron FASTA/AGP exports carry only the captured request through IPC.
+The main process opens a native destination chooser, streams guarded HTTP bytes
+to a staged file, commits by rename and updates per-purpose destination memory.
+One operation belongs to each window; cancellation, navigation, renderer loss and
+graceful quit clean up owned staging. Quit waits for active transfer cleanup.
+Filesystem errors provide useful text without IPC internals. Streamed results
+advertise no browser readback; Blob-backed session readback stays available.
+
+The built Linux Electron 41.10.7 payload passes real GTK dialog acceptance on an
+isolated X display: 512 Mb full FASTA, exact selected FASTA, AGP, native/dialog
+cancellation, disk-permission failure, confirmed/cancelled session save/readback,
+navigation cancellation and last-window shutdown. The sequence checksum matches
+the independent reference. Native download requests are absent from the renderer;
+sampled main-process RSS stays well below the file size. The normal 90 browser
+scenarios and full JVM/WebUI checks also pass. Exact evidence/hashes are recorded
+in [reinforcement-validation.md](reinforcement-validation.md).
+
+P3 remains in progress. Tauri still needs streaming and its Rust 1.88/WebKit SDK;
+download-only browsers still buffer exports. Other platforms, portals/Wayland,
+legacy-Blob shutdown/crash durability, source/chooser/accessibility coverage and
+final combined-SFX qualification remain open. Static inspection found an
+additional release task: `HiCT_WebUI/src/electron/main/main.ts::fallbackFileUrl`
+assumes the development directory layout, whereas the packaged main sits one
+level closer to `index.html`. Correct that path and exercise offline startup and
+reconnection from the built payload. The online native-export acceptance does
+not qualify that offline path.
 
 ## Mandatory release gates
 

@@ -47,6 +47,27 @@ advance remembered directories. This protects the previous file against a failed
 write. Filesystem crash durability and cross-platform replacement behavior are
 separate qualification requirements.
 
+Current Electron windows expose a request-transfer capability for FASTA/AGP.
+The renderer sends only the endpoint, JSON options and captured history headers.
+The main process opens the native chooser first, then fetches and writes chunks
+sequentially to a staged sibling file. It validates the existing trusted-local
+host policy and export endpoint allowlist, rejects redirects/error content, and
+never sends the file bytes through renderer IPC. Older wrappers without this
+capability retain their compatibility path. Tauri has not yet implemented it.
+Operation IDs use 128 random bits from `Crypto.getRandomValues`, which supports
+HTTP contexts; this avoids adding a secure-context-only UUID dependency to the
+trusted-LAN workflow ([API reference](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues)).
+
+Each window owns at most one native coordinate transfer. Cancellation requires
+the matching window and operation ID. Navigation, renderer loss and destruction
+abort owned work. Graceful quit cancels transfers and waits for their cleanup;
+an unanswered chooser owns no file and its aborted signal prevents later I/O.
+Rename commits the file; cancellation after that point cannot turn a completed
+save into a cancelled result. Permission and storage errors have concise messages;
+the preload removes IPC method-name wrappers. Streamed native results do not
+advertise browser readback. Sessions and locally generated figures still retain
+their confirmed Blob readback capability.
+
 Server-side input selectors retain directory and filename per server/purpose in
 local settings. Reopening verifies the folder and preselects the file only if it
 is still visible. A missing folder falls back to the root. Browsing and dismissal
@@ -70,17 +91,27 @@ Electron's actual IPC handler is exercised against real temporary files, includi
 injected rename failure. The actual Tauri filesystem function is compiled and
 tested independently; this does not qualify the complete Tauri wrapper.
 
+Nine acceptance checks pass with the built Linux Electron 41.10.7 payload and
+real GTK save/cancel dialogs on a private X display, including 512 Mb FASTA,
+selected FASTA, AGP, permission failure, cancellation, navigation, last-window
+cleanup and session save/readback. A throttling proxy forwards actual JVM data
+and preserves the journal/cancellation response headers. The direct desktop
+transfer creates no renderer coordinate-download requests. Other platforms,
+Wayland/portal variants, hard-crash durability and full installer integration
+remain unqualified.
+
 The audit host has Rust 1.75, which cannot read the wrapper's v4 Cargo lockfile;
-the project requires Rust 1.88. Full wrapper compilation and native GUI checks on
-each advertised platform remain required. Whole-Blob buffering and desktop IPC
-(including Tauri's per-byte array conversion) are not yet qualified for large
-FASTA files. Browser streaming is qualified on a 512 Mb synthetic assembly with
+the project requires Rust 1.88, and WebKit 4.1 development metadata is absent.
+Full Tauri compilation and its updated native GUI checks remain required.
+Whole-Blob buffering in older Electron/Tauri and download-only browsers
+(including Tauri's per-byte array conversion) is not qualified for large FASTA.
+Browser streaming is qualified on a 512 Mb synthetic assembly with
 an independent sequence checksum and Chromium's actual private-filesystem
 writable stream in a persistent profile. Only the chooser is substituted; the
 large backend response is fetched directly. Cancellation and injected write
 failure abort the real writer and retain the old output.
 This qualifies the browser transfer integration, not OS-native file dialogs or
-genome-scale behavior across all browsers. Desktop/download streaming, broader
+genome-scale behavior across all browsers. Tauri/download streaming, broader
 bounded-memory qualification, all secondary-source/chooser routes,
 large directories, accessibility and restart behavior remain P3 work. No release
 readiness claim follows from these primary workflow checks.

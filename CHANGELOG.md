@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Stream Electron FASTA/AGP exports in the main process with native destination selection, revision guards and no file-sized renderer IPC.
+- Cancel owned transfers on navigation and wait for staged-file cleanup on graceful quit; show clear filesystem failures and preserve native session save/readback.
+
 - Stream FASTA/AGP directly to writable browser destinations with backpressure, a cancellable progress notice, and abort-on-failure cleanup.
 
 - Choose destinations for sessions, FASTA/AGP, figures and settings exports, remember file choices by purpose, and expose File → Open Examples.
