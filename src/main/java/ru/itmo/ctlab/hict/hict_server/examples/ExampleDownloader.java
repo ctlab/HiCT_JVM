@@ -361,7 +361,15 @@ public final class ExampleDownloader {
     }
     final long expected = file.getLong("bytes", -1L);
     final var sha = file.getString("sha256");
-    if (Files.isRegularFile(target) && verified(target, expected, sha, false)) {
+    final var recorded = ExampleCache.reusableFile(folder, example.body(), file);
+    final var cachedSha = sha != null ? sha : recorded == null ? null : recorded.getString("sha256");
+    if (Files.isRegularFile(target) && cachedSha != null) {
+      synchronized (lock) {
+        status = new Status(State.RUNNING, example.id(), 0, "Verifying cached " + name, null,
+          0L, 0L, name, List.copyOf(status.files()), List.copyOf(status.skippedOptional()), false);
+      }
+    }
+    if (Files.isRegularFile(target) && cachedSha != null && verified(target, expected, cachedSha, false, flag)) {
       progress.update(Files.size(target), Files.size(target));
       return;
     }
@@ -497,7 +505,7 @@ public final class ExampleDownloader {
       break;
     }
     if (flag.get()) throw new CancellationException("Cancelled");
-    if (!verified(part, expected, sha, true)) {
+    if (!verified(part, expected, sha, true, flag)) {
       Files.deleteIfExists(part);
       Files.deleteIfExists(meta);
       throw new IOException(name + " failed verification (length or sha256 does not match the catalog) and was discarded");
@@ -546,7 +554,7 @@ public final class ExampleDownloader {
     throw new IOException("Too many redirects");
   }
 
-  private static boolean verified(final Path file, final long expectedBytes, final @Nullable String sha, final boolean complete) throws IOException {
+  private static boolean verified(final Path file, final long expectedBytes, final @Nullable String sha, final boolean complete, AtomicBoolean cancelled) throws IOException {
     if (expectedBytes > 0 && Files.size(file) != expectedBytes) {
       return false;
     }
@@ -556,6 +564,7 @@ public final class ExampleDownloader {
         final var buffer = new byte[1 << 16];
         int read;
         while ((read = in.read(buffer)) >= 0) {
+          if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new CancellationException("Verification cancelled");
           digest.update(buffer, 0, read);
         }
         return HexFormat.of().formatHex(digest.digest()).equals(sha);
@@ -572,7 +581,8 @@ public final class ExampleDownloader {
     for (final var name : downloaded) {
       if (flag.get()) throw new CancellationException("Cancelled");
       final var path = folder.resolve(name);
-      final var entry = new JsonObject().put("filename", name).put("bytes", Files.size(path));
+      final var entry = new JsonObject().put("filename", name).put("bytes", Files.size(path))
+        .put("modifiedAt", Files.getLastModifiedTime(path).toString());
       try (InputStream in = Files.newInputStream(path)) {
         final var digest = MessageDigest.getInstance("SHA-256");
         final var buffer = new byte[1 << 16];
@@ -588,7 +598,8 @@ public final class ExampleDownloader {
       files.add(entry);
     }
     final var body = example.body();
-    final var manifest = new JsonObject().put("exampleId", example.id()).put("title", body.getString("title"))
+    final var manifest = new JsonObject().put("exampleId", example.id()).put("catalogFingerprint", ExampleCache.fingerprint(body))
+      .put("catalogExample", body.copy()).put("title", body.getString("title"))
       .put("catalogSource", example.source()).put("completedAt", java.time.Instant.now().toString())
       .put("files", files).put("openingRecipe", body.getJsonObject("openingRecipe"))
       .put("attribution", body.getJsonObject("attribution")).put("publications", body.getJsonArray("publications"));

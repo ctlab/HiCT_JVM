@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -237,6 +238,80 @@ class ExampleDownloaderTest {
     assertEquals("P", manifest.getJsonObject("attribution").getString("provider"));
     assertEquals(sha(payload), manifest.getJsonArray("files").getJsonObject(0).getString("sha256"));
     assertTrue(s.allRequiredPresent());
+  }
+
+  @Test void cacheDiscoveryRequiresCurrentRecipeAndRecordedFileMetadata() throws Exception {
+    plainServer();
+    var spec = example(file("a.bin", "/f", payload.length, sha(payload), true));
+    var d = downloader();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertTrue(ExampleCache.available(data, spec.body()));
+    var reordered = new JsonObject();
+    var keys = new ArrayList<>(spec.body().fieldNames());
+    java.util.Collections.reverse(keys);
+    keys.forEach(key -> reordered.put(key, spec.body().getValue(key)));
+    reordered.put("downloaded", true).put("source", "test").put("bundled", true);
+    assertEquals(ExampleCache.fingerprint(spec.body()), ExampleCache.fingerprint(reordered));
+    var changed = spec.body().copy();
+    changed.getJsonObject("openingRecipe").put("displayMode", "oe");
+    assertFalse(ExampleCache.available(data, changed));
+    var target = data.resolve("examples/ex1/a.bin");
+    Files.write(target, new byte[]{0});
+    assertFalse(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertArrayEquals(payload, Files.readAllBytes(target));
+    assertTrue(ExampleCache.available(data, spec.body()));
+    Files.writeString(data.resolve("examples/ex1/manifest.json"), "{}");
+    assertFalse(ExampleCache.available(data, spec.body()));
+  }
+
+  @Test void unpinnedCachedFilesNeedMatchingProvenanceAndAreRehashed() throws Exception {
+    plainServer();
+    var spec = example(file("a.bin", "/f", payload.length, null, true));
+    var d = downloader();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    int fetched = requests.size();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertEquals(fetched, requests.size(), "Verified cached bytes need no provider request");
+    var target = data.resolve("examples/ex1/a.bin");
+    var time = Files.getLastModifiedTime(target);
+    var damaged = payload.clone();
+    damaged[0] ^= 1;
+    Files.write(target, damaged);
+    Files.setLastModifiedTime(target, time);
+    // Discovery is deliberately metadata-only. Actual opening must run the job.
+    assertTrue(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertTrue(requests.size() > fetched);
+    assertArrayEquals(payload, Files.readAllBytes(target));
+    fetched = requests.size();
+    spec.body().getJsonObject("attribution").put("provider", "Updated provider");
+    assertFalse(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertEquals(fetched, requests.size(), "An attribution change does not change the source file");
+    spec.body().getJsonArray("files").getJsonObject(0).put("url", base + "/f?revision=2");
+    assertFalse(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertTrue(requests.size() > fetched, "A changed source declaration must be fetched again");
+    var manifestPath = data.resolve("examples/ex1/manifest.json");
+    var manifest = new JsonObject(Files.readString(manifestPath));
+    for (var invalid : List.of("not an array", new JsonArray().add("not a file record"),
+      new JsonArray().add(new JsonObject().put("filename", "a.bin").put("sha256", 42)))) {
+      manifest.put("files", invalid);
+      Files.writeString(manifestPath, manifest.encode());
+      assertFalse(ExampleCache.available(data, spec.body()));
+      fetched = requests.size();
+      d.start(spec);
+      assertEquals(ExampleDownloader.State.READY, await(d).state());
+      assertTrue(requests.size() > fetched, "Malformed cache records must recover by downloading");
+    }
   }
 
   @Test void aWrongChecksumDiscardsTheFile() throws Exception {

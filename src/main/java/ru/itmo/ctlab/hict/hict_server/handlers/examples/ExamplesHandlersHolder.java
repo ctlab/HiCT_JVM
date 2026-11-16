@@ -74,25 +74,6 @@ public class ExamplesHandlersHolder extends HandlersHolder {
     return wrapper == null ? null : wrapper.getPath();
   }
 
-  private static boolean isDownloaded(final Path root, final io.vertx.core.json.JsonObject example) {
-    try {
-      final var folder = root.resolve("examples").resolve(example.getString("id"));
-      if (!java.nio.file.Files.isRegularFile(folder.resolve("manifest.json"))) {
-        return false;
-      }
-      for (final var entry : example.getJsonArray("files")) {
-        final var file = (io.vertx.core.json.JsonObject) entry;
-        if (file.getBoolean("required", true) && !java.nio.file.Files.isRegularFile(folder.resolve(file.getString("filename")))) {
-          return false;
-        }
-      }
-      final var preparation = example.getJsonObject("openingRecipe").getJsonObject("fastaPreparation");
-      return preparation == null || java.nio.file.Files.isRegularFile(folder.resolve(preparation.getString("filename")));
-    } catch (final RuntimeException e) {
-      return false;
-    }
-  }
-
   private synchronized ExampleDownloader downloader(final Path root) {
     if (downloader == null || !root.equals(downloaderRoot)) {
       if (downloader != null) {
@@ -110,10 +91,10 @@ public class ExamplesHandlersHolder extends HandlersHolder {
       final var root = dataDirectory();
       vertx.executeBlocking(() -> {
         final var json = ExamplesCatalog.load(root).toJson();
-        // An example counts as downloaded when its manifest exists and every required file is on disk.
+        // Discovery only: opening rehashes cached data through Jobs.
         for (final var entry : json.getJsonArray("examples")) {
           final var example = (io.vertx.core.json.JsonObject) entry;
-          example.put("downloaded", root != null && isDownloaded(root, example));
+          example.put("downloaded", root != null && ru.itmo.ctlab.hict.hict_server.examples.ExampleCache.available(root, example));
         }
         return json;
       }, false).onSuccess(json -> ctx.response().putHeader("content-type", "application/json").end(json.encode()))

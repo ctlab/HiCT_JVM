@@ -374,6 +374,8 @@ def main():
                         "button", name="Open result", exact=True
                     ).click()
                     await_file("manual")
+                    assert current()["jobId"] != manual_id
+                    record("historical-example-result-is-reverified-under-a-new-job")
                     record(
                         "closing-jobs-keeps-download-running-and-retains-earlier-results-without-auto-open"
                     )
@@ -498,6 +500,104 @@ def main():
                     record(
                         "late-start-response-after-catalog-close-does-not-open-jobs-or-replace-the-map"
                     )
+                    cached = data / "examples/jobs-automatic/example.hict.hdf5"
+                    before = cached.stat()
+                    previous_id = current()["jobId"]
+                    control(paused=True)
+                    d = open_catalog()
+                    card(d, "automatic").get_by_role(
+                        "button", name="Open example", exact=True
+                    ).click()
+                    expect(d).to_have_count(0)
+                    cached_id = current()["jobId"]
+                    assert cached_id != previous_id
+                    await_state("READY")
+                    await_file("automatic")
+                    assert cached.stat().st_mtime_ns == before.st_mtime_ns
+                    record("cached-example-is-verified-in-jobs-without-redownloading")
+                    page.evaluate(
+                        "api=>window.__hictBenchmark.open('tiny-primary.hict.hdf5',api)",
+                        api.url,
+                    )
+                    check.settle()
+                    # Same size and mtime defeats discovery metadata, but must not
+                    # defeat the full digest performed by an opening job.
+                    with cached.open("r+b") as stream:
+                        stream.seek(-1, 2)
+                        last = stream.read(1)
+                        stream.seek(-1, 2)
+                        stream.write(bytes([last[0] ^ 1]))
+                    os.utime(cached, ns=(before.st_atime_ns, before.st_mtime_ns))
+                    assert (
+                        hashlib.sha256(cached.read_bytes()).hexdigest()
+                        != fixture_info["sha256"]
+                    )
+                    assert (
+                        next(
+                            e
+                            for e in api_json(fx, "/examples/catalog", {})["examples"]
+                            if e["id"] == "jobs-automatic"
+                        )["downloaded"]
+                        is True
+                    )
+                    p, row, repaired_id = start("automatic")
+                    assert repaired_id != cached_id
+                    expect(row).to_contain_text("Downloading example.hict.hdf5")
+                    assert filename() == "tiny-primary.hict.hdf5"
+                    record("tampered-cached-example-cannot-open-before-repair")
+                    control(paused=False)
+                    await_state("READY")
+                    await_file("automatic")
+                    assert (
+                        hashlib.sha256(cached.read_bytes()).hexdigest()
+                        == fixture_info["sha256"]
+                    )
+                    record("same-size-same-mtime-corruption-is-repaired-before-opening")
+                    catalog_file = data / "examples/catalogs/jobs-fixture.json"
+                    declaration = json.loads(catalog_file.read_text())
+                    changed = next(
+                        e
+                        for e in declaration["examples"]
+                        if e["id"] == "jobs-automatic"
+                    )
+                    changed["attribution"][
+                        "acknowledgement"
+                    ] = "Updated fixture attribution."
+                    catalog_file.write_text(json.dumps(declaration))
+                    assert (
+                        next(
+                            e
+                            for e in api_json(fx, "/examples/catalog", {})["examples"]
+                            if e["id"] == "jobs-automatic"
+                        )["downloaded"]
+                        is False
+                    )
+                    previous_id = current()["jobId"]
+                    d = open_catalog()
+                    card(d, "automatic").get_by_role(
+                        "button", name="Open example", exact=True
+                    ).click()
+                    expect(d).to_have_count(0)
+                    declaration_id = current()["jobId"]
+                    assert declaration_id != previous_id
+                    await_state("READY")
+                    expect(
+                        page.get_by_role("dialog", name="Background jobs", exact=True)
+                    ).to_have_count(0)
+                    manifest = json.loads((cached.parent / "manifest.json").read_text())
+                    assert (
+                        manifest["catalogExample"]["attribution"]["acknowledgement"]
+                        == "Updated fixture attribution."
+                    )
+                    assert (
+                        next(
+                            e
+                            for e in api_json(fx, "/examples/catalog", {})["examples"]
+                            if e["id"] == "jobs-automatic"
+                        )["downloaded"]
+                        is True
+                    )
+                    record("changed-catalog-invalidates-cache-and-refreshes-provenance")
                     page.set_viewport_size({"width": 640, "height": 600})
                     p = panel()
                     assert p.evaluate("(e)=>e.scrollWidth<=e.clientWidth+1")
@@ -531,7 +631,7 @@ def main():
                             == "examples/jobs-automatic/example.hict.hdf5"
                             for body in main_opens
                         )
-                        == 1
+                        == 4
                     ), main_opens
                     assert not any(
                         body.get("filename")

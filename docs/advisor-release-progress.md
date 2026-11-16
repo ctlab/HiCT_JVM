@@ -27,7 +27,7 @@ describe earlier releases; they must not override the decisions below.
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
-| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first example downloads, retained attempt history, byte/indeterminate progress, scoped cancellation, recovery and opening intent implemented; primary Chromium workflows and FASTA-only AGP verified; subsequent conversion/opening phases, cache provenance, OSD/resolution and release qualification pending |
+| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first example downloads, retained attempt history, byte/indeterminate progress, scoped cancellation, recovery and opening intent implemented; primary Chromium workflows and FASTA-only AGP verified; cache discovery/opening integrity implemented; subsequent conversion/opening phases, OSD/resolution and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
@@ -682,3 +682,20 @@ OSD resolution transitions and diagonal provenance require their wider checks.
 P8/P9, other package qualification, accessibility, dense-map performance, native
 platforms and publication/release artifacts remain open. The goal stays active.
 Protected plans/owner files are unchanged; nothing pushed, merged or tagged.
+
+## Cached example verification and current-catalog provenance
+
+Cached cards and historical example results now start cancellable Jobs verification
+before opening. Manifests retain the canonical current declaration, its fingerprint
+and file hash/size/modification metadata. Catalog discovery stays metadata-only;
+opening rehashes even same-size/same-mtime content. Valid pinned cached files are
+reused without downloading, while unpinned files require a matching source
+declaration and verified recorded hash. Recipe/attribution changes refresh
+provenance without refetching unchanged sources; legacy records and changed
+unpinned source declarations require downloading again. Late verification
+start/catalog replies cannot replace a different workspace. P7 remains in progress:
+subsequent conversion/wizard phases, real public example qualification, OSD resolution
+transitions/diagonal provenance, catalog/session provenance transfer and release/platform
+gates remain open. Screenshot review also found repeated startup sensitivity/progress
+notifications overlapping Jobs; remove that noise before release. Final validation
+evidence is recorded in reinforcement-validation.md.

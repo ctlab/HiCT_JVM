@@ -1,6 +1,6 @@
 # Examples catalog
 
-`Help ▸ Examples...` lists example datasets from data, downloads them and hands them to the opening
+`File ▸ Open Examples…` (also available under Help) lists example datasets from data, downloads them and hands them to the opening
 wizard. Nothing about sections, cards or files is written into the application: it is all in JSON.
 
 ## Where catalogs live
@@ -46,8 +46,8 @@ The client sends an example id; the server resolves everything else from its own
 
 - Addresses must be `https`, with no credentials, on the standard port, and resolve only to public
   addresses (not loopback, private, link-local, carrier-grade NAT, multicast). Each redirect (five at most,
-  followed by hand) is checked again. A DNS answer that changes between the check and the connection is
-  not pinned: the check is repeated per request, not per connection.
+  followed by hand) is checked again. Connections use the validated address while retaining the
+  origin Host, TLS SNI and certificate checks.
 - Files go to `<data>/examples/<example id>/<filename>` via `<filename>.part`. The final path is checked to be
   inside the data folder, a file that fails its length or `sha256` is discarded, and the move into place is
   atomic. A download is complete only when the file is verified, not merely present.
@@ -56,11 +56,18 @@ The client sends an example id; the server resolves everything else from its own
 - Free space is checked before writing (the file plus a 512 MiB margin), and a size above the catalog's
   `bytes` is refused. Unknown lengths are accepted when the catalog gives no size.
 - Required files must succeed. Optional files may fail and are listed as skipped.
-- On success a `manifest.json` next to the files records the file hashes, the opening recipe, the
-  publications and the attribution. Nothing downloaded is ever executed.
-- Download completion is separate from opening: the card shows `Downloaded` and **Open in HiCT** starts the
-  wizard with the recipe's files chosen. The wizard still converts a `.hic` first. Opening asks about
-  unsaved edits as usual.
+- On success an atomically published `manifest.json` records a canonical catalog fingerprint, the
+  full example declaration, file hashes/sizes/modification times, recipe, publications and attribution.
+  Nothing downloaded is ever executed.
+- Cached cards and historical **Open result** actions start a cancellable verification job before
+  opening. Valid cached bytes need no network transfer. Catalog discovery compares the declaration
+  fingerprint and recorded metadata without hashing large files; it is not a content-integrity proof.
+  Opening rehashes the files, including when size and modification time are unchanged. An unpinned
+  file needs a matching source declaration and verified manifest hash to be reused. Recipe or
+  attribution changes refresh provenance without refetching unchanged source files. Legacy records
+  and changed unpinned source declarations require downloading again. A provider checksum verifies
+  declared content; a locally recorded checksum alone cannot prove provider authenticity.
+- The wizard still converts a `.hic` first. Opening asks about unsaved edits as usual.
 
 ## API
 

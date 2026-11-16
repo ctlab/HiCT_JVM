@@ -1,7 +1,9 @@
 # Examples and Jobs
 
 Use **File → Open Examples…** to choose a dataset. Starting a download opens
-**Jobs**, focused on that dataset. Quick-start downloads show that the example
+**Jobs**, focused on that dataset. Cached examples and **Open result** also start
+a verification job before opening. Valid cached files are reused after checksum
+verification; changed or damaged files are fetched again. Quick-start downloads show that the example
 will open when ready. Closing Jobs lets the transfer continue and cancels that
 automatic opening; **Open result** remains available when it finishes. Opening a
 different workspace also revokes a pending download's automatic opening.
@@ -34,3 +36,9 @@ These automatic-opening rules apply to the download handoff. Recipes that need
 conversion or the opening wizard retain their existing subsequent workflow. A page
 reload does not restore an automatic-opening intent; use Jobs or the example card.
 Stopping the server cancels active work rather than merely hiding progress.
+
+A catalog change invalidates the earlier ready marker. Reopening verifies the files
+against the current declaration and refreshes the recorded recipe and attribution.
+Older manifests are refreshed by the same workflow. Checksums supplied by the
+provider verify the declared content; without one, the manifest records the fetched
+bytes and can detect later changes, but cannot establish provider authenticity.

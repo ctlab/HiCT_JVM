@@ -4357,3 +4357,43 @@ pan acknowledgements are 15.7–17.4 ms; sampled pans are 24.0–26.1 ms against
 150 ms fixture gate. This does not qualify dense maps or native packages. Together
 the final development pair passes 169 browser scenarios plus the independent
 11-case download repeat, all with successful process exits.
+
+## Cached example opening integrity (2026-11-17)
+
+Cached cards and historical results now create a cancellable verification job
+before opening. Catalog discovery compares a canonical declaration fingerprint
+and recorded file metadata without hashing large datasets. Opening rehashes actual
+bytes, including same-size/same-mtime corruption, repairs damaged files and refreshes
+manifest provenance. Unpinned files need matching source declarations and verified
+recorded hashes; unchanged sources survive recipe/attribution updates without a
+network transfer. Malformed records fall back to downloading. Late start/catalog
+replies cannot replace another workspace.
+
+Final `/tmp/hict-example-cache-web-04.log` build/type/numerical checks pass; all six
+changed UI files pass Prettier and the browser driver passes Black. Final JVM log
+`/tmp/hict-example-cache-jvm-full-04.log` and XML reports show 599 tests, zero
+failures/errors, seven optional skips. Two added tests cover declaration ordering,
+response-only fields, changed recipes/sources, tampering with restored timestamps,
+metadata discovery, reuse without provider requests and malformed manifest shapes.
+`/tmp/hict-example-cache-ui-03/results.json` passes 16 actual-control cases, including
+historical-result revalidation, cache reuse, blocked opening during repair, exact
+repaired SHA-256 and refreshed attribution. Existing retry/cancel/Range, stale
+intent, optional warnings and 640 px history still pass. Other job services and
+FASTA-only AGP pass ten cases in `/tmp/hict-example-cache-other-02/browser/results.json`;
+the physical input hashes remain unchanged. Both browser processes exit zero.
+No broad rendering/performance or scientific cut suite was rerun for this scoped
+increment. Initial diagnostic runs exposed a missing test import, an intermediate
+event type, mixed pre-fix compiled sources and a GET instead of POST in the new
+driver; only the consistent final artifacts above are counted.
+
+Frozen WebUI dist SHA-256 (sorted relative paths/NUL/bytes, excluding its electron
+subtree): `5d3817e4761624364e1a12d13e89a7040606153000962524ddb08f183b08bf86`.
+Development JAR `hict_server-2.0.38-013586d-webui_d670b94-fat.jar` SHA-256:
+`a29e3adf204cba80f8be23c738f82cc3ac021ad0adfc8b950679fd74f3d98174`.
+The browser serves current assets separately from older embedded assets; this is
+not SFX/native qualification. Final screenshot review covers repair progress and
+640 px history. It also exposes repeated startup sensitivity/progress notifications
+overlapping the dialog; this UX issue remains a release gate. Public providers,
+conversion/wizard phases, catalog/session provenance transfer, OSD/diagonal behavior
+and final platform/publication gates remain open. Protected files are unchanged;
+nothing pushed, merged or tagged.
