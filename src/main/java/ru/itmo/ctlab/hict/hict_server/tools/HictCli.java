@@ -67,6 +67,7 @@ public class HictCli implements Runnable {
     "--check-available-natives",
     "--quiet",
     "--all-resolutions",
+    "--approximate-rebin",
     "--build-resolution-pyramid",
     "--balance-input-coolers",
     "--balance-exported-coolers",
@@ -821,6 +822,10 @@ public class HictCli implements Runnable {
     )
     boolean balanceExportedCoolers;
 
+    @Option(names = "--approximate-rebin", arity = "0..1", fallbackValue = "true", converter = BooleanOptionConverter.class,
+      description = "Opt in to sequence-overlap float64 Cooler rebinning for exact AGP cuts. Requires --apply-agp and --no-balance-exported-coolers.")
+    boolean approximateRebin;
+
     @Option(
       names = "--export-mode",
       defaultValue = "AUTO",
@@ -836,6 +841,8 @@ public class HictCli implements Runnable {
                                 final @NotNull Path outputPath,
                                 final String agpPath,
                                 final boolean applyAgp) {
+      if (approximateRebin && !(this instanceof HictToMcool))
+        throw new IllegalArgumentException("Approximate rebinning is available only for hict-to-mcool export");
       return new ConversionOptions(
         inputPath,
         outputPath,
@@ -850,7 +857,8 @@ public class HictCli implements Runnable {
         buildResolutionPyramid,
         balanceInputCoolers,
         balanceExportedCoolers,
-        exportMode
+        exportMode,
+        approximateRebin
       );
     }
 

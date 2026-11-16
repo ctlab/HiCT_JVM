@@ -18,6 +18,9 @@
 
 ### Sequence analysis and sessions
 
+- Export sequence-cut assemblies to Cooler with explicit approximate rebinning, labeled fractional values and conserved retained contacts, while preserving native HiCT data.
+- Retrieve completed exports from Jobs with readable result filenames after dismissing the export dialog.
+
 - Preserve source sequence coordinates beyond 2.1 Gb in cuts, AGP components and saved sessions.
 
 - Expose optional physical source-bin identities in numeric matrix queries, so repeated references after exact cuts can be identified without changing contact values.

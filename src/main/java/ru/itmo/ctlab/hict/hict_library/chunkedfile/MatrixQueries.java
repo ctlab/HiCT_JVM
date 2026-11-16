@@ -394,6 +394,8 @@ public class MatrixQueries {
       }
     } catch (final ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException e) {
       throw e;
+    } catch (java.util.concurrent.CancellationException | java.io.UncheckedIOException e) {
+      throw e;
     } catch (final Exception ex) {
       throw new RuntimeException("Scanning contacts failed", ex);
     } finally {

@@ -84,6 +84,10 @@ public class HictToMcoolConverter {
   );
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) throws IOException, NoSuchFieldException {
+    if (options.approximateRebin()) {
+      new ApproximateCoolerExporter().export(options, logConsumer, () -> Thread.currentThread().isInterrupted());
+      return;
+    }
     HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
     final var availableResolutions = readAvailableResolutions(options.inputPath());
@@ -2479,7 +2483,7 @@ public class HictToMcoolConverter {
     }
   }
 
-  private static @NotNull HDF5IntStorageFeatures resolveIntStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+  static @NotNull HDF5IntStorageFeatures resolveIntStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
     if (options.compressionLevel() <= 0) {
       return HDF5IntStorageFeatures.INT_CHUNKED;
     }
@@ -2495,7 +2499,7 @@ public class HictToMcoolConverter {
     };
   }
 
-  private static @NotNull HDF5FloatStorageFeatures resolveFloatStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+  static @NotNull HDF5FloatStorageFeatures resolveFloatStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
     if (options.compressionLevel() <= 0) {
       return HDF5FloatStorageFeatures.FLOAT_CHUNKED;
     }
@@ -2663,7 +2667,7 @@ public class HictToMcoolConverter {
     return path;
   }
 
-  private static long resolveExportMemoryLimitBytes(final @NotNull Consumer<String> logger) {
+  static long resolveExportMemoryLimitBytes(final @NotNull Consumer<String> logger) {
     final var configured = firstNonBlank(
       System.getProperty("hict.export.maxMemoryBytes"),
       System.getenv("HICT_EXPORT_MAX_MEMORY_BYTES"),

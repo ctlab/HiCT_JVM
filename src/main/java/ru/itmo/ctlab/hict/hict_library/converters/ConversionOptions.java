@@ -19,9 +19,19 @@ public record ConversionOptions(
   boolean buildResolutionPyramid,
   boolean balanceInputCoolers,
   boolean balanceExportedCoolers,
-  @NotNull ExportMode exportMode
+  @NotNull ExportMode exportMode,
+  boolean approximateRebin
 ) {
   public static final String NO_AGP = "";
+
+  public ConversionOptions(Path inputPath, Path outputPath, List<Long> resolutions, int chunkSize,
+      int compressionLevel, CompressionAlgorithm compressionAlgorithm, String agpPath, boolean applyAgpBeforeExport,
+      int parallelism, boolean exportAllResolutions, boolean buildResolutionPyramid, boolean balanceInputCoolers,
+      boolean balanceExportedCoolers, ExportMode exportMode) {
+    this(inputPath, outputPath, resolutions, chunkSize, compressionLevel, compressionAlgorithm, agpPath,
+      applyAgpBeforeExport, parallelism, exportAllResolutions, buildResolutionPyramid, balanceInputCoolers,
+      balanceExportedCoolers, exportMode, false);
+  }
 
   public ConversionOptions(
     final @NotNull Path inputPath,
@@ -106,6 +116,10 @@ public record ConversionOptions(
     if (exportMode == null) {
       exportMode = ExportMode.AUTO;
     }
+    if (approximateRebin && (!applyAgpBeforeExport || agpPath.isBlank()))
+      throw new IllegalArgumentException("Approximate rebinning requires an AGP assembly");
+    if (approximateRebin && balanceExportedCoolers)
+      throw new IllegalArgumentException("Approximate rebinning exports unbalanced float64 values; disable export balancing");
   }
 
   public static boolean defaultBuildResolutionPyramid() {

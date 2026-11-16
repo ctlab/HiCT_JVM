@@ -97,6 +97,11 @@ public final class HictToMcoolExportPipeline {
                       final @NotNull Consumer<String> logger,
                       final @NotNull Consumer<Process> processSink,
                       final @NotNull BooleanSupplier cancellationRequested) throws Exception {
+    if (options.approximateRebin()) {
+      logger.accept("Using the internal approximate float64 exporter; native source contacts remain unchanged.");
+      new ru.itmo.ctlab.hict.hict_library.converters.ApproximateCoolerExporter().export(options, logger, cancellationRequested);
+      return;
+    }
     final var effectiveMode = resolveEffectiveMode(options);
     if (effectiveMode == ConversionOptions.ExportMode.INTERNAL) {
       if (options.balanceExportedCoolers()) {

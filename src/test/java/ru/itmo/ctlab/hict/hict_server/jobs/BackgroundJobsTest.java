@@ -14,6 +14,13 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BackgroundJobsTest {
+  @Test void downloadResultNamesDoNotChangeTheirEndpointsAndRemainOptionalForOlderServices() {
+    var named = new BackgroundJob.Output("/convert/download/id", "download", null, null, null, null, "assembly.mcool");
+    var json = JsonObject.mapFrom(named);
+    assertEquals("/convert/download/id", json.getString("filename"));
+    assertEquals("assembly.mcool", json.getString("displayName"));
+    assertFalse(JsonObject.mapFrom(new BackgroundJob.Output("track.bed", "open_tracks", null)).containsKey("displayName"));
+  }
   @TempDir Path directory;
 
   private BackgroundJob job(String id, String state, long created) {

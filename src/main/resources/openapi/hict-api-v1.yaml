@@ -2274,6 +2274,7 @@ components:
               agpFilename: { type: string, nullable: true }
               mapFilename: { type: string, nullable: true }
               displayMode: { type: string, nullable: true, enum: [overlay, below, above, none] }
+              displayName: { type: string, description: Human-readable result filename when filename is a download endpoint. }
 
     EmptyObject:
       type: object
@@ -3037,6 +3038,20 @@ components:
           type: boolean
           default: false
           description: Export the currently opened HiCT assembly state when converting .hict.hdf5 to Cooler.
+        approximateRebin:
+          type: boolean
+          default: false
+          description: |
+            Explicitly opt in to approximate float64 Cooler rebinning by sequence
+            overlap. Requires hict-to-mcool and a current or selected AGP assembly.
+            The internal writer models independent uniform endpoints within each
+            original bin's actual sequence interval and conserves retained
+            unordered contacts. Omitted sequence is not renormalized. Native HiCT
+            contacts remain unchanged. Output metadata labels the estimate and
+            bins/hict_sequence_fraction records sequence coverage (including gaps).
+            Balancing is disabled by default for this mode; explicitly requesting
+            balanceExportedCoolers=true is rejected. exportMode is overridden by
+            the internal approximate writer.
         exportMode:
           type: string
           enum: [auto, internal, hictk]
@@ -3058,6 +3073,10 @@ components:
     StartBatchConversionRequest:
       type: object
       properties:
+        approximateRebin:
+          type: boolean
+          default: false
+          description: Same opt-in approximate policy as StartConversionJobRequest; requires an AGP for each HiCT input and unbalanced output.
         files:
           type: array
           items: { type: string }

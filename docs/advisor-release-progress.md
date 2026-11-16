@@ -21,7 +21,7 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: explicit bin origins, guarded exact API, source synchronization and v4 session replay implemented; scissors/feature UI, remaining shared-bin accounting, sequence-scale display and approximate export pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: guarded exact API, source synchronization, v4 replay, long offsets and opt-in approximate Cooler export implemented; scissors/feature UI, remaining shared-bin accounting, sequence-scale display and broader qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
@@ -91,9 +91,27 @@ bins. Padding has no physical identity. Statistics explicitly count display cell
 This metadata leaves raw values unchanged; it does not deduplicate arbitrary
 pipeline outputs or qualify the remaining expected-profile/histogram accounting.
 
+Explicit approximate Cooler export is implemented through the library, CLI,
+single/batch jobs and the matrix export dialog. It scans original unordered
+contacts once, redistributes by sequence-overlap fractions, writes labeled
+unbalanced float64 estimates and verifies retained-contact conservation. Diagonal
+contacts include both exchangeable endpoint orders. Gaps expose sequence coverage;
+omitted sequence is not renormalized. Native data is unchanged. Bounded caches,
+external sorting and atomic publication cover cancellation/failure. Ordinary
+export does not silently enable this policy, and estimated exports do not enter
+the ordinary conversion cache. See [the method and limitations](approximate-cooler-export.md).
+
+Chromium verified explicit consent, restored controls, Jobs delivery/download and
+batch export. Independent Python Cooler/base-endpoint oracles matched every
+exported cell at 4/10 bp and retained the total 22. Evidence:
+`/tmp/hict-approximate-export-qualified/results.json`. Multi-stripe, all-interior-cut,
+both-strand, gap, partial-retention, empty-output and cleanup tests also pass.
+Large-map performance, reimport provenance and final native/package qualification
+remain separate release gates. Each stored resolution is estimated independently,
+not asserted to be an exact aggregation of the finest estimated level.
+
 The scissors still use the historical endpoint. Before switching the UI, finish
-remaining shared-bin statistics/normalization, explicit
-approximate Cooler export, and sequence-scale display. Source offsets now use
+remaining shared-bin statistics/normalization and sequence-scale display. Source offsets now use
 longs throughout descriptors, cut lineage, AGP slices, FASTA calls and responses.
 Portable sessions also validate the complete source interval against the maximum
 exact JavaScript integer. A tiny contact fixture with a declared 3 Gb contig

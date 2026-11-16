@@ -2664,3 +2664,55 @@ digits. Evidence: `/tmp/hict-long-offset-browser/results.json`; restored screens
 inspected. Fixture generation uses `ReinforcementHdf5Fixture long-offset <tmp-dir>`
 on the built JAR plus test classes. This deliberately creates no multi-gigabase
 FASTA; large-FASTA I/O and proper sequence-scale display remain separate gates.
+
+## Advisor P1 explicit approximate Cooler export (2026-11-16)
+
+Added an opt-in sequence-overlap projection and float64 `.cool`/`.mcool` writer,
+wired through library conversion, single/batch jobs, both CLI entry points and
+the matrix export dialog. The native source is read-only. Projection uses
+original physical-bin identities, actual terminal-bin lengths and independent
+uniform endpoints. Source-diagonal contacts allocate twice the fraction product
+to distinct target bins. Partial retention is not renormalized. Each stored
+resolution is estimated independently, explicitly labeled in output metadata.
+The method, limits and API/CLI examples are in `approximate-cooler-export.md`.
+
+The writer uses a bounded endpoint cache and a bounded-memory/fan-in fractional
+COO merge sort. It records sequence coverage for gap bins, original/retained/
+exported totals and a conservation tolerance, and publishes only validated output.
+Cancellation and output failures preserve an existing target and remove owned
+intermediate files. Estimated exports bypass the ordinary conversion cache.
+Ordinary export still requires explicit consent before using this approximation.
+Incompatible balancing is rejected; the UI visibly selects internal, unbalanced
+output and restores earlier settings when approximation is deselected.
+
+Tests enumerate all interior cuts of the 17 bp fixture on both strands and compare
+every projected cell with independent base-endpoint enumeration. Additional cases
+cover repeated cuts, gaps, omitted sequence, short terminal bins, multiple physical
+stripes, ambiguous/copying layouts, empty Cooler output, multipass fractional
+sorting, cancellation, failure cleanup, CLI forms and older Jobs output schemas.
+All 548 JVM tests passed: zero failures/errors and seven optional skips. WebUI
+build and DTO regressions passed; focused ESLint has zero errors and five existing
+unused-import warnings. No new runtime dependency was added.
+
+The Chromium journey explicitly refuses export until consent, verifies control
+restoration, dismisses the export dialog, downloads its finished Jobs result, and
+then exercises batch export with default unbalanced output. Python Cooler opens
+both actual artifacts and a separate base-endpoint oracle checks every cell and
+the symmetric matrix reader. At 4/10 bp, both retain 22 unordered contacts; maximum
+cell error is 8.9e-16. Native source SHA-256 is unchanged and there are zero page
+errors. Evidence: `/tmp/hict-approximate-export-qualified/{results,cooler-parity,
+batch-cooler-parity}.json`; both final screenshots were inspected. Screenshot
+review prompted clearing corrected validation feedback and replacing raw Jobs
+download endpoints with readable filenames via an optional `displayName` field.
+
+Actual packaged `convert hict-to-mcool` CLI exports passed independent Cooler
+parity with both a bare approximation flag and the launcher's `yes` form:
+`/tmp/hict-approx-cli/{cooler-parity,boolean-cooler-parity}.json`. The guide includes
+the required `convert` command prefix. An initial opt-in test accidentally chose
+the generated input Cooler's filename as its output; a distinct export name fixed
+that test setup. The browser harness also needed the list endpoint's POST method.
+
+Remaining P1 gates include shared-bin expected/histogram accounting, uniform
+sequence-scale geometry, scissors/feature actions, larger-map performance and
+reimport provenance qualification. Neither P1 nor the publication release is
+claimed complete by this increment.
