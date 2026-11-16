@@ -24,6 +24,7 @@
 
 package ru.itmo.ctlab.hict.hict_server.dto.response.assembly;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.AssemblyInfo;
 
@@ -33,7 +34,9 @@ import java.util.Map;
 
 /** A complete assembly snapshot with shared resolution keys; never a delta. */
 public record CompactAssemblyInfoDTO(String format, long[] resolutions,
-                                    List<Object[]> contigs, List<Object[]> scaffolds) {
+                                    List<Object[]> contigs, List<Object[]> scaffolds,
+                                    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+                                    Map<Integer, Map<Long, Long>> contigBinOffsets) {
   public static final String FORMAT = "compact-v1";
 
   public record Response(CompactAssemblyInfoDTO assemblyInfo, long version) {}
@@ -43,8 +46,16 @@ public record CompactAssemblyInfoDTO(String format, long[] resolutions,
     if (!FORMAT.equals(requestedFormat)) {
       return new AssemblyInfoWithVersionDTO(AssemblyInfoDTO.generateFromChunkedFile(file), version);
     }
-    return new Response(fromSnapshot(file.getAssemblyInfo(), file.getResolutions(),
-      file.getContigNameOverrides(), file.getScaffoldNameOverrides()), version);
+    final var snapshot = file.getAssemblyInfo();
+    final var dto = fromSnapshot(snapshot, file.getResolutions(),
+      file.getContigNameOverrides(), file.getScaffoldNameOverrides());
+    final var offsets = new java.util.LinkedHashMap<Integer, Map<Long, Long>>();
+    snapshot.contigs().forEach(tuple -> {
+      final var values = file.firstOwnedBinOffsets(tuple.descriptor());
+      if (!values.isEmpty()) offsets.put(tuple.descriptor().getContigId(), values);
+    });
+    return new Response(new CompactAssemblyInfoDTO(dto.format, dto.resolutions, dto.contigs,
+      dto.scaffolds, offsets), version);
   }
 
   static CompactAssemblyInfoDTO fromSnapshot(AssemblyInfo snapshot, long[] resolutions,
@@ -67,6 +78,6 @@ public record CompactAssemblyInfoDTO(String format, long[] resolutions,
       return new Object[]{d.scaffoldId(), scaffoldAliases.getOrDefault(d.scaffoldId(), d.scaffoldName()),
         d.scaffoldName(), d.spacerLength(), borders == null ? null : new long[]{borders.startBP(), borders.endBP()}};
     }).toList();
-    return new CompactAssemblyInfoDTO(FORMAT, keys, contigs, scaffolds);
+    return new CompactAssemblyInfoDTO(FORMAT, keys, contigs, scaffolds, Map.of());
   }
 }

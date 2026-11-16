@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--jar', required=True)
     parser.add_argument('--webui', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--geometry-only', action='store_true', help='Run only the independent clipped-bin browser oracle')
     args = parser.parse_args()
     suite = Path(args.suite).resolve() if args.suite else Path(__file__).resolve().parents[1]
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=False)
@@ -612,8 +613,65 @@ class OverlayFixture { public static void main(String[] a) {
             }""",filename)
             assert result['primary']['contigDescriptors'] == result['secondary']['contigDescriptors'], result
             (out/'original-order-reattachment.json').write_text(json.dumps(result,indent=2))
+        def fragment_geometry():
+            # Start from the independent 4 kb source fixture. A legacy cut at
+            # source bp 200 removes [200,300), leaving a coarse 200 bp bin
+            # clipped to [300,400) in the right child.
+            app.http('/close', {})
+            app.http('/open', {'filename': 'known.hict.hdf5'})
+            app.http('/split_contig_at_bin', {'splitPx': 2, 'bpResolution': 100})
+            checks = []
+            for reversed_layout in (False, True):
+                if reversed_layout:
+                    app.http('/reverse_selection_range', {'startBP': 0, 'endBP': 3900})
+                page.reload()
+                check.menu('File', 'Attach')
+                check.settle()
+                result = page.evaluate("""() => {
+                    const h=window.__hictBenchmark.manager().contigDimensionHolder;
+                    const failures=[];
+                    for(const resolution of [100,200]) {
+                        let globalBp=0, globalPixel=0;
+                        for(const d of h.contigDescriptors) {
+                            const intervals=[];
+                            const a=d.contigOffsetInSource,b=a+d.contigLengthBp;
+                            for(let start=Math.floor(a/resolution)*resolution;start<b;start+=resolution)
+                                intervals.push([Math.max(start,a),Math.min(start+resolution,b)]);
+                            const reverse=d.direction===0;
+                            if(reverse)intervals.reverse();
+                            if(intervals.length!==d.contigLengthBins.get(resolution))
+                                failures.push('source bin count '+resolution);
+                            intervals.forEach(([start,end],bin)=>{
+                                const first=reverse?b-end:start-a;
+                                const last=reverse?b-start:end-a;
+                                for(let local=first;local<last;local++) {
+                                    const bp=globalBp+local,px=globalPixel+bin;
+                                    if(h.getPxContainingBp(bp,resolution)!==px ||
+                                       h.getBinContainingBp(bp,resolution)!==px ||
+                                       h.getStartBpOfPx(px,resolution)!==globalBp+first)
+                                        failures.push('integer '+resolution+':'+bp);
+                                    const fractional=h.getFractionalPxOfBp(bp+0.5,resolution);
+                                    if(Math.abs(h.getFractionalBpOfPx(fractional,resolution)-bp-0.5)>1e-7)
+                                        failures.push('fractional '+resolution+':'+bp);
+                                }
+                            });
+                            globalBp+=d.contigLengthBp; globalPixel+=intervals.length;
+                        }
+                    }
+                    return {failures:failures.slice(0,20),origins:h.contigDescriptors.map(d=>
+                        ({sourceStart:d.contigOffsetInSource,offsets:[...(d.contigBinOffsets??[])]}))};
+                }""")
+                assert not result['failures'], result
+                assert any([200,-100] in d['offsets'] for d in result['origins']), result
+                checks.append({'reversed':reversed_layout,**result})
+                page.screenshot(path=str(out / ('fragment-reversed.png' if reversed_layout else 'fragment-forward.png')))
+            (out / 'fragment-geometry.json').write_text(json.dumps(checks,indent=2))
         try:
             page.goto(f'http://127.0.0.1:{static.server_port}/')
+            if args.geometry_only:
+                check.step('partial-source-bin-coordinate-parity', fragment_geometry)
+                success = True
+                return
             check.step('open', lambda: load_file('File', 'Open…', 'known.hict.hdf5', '/open'))
             check.step('missing-fasta-guidance', missing_fasta)
             check.step('link-fasta', lambda: load_file('Assembly', 'Link FASTA', 'known.fasta', '/link_fasta'))
@@ -634,6 +692,7 @@ class OverlayFixture { public static void main(String[] a) {
             (out / 'notifications.json').write_text(json.dumps(notifications, indent=2))
             assert not [e for e in notifications if e['level'] == 'error'], notifications
             assert any('Sequence search completed: 1 matches' in e['message'] for e in notifications)
+            check.step('partial-source-bin-coordinate-parity', fragment_geometry)
             success = True
         finally:
             (out / 'summary.json').write_text(json.dumps(dict(status='ok' if success else 'error', cases=check.rows, browser=browser.version), indent=2))

@@ -7,6 +7,15 @@ info:
 
     This specification is intended for WebUI integration, Python `hict`/`hict_jvm_api`
     clients and programmatic data-processing pipelines.
+
+    Contig descriptors may include `contigBinOffsets`, a sparse object keyed by
+    bp resolution. Each signed int64 value is the source-forward origin of the
+    first retained contact bin relative to the contig fragment's sequence start.
+    Negative values identify a bin beginning before the fragment. Missing keys
+    in this object mean zero; an absent object denotes older implicit geometry.
+    The optional `contigBinOffsets` object on compact-v1 assembly snapshots maps
+    contig IDs to these same sparse objects, without changing the nine contig
+    row columns. An omitted compact map denotes zero origins for current servers.
 servers:
   - url: /
 tags:

@@ -2516,3 +2516,37 @@ Full native-wrapper/platform/repeated-start matrix remains pending; this check
 does not qualify Windows or macOS. One premature acceptance invocation overlapped
 JAR rebuilding and failed reading the incomplete archive; rerun after build
 completion passed without changing application behavior.
+
+## Advisor P1 prerequisite: explicit fragment-bin coordinates (2026-11-16)
+
+Assembly descriptors now expose sparse source-forward first-bin origins per
+resolution, derived from immutable physical ATU ownership. Compact responses
+retain the nine-column contig rows and add offsets by contig ID. The WebUI
+uses explicit origins for native-level integer and fractional coordinate
+conversion, including reversed partial bins. Older responses and synthetic
+levels retain their existing fallback path. No split algorithm is changed in
+this increment: exact non-loss cuts, native shared-bin identity accounting,
+session v4 and approximate matrix exports remain pending.
+
+Validation: full Java suite 519 tests, zero failures/errors, seven optional
+skips; WebUI build and included regressions passed. DTO checks cover legacy and
+compact parity, invalid offsets and older responses. Source interval enumeration
+checks cover partial bins and fractional inverse coordinates on both strands.
+The independent browser oracle checks every retained base of a 4 kb source at
+100/200 bp after a real legacy split, then after reversal. Focused evidence:
+`/tmp/hict-bin-geometry-focused/fragment-geometry.json`; screenshot inspected.
+The initial browser oracle caught native levels being marked ensured by the
+renderer, bypassing explicit geometry; tracking native levels separately fixed
+it. A reversed fractional lookup used a continuous position as an integer base
+index; flooring before bin lookup fixed its half-base error. A Java oracle
+initially assumed coarse bin ownership began at source bp 10; actual legacy
+ATUs retain the source bp 0 bin, so the corrected oracle records origin -12
+rather than changing historical cut semantics.
+
+Final browser suite: all 17 scenarios passed with zero page errors, including
+local BLAST, search delivery, ModDotPlot generation/accumulation, pipeline round
+trips, selection exports and the new source-bin oracle. Evidence:
+`/tmp/hict-bin-geometry-qualified/summary.json`. One harness-only rerun was needed
+because the new scenario reloads the page: historical notification assertions
+now run before that reload, preserving their original coverage. Focused ESLint
+returned success with existing schema-resolution notices and no code errors.

@@ -4,6 +4,8 @@
 
 ### Navigation and visualization
 
+- Keep native-resolution rulers and sequence coordinates aligned with partial source bins after contig edits, including reversed fragments.
+
 - Keep notification stacks away from visualization controls on smaller windows.
 
 - Show contig and scaffold names on the map whenever the contigs in view are wide enough to read. Small contigs elsewhere in the assembly no longer hide the names of large ones on screen.

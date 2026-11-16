@@ -21,7 +21,7 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | Pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: explicit source-bin origins delivered to WebUI; exact operation/session/export changes pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
@@ -45,6 +45,19 @@ FASTA-only AGP matched all 19 Borrelia records. Yeast raw 200x200 windows at
 50/100 bp matched the source Cooler exactly, including its empty diagonal.
 Evidence remains under `/tmp/hict-plan-audit`; archive release evidence before
 claiming final qualification. Native and cross-platform GUI coverage is pending.
+
+## P1 coordinate prerequisite
+
+Assembly responses now expose sparse per-resolution source-forward bin origins.
+Legacy descriptors carry `contigBinOffsets`; compact-v1 carries the corresponding
+map by contig ID while preserving its row shape. The WebUI uses these origins
+for native-level bp/bin/pixel conversion and fractional interpolation. Older
+servers and synthetic guidance levels retain their previous mapping path.
+Focused browser evidence: `/tmp/hict-bin-geometry-focused/fragment-geometry.json`.
+All bases of the independent 4 kb fixture were checked against enumerated source
+intervals at 100/200 bp after a cut and reversal. This does not change cut
+semantics yet. Legacy destructive split replay and coarse empty footprints are
+still preserved until the new exact operation is implemented.
 
 ## Mandatory release gates
 

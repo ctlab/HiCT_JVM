@@ -547,6 +547,16 @@ public class ChunkedFile implements AutoCloseable {
     throw new IllegalArgumentException("Missing original contact-bin ownership for " + descriptor.getContigName());
   }
 
+  /** Sparse source-forward origins, keyed by bp resolution. Missing keys mean zero. */
+  public java.util.Map<Long, Long> firstOwnedBinOffsets(final ContigDescriptor descriptor) {
+    final var offsets = new java.util.LinkedHashMap<Long, Long>();
+    for (int order = 1; order < resolutions.length; order++) {
+      final long offset = firstOwnedBinOffset(descriptor, order);
+      if (offset != 0) offsets.put(resolutions[order], offset);
+    }
+    return java.util.Map.copyOf(offsets);
+  }
+
   /** Exclusive visible-bin endpoint of a nonempty half-open bp interval.
    * A hidden component contributes no pixel, including at the interval end. */
   public long bpRangeEndToPixels(long endBp, ResolutionDescriptor resolution) {
