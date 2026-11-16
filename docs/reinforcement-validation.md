@@ -3213,3 +3213,69 @@ modifier behavior, the secondary-source matrix, accessibility, large-map/queue
 latency and final embedded/platform qualification remain pending. No broad repeat
 annotation or publication-release claim is made. Plan files and protected initial
 changes remain untouched.
+
+## Continuous alignment preview and short repeats — 2026-11-16
+
+The preview replaces per-base icon points with continuous run polylines through
+each aligned base boundary. This spans the full letter intersection, preserves
+reverse slope and native fragment kinks, and distinguishes substitutions,
+ambiguity and indels with shared colors/dashes. Rendering is bounded to 4096
+runs and 65,536 vertices; malformed/oversized data fails atomically. The map and
+PNG/SVG/PDF use the same geometry; vector exports retain paths rather than icon
+images. The legend explains the visible local comparison without extra controls.
+
+The backend already processed all PAF records. A disposable native-tool probe
+showed that the original 7-BP seeds/chain thresholds returned zero hits for
+`CTCTCTCTCTCT × CTCTCTCTCT`. Tiny windows (both ≤64 BP) now use
+`short-window-v1` (k2/w1/m2/n1/s2); larger windows retain
+`seeded-window-v1` (k7/w3/m12/n2/s12). All reported extended-CIGAR alignments
+are retained, within the existing 256-record/4096-segment bounds. Canonical
+`=`/`X` operations are checked against the actual frozen source bases, including
+reverse complementation. This exposed and corrected a contradictory base in an
+older synthetic reverse-strand test. Ambiguous positions remain ambiguous.
+Responses add applied profile, method, interval/snapshot and input/tool checksums.
+The heuristic/local-comparison limits are documented in
+[alignment-preview.md](alignment-preview.md).
+
+Navigation cancels known jobs immediately. The initial submission is allowed to
+return its job ID, with a bounded 15-second transport timeout, so a late obsolete
+submission can be cancelled. Polling remains abortable; stale responses cannot
+redraw disabled/disposed/changed views. Grid metadata participates in the client
+request key. Controller regressions verify cancellation of both known and late
+submissions; transport tests verify its timeout and displayed history guard.
+
+Full JVM `test shadowJar -x copyWebUI --offline` passes with 583 tests, zero
+failures/errors and seven optional skips (`/tmp/hict-alignment-lines-final-jvm.log`).
+Full WebUI build/types/regressions pass
+(`/tmp/hict-alignment-lines-qualified-web-02.log`); the known large-chunk warning
+remains. Geometry tests cover all operations/strands, one-base substitutions,
+nonuniform mappings, >2.5 Gb positions and invalid/bounded input. Profile tests
+cover the 64/65-BP boundary. Source checks reject inconsistent canonical CIGARs.
+
+`check_alignment_runs_browser.py` passes 12 real Chromium scenarios on fresh
+physical HDF5/FASTA data: all ten CT diagonals checked against an independent
+maximal-diagonal oracle, a substitution, short and larger-window indels, reverse
+complements, ambiguity/no-hit, exact vertices, requested further letter zoom,
+PNG/SVG/PDF, disable/resume, precise shared-bin fragments, reversal, undo/redo and
+scoped session restoration. Input checksums match independent source slices.
+Evidence: `/tmp/hict-alignment-qualified-browser/results.json`. Native bytes are
+unchanged and there are no page errors. The current map/figure screenshots were
+visually inspected. Standalone SVG and PDF were rendered independently; orange
+substitution bounds in PNG/PDF agree within one pixel in the inspected figure:
+`/tmp/hict-alignment-lines-browser-02/{alignment-lines.png,alignment-lines-svg.png,alignment-lines-pdf.png,export-color-bounds.json}`.
+The later UI-only changes add the request timeout and simplify the legend text;
+the exported line geometry remains the same.
+
+The existing measurement (12), sequence-view/export/session (17), independent
+selection (7), hidden/binless tracks (13) and feature-action (15) browser suites
+also pass on the qualified runtime, for 76 total checks without page errors.
+Evidence: `/tmp/hict-alignment-qualified-{repeat,view,selection,tracks,feature}-browser/results.json`.
+Immutable server SHA-256:
+`53f12b3e5282712bbb5b957a36ed6244e84344eb056578612f0b1dda591d9f70`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`6a8ab67db4be78a7464e0a68bc8911ae6965321b740b822a7b244e1b99a64d0f`.
+
+Short-seed matches are exploratory sequence comparisons, not significance/homology
+calls or an exhaustive alignment enumeration. Broader secondary/source/platform,
+accessibility, dense-window latency and final embedded-package qualification
+remain open. Plan files and protected initial changes remain untouched.

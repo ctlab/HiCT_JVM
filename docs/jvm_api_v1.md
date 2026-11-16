@@ -193,7 +193,7 @@ and assembly reconstruction checks.
 | `POST` | `/examples/download/start` | Download and verify an example |
 | `POST` | `/examples/download/status` | Read current download progress |
 | `POST` | `/examples/download/cancel` | Cancel the current download |
-| `POST` | `/sequence/alignment_detail` | Read or prepare bounded CIGAR alignment detail |
+| `POST` | `/sequence/alignment_detail` | Read or prepare bounded CIGAR alignment detail with applied profile and input/tool provenance |
 | `POST` | `/sequence/repeat_period` | Start/inspect bounded gapless repeat measurement, 1–4096 BP |
 
 Repeat measurements accept `{startBp,endBp}` (zero-based half-open) or `{jobId}`

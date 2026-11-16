@@ -89,10 +89,16 @@ coordinates. Reorder tracks, hide either axis, or remove a track in that dialog.
 ## Sequence and analysis
 
 Link a matching FASTA through File or the guidance in a sequence-dependent tool.
-At letter zoom, sequence axes and exact alignment detail follow the assembly.
-Alignment detail is bounded to the visible intervals and reports an empty result
+At letter zoom, sequence axes and local alignment detail follow the assembly.
+Continuous lines span the aligned letter intersections: green forward matches,
+purple reverse matches and orange substitutions. Dashed gray lines mark ambiguous
+bases and horizontal/vertical indels. Alignment detail is bounded to the visible intervals and reports an empty result
 when no alignment is found. **Open FASTA only…** creates an assembly without
 contact signal. Its sequence and structural tools remain available.
+Tiny windows use shorter seeds so short repeats remain visible. These are local
+sequence comparisons; a short match alone does not establish homology. View →
+Automatically align visible FASTA turns this display off/on. See
+[the alignment method and limits](alignment-preview.md).
 
 On a FASTA strip, Ctrl/Command-drag across letters to measure an interval. You
 can also right-click and choose **Drag to select bases**; choose **Drag to pan**

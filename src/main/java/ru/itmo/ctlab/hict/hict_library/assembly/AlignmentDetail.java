@@ -92,8 +92,12 @@ public final class AlignmentDetail {
   }
 
   private static Operation operationAt(CharSequence rows, CharSequence cols, int row, int col, int step, Operation exact) {
-    return canonical(rows.charAt(row)) && canonical(cols.charAt(step < 0 ? col - 1 : col))
-      ? exact : Operation.AMBIGUOUS;
+    char r = Character.toUpperCase(rows.charAt(row));
+    char c = Character.toUpperCase(cols.charAt(step < 0 ? col - 1 : col));
+    if (!canonical(r) || !canonical(c)) return Operation.AMBIGUOUS;
+    if (step < 0) c = switch(c) { case 'A' -> 'T'; case 'T' -> 'A'; case 'C' -> 'G'; default -> 'C'; };
+    if ((r == c) != (exact == Operation.MATCH)) throw malformed("Extended CIGAR disagrees with its source bases");
+    return exact;
   }
 
   private static boolean canonical(char base) {

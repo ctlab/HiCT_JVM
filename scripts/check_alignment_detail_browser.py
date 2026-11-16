@@ -71,7 +71,7 @@ with sync_playwright() as pw:
     )
     detail = page.evaluate("""()=>{
       const m=window.__hictBenchmark.manager(),l=m.alignmentDetail;
-      const colors=l.source.getFeatures().map(f=>decodeURIComponent(f.getStyle().getImage()?.getSrc() ?? ""));
+      const colors=l.source.getFeatures().map(f=>f.getStyle().at(-1).getStroke()?.getColor() ?? "");
       const holder=m.contigDimensionHolder,d=m.viewAndLayersManager.getActiveVectorResolutionDescriptor();
       return {colors,point:m.getMap().getPixelFromCoordinate([
         holder.getFractionalPxOfBp(1100.5,d.bpResolution)*d.pixelResolution,
@@ -157,7 +157,7 @@ with sync_playwright() as pw:
         page.wait_for_function(
             """()=> {
           const l=window.__hictBenchmark.manager().alignmentDetail;
-          return l.source.getFeatures().some(f=>decodeURIComponent(f.getStyle().getImage()?.getSrc() ?? '').includes('#c2410c'))
+          return l.source.getFeatures().some(f=>f.getStyle().at(-1).getStroke()?.getColor()==='#c2410c')
             && l.state.message.value==='';
         }""",
             timeout=30000,

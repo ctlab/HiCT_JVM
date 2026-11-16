@@ -30,7 +30,16 @@ class AlignmentDetailTest {
       new AlignmentDetail.Segment(3, 4, 1, 2, MATCH, true),
       new AlignmentDetail.Segment(4, 5, 1, 1, DELETION, true),
       new AlignmentDetail.Segment(5, 6, 0, 1, MATCH, true)),
-      AlignmentDetail.parsePaf(paf("-", "2=1X1I1=1D1="), "ACGATC", "GCRYGT", 0, 0, 20));
+      AlignmentDetail.parsePaf(paf("-", "2=1X1I1=1D1="), "ACGATC", "GTRYGT", 0, 0, 20));
+  }
+
+  @Test
+  void validatesActualBasesOnBothStrandsInsteadOfTrustingCigarLabels() {
+    assertThrows(IllegalArgumentException.class, () -> AlignmentDetail.parsePaf(paf("+","6="),"ACGTAC","TCGTAC",0,0,20));
+    assertThrows(IllegalArgumentException.class, () -> AlignmentDetail.parsePaf(paf("+","1X5="),"ACGTAC","ACGTAC",0,0,20));
+    assertThrows(IllegalArgumentException.class, () -> AlignmentDetail.parsePaf(paf("-","6="),"AAAAAA","AAAAAA",0,0,20));
+    assertEquals(1,AlignmentDetail.parsePaf(paf("-","6="),"AAAAAA","TTTTTT",0,0,20).size());
+    assertEquals(1,AlignmentDetail.parsePaf(paf("+","6="),"acgtac","ACGTAC",0,0,20).size());
   }
 
   @Test

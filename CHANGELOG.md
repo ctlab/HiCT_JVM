@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Draw continuous alignment runs through letter boundaries, with distinct substitutions, reverse matches and indels in the map and vector exports.
+- Recover short tandem-repeat alignments with a bounded short-window profile, verify CIGAR labels against source bases, and cancel obsolete preview jobs without losing their IDs.
+
 - Select and measure FASTA letters on either axis/strand, copy exact sequence and coordinates, and estimate a bounded repeat period through cancellable Jobs.
 - Keep FASTA measurements stable during navigation, invalidate them after edits, and exclude transient measurement overlays from saved sessions and image exports.
 

@@ -25,7 +25,7 @@ describe earlier releases; they must not override the decisions below.
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
-| P5 Alignment runs/full cells and FASTA navigation | 5, 8 | Pending; existing wheel-to-letters verified |
+| P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
@@ -262,6 +262,34 @@ The measurement card fits the inspected 1024×768 viewport; that does
 not qualify the surrounding application's known responsive-layout issues.
 Native platform/modifier, secondary-source, accessibility and large-map/queue
 performance qualification remain open. P2 and the publication release are not complete.
+
+## Continuous alignment preview
+
+Alignment geometry now uses continuous base-boundary runs instead of isolated
+per-base icons, preserving forward/reverse direction, substitutions, ambiguity
+and indels in the map and vector exports. Tiny windows use an explicit short-seed
+profile, while larger windows retain the previous seeded settings. The backend
+already parsed all PAF records; short-window seeding was why the advisor's CT pair
+returned no hit. The corrected pair yields all ten independently enumerated
+maximal exact diagonals. Source/CIGAR checks reject inconsistent canonical labels
+on both strands. Results declare profile, input/tool checksums and snapshot.
+
+Navigation cancels known jobs immediately, and late initial submissions retain
+their job IDs long enough to cancel obsolete work. Bounded transport and generation
+guards cover delayed responses. Grid metadata forces correct reprojection.
+Method and limits: [alignment-preview.md](alignment-preview.md).
+
+The full JVM suite passes with 583 tests, zero failures/errors and seven optional
+skips; full WebUI checks pass. Real Chromium checks cover CT repeats, substitutions,
+short/long indels, reverse complements, ambiguity/no-hit, line coordinates, zoom,
+PNG/SVG/PDF, exact fragments, reversal, undo/redo and scoped session restore.
+Evidence: `/tmp/hict-alignment-qualified-browser/results.json` (12 checks).
+The existing measurement/map/selection/track/feature workflows also pass (64):
+`/tmp/hict-alignment-qualified-{repeat,view,selection,tracks,feature}-browser/results.json`.
+Standalone SVG/PDF outputs were rendered and visually inspected; PNG/PDF orange
+substitution bounds agree within one pixel in the inspected fixture. Broader
+source/platform, accessibility, dense-window latency and embedded-package gates
+remain open. P5 and the publication release are not complete.
 
 ## Mandatory release gates
 

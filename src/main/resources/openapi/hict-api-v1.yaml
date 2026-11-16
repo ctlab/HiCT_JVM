@@ -1975,7 +1975,7 @@ paths:
       tags: [Sequence analysis]
       summary: Start or inspect exact alignment detail for two bounded sequence intervals
       operationId: sequenceAlignmentDetail
-      description: Runs the bundled aligner with extended CIGAR output. Coordinates are zero-based and half-open. A finished result reports an empty segment list when no alignment is found.
+      description: Runs the bundled minimap2-compatible aligner with extended CIGAR output and all reported chains. Tiny windows (both at most 64 bases) use short-window-v1 (k=2, w=1, m=2, n=1, s=2), larger windows use seeded-window-v1 (k=7, w=3, m=12, n=2, s=12). Both use one thread, -P, --dual=no, --no-long-join, -c and --eqx. Every canonical match/substitution is checked against the frozen source bases on its strand. Coordinates are zero-based and half-open. These seeded local alignments are not exhaustive homology calls. Empty results are explicit. Output limits fail rather than silently dropping records.
       requestBody:
         required: true
         content:
@@ -2623,6 +2623,25 @@ components:
           properties:
             coordinateSystem: { type: string, enum: [ASSEMBLY_BP, PADDED_SEQUENCE] }
             alignmentCount: { type: integer, minimum: 0 }
+            method: { type: string, description: Additive alignment implementation version }
+            aligner: { type: string, description: Executed aligner filename }
+            alignerSha256: { type: string, description: SHA-256 of the executed aligner }
+            rowSha256: { type: string, description: SHA-256 of frozen row sequence UTF-8 bytes }
+            columnSha256: { type: string, description: SHA-256 of frozen column sequence UTF-8 bytes }
+            snapshot: { type: string, description: Captured assembly fingerprint }
+            rowStart: { type: integer, format: int64, minimum: 0 }
+            rowEnd: { type: integer, format: int64, minimum: 1 }
+            columnStart: { type: integer, format: int64, minimum: 0 }
+            columnEnd: { type: integer, format: int64, minimum: 1 }
+            profile:
+              type: object
+              properties:
+                name: { type: string, enum: [short-window-v1, seeded-window-v1] }
+                kmer: { type: integer }
+                window: { type: integer }
+                chainScore: { type: integer }
+                seeds: { type: integer }
+                alignmentScore: { type: integer }
             message: { type: string, nullable: true }
             segments:
               type: array

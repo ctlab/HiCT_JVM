@@ -300,9 +300,11 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       Files.createDirectory(job.directory);
       Files.writeString(rowPath, ">row\n" + key.rows + "\n");
       Files.writeString(colPath, ">column\n" + key.columns + "\n");
-      final var command = List.of(aligner.toString(), "-t", "1", "-k", "7", "-w", "3",
-        "-m", "12", "-n", "2", "-s", "12", "-P", "--dual=no", "--no-long-join", "-c", "--eqx",
-        rowPath.toString(), colPath.toString());
+      final var profile = AlignmentDetailProfile.forWindows(key.rows.length(), key.columns.length());
+      final var command = profile.command(aligner, rowPath, colPath);
+      job.toolCommand = String.join(" ", command);
+      job.toolSha256 = sha256(aligner);
+      job.checkCancelled();
       job.state = "running";
       final var process = new ProcessBuilder(command).redirectError(errors.toFile()).start();
       job.process = process;
@@ -326,6 +328,12 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       job.fragments = segments.size();
       job.alignmentDetail = new JsonObject().put("coordinateSystem", coordinateSystem)
         .put("segments", segments).put("alignmentCount", alignments)
+        .put("method", "minimap2-extended-cigar-v2").put("profile", JsonObject.mapFrom(profile))
+        .put("rowStart", key.window.rowStart()).put("rowEnd", key.window.rowEnd())
+        .put("columnStart", key.window.columnStart()).put("columnEnd", key.window.columnEnd())
+        .put("snapshot", job.snapshotId)
+        .put("aligner", aligner.getFileName().toString()).put("alignerSha256", job.toolSha256)
+        .put("rowSha256", sequenceSha256(key.rows)).put("columnSha256", sequenceSha256(key.columns))
         .put("message", alignments == 0 ? "No alignment found in the selected intervals" : null);
     } catch (Exception failure) {
       terminal = job.cancelled.get() || failure instanceof InterruptedException || failure instanceof CancellationException
@@ -778,6 +786,11 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     var digest = java.security.MessageDigest.getInstance("SHA-256");
     try (var input = new java.security.DigestInputStream(Files.newInputStream(path), digest)) { input.transferTo(OutputStream.nullOutputStream()); }
     return HexFormat.of().formatHex(digest.digest());
+  }
+
+  private static String sequenceSha256(String sequence) throws java.security.NoSuchAlgorithmException {
+    return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+      .digest(sequence.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
   }
 
   private static final class Job {
