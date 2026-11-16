@@ -51,6 +51,11 @@ histogram inspector in Rendering Pipeline remains available for axis and binning
 controls. A draggable color midpoint is still planned separately; the O/E neutral
 point must remain at 1.
 
+**Slider limits & data → Scan whole map** is a separate exact operation. In
+Expected/O/E it uses a whole-resolution fit, independently of this viewport's fit.
+See [Exact whole-map signal limits](whole-map-signal-limits.md) for scope, missing
+values and cancellation.
+
 For API clients, `/matrix/query` in `TRADITIONAL_NORMALIZED` mode now matches O/E
 rendering: missing ratios are NaN in floating-point binary output and null in JSON.
 They are distinct from supported zeros. Integer output cannot represent NaN.

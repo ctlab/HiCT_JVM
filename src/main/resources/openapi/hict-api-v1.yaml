@@ -856,7 +856,7 @@ paths:
   /matrix/statistics:
     post:
       tags: [Tiles]
-      summary: Exact finite extrema of a bounded numeric-pipeline block
+      summary: Exact finite extrema of a bounded display-signal block
       description: |
         First request metadataOnly to obtain the current revision and full visible-pixel
         extent of the resolution. Then visit every 512 by 512 block using that revision.
@@ -864,6 +864,15 @@ paths:
         conversion. Partial edge blocks are clipped to the map. Non-finite values are
         excluded from count and extrema. Any rendering/assembly invalidation cancels
         the snapshot with HTTP 409. Statistics run on the export worker pool.
+        PIPELINE_SIGNAL (the default) evaluates the supplied numeric expression.
+        TRADITIONAL_NORMALIZED follows primary visualization processing. In Expected
+        or O/E mode it fits one whole-resolution, within-scaffold positive-finite
+        expected profile and reuses it across blocks. It does not read or replace the
+        viewport profile. The first block therefore needs an additional complete
+        bounded-memory pass. Undefined O/E support is excluded; supported zeros count.
+        Counts describe visible display cells, including repeated references after
+        exact cuts, rather than independent physical contacts. A scan changes no
+        colors, processing settings or viewport state.
       operationId: queryMatrixStatistics
       requestBody:
         required: true
@@ -878,6 +887,10 @@ paths:
                 revision: { type: string }
                 startRowPx: { type: integer, format: int64, minimum: 0 }
                 startColPx: { type: integer, format: int64, minimum: 0 }
+                signalMode:
+                  type: string
+                  enum: [PIPELINE_SIGNAL, TRADITIONAL_NORMALIZED]
+                  default: PIPELINE_SIGNAL
                 expression: { type: object, additionalProperties: true }
       responses:
         '200':
@@ -890,6 +903,8 @@ paths:
                 properties:
                   revision: { type: string }
                   size: { type: integer, format: int64 }
+                  signalMode: { type: string }
+                  expectedProfileScope: { type: string, enum: [WHOLE_MAP] }
                   rows: { type: integer }
                   cols: { type: integer }
                   count: { type: integer, format: int64 }

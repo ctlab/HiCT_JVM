@@ -580,3 +580,33 @@ user guidance is visualization-transactions.md. Draggable midpoint/gamma, derive
 view whole-resolution exact-scan semantics, wider custom graphs/NaN provenance,
 native/platform/performance/accessibility qualification and the remaining packages
 stay open. P6 and the overall release/publication goal remain in progress.
+
+## Exact limits for the selected derived view
+
+Whole-resolution scans previously evaluated Observed graph input even in Expected
+or O/E. They now use the primary display signal in those modes and fit a separate
+whole-resolution expected profile once, reusing it across 512 × 512 blocks. The
+viewport profile and map pixels stay unchanged. Undefined ratios do not count as
+zeros. Observed/Secondary expressions and the API's default pipeline mode remain
+supported. Scans wait for pending processing edits, offer Cancel, reject late
+responses after cancellation/mode changes and retain completed limits while panning.
+Percentage identity controls keep their fixed scale, independently of derived views.
+
+An independent 513-bin fixture crosses both block axes: counts 2 and 8 on the main
+diagonal imply Expected=5 and supported O/E max=1.6. The old backend returns 8
+instead of 5. New HTTP and browser regressions verify four complete blocks, finite
+counts, cache reuse, unchanged viewport fit, pixel bytes, settings and source file.
+All 590 JVM tests pass (zero failures/errors, seven optional skips). The WebUI build
+and 121 browser scenarios pass, including the ten new scan cases, prior transaction,
+O/E, track/source, responsive, graph-editor and histogram cases. A separate ten-case
+repeat adds explicit rendered-tile hash preservation. Fixture sampled pans are
+24.0–31.2 ms with image-transfer peak four; production-size/package performance is
+not implied. Evidence is in reinforcement-validation.md; user guidance is
+whole-map-signal-limits.md.
+
+This resolves the recorded derived-view exact-scan signal mismatch. Expected
+profile memory still grows with distance bins and the initial whole-resolution
+fit adds a full pass; dense-map resource/latency qualification remains required.
+Draggable midpoint/gamma, wider graph/NaN provenance, accessibility, platform/native
+packages, P7–P9 and final release/publication deliverables remain pending. The full
+goal is active; protected plans and owner files are unchanged.

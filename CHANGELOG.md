@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Scan the selected Expected/O/E signal with one independent whole-map profile across all blocks, preserving the viewport fit and distinguishing unsupported ratios from measured zeros.
+- Cancel exact-limit scans, reject obsolete responses, and keep completed slider limits steady while panning.
+
 - Preserve newer thresholds, transforms and source-specific edits through delayed normalization, reads and preset writes, with clear pending and retry status.
 - Apply pending visualization changes before session snapshots and opening Rendering Pipeline, and preserve committed graph state when a request fails.
 

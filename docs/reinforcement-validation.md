@@ -4116,3 +4116,83 @@ and local preset track/background styling are not all moved into this queue.
 Draggable midpoint/gamma, derived-view exact-scan applicability, broader graph/NaN
 provenance, dense-map/soak/accessibility and release/publication gates remain open.
 All protected plans/owner files remain unchanged. Nothing pushed, merged or tagged.
+
+## Whole-resolution Expected/O/E statistics
+
+WebUI commit `9aea0ec`; matching version `2.0.36-5381e0b-webui_9aea0ec`.
+
+`Scan whole map` previously sent the Observed colormap expression in every display
+mode, and `/matrix/statistics` forced PIPELINE_SIGNAL. The endpoint now accepts
+TRADITIONAL_NORMALIZED for the primary display signal, without an expression.
+Its default remains PIPELINE_SIGNAL. In a derived view, an independent, immutable
+whole-resolution expected profile is fitted in 512 × 512 blocks and reused across
+all scan blocks. A single-entry profile cache is keyed by server revision and
+resolution and does not replace the viewport cache. Thread interruption and tile
+generation checks bound cancellation to a block during fitting. Matrix storage is
+block-bounded; the profile grows with distance bins. Finite counts include supported
+zeros and exclude missing O/E support. Counts remain display cells, including
+repeated source-bin references after cuts, not independent physical contacts.
+
+The sidebar captures display mode/expression in the scan key, waits for processing
+drafts, guards metadata and block responses, offers Cancel, and retains completed
+limits during pan at the same resolution. Changing signal context cancels an active
+scan. Derived limits are explicitly labeled whole-map; they are independent of the
+viewport profile and do not apply thresholds or graph changes. The irrelevant
+Observed loaded-tile action and identity percentage scale are not substituted for
+the active primary derived signal. API schema and user guidance document the scope.
+
+Evidence:
+
+- `/tmp/hict-exact-derived-red-01.log`: final UI against the preceding backend
+  reproduces Expected max 8 instead of 5. This is an intentional failing diagnostic.
+- `/tmp/hict-exact-derived-jvm-focused-02.log`: new HTTP regression passes on a
+  513-bin source with diagonal contacts 2 and 8 and one distance-512 contact 4.
+  Across four partial/full blocks, Expected max is 5 and finite count 263169;
+  O/E max is 1.6 and finite count 515. The deliberately different viewport fit
+  remains the same object, source bytes stay unchanged, the legacy constant graph
+  expression still yields 99, ambiguous requests are rejected and obsolete
+  revisions return 409. The first attempt lacked the test server's initial
+  visualization-options fixture; corrected setup passes without changing assertions.
+- `/tmp/hict-exact-derived-jvm-full-01.log`: all 590 tests, zero failures/errors,
+  seven optional skips. `/tmp/hict-exact-derived-web-02.log`: build/type checks
+  and existing numerical/DTO/streaming regressions pass. Explicit Prettier passes
+  for the two changed WebUI files; the new Python driver passes Black checking.
+- `/tmp/hict-exact-derived-ui-03/results.json`: ten new real-control cases for
+  Observed, Expected/O/E profiles, exact cache, cancellation/retry, stale mode,
+  immediate transform then Scan and 640 px controls. Options/graphs, native
+  display counts, readback of the independent viewport fit and source hashes are
+  asserted. `/tmp/hict-exact-derived-ui-04/results.json` independently repeats all
+  ten with additional byte-identical rendered PNG checks before/after derived scans.
+  An earlier driver attempt used the wrong JSON field (`matrix` instead of the
+  actual flattened `values`) and is excluded from acceptance.
+- `/tmp/hict-exact-derived-transactions-01/results.json`: 16 delayed-write/read,
+  source switching, presets, session and graph-editor barrier cases.
+- `/tmp/hict-exact-derived-oe-01/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 existing O/E/mode/signal cases.
+- `/tmp/hict-exact-derived-responsive-01/results.json`: 15 responsive cases.
+  `/tmp/hict-exact-derived-tracks-01/{results.json,controls/results.json}`:
+  13+8 tracks/source/control cases.
+- `/tmp/hict-exact-derived-observed-01/browser/results.json`: 12 Observed-editor
+  cases; `/tmp/hict-exact-derived-legacy-01/browser/results.json`: four detailed
+  histogram cases. Both 154,317,488 byte physical map copies stay unchanged, SHA-256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- `/tmp/hict-exact-derived-hist-01/results.json`: 13 inline histogram cases.
+  Isolated pan acknowledgements 14.4–16.5 ms; sampled pan 24.0–31.2 ms; network
+  image-transfer peak four. These meet the 150 ms fixture gate, not a production
+  dense-map latency or package qualification.
+
+Together: 121 passing final-build browser cases, plus an independent ten-case
+repeat. All processes exited successfully. Browser window-error captures are empty;
+injected 503s are allowed only in the existing explicit failure cases. Final visual
+review covers desktop whole-map Expected wording/limits and the 640 px exact scan
+controls and transformed result. Scientific sequence/cut/file suites were not
+rerun for this increment; their previous 90-case evidence is retained separately.
+
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+`c258c498ef032ff44770d453a17840af7369d5498d41c9ce41beeaec8cfa0eac`.
+Development JAR `hict_server-2.0.35-7909e72-webui_b994994-fat.jar` SHA-256:
+`e05ef39bab38444292bdd2ea1b4c53a14b9a1909d6d332925c4b3f9e8ed449a3`.
+Browser tests serve these new assets separately from the embedded older interface.
+Combined/native package, dense-map profile memory/first-pass duration, broader
+custom graphs, midpoint/gamma and the other release/publication gates remain open.
+Protected plans and owner files are unchanged. Nothing pushed, merged or tagged.

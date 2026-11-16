@@ -71,6 +71,11 @@ public final class ReinforcementHdf5Fixture {
   }
 
   public static void main(String[] args) throws Exception {
+    if (args.length == 2 && args[0].equals("statistics")) {
+      create(Path.of(args[1]), "scan", List.of(4L), 2052,
+        new long[][]{{0, 0, 2}, {2048, 2048, 8}, {0, 2048, 4}});
+      return;
+    }
     if (args.length == 2 && args[0].equals("long-offset")) {
       create(Path.of(args[1]), "long-source", List.of(1_000_000_000L, 2_000_000_000L), 3_000_000_017L,
         new long[][]{{0, 0, 1}, {2_500_000_001L, 3_000_000_016L, 7}, {3_000_000_016L, 3_000_000_016L, 11}});

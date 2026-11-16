@@ -930,6 +930,61 @@ class ApiHttpIntegrationTest {
     assertEquals(2.0, after.getJsonObject("visualizationOptions").getDouble("postLogBase"));
   }
 
+  @Test
+  void wholeMapStatisticsUseOneExpectedProfileAcrossBlocksWithoutChangingTheViewport() throws Exception {
+    var path = ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "scan", List.of(4L), 2052,
+      new long[][]{{0, 0, 2}, {2048, 2048, 8}, {0, 2048, 4}});
+    var before = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        -1, -1, false, false, false, new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0.5, 2))));
+    assertEquals(200, post("/open", "{\"filename\":\"scan.hict.hdf5\"}").statusCode());
+    var options = new JsonObject(post("/get_visualization_options", "{}").body())
+      .put("preLogBase", -1).put("postLogBase", -1).put("applyCoolerWeights", false)
+      .put("resolutionScaling", false).put("resolutionLinearScaling", false);
+    for (var mode : List.of("EXPECTED", "OBSERVED_OVER_EXPECTED")) {
+      assertEquals(200, post("/set_visualization_options", options.copy().put("signalDisplayMode", mode).encode()).statusCode());
+      assertEquals(200, post("/visualization/expected_profile", new JsonObject().put("bpResolution", 4)
+        .put("startRowPx", 0).put("endRowPx", 1).put("startColPx", 0).put("endColPx", 1).encode()).statusCode());
+      var map = vertx.sharedData().getLocalMap("hict_server");
+      var viewport = map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY);
+      var base = new JsonObject().put("bpResolution", 4).put("signalMode", "TRADITIONAL_NORMALIZED");
+      var meta = new JsonObject(post("/matrix/statistics", base.copy().put("metadataOnly", true).encode()).body());
+      assertEquals(513, meta.getInteger("size"));
+      base.put("revision", meta.getString("revision"));
+      long count = 0;
+      double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+      for (int row : new int[]{0, 512}) for (int col : new int[]{0, 512}) {
+        var response = post("/matrix/statistics", base.copy().put("startRowPx", row).put("startColPx", col).encode());
+        assertEquals(200, response.statusCode(), response.body());
+        var block = new JsonObject(response.body());
+        assertEquals("WHOLE_MAP", block.getString("expectedProfileScope"));
+        assertEquals(Math.min(512, 513 - row), block.getInteger("rows"));
+        assertEquals(Math.min(512, 513 - col), block.getInteger("cols"));
+        count += block.getLong("count");
+        if (block.getLong("count") > 0) {
+          min = Math.min(min, block.getDouble("min")); max = Math.max(max, block.getDouble("max"));
+        }
+        if (row == 512 && col == 512) assertEquals(mode.equals("EXPECTED") ? 5 : 1.6, block.getDouble("max"), 1e-12);
+      }
+      // Positive-finite diagonal means: (2+8)/2 = 5 and the single distance-512 contact = 4.
+      assertEquals(mode.equals("EXPECTED") ? 513L * 513 : 515L, count);
+      assertEquals(0, min); assertEquals(mode.equals("EXPECTED") ? 5 : 1.6, max, 1e-12);
+      org.junit.jupiter.api.Assertions.assertSame(viewport, map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY));
+      var legacy = post("/matrix/statistics", new JsonObject().put("bpResolution", 4)
+        .put("startRowPx", 512).put("startColPx", 512)
+        .put("expression", new JsonObject().put("type", "constant").put("value", 99)).encode());
+      assertEquals(200, legacy.statusCode(), legacy.body());
+      assertEquals(99, new JsonObject(legacy.body()).getDouble("max"));
+      assertEquals(400, post("/matrix/statistics", base.copy().put("expression", new JsonObject()).encode()).statusCode());
+      assertEquals(400, post("/matrix/statistics", base.copy().put("signalMode", "RAW_COUNTS").encode()).statusCode());
+      assertEquals(200, post("/set_visualization_options", options.copy().put("signalDisplayMode", "OBSERVED").encode()).statusCode());
+      assertEquals(409, post("/matrix/statistics", base.encode()).statusCode());
+    }
+    org.junit.jupiter.api.Assertions.assertArrayEquals(before, java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)));
+  }
+
   @Test void exactCutRequiresDisplayedRevisionAndSynchronizesIndependentPyramidsWithUndoRedo() throws Exception {
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "exact-primary", List.of(4L, 10L));
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "exact-secondary", List.of(3L, 7L));

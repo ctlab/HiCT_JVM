@@ -74,6 +74,10 @@ import java.util.stream.IntStream;
 public class TileHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
   private final String statisticsInstance = java.util.UUID.randomUUID().toString();
+  private record StatisticsExpectedProfile(String revision, long bpResolution,
+                                           DistanceExpectedNormalizer.DiagonalProfile profile) { }
+  // One immutable scan profile, separate from the viewport renderer's profile.
+  private volatile StatisticsExpectedProfile statisticsExpectedProfile;
   private final Map<ChunkedFile, ProjectionGridCache> projectionGrids = new WeakHashMap<>();
   public static final String EXPECTED_PROFILE_LOCAL_MAP_KEY = "ViewportExpectedProfile";
   private static final String EXPECTED_PROFILE_BINS_KEY = "ViewportExpectedProfileBins";
@@ -544,6 +548,12 @@ public class TileHandlersHolder extends HandlersHolder {
           final var size = file.getContigTree().getLengthInUnits(QueryLengthUnit.PIXELS,
             ResolutionDescriptor.fromBpResolution(bpResolution, file));
           final var result = new JsonObject().put("revision", revision).put("size", size);
+          final var signalMode = request.getString("signalMode", "PIPELINE_SIGNAL");
+          if (!signalMode.equals("PIPELINE_SIGNAL") && !signalMode.equals("TRADITIONAL_NORMALIZED"))
+            throw new io.vertx.ext.web.handler.HttpException(400, "Statistics signalMode must be PIPELINE_SIGNAL or TRADITIONAL_NORMALIZED");
+          if (signalMode.equals("TRADITIONAL_NORMALIZED") && request.containsKey("expression"))
+            throw new io.vertx.ext.web.handler.HttpException(400, "Traditional statistics do not accept a pipeline expression");
+          result.put("signalMode", signalMode);
           if (!request.getBoolean("metadataOnly", false)) {
             final long row = request.getLong("startRowPx", 0L);
             final long col = request.getLong("startColPx", 0L);
@@ -551,9 +561,14 @@ public class TileHandlersHolder extends HandlersHolder {
               throw new IllegalArgumentException("Statistics block is outside the map");
             // Fixed blocks bound memory and cancellation latency, including for very fine maps.
             final var query = request.copy().put("unit", "PIXELS").put("source", "PRIMARY")
-              .put("signalMode", "PIPELINE_SIGNAL").put("endRowPx", Math.min(size, row + 512))
+              .put("signalMode", signalMode).put("endRowPx", Math.min(size, row + 512))
               .put("endColPx", Math.min(size, col + 512));
-            result.mergeIn(new JsonObject(computeMatrixQueryResponse(query, true).jsonBody()));
+            final var options = ((ShareableWrappers.SimpleVisualizationOptionsWrapper) map.get("visualizationOptions"))
+              .getSimpleVisualizationOptions();
+            final var expected = signalMode.equals("TRADITIONAL_NORMALIZED") && options.getSignalDisplayMode() != SignalDisplayMode.OBSERVED
+              ? wholeMapStatisticsExpectedProfile(file, options, bpResolution, size, revision, scheduler) : null;
+            result.mergeIn(new JsonObject(computeMatrixQueryResponse(query, true, expected).jsonBody()));
+            if (expected != null) result.put("expectedProfileScope", "WHOLE_MAP");
           }
           if (!revision.equals(statisticsInstance + ":" + scheduler.currentGeneration(RequestTaskScheduler.CancellationDomain.TILE)))
             throw new java.util.concurrent.CancellationException("Signal statistics are obsolete");
@@ -1020,6 +1035,11 @@ public class TileHandlersHolder extends HandlersHolder {
   }
 
   private MatrixResponsePayload computeMatrixQueryResponse(final @NotNull JsonObject request, boolean statisticsOnly) {
+    return computeMatrixQueryResponse(request, statisticsOnly, null);
+  }
+
+  private MatrixResponsePayload computeMatrixQueryResponse(final @NotNull JsonObject request, boolean statisticsOnly,
+      @Nullable DistanceExpectedNormalizer.DiagonalProfile statisticsExpected) {
     final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
     final var primaryChunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
     if (primaryChunkedFileWrapper == null) {
@@ -1119,7 +1139,7 @@ public class TileHandlersHolder extends HandlersHolder {
         options.getCoolerWeightsNaNPolicy()
       );
       case TRADITIONAL_NORMALIZED -> {
-        final var expectedProfile = "PRIMARY".equals(requestedSource)
+        final var expectedProfile = statisticsExpected != null ? statisticsExpected : "PRIMARY".equals(requestedSource)
           ? resolveExpectedProfileForTile(map, requestedChunkedFile, matrixWithWeights, options, visibleOnly) : null;
         signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processDisplaySignal(matrixWithWeights, options, expectedProfile).values();
       }
@@ -1317,6 +1337,33 @@ public class TileHandlersHolder extends HandlersHolder {
     return profile.resolutionOrder() == resolutionDescriptor.getResolutionOrderInArray()
       ? profile
       : null;
+  }
+
+  /** Fit once across the scan domain, never once per statistics block or into the viewport cache. */
+  private DistanceExpectedNormalizer.DiagonalProfile wholeMapStatisticsExpectedProfile(
+      ChunkedFile file, ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
+      long bpResolution, long size, String revision, RequestTaskScheduler scheduler) {
+    final var cached = statisticsExpectedProfile;
+    if (cached != null && cached.revision().equals(revision) && cached.bpResolution() == bpResolution)
+      return cached.profile();
+    final var descriptor = ResolutionDescriptor.fromBpResolution(bpResolution, file);
+    final var accumulator = DistanceExpectedNormalizer.newSegmentedAccumulator(
+      descriptor.getResolutionOrderInArray(), 0, size, 0, size,
+      buildExpectedDomains(file, descriptor, 0, size, 0, size));
+    final var weights = expectedSampleWeights(file, descriptor, 0, size, 0, size);
+    for (long row = 0; row < size; row += 512) {
+      for (long col = 0; col < size; col += 512) {
+        if (Thread.currentThread().isInterrupted() ||
+            !revision.equals(statisticsInstance + ":" + scheduler.currentGeneration(RequestTaskScheduler.CancellationDomain.TILE)))
+          throw new java.util.concurrent.CancellationException("Whole-map expected statistics are obsolete");
+        final var matrix = file.matrixQueries().getSubmatrix(descriptor,
+          row, col, Math.min(size, row + 512), Math.min(size, col + 512), true);
+        accumulator.addSignal(file.tileVisualizationProcessor().prepareSignalMatrix(matrix, options), row, col, weights);
+      }
+    }
+    final var profile = accumulator.toProfile();
+    statisticsExpectedProfile = new StatisticsExpectedProfile(revision, bpResolution, profile);
+    return profile;
   }
 
   /** Never fall back to a cross-scaffold diagonal model while a viewport profile is loading. */
