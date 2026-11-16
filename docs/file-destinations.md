@@ -12,6 +12,20 @@ Successful handles are reused as start locations per export purpose during the
 page lifetime. Stable purpose IDs allow the browser to retain its own chooser
 history. Session opening uses the same purpose where that API is available.
 
+For FASTA/AGP, writable browser handles consume the fetch response as a byte
+stream. Each disk write completes before another chunk is pulled. Neither an
+assembly-sized ArrayBuffer nor a Blob is created on this path. An AbortController
+cancels preparation/transfer from the export notice. Errors cancel the response,
+abort the writer and preserve the previous successful destination memory. Saved
+is reported only after writer close. HTTP failures and unexpected content types
+are rejected before opening a writer, without buffering the error body.
+
+The export uses one promise-managed notice for progress and the final outcome,
+recorded once in the notification journal. Cancel becomes Close after completion.
+The installed notification library appends reused IDs and can loop layout during
+manual dismissal/replacement. The export integration avoids both operations;
+its lifecycle has focused and real-browser regression coverage.
+
 Without the writable-file API, the ordinary browser download starts and the
 notification explains that the browser controls the destination. HiCT cannot
 confirm its completion and never marks the assembly saved from this outcome.
@@ -60,6 +74,13 @@ The audit host has Rust 1.75, which cannot read the wrapper's v4 Cargo lockfile;
 the project requires Rust 1.88. Full wrapper compilation and native GUI checks on
 each advertised platform remain required. Whole-Blob buffering and desktop IPC
 (including Tauri's per-byte array conversion) are not yet qualified for large
-FASTA files. Streaming, bounded memory, all secondary-source/chooser routes,
+FASTA files. Browser streaming is qualified on a 512 Mb synthetic assembly with
+an independent sequence checksum and Chromium's actual private-filesystem
+writable stream in a persistent profile. Only the chooser is substituted; the
+large backend response is fetched directly. Cancellation and injected write
+failure abort the real writer and retain the old output.
+This qualifies the browser transfer integration, not OS-native file dialogs or
+genome-scale behavior across all browsers. Desktop/download streaming, broader
+bounded-memory qualification, all secondary-source/chooser routes,
 large directories, accessibility and restart behavior remain P3 work. No release
 readiness claim follows from these primary workflow checks.

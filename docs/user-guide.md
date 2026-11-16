@@ -76,6 +76,12 @@ files and downloads are on your computer. Use **File → Open Examples** to open
 the existing example chooser. See [file-destinations.md](file-destinations.md)
 for supported save behavior and remaining platform qualification.
 
+FASTA and AGP exports stream directly to writable browser destinations. The
+Exporting notice offers Cancel while preparing or transferring the file, then
+shows the result. A cancelled or failed transfer does not confirm a saved file.
+Desktop wrappers and download-only browsers currently use the buffered transfer
+path; their large-file memory qualification remains pending.
+
 ## Signal and layers
 
 Use the Visualization sidebar to change the color range, signal transform and

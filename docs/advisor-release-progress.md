@@ -23,7 +23,7 @@ describe earlier releases; they must not override the decisions below.
 |---|---|---|
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
-| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed session state, frozen revision-guarded FASTA/AGP, per-purpose file memory and File Examples implemented and primary Chromium verified; native dialogs, large-file streaming and wider chooser coverage pending |
+| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed session state, frozen revision-guarded FASTA/AGP, browser streaming/cancellation, per-purpose file memory and File Examples implemented; primary workflows and 512 Mb browser transfer verified; native dialogs, desktop/download streaming and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
@@ -323,6 +323,34 @@ Rust 1.75 versus lockfile v4/project Rust 1.88 requirements. Native GUI/platform
 qualification, bounded-memory large exports, remaining chooser/secondary-source
 routes, accessibility, restart and large-directory coverage remain open. P3 and
 the publication release are not complete.
+
+## Browser streaming qualification
+
+FASTA/AGP browser destinations now consume a fetch byte stream with one awaited
+write per chunk, avoiding the old complete-response ArrayBuffer/Blob. The export
+notice owns preparation/transfer cancellation and reports one final outcome in
+the notification journal. Stale/failed HTTP responses are rejected before writer
+creation; read/write/close failures cancel the response and abort the writer.
+Desktop and download-only compatibility paths remain buffered and unqualified
+for genome-scale memory use.
+
+An actual Chromium private-filesystem writer in a persistent profile saves a
+512 Mb synthetic assembly (518,400,010 FASTA bytes), verified against an independent
+sequence checksum. Cancellation and injected write failure abort the real writer
+and retain the preceding file, independently downloaded and hashed after each.
+The chooser alone is substituted and the backend response is fetched directly.
+The final run's frame p95 is 16.7 ms and pointer acknowledgement p95 is 13.2 ms;
+sampled total Chromium RSS grows by 172.5 MB (peak 717.0 MB). These measurements
+cover this sparse-map transfer workload on the declared Linux host, not the full
+multi-track/large-map release workload. Evidence:
+`/tmp/hict-stream-browser-09/results.json`. The normal file workflow passes again
+on this build. See the detailed validation record for all regression evidence.
+
+The runtime notification integration uses the installed library's single promise
+lifecycle. Reused toast IDs and manual dismiss/replacement caused a rendering
+loop during development and are excluded by focused tests and real UI checks.
+P3 still needs desktop/download streaming, OS-dialog/platform, wider source/input
+and release-package qualification. No publication-release claim is made.
 
 ## Mandatory release gates
 

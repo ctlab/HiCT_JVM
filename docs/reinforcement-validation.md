@@ -3346,3 +3346,86 @@ does not change the qualified Java implementation. Final embedded/package,
 native-dialog/platform, streaming/large-memory, all chooser routes, secondary
 sources, accessibility, restart and large-directory gates remain open. Plan files
 and protected initial changes remain untouched. See [file-destinations.md](file-destinations.md).
+
+## Browser streaming FASTA/AGP — 2026-11-16
+
+FASTA/AGP exports use fetch streaming when the selected destination supports a
+writable byte stream. Each disk write completes before the next network chunk is
+pulled; this path creates no assembly-sized ArrayBuffer or Blob. HTTP errors and
+unexpected response types cancel without opening a writer. Read/write/close
+failures cancel the source and abort the writer; destination memory advances only
+after confirmed close. The progress notice cancels preparation/transfer, then
+reports one journal outcome. The existing desktop/download-only path is explicit
+and remains buffered; large-file qualification for those adapters is pending.
+
+Focused tests transfer 128 MiB in 64 KiB chunks while asserting at most two chunks
+of source pull-ahead. They cover reader/open/write/close failure, blocked-read
+cancellation, released locks, unchanged destination memory, captured revision,
+cancelled legacy transport, and one notification outcome. Adapter tests verify
+raw streaming DTO/headers/signal and discard HTTP/unexpected-content responses
+without buffering. The UI initially exposed a rendering loop from reused toast
+IDs/manual dismissal and replacement in the installed vue-sonner version. The
+final implementation uses one promise-managed notice, with no manual replacement;
+focused tests reject those unsafe operations and real UI workflows pass.
+
+Full WebUI build/types/regressions pass (`/tmp/hict-stream-web-03.log`), retaining
+the known large-chunk warning. JVM test/shadowJar checks pass with 585 tests,
+zero failures/errors and seven optional skips (`/tmp/hict-stream-jvm.log`).
+Java production code is unchanged in this increment; the fixture now supports
+bounded larger inputs while retaining its default 4 kb behavior.
+
+`check_streaming_exports_browser.py` passes six checks using a real persistent
+Chromium private-filesystem writer: 512 Mb of independent deterministic IUPAC
+sequence exports to 518,400,010 FASTA bytes in 4,530 writes. Maximum observed
+chunk is 2 MiB. The chooser is substituted; the writer and direct HTTP transfer
+are real. The output is downloaded from the file handle and checked with an
+independent sequence hash. Cancelled and injected-failure transfers abort the
+real writer; independent readback hashes prove that each retained the previously
+saved output. Both source files remain unchanged. Saved/error notices were
+visually inspected. Evidence: `/tmp/hict-stream-browser-09/results.json` and its
+PNG/FASTA artifacts. This qualifies the transfer/writer integration, not an
+OS-native destination dialog. Failure injection occurs before a real write; it
+does not simulate every filesystem failure mode.
+
+The final run samples 247 animation frames and 58 trusted browser pointer-move
+events injected through CDP
+throughout preparation/transfer: frame p95 16.7 ms, DOM event acknowledgement p95
+13.2 ms. No page errors occur. Linux Ryzen 9 7900X (24 logical CPUs), 64 GB host
+memory, Playwright Chromium headless 131.0.6778.33, persistent local profile,
+1600×1100 viewport. This is a sparse synthetic-map transfer workload; dense maps,
+all tracks, desktop OS input dispatch, and the release soak remain separate gates.
+Natural sampled peaks, without periodic GC during the transfer:
+
+| Metric | Baseline bytes | Peak bytes | Increase bytes |
+|---|---:|---:|---:|
+| JavaScript heap | 7,581,048 | 8,685,940 | 1,104,892 |
+| Renderer RSS | 173,563,904 | 330,190,848 | 156,626,944 |
+| All owned Chromium processes RSS | 544,477,184 | 716,996,608 | 172,519,424 |
+
+The JavaScript metric excludes native buffers; total process RSS is therefore
+reported separately. Earlier upload-backed and incognito-OPFS measurements were
+not accepted as production memory evidence: artificial uploads allocate extra
+buffers, and incognito private files reside in memory. The final fixture uses
+persistent disk-backed storage and direct fetch without Playwright interception.
+A prior isolated persistent run also passes (`/tmp/hict-stream-browser-08`), with
+16.7 ms frame p95 and 12.2 ms input p95. These two runs are not an exhaustive
+scaling or hardware benchmark.
+
+The 14 existing file workflows pass:
+`/tmp/hict-stream-file-browser-03/results.json`. The existing sequence view (17),
+independent selection (7), FASTA measurement (12) and alignment (12) workflows
+also pass on the same final build:
+`/tmp/hict-stream-final-{sequence_view,selection_modes,fasta_measurement,alignment_runs}-browser/results.json`.
+The hidden/binless-track (13) and feature-edge (15) workflows also pass:
+`/tmp/hict-stream-final-{sequence_tracks,feature_edges}-browser/results.json`.
+That is all 90 existing browser scenarios plus the six large-transfer checks on
+the final build, with no unexpected page errors.
+
+Immutable server SHA-256:
+`4226a8a70c429756c552e9906cf9f23e6ec047597f3e9959dce316d86f20a7ba`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`e647bd1fc4b1f1efdfde04b5bc79cc9530445d474e2abd4245c78e88b701bdec`.
+The server artifact contains the preceding embedded WebUI; these runs explicitly
+serve the new WebUI separately. Final embedded/platform qualification is pending.
+Plans, manuscript and protected initial changes remain untouched. P3 and the
+full production/publication release remain incomplete.

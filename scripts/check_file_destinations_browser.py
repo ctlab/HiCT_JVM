@@ -47,9 +47,9 @@ def main():
                 if(q.pickerMode==='deny')throw new DOMException('Picker denied','NotAllowedError');
                 const name='chosen-'+options.suggestedName;
                 const handle={name,getFile:async()=>{q.readbacks++;return q.files[name];},createWritable:async()=>{
-                  let blob;return {write:async value=>{if(q.writeMode==='fail-write')throw Error('Simulated write failure');blob=value;},
+                  const chunks=[];return {write:async value=>{if(q.writeMode==='fail-write')throw Error('Simulated write failure');chunks.push(value);},
                     close:async()=>{if(q.writeMode==='fail-close')throw Error('Simulated close failure');
-                      const commit=()=>{q.files[name]=new File([blob],name,{type:blob.type});q.last=name;};
+                      const commit=()=>{q.files[name]=new File(chunks,name,{type:chunks[0]?.type||'text/plain'});q.last=name;};
                       if(q.writeMode==='wait-close')await new Promise(resolve=>{q.releaseWrite=()=>{commit();q.releaseWrite=null;resolve();};});else commit();},
                     abort:async()=>{q.aborts++;}};
                 }};
