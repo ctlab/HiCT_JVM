@@ -3149,3 +3149,67 @@ FASTA-track repeat measurement, real macOS/native modifier behavior, secondary
 source interactions, large-map selection performance, whole-map export and final
 embedded/platform qualification remain pending. This does not complete P2 or
 the release gate. Plan files and protected initial changes remain untouched.
+
+## FASTA interval selection and repeat measurement — 2026-11-16
+
+FASTA strips now support Ctrl/Command-drag selection, a context-menu plain-drag
+selection mode, one-letter intervals and Shift-arrow extension within visible
+bases. Plain drag otherwise keeps its pan behavior. A shared card gives exact
+length/assembly coordinates and copies the frozen selected strand's sequence.
+The reverse row copies reverse-complement IUPAC sequence in reading direction.
+The highlight is a separate presentation element, excluded from figure captures.
+Escape cancels a partial gesture; edits, scope changes and FASTA changes clear
+the selection. Panning preserves it, and sessions do not serialize it.
+
+Explicit Estimate period submits a bounded immutable gapless window to the shared
+sequence worker through `/sequence/repeat_period`. History headers guard capture;
+source stamps, assembly fingerprints and interval SHA-256 identify the frozen input. Settings
+advertise support, DTO transport preserves long positions, and status/cancellation
+use existing Jobs infrastructure. Job summaries identify the captured interval.
+Late submissions/results cannot reopen or overwrite a cancelled/closed card.
+`ungapped-autocorrelation-v1` reports exact periodicity or a thresholded imperfect
+candidate, excluding ambiguous symbols and composition-biased similarity. The
+UI and [method document](repeat-measurement.md) explain thresholds, overlapping
+pair dependence and the lack of indel modeling/significance testing.
+
+Library tests compare exact motifs with an independent shift oracle, including
+the advisor's CT repeat pair, partial copies, a point substitution, homopolymers,
+ambiguity, composition bias, lowercase, size bounds and cancellation. DTO tests
+cover invalid inputs and >2.5 Gb offsets. The real HTTP test occupies the actual
+sequence worker, cancels queued jobs, fills/rejects the queue, modifies/reverses
+the live assembly and verifies frozen analysis/provenance. It also checks stale
+headers, missing/out-of-range requests, Jobs summaries, capability and unchanged
+native bytes. Full JVM checks pass with 581 tests, zero failures/errors and seven
+optional skips (`/tmp/hict-repeat-provenance-jvm.log`, full test/shadowJar).
+The queue saturation/cancellation checks also pass in
+`/tmp/hict-repeat-qualified-jvm.log`. Full WebUI build/regressions
+and type checks pass (`/tmp/hict-repeat-final-web.log`,
+`/tmp/hict-repeat-provenance-types.log`); the known chunk warning remains.
+
+The final Chromium measurement script passes 12 scenarios:
+`/tmp/hict-repeat-final-browser/results.json`. Real horizontal/vertical gestures,
+both strands, clipboard bytes, length/endpoints, exact/imperfect repeat jobs,
+ambiguity, Jobs summaries, input checksums, Escape mid-drag, delayed-response ownership, exact
+cross-bin cutting, reversal, pan preservation, compact card layout, clean exports
+and actual save/close/reopen all pass. The known one-substitution interval reports
+period 2 and 8/10 informative matches; all-N input reports no supported period.
+Selection-active and clean PNG bytes match exactly. Native source bytes remain
+unchanged and there are no page errors. Screenshots of the card, both strands,
+Jobs, and 1024×768 layout were visually inspected.
+
+Existing browser workflows also pass on the same runtime artifacts: independent
+selections (7), main sequence view/exports/sessions (17), hidden/binless tracks
+(13), and feature cuts/navigation/clipboard (15). Together with the 12 measurement
+scenarios, all 64 checks pass without page errors. Evidence:
+`/tmp/hict-repeat-final-{selection,view,tracks,feature}-browser/results.json`.
+Immutable server SHA-256:
+`916db831c7bdcd1f69e66c7bc29d56d664cfc087368c3d81f30dc0de6326e735`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`97d5786272388c617d3f6318a2e5d37d16454c79e9b8f066cc4604bf83c3b1cc`.
+
+The card fits the inspected compact viewport; existing surrounding toolbar/sidebar
+overflow remains part of the pending responsive-layout work. Real macOS/native
+modifier behavior, the secondary-source matrix, accessibility, large-map/queue
+latency and final embedded/platform qualification remain pending. No broad repeat
+annotation or publication-release claim is made. Plan files and protected initial
+changes remain untouched.

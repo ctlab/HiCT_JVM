@@ -295,6 +295,79 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void repeatJobsFreezeInputsCancelQueuedWorkAndPublishBoundedSummaries() throws Exception {
+    final var fasta = tempDataDir.resolve("repeat.fa");
+    Files.writeString(fasta, ">sequence\nCTCTCTCTCTCTACGT\n");
+    final var nativeFile = tempDataDir.resolve("repeat.hict.hdf5");
+    ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly.write(
+      ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly.scan(fasta,100,()->false,null), nativeFile, ()->false,null);
+    final var digest = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(nativeFile));
+    final var holders = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder[1];
+    startServerWithInfoAndFileHandlers(router -> {
+      new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx,scheduler).addHandlersToRouter(router);
+      holders[0] = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder(vertx);
+      holders[0].addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJobsHandlersHolder(List.of(
+        new ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJobsHandlersHolder.Service("sequence",holders[0]::backgroundJobs,holders[0]::cancelBackgroundJob,()->{}))).addHandlersToRouter(router);
+    });
+    final var release = new CountDownLatch(1);
+    try {
+      assertEquals(409,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}").statusCode());
+      assertEquals(200,post("/open","{\"filename\":\"repeat.hict.hdf5\"}").statusCode());
+      assertEquals(200,post("/link_fasta","{\"fastaFilename\":\"repeat.fa\"}").statusCode());
+      // Occupy the real sequence worker so queued cancellation is deterministic,
+      // without requiring external native tools or timing-dependent long reads.
+      final var workersField = holders[0].getClass().getDeclaredField("workers");
+      workersField.setAccessible(true);
+      final var workers = (java.util.concurrent.ThreadPoolExecutor) workersField.get(holders[0]);
+      final var started = new CountDownLatch(1);
+      workers.execute(() -> { started.countDown(); try { release.await(10,TimeUnit.SECONDS); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } });
+      assertTrue(started.await(5,TimeUnit.SECONDS));
+      final var first = post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}");
+      assertEquals(202,first.statusCode(),first.body());
+      final var frozen = new JsonObject(first.body());
+      final String jobId = frozen.getString("jobId");
+      final var queued = new JsonObject(post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}").body());
+      assertEquals(200,post("/jobs/cancel",new JsonObject().put("id","sequence/"+queued.getString("jobId")).encode()).statusCode());
+      assertEquals("cancelled",new JsonObject(post("/sequence/repeat_period",new JsonObject().put("jobId",queued.getString("jobId")).encode()).body()).getString("status"));
+      final var extra = new java.util.ArrayList<String>();
+      for (int i=0;i<6;i++) {
+        final var response = post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}");
+        assertEquals(202,response.statusCode(),response.body());
+        extra.add(new JsonObject(response.body()).getString("jobId"));
+      }
+      assertEquals(503,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}").statusCode());
+      for (String id : extra) assertEquals(200,post("/sequence/jobs/"+id+"/stop","{}").statusCode());
+      final var file = ((ShareableWrappers.ChunkedFileWrapper) vertx.sharedData().getLocalMap("hict_server").get("chunkedFile")).getChunkedFile();
+      file.getScaffoldingOperations().splitContigAtBp(0,3);
+      file.getScaffoldingOperations().reverseSelectionRangeBp(0,16);
+      release.countDown();
+      JsonObject status = null;
+      for (int i=0;i<100;i++) {
+        status = new JsonObject(post("/sequence/repeat_period",new JsonObject().put("jobId",jobId).encode()).body());
+        if (Set.of("finished","failed","cancelled").contains(status.getString("status"))) break;
+        Thread.sleep(10);
+      }
+      assertEquals("finished",status.getString("status"),status.encode());
+      assertEquals(2,status.getJsonObject("result").getInteger("periodBp"));
+      assertEquals(12,status.getJsonObject("result").getInteger("length"));
+      assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+        .digest("CTCTCTCTCTCT".getBytes(StandardCharsets.UTF_8))),status.getJsonObject("result").getString("inputSha256"));
+      assertEquals(fasta.toRealPath().toString(),status.getJsonObject("result").getString("sourceFasta"));
+      assertTrue(status.getJsonObject("result").getString("sourceStamp").contains("size="));
+      assertEquals(frozen.getString("snapshot"),status.getJsonObject("result").getString("snapshot"));
+      assertEquals(409,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}",
+        Map.of("X-HiCT-History-Session","stale","X-HiCT-History-Revision","0")).statusCode());
+      assertEquals(400,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":17}").statusCode());
+      assertEquals(404,post("/sequence/repeat_period","{\"jobId\":\"missing\"}").statusCode());
+      final var jobs = new io.vertx.core.json.JsonArray(get("/jobs").body());
+      assertTrue(jobs.stream().map(JsonObject.class::cast).anyMatch(j->j.getString("message").contains("Period 2 bp")),jobs.encode());
+      assertTrue(new JsonObject(post("/sequence/settings","{}").body()).getBoolean("repeatPeriod"));
+      org.junit.jupiter.api.Assertions.assertArrayEquals(digest,java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(nativeFile)));
+    } finally { release.countDown(); holders[0].close(); }
+  }
+
+  @Test
   void fastaOnlySourcesReturnBlankTilesAndRejectContactNormalization() throws Exception {
     final var fasta = tempDataDir.resolve("reference.fa");
     Files.writeString(fasta, ">sequence\nACGTACGTACGT\n");

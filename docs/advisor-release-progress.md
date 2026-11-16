@@ -22,7 +22,7 @@ describe earlier releases; they must not override the decisions below.
 | Package | Advisor items | Status |
 |---|---|---|
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
-| P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: separate Shift entities and persistent Ctrl regions, coordinate entry and scoped border hiding implemented and primary Chromium verified; FASTA-track measurement and platform/large-map qualification pending |
+| P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | Pending; existing wheel-to-letters verified |
@@ -227,9 +227,41 @@ Evidence: `/tmp/hict-selection-browser-06/results.json`. Existing sequence-view
 Native files remain unchanged and no page errors were recorded. Regression runs
 precede a final label-only pluralization/import cleanup; the seven selection
 scenarios are repeated on the final build. FASTA-track repeat measurement is
-still unimplemented. macOS/native modifier behavior, full secondary-source/UI
+implemented below. macOS/native modifier behavior, full secondary-source/UI
 coverage, large-map selection latency and embedded/platform qualification remain
 open. P2 is not complete.
+
+## FASTA interval and repeat measurement
+
+Ctrl/Command-drag on either FASTA strip selects whole letters without panning.
+A context-menu selection mode permits ordinary dragging, and Shift-arrows extend
+within visible bases. A single shared card shows exact length/assembly coordinates,
+copies forward or reverse-complement sequence and submits an explicit repeat job.
+Escape cancels an incomplete drag or clears the card. Navigation preserves it;
+assembly/scope/FASTA changes clear it. Neither sessions nor image exports include
+transient measurement overlays.
+
+The new bounded `/sequence/repeat_period` endpoint captures the gapless interval
+under the history guard and runs ungapped autocorrelation on the existing sequence
+worker. Results appear in the card and Jobs; cancellation, stale input, queue
+limits and late-response ownership follow the same job infrastructure. Exact
+periodicity and imperfect candidates have distinct explanations. Ambiguous bases
+never match and indels are not modeled. The method and thresholds are documented
+in [repeat-measurement.md](repeat-measurement.md).
+
+Library/DTO and real HTTP tests cover known repeats, a substitution, ambiguity,
+safe coordinates, deterministic queued cancellation, frozen input after edits,
+stale headers, summary publication and unchanged source bytes. Full JVM checks
+pass with 581 tests, zero failures/errors and seven optional skips; full WebUI
+build/regressions pass. Twelve Chromium measurement scenarios pass, including
+input checksums and actual session restore:
+`/tmp/hict-repeat-final-browser/results.json`. Existing selection/map/feature/track
+workflows also pass (52 checks):
+`/tmp/hict-repeat-final-{selection,view,feature,tracks}-browser/results.json`.
+The measurement card fits the inspected 1024×768 viewport; that does
+not qualify the surrounding application's known responsive-layout issues.
+Native platform/modifier, secondary-source, accessibility and large-map/queue
+performance qualification remain open. P2 and the publication release are not complete.
 
 ## Mandatory release gates
 

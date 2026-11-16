@@ -194,6 +194,21 @@ and assembly reconstruction checks.
 | `POST` | `/examples/download/status` | Read current download progress |
 | `POST` | `/examples/download/cancel` | Cancel the current download |
 | `POST` | `/sequence/alignment_detail` | Read or prepare bounded CIGAR alignment detail |
+| `POST` | `/sequence/repeat_period` | Start/inspect bounded gapless repeat measurement, 1–4096 BP |
+
+Repeat measurements accept `{startBp,endBp}` (zero-based half-open) or `{jobId}`
+to read status. Displayed history headers guard the captured interval. They use
+the shared sequence worker queue and cancellation endpoints; completed summaries
+appear in `/jobs` as `repeat_period`. `/sequence/settings` advertises
+`repeatPeriod=true`. Results describe the frozen interval and assembly fingerprint,
+with `inputSha256` for the captured forward sequence's UTF-8 bytes, its source
+FASTA path and stat stamp (a change guard, not a whole-file checksum).
+The shortest supported ungapped lag has at least two copies (a partial final
+copy is allowed). Exact periodicity is reported directly. Imperfect candidates
+require at least eight informative A/C/G/T pairs, at least 80% informative overlap,
+80% pair identity and 20 percentage points above the interval's base-composition
+identity baseline. Ambiguous bases never match. This is an exploratory estimate,
+not statistical significance or a repeat annotation; indels are not modeled.
 
 Check the OpenAPI request schemas before calling these endpoints. Session
 restore validates referenced files and preserves native split lineage. Job

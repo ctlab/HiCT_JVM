@@ -12,6 +12,7 @@ import ru.itmo.ctlab.hict.hict_library.assembly.*;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
 import ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler;
 import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.AlignmentDetailRequestDTO;
+import ru.itmo.ctlab.hict.hict_server.dto.request.sequence.RepeatPeriodRequestDTO;
 import ru.itmo.ctlab.hict.hict_server.util.shareable.ShareableWrappers;
 import java.io.*;
 import java.nio.file.*;
@@ -35,7 +36,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   public List<BackgroundJob> backgroundJobs() {
     return jobs.values().stream().map(job -> new BackgroundJob(
       job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
-      job.state, job.error, job.output == null ? List.of() : List.of(
+      job.repeatPeriod == null ? job.state : repeatSummary(job), job.error, job.output == null ? List.of() : List.of(
         new BackgroundJob.Output(job.output,
           job.kind.equals("search") ? "open_tracks"
             : job.kind.equals("moddotplot") ? "attach_identity" : "attach_dotplot", null, null, job.mapFilename, job.kind.equals("search") ? null : resultDisplayMode(job.request))))).toList();
@@ -56,6 +57,15 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   }
 
   @Override public void addHandlersToRouter(Router router) {
+    router.post("/sequence/repeat_period").handler(ctx -> {
+      final var shared = vertx.sharedData().getLocalMap("hict_server");
+      final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (wrapper == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
+      wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
+        () -> repeatPeriod(ctx.body().asJsonObject()), result -> ctx.response()
+          .setStatusCode(Set.of("submitted", "running").contains(result.getString("status")) ? 202 : 200)
+          .putHeader("content-type", "application/json").end(result.encode()));
+    });
     router.post("/sequence/alignment_detail").handler(ctx -> {
       final var shared = vertx.sharedData().getLocalMap("hict_server");
       final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
@@ -95,7 +105,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         try {
           if (request != null && request.containsKey("gapLengthBp")) System.setProperty(AssemblyExportSettings.GAP_LENGTH_KEY, Long.toString(gapLength(request)));
           var result = new JsonObject().put("gapLengthBp", AssemblyExportSettings.gapLengthBp())
-            .put("blastBundlePlatforms", "Linux x86_64");
+            .put("blastBundlePlatforms", "Linux x86_64").put("repeatPeriod", true);
           var shared = vertx.sharedData().getLocalMap("hict_server");
           boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
           result.put("mapOpen", shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile") != null);
@@ -147,6 +157,80 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
 
   private record AlignmentKey(String assembly, Path fasta, Stamp stamp, AlignmentDetailRequestDTO window,
                               String rows, String columns) { }
+
+  private static JsonObject repeatStatus(Job job) {
+    return job.statusJson().put("result", job.repeatPeriod);
+  }
+
+  private static String repeatSummary(Job job) {
+    final var result = job.repeatPeriod;
+    return "Captured assembly " + (job.request.getLong("startBp") + 1) + "–" + job.request.getLong("endBp")
+      + " (1-based inclusive), " + result.getInteger("length") + " bp. "
+      + (result.getInteger("periodBp") == null ? "No supported period."
+        : "Period " + result.getInteger("periodBp") + " bp; "
+          + Math.round(result.getDouble("identity") * 1000) / 10.0 + "% matching informative pairs. ")
+      + result.getString("message");
+  }
+
+  private JsonObject repeatPeriod(JsonObject body) throws Exception {
+    final RepeatPeriodRequestDTO request;
+    try { request = RepeatPeriodRequestDTO.fromJson(body); }
+    catch (IllegalArgumentException invalid) { throw new HttpException(400, invalid.getMessage()); }
+    if (request.jobId() != null) {
+      final var job = jobs.get(request.jobId());
+      if (job == null || !job.kind.equals("repeat_period")) throw new HttpException(404, "Repeat measurement job not found");
+      return repeatStatus(job);
+    }
+    final var shared = vertx.sharedData().getLocalMap("hict_server");
+    final boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
+    final var map = (ShareableWrappers.ChunkedFileWrapper) shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile");
+    var linked = (ShareableWrappers.PathWrapper) shared.get(secondary ? "linkedFastaSecondaryPath" : "linkedFastaPrimaryPath");
+    if (linked == null && !secondary) linked = (ShareableWrappers.PathWrapper) shared.get("linkedFastaPath");
+    if (map == null || linked == null) throw new HttpException(409, "Link the FASTA for the active assembly before measuring repeats");
+    final var file = map.getChunkedFile();
+    final var fasta = linked.getPath().toRealPath();
+    final var stamp = Stamp.read(fasta);
+    final var snapshot = AssemblySequenceSnapshot.capture(file);
+    if (request.endBp() > snapshot.length()) throw new HttpException(400, "The repeat interval is outside the current assembly");
+    final var sequence = file.getFastaProcessor().readTrackRegion(fasta, request.startBp(), request.endBp(), false).sequence();
+    stamp.check(fasta);
+    final var id = UUID.randomUUID().toString();
+    final var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    final var job = new Job(id, data, data, snapshot, body.copy(), file.getHdfFilePath().toString(), "repeat_period");
+    job.sourceFasta = fasta.toString(); job.sourceStamp = stamp.toString();
+    jobs.put(id, job);
+    try { workers.execute(() -> {
+      job.thread = Thread.currentThread();
+      final long started = System.nanoTime();
+      String terminal = "finished";
+      try {
+        job.checkCancelled(); job.state = "running";
+        final var result = RepeatPeriod.estimate(sequence, job::checkCancelled);
+        job.checkCancelled();
+        job.repeatPeriod = JsonObject.mapFrom(result).put("startBp", request.startBp()).put("endBp", request.endBp())
+          .put("coordinateSystem", "assembly_bp_gapless").put("snapshot", job.snapshotId)
+          .put("sourceFasta", job.sourceFasta).put("sourceStamp", job.sourceStamp)
+          .put("inputSha256", HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+            .digest(sequence.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+      } catch (Exception failure) {
+        terminal = job.cancelled.get() || failure instanceof CancellationException || failure instanceof InterruptedException
+          ? "cancelled" : "failed";
+        job.error = terminal.equals("failed") ? Objects.toString(failure.getMessage(), "Repeat measurement failed") : null;
+      } finally {
+        job.elapsedNs = System.nanoTime() - started;
+        job.snapshot = null;
+        synchronized (job) {
+          // Cancellation can race the last comparison; never publish a cancelled result.
+          if (job.cancelled.get()) { terminal = "cancelled"; job.repeatPeriod = null; }
+          job.thread = null; job.state = terminal; job.finished = System.currentTimeMillis();
+        }
+        trimCompletedJobs(); Thread.interrupted();
+      }
+    }); } catch (RejectedExecutionException full) {
+      jobs.remove(id); throw new HttpException(503, "The sequence analysis queue is full");
+    }
+    return repeatStatus(job);
+  }
 
   private JsonObject alignmentDetail(JsonObject body) throws Exception {
     final AlignmentDetailRequestDTO request;
@@ -703,7 +787,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     final ArrayDeque<String> logs = new ArrayDeque<>();
     volatile String state = "submitted", output, error;
     volatile String sourceFasta, sourceStamp, toolCommand, toolSha256, inputSha256;
-    volatile JsonObject alignmentDetail;
+    volatile JsonObject alignmentDetail, repeatPeriod;
     volatile long finished, hits, fragments, elapsedNs;
     volatile Process process; volatile Thread thread; volatile BufferedWriter logWriter;
     Job(String id, Path directory, Path data, AssemblySequenceSnapshot snapshot, JsonObject request, String mapFilename) {

@@ -94,6 +94,23 @@ Alignment detail is bounded to the visible intervals and reports an empty result
 when no alignment is found. **Open FASTA only…** creates an assembly without
 contact signal. Its sequence and structural tools remain available.
 
+On a FASTA strip, Ctrl/Command-drag across letters to measure an interval. You
+can also right-click and choose **Drag to select bases**; choose **Drag to pan**
+to return to navigation. Both endpoints include their letters. The small
+measurement card gives the exact base count and assembly coordinates, and copies
+the selected sequence. Selecting the reverse-strand row copies its reverse
+complement in reading direction. Shift-arrows extend a selection within the
+visible bases. Escape cancels an unfinished drag or clears the measurement.
+
+**Estimate period** runs an ungapped autocorrelation job for up to 4096 bases.
+The card and Jobs show its result. Ambiguous bases never count as matching
+evidence. An imperfect candidate is exploratory; check it with a dot plot,
+especially when insertions/deletions may be present. Expand **How the estimate
+works** for the thresholds. Counts and coordinates use the gap-free assembly;
+configured scaffold separators are not inserted into this measurement. Edits or
+FASTA changes clear it, and transient measurements are not saved in sessions.
+See [the method and limitations](repeat-measurement.md).
+
 Tools offers sequence search, alignment dotplots and ModDotPlot identity maps.
 Exact and substitution searches use SeqKit. BLAST uses the bundled BLAST+ tools.
 The job panel keeps progress, cancellation, errors and result actions available

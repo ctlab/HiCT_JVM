@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Select and measure FASTA letters on either axis/strand, copy exact sequence and coordinates, and estimate a bounded repeat period through cancellable Jobs.
+- Keep FASTA measurements stable during navigation, invalidate them after edits, and exclude transient measurement overlays from saved sessions and image exports.
+
 - Separate Shift entity selection from persistent Ctrl/Command analysis regions, with stable border highlights and optional border hiding in scoped views.
 - Select exact regions by assembly or contig coordinates, preserve their endpoints across scales and FASTA export, and exclude selection overlays from image exports.
 
