@@ -29,6 +29,7 @@ import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.nativeprocessing.NativeProcessingService;
 
 import java.util.Arrays;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceBinProvenance;
 
 public final class DistanceExpectedNormalizer {
   private DistanceExpectedNormalizer() {
@@ -276,6 +277,72 @@ public final class DistanceExpectedNormalizer {
     }
   }
 
+  /** One unit of support per unordered physical pair across the complete fitting window. */
+  public static final class SampleWeights {
+    private final long startRowPx, startColPx;
+    private final int[] rows, cols;
+    private final long[] rowKeys, colKeys;
+    private final int[] rowReverseMultiplicity, colReverseMultiplicity;
+
+    public SampleWeights(long startRowPx, long startColPx,
+                         SourceBinProvenance rows,
+                         SourceBinProvenance cols) {
+      this.startRowPx = startRowPx;
+      this.startColPx = startColPx;
+      this.rows = rows.referenceMultiplicities();
+      this.cols = cols.referenceMultiplicities();
+      this.rowKeys = keys(rows);
+      this.colKeys = keys(cols);
+      this.rowReverseMultiplicity = multiplicitiesIn(rowKeys, colKeys);
+      this.colReverseMultiplicity = multiplicitiesIn(colKeys, rowKeys);
+    }
+
+    private static long[] keys(SourceBinProvenance axis) {
+      final var result = new long[Math.toIntExact(axis.axisLength())];
+      Arrays.fill(result, -1L);
+      for (var run : axis.runs()) for (int i = 0; i < run.length(); i++) {
+        result[Math.toIntExact(run.offset()) + i] = ((long) run.stripeId() << 32)
+          | Integer.toUnsignedLong(run.firstBinInStripe() + run.step() * i);
+      }
+      return result;
+    }
+
+    private static int[] multiplicitiesIn(long[] keys, long[] other) {
+      final var sorted = other.clone();
+      Arrays.sort(sorted);
+      final var counts = new int[keys.length];
+      for (int i = 0; i < keys.length; i++) {
+        if (keys[i] < 0) continue;
+        int low = 0, high = sorted.length;
+        while (low < high) {
+          final int mid = (low + high) >>> 1;
+          if (sorted[mid] < keys[i]) low = mid + 1; else high = mid;
+        }
+        final int first = low;
+        high = sorted.length;
+        while (low < high) {
+          final int mid = (low + high) >>> 1;
+          if (sorted[mid] <= keys[i]) low = mid + 1; else high = mid;
+        }
+        counts[i] = low - first;
+      }
+      return counts;
+    }
+
+    public double at(long rowPx, long colPx) {
+      final long row = rowPx - startRowPx, col = colPx - startColPx;
+      if (row < 0 || row >= rows.length || col < 0 || col >= cols.length) return 0.0d;
+      final int r = (int) row, c = (int) col;
+      if (rows[r] == 0 || cols[c] == 0) return 0.0d;
+      long references = (long) rows[r] * cols[c];
+      // A/B and B/A are one stored unordered contact. Count all aliases of
+      // both orientations, including unequal multiplicities in rectangular views.
+      if (rowKeys[r] != colKeys[c])
+        references = Math.addExact(references, (long) rowReverseMultiplicity[r] * colReverseMultiplicity[c]);
+      return 1.0d / references;
+    }
+  }
+
   public static final class DiagonalAccumulator {
     private final int resolutionOrder;
     private final long startRowPx;
@@ -287,7 +354,7 @@ public final class DistanceExpectedNormalizer {
     private final long segmentEndPx;
     private final long minDiagonal;
     private final double[] sums;
-    private final long[] counts;
+    private final double[] counts;
 
     private DiagonalAccumulator(final int resolutionOrder,
                                 final long startRowPx,
@@ -308,7 +375,7 @@ public final class DistanceExpectedNormalizer {
       if (this.endRowPx <= this.startRowPx || this.endColPx <= this.startColPx) {
         this.minDiagonal = 0L;
         this.sums = new double[0];
-        this.counts = new long[0];
+        this.counts = new double[0];
         return;
       }
       final var diagonalBounds = diagonalBounds(
@@ -323,7 +390,7 @@ public final class DistanceExpectedNormalizer {
         diagonalBounds.maxDiagonal() - diagonalBounds.minDiagonal() + 1L
       );
       this.sums = new double[diagonalCount];
-      this.counts = new long[diagonalCount];
+      this.counts = new double[diagonalCount];
     }
 
     private static @NotNull DiagonalAccumulator forDomain(final int resolutionOrder,
@@ -351,6 +418,13 @@ public final class DistanceExpectedNormalizer {
     public void addSignal(final double @NotNull [][] signal,
                           final long chunkStartRowPx,
                           final long chunkStartColPx) {
+      addSignal(signal, chunkStartRowPx, chunkStartColPx, null);
+    }
+
+    public void addSignal(final double @NotNull [][] signal,
+                          final long chunkStartRowPx,
+                          final long chunkStartColPx,
+                          final @Nullable SampleWeights sampleWeights) {
       if (signal.length == 0 || this.sums.length == 0) {
         return;
       }
@@ -378,8 +452,9 @@ public final class DistanceExpectedNormalizer {
           if (diagonalIndex < 0 || diagonalIndex >= this.sums.length) {
             continue;
           }
-          this.sums[diagonalIndex] += value;
-          this.counts[diagonalIndex] += 1L;
+          final double weight = sampleWeights == null ? 1.0d : sampleWeights.at(absoluteRowPx, absoluteColPx);
+          this.sums[diagonalIndex] += value * weight;
+          this.counts[diagonalIndex] += weight;
         }
       }
     }
@@ -460,6 +535,13 @@ public final class DistanceExpectedNormalizer {
     public void addSignal(final double @NotNull [][] signal,
                           final long chunkStartRowPx,
                           final long chunkStartColPx) {
+      addSignal(signal, chunkStartRowPx, chunkStartColPx, null);
+    }
+
+    public void addSignal(final double @NotNull [][] signal,
+                          final long chunkStartRowPx,
+                          final long chunkStartColPx,
+                          final @Nullable SampleWeights sampleWeights) {
       if (signal.length == 0 || this.scopedAccumulators.length == 0) {
         return;
       }
@@ -472,7 +554,7 @@ public final class DistanceExpectedNormalizer {
         if (!scoped.domain().intersects(chunkStartColPx, chunkColEndPx)) {
           continue;
         }
-        scoped.accumulator().addSignal(signal, chunkStartRowPx, chunkStartColPx);
+        scoped.accumulator().addSignal(signal, chunkStartRowPx, chunkStartColPx, sampleWeights);
       }
     }
 
@@ -515,7 +597,7 @@ public final class DistanceExpectedNormalizer {
         overallMinDiagonal = minDiagonal;
         final var diagonalCount = (int) (maxDiagonal - minDiagonal + 1L);
         final var sums = new double[diagonalCount];
-        final var counts = new long[diagonalCount];
+        final var counts = new double[diagonalCount];
         for (final var scoped : this.scopedAccumulators) {
           final var accumulator = scoped.accumulator();
           for (int index = 0; index < accumulator.sums.length; index++) {

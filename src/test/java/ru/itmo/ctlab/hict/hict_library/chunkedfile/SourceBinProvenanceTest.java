@@ -31,13 +31,24 @@ class SourceBinProvenanceTest {
       assertEquals(List.of(4, 3, 2, 1, 1, 0, 0), bins(provenance));
       final var displayed = queries.getSubmatrix(resolution, 0, 0, 7, 7, true).matrix();
       final var identities = bins(provenance);
+      final var support = provenance.referenceMultiplicities();
+      assertArrayEquals(new int[]{1,1,1,2,2,2,2}, support);
+      double originalTotal = 0, weightedTotal = 0, supportMass = 0;
+      for (int r = 0; r < 5; r++) for (int c = 0; c < 5; c++) originalTotal += original.getAsDouble(r,c);
       for (int r = 0; r < 7; r++) for (int c = 0; c < 7; c++)
         assertEquals(original.getAsDouble(identities.get(r), identities.get(c)), displayed.getAsDouble(r, c));
+      for (int r = 0; r < 7; r++) for (int c = 0; c < 7; c++) {
+        supportMass += 1.0 / support[r] / support[c];
+        weightedTotal += displayed.getAsDouble(r,c) / support[r] / support[c];
+      }
+      assertEquals(25, supportMass, 1e-12, "Five unique bins produce 25 ordered physical pairs");
+      assertEquals(originalTotal, weightedTotal, 1e-12, "Repeated references add no observations");
       assertEquals(List.of(2, 1, 1, 0), bins(queries.sourceBinProvenance(resolution, 2, 6, true)));
       final var padded = queries.sourceBinProvenance(resolution, -2, 9, true);
       assertEquals(11, padded.axisLength());
       assertEquals(2, padded.runs().getFirst().offset());
       assertEquals(5, padded.uniqueSourceBins());
+      assertArrayEquals(new int[]{0,0,1,1,1,2,2,2,2,0,0}, padded.referenceMultiplicities());
       assertTrue(queries.sourceBinProvenance(resolution, -7, -2, true).runs().isEmpty());
       assertTrue(queries.sourceBinProvenance(resolution, 7, 9, true).runs().isEmpty());
       assertEquals(0, queries.sourceBinProvenance(resolution, 3, 3, true).axisLength());
@@ -62,9 +73,19 @@ class SourceBinProvenanceTest {
       new ATUDescriptor(second, 2, 6, ATUDirection.FORWARD)), 12, 0);
     assertEquals(12, provenance.referencedBins());
     assertEquals(10, provenance.uniqueSourceBins());
+    assertArrayEquals(new int[]{1,1,2,2,1,1,2,2,1,1,1,1}, provenance.referenceMultiplicities());
     assertThrows(UnsupportedOperationException.class, () -> provenance.runs().clear());
     assertThrows(IllegalArgumentException.class, () -> SourceBinProvenance.fromATUs(
       List.of(new ATUDescriptor(first, 2, 6, ATUDirection.FORWARD)), 3, 0));
+  }
+
+  @Test void multiplicityDoesNotAllocateByPhysicalStripeSize() {
+    final var stripe = new StripeDescriptor(4, 2_000_000_000, new double[0]);
+    final var axis = SourceBinProvenance.fromATUs(List.of(
+      new ATUDescriptor(stripe, 1_999_999_990, 1_999_999_995, ATUDirection.FORWARD),
+      new ATUDescriptor(stripe, 1_999_999_992, 1_999_999_997, ATUDirection.REVERSED)), 10, 0);
+    assertArrayEquals(new int[]{1,1,2,2,2,1,1,2,2,2}, axis.referenceMultiplicities());
+    assertEquals(7, Arrays.stream(axis.referenceMultiplicities()).mapToDouble(n -> 1.0/n).sum(), 0);
   }
 
   private static List<Integer> bins(SourceBinProvenance provenance) {

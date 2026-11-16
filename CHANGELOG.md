@@ -18,6 +18,8 @@
 
 ### Sequence analysis and sessions
 
+- Weight repeated exact-cut references once per unordered source-bin pair in expected fitting, keep fitting consistent across tile chunks, and label histogram counts as displayed samples.
+
 - Preserve stored fractional values and genuine weights in ordinary Cooler re-export, retain int64 counts in mixed pyramids, and report cis totals separately from interchromosomal contacts.
 - Preserve existing export destinations on failure or cancellation, with explicit overflow and invalid-value errors.
 

@@ -57,7 +57,8 @@ public final class TileSignalStatistics {
     public Range(Double min, Double max, long count) { this(min, max, count, null); }
   }
   public record Signal(String expression, Range range) {}
-  public record Snapshot(String source, long bpResolution, String revision, Range raw, List<Signal> processed) {}
+  public record Snapshot(String source, long bpResolution, String revision, Range raw, List<Signal> processed,
+                         String countSemantics) {}
   public final Accumulator raw = new Accumulator();
   private final LinkedHashMap<String, Accumulator> processed = new LinkedHashMap<>();
   public Accumulator signal(String expression) { return processed.computeIfAbsent(expression, key -> new Accumulator()); }
@@ -67,6 +68,6 @@ public final class TileSignalStatistics {
   }
   public Snapshot snapshot(String source, long bpResolution, String revision) {
     return new Snapshot(source, bpResolution, revision, raw.snapshot(), processed.entrySet().stream()
-      .map(entry -> new Signal(entry.getKey(), entry.getValue().snapshot())).toList());
+      .map(entry -> new Signal(entry.getKey(), entry.getValue().snapshot())).toList(), "DISPLAY_CELLS");
   }
 }

@@ -2808,3 +2808,48 @@ Evidence: `/tmp/hict-stored-float-qualified/{results,stored-parity,cli-parity}.j
 it does not establish large-map latency, optional balancing or final package UX.
 Shared-bin expected/histogram accounting, sequence-scale geometry and the main
 scissors transition remain outstanding P1 dependencies. The goal remains active.
+
+
+## Shared-bin expected fitting and histogram semantics (2026-11-16)
+
+Exact-cut aliases now share one unit of support per unordered physical source-bin
+pair across the full fitting window. This includes repeated source-diagonal cells
+and symmetric A/B, B/A orientations with unequal multiplicities in rectangular
+views. Source keys include stripe identity. A sparse interval sweep computes
+reference counts without allocating arrays indexed by source stripe size. The
+same weights feed every tile chunk and scaffold domain. Expected means retain the
+existing positive-finite policy at absolute display-bin separations. Native values
+are not changed or summed into synthetic observations. See
+[the explicit method and limitations](shared-bin-statistics.md).
+
+Primary viewport profiles, raster fallbacks and normalized numeric queries share
+the policy. BINS queries fit their own axis, including hidden contigs, and do not
+reuse PIXELS caches. Color histograms intentionally remain display distributions;
+tile statistics now declare DISPLAY_CELLS, the dialog labels displayed matrix
+cells and explains repeated references for exact-cut assemblies. O/E's tooltip
+explains shared support. No additional routine dialog or control was introduced.
+
+All 564 JVM tests passed, zero failures/errors, seven optional skips. WebUI build,
+histogram/range aggregation and API DTO regression scripts passed. Focused ESLint
+exited successfully with no reported lint errors (the existing plugin schema
+resolver prints directiveConfigSchema diagnostics). Tests cover reversed/padded
+axes, stripe indices near two billion, weighted contact-support conservation,
+unequal reverse multiplicities, rectangular windows and per-cell chunk invariance.
+The existing expected/scaffold/native-rendering tests also pass.
+
+Chromium exercised two exact cuts, reversal, scaffolding, the Expected/O/E control
+and the real selection histogram. Four numerical windows (square, rectangular,
+unequal-alias rectangle and BINS) agree with an independent unordered-pair
+occurrence enumeration with maximum cell error zero. Cached and uncached primary
+fits agree. Tile statistics report 49 display cells for a 7x7 window. Native source
+SHA-256 is unchanged, and there are zero page errors. The histogram screenshot was
+visually inspected; its displayed-sample explanation is readable.
+
+Evidence: `/tmp/hict-shared-expected-qualified/{results.json,shared-histogram.png,shared-oe.png}`.
+Immutable server SHA-256:
+`27cb03a8414889983f42ab8622f828d9c16600234effe4daf2b16d58fb23d2ac`.
+The checker serves the built WebUI independently of the JAR; this is feature
+qualification, not packaged UI or cross-platform release qualification. The
+screenshots still show the current bin-grid stretching of short fragments.
+Uniform sequence-scale geometry, the main scissors transition and broader
+performance/native/package gates remain pending. The full goal remains active.

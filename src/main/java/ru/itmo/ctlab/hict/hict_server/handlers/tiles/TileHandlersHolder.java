@@ -306,6 +306,8 @@ public class TileHandlersHolder extends HandlersHolder {
             clampedEndColPx,
             expectedDomains
           );
+          final var sampleWeights = expectedSampleWeights(chunkedFile, resolutionDescriptor,
+            clampedStartRowPx, clampedEndRowPx, clampedStartColPx, clampedEndColPx);
           for (long chunkStartRowPx = clampedStartRowPx; chunkStartRowPx < clampedEndRowPx; chunkStartRowPx += chunkSize) {
             final var chunkEndRowPx = Math.min(clampedEndRowPx, chunkStartRowPx + chunkSize);
             for (long chunkStartColPx = clampedStartColPx; chunkStartColPx < clampedEndColPx; chunkStartColPx += chunkSize) {
@@ -325,7 +327,8 @@ public class TileHandlersHolder extends HandlersHolder {
               accumulator.addSignal(
                 baseSignal,
                 matrixWithWeights.startRowIncl(),
-                matrixWithWeights.startColIncl()
+                matrixWithWeights.startColIncl(),
+                sampleWeights
               );
             }
           }
@@ -341,6 +344,9 @@ public class TileHandlersHolder extends HandlersHolder {
             .put("endRowPx", clampedEndRowPx)
             .put("startColPx", clampedStartColPx)
             .put("endColPx", clampedEndColPx)
+            .put("sampleSemantics", "UNIQUE_UNORDERED_SOURCE_PAIR_MASS")
+            .put("distanceSemantics", "DISPLAY_BIN_DISTANCE")
+            .put("sharedReferenceWeighting", sampleWeights != null)
             .put("domainCount", expectedDomains.length)
             .put("minDiagonal", profile.minDiagonal())
             .put("diagonalCount", profile.means().length);
@@ -759,7 +765,7 @@ public class TileHandlersHolder extends HandlersHolder {
       endRowPx,
       endColPx
     );
-    final var expectedProfile = resolveExpectedProfile(map, resolutionDescriptor);
+    final var expectedProfile = resolveExpectedProfileForTile(map, chunkedFile, matrixWithWeights, options);
 
     final BufferedImage image;
     if (renderPipelineConfig.enabled() && options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
@@ -996,9 +1002,6 @@ public class TileHandlersHolder extends HandlersHolder {
       throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
     }
     final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
-    final var expectedProfile = "PRIMARY".equals(requestedSource)
-      ? resolveExpectedProfile(map, resolutionDescriptor)
-      : null;
 
     final var units = parseUnits(request.getString("unit", request.getString("units", "PIXELS")));
     final var startRowInUnits = resolveRangeStart(request, Axis.ROW, units);
@@ -1060,8 +1063,11 @@ public class TileHandlersHolder extends HandlersHolder {
         matrixWithWeights.colWeights(),
         options.getCoolerWeightsNaNPolicy()
       );
-      case TRADITIONAL_NORMALIZED ->
+      case TRADITIONAL_NORMALIZED -> {
+        final var expectedProfile = "PRIMARY".equals(requestedSource)
+          ? resolveExpectedProfileForTile(map, requestedChunkedFile, matrixWithWeights, options, visibleOnly) : null;
         signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options, expectedProfile).values();
+      }
       case PIPELINE_SIGNAL -> {
         if ("SECONDARY".equals(requestedSource)) {
           throw new IllegalArgumentException("PIPELINE_SIGNAL queries are supported only for the primary source");
@@ -1259,9 +1265,19 @@ public class TileHandlersHolder extends HandlersHolder {
     final @NotNull ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrix,
     final @NotNull ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options
   ) {
+    return resolveExpectedProfileForTile(map, file, matrix, options, true);
+  }
+
+  private @Nullable DistanceExpectedNormalizer.DiagonalProfile resolveExpectedProfileForTile(
+    LocalMap<String, Object> map, ChunkedFile file,
+    ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrix,
+    ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
+    boolean visibleOnly
+  ) {
     if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) return null;
     final var descriptor = matrix.resolutionDescriptor();
-    final var cached = resolveExpectedProfile(map, descriptor);
+    // Viewport profiles use visible PIXELS. BINS includes hidden contigs and has a different axis.
+    final var cached = visibleOnly ? resolveExpectedProfile(map, descriptor) : null;
     final int rows = (int) Math.max(0L, matrix.endRowExcl() - matrix.startRowIncl());
     final int cols = (int) Math.max(0L, matrix.endColExcl() - matrix.startColIncl());
     if (cached != null && cached.matchesResolutionWindow(matrix.startRowIncl(), matrix.startColIncl(), rows, cols)) {
@@ -1271,10 +1287,31 @@ public class TileHandlersHolder extends HandlersHolder {
       descriptor.getResolutionOrderInArray(), matrix.startRowIncl(), matrix.endRowExcl(),
       matrix.startColIncl(), matrix.endColExcl(),
       buildExpectedDomains(file, descriptor, matrix.startRowIncl(), matrix.endRowExcl(),
-        matrix.startColIncl(), matrix.endColExcl()));
+        matrix.startColIncl(), matrix.endColExcl(), visibleOnly));
     accumulator.addSignal(file.tileVisualizationProcessor().prepareSignalMatrix(matrix, options),
-      matrix.startRowIncl(), matrix.startColIncl());
+      matrix.startRowIncl(), matrix.startColIncl(),
+      expectedSampleWeights(file, descriptor, matrix.startRowIncl(), matrix.endRowExcl(),
+        matrix.startColIncl(), matrix.endColExcl(), visibleOnly));
     return accumulator.toProfile();
+  }
+
+  /** Counts repeated immutable bins within the fitting window, not once per tile chunk. */
+  private @Nullable DistanceExpectedNormalizer.SampleWeights expectedSampleWeights(
+    ChunkedFile file, ResolutionDescriptor resolution, long rowStart, long rowEnd, long colStart, long colEnd
+  ) {
+    return expectedSampleWeights(file, resolution, rowStart, rowEnd, colStart, colEnd, true);
+  }
+
+  private @Nullable DistanceExpectedNormalizer.SampleWeights expectedSampleWeights(
+    ChunkedFile file, ResolutionDescriptor resolution, long rowStart, long rowEnd, long colStart, long colEnd,
+    boolean visibleOnly
+  ) {
+    final var rows = file.matrixQueries().sourceBinProvenance(resolution, rowStart, rowEnd, visibleOnly);
+    final var cols = rowStart == colStart && rowEnd == colEnd ? rows
+      : file.matrixQueries().sourceBinProvenance(resolution, colStart, colEnd, visibleOnly);
+    if (rows.referencedBins() == rows.uniqueSourceBins() && cols.referencedBins() == cols.uniqueSourceBins()) return null;
+    return new DistanceExpectedNormalizer.SampleWeights(rowStart, colStart,
+      rows, cols);
   }
 
   private DistanceExpectedNormalizer.PixelDomain @NotNull [] buildExpectedDomains(
@@ -1285,6 +1322,14 @@ public class TileHandlersHolder extends HandlersHolder {
     final long startColPx,
     final long endColPx
   ) {
+    return buildExpectedDomains(chunkedFile, resolutionDescriptor, startRowPx, endRowPx, startColPx, endColPx, true);
+  }
+
+  private DistanceExpectedNormalizer.PixelDomain @NotNull [] buildExpectedDomains(
+    ChunkedFile chunkedFile, ResolutionDescriptor resolutionDescriptor,
+    long startRowPx, long endRowPx, long startColPx, long endColPx, boolean visibleOnly
+  ) {
+    final var coordinateUnit = visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS;
     final var scaffoldDomains = new ArrayList<DistanceExpectedNormalizer.PixelDomain>();
     final var basePairsResolution = ResolutionDescriptor.fromResolutionOrder(0);
     for (final var scaffold : chunkedFile.getScaffoldTree().getScaffoldList()) {
@@ -1294,14 +1339,14 @@ public class TileHandlersHolder extends HandlersHolder {
         basePairsResolution,
         QueryLengthUnit.BASE_PAIRS,
         resolutionDescriptor,
-        QueryLengthUnit.PIXELS
+        coordinateUnit
       );
       final var endPx = chunkedFile.convertUnits(
         borders.endBP(),
         basePairsResolution,
         QueryLengthUnit.BASE_PAIRS,
         resolutionDescriptor,
-        QueryLengthUnit.PIXELS
+        coordinateUnit
       );
       addExpectedDomain(
         scaffoldDomains,
@@ -1314,7 +1359,7 @@ public class TileHandlersHolder extends HandlersHolder {
     long contigStartPx = 0L;
     for (final var contig : chunkedFile.getContigTree().getOrderedContigList()) {
       final var contigLengthPx = contig.descriptor().getLengthInUnits(
-        QueryLengthUnit.PIXELS,
+        coordinateUnit,
         resolutionDescriptor
       );
       final var currentContigStartPx = contigStartPx;

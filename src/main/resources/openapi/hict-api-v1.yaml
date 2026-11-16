@@ -663,6 +663,14 @@ paths:
       tags: [Rendering]
       summary: Recompute the viewport-shared expected profile used by Expected and O/E display modes
       operationId: setViewportExpectedProfile
+      description: >-
+        Fits positive finite signal within scaffolds (or unscaffolded contigs),
+        using absolute display-bin separations. Repeated references after exact
+        cuts share one unit of support per unordered physical source-bin pair
+        across the complete fitting window, including both symmetric orientations.
+        Successful fits report sampleSemantics=UNIQUE_UNORDERED_SOURCE_PAIR_MASS,
+        distanceSemantics=DISPLAY_BIN_DISTANCE and sharedReferenceWeighting.
+        Histogram and matrix-statistics counts describe DISPLAY_CELLS instead.
       requestBody:
         required: true
         content:

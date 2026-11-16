@@ -45,6 +45,7 @@ class TileSignalStatisticsTest {
     var first = new TileSignalStatistics();
     first.traditional(new double[][]{{0, 2}, {3, Double.NaN}});
     var saved = first.snapshot("PRIMARY", 1000, "a");
+    assertEquals("DISPLAY_CELLS", JsonObject.mapFrom(saved).getString("countSemantics"));
     first.traditional(new double[][]{{100}});
     assertEquals(3d, saved.processed().getFirst().range().max());
     assertTrue(new TileSignalStatistics().snapshot("SECONDARY", 5000, "b").processed().isEmpty());

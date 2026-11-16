@@ -21,7 +21,7 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: guarded exact API, source synchronization, v4 replay, long offsets and opt-in approximate Cooler export implemented; scissors/feature UI, remaining shared-bin accounting, sequence-scale display and broader qualification pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: guarded exact API, source synchronization, v4 replay, long offsets and opt-in approximate Cooler export implemented; shared-bin expected fitting and histogram sample semantics verified; scissors/feature UI, sequence-scale display and broader qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
@@ -88,8 +88,18 @@ Numeric queries now identify source-reference versus pipeline display-grid
 semantics. Optional JSON provenance exposes compact axis runs keyed by source,
 resolution, stripe and bin index, with counts of referenced and unique physical
 bins. Padding has no physical identity. Statistics explicitly count display cells.
-This metadata leaves raw values unchanged; it does not deduplicate arbitrary
-pipeline outputs or qualify the remaining expected-profile/histogram accounting.
+This metadata leaves raw values unchanged. Expected fitting now assigns one unit
+of support per unordered physical source-bin pair across all its displayed aliases
+in the fitting window, including both symmetric orientations. Chunking does not
+reset support. Primary numeric fallbacks and raster paths use the same policy;
+BINS queries include hidden contigs and fit their own coordinate axis. Histogram
+counts intentionally describe displayed cells for contrast fitting, including
+arbitrary pipeline outputs, and are labeled accordingly. See
+[the method and limits](shared-bin-statistics.md). Chromium verified four fitting
+windows against an independent enumeration with zero cell error, O/E controls,
+visible histogram labels and unchanged native bytes:
+`/tmp/hict-shared-expected-qualified/results.json`. Large-map performance and
+sequence-scale geometry are still unqualified.
 
 Explicit approximate Cooler export is implemented through the library, CLI,
 single/batch jobs and the matrix export dialog. It scans original unordered
@@ -121,7 +131,7 @@ performance and final native/package qualification remain pending. Each stored r
 not asserted to be an exact aggregation of the finest estimated level.
 
 The scissors still use the historical endpoint. Before switching the UI, finish
-remaining shared-bin statistics/normalization and sequence-scale display. Source offsets now use
+sequence-scale display and broader shared-bin qualification. Source offsets now use
 longs throughout descriptors, cut lineage, AGP slices, FASTA calls and responses.
 Portable sessions also validate the complete source interval against the maximum
 exact JavaScript integer. A tiny contact fixture with a declared 3 Gb contig
