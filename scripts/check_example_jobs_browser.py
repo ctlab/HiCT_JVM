@@ -2,6 +2,7 @@
 """Exercise real, controlled TLS example downloads through catalog and Jobs UI."""
 
 import re
+import sys
 import shutil
 import argparse, functools, hashlib, http.server, json, os, signal, subprocess, threading, time
 from pathlib import Path
@@ -15,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ("jar", "webui", "data-dir", "output"):
         parser.add_argument("--" + key, required=True)
+    parser.add_argument("--hdf-python", default=sys.executable)
     args = parser.parse_args()
     data, out = Path(args.data_dir).absolute(), Path(args.output).absolute()
     if any(p != p.resolve() or not p.is_relative_to("/tmp") for p in (data, out)):
@@ -42,6 +44,16 @@ def main():
                     scripts.parent
                     / "src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java"
                 ),
+                str(data),
+            ],
+            check=True,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        subprocess.run(
+            [
+                args.hdf_python,
+                str(scripts / "prepare_example_jobs_cooler.py"),
                 str(data),
             ],
             check=True,
@@ -161,11 +173,58 @@ def main():
                         + r.request.url.removeprefix("http://localhost:5000")
                     ),
                 )
-                for pattern in ("**/examples/**", "**/jobs", "**/jobs/cancel"):
-                    page.route(
-                        pattern,
-                        lambda r: r.continue_(url=fx + urlparse(r.request.url).path),
+                page.route(
+                    "**/examples/**",
+                    lambda r: r.continue_(url=fx + urlparse(r.request.url).path),
+                )
+                held_jobs = []
+                hold_job_example = None
+                held_conversions = []
+                hold_conversion_start = False
+                conversion_submissions = []
+                cors = {"Access-Control-Allow-Origin": url.rstrip("/")}
+
+                def combined_jobs(route):
+                    if urlparse(route.request.url).path != "/jobs":
+                        return route.fallback()
+                    values = api_json(fx, "/jobs") + api_json(api.url, "/jobs")
+                    values.sort(
+                        key=lambda job: job.get("createdAtMs") or 0, reverse=True
                     )
+                    if hold_job_example and any(
+                        j.get("details", {}).get("exampleId") == hold_job_example
+                        and j["kind"] == "conversion"
+                        for j in values
+                    ):
+                        held_jobs.append((route, values))
+                        return
+                    route.fulfill(json=values, headers=cors)
+
+                def cancel_job(route):
+                    host = (
+                        fx
+                        if route.request.post_data_json["id"].startswith("download/")
+                        else api.url
+                    )
+                    route.continue_(url=host + "/jobs/cancel")
+
+                def start_conversion(route):
+                    response = route.fetch(url=api.url + "/convert/jobs")
+                    if response.ok:
+                        conversion_submissions.append(
+                            {
+                                "request": route.request.post_data_json,
+                                "response": response.json(),
+                            }
+                        )
+                    if hold_conversion_start:
+                        held_conversions.append((route, response))
+                    else:
+                        route.fulfill(response=response)
+
+                page.route("**/jobs", combined_jobs)
+                page.route("**/jobs/cancel", cancel_job)
+                page.route("**/convert/jobs", start_conversion)
                 check = BrowserCheck(page, out)
                 main_opens = []
                 page.on(
@@ -186,7 +245,7 @@ def main():
                     return api_json(fx, "/fixture/control", values)
 
                 def jobs():
-                    return api_json(fx, "/jobs")
+                    return api_json(fx, "/jobs") + api_json(api.url, "/jobs")
 
                 def current():
                     return api_json(fx, "/examples/download/status", {})
@@ -474,7 +533,9 @@ def main():
                     held = []
 
                     def hold_start(route):
-                        held.append((route, route.fetch()))
+                        held.append(
+                            (route, route.fetch(url=fx + "/examples/download/start"))
+                        )
 
                     page.route("**/examples/download/start", hold_start)
                     d = open_catalog()
@@ -618,6 +679,292 @@ def main():
                     record(
                         "jobs-history-remains-scrollable-and-keyboard-accessible-at-640"
                     )
+                    page.set_viewport_size({"width": 1440, "height": 1000})
+
+                    def begin_conversion(key):
+                        control(paused=False)
+                        d = open_catalog()
+                        card(d, key).get_by_role(
+                            "button", name="Open example", exact=True
+                        ).click()
+                        deadline = time.monotonic() + 60
+                        while time.monotonic() < deadline:
+                            submitted = next(
+                                (
+                                    c
+                                    for c in conversion_submissions
+                                    if c["request"].get("exampleId") == "jobs-" + key
+                                ),
+                                None,
+                            )
+                            if submitted:
+                                return "conversion/" + submitted["response"]["jobId"]
+                            page.wait_for_timeout(50)
+                        raise AssertionError((key, jobs()))
+
+                    def converted_job(job_id, state="finished"):
+                        deadline = time.monotonic() + 90
+                        while time.monotonic() < deadline:
+                            job = next((j for j in jobs() if j["id"] == job_id), None)
+                            if job and job["state"] == state:
+                                return job
+                            if (
+                                job
+                                and job["state"] in ("failed", "cancelled")
+                                and state == "finished"
+                            ):
+                                raise AssertionError(job)
+                            page.wait_for_timeout(100)
+                        raise AssertionError(jobs())
+
+                    def release_jobs():
+                        for route, values in held_jobs:
+                            route.fulfill(json=values, headers=cors)
+                        held_jobs.clear()
+
+                    def assert_reference(key):
+                        check.settle()
+                        page.wait_for_function(
+                            "expected=>window.__hictBenchmark.manager()?.getOptions().fastaFilename===expected",
+                            arg="examples/jobs-" + key + "/example.fa",
+                        )
+                        response = page.request.post(
+                            api.url + "/get_fasta_for_assembly", data={}
+                        )
+                        assert response.ok, response.text()
+                        bases = "".join(
+                            line.strip()
+                            for line in response.text().splitlines()
+                            if not line.startswith(">")
+                        )
+                        assert bases == "ACGTACGTACGTACGTA", response.text()
+
+                    automatic_conversion = begin_conversion("convert-auto")
+                    converted = converted_job(automatic_conversion)
+                    await_file("convert-auto")
+                    assert_reference("convert-auto")
+                    assert converted["outputs"][0]["action"] == "example"
+                    assert converted["outputs"][0]["filename"] == "jobs-convert-auto"
+                    assert converted["details"]["title"] == "Workflow convert-auto"
+                    tensor = api_json(
+                        api.url,
+                        "/matrix/query",
+                        {
+                            "bpResolution": 4,
+                            "unit": "PIXELS",
+                            "startRowPx": 0,
+                            "endRowPx": 5,
+                            "startColPx": 0,
+                            "endColPx": 5,
+                            "signalMode": "RAW_COUNTS",
+                            "format": "JSON",
+                        },
+                    )
+                    assert tensor["values"] == [
+                        1,
+                        3,
+                        0,
+                        0,
+                        0,
+                        3,
+                        0,
+                        7,
+                        0,
+                        0,
+                        0,
+                        7,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        11,
+                    ], tensor
+                    for bad in (
+                        {
+                            "filename": "tiny-primary.mcool",
+                            "exampleId": "jobs-convert-auto",
+                            "direction": "mcool-to-hict",
+                            "overwrite": True,
+                        },
+                        {
+                            "filename": "examples/jobs-convert-auto/example.mcool",
+                            "exampleId": "jobs-convert-auto",
+                            "direction": "mcool-to-hict",
+                            "outputFilename": "misrouted-example.hict.hdf5",
+                            "overwrite": True,
+                        },
+                    ):
+                        rejected = page.request.post(
+                            api.url + "/convert/jobs", data=bad
+                        )
+                        assert rejected.status == 400, rejected.text()
+                    assert not (data / "misrouted-example.hict.hdf5").exists()
+                    record(
+                        "example-conversion-opens-once-with-the-actual-reference-and-contact-values"
+                    )
+
+                    hold_job_example = "jobs-convert-close"
+                    close_conversion = begin_conversion("convert-close")
+                    p = panel(True)
+                    expect(p).to_contain_text(
+                        "The converted example will open when ready"
+                    )
+                    record(
+                        "example-conversion-hands-progress-and-opening-intent-to-jobs"
+                    )
+                    p.get_by_role("button", name="Close", exact=True).click()
+                    converted_job(close_conversion)
+                    hold_job_example = None
+                    release_jobs()
+                    page.wait_for_timeout(1200)
+                    assert filename() == "examples/jobs-convert-auto/example.hict.hdf5"
+                    p = panel()
+                    p.locator('[data-job-id="' + close_conversion + '"]').get_by_role(
+                        "button", name="Open result", exact=True
+                    ).click()
+                    await_file("convert-close")
+                    assert_reference("convert-close")
+                    assert (
+                        len(
+                            [
+                                j
+                                for j in jobs()
+                                if j["kind"] == "conversion"
+                                and j.get("details", {}).get("exampleId")
+                                == "jobs-convert-close"
+                            ]
+                        )
+                        == 1
+                    )
+                    record(
+                        "closing-conversion-progress-preserves-result-and-manual-open-reuses-conversion"
+                    )
+
+                    hold_job_example = "jobs-convert-change"
+                    change_conversion = begin_conversion("convert-change")
+                    p = panel(True)
+                    expect(p).to_contain_text(
+                        "The converted example will open when ready"
+                    )
+                    page.evaluate(
+                        "api=>window.__hictBenchmark.open('tiny-primary.hict.hdf5',api)",
+                        api.url,
+                    )
+                    check.settle()
+                    converted_job(change_conversion)
+                    hold_job_example = None
+                    release_jobs()
+                    page.wait_for_timeout(1200)
+                    assert filename() == "tiny-primary.hict.hdf5"
+                    expect(
+                        p.get_by_text(
+                            "The converted example will open when ready", exact=False
+                        )
+                    ).to_have_count(0)
+                    p.get_by_role("button", name="Close", exact=True).click()
+                    record("workspace-change-revokes-conversion-opening-intent")
+
+                    hold_conversion_start = True
+                    late_conversion = begin_conversion("convert-late")
+                    assert held_conversions
+                    page.evaluate(
+                        "api=>window.__hictBenchmark.open('tiny-fine.hict.hdf5',api)",
+                        api.url,
+                    )
+                    check.settle()
+                    hold_conversion_start = False
+                    for route, response in held_conversions:
+                        route.fulfill(response=response)
+                    held_conversions.clear()
+                    converted_job(late_conversion)
+                    page.wait_for_timeout(1200)
+                    assert filename() == "tiny-fine.hict.hdf5"
+                    expect(
+                        page.get_by_role("dialog", name="Background jobs", exact=True)
+                    ).to_have_count(0)
+                    record(
+                        "late-conversion-submission-cannot-reopen-progress-or-replace-a-new-workspace"
+                    )
+
+                    failed_conversion = begin_conversion("convert-fail")
+                    converted_job(failed_conversion, "failed")
+                    p = panel(True)
+                    row = p.locator('[data-job-id="' + failed_conversion + '"]')
+                    expect(row).to_contain_text("failed")
+                    expect(row.get_by_role("alert")).to_contain_text(
+                        "Conversion could not finish."
+                    )
+                    expect(row.locator(".job-error")).to_be_hidden()
+                    expect(
+                        p.get_by_text(
+                            "The converted example will open when ready", exact=False
+                        )
+                    ).to_have_count(0)
+                    assert filename() == "tiny-fine.hict.hdf5"
+                    record(
+                        "failed-example-conversion-stays-in-jobs-without-replacing-the-map"
+                    )
+                    row.get_by_text("Error details", exact=True).click()
+                    expect(row.locator(".job-error")).to_contain_text(
+                        "Not a valid Cooler"
+                    )
+                    page.screenshot(path=str(out / "conversion-error-details.png"))
+                    row.get_by_role(
+                        "button", name="Open Examples to retry", exact=True
+                    ).click()
+                    retry_dialog = page.get_by_role(
+                        "dialog", name="Examples", exact=True
+                    )
+                    retry_card = card(retry_dialog, "convert-fail")
+                    expect(
+                        retry_card.get_by_role(
+                            "button", name="Open example", exact=True
+                        )
+                    ).to_be_in_viewport()
+                    assert retry_card.evaluate("e=>e.contains(document.activeElement)")
+                    retry_dialog.get_by_role("button", name="Close", exact=True).click()
+                    page.get_by_role(
+                        "button", name="Open notifications", exact=True
+                    ).click()
+                    notifications = page.get_by_role("dialog").filter(
+                        has=page.get_by_role(
+                            "heading", name="Notifications", exact=True
+                        )
+                    )
+                    expect(notifications).to_be_visible()
+                    expect(notifications).not_to_contain_text(
+                        "Sensitivity threshold for slide to diagonal"
+                    )
+                    expect(notifications).not_to_contain_text("Preparing Workflow")
+                    record(
+                        "opening-examples-does-not-accumulate-startup-debug-and-progress-notifications"
+                    )
+                    notifications.locator(".btn-close").click()
+                    for key in (
+                        "convert-auto",
+                        "convert-close",
+                        "convert-change",
+                        "convert-late",
+                        "convert-fail",
+                    ):
+                        assert (
+                            len(
+                                [
+                                    c
+                                    for c in conversion_submissions
+                                    if c["request"].get("exampleId") == "jobs-" + key
+                                ]
+                            )
+                            == 1
+                        )
                     assert (
                         source_hash
                         == hashlib.sha256(
@@ -649,6 +996,7 @@ def main():
                                 "checks": rows,
                                 "jobs": jobs(),
                                 "mapOpenRequests": main_opens,
+                                "conversionSubmissions": conversion_submissions,
                                 "protocolChecks": {
                                     "invalidExampleRequest": 400,
                                     "unknownExample": 404,

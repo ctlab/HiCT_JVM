@@ -39,11 +39,18 @@ public final class ExampleJobsBrowserServer {
     var bytes = Files.readAllBytes(data.resolve("tiny-primary.hict.hdf5"));
     var payload = java.util.Arrays.copyOf(bytes, bytes.length + 4 * 1024 * 1024);
     var hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload));
+    var cooler = Files.readAllBytes(data.resolve("valid-example.mcool"));
+    var coolerPayload = java.util.Arrays.copyOf(cooler, cooler.length + 4 * 1024 * 1024);
+    var reference = ">tiny\nACGTACGTACGTACGTA\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    java.util.function.Function<String,byte[]> contentFor = name -> name.startsWith("reference-") ? reference
+      : name.equals("convert-fail") ? "Not a Cooler file".getBytes(java.nio.charset.StandardCharsets.US_ASCII)
+      : name.startsWith("convert-") ? coolerPayload : payload;
     var paused = new AtomicBoolean(true);
     var fail = new AtomicBoolean(true);
     var ranges = new java.util.concurrent.CopyOnWriteArrayList<String>();
     origin.createContext("/payload/", exchange -> {
       try {
+        var content = contentFor.apply(exchange.getRequestURI().getPath().substring("/payload/".length()));
         if (exchange.getRequestURI().getPath().endsWith("optional") || exchange.getRequestURI().getPath().endsWith("failure") && fail.get()) {
           exchange.sendResponseHeaders(503, -1); return;
         }
@@ -52,12 +59,12 @@ public final class ExampleJobsBrowserServer {
         if (range != null) { synchronized (ranges) { ranges.add(exchange.getRequestURI().getPath() + " " + range); Files.writeString(output.resolve("ranges.json"), new JsonArray(ranges).encode()); } }
         if (range != null) offset = Integer.parseInt(range.replace("bytes=", "").replace("-", ""));
         exchange.getResponseHeaders().set("ETag", "\"fixture-v1\"");
-        if (offset > 0) exchange.getResponseHeaders().set("Content-Range", "bytes " + offset + "-" + (payload.length-1) + "/" + payload.length);
-        exchange.sendResponseHeaders(offset > 0 ? 206 : 200, exchange.getRequestURI().getPath().endsWith("unknown") ? 0 : payload.length-offset);
+        if (offset > 0) exchange.getResponseHeaders().set("Content-Range", "bytes " + offset + "-" + (content.length-1) + "/" + content.length);
+        exchange.sendResponseHeaders(offset > 0 ? 206 : 200, exchange.getRequestURI().getPath().endsWith("unknown") ? 0 : content.length-offset);
         int written = 0;
-        for (int position = offset; position < payload.length; position += 16384) {
-          int length = Math.min(16384, payload.length-position);
-          exchange.getResponseBody().write(payload, position, length); exchange.getResponseBody().flush();
+        for (int position = offset; position < content.length; position += 16384) {
+          int length = Math.min(16384, content.length-position);
+          exchange.getResponseBody().write(content, position, length); exchange.getResponseBody().flush();
           written += length;
           if (written < 131072) Thread.sleep(50);
           while (written >= 131072 && paused.get()) Thread.sleep(25);
@@ -71,17 +78,27 @@ public final class ExampleJobsBrowserServer {
     var catalog = new JsonObject().put("schemaVersion",1).put("catalogId","jobs-fixture")
       .put("sections", new JsonArray().add(new JsonObject().put("id","jobs-fixture").put("title","Download workflow fixtures").put("order",0)));
     var examples = new JsonArray();
-    for (var id : List.of("automatic","manual","cancel","failure","unknown","changed","starting")) {
-      var file = new JsonObject().put("id","matrix").put("role","matrix").put("format","hict")
-        .put("filename","example.hict.hdf5").put("url",base + "/payload/" + id).put("required",true).put("sha256",hash);
-      if (!id.equals("unknown")) file.put("bytes",payload.length);
+    for (var id : List.of("automatic","manual","cancel","failure","unknown","changed","starting","convert-auto","convert-close","convert-change","convert-late","convert-fail")) {
+      boolean converting = id.startsWith("convert-");
+      var filePayload = contentFor.apply(id);
+      var fileHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(filePayload));
+      var file = new JsonObject().put("id","matrix").put("role","matrix").put("format",converting ? "mcool" : "hict")
+        .put("filename",converting ? "example.mcool" : "example.hict.hdf5").put("url",base + "/payload/" + id).put("required",true).put("sha256",fileHash);
+      if (!id.equals("unknown")) file.put("bytes",filePayload.length);
       var files = new JsonArray().add(file);
+      var recipe = new JsonObject().put("matrix","matrix").put("quickStart",true);
+      if (converting) {
+        files.add(new JsonObject().put("id","reference").put("role","fasta").put("format","fasta").put("filename","example.fa")
+          .put("url",base + "/payload/reference-" + id).put("required",true).put("bytes",reference.length)
+          .put("sha256",HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(reference))));
+        recipe.put("fasta","reference");
+      }
       if (id.equals("manual")) files.add(new JsonObject().put("id","optional").put("role","track").put("format","bed")
         .put("url",base+"/payload/optional").put("filename","optional.bed").put("required",false));
       examples.add(new JsonObject().put("id","jobs-"+id).put("sectionId","jobs-fixture").put("title","Workflow " + id)
         .put("description","Controlled download for browser acceptance.")
         .put("publications",new JsonArray().add(new JsonObject().put("title","Synthetic fixture").put("citation","HiCT automated fixture").put("url","https://example.org/fixture")))
-        .put("files",files).put("openingRecipe",new JsonObject().put("matrix","matrix").put("quickStart",true))
+        .put("files",files).put("openingRecipe",recipe)
         .put("attribution",new JsonObject().put("provider","HiCT tests").put("url","https://example.org/").put("termsUrl","https://example.org/terms").put("acknowledgement","Synthetic data, no biological interpretation.")));
     }
     catalog.put("examples",examples);

@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Follow quick-start example conversions in Jobs, retain their FASTA when reopening results, offer clear errors and a direct retry, and revoke automatic opening when closing progress or changing workspace.
+- Keep map startup quiet by removing internal sensitivity notices and redundant example preparation notifications.
+
 - Verify cached examples through Jobs before opening, repair damaged files, and refresh ready status and provenance when the catalog changes.
 
 - Follow example downloads in Jobs with dataset names, honest byte progress, retained results, optional-file warnings and focused recovery, while keeping automatic opening tied to the user's current intent.

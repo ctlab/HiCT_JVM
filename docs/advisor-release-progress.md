@@ -27,7 +27,7 @@ describe earlier releases; they must not override the decisions below.
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
-| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first example downloads, retained attempt history, byte/indeterminate progress, scoped cancellation, recovery and opening intent implemented; primary Chromium workflows and FASTA-only AGP verified; cache discovery/opening integrity implemented; subsequent conversion/opening phases, OSD/resolution and release qualification pending |
+| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first example downloads, retained attempt history, byte/indeterminate progress, scoped cancellation, recovery and opening intent implemented; primary Chromium workflows and FASTA-only AGP verified; cache discovery/opening integrity implemented; quick-start conversion handoff and recipe-preserving results implemented; wider wizard, OSD/resolution and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
@@ -699,3 +699,23 @@ transitions/diagonal provenance, catalog/session provenance transfer and release
 gates remain open. Screenshot review also found repeated startup sensitivity/progress
 notifications overlapping Jobs; remove that noise before release. Final validation
 evidence is recorded in reinforcement-validation.md.
+
+## Quick-start conversion progress and quiet opening
+
+Quick-start examples now hand conversion progress to Jobs instead of following an
+invisible polling loop. Their server-side conversion results retain validated
+example context and return through the current recipe, revalidating cached inputs
+and reusing completed conversion while preserving the linked FASTA. Closing Jobs,
+changing workspace, failure and late resolution/submission replies revoke automatic
+opening. Context is accepted only for a current ready quick-start recipe, its exact
+source, a conversion to HiCT and the standard cached destination. Other conversion
+results keep their existing behavior. Internal slide-sensitivity notices and
+redundant Preparing example notifications no longer accumulate on map opening.
+Long job diagnostics stay under Error details; failed example conversions offer
+a focused return to their catalog card for retry.
+
+Primary validation and final artifact evidence are recorded in
+reinforcement-validation.md. P7 remains active for larger/public examples, live
+conversion cancellation qualification, wider wizard workflows, catalog/session
+provenance transfer, OSD resolution/diagonal behavior and release/platform gates.
+Protected plans and owner files remain unchanged; nothing pushed, merged or tagged.

@@ -67,7 +67,11 @@ The client sends an example id; the server resolves everything else from its own
   attribution changes refresh provenance without refetching unchanged source files. Legacy records
   and changed unpinned source declarations require downloading again. A provider checksum verifies
   declared content; a locally recorded checksum alone cannot prove provider authenticity.
-- The wizard still converts a `.hic` first. Opening asks about unsaved edits as usual.
+- Quick-start conversion runs through Jobs. Its result retains the example ID and title so
+  reopening returns through the recipe and preserves the FASTA context. Optional `exampleId` on
+  `/convert/jobs` requires a current ready quick-start recipe, its exact source, conversion to HiCT
+  and the standard cached destination. Other conversions keep their ordinary map/download results.
+  Recipes needing layouts/tracks retain the wizard. Opening asks about unsaved edits as usual.
 
 ## API
 

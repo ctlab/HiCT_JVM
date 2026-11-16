@@ -314,6 +314,27 @@ class ExampleDownloaderTest {
     }
   }
 
+  @Test void exampleConversionContextRequiresTheCurrentReadyRecipeAndExactSource() throws Exception {
+    plainServer();
+    var spec = example(file("a.mcool", "/f", payload.length, sha(payload), true));
+    spec.body().getJsonObject("openingRecipe").put("matrix", "a.mcool").put("quickStart", true);
+    var d = downloader();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    var source = data.resolve("examples/ex1/a.mcool");
+    var direction = ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection.MCOOL_TO_HICT;
+    assertEquals(new ExampleConversionContext("ex1", "T"), ExampleConversionContext.forExample(data, source, direction, spec));
+    assertNull(ExampleConversionContext.resolve(data, source, direction, null));
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.resolve(data, source, direction, "not-present"));
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, data.resolve("other.mcool"), direction, spec));
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, source,
+      ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection.HICT_TO_MCOOL, spec));
+    spec.body().put("title", "Changed catalog");
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, source, direction, spec));
+    spec.body().getJsonObject("openingRecipe").put("quickStart", false);
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, source, direction, spec));
+  }
+
   @Test void aWrongChecksumDiscardsTheFile() throws Exception {
     plainServer();
     var d = downloader();

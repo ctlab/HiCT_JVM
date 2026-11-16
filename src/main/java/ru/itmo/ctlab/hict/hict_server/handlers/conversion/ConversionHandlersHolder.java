@@ -5,6 +5,7 @@ import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
 import ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts;
 
 import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+import ru.itmo.ctlab.hict.hict_server.examples.ExampleConversionContext;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
@@ -76,14 +77,16 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         return jobs.values().stream().map(job -> {
             final boolean opensMap = job.dataDirectory != null && job.outputPath.startsWith(job.dataDirectory)
               && job.outputPath.getFileName().toString().endsWith(".hict.hdf5");
+            final var example = job.example;
             final var outputs = "finished".equals(job.status)
               ? List.of(new BackgroundJob.Output(
-                  opensMap ? toClientFilename(job.outputPath, job.dataDirectory) : "/convert/download/" + job.jobId,
-                  opensMap ? "open_map" : "download", null, null, null, null, job.outputPath.getFileName().toString()))
+                  example != null ? example.id() : opensMap ? toClientFilename(job.outputPath, job.dataDirectory) : "/convert/download/" + job.jobId,
+                  example != null ? "example" : opensMap ? "open_map" : "download", null, null, null, null, job.outputPath.getFileName().toString()))
               : List.<BackgroundJob.Output>of();
             return new BackgroundJob(job.jobId, "conversion", job.status,
               job.overallProgress, job.createdAtMs, job.startedAtMs, job.finishedAtMs,
-              job.currentStageLabel, job.error, outputs);
+              job.currentStageLabel, job.error, outputs, example == null ? null
+                : new BackgroundJob.Details(example.title(), null, null, null, List.of(), example.id()));
         }).toList();
     }
 
@@ -345,7 +348,12 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     }
 
                     final var direction = ConversionDirection.fromRequestOrSource(requestJson.getString("direction"), sourcePath);
+                    final var example = ExampleConversionContext.resolve(dataDirectory, sourcePath, direction, requestJson.getString("exampleId"));
                     final var outputPath = resolveOutputPath(dataDirectory, sourcePath, direction, requestJson.getString("outputFilename", ""));
+                    if (example != null && !outputPath.toAbsolutePath().normalize()
+                      .equals(direction.deriveOutputPath(sourcePath).toAbsolutePath().normalize())) {
+                        throw new IllegalArgumentException("Example opening requires its standard cached conversion destination");
+                    }
                     prepareOutputPath(outputPath, overwrite);
                     final var requestedAssemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
                     final var currentAssemblyPath = useCurrentAssembly && direction == ConversionDirection.HICT_TO_MCOOL
@@ -379,6 +387,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     try {
                         job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false, loadOptions);
                         job.overwrite = overwrite;
+                        job.example = example;
                     } catch (IOException e) {
                         throw new RuntimeException("Failed to create conversion job", e);
                     }
@@ -1119,6 +1128,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         private final boolean deleteSourceOnCleanup;
         private final boolean deleteOutputOnCleanup;
         private final HictkLoadOptions loadOptions;
+        private volatile ExampleConversionContext example;
         private volatile String status = "queued";
         private volatile String error = "";
         private final Deque<String> logs = new ArrayDeque<>();

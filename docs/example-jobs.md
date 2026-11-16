@@ -32,8 +32,12 @@ map context. For **File → Open FASTA only…**, choose the file and select **C
 and open**. Its result can also be opened from Jobs. **Assembly → Export to AGP**
 is available without contact data and describes the assembled sequence coordinates.
 
-These automatic-opening rules apply to the download handoff. Recipes that need
-conversion or the opening wizard retain their existing subsequent workflow. A page
+Quick-start recipes that need matrix conversion hand progress to a named conversion
+job. Closing Jobs lets conversion finish and revokes automatic opening. Its **Open
+result** returns through the example recipe, verifies cached inputs, reuses the
+completed conversion and links the recipe FASTA. Changing workspace also revokes
+automatic opening. Failed conversions remain in Jobs with a short failure message, expandable
+**Error details** and **Open Examples to retry**, focused on the matching card. Recipes with assembly layouts/tracks retain the opening wizard. A page
 reload does not restore an automatic-opening intent; use Jobs or the example card.
 Stopping the server cancels active work rather than merely hiding progress.
 

@@ -4397,3 +4397,41 @@ overlapping the dialog; this UX issue remains a release gate. Public providers,
 conversion/wizard phases, catalog/session provenance transfer, OSD/diagonal behavior
 and final platform/publication gates remain open. Protected files are unchanged;
 nothing pushed, merged or tagged.
+
+## Example conversion handoff, recovery and quiet opening (2026-11-17)
+
+Quick-start conversion now hands progress to Jobs and retains validated example
+context so results reopen through the recipe with their FASTA. Close/workspace/
+failure/late replies revoke automatic opening; unrelated sources and custom cached
+destinations are rejected before output preparation. Startup notices no longer
+accumulate; failures have a short summary, expandable diagnostic and focused retry.
+Final JVM `/tmp/hict-example-conversion-jvm-full-04.log` and XML: 600 tests, zero
+failures/errors, seven optional skips. Final WebUI `/tmp/hict-example-conversion-web-03.log`
+build/type/numerical checks pass, including omitted/present example-ID DTO checks;
+six UI/script files pass Prettier and both Python scripts pass Black. Final
+`/tmp/hict-example-conversion-ui-05/results.json` passes 23 actual-control cases
+with empty window errors; `/tmp/hict-example-conversion-other-03/browser/results.json`
+adds ten ordinary-conversion/other-service/FASTA-only AGP cases. Both exit zero.
+Real bundled hictk metadata/zoomify/balance/import run on a Cooler-generated seed;
+linked FASTA export matches all 17 bases. Independent fresh-server verification in
+ui-05/full-cell-parity.json matches all 25 known cells in the original and four
+converted matrices, and ui-05/input-integrity.json confirms all ten downloaded
+matrix/reference files still match their pinned hashes. Historical result opening
+reuses one completed conversion and preserves its reference. Actual Jobs completion
+and accepted submission replies are held for close/workspace/late-intent checks;
+no states or conversion outputs are fabricated. Bad source/destination requests
+return HTTP 400 without creating the misrouted output. Screenshot review covers
+handoff, compact/expanded failure, focused retry and empty notification history.
+Diagnostics caught a real omitted DTO field; fixture/driver corrections supplied a
+standards-compatible Cooler, explicit provider routing for delayed starts, completed
+FASTA linking before export, and an existing alternate map. Incomplete runs are
+excluded. Reproduce with Cooler/h5py/pandas via --hdf-python. Frozen dist SHA-256
+(sorted relative paths/NUL/bytes, excluding its electron subtree):
+`6381073040376055b7911f4399241a4ec95d8852ac7133d17497bf74e64da135`.
+Development JAR `hict_server-2.0.39-210bbe0-webui_d787595-fat.jar` SHA-256:
+`cb5e4abb1523e4109cf64df5d952380e3ca03a5149319ed8c667128966b53a7d`.
+Assets are served separately from older embedded assets, qualifying a development
+pair. Broad rendering/cut/sequence/performance/native suites were not rerun. Live
+conversion cancellation, large/public examples, wider wizard workflows, catalog/
+session provenance transfer, OSD/diagonal behavior and release/publication gates
+remain open. Protected plans/owner files are unchanged; nothing pushed/merged/tagged.
