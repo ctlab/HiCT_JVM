@@ -144,8 +144,9 @@ def main():
             page.keyboard.up("Shift")
             page.wait_for_function(
                 """({first,last}) => {
-                const s=window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders;
-                return s.leftContigOrderInclusive===first && s.rightContigOrderInclusive===last;
+                const m=window.__hictBenchmark.manager(),h=m.contigDimensionHolder;
+                const orders=m.viewAndLayersManager.currentViewState.selectedContigIds.map(id=>h.contigIdToOrd[id]);
+                return Math.min(...orders)===first && Math.max(...orders)===last;
             }""",
                 arg={"first": first, "last": last},
             )

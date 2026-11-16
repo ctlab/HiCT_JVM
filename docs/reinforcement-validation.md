@@ -3095,3 +3095,57 @@ BigWig/VCF and all signal modes, large-file latency (including contention with
 native precompute), the full secondary UI matrix, responsive layout and final
 embedded/platform qualification remain open. This increment establishes numerical
 and primary browser correctness; it does not certify all tracks or performance.
+
+## Independent selections and exact region entry — 2026-11-16
+
+Shift entity selection now uses a transient DragBox and stable contig/scaffold
+IDs, with stroke-only highlights drawn independently from ordinary border style.
+Ctrl/Command region selection uses a persistent Extent and authoritative half-open
+assembly BP bounds. The two modes clear each other. A plain click outside the
+region or Escape clears it; assembly/scope changes invalidate selections. Structural
+commands consume entity IDs, and analysis-region context menus exclude those edits.
+The Selection menu exposes mode, selection summary, coordinates and scoped border
+hiding. Border hiding retains selected outlines and names.
+
+The coordinate dialog accepts independent row/column assembly positions or
+current-contig offsets in explicit one-based inclusive/BED conventions. Parsing
+rejects unsafe integers, fractions, malformed grouping, ambiguous/unknown contigs,
+empty/inverted intervals and scope violations before changing selection. An open
+dialog captures assembly session/revision and scope revision. Native/base grid
+changes reproject its BP endpoints without native-bin rounding; FASTA export reads
+those endpoints directly. Export rendering hides/restores both selection layers.
+
+`check-region-selection.mjs` exercises the production parser and manager methods,
+including colon-containing names, >2.5 Gb positions, fractional native projection,
+grid changes, entity/region isolation and invalid-input preservation. It runs in
+the full WebUI build. `npm run build:web` passes, including types and existing
+regressions (`/tmp/hict-selection-final-web.log`); the known chunk warning remains.
+JVM `./gradlew test shadowJar -x copyWebUI --offline` passes with 574 tests, zero
+failures/errors and seven optional skips (`/tmp/hict-selection-jvm.log`). No JVM
+production source changed in this increment.
+
+`check_selection_modes_browser.py` creates a disposable physical 4 kb source,
+makes two exact cuts and uses real Shift/Ctrl pointer gestures and menu controls.
+Seven scenarios cover entity/scaffold highlights after zoom, transient box removal,
+region persistence/edit isolation, scoped border hiding, exact contig-coordinate
+entry, invalid/stale input, Escape, scale changes and downloads. FASTA records
+match independent source slices, including the default scaffold separator across
+the row interval. PNG exports with either entity highlights or a region are
+byte-identical to the clean PNG; selections are restored afterward. Evidence:
+`/tmp/hict-selection-browser-06/{results.json,coordinate-dialog.png,selected.fasta,clean-export.png,entity-export.png,region-export.png}`.
+The native hash is unchanged and no page errors occur. Screenshots of the selection
+menu, scoped border selection, coordinate form and restored region were inspected.
+
+The existing sequence-view/export/session (17), feature-cut/navigation/clipboard
+(15) and hidden/binless-track/session (13) workflows also pass without page errors:
+`/tmp/hict-selection-{view,feature,tracks}-browser-01/results.json`. These runs
+precede final label pluralization and unused-import cleanup; the seven selection
+scenarios are repeated on that final distribution. Immutable server SHA-256:
+`ebaaf550d99e0a5eb6881975d50c30c5677fb9cc6f1a2a4a306f80f538e7a7c1`.
+Final separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`045d85df832f2156cbaec06b48482765e779329b805d1379991af1b820e8f898`.
+
+FASTA-track repeat measurement, real macOS/native modifier behavior, secondary
+source interactions, large-map selection performance, whole-map export and final
+embedded/platform qualification remain pending. This does not complete P2 or
+the release gate. Plan files and protected initial changes remain untouched.

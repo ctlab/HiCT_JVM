@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Separate Shift entity selection from persistent Ctrl/Command analysis regions, with stable border highlights and optional border hiding in scoped views.
+- Select exact regions by assembly or contig coordinates, preserve their endpoints across scales and FASTA export, and exclude selection overlays from image exports.
+
 - Project base-scale 1D features and signals across hidden and binless sequence, with bounded queries and native-bin weight provenance.
 - Keep normalization availability tied to stored source resolution and label base-scale track coordinates explicitly.
 

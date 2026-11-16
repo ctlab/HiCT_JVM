@@ -22,7 +22,7 @@ describe earlier releases; they must not override the decisions below.
 | Package | Advisor items | Status |
 |---|---|---|
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
-| P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
+| P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: separate Shift entities and persistent Ctrl regions, coordinate entry and scoped border hiding implemented and primary Chromium verified; FASTA-track measurement and platform/large-map qualification pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | Pending; existing wheel-to-letters verified |
@@ -199,6 +199,37 @@ feature cutting, values/tooltips, normalization availability and session restore
 `/tmp/hict-base-tracks-browser-04/results.json` (13 checks, no page errors).
 Native bytes are unchanged. BigWig/VCF, all aggregation modes, large-file latency,
 the broader secondary UI matrix, layout and package/platform gates remain open.
+
+## Independent selections and exact coordinate entry
+
+Shift-click/drag selects contigs or scaffolds for editing, chosen in the Selection
+menu. Its rubber band disappears on release and stroke-only entity highlights
+remain. Selected IDs survive viewport feature rebuilds; structural changes and
+scope changes clear transient selections. Ctrl-drag (Command on macOS) creates a
+persistent analysis region, independently of entity selection. Clicking inside
+keeps it; clicking outside or Escape clears it. Region context menus no longer
+offer structural edits, and region selection cannot reverse/group entities.
+
+Coordinate entry accepts assembly positions and current-contig offsets, including
+names containing colons. One-based inclusive and BED conventions are explicit.
+Invalid, ambiguous, unsafe and out-of-scope entries preserve the prior selection;
+an assembly/scope change invalidates an already-open dialog. BP endpoints remain
+authoritative through native/base projection and FASTA downloads. Both narrowed
+axes enable ordinary border hiding while selected borders and ruler names remain.
+
+Full WebUI build/regressions and 574 JVM tests pass (zero failures/errors, seven
+optional skips). Seven primary Chromium scenarios verify real gestures, both
+entity kinds, exact/scoped coordinates, independent FASTA sequence contents,
+stale-dialog rejection and selection-free image exports with restored selection.
+Evidence: `/tmp/hict-selection-browser-06/results.json`. Existing sequence-view
+(17), feature-action (15) and hidden/binless-track (13) workflows also pass:
+`/tmp/hict-selection-{view,feature,tracks}-browser-01/results.json`.
+Native files remain unchanged and no page errors were recorded. Regression runs
+precede a final label-only pluralization/import cleanup; the seven selection
+scenarios are repeated on the final build. FASTA-track repeat measurement is
+still unimplemented. macOS/native modifier behavior, full secondary-source/UI
+coverage, large-map selection latency and embedded/platform qualification remain
+open. P2 is not complete.
 
 ## Mandatory release gates
 

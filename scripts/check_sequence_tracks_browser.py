@@ -99,8 +99,8 @@ def main():
             assert response.value.request.post_data_json['offsetBp']==1
             check.settle()
             assert [value(query(0,5)['tracks'][2],p) for p in range(5)]==[None,20,20,100,100]
-            page.evaluate('''()=>{const l=window.__hictBenchmark.manager().viewAndLayersManager,s=l.layersHolder.bpResolutionToContigBordersLayer.get(1).getSource();
-                l.selectionCollections.selectedContigFeatures.extend(s.getFeatures().filter(f=>f.get('trackType')==='contigBorders'));}''')
+            page.evaluate('''()=>{const m=window.__hictBenchmark.manager(),h=m.contigDimensionHolder;
+                m.viewAndLayersManager.selectEntityRangeByBp(0,h.prefix_sum_bp[h.contig_count]);}''')
             with page.expect_response('**/reverse_selection_range') as response:
                 page.get_by_role('button',name='Reverse Selection',exact=True).click()
             assert response.value.ok;check.settle();focus(3998)

@@ -239,7 +239,7 @@ with sync_playwright() as pw:
             page.mouse.up()
             page.keyboard.up("Shift")
             page.wait_for_function(
-                "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders.leftContigDescriptorInclusive!==undefined"
+                "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectedContigIds.length>0"
             )
             with page.expect_response(
                 "**/reverse_selection_range"

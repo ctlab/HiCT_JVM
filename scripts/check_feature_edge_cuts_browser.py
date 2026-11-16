@@ -135,9 +135,8 @@ def main():
                 page.keyboard.press('Control+z'); check.settle()
             assert lengths() == [4000], lengths()
             page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()'); check.settle()
-            page.evaluate('''()=>{const l=window.__hictBenchmark.manager().viewAndLayersManager;
-                const source=l.layersHolder.bpResolutionToContigBordersLayer.get(l.currentViewState.resolutionDesciptor.bpResolution).getSource();
-                l.selectionCollections.selectedContigFeatures.extend(source.getFeatures().filter(f=>f.get('trackType')==='contigBorders'));}''')
+            page.evaluate('''()=>{const m=window.__hictBenchmark.manager(),h=m.contigDimensionHolder;
+                m.viewAndLayersManager.selectEntityRangeByBp(0,h.prefix_sum_bp[h.contig_count]);}''')
             with page.expect_response('**/reverse_selection_range') as response:
                 page.get_by_role('button', name='Reverse Selection', exact=True).click()
             assert response.value.ok

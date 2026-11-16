@@ -123,8 +123,10 @@ class BrowserCheck:
     def menu(self, menu, action):
         self.page.get_by_role("link", name=menu, exact=True).click()
         target = self.page.get_by_role("link", name=action, exact=True)
-        if not target.count():
-            target = self.page.get_by_role("button", name=action, exact=True)
+        for role in ("button", "menuitemradio", "menuitemcheckbox"):
+            if target.count():
+                break
+            target = self.page.get_by_role(role, name=action, exact=True)
         target.click()
 
     def advanced(self):
@@ -161,7 +163,7 @@ class BrowserCheck:
         }""")
         self.page.wait_for_timeout(300)
 
-    def select_range(self):
+    def select_range(self, region=True):
         self.page.evaluate("""() => {
             const manager=window.__hictBenchmark.manager();
             manager.eventManager.resetSelection();
@@ -179,18 +181,20 @@ class BrowserCheck:
                 return [rect.left+point[0],rect.top+point[1]];
             });
         }""")
-        self.page.keyboard.down("Shift")
+        modifier = "Control" if region else "Shift"
+        self.page.keyboard.down(modifier)
         self.page.mouse.move(*points[0])
         self.page.mouse.down()
         self.page.mouse.move(*points[1], steps=12)
         self.page.mouse.up()
-        self.page.keyboard.up("Shift")
+        self.page.keyboard.up(modifier)
         self.page.wait_for_function(
-            "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders.leftContigDescriptorInclusive!==undefined"
+            "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectionBorders.leftBP!==undefined" if region else
+            "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectedContigIds.length>0"
         )
 
     def reverse(self):
-        self.select_range()
+        self.select_range(region=False)
         with self.page.expect_response("**/reverse_selection_range") as response:
             self.page.get_by_role(
                 "button", name="Reverse Selection", exact=True

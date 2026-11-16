@@ -20,7 +20,23 @@ assembly and save-conflict protection applies.
 
 Drag to pan and use the wheel or zoom buttons to change scale. The ruler-corner
 lock anchors the map to its top and left boundaries. Unlock it for free panning.
-Click a contig, or hold Shift and drag a range to select. The search box locates
+Hold Shift and click or drag to select entities for assembly editing. The
+temporary drag box disappears on release; selected entity borders stay
+highlighted. **Selection** chooses whether Shift selects contigs or scaffolds.
+Hold Ctrl (Command on macOS) and drag a persistent region for dot plots, sequence
+tools, histograms and exports. A region does not select entities for editing.
+Click outside the region, use **Selection → Clear selection**, or press Escape
+to clear it. Escape first closes an open dialog or cancels an armed edit tool.
+
+**Selection → Select region by coordinates…** accepts independent row/column
+intervals as assembly positions or `current-contig:position`. The default is
+one-based, inclusive, matching copied coordinates. BED-style zero-based,
+half-open coordinates are also available. Entry is validated against the current
+row/column scopes. The selection's BP endpoints stay exact when changing display
+scale. When both axes are narrowed, **Selection → Hide borders in scoped view**
+removes ordinary border clutter; selected entity borders remain highlighted.
+
+The search box locates
 contigs, scaffolds and genomic coordinates. Row and column scope selectors limit
 the displayed intervals independently. Ruler modes show global, contig-relative
 or scaffold-relative coordinates. Hover reveals exact positions and hidden spans.
@@ -30,7 +46,11 @@ or scaffold-relative coordinates. Hover reveals exact positions and hidden spans
 Use the left toolbar or the selection's context menu to reverse, move, split,
 group, ungroup, rename or send sequence to debris. Move displays insertion targets.
 Split stays armed until a double-click chooses the cut position or Escape cancels
-it. A split removes one finest-resolution contact bin, with Undo restoring it.
+it. On current servers, a split retains every base and all original contact bins;
+children share a source bin if the cut crosses it. GTF/GFF feature menus also
+offer exact cuts at their displayed start/end boundaries. Existing joins are
+disabled. Older servers explicitly warn when using their historical bin-removing
+split operation.
 The Journal records edits and provides Undo and Redo. A new edit after Undo
 starts a new history branch. Text-field Undo operates on the text being edited.
 
