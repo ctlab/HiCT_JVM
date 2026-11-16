@@ -509,9 +509,9 @@ public class ScaffoldingOperations {
 
       final var newContigNamesInSourceFasta = List.of(oldContigDescriptor.getContigNameInSourceFASTA(), oldContigDescriptor.getContigNameInSourceFASTA());
       final var newContigOffsetsInSourceFasta = switch (oldContigNode.getContigDirection()) {
-        case FORWARD -> List.of(oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getOffsetInSourceFASTA() + (int) rightContigStartInSource);
+        case FORWARD -> List.of(oldContigDescriptor.getOffsetInSourceFASTA(), Math.addExact(oldContigDescriptor.getOffsetInSourceFASTA(), rightContigStartInSource));
         case REVERSED -> List.of(
-          oldContigDescriptor.getOffsetInSourceFASTA() + (int) (oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart),
+          Math.addExact(oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart),
           oldContigDescriptor.getOffsetInSourceFASTA()
         );
       };

@@ -66,7 +66,7 @@ public final class SessionAssemblyRestorer {
         require(saved.getInteger("contigId") == actual.getContigId(), path + ".contigId", "AGP cannot preserve component identity");
         require(saved.getInteger("contigDirection") == tuple.direction().ordinal(), path + ".contigDirection", "AGP changed strand");
         require(saved.getLong("contigLengthBp") == actual.getLengthBp(), path + ".contigLengthBp", "AGP changed component length");
-        require(saved.getInteger("contigOffsetInSource") == actual.getOffsetInSourceFASTA(), path + ".contigOffsetInSource", "AGP changed source interval");
+        require(saved.getLong("contigOffsetInSource") == actual.getOffsetInSourceFASTA(), path + ".contigOffsetInSource", "AGP changed source interval");
         require(saved.getString("contigSourceName").equals(actual.getContigNameInSourceFASTA()), path + ".contigSourceName", "AGP changed source name");
         length = Math.addExact(length, actual.getLengthBp());
         final var bins = new ArrayList<Long>();

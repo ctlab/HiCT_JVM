@@ -37,7 +37,7 @@ public record ContigDescriptorDTO(
   String contigName,
   String contigOriginalName,
   String contigSourceName,
-  int contigOffsetInSource,
+  long contigOffsetInSource,
   int contigDirection,
   long contigLengthBp,
   Map<Long, Long> contigLengthBins,

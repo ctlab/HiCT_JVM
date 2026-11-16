@@ -22,6 +22,10 @@ info:
     fragments can reference the same bin; these references are not additional
     contact observations. Session snapshot v2 preserves this policy when a
     secondary source uses a different resolution pyramid.
+    Source sequence offsets (`contigOffsetInSource` in legacy descriptors and
+    column 4 in compact-v1 contig rows) are nonnegative int64 coordinates, as are
+    split-lineage `sourceOffsetBp` values. Portable sessions validate complete
+    source intervals against the maximum exact JavaScript integer (9007199254740991).
 servers:
   - url: /
 tags:
@@ -2468,7 +2472,7 @@ components:
             properties:
               parentId: { type: integer, format: int32, minimum: 0 }
               sourceName: { type: string, minLength: 1 }
-              sourceOffsetBp: { type: integer, format: int32, minimum: 0 }
+              sourceOffsetBp: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
               parentLengthBp: { type: integer, format: int64, minimum: 2 }
               reversed: { type: boolean }
               splitOffsetBp: { type: integer, format: int64, minimum: 1 }

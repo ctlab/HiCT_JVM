@@ -18,9 +18,6 @@ public final class ExactContigSlice {
       throw new IllegalArgumentException("Exact slice must be a nonempty interval inside its parent");
     final long sourceStart = Math.addExact(parent.getOffsetInSourceFASTA(), from);
     final long sourceEnd = Math.addExact(parent.getOffsetInSourceFASTA(), to);
-    // The current descriptor storage uses int offsets. Fail before any mutation
-    // rather than wrap a source coordinate; long-offset migration is separate.
-    final int offset = Math.toIntExact(sourceStart);
     final var lengths = new ArrayList<Long>();
     final var visibility = new ArrayList<ContigHideType>();
     final var atus = new ArrayList<List<ATUDescriptor>>();
@@ -56,6 +53,6 @@ public final class ExactContigSlice {
       atus.add(List.copyOf(pieces));
     }
     return new ContigDescriptor(id, parent.getContigNameInSourceFASTA() + "_" + sourceStart + "_" + sourceEnd,
-      to - from, lengths, visibility, atus, parent.getContigNameInSourceFASTA(), offset, true);
+      to - from, lengths, visibility, atus, parent.getContigNameInSourceFASTA(), sourceStart, true);
   }
 }

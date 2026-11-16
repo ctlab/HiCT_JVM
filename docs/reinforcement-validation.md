@@ -2639,3 +2639,28 @@ to two bins. Both retain the independently computed unique contact sum of 22.
 Evidence: `/tmp/hict-provenance-browser/results.json`; restored screenshot inspected.
 Remaining shared-bin expected/histogram accounting and approximate exports still
 require implementation and qualification before switching scissors.
+
+## Advisor P1 long source sequence offsets (2026-11-16)
+
+Source sequence offsets are now longs across contig descriptors, exact slices,
+historical cut arithmetic, AGP import, FASTA extraction calls, cut lineage and
+legacy/compact responses. Session restoration reads longs. Session decoding
+validates both offsets and complete source intervals against the maximum exact
+JavaScript integer, preventing unsafe JSON coordinates. Existing session versions
+and historical bin-removal semantics remain covered.
+
+A real Cooler-to-HiCT fixture declares a 3,000,000,017 bp contig with only four
+coarse bins. Tests cover nested exact cuts at source offsets 2,500,000,001 and
+2,500,000,002, one-base fragment snapshots, source-bin mapping/session parity,
+legacy AGP slices and historical cuts on both strands retaining the 3,000,000,000
+source offset. Decoder tests cover large accepted offsets and rejected unsafe or
+overflowing intervals. All 533 JVM tests passed with zero failures/errors and
+seven optional skips. No WebUI source changed.
+
+`check_long_source_offset_browser.py` passed all five acceptance checks with zero
+page errors through the real adapter and session download/file chooser. Compact
+responses, saved lineage, restored source intervals and AGP endpoints retain all
+digits. Evidence: `/tmp/hict-long-offset-browser/results.json`; restored screenshot
+inspected. Fixture generation uses `ReinforcementHdf5Fixture long-offset <tmp-dir>`
+on the built JAR plus test classes. This deliberately creates no multi-gigabase
+FASTA; large-FASTA I/O and proper sequence-scale display remain separate gates.

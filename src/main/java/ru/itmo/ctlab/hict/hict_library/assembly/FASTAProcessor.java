@@ -630,7 +630,7 @@ public class FASTAProcessor implements AutoCloseable {
 
   static @NotNull String extractContigSliceFromSource(final @NotNull String source,
                                                       final @NotNull String sourceName,
-                                                      final int sourceOffset,
+                                                      final long sourceOffset,
                                                       final long contigLengthBp,
                                                       final @NotNull ContigDirection direction,
                                                       final long startInsideContig,

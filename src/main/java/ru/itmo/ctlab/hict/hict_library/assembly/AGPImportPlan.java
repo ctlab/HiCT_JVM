@@ -167,7 +167,7 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
     long absoluteStart = source.getOffsetInSourceFASTA() + from;
     return new ContigDescriptor(id, source.getContigNameInSourceFASTA() + ":" + (absoluteStart + 1) + "-" + (source.getOffsetInSourceFASTA() + to),
       to - from, lengths, source.getPresenceAtResolution().subList(1, resolutions.length), atus,
-      source.getContigNameInSourceFASTA(), Math.toIntExact(absoluteStart));
+      source.getContigNameInSourceFASTA(), absoluteStart);
   }
   private static long ceilDiv(long value, long divisor) { return value / divisor + (value % divisor == 0 ? 0 : 1); }
 }

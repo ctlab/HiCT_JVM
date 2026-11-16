@@ -164,8 +164,9 @@ public final class SessionSnapshotDecoder {
         final var split = asObject(splits.getValue(i), field);
         final long parent = integer(split, "parentId", field, 0, Integer.MAX_VALUE);
         string(split, "sourceName", field, false);
-        integer(split, "sourceOffsetBp", field, 0, Integer.MAX_VALUE);
+        final long sourceOffset = integer(split, "sourceOffsetBp", field, 0, MAX_INTEGER);
         final long length = integer(split, "parentLengthBp", field, 2, MAX_INTEGER);
+        if (length > MAX_INTEGER - sourceOffset) fail(field + ".parentLengthBp", "source interval exceeds supported range");
         bool(split, "reversed", field);
         if (split.containsKey("exact") && bool(split, "exact", field) && snapshotVersion < 2)
           fail(field + ".exact", "exact cuts require snapshot version 2");
@@ -190,9 +191,10 @@ public final class SessionSnapshotDecoder {
       name(contig, "contigName", field);
       name(contig, "contigOriginalName", field);
       string(contig, "contigSourceName", field, false);
-      integer(contig, "contigOffsetInSource", field, 0, Integer.MAX_VALUE);
+      final long sourceOffset = integer(contig, "contigOffsetInSource", field, 0, MAX_INTEGER);
       integer(contig, "contigDirection", field, 0, 1);
       long bp = integer(contig, "contigLengthBp", field, 1, MAX_INTEGER);
+      if (bp > MAX_INTEGER - sourceOffset) fail(field + ".contigLengthBp", "source interval exceeds supported range");
       if (bp > MAX_INTEGER - length) fail(field + ".contigLengthBp", "assembly length exceeds supported range");
       length += bp;
       var bins = object(contig, "contigLengthBins", field);

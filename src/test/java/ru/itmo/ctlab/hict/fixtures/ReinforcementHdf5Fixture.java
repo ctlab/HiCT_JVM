@@ -71,6 +71,11 @@ public final class ReinforcementHdf5Fixture {
   }
 
   public static void main(String[] args) throws Exception {
+    if (args.length == 2 && args[0].equals("long-offset")) {
+      create(Path.of(args[1]), "long-source", List.of(1_000_000_000L, 2_000_000_000L), 3_000_000_017L,
+        new long[][]{{0, 0, 1}, {2_500_000_001L, 3_000_000_016L, 7}, {3_000_000_016L, 3_000_000_016L, 11}});
+      return;
+    }
     if (args.length == 2 && args[0].equals("mixed-pyramids")) {
       final var directory = Path.of(args[1]);
       final long[][] landmarks = {{101, 211, 500}, {420, 537, 700}, {960, 1001, 900}, {12016, 12016, 1100}};
