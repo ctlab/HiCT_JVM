@@ -26,7 +26,7 @@ describe earlier releases; they must not override the decisions below.
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
-| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help verified against both sources; O/E colors/alpha and palette persistence, shared ratio-palette nodes and stable/live threshold controls implemented and Chromium verified; direct active-O/E pipeline projection, palette presets, inline histogram levels and broader qualification pending |
+| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help verified against both sources; O/E colors/alpha, persistence, shared presets, active primary O/E pipeline editor, ratio-palette nodes and stable/live threshold controls implemented and Chromium verified; inline viewport histogram/levels and broader qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
@@ -490,3 +490,24 @@ failure/cancellation, stale jobs, matrix/sequence/figure exports, 15 open/close
 cycles and a 30-minute mixed soak. Preserve p95 input <=100 ms and frame <=33 ms
 on declared hardware. All advertised platforms require actual package/native
 dialog qualification; unrun checks remain pending.
+
+
+## Active primary O/E editor and shared presets
+
+Rendering Pipeline now opens a compact Primary O/E colormap editor when Show
+O/E is active, alongside the separate Observed graph. Shared blue–white–red and
+purple–white–green presets, endpoint colors/alpha, ratio handles, automatic preview,
+reset and typed palette-file import/export operate on the active primary palette.
+Secondary selection does not redirect edits. Serialized, coalesced writes preserve
+newer choices; invalid or failed changes leave the last committed palette intact.
+Returning from Preview reconciles actual sidebar palette/display-mode changes.
+Unchanged Observed graph closes no longer rewrite its stored representation.
+
+Final WebUI build and 168 Chromium scenarios pass, plus an 11-case focused rerun
+with explicit processing-option isolation assertions. Visual review includes the
+compact editor and reachable footer at 800×600. Existing Observed graph workflows
+pass on an unchanged 154 MB real-map copy. Details, artifact hashes and limitations
+are in reinforcement-validation.md. No JVM runtime code changed in this increment.
+This implements the direct active-O/E editor and preset part of item 19; inline
+viewport histogram/levels (item 22), native/package, performance and other release
+and publication gates remain open. P6 and the overall goal remain in progress.

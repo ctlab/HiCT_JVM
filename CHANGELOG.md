@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Edit the active primary O/E palette in Rendering Pipeline with shared presets, live preview, safe delayed updates and palette import/export, while preserving the Observed graph and secondary layer.
+- Reload sidebar changes when returning from palette Preview and keep palette controls usable in compact windows.
+
 - Honor O/E endpoint colors and alpha, remember separate Expected/O/E palettes, and add a neutral-at-1 ratio palette to pipeline colormap nodes.
 - Keep slider limits steady during adjustment and apply live threshold changes, with O/E handles staying on the correct side of neutral.
 

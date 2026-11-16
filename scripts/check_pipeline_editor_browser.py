@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import BrowserCheck
 
 
 def main():
@@ -29,6 +30,8 @@ def main():
         page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         page.add_init_script("window.addEventListener('unhandledrejection', e=>console.error('Unhandled pipeline-audit promise',e.reason))")
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__ = true")
+        BrowserCheck(page, out)  # Owned writable chooser shim for graph export, as in other UI suites.
+        page.add_init_script("window.__editorWindowErrors=[];window.addEventListener('error',e=>{if(e instanceof ErrorEvent)window.__editorWindowErrors.push(e.message);},true)")
         page.route("http://localhost:5000/**", lambda route: route.continue_(
             url=args.api + route.request.url.removeprefix("http://localhost:5000")))
         page.goto(args.url)
@@ -281,6 +284,8 @@ def main():
         assert signal_values() == reset_signal
         record_result({"test": "Reset publishes the server default and preserves it through close and reopen"})
         assert not errors, errors
+        window_errors=page.evaluate("window.__editorWindowErrors");assert not window_errors,window_errors
+        (out / "errors.json").write_text(json.dumps({"pageErrors":errors,"windowErrors":window_errors},indent=2))
         (out / "results.json").write_text(json.dumps(results, indent=2) + "\n")
         browser.close()
         print(json.dumps(results, indent=2))

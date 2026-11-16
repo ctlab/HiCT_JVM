@@ -3880,3 +3880,65 @@ separately. Combined SFX/native packages, other platforms, dense-map latency,
 retina/touch/accessibility, custom O/E figure-output matrix and mixed soak remain
 pending. P6 and the full publication release stay in progress. Protected
 files/plans remain untouched. Nothing was pushed, merged or tagged.
+
+
+## Active primary O/E editor acceptance
+
+The active primary O/E editor is separate from the Observed graph and uses the
+same named presets as the sidebar. It preserves the exact Observed graph JSON,
+all non-colormap processing options, secondary selection and nontransparent
+secondary tile pixels. Updates serialize and coalesce superseded choices; injected
+failure supports retry without committing invalid values. Palette import/export
+uses a distinct PRIMARY_OE settings schema and the shared destination workflow.
+Preview return reloads sidebar changes and reconciles display-mode changes.
+
+Final npm run build:web passes (/tmp/hict-oe-editor-web-10.log), including TypeScript
+and all existing Node checks; only the existing large-chunk warning remains.
+Changed Vue/TS formatting, Python compilation and git diff --check pass. No JVM
+runtime changes were made; the preceding full 588-test JVM run (zero failures or
+errors, seven optional skips, /tmp/hict-oe-full-jvm-02.log) remains the backend
+baseline, rather than a claimed new run.
+
+Final Chromium evidence on the frozen build, DPR 1, disposable fixture copies:
+
+- /tmp/hict-oe-editor-ui-08/results.json: 11 focused cases. Its independent
+  display_mode_roundtrip and signal_controls baselines add 12 and seven cases.
+  /tmp/hict-oe-editor-ui-10/results.json repeats the 11 focused cases with explicit
+  equality of all non-colormap processing options. Capture-phase window errors
+  and page errors are empty, source hashes unchanged. Cases cover visible overlay
+  isolation, presets and actual RGBA endpoints, keyboard tabs, compact dimensions,
+  Preview/sidebar reconciliation, palette export/reset/import, delayed writes
+  (held 6 → queued 8 → latest 4 publishes only 6 and 4), injected 503/retry,
+  invalid-draft close and rejection outside O/E mode.
+- /tmp/hict-oe-observed-existing-02/browser/results.json: 12 existing Observed
+  editor cases, including import/export, inspector, layout, Preview, stale cache,
+  delayed thresholds, branch pixels, swaps, presets and reset. Source.json confirms
+  an unchanged physical 154,317,488-byte map copy, SHA-256
+  8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317.
+  The legacy driver now uses the same controlled writable destination as other
+  browser save checks and records capture-phase window errors across reloads.
+- /tmp/hict-oe-editor-tracks-03/results.json and controls/results.json: 13+8
+  track/source, guarded editing, resized canvas and signal-control cases.
+- /tmp/hict-oe-editor-responsive-03/results.json: 15 cases down to 640 px.
+- /tmp/hict-oe-editor-regression-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-02/results.json:
+  all 90 established sequence, selection, scientific cut and save scenarios.
+
+These are 168 passing scenarios with successful process exits, plus the focused
+11-case rerun, counted separately. Expected injected HTTP/console failures remain
+confined to their failure cases. Visual inspection covers active-oe-editor.png,
+active-oe-editor-800.png and active-oe-editor-640.png in the focused output.
+Diagnostic earlier runs include corrected fixture/route/accessible-name setup and
+the reproduced stale-Preview palette; they are not acceptance runs. Tracks -02,
+responsive -02 and focused -09 could not bind sockets inside the sandbox and were
+rerun successfully with local-server permission as -03, -03 and -10 respectively.
+
+Backend JAR hict_server-2.0.31-f08ec1b-webui_293038a-fat.jar SHA-256:
+85907de031ac5b4f38c3f1d43f2843f8adee22e1604d5dc14566a53616775b21.
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+c007a136a5438951a41d595419915e5f6fc4e0ba65bd68f828f827a9a6fdb3e6.
+Acceptance serves these assets separately from the JAR's embedded preceding UI.
+Combined SFX/native packages, other platforms, dense-map latency, retina/touch,
+full accessibility, figure-output matrix and mixed soak remain unqualified.
+Viewport histogram/levels and the remaining advisor/release/publication gates are
+still pending. Protected plans/files are unchanged. Nothing pushed, merged or tagged.
