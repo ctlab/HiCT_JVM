@@ -49,7 +49,8 @@ def main():
 
         def choose(filename):
             dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
-            dialog.get_by_role('button', name='Browse…', exact=True).last.click()
+            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            dialog.get_by_role('button', name='Browse…', exact=True).click()
             picker = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Select secondary data source', exact=True))
             picker.locator('span[title]').filter(has_text=re.compile('^' + re.escape(filename) + '$')).click()
             picker.get_by_role('button', name='Load', exact=True).click()
@@ -75,8 +76,9 @@ def main():
             page.get_by_role('link', name='Tracks and layers…', exact=True).click()
             if args.secondary_drives_assembly:
                 dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+                dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
                 with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')):
-                    dialog.locator('select').select_option('SECONDARY')
+                    dialog.get_by_label('Assembly source',exact=True).select_option('SECONDARY')
                 page.wait_for_function("()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0].direction===0")
                 before = snapshot()
             failed = choose('broken.hict.hdf5')
@@ -121,9 +123,10 @@ def main():
             assert post('/secondary/status')['filename'] == 'tiny-unrelated.hict.hdf5'
             result['checks'].append('confirmed mismatched replacement applies the returned assembly to the client')
             dialog = page.locator('.modal.show').filter(has=page.get_by_role('heading', name='Tracks and layers', exact=True))
+            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
             for source in ('PRIMARY', 'SECONDARY'):
                 with page.expect_response(lambda response: response.url.endswith('/secondary/set_assembly_source')) as switched:
-                    dialog.locator('select').select_option(source)
+                    dialog.get_by_label('Assembly source',exact=True).select_option(source)
                 assert switched.value.ok, switched.value.text()
                 assert set(switched.value.json()['assemblyInfo']['contigDescriptors'][0]['contigLengthBins']) == {'4', '10'}
             page.wait_for_function('''()=>window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0]

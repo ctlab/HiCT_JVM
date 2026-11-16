@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import BrowserCheck
 
 
 def main():
@@ -29,6 +30,7 @@ def main():
         context.route('http://localhost:5000/**', lambda route: route.continue_(
             url=args.api + route.request.url.removeprefix('http://localhost:5000')))
         page = context.new_page()
+        BrowserCheck(page,output)  # Controlled writable destination, as in other browser acceptance.
         page.set_default_timeout(15000)
 
         def post(path, body=None):

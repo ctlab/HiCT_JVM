@@ -3590,3 +3590,90 @@ separately or from the copied payload, not from the JAR. Final combined-SFX,
 other platforms, unresponsive-server timing, Wayland/portals, accessibility,
 origin-conflict preference migration and the full publication gates remain open.
 Plans, protected files and manuscript remain untouched.
+
+
+## Separated tracks/sources and live map weights (2026-11-16)
+
+View → Tracks and layers now has keyboard-accessible 1D tracks and Sources and
+layers tabs. Add offers a file or map weights from either source. Track cards
+retain visibility/axis/color/name/order/removal controls; signal settings,
+background appearance and preparation are disclosures. The layer action opens
+and focuses the existing sidebar. File versus square-root coverage weights and
+known unavailability have explicit hints; unknown legacy provenance stays usable.
+See [the user guide](tracks-and-sources.md).
+
+CommittedTrackInput preserves focused name/range/log-base drafts across server
+refreshes, then reconciles the accepted value. LinearTrackManager rejects stale
+list responses and responses arriving after disposal. A real delayed backend
+snapshot verifies both draft retention and that an older list cannot revert a
+newer edit. Preparation polls only while its disclosure is open and stops on
+close/unmount, including when the initial request finishes late.
+
+Resize completion refreshes map/rulers/tracks after Vue commits the grid. Track
+frames use an inset outline, removing the two-pixel CSS scaling caused by borders.
+Mouse, keyboard, lost-window-focus cleanup and workspace shrink preserve bounded
+panel sizes. Workspace clamping runs in a coalesced animation frame, outside
+resize-observer delivery; its accessible maximum follows the workspace. At three panel sizes, bitmap dimensions equal their CSS surface and
+map-axis dimensions; dark corner/background and edge pixels contain no white
+strip. A later visual review caught a ResizeObserver-loop toast missed by console/page
+error collection. A capture-phase window-error probe now rejects this warning.
+The original one-size baseline did not reproduce the advisor's stripe;
+the final checks establish these tested geometries, not every display/driver.
+
+Normalization acceptance uncovered a separate scientific defect: native weight
+tracks could reuse precomputed values from the preceding normalization mode.
+The focused TrackWeightsNormalizationTest failed before the fix with five file
+weights instead of the four supported coverage weights. Map weights now bypass
+precompute/cache loading and read the resident active vectors. Their preparation
+control explains this and is disabled when only weights are loaded. The regression
+uses independent row sums [4,10,7,0,11], symmetric total 32 and the full-map
+preserving scale, with different stored vectors for primary and secondary. It
+checks file → coverage → file, manual precompute, missing zero-coverage support,
+both sources and identical input bytes. Existing sequence-grid weight oracles
+continue to pass. Dense-map performance remains a release gate.
+
+Full ./gradlew test shadowJar -x copyWebUI --offline passes: 586 tests, zero
+failures/errors, seven optional skips (/tmp/hict-tracks-qualified-jvm.log).
+The focused before/after logs are /tmp/hict-tracks-weights-{before,after}.log.
+npm run build:web passes (/tmp/hict-tracks-final-observer-web.log), retaining the known
+large-chunk warning. Python acceptance drivers compile successfully.
+
+Final Chromium evidence: /tmp/hict-tracks-ui-12/results.json has 13 manager,
+source, keyboard, resize, delayed-response, normalization and capability cases.
+Its controls/results.json adds six numeric/import/background/preparation/error
+cases, including [2,3,4,5,6] file weights and an independently checked BED feature.
+Source HDF5 hashes are unchanged; normal page-error and capture-phase window-error lists are empty. Visual review
+covers file import, both tabs at 1440/1024/800 px, dark resized panels, a shrunk
+800 px workspace, and coverage-source labels/map. This is a desktop Chromium
+DPR-1 qualification on the same declared Linux host, using disposable fixtures.
+
+/tmp/hict-tracks-source-regressions-06/{secondary-primary,secondary-owner,
+failure-reporting,source-capabilities}/results.json adds 5+5+6+5 cases: exact
+edited replacement/cancellation under both assembly authorities, one useful
+message per injected failure, and stored-resolution/source capability checks.
+The failure fixture now uses the same controlled writable chooser as the other
+browser checks. Capability checks use the native source descriptor rather than
+the virtual 1 bp display descriptor. --legacy-file preserves the existing real-map
+default; this run supplies a small physical clone with provenance attributes
+removed. A modern file explicitly marked ABSENT is not an unknown legacy file.
+Intentional HTTP/console failures are expected only in the failure tests.
+
+All 90 established scenarios also pass on this exact JVM/WebUI pair:
+/tmp/hict-tracks-verified-{sequence_view,selection_modes,fasta_measurement,
+alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-browser/results.json.
+Together these are 130 passing browser cases; their documented picker/probe
+substitutions remain in force. Development runs with incomplete fixtures,
+incorrect pixel expectations or timing assumptions are not final evidence.
+
+Test JAR hict_server-2.0.28-5e7edd4-webui_a1839b7-fat.jar SHA-256:
+dff6d37370a077b375d071cc7779d25ed7728db127e3e83018e50b3bc444e090.
+WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+8ae741465780626ea725b34adfb2ee8987e5f579ec3b68a62411332aba18acb3.
+The JAR embeds the preceding WebUI; acceptance serves the matching new assets
+separately. Final combined-SFX, real large-file/format and platform matrices,
+retina/touch/accessibility, narrow main-workspace layout, navigation latency and
+mixed soak remain open. At 800 px after the sidebar was explicitly opened, its
+controls remain cropped;
+that main-workspace responsiveness issue is a follow-up. The manager itself fits
+that width. P4 and the publication release remain in progress. Protected
+files/plans are untouched.

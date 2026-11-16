@@ -1237,6 +1237,8 @@ public class Track1DManager implements AutoCloseable {
 
   private @Nullable TrackPrecomputeRuntime maybeScheduleTrackPrecomputeFromQuery(final @NotNull ChunkedFile chunkedFile,
                                                                                  final @NotNull TrackState track) {
+    // These weights are already resident and change with the active normalization.
+    if (track.type() == TrackType.COOLER_WEIGHTS) return null;
     final var runtime = this.precomputeRuntimeByTrackId.get(track.trackId());
     if (runtime != null && (runtime.isActive() || "cancelled".equals(runtime.status))) {
       return runtime;
@@ -1252,6 +1254,7 @@ public class Track1DManager implements AutoCloseable {
   private void scheduleTrackPrecompute(final @NotNull ChunkedFile chunkedFile,
                                        final @NotNull TrackState track,
                                        final boolean force) {
+    if (track.type() == TrackType.COOLER_WEIGHTS) return;
     synchronized (this.precomputeRuntimeByTrackId) {
       final var previous = this.precomputeRuntimeByTrackId.get(track.trackId());
       if (previous != null && previous.isActive()) return;
@@ -1395,7 +1398,7 @@ public class Track1DManager implements AutoCloseable {
                                                           final int widthPx,
                                                           final long bpResolution,
                                                           final @NotNull String assemblySignature) {
-    if (track.dataSource().renderStyle() == RenderStyle.FEATURE) {
+    if (track.type() == TrackType.COOLER_WEIGHTS || track.dataSource().renderStyle() == RenderStyle.FEATURE) {
       return null;
     }
     final var totalVisiblePixels = orderedSegments.isEmpty() ? 0L : orderedSegments.get(orderedSegments.size() - 1).visiblePxEnd();

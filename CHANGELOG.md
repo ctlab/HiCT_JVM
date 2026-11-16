@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Separate 1D tracks from map sources, add source weights through Add, and preserve typed settings and panel alignment across refreshes and resizing.
+- Identify file versus coverage weights and keep weight tracks current when normalization changes, including after precompute.
+
 - Open the bundled Electron interface when the hosted page is unavailable, with a Reconnect action that protects unsaved assembly edits.
 - Preserve bundled-interface preferences across restarts and include packaged icons without weakening browser or backend access controls.
 

@@ -24,7 +24,7 @@ describe earlier releases; they must not override the decisions below.
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
-| P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
+| P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
@@ -401,6 +401,32 @@ regressions. JVM bind/CORS, Electron file fuses and renderer isolation are uncha
 Tauri, other platforms, Wayland/portals, wider accessibility and input coverage,
 soak/performance and final combined-SFX qualification remain open. P3 and the full
 publication release remain in progress.
+
+## Tracks, sources and live weights
+
+The manager now separates **1D tracks** from **Sources and layers**. Add offers a
+file or map weights from either source. Weights identify their active file or
+square-root coverage origin, preserve unknown-provenance legacy access, and
+explain known unavailability. Per-track signal controls and preparation are
+optional disclosures. The layer action opens the existing sidebar with focus.
+The [user guide](tracks-and-sources.md) describes the workflow and keyboard access.
+
+Names and numbers retain their drafts across refreshes, and late list responses
+cannot undo newer edits or reset local log settings. Resize completion refreshes
+the grid; track frames no longer scale the coordinate surface. Keyboard resizing,
+workspace shrink and lost-focus cleanup share the same size constraints.
+
+Normalization acceptance exposed a native-track defect: weight precompute could
+retain the preceding normalization's values. These weights are already resident
+in the map and now bypass persistent precompute. An independent numerical
+regression covers both sources, both mode transitions, masked bins and unchanged
+source bytes. Optional preparation explains that map weights need no preparation.
+
+P4 remains in progress. The detailed validation record identifies accepted browser
+workflows and exact artifacts; wider real-file, platform, accessibility, dense-map
+and soak qualification remain open. At 800 px after explicitly opening the
+sidebar, main-workspace controls still crop; responsive sidebar/ribbon work is
+a recorded follow-up. The manager modal itself fits that width. The full publication release is not complete.
 
 ## Mandatory release gates
 
