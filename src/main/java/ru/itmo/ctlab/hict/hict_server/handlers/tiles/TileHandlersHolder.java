@@ -76,6 +76,7 @@ public class TileHandlersHolder extends HandlersHolder {
   private final String statisticsInstance = java.util.UUID.randomUUID().toString();
   private final Map<ChunkedFile, ProjectionGridCache> projectionGrids = new WeakHashMap<>();
   public static final String EXPECTED_PROFILE_LOCAL_MAP_KEY = "ViewportExpectedProfile";
+  private static final String EXPECTED_PROFILE_BINS_KEY = "ViewportExpectedProfileBins";
   private static final byte[] TRANSPARENT_PNG_BYTES = createTransparentPng();
   private static final String TRANSPARENT_PNG_BASE64 = Base64.getEncoder().encodeToString(TRANSPARENT_PNG_BYTES);
   private static final int MAX_MATRIX_QUERY_ELEMENTS = Integer.getInteger("HICT_MATRIX_QUERY_MAX_ELEMENTS", 16_777_216);
@@ -86,6 +87,7 @@ public class TileHandlersHolder extends HandlersHolder {
 
   public static void clearExpectedProfileCache(final @NotNull LocalMap<String, Object> map) {
     map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+    map.remove(EXPECTED_PROFILE_BINS_KEY);
   }
 
   private static void validatePipelineResources(RenderPipelineConfig pipeline, LocalMap<String, Object> map) {
@@ -256,13 +258,16 @@ public class TileHandlersHolder extends HandlersHolder {
           }
 
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
+          final var unit = requestJSON.getString("unit", "PIXELS");
+          if (!unit.equals("PIXELS") && !unit.equals("BINS")) throw new IllegalArgumentException("Expected profile unit must be PIXELS or BINS");
+          final boolean visibleOnly = unit.equals("PIXELS");
           final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
           if (resolutionOrder == null) {
             throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
           }
           final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
           final var totalAssemblyLength = chunkedFile.getContigTree().getLengthInUnits(
-            QueryLengthUnit.PIXELS,
+            visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS,
             resolutionDescriptor
           );
           final long clampedStartRowPx = Math.max(0L, Math.min(startRowPx, totalAssemblyLength));
@@ -292,7 +297,7 @@ public class TileHandlersHolder extends HandlersHolder {
             clampedStartRowPx,
             clampedEndRowPx,
             clampedStartColPx,
-            clampedEndColPx
+            clampedEndColPx, visibleOnly
           );
           final var chunkSize = Math.max(
             32,
@@ -307,7 +312,7 @@ public class TileHandlersHolder extends HandlersHolder {
             expectedDomains
           );
           final var sampleWeights = expectedSampleWeights(chunkedFile, resolutionDescriptor,
-            clampedStartRowPx, clampedEndRowPx, clampedStartColPx, clampedEndColPx);
+            clampedStartRowPx, clampedEndRowPx, clampedStartColPx, clampedEndColPx, visibleOnly);
           for (long chunkStartRowPx = clampedStartRowPx; chunkStartRowPx < clampedEndRowPx; chunkStartRowPx += chunkSize) {
             final var chunkEndRowPx = Math.min(clampedEndRowPx, chunkStartRowPx + chunkSize);
             for (long chunkStartColPx = clampedStartColPx; chunkStartColPx < clampedEndColPx; chunkStartColPx += chunkSize) {
@@ -318,7 +323,7 @@ public class TileHandlersHolder extends HandlersHolder {
                 chunkStartColPx,
                 chunkEndRowPx,
                 chunkEndColPx,
-                true
+                visibleOnly
               );
               final var baseSignal = chunkedFile.tileVisualizationProcessor().prepareSignalMatrix(
                 matrixWithWeights,
@@ -334,7 +339,7 @@ public class TileHandlersHolder extends HandlersHolder {
           }
           final var profile = accumulator.toProfile();
           map.put(
-            EXPECTED_PROFILE_LOCAL_MAP_KEY,
+            visibleOnly ? EXPECTED_PROFILE_LOCAL_MAP_KEY : EXPECTED_PROFILE_BINS_KEY,
             new ShareableWrappers.DiagonalExpectedProfileWrapper(profile)
           );
           return new JsonObject()
@@ -344,6 +349,7 @@ public class TileHandlersHolder extends HandlersHolder {
             .put("endRowPx", clampedEndRowPx)
             .put("startColPx", clampedStartColPx)
             .put("endColPx", clampedEndColPx)
+            .put("unit", unit)
             .put("sampleSemantics", "UNIQUE_UNORDERED_SOURCE_PAIR_MASS")
             .put("distanceSemantics", "DISPLAY_BIN_DISTANCE")
             .put("sharedReferenceWeighting", sampleWeights != null)
@@ -1296,8 +1302,14 @@ public class TileHandlersHolder extends HandlersHolder {
     final @NotNull LocalMap<String, Object> map,
     final @NotNull ResolutionDescriptor resolutionDescriptor
   ) {
-    final var wrapper =
-      (ShareableWrappers.DiagonalExpectedProfileWrapper) map.get(EXPECTED_PROFILE_LOCAL_MAP_KEY);
+    return resolveExpectedProfile(map,resolutionDescriptor,true);
+  }
+
+  private @Nullable DistanceExpectedNormalizer.DiagonalProfile resolveExpectedProfile(
+    LocalMap<String,Object> map, ResolutionDescriptor resolutionDescriptor, boolean visibleOnly
+  ) {
+    final var wrapper = (ShareableWrappers.DiagonalExpectedProfileWrapper)
+      map.get(visibleOnly ? EXPECTED_PROFILE_LOCAL_MAP_KEY : EXPECTED_PROFILE_BINS_KEY);
     if (wrapper == null) {
       return null;
     }
@@ -1325,8 +1337,8 @@ public class TileHandlersHolder extends HandlersHolder {
   ) {
     if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) return null;
     final var descriptor = matrix.resolutionDescriptor();
-    // Viewport profiles use visible PIXELS. BINS includes hidden contigs and has a different axis.
-    final var cached = visibleOnly ? resolveExpectedProfile(map, descriptor) : null;
+    // PIXELS and BINS retain independent fitted axes because BINS includes hidden contigs.
+    final var cached = resolveExpectedProfile(map, descriptor, visibleOnly);
     final int rows = (int) Math.max(0L, matrix.endRowExcl() - matrix.startRowIncl());
     final int cols = (int) Math.max(0L, matrix.endColExcl() - matrix.startColIncl());
     if (cached != null && cached.matchesResolutionWindow(matrix.startRowIncl(), matrix.startColIncl(), rows, cols)) {

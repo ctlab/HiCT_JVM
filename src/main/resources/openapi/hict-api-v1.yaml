@@ -671,6 +671,9 @@ paths:
         Successful fits report sampleSemantics=UNIQUE_UNORDERED_SOURCE_PAIR_MASS,
         distanceSemantics=DISPLAY_BIN_DISTANCE and sharedReferenceWeighting.
         Histogram and matrix-statistics counts describe DISPLAY_CELLS instead.
+        unit defaults to PIXELS (visible native bins). BINS includes hidden
+        components and is used by sequence-grid display. Their cached profiles
+        are independent; responses report the fitted unit.
       requestBody:
         required: true
         content:
@@ -2534,6 +2537,7 @@ components:
       required: [schemaVersion, units, scoreScale, contactDataState, resolutions, importedWeightResolutions, weightMetadataComplete, contactNormalization, importedWeights]
       properties:
         schemaVersion: { type: integer, enum: [1] }
+        sequenceScaleTiles: { type: boolean, description: Server can project stored source-bin colors onto an explicit one-base display grid. Omitted by older servers. This does not add a stored contact resolution. }
         units: { type: string, enum: [CONTACT_COUNT, ALIGNMENT_SAMPLE_COUNT, ALIGNMENT_PRESENCE, IDENTITY_PERCENT, SEQUENCE_ONLY, UNKNOWN] }
         scoreScale: { type: number, minimum: 0, exclusiveMinimum: true }
         contactDataState: { type: string, enum: [PRESENT, ABSENT, UNKNOWN] }
@@ -2626,6 +2630,7 @@ components:
       required: [bpResolution, startRowPx, endRowPx, startColPx, endColPx]
       properties:
         bpResolution: { type: integer, format: int64 }
+        unit: { type: string, enum: [PIXELS, BINS], default: PIXELS, description: Axis units for all four bounds. The legacy Px field names are retained for compatibility. }
         startRowPx: { type: integer, format: int64 }
         endRowPx: { type: integer, format: int64 }
         startColPx: { type: integer, format: int64 }

@@ -95,14 +95,32 @@ def main():
                 assert len(actual['values']) == len(expected)
                 error = max(abs(a-b) for a,b in zip(actual['values'],expected))
                 assert error < 1e-12,(unit,error,actual,expected)
-                if unit == 'PIXELS':
-                    fitted = json.loads(app.http('/visualization/expected_profile',{'bpResolution':4,
-                        'startRowPx':row_start,'endRowPx':row_end,'startColPx':col_start,'endColPx':col_end}))
-                    assert fitted['sampleSemantics']=='UNIQUE_UNORDERED_SOURCE_PAIR_MASS'
-                    assert fitted['sharedReferenceWeighting'] is True
-                    cached = json.loads(app.http('/matrix/query',dict(query,signalMode='TRADITIONAL_NORMALIZED')))
-                    assert cached['values']==actual['values']
+                fitted = json.loads(app.http('/visualization/expected_profile',{'bpResolution':4,'unit':unit,
+                    'startRowPx':row_start,'endRowPx':row_end,'startColPx':col_start,'endColPx':col_end}))
+                assert fitted['unit']==unit
+                assert fitted['sampleSemantics']=='UNIQUE_UNORDERED_SOURCE_PAIR_MASS'
+                assert fitted['sharedReferenceWeighting'] is True
+                cached = json.loads(app.http('/matrix/query',dict(query,signalMode='TRADITIONAL_NORMALIZED')))
+                assert cached['values']==actual['values']
                 results.append({'unit':unit,'rows':[row_start,row_end],'cols':[col_start,col_end],'maxError':error})
+            # Both cached windows cover the probe, but their fitted means differ.
+            # A BINS fit must not replace the visible PIXELS fit (or conversely).
+            profiles={}
+            for unit,start in [('PIXELS',0),('BINS',2)]:
+                query={'bpResolution':4,'unit':unit,'startRow':start,'endRow':7,
+                       'startCol':start,'endCol':7,'format':'JSON'}
+                raw=json.loads(app.http('/matrix/query',dict(query,signalMode='RAW_COUNTS')))
+                profiles[unit]=(start,oracle(raw['values'],ids[start:7],ids[start:7],start,start))
+                fitted=json.loads(app.http('/visualization/expected_profile',{'bpResolution':4,'unit':unit,
+                    'startRowPx':start,'endRowPx':7,'startColPx':start,'endColPx':7}))
+                assert fitted['unit']==unit
+            for unit,(start,values) in profiles.items():
+                actual=json.loads(app.http('/matrix/query',{'bpResolution':4,'unit':unit,'startRow':3,'endRow':7,
+                    'startCol':3,'endCol':7,'format':'JSON','signalMode':'TRADITIONAL_NORMALIZED'}))['values']
+                expected=[values[(r-start)*(7-start)+c-start] for r in range(3,7) for c in range(3,7)]
+                error=max(abs(a-b) for a,b in zip(actual,expected))
+                assert error<1e-12,(unit,'profile cache isolation',actual,expected)
+                results.append({'unit':unit,'cacheIsolationMaxError':error})
             stats = page.request.post(app.url+'/matrix/query',data={'bpResolution':4,'rows':7,'cols':7,
                 'format':'JSON','signalMode':'RAW_COUNTS','includeTileStatistics':True})
             assert stats.ok,stats.text()
@@ -123,7 +141,8 @@ def main():
             page.get_by_role('menuitem',name='Signal histogram...',exact=True).click()
             dialog = page.get_by_role('dialog',name='Signal histogram',exact=True)
             dialog.get_by_text('counts displayed samples.',exact=False).wait_for()
-            dialog.get_by_text('displayed matrix cells',exact=False).wait_for()
+            sequence_scale=page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.isSequenceScale')
+            dialog.get_by_text('native matrix references' if sequence_scale else 'displayed matrix cells',exact=False).wait_for()
             page.screenshot(path=str(output/'shared-histogram.png'))
             assert not check.errors,check.errors
             assert hashlib.sha256(source.read_bytes()).hexdigest()==digest

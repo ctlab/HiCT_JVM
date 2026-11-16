@@ -2907,3 +2907,71 @@ and a diagnostic preview of actual tile images; the main UI transition remains
 pending. Current map geometry, rulers, FASTA, selections, exports and edit
 coordinates must be coordinated next. P1 and the full release/publication goal
 remain active, including all platform, large-map and final soak gates.
+
+## Main-map sequence-scale integration — 2026-11-16
+
+The WebUI now uses the bounded sequence-grid renderer on capable servers. It
+preserves a native coordinate snapshot, represents short fragments at their true
+base widths and keeps the stored resolution explicit in the header/Info. Scissors
+use revision-guarded exact cuts, and native raster extents update when shared
+references add bins. Saved viewport and bookmark records carry additive BP/grid
+fields, with legacy parsing retained. The overview uses a separate native
+projection. Native BINS diagnostics and expected-profile caches remain distinct
+from visible PIXELS; expanded base colors are not counted as new observations.
+
+`npm run build:web` passed with type checks and all existing regressions, including
+the newly enabled coordinate-snapshot suite, optional server capability parsing
+and saved BP/grid validation. The known large-chunk warning remains. JVM
+`./gradlew test shadowJar -x copyWebUI --offline` passed: 571 tests, zero
+failures/errors, seven optional skips. Logs:
+`/tmp/hict-sequence-view-resize-web.log` and
+`/tmp/hict-sequence-view-final-jvm.log`.
+
+`scripts/check_sequence_view_browser.py` creates physical disposable 4 kb
+Cooler/native, IUPAC FASTA and stranded BED6 fixtures. Chromium operates the real
+scissors twice (253 bp, then 1 bp), keyboard undo/redo and Reverse Selection.
+Final fragments are 3747/252/1 bp, with native raster axes 42/22 references at
+100/200 bp. Every retained base matches the full 4 kb reverse complement. The
+three-base feature occupies 60 screen pixels at 20 pixels/base. Native/base
+saved centers, real wheel events, overview clicks, O/E controls, viewport
+PNG/SVG/PDF, and save/close/open session pass. Eight wheel steps reach visible
+letters; each preserves the fixed-client pointer locus within 1e-5 bp. Overview
+click tolerance is 1e-3 bp to accommodate browser subpixel rounding. Export and
+session restoration retain the BP center, and the source native hash is unchanged.
+All 17 workflow checks pass without page errors. The real map, PNG and independently
+rasterized PDF were visually inspected. SVG is valid XML with no external image
+references; a standalone SVG-document screenshot timed out and is not counted as
+standalone-viewer qualification.
+The same SVG renders successfully as a Chromium image; that preview was visually
+inspected too (`svg-image-preview.png`). Its FASTA text uses a different fallback
+font outside the app. Portable SVG typography remains an export qualification
+item; this increment does not certify publication-ready typography.
+
+Evidence: `/tmp/hict-sequence-view-browser-19/`, including `results.json`,
+`restored-sequence-view.png`, `sequence-view.{png,svg,pdf}` and `pdf-preview.png`.
+Server SHA-256:
+`64f0d7259f6a42ffa1143f665aa80fcbc30d35f6b77f1230af154274439e9293`.
+WebUI distribution SHA-256 (sorted relative file names plus NUL plus file bytes):
+`9646c2b00a51e39feef11f92c14fd04ec55367374d900e10faf95ddd480842d0`.
+The JVM used an immutable artifact copy; WebUI was served separately. The artifact
+name's older WebUI suffix does not qualify an embedded package for this increment.
+
+`scripts/check_shared_expected_browser.py` now fits both units and verifies that
+different BINS/PIXELS fitting windows cannot overwrite each other's cached means.
+Four independent numerical comparisons and both cache-isolation probes have zero
+error. O/E and the base-scale histogram reference labels pass, with unchanged
+native bytes and no page errors. Evidence:
+`/tmp/hict-shared-expected-bins-browser-03/results.json`, same server hash.
+
+Browser failures during development exposed an active/future-grid lookup mix-up,
+BP bookmarks clamped before FASTA-strip layout, and zooms interrupted by generic
+gap handling or resized zoom limits. Those paths are corrected and exercised by
+the final checker. Test clicks were also moved clear of map controls, and wheel
+checks now wait for dispatch before waiting for animation completion.
+
+P1 remains open: full secondary/disjoint-pyramid UI coverage, hidden/no-bin and
+quantitative 1D tracks, feature-edge cuts, broader selection/export/bookmark
+migration, large-map performance and packaged-platform/soak qualification.
+Quantitative tracks still sample native bins before mapping their positions to
+the base axis. No production/release/publication-complete claim follows from this
+tiny-fixture qualification.

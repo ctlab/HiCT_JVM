@@ -2,9 +2,9 @@
 
 `GET /get_tile?source=PRIMARY&bpResolution=1000&sequenceScale=true` can draw a
 native contact map on a uniform one-base display grid. `source=SECONDARY` uses
-that source's own assembly and stored resolution. This is a rendering primitive;
-the main map's mode transition, coordinate overlays and edit integration remain
-pending. It does not add a 1 bp contact resolution to the file.
+that source's own assembly and stored resolution. The WebUI now integrates this
+projection into the main map on servers advertising `sequenceScaleTiles=true`.
+It does not add a 1 bp contact resolution to the file.
 
 With this option, tile positions index current contig-tree assembly base
 coordinates. For `PNG_BY_PIXELS`, `row` and `col` are start bases and `rows` and
@@ -55,6 +55,46 @@ nested cuts, reordering, padding, hidden and missing bins, original weights,
 positions beyond 2.5 Gb, cancellation and per-base triangle assignment. The
 Chromium checker decodes actual server PNGs and compares native colors channel
 by channel for primary/secondary sources with both standard and graph renderers.
-Its diagnostic preview is an acceptance artifact, not the implemented main UI.
+Its diagnostic preview is an acceptance artifact separate from the main UI.
 Large-map performance, all track formats and packaged-platform qualification
 remain separate release gates.
+
+## Main-map coordinate transition
+
+The main map enters a uniform base axis at four screen pixels per base and
+retains it down to two, avoiding repeated mode changes at the boundary. Readable
+FASTA letters use the loaded font's measured width. The status label distinguishes
+base display scale from the stored contact-bin resolution. Native raster layers
+and their coordinate snapshot remain available; a virtual display level never
+overwrites a real stored 1 bp level or its hidden-bin metadata.
+
+Wheel and trackpad navigation translate anchors through assembly base coordinates.
+Zoom-limit updates wait for an active gesture to finish when the letter strips
+resize the viewport. The overview retains a separate native projection and maps
+its viewport/clicks through base coordinates. Saved views and bookmarks carry
+optional `centerBp`, `displayGrid` and `bpResolution` fields; old documents remain
+readable. BP centers are reapplied after the letter-strip layout settles, with
+intervening user input cancelling that correction.
+
+On capable servers scissors round to a base boundary and call the revision-guarded
+exact-cut API. All sequence and original source-bin references remain available.
+Native raster extents are refreshed when a cut adds a shared reference. Older
+servers retain their existing endpoint and its explicit bin-removal warning.
+The guide and actual exact-cut request use the same boundary convention.
+
+Sequence-scale viewport diagnostics sample native BINS, rather than treating
+expanded base colors as new matrix observations. Expected-profile requests accept
+`unit=PIXELS` (default) or `BINS`, with independent caches. Histograms label native
+matrix references at base scale. Both cache axes retain unordered-source-pair
+support weighting. Figure export holds its coordinate basis while rendering and
+restores the user's position afterward.
+
+Qualification currently covers the deterministic primary 4 kb contact/FASTA/BED6
+workflow, real cuts producing a one-base fragment, reversal, keyboard history,
+wheel zoom to letters, overview navigation, viewport PNG/SVG/PDF and session
+save/close/restore. See `scripts/check_sequence_view_browser.py` and the validation
+ledger. This does not yet qualify the full secondary/disjoint-pyramid UI matrix,
+all track formats, hidden/no-bin 1D features, feature-edge cut menus, selection and
+whole-map exports, or native desktop platforms. Quantitative 1D tracks still sample
+stored native bins before their positions are mapped onto the base axis; full
+base-scale quantitative and hidden-component track behavior remains P1/P4 work.

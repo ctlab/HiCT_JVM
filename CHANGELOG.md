@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Add a uniform base-scale map with explicit native-bin labels, aligned FASTA/features, pointer-anchored zoom and portable saved view coordinates.
+- Use sequence-preserving exact scissors on capable servers, refresh raster extents after cuts, and separate native-bin expected profiles from visible-bin profiles.
+
 - Keep native-resolution rulers and sequence coordinates aligned with partial source bins after contig edits, including reversed fragments.
 
 - Keep notification stacks away from visualization controls on smaller windows.

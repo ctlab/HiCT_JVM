@@ -21,7 +21,7 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: guarded exact API, source synchronization, v4 replay, long offsets and opt-in approximate Cooler export implemented; shared-bin expected fitting and histogram sample semantics verified; sequence-grid backend verified; scissors/feature UI, main-map sequence-scale integration and broader qualification pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary cuts/FASTA/BED6/wheel/overview/viewport exports/session workflow verified; feature-edge cuts, broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
@@ -55,9 +55,9 @@ for native-level bp/bin/pixel conversion and fractional interpolation. Older
 servers and synthetic guidance levels retain their previous mapping path.
 Focused browser evidence: `/tmp/hict-bin-geometry-focused/fragment-geometry.json`.
 All bases of the independent 4 kb fixture were checked against enumerated source
-intervals at 100/200 bp after a cut and reversal. This does not change cut
-semantics yet. Legacy destructive split replay and coarse empty footprints are
-still preserved until the new exact operation is implemented.
+intervals at 100/200 bp after a cut and reversal. That prerequisite alone did not
+change cut semantics. Exact operations and their main-map integration are
+described below; legacy destructive split replay remains readable.
 
 ## P1 exact library cuts and sessions
 
@@ -98,8 +98,8 @@ arbitrary pipeline outputs, and are labeled accordingly. See
 [the method and limits](shared-bin-statistics.md). Chromium verified four fitting
 windows against an independent enumeration with zero cell error, O/E controls,
 visible histogram labels and unchanged native bytes:
-`/tmp/hict-shared-expected-qualified/results.json`. Large-map performance and
-sequence-scale geometry are still unqualified.
+`/tmp/hict-shared-expected-qualified/results.json`. Large-map performance remains
+unqualified; primary sequence-scale geometry is covered by the later workflow below.
 
 Explicit approximate Cooler export is implemented through the library, CLI,
 single/batch jobs and the matrix export dialog. It scans original unordered
@@ -139,20 +139,37 @@ bounds now accommodate shared assembly references, and numeric BINS track inputs
 retain hidden-bin weights/features. Chromium decoded every PNG channel for both
 sources and two levels with standard/graph renderers, with zero error and no
 page errors: `/tmp/hict-sequence-grid-qualified/results.json`. See
-[the rendering contract](sequence-scale-rendering.md). This is a backend primitive;
-the current WebUI still uses its native bin-grid geometry. Main-map transitions,
-rulers, FASTA, selections, exports and exact-cut entry points must be integrated
-and qualified together before enabling the scissors.
+[the rendering contract](sequence-scale-rendering.md).
 
-The scissors still use the historical endpoint. Before switching the UI, finish
-sequence-scale display and broader shared-bin qualification. Source offsets now use
+The main WebUI now switches to a uniform base axis on capable servers, with an
+explicit native-bin status, separate native coordinate snapshot and bounded
+sequence-grid tiles. Real scissors use the guarded exact-cut endpoint. Native
+raster extents grow with shared references. Rulers, FASTA and BED6 feature positions,
+wheel pointer anchors, overview projection/clicks, BP saved views, keyboard history,
+viewport PNG/SVG/PDF and portable session restoration passed the deterministic
+4 kb primary-source browser workflow. Eight wheel steps reached readable FASTA
+letters without changing the base under the pointer. All 4,000 IUPAC bases remain
+in their exact reverse-complement order and the source file hash is unchanged.
+Evidence: `/tmp/hict-sequence-view-browser-19/results.json` (17 checks, no page
+errors). PNG and PDF output were visually inspected. BINS and PIXELS expected
+profiles now have independent caches; both fit-window isolation probes match an
+independent oracle exactly: `/tmp/hict-shared-expected-bins-browser-03/results.json`.
+
+This is a qualified primary workflow, not completion of P1. Quantitative 1D
+tracks still sample stored bins, and hidden/no-bin track components, the full
+secondary/disjoint-pyramid UI matrix, feature-edge cutting, selection/whole-map
+exports, saved-bookmark migration, large-map latency and platform/package gates
+remain open. The browser served the current WebUI distribution separately from
+the JVM artifact; final embedded-package qualification is still required.
+
+Source offsets now use
 longs throughout descriptors, cut lineage, AGP slices, FASTA calls and responses.
 Portable sessions also validate the complete source interval against the maximum
 exact JavaScript integer. A tiny contact fixture with a declared 3 Gb contig
 validates nested cuts past 2.5 Gb, both-strand historical cut replay, AGP slices,
-compact responses and actual session save/close/reopen. This does not qualify
-large-FASTA I/O or fix the stretched display of a short fragment at coarse levels.
-P1 is not complete.
+compact responses and actual session save/close/reopen. Large-FASTA I/O remains
+unqualified. Native-level displays retain reference bins; sequence-scale displays
+clip short fragments to their retained base widths. P1 is not complete.
 
 ## Mandatory release gates
 
