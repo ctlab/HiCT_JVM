@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Show a viewport signal histogram below the color slider with sampled-data labels, threshold marks and Fit levels, and reserve transfer capacity for interactive requests.
+- Preserve missing O/E support as missing in numeric diagnostics, while keeping measured zeros distinct and using meaningful positive ratios for fitted O/E limits.
+
 - Edit the active primary O/E palette in Rendering Pipeline with shared presets, live preview, safe delayed updates and palette import/export, while preserving the Observed graph and secondary layer.
 - Reload sidebar changes when returning from palette Preview and keep palette controls usable in compact windows.
 

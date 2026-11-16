@@ -904,8 +904,10 @@ paths:
       summary: Fetch rectangular submatrix as numeric tensor-ready payload
       description: |
         `TRADITIONAL_NORMALIZED` follows the active visualization settings. When the UI is set to `Expected` or `O/E`,
-        the returned signal uses a distance-expected estimate computed from the fetched query window after the selected
-        raw-or-balanced normalization steps.
+        the returned signal uses the active distance-expected profile when it covers the query window,
+        otherwise a profile fitted to the query window after the selected raw-or-balanced normalization steps.
+        Undefined O/E support is missing (NaN in floating-point binary output and null in JSON),
+        matching transparent map cells. A supported measured zero remains zero.
         Assembly axes reference original source bins. Exact cuts can display the same
         bin more than once. These references must not be summed as independent
         observations. `includeBinProvenance: true` with JSON returns compact physical
@@ -2874,6 +2876,7 @@ components:
           default: TRADITIONAL_NORMALIZED
           description: |
             `TRADITIONAL_NORMALIZED` applies the currently selected visualization normalization and display mode.
+            Undefined O/E ratios are NaN in floating-point binary output and null in JSON, distinct from measured zero.
         source:
           type: string
           enum: [PRIMARY, SECONDARY]
@@ -2913,7 +2916,7 @@ components:
             bpResolution: { type: integer, format: int64 }
             rowAxis: { $ref: '#/components/schemas/SourceBinAxis' }
             colAxis: { $ref: '#/components/schemas/SourceBinAxis' }
-        unit: { type: string, enum: [PIXELS] }
+        unit: { type: string, enum: [PIXELS, BINS] }
         startRowPx: { type: integer, format: int64 }
         endRowPx: { type: integer, format: int64 }
         startColPx: { type: integer, format: int64 }
@@ -2921,9 +2924,9 @@ components:
         values:
           type: array
           items:
-            oneOf:
-              - type: number
-              - type: integer
+            type: number
+            nullable: true
+            description: Numeric signal or raw count, with null for nonfinite or missing signals.
         rowWeights:
           type: array
           items: { type: number }

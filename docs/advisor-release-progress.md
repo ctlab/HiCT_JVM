@@ -26,7 +26,7 @@ describe earlier releases; they must not override the decisions below.
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
-| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help verified against both sources; O/E colors/alpha, persistence, shared presets, active primary O/E pipeline editor, ratio-palette nodes and stable/live threshold controls implemented and Chromium verified; inline viewport histogram/levels and broader qualification pending |
+| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds and inline viewport histogram/percentile fitting implemented and Chromium verified; normalization/refit draft race, draggable midpoint, broader native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
@@ -511,3 +511,44 @@ are in reinforcement-validation.md. No JVM runtime code changed in this incremen
 This implements the direct active-O/E editor and preset part of item 19; inline
 viewport histogram/levels (item 22), native/package, performance and other release
 and publication gates remain open. P6 and the overall goal remain in progress.
+
+
+## Inline viewport histogram and sample-based levels
+
+A compact histogram now sits under the color slider, aligned with its threshold
+marks and linear/log sensitivity axis. It refreshes on navigation, source/input
+changes and raster revisions. Native bin-reference sampling at letter zoom avoids
+counting every FASTA letter as another contact. Large views explicitly say Sampled
+viewport and use two-dimensional block strata, with at most 65,536 cells and four
+concurrent queries. A failed refresh clears the old curve and offers Retry.
+
+Fit levels uses exact sample percentiles, changes actual map colors and preserves
+contacts, numeric graph inputs and the other source. O/E uses positive ratios for
+its logarithmic bounds while retaining measured zeros in the histogram. Missing
+expected support stays NaN/null in binary/JSON diagnostics, matching transparent
+map cells. An empty ordinary viewport keeps zero at the lower endpoint color.
+API documentation now states the nullable-value and BINS contracts.
+
+A cold sampled pan exceeded 150 ms before limiting image transfers. Traces showed
+browser-side request stalls during tile loading; this indicates connection pressure,
+not proof of the entire outlier's cause. Main-map/minimap image budgets now sum to
+four, leaving HTTP/1 capacity for interactive queries. Two fresh final runs observe
+at most four image transfers and meet the 150 ms fixture gate: sampled pans are
+28.9–31.3 ms and 25.5–28.0 ms. Dense-map/packaged performance remains unqualified.
+
+All 185 final browser scenarios pass, plus an independent 13-case focused repeat.
+Artifact details are recorded in reinforcement-validation.md.
+Full JVM tests pass (589 tests, seven optional skips, zero failures/errors), as do
+the WebUI build and numerical checks. User guidance is viewport-histogram.md.
+Draggable midpoint/gamma, native/package, dense-map/soak/accessibility and remaining
+release/publication gates are still pending. Item 22/P6 is not complete.
+
+A separate existing race was reproduced during setup: choosing normalization and
+immediately entering Upper=100 can end at 11 after a late normalization refit.
+The focused histogram fixture now awaits the real normalization/refit promise and
+verifies the initial 100 write before testing Fit. This isolates the histogram;
+it does not resolve or qualify that rapid-edit workflow. Fix before release:
+serialize/coalesce source-scoped visualization writes and protect newer user drafts
+from hydration/refitting. Add a delayed-refit browser regression for thresholds,
+transforms and source switching, proving actual graph/options/pixels and session
+state. This is the next P6 prerequisite alongside the draggable midpoint.

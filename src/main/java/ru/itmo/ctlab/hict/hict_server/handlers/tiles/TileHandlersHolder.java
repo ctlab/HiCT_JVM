@@ -1121,7 +1121,7 @@ public class TileHandlersHolder extends HandlersHolder {
       case TRADITIONAL_NORMALIZED -> {
         final var expectedProfile = "PRIMARY".equals(requestedSource)
           ? resolveExpectedProfileForTile(map, requestedChunkedFile, matrixWithWeights, options, visibleOnly) : null;
-        signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processTile(matrixWithWeights, options, expectedProfile).values();
+        signalMatrix = requestedChunkedFile.tileVisualizationProcessor().processDisplaySignal(matrixWithWeights, options, expectedProfile).values();
       }
       case PIPELINE_SIGNAL -> {
         if ("SECONDARY".equals(requestedSource)) {
@@ -1704,7 +1704,7 @@ public class TileHandlersHolder extends HandlersHolder {
     for (int row = 0; row < rows; row++) {
       final var sourceRow = matrix[row];
       for (int col = 0; col < cols; col++) {
-        result.add(sourceRow[col]);
+        result.add(Double.isFinite(sourceRow[col]) ? sourceRow[col] : null);
       }
     }
     return result;

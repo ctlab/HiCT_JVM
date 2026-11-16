@@ -174,6 +174,13 @@ public class TileVisualizationProcessor {
     return processTile(rawTile, visualizationOptions, expectedProfile, false);
   }
 
+  /** Numeric display signal, preserving undefined O/E as NaN rather than measured zero. */
+  public TileWithWeights processDisplaySignal(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                              final @NotNull SimpleVisualizationOptions options,
+                                              final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    return processTile(rawTile, options, expectedProfile, true);
+  }
+
   private TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
                                      final @NotNull SimpleVisualizationOptions visualizationOptions,
                                      final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile,
@@ -296,7 +303,7 @@ public class TileVisualizationProcessor {
     final var input = rawTile.matrix();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
-    final var normalized = processTile(rawTile, options, expectedProfile, true);
+    final var normalized = processDisplaySignal(rawTile, options, expectedProfile);
     if (signalObserver != null) signalObserver.accept(normalized.values());
     final var colormap = options.getColormap();
     if (colormap instanceof SimpleLinearGradient gradient) {

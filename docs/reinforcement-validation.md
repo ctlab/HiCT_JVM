@@ -3942,3 +3942,106 @@ Combined SFX/native packages, other platforms, dense-map latency, retina/touch,
 full accessibility, figure-output matrix and mixed soak remain unqualified.
 Viewport histogram/levels and the remaining advisor/release/publication gates are
 still pending. Protected plans/files are unchanged. Nothing pushed, merged or tagged.
+
+
+## Inline viewport histogram, fitting and missing O/E diagnostics
+
+Implemented a 64-bin inline curve inside SignalRangeControl with aligned threshold
+marks, exact-sample percentile fitting, source/input selection, bounded querying,
+cancellation and failed-refresh Retry. Vertical square-root count scaling and
+bounded Catmull–Rom smoothing are drawing aids only. Out-of-axis samples are counted
+separately. A 2-D stratum grid replaces flattened sampling, which could select only
+one column on square matrices. Interactive previews retain at most 65,536 cells
+in 16 blocks of 64×64 with four concurrent queries. Existing detailed/1-D inspectors
+retain their previous default block sizes and sequential I/O.
+
+TRADITIONAL_NORMALIZED numeric queries use the renderer's missing-O/E mask. Supported
+zero and missing expected support are distinct (NaN in binary, null in JSON).
+OpenAPI documents nullable signals, BINS response units and matching expected-profile
+reuse. Legacy internal finite normalization remains available. A real-fixture JVM
+regression compares within-domain signals, zeros, missing cross-domain support and
+image alpha. O/E fitted limits use positive percentiles with 0.5/2 fallbacks where
+samples do not supply a side of neutral 1. An ordinary empty viewport fits 0–1,
+keeping zero at the lower color instead of inventing midrange contrast.
+
+A diagnostic cold pan took 558.6 ms (/tmp/hict-inline-hist-ui-10); the next pans were
+47.4 and 31.1 ms. Traced repeat -11 showed matrix request elapsed times dominated
+by browser-side stalls before transmission during tile loading (e.g. ~35 ms before
+send versus ~2 ms to first response); tile requests also queued before transmission.
+This indicates HTTP/1 connection pressure, though it does not prove the entire
+outlier's cause. OpenLayers now budgets three image loads for the main map and
+one for the minimap. It retains queue priority and existing PNG/binary cancellation
+semantics while reserving connection capacity for interactive requests. No new
+transport or server-priority bypass was introduced. Final independent cold runs
+below verify a peak of four actual tile transfers and the 150 ms fixture gates.
+
+npm run build:web passes (/tmp/hict-inline-hist-web-08.log), including all TypeScript
+and Node suites, with the existing large-chunk warning. Numerical checks cover exact
+quantiles, flat/zero signals, signed/zero/missing/outside bins, logarithmic axis
+binning, bounded spline controls, 2-D sample coverage and query/concurrency/memory
+bounds. Formatting, Python compile and diff checks pass. Full ./gradlew test shadowJar
+-x copyWebUI --offline passes: 589 tests, zero failures/errors, seven optional skips
+(/tmp/hict-inline-hist-jvm-full-03.log), including the corrected API resource schema.
+
+Final Chromium evidence, frozen UI/JAR, Linux DPR 1, disposable copies:
+
+- /tmp/hict-inline-hist-ui-14/results.json: 13 focused cases. Known 5×5 contacts
+  yield 25 finite cells/19 zeros. O/E yields 13 finite ratios/7 measured zeros and
+  excludes 12 unsupported cells; independent expected values include 1/6 and 0.6.
+  Numeric JSON distinguishes null from zero, and binary-driven curve counts agree.
+  Fit publishes limits and changes tile pixels while preserving contacts. Secondary
+  custom ×3 fitting reaches 33 with Primary graph/pixels unchanged. At 800×600 and
+  640×800 the chart/actions fit. Larger viewports explicitly sample 65,536 cells;
+  panning changes actual query windows. Empty fitting preserves zero-colored pixels.
+  Injected 503 clears stale data, disables Fit, preserves graph/options and recovers
+  through Retry. Sources and unexpected page/console-error checks pass.
+- The independent fresh-server repeat /tmp/hict-inline-hist-ui-15/results.json passes
+  the same 13 cases. -14 pan-latency.json: 8.4, 21.8, 17.1, 18.7 ms; its sampled
+  counterpart: 29.7, 28.9, 31.3 ms. -15: 10.8, 15.3, 15.6, 15.5 ms and 25.5, 28.0,
+  26.6 ms. Both assert the 150 ms bound and measure peakTileTransfers=4. Timing,
+  browser long-task and request traces are retained. These are isolated synthetic
+  fixture claims, not dense production-map or packaged-build qualification. The
+  tiny 17 bp source always fits at permitted zoom; varying cropped windows are
+  proved separately with the larger fixture.
+- /tmp/hict-inline-hist-oe-04/results.json and its display_mode_roundtrip and
+  signal_controls directories: 11+12+7 palette, processing, session, graph, Secondary,
+  Preview, delayed-write, drag and atomic-failure cases. Empty capture-phase window
+  errors across reloads are also checked by the O/E driver.
+- /tmp/hict-inline-hist-responsive-04/results.json: 15 responsive/navigation/control
+  cases. /tmp/hict-inline-hist-tracks-04/results.json and controls/results.json:
+  13+8 track/source/signal/resize cases.
+- /tmp/hict-inline-hist-regression-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-04/results.json:
+  all 90 established sequence, selection, scientific cut and save cases.
+- /tmp/hict-inline-hist-observed-04/browser/results.json: 12 Observed-editor cases.
+  /tmp/hict-inline-hist-legacy-04/browser/results.json: four detailed histogram
+  row/column/scalar, log/rebin/no-extra-I/O, mobile and cancel/retry cases. The detailed
+  driver uses the established controlled writable chooser. Both physical 154,317,488
+  byte real-map copies stay unchanged, SHA-256
+  8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317.
+
+Together: 185 passing browser scenarios with successful process exits. The
+independent 13-case focused repeat is counted separately. Visual review covers the inline O/E chart at 640 px,
+desktop thresholds and sampled captions. Earlier diagnostics corrected a debounced
+write wait, tooltip integer formatting, tiny-map full-extent assumption and the
+O/E/empty-region fitting policies. Initial Vite builds could not spawn Git inside
+the sandbox; permitted builds passed. Injected 503 console failures are expected
+only in that failure case.
+
+A separate existing normalization race appeared in -13: a user-entered Upper=100
+could be replaced by 11 when the preceding normalization refit finished. The focused
+fixture now awaits the real policy/refit promise, acknowledges and verifies its
+initial 100 commit before testing Fit. It does not qualify rapid edits during a
+refit. Source-scoped serialization/coalescing and protection of newer user drafts
+from refit/hydration remain mandatory release work, recorded in the progress ledger.
+
+Final development JAR hict_server-2.0.33-1f68b42-webui_0a1e9fd-fat.jar SHA-256:
+64fd988b0bddf228f2197ecdf72f2b20c1af69ea0746fbc5d6353defc367a429.
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+1fc967cb6fae8b6f9845884ff1ef8ae15f10d2126f21ecdbd3be3e20490da318.
+Acceptance serves these assets separately from the JAR's preceding embedded UI.
+Earlier code-equivalent JAR 974b9400… precedes the nullable/BINS schema correction.
+Combined SFX/native packages, other platforms, dense-map latency/soak, retina/touch,
+full accessibility and figure-output qualification remain pending. Draggable color
+midpoint/gamma is not delivered; O/E neutral must remain 1. P6 and the overall goal
+remain active. Protected plans/files are unchanged. Nothing pushed, merged or tagged.

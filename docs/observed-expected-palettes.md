@@ -20,6 +20,10 @@ limits fixed. **Use full loaded range** resumes loaded-tile limits;
 **Focus range** changes adjustment precision. A source, target or display-mode
 change starts a new slider domain. The rail marks neutral white at 1.
 
+The inline [viewport histogram](viewport-histogram.md) counts supported zeros and
+excludes missing O/E support. **Fit levels** uses positive sample percentiles for
+logarithmic bounds while keeping neutral at 1.
+
 With Show O/E active, **View → Rendering pipeline…** opens the
 **Primary O/E colormap** tab. It edits the active primary map even when the
 sidebar is displaying Secondary. Presets, endpoint colors and thresholds are the
