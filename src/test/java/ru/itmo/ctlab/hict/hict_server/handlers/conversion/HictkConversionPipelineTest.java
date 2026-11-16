@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -16,6 +17,23 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HictkConversionPipelineTest {
+  @Test
+  void overallProgressIncludesTheBudgetForStagesThatHaveNotStarted() {
+    var plan = List.of(
+      new HictkConversionPipeline.StageDefinition("metadata", "Metadata", 2),
+      new HictkConversionPipeline.StageDefinition("zoomify", "Zoomify", 3),
+      new HictkConversionPipeline.StageDefinition("import_hict", "Import", 5));
+    var lines = new ArrayList<String>();
+    HictkConversionPipeline.emitStage(lines::add, plan, "metadata", 1, "Ready");
+    HictkConversionPipeline.emitStage(lines::add, plan, "zoomify", 0, "Starting");
+    HictkConversionPipeline.emitStage(lines::add, plan, "zoomify", 0.5, "Halfway");
+    HictkConversionPipeline.emitStage(lines::add, plan, "zoomify", 1, "Ready");
+    HictkConversionPipeline.emitStage(lines::add, plan, "import_hict", 0, "Starting");
+    HictkConversionPipeline.emitStage(lines::add, plan, "import_hict", 1, "Ready");
+    assertEquals(List.of("0.2000", "0.2000", "0.3500", "0.5000", "0.5000", "1.0000"),
+      lines.stream().map(line -> line.split(" overall=")[1].split(" ")[0]).toList());
+  }
+
   @TempDir
   Path tempDir;
 

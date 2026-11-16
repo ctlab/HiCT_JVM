@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Show numeric overall progress for example conversions, accounting for later stages rather than reaching 100% after each stage.
+- Treat cancelled example conversions as an expected outcome, keep downloaded inputs, and provide a direct retry without a failure alert.
+
 - Keep Info current while zoom tiles load without reading tile pixels, and explain the yeast Micro-C example's source-supported short-range empty band.
 - Dismiss map-specific masking notices safely when changing maps, and support numeric pipeline queries across different resolution pyramids, including hidden bins.
 

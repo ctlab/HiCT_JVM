@@ -78,7 +78,7 @@ public final class ExampleJobsBrowserServer {
     var catalog = new JsonObject().put("schemaVersion",1).put("catalogId","jobs-fixture")
       .put("sections", new JsonArray().add(new JsonObject().put("id","jobs-fixture").put("title","Download workflow fixtures").put("order",0)));
     var examples = new JsonArray();
-    for (var id : List.of("automatic","manual","cancel","failure","unknown","changed","starting","convert-auto","convert-close","convert-change","convert-late","convert-fail")) {
+    for (var id : List.of("automatic","manual","cancel","failure","unknown","changed","starting","convert-auto","convert-close","convert-change","convert-late","convert-fail","convert-cancel")) {
       boolean converting = id.startsWith("convert-");
       var filePayload = contentFor.apply(id);
       var fileHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(filePayload));

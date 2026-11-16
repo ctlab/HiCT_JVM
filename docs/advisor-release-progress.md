@@ -755,3 +755,32 @@ P7 remains active for live conversion cancellation, wider wizard/public examples
 and catalog/session provenance transfer. P8/P9 and remaining release/publication
 qualification remain open. Protected plans and owner files remain unchanged;
 nothing pushed, merged or tagged.
+
+## Overall conversion progress and live cancellation
+
+Example conversion progress is now determinate even when its context contains no
+download byte count. Only unknown-length example downloads use an indeterminate
+bar. The backend's overall fraction now includes every stage's budget: previously
+each stage reached 100% because the denominator ended at that stage. A focused
+weighted-stage regression verifies continuity across transitions. Cancellation is
+shown as an expected outcome, with retained-input and focused retry guidance,
+without a failure alert or an Open result action for the cancelled attempt.
+
+The final Linux browser check pauses an identified, real bundled hictk zoomify
+child of the owned test server. Cancel terminates that child, removes unpublished
+output and staging, preserves matrix/reference hashes and keeps the current map.
+Retry creates a separate attempt and opens the completed recipe with its 17-base
+reference. The original attempt remains cancelled. Cancellation HTTP acknowledgement
+was 23.5 ms on this host; this is not a throughput or cross-platform benchmark.
+The native pipeline temporary directory was also confirmed removed.
+
+Final validation: 603 JVM tests, zero failures/errors, seven optional skips; WebUI
+build/type/numerical checks; 42 browser cases (26 examples, ten other services and
+six failure-reporting cases). Screenshots confirm numeric progress, neutral
+cancellation, focused retry and the resulting linked reference. Exact artifacts,
+process identity and evidence are in reinforcement-validation.md. This closes the
+stated live-conversion-cancellation acceptance on Linux, not the platform matrix.
+P7 remains active for wider wizard/public examples and catalog/session provenance
+transfer. P8/P9 and remaining scientific, performance, native and publication/release
+qualification remain open. Protected plans and owner files remain unchanged;
+nothing pushed, merged or tagged.

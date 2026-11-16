@@ -17,6 +17,11 @@ def main():
     for key in ("jar", "webui", "data-dir", "output"):
         parser.add_argument("--" + key, required=True)
     parser.add_argument("--hdf-python", default=sys.executable)
+    parser.add_argument(
+        "--live-cancellation",
+        action="store_true",
+        help="Linux: pause an owned, real hictk child to qualify running-job cancellation",
+    )
     args = parser.parse_args()
     data, out = Path(args.data_dir).absolute(), Path(args.output).absolute()
     if any(p != p.resolve() or not p.is_relative_to("/tmp") for p in (data, out)):
@@ -182,6 +187,7 @@ def main():
                 held_conversions = []
                 hold_conversion_start = False
                 conversion_submissions = []
+                cancellation_evidence = {}
                 cors = {"Access-Control-Allow-Origin": url.rstrip("/")}
 
                 def combined_jobs(route):
@@ -206,7 +212,13 @@ def main():
                         if route.request.post_data_json["id"].startswith("download/")
                         else api.url
                     )
-                    route.continue_(url=host + "/jobs/cancel")
+                    started = time.monotonic()
+                    response = route.fetch(url=host + "/jobs/cancel")
+                    cancellation_evidence[route.request.post_data_json["id"]] = {
+                        "acknowledgementMs": (time.monotonic() - started) * 1000,
+                        "httpStatus": response.status,
+                    }
+                    route.fulfill(response=response)
 
                 def start_conversion(route):
                     response = route.fetch(url=api.url + "/convert/jobs")
@@ -931,6 +943,150 @@ def main():
                     ).to_be_in_viewport()
                     assert retry_card.evaluate("e=>e.contains(document.activeElement)")
                     retry_dialog.get_by_role("button", name="Close", exact=True).click()
+
+                    if args.live_cancellation:
+                        from owned_conversion_process import PausedHictkChild
+
+                        with PausedHictkChild(api.process.pid) as paused:
+                            cancelled_conversion = begin_conversion("convert-cancel")
+                            deadline = time.monotonic() + 30
+                            while not paused.ready.is_set():
+                                assert time.monotonic() < deadline, paused.error
+                                page.wait_for_timeout(25)
+                            assert not paused.error, paused.error
+                            p = panel(True)
+                            row = p.locator(
+                                '[data-job-id="' + cancelled_conversion + '"]'
+                            )
+                            expect(row).to_contain_text("running")
+                            progress = row.get_by_role("progressbar")
+                            expect(progress).to_have_attribute(
+                                "value", re.compile(r"[0-9]")
+                            )
+                            running = next(
+                                j for j in jobs() if j["id"] == cancelled_conversion
+                            )
+                            assert 0 < running["progress"] < 1, running
+                            expect(progress).to_have_attribute(
+                                "value", str(running["progress"])
+                            )
+                            example_dir = data / "examples/jobs-convert-cancel"
+                            output = example_dir / "example.hict.hdf5"
+                            assert not output.exists()
+                            assert list(example_dir.glob(".hict-incomplete-*"))
+                            inputs = {
+                                f.name: hashlib.sha256(f.read_bytes()).hexdigest()
+                                for f in example_dir.iterdir()
+                                if f.name in ("example.mcool", "example.fa")
+                            }
+                            record(
+                                "running-example-conversion-shows-numeric-stage-progress"
+                            )
+                            with page.expect_response(
+                                lambda response: urlparse(response.url).path
+                                == "/jobs/cancel"
+                            ):
+                                row.get_by_role(
+                                    "button", name="Cancel", exact=True
+                                ).click()
+                            finished = converted_job(cancelled_conversion, "cancelled")
+                            expect(row).to_contain_text("Conversion stopped.")
+                            expect(row.get_by_role("alert")).to_have_count(0)
+                            expect(
+                                row.get_by_text("Error details", exact=True)
+                            ).to_have_count(0)
+                            expect(
+                                row.get_by_role(
+                                    "button", name="Open result", exact=True
+                                )
+                            ).to_have_count(0)
+                            expect(
+                                row.get_by_role("button", name="Cancel", exact=True)
+                            ).to_have_count(0)
+                            assert not finished["outputs"]
+                            assert filename() == "tiny-fine.hict.hdf5"
+                            deadline = time.monotonic() + 10
+                            while paused.alive() or list(
+                                example_dir.glob(".hict-incomplete-*")
+                            ):
+                                assert (
+                                    time.monotonic() < deadline
+                                ), "Owned process or incomplete output survived cancellation"
+                                page.wait_for_timeout(25)
+                            assert not output.exists()
+                            assert inputs == {
+                                name: hashlib.sha256(
+                                    (example_dir / name).read_bytes()
+                                ).hexdigest()
+                                for name in inputs
+                            }
+                            evidence = cancellation_evidence[cancelled_conversion]
+                            assert (
+                                evidence["httpStatus"] == 200
+                                and evidence["acknowledgementMs"] < 1000
+                            ), evidence
+                            evidence.update(
+                                {
+                                    "pausedProcess": paused.identity,
+                                    "sourceHashes": inputs,
+                                    "noSurvivingChild": True,
+                                    "noPublishedOrIncompleteOutput": True,
+                                }
+                            )
+                            record(
+                                "cancel-running-example-keeps-inputs-removes-output-and-stops-owned-hictk"
+                            )
+                        row.get_by_role(
+                            "button", name="Open Examples to retry", exact=True
+                        ).click()
+                        retry_dialog = page.get_by_role(
+                            "dialog", name="Examples", exact=True
+                        )
+                        retry_card = card(retry_dialog, "convert-cancel")
+                        retry_button = retry_card.get_by_role(
+                            "button", name="Open example", exact=True
+                        )
+                        expect(retry_button).to_be_in_viewport()
+                        assert retry_card.evaluate(
+                            "e=>e.contains(document.activeElement)"
+                        )
+                        retry_button.click()
+                        deadline = time.monotonic() + 60
+                        retried = None
+                        while retried is None:
+                            candidates = [
+                                c
+                                for c in conversion_submissions
+                                if c["request"].get("exampleId")
+                                == "jobs-convert-cancel"
+                            ]
+                            if len(candidates) == 2:
+                                retried = (
+                                    "conversion/" + candidates[-1]["response"]["jobId"]
+                                )
+                                break
+                            assert time.monotonic() < deadline, candidates
+                            page.wait_for_timeout(50)
+                        assert retried != cancelled_conversion
+                        converted_job(retried)
+                        await_file("convert-cancel")
+                        assert_reference("convert-cancel")
+                        assert inputs == {
+                            name: hashlib.sha256(
+                                (example_dir / name).read_bytes()
+                            ).hexdigest()
+                            for name in inputs
+                        }
+                        assert not list(example_dir.glob(".hict-incomplete-*"))
+                        assert (
+                            next(j for j in jobs() if j["id"] == cancelled_conversion)[
+                                "state"
+                            ]
+                            == "cancelled"
+                        )
+                        record(
+                            "cancelled-example-retries-as-a-new-job-and-opens-its-reference"
+                        )
                     page.get_by_role(
                         "button", name="Open notifications", exact=True
                     ).click()
@@ -1002,6 +1158,7 @@ def main():
                                     "unknownExample": 404,
                                     "staleCancellation": 404,
                                 },
+                                "cancellationEvidence": cancellation_evidence,
                                 "sourceSha256": source_hash,
                                 "downloadedSha256": fixture_info["sha256"],
                                 "errors": check.errors,

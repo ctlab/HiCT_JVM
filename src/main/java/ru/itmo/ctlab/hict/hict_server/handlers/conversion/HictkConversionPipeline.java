@@ -1184,17 +1184,16 @@ public final class HictkConversionPipeline {
     return new IllegalStateException(message.toString());
   }
 
-  private static void emitStage(final @NotNull Consumer<String> logger,
+  static void emitStage(final @NotNull Consumer<String> logger,
                                 final @NotNull List<StageDefinition> stagePlan,
                                 final @NotNull String stageId,
                                 final double stageProgress,
                                 final @NotNull String detail) {
     final var boundedStageProgress = Math.max(0.0d, Math.min(1.0d, stageProgress));
     double completedWeight = 0.0d;
-    double totalWeight = 0.0d;
+    final double totalWeight = stagePlan.stream().mapToDouble(StageDefinition::weight).sum();
     double currentWeight = 0.0d;
     for (final var stage : stagePlan) {
-      totalWeight += stage.weight();
       if (stage.id().equals(stageId)) {
         currentWeight = stage.weight();
         break;
@@ -1268,7 +1267,7 @@ public final class HictkConversionPipeline {
     }
   }
 
-  private record StageDefinition(@NotNull String id, @NotNull String label, double weight) {
+  record StageDefinition(@NotNull String id, @NotNull String label, double weight) {
   }
 
   private record HicMetadata(@NotNull List<Long> resolutions, @NotNull String assembly) {

@@ -4500,3 +4500,54 @@ SFX/native release. Broader sequence/cut/native/performance suites were not reru
 Live conversion cancellation, larger/public examples, wider wizard workflows,
 catalog/session provenance transfer and release/publication gates remain open.
 Protected plans/owner files are unchanged; nothing pushed, merged or tagged.
+
+
+### Stage-weighted conversion progress and live cancellation
+
+Example conversion details carry a title/recipe rather than byte totals. Jobs now
+uses numeric conversion progress while unknown-length example downloads stay
+indeterminate. The backend previously normalized against only the stages up to the
+current one, causing repeated 100% values; it now includes all stage weights.
+The focused regression `/tmp/hict-conversion-cancel-focused-01.log` verifies
+20%, 20%, 35%, 50%, 50%, 100% across an independent 2/3/5 stage budget. The final
+`/tmp/hict-conversion-cancel-jvm-02.log` and XML pass 603 tests with zero
+failures/errors and seven optional skips. WebUI
+`/tmp/hict-conversion-cancel-web-01.log` build/type/numerical checks and explicit
+Prettier pass; the updated browser driver and new process helper pass Black.
+
+Final `/tmp/hict-conversion-cancel-ui-02/results.json`: 26 actual-control cases,
+empty errors, exit zero. The optional --live-cancellation Linux check pauses an
+actual owned hictk zoomify child using SIGSTOP, identified through /proc by parent,
+PID and kernel start time. It does not replace tools, job states, output or process
+responses. Pausing makes a normally brief stage observable; the bar correctly
+shows the server's numeric fraction below 100%. Clicking Cancel returns HTTP 200
+in 23.467 ms, stops the identified child and removes job staging without publishing
+an output. The current map remains tiny-fine. Both input hashes remain unchanged:
+example.fa `21844eb908519057b7ef6f3dd5774748b6156aa2062ff303522bfb22e968772d`,
+example.mcool `b60d964ac3e1d94777da8f9c9b2de8b0c64bf2723c11456262f200b55d9427e4`.
+The neutral cancelled row has no alert, error detail or Open result, and its retry
+focuses the matching card. A new job completes through the actual bundled tools,
+links and exports all 17 reference bases, and preserves the cancelled attempt.
+`native-temporary-cleanup.json` independently confirms removal of the exact native
+pipeline directory recorded in the stopped process command. The process guard
+resumes its owned child on diagnostic failure so normal server cleanup can run.
+This qualifies cancellation on this host, not unpaused throughput or other OSes.
+
+`/tmp/hict-conversion-cancel-other-01/browser/results.json` adds ten ordinary
+conversion/job-service/FASTA-only AGP cases; failures-01/browser adds six injected
+failure-reporting cases. All exit zero, giving 42 browser cases on the frozen pair.
+Screenshots were inspected for the partial numeric bar, neutral cancellation,
+focused retry and the resulting linked FASTA. Initial ui-01 exposed the actual
+backend progress defect and compared a first-rendered value before the next Jobs
+poll; it is excluded. The corrected driver waits for normal polling and hashes
+only downloaded payloads, since verification legitimately refreshes the manifest.
+
+Frozen dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`90c4afd8b2dafc76c9965963a79cb8236e30ae4e5ba3180c9d516fc55f0a0f1f`.
+Development JAR `hict_server-2.0.41-0ef23f9-webui_0b930de-fat.jar` SHA-256:
+`8cdad5c0febeaec42a0839e16456ef4a78ca80c593f3d7983b7cf52890361b3e`.
+Assets are served separately; this does not qualify combined SFX/native packages.
+Broader rendering, sequence, cut, performance and platform suites were not rerun.
+Wider wizard/public example qualification, catalog/session provenance transfer,
+P8/P9 and remaining release/publication gates remain open. Protected plans and
+owner files are unchanged; nothing pushed, merged or tagged.

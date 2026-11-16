@@ -33,13 +33,23 @@ and open**. Its result can also be opened from Jobs. **Assembly → Export to AG
 is available without contact data and describes the assembled sequence coordinates.
 
 Quick-start recipes that need matrix conversion hand progress to a named conversion
-job. Closing Jobs lets conversion finish and revokes automatic opening. Its **Open
+job. Its progress bar uses the overall conversion stages, including work that has
+not started yet. It is an estimate by stage; durations vary by dataset.
+Unknown-length downloads keep a separate indeterminate bar.
+Closing Jobs lets conversion finish and revokes automatic opening. Its **Open
 result** returns through the example recipe, verifies cached inputs, reuses the
 completed conversion and links the recipe FASTA. Changing workspace also revokes
 automatic opening. Failed conversions remain in Jobs with a short failure message, expandable
 **Error details** and **Open Examples to retry**, focused on the matching card. Recipes with assembly layouts/tracks retain the opening wizard. A page
 reload does not restore an automatic-opening intent; use Jobs or the example card.
 Stopping the server cancels active work rather than merely hiding progress.
+
+Cancelling an example conversion stops its active tool and removes incomplete
+conversion output. The downloaded matrix and reference remain available. A
+cancelled conversion has no result to open and does not replace the current map;
+**Open Examples to retry** focuses its card. Retrying creates a new conversion job
+and opens the completed recipe with its reference. Cancellation is an expected
+outcome, so it is shown without a failure alert.
 
 A catalog change invalidates the earlier ready marker. Reopening verifies the files
 against the current declaration and refreshes the recorded recipe and attribution.
