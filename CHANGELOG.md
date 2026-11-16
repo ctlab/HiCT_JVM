@@ -18,6 +18,8 @@
 
 ### Sequence analysis and sessions
 
+- Expose optional physical source-bin identities in numeric matrix queries, so repeated references after exact cuts can be identified without changing contact values.
+
 - Preserve exact-cut source bins across secondary maps with different resolutions and saved sessions, and reject exact-cut API requests from an outdated assembly view.
 
 - Save sessions in format v4 with explicit support for exact sequence-cut lineage, while retaining older session readers and historical cut behavior.

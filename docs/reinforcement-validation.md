@@ -2613,3 +2613,29 @@ The existing session suite passed all 18 checks with zero page errors
 initially lacked the harness's visualization options required for session capture;
 adding the production-equivalent options fixed it. A repeated-success notification
 needed a nonunique-toast-aware browser locator. These were test setup failures.
+
+## Advisor P1 numeric source-bin provenance (2026-11-16)
+
+`/matrix/query` now labels source-bin references versus pipeline display-grid
+expressions in JSON and browser-readable headers. Optional JSON-only provenance
+returns compact, oriented physical-bin runs and per-window reference/unique-bin
+counts. Padding is unrepresented by runs. Physical identity includes source and
+resolution as well as stripe and index. Run union accounting distinguishes
+different stripes and overlapping reversed ranges without expanding bins in
+memory. Raw and weighted values are unchanged. Statistics counts are explicitly
+labeled `DISPLAY_CELLS`; this is not a claim of independent-contact statistics.
+
+Unit/HTTP regressions check original contact parity after repeated cuts and
+reversal, query clipping and padding, hidden-vs-all-bin axes, immutable runs,
+cross-stripe identities, primary/secondary queries, opt-in behavior, binary
+semantics headers and rejection of binary provenance requests. All 528 JVM tests
+passed with zero failures/errors and seven optional skips. No WebUI source changed.
+
+Chromium passed all ten extended exact-cut/session checks against the built JAR,
+including actual cross-origin header access, every numeric cell mapped to its
+original physical bins and conservation after deduplicating unordered contacts.
+The 4 bp level has seven references to five unique bins; 10 bp has five references
+to two bins. Both retain the independently computed unique contact sum of 22.
+Evidence: `/tmp/hict-provenance-browser/results.json`; restored screenshot inspected.
+Remaining shared-bin expected/histogram accounting and approximate exports still
+require implementation and qualification before switching scissors.

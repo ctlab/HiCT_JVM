@@ -49,6 +49,11 @@ def main():
             check = BrowserCheck(page, output)
             app.http('/open', {'filename': 'tiny-primary.hict.hdf5'})
             app.http('/link_fasta', {'fastaFilename': 'tiny.fa'})
+            original_contacts = {}
+            for resolution, count in ((4, 5), (10, 2)):
+                original_contacts[resolution] = json.loads(app.http('/matrix/query', {
+                    'bpResolution': resolution, 'rows': count, 'cols': count,
+                    'signalMode': 'RAW_COUNTS', 'format': 'JSON'}))
             page.goto(f'http://127.0.0.1:{static.server_port}/')
             check.menu('File', 'Attach')
             check.settle()
@@ -130,6 +135,45 @@ def main():
             lengths = lambda: page.evaluate("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors.map(d=>d.contigLengthBp)")
             assert lengths() == [5,7,2,3], lengths()
             assert page.evaluate("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors.every(d=>d.contigSharedBinSlice===true)")
+            provenance_checks = []
+            for resolution in (4, 10):
+                count = page.evaluate("""r => window.__hictBenchmark.manager().contigDimensionHolder
+                    .contigDescriptors.reduce((n,d)=>n+d.contigLengthBins.get(r),0)""", resolution)
+                request = {'bpResolution': resolution,
+                    'rows': count, 'cols': count, 'signalMode': 'RAW_COUNTS', 'format': 'JSON',
+                    'includeBinProvenance': True}
+                response = page.evaluate("""async request => {
+                    const response=await fetch('http://localhost:5000/matrix/query', {
+                        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});
+                    return {status:response.status, semantics:response.headers.get('x-hict-cell-semantics'),
+                        tensor:await response.json()};
+                }""", request)
+                assert response['status'] == 200 and response['semantics'] == 'SOURCE_BIN_REFERENCES'
+                numeric = response['tensor']
+                assert numeric['cellSemantics'] == 'SOURCE_BIN_REFERENCES'
+                metadata = numeric['binProvenance']
+                assert metadata['source'] == 'PRIMARY' and metadata['bpResolution'] == resolution
+                axis = metadata['rowAxis']
+                assert axis == metadata['colAxis'] and axis['axisLength'] == count
+                bins = [None] * count
+                for run in axis['runs']:
+                    assert run['stripeId'] == 0
+                    for i in range(run['length']):
+                        bins[run['offset']+i] = run['firstBinInStripe'] + i*run['step']
+                original = original_contacts[resolution]
+                assert axis['uniqueSourceBins'] == len(set(bins)) == original['rows']
+                assert axis['referencedBins'] == count > axis['uniqueSourceBins']
+                unique_contacts = {}
+                for row, source_row in enumerate(bins):
+                    for col, source_col in enumerate(bins):
+                        value = numeric['values'][row*count+col]
+                        assert value == original['values'][source_row*original['cols']+source_col]
+                        unique_contacts[tuple(sorted((source_row,source_col)))] = value
+                original_total = sum(original['values'][r*original['cols']+c]
+                    for r in range(original['rows']) for c in range(r,original['cols']))
+                assert sum(unique_contacts.values()) == original_total
+                provenance_checks.append({'resolution': resolution, 'references': count,
+                    'uniqueBins': len(set(bins)), 'uniqueContactSum': original_total})
             page.locator('#hic-contact-map').click(position={'x':100,'y':100})
             with page.expect_response('**/assembly/history/restore') as undo:
                 page.keyboard.press('Control+z')
@@ -152,7 +196,8 @@ def main():
             assert not check.errors, check.errors
             page.screenshot(path=str(output/'api-cut-restored.png'))
             (output / 'results.json').write_text(json.dumps({'status': 'ok', 'state': state, 'sequence': sequence,
-                'checks': ['v4 save', 'exact restore', 'source-bin coordinate parity', 'gap-free sequence', 'save/close/reopen', 'guarded API cut', 'stale cut rejected', 'keyboard undo/redo', 'API cut save/restore']}, indent=2))
+                'provenance': provenance_checks,
+                'checks': ['v4 save', 'exact restore', 'source-bin coordinate parity', 'gap-free sequence', 'save/close/reopen', 'guarded API cut', 'stale cut rejected', 'keyboard undo/redo', 'API cut save/restore', 'physical-bin query parity and unique-contact conservation']}, indent=2))
             browser.close()
     finally:
         static.shutdown()

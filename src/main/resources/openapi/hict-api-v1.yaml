@@ -874,6 +874,12 @@ paths:
         `TRADITIONAL_NORMALIZED` follows the active visualization settings. When the UI is set to `Expected` or `O/E`,
         the returned signal uses a distance-expected estimate computed from the fetched query window after the selected
         raw-or-balanced normalization steps.
+        Assembly axes reference original source bins. Exact cuts can display the same
+        bin more than once. These references must not be summed as independent
+        observations. `includeBinProvenance: true` with JSON returns compact physical
+        bin runs for each axis, allowing repeated references to be identified.
+        Pipeline values are display-grid expressions and may depend on tracks or
+        other sources; their axis provenance describes the selected source grid.
       operationId: queryMatrix
       requestBody:
         required: true
@@ -918,6 +924,8 @@ paths:
               schema: { type: string, enum: [float32, float64, int64] }
             x-hict-signal-mode:
               schema: { type: string }
+            x-hict-cell-semantics:
+              schema: { type: string, enum: [SOURCE_BIN_REFERENCES, DISPLAY_GRID_SIGNAL] }
           content:
             application/json:
               schema:
@@ -2697,6 +2705,10 @@ components:
         includeWeights:
           type: boolean
           default: false
+        includeBinProvenance:
+          type: boolean
+          default: false
+          description: Include physical source-bin axis runs. Requires format JSON.
       required: [bpResolution]
 
     MatrixQueryJsonResponse:
@@ -2709,6 +2721,17 @@ components:
         cols: { type: integer }
         dtype: { type: string, enum: [float64, int64] }
         signalMode: { type: string }
+        cellSemantics:
+          type: string
+          enum: [SOURCE_BIN_REFERENCES, DISPLAY_GRID_SIGNAL]
+        binProvenance:
+          type: object
+          properties:
+            identityScope: { type: string, enum: [SOURCE_AND_RESOLUTION] }
+            source: { type: string, enum: [PRIMARY, SECONDARY] }
+            bpResolution: { type: integer, format: int64 }
+            rowAxis: { $ref: '#/components/schemas/SourceBinAxis' }
+            colAxis: { $ref: '#/components/schemas/SourceBinAxis' }
         unit: { type: string, enum: [PIXELS] }
         startRowPx: { type: integer, format: int64 }
         endRowPx: { type: integer, format: int64 }
@@ -2726,6 +2749,30 @@ components:
         colWeights:
           type: array
           items: { type: number }
+
+    SourceBinAxis:
+      type: object
+      description: |
+        Runs are relative to the output array, including any leading zero padding.
+        Positions absent from runs have no source-bin identity. A physical identity
+        is (source file, resolution, stripeId, binInStripe). Its binInStripe at
+        position offset+i is firstBinInStripe+i*step. uniqueSourceBins counts the
+        union of referenced physical bins in this axis window only, not the whole
+        assembly. It does not deduplicate unordered matrix contacts or pipeline values.
+      properties:
+        axisLength: { type: integer, format: int64 }
+        referencedBins: { type: integer, format: int64 }
+        uniqueSourceBins: { type: integer, format: int64 }
+        runs:
+          type: array
+          items:
+            type: object
+            properties:
+              offset: { type: integer, format: int64 }
+              length: { type: integer }
+              stripeId: { type: integer }
+              firstBinInStripe: { type: integer }
+              step: { type: integer, enum: [-1, 1] }
 
     RangeRequest:
       type: object

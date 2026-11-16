@@ -866,6 +866,32 @@ class ApiHttpIntegrationTest {
     final var cut = post("/split_contig_at_bp", body.encode(), headers);
     assertEquals(200, cut.statusCode(), cut.body());
     assertEquals(409, post("/split_contig_at_bp", body.encode(), headers).statusCode());
+    final var query = new JsonObject().put("bpResolution", 4).put("rows", 6).put("cols", 6)
+      .put("signalMode", "RAW_COUNTS").put("format", "JSON").put("includeBinProvenance", true);
+    var numeric = post("/matrix/query", query.encode());
+    assertEquals(200, numeric.statusCode(), numeric.body());
+    var tensor = new JsonObject(numeric.body());
+    assertEquals("SOURCE_BIN_REFERENCES", tensor.getString("cellSemantics"));
+    assertEquals("SOURCE_BIN_REFERENCES", numeric.headers().firstValue("x-hict-cell-semantics").orElseThrow());
+    var provenance = tensor.getJsonObject("binProvenance");
+    assertEquals("PRIMARY", provenance.getString("source"));
+    assertEquals(4L, provenance.getLong("bpResolution"));
+    assertEquals(6L, provenance.getJsonObject("rowAxis").getLong("referencedBins"));
+    assertEquals(5L, provenance.getJsonObject("rowAxis").getLong("uniqueSourceBins"));
+    assertEquals(provenance.getJsonObject("rowAxis"), provenance.getJsonObject("colAxis"));
+    for (int col = 0; col < 6; col++)
+      assertEquals(tensor.getJsonArray("values").getValue(6 + col), tensor.getJsonArray("values").getValue(12 + col));
+    var plain = new JsonObject(post("/matrix/query", query.copy().put("includeBinProvenance", false).encode()).body());
+    assertTrue(!plain.containsKey("binProvenance"));
+    assertEquals(tensor.getJsonArray("values"), plain.getJsonArray("values"));
+    var binary = post("/matrix/query", query.copy().put("includeBinProvenance", false).put("format", "BINARY_FLOAT64").encode());
+    assertEquals(200, binary.statusCode());
+    assertEquals("SOURCE_BIN_REFERENCES", binary.headers().firstValue("x-hict-cell-semantics").orElseThrow());
+    assertEquals(400, post("/matrix/query", query.copy().put("format", "BINARY_FLOAT64").encode()).statusCode());
+    var secondaryQuery = query.copy().put("source", "SECONDARY").put("bpResolution", 3).put("rows", 7).put("cols", 7);
+    var secondaryProvenance = new JsonObject(post("/matrix/query", secondaryQuery.encode()).body()).getJsonObject("binProvenance");
+    assertEquals("SECONDARY", secondaryProvenance.getString("source"));
+    assertEquals(6L, secondaryProvenance.getJsonObject("rowAxis").getLong("uniqueSourceBins"));
     var map = vertx.sharedData().getLocalMap("hict_server");
     for (String key : List.of("chunkedFile", "chunkedFileSecondary")) {
       var file = ((ShareableWrappers.ChunkedFileWrapper) map.get(key)).getChunkedFile();

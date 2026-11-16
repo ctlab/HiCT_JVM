@@ -84,8 +84,15 @@ policy through optional descriptor flags, even for projected sources without
 their own cut history. Coverage preparation already scans unique stored contacts;
 a regression proves its weights remain identical after repeated exact cuts.
 
+Numeric queries now identify source-reference versus pipeline display-grid
+semantics. Optional JSON provenance exposes compact axis runs keyed by source,
+resolution, stripe and bin index, with counts of referenced and unique physical
+bins. Padding has no physical identity. Statistics explicitly count display cells.
+This metadata leaves raw values unchanged; it does not deduplicate arbitrary
+pipeline outputs or qualify the remaining expected-profile/histogram accounting.
+
 The scissors still use the historical endpoint. Before switching the UI, finish
-remaining shared-bin statistics/normalization and numeric-query provenance, explicit
+remaining shared-bin statistics/normalization, explicit
 approximate Cooler export, and sequence-scale display. Source offsets still use
 the existing int descriptor field: exact slices fail on overflow rather than
 wrapping; long-offset migration remains part of P1. This increment does not

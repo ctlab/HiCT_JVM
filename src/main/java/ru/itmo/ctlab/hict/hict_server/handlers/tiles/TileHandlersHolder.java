@@ -1045,6 +1045,11 @@ public class TileHandlersHolder extends HandlersHolder {
     final var signalMode = MatrixSignalMode.fromRaw(request.getString("signalMode", MatrixSignalMode.TRADITIONAL_NORMALIZED.name()));
     final var format = MatrixResponseFormat.fromRaw(request.getString("format", MatrixResponseFormat.BINARY_FLOAT32.name()));
     final var includeWeights = request.getBoolean("includeWeights", false);
+    final var includeBinProvenance = request.getBoolean("includeBinProvenance", false);
+    if (includeBinProvenance && format != MatrixResponseFormat.JSON)
+      throw new io.vertx.ext.web.handler.HttpException(400, "includeBinProvenance requires format JSON");
+    final String cellSemantics = signalMode == MatrixSignalMode.PIPELINE_SIGNAL
+      ? "DISPLAY_GRID_SIGNAL" : "SOURCE_BIN_REFERENCES";
 
     final double[][] signalMatrix;
     switch (signalMode) {
@@ -1102,7 +1107,8 @@ public class TileHandlersHolder extends HandlersHolder {
         }
       }
       final var payload = new JsonObject().put("rows", rowCount).put("cols", columnCount)
-        .put("count", finite).put("min", finite == 0 ? null : min).put("max", finite == 0 ? null : max);
+        .put("count", finite).put("min", finite == 0 ? null : min).put("max", finite == 0 ? null : max)
+        .put("countSemantics", "DISPLAY_CELLS");
       return new MatrixResponsePayload("application/json", payload.encode(), null, Map.of());
     }
 
@@ -1126,6 +1132,7 @@ public class TileHandlersHolder extends HandlersHolder {
     headers.put("x-hict-cols", Integer.toString(columnCount));
     headers.put("x-hict-signal-mode", signalMode.name());
     headers.put("x-hict-source", requestedSource);
+    headers.put("x-hict-cell-semantics", cellSemantics);
     headers.put("x-hict-unit", visibleOnly ? "PIXELS" : "BINS");
     headers.put("x-hict-start-row-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startRowIncl()));
     headers.put("x-hict-end-row-" + headerCoordinateSuffix, Long.toString(matrixWithWeights.startRowIncl() + rowCount));
@@ -1137,6 +1144,7 @@ public class TileHandlersHolder extends HandlersHolder {
         .put("rows", rowCount)
         .put("cols", columnCount)
         .put("signalMode", signalMode.name())
+        .put("cellSemantics", cellSemantics)
         .put("unit", visibleOnly ? "PIXELS" : "BINS")
         .put("startRow" + jsonCoordinateSuffix, matrixWithWeights.startRowIncl())
         .put("endRow" + jsonCoordinateSuffix, matrixWithWeights.startRowIncl() + rowCount)
@@ -1159,6 +1167,15 @@ public class TileHandlersHolder extends HandlersHolder {
       if (includeWeights) {
         payload.put("rowWeights", toJsonArray(matrixWithWeights.rowWeights(), rowCount));
         payload.put("colWeights", toJsonArray(matrixWithWeights.colWeights(), columnCount));
+      }
+      if (includeBinProvenance) {
+        final var provenance = new JsonObject().put("identityScope", "SOURCE_AND_RESOLUTION")
+          .put("source", requestedSource).put("bpResolution", bpResolution)
+          .put("rowAxis", JsonObject.mapFrom(requestedChunkedFile.matrixQueries().sourceBinProvenance(
+            resolutionDescriptor, startRowPx, endRowPx, visibleOnly)))
+          .put("colAxis", JsonObject.mapFrom(requestedChunkedFile.matrixQueries().sourceBinProvenance(
+            resolutionDescriptor, startColPx, endColPx, visibleOnly)));
+        payload.put("binProvenance", provenance);
       }
       headers.put("x-hict-dtype", payload.getString("dtype", "float64"));
       return new MatrixResponsePayload("application/json", payload.encode(), null, headers);
