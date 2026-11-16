@@ -730,6 +730,16 @@ public final class RenderPipelineConfig {
             return mapIdentityColor(value, minExpression.eval(context), maxExpression.eval(context));
           };
         }
+        if ("OBSERVED_OVER_EXPECTED".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
+          final var depleted = parseColor(node.getString("startColor"), new Color(0x2166ac));
+          final var enriched = parseColor(node.getString("endColor"), new Color(0xb2182b));
+          yield context -> {
+            final var value = inputExpression.eval(context);
+            if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
+            return ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.ObservedExpectedPalette.argb(
+              value, minExpression.eval(context), maxExpression.eval(context), depleted, enriched);
+          };
+        }
         final var defaultStart = new Color(255, 255, 255, 0);
         final var defaultEnd = new Color(0, 96, 0, 255);
         final var startColor = parseColor(node.getString("startColor"), defaultStart);

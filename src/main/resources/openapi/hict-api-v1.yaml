@@ -2750,6 +2750,14 @@ components:
         endColPx: { type: integer, format: int64 }
     RenderPipelineConfig:
       type: object
+      description: >-
+        Observed-view expressions. Colormap mode OBSERVED_OVER_EXPECTED maps an
+        already-computed ratio signal around neutral white at 1, with depleted
+        startColor and enriched endColor (including alpha), logarithmic interpolation,
+        minSignal/maxSignal or connected min/max numeric expressions. Undefined or
+        negative ratios are transparent. This palette does not fit an expected
+        profile. Expected/O/E view selection retains its separate primary-map
+        processing and uses the same palette mapping for O/E.
       additionalProperties: true
 
     TileWithRangesResponse:

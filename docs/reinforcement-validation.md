@@ -3791,3 +3791,92 @@ inline range refresh also waits 250 ms and only aggregates loaded tile limits;
 it does not satisfy the requested viewport histogram, levels/midpoint or 150 ms
 pan gate (item 22). Those items remain pending. P6 and the full goal stay active.
 Nothing was pushed, merged or tagged.
+
+## O/E palettes and live range controls — 2026-11-16
+
+Advisor item 19 now has functioning O/E endpoint pickers, alpha, separate
+Expected/O/E palette memory across mode changes and browser reloads, and active
+palette/session restoration. Default O/E colors are explicitly blue/red with
+neutral white at 1 and limits 0.5/2. The shared ObservedExpectedPalette mapper is
+also available to an Observed-view graph's colormap node as
+mode OBSERVED_OVER_EXPECTED. It colors an already-computed ratio signal, honors
+literal or connected limits, and preserves that mode/input across editor Apply
+and sidebar edits. API documentation describes this contract. The guide is
+[observed-expected-palettes.md](observed-expected-palettes.md).
+
+This is a partial P6 increment. The custom graph still controls Observed;
+Expected/O/E retain separate primary-map processing. Direct editing of the active
+Show O/E palette through a projected pipeline graph, named O/E palette presets
+and the inline viewport histogram/levels/midpoint remain pending. No change was
+made to expected-profile fitting: its existing positive-finite-signal policy,
+scaffold/contig domains, native-bin distances and shared-reference weights remain.
+Older sessions now honor their stored endpoint colors, which the previous O/E
+renderer ignored. The guide states this visible behavior change.
+
+Real acceptance exposed two slider bugs. With an upper threshold outside the
+automatic domain, dragging shrank the computed domain on each move: a 70% drag
+from a selected 0–11 range landed at 2.4016386594 rather than about 7.7. Both limits
+are now captured before pointer/keyboard adjustment. Changing source, target or
+display mode starts its own domain; loaded-range and Focus actions retain their
+explicit behavior. The legacy signal-controls test now chooses the native grid
+for its loaded-tile limits, since base-grid images deliberately omit native-cell
+statistics. This does not qualify base-grid viewport histogram support.
+
+The second bug suppressed automatic publication: store round trips set the
+hydration guard even when local values/colors already matched. Synchronization
+now runs only when values differ, so ordinary handle changes publish after the
+existing debounce and reload pixels without pressing Apply. O/E handles stay on
+opposite sides of neutral 1; invalid typed ranges receive a useful message. The
+rail marks neutral white at the corresponding slider position.
+
+Full ./gradlew test shadowJar -x copyWebUI --offline passes: 588 tests, zero
+failures/errors, seven optional skips (/tmp/hict-oe-full-jvm-02.log). New numerical
+regressions independently check asymmetric logarithmic bounds, half-strength
+colors, exact RGBA endpoints, neutral 1, measured zero, undefined/negative ratios,
+connected limits and pipeline serialization. Existing default palette expectations
+now explicitly select the blue/red endpoints; custom RGBA is tested separately.
+npm run build:web passes (/tmp/hict-oe-web-06.log), with the existing large-chunk
+warning. Storage tests cover fresh realms, malformed preferences and a failed write
+with an older disk value. AST-preserving formatting and Python compile pass.
+
+Final Chromium evidence, DPR 1 on the same Linux host, disposable data:
+
+- /tmp/hict-oe-palette-ui-10/results.json: six focused cases. Actual picker actions
+  change tile RGBA and preserve the Observed graph; Expected/O/E retain independent
+  ranges; reload and saved-session restore retain chosen colors, limits and pixels;
+  keyboard adjustment automatically changes both committed limits and pixels;
+  ratio nodes survive the real editor Apply/close and a sidebar edit. The active
+  fitting profile determines the positive ratio used by the color oracle; it is
+  not assumed that the highest cell reaches the chosen color limit. Undefined
+  masking and exact endpoint/interpolation values also have independent JVM tests.
+  Source hashes, page-error and capture-phase window-error checks pass across reloads.
+- Its display_mode_roundtrip/results.json adds 12 cases covering disabled graphs,
+  split/overlay identity sources, unchanged Observed graphs/secondary pixels,
+  sessions and rejected publication. Its signal_controls/results.json adds seven
+  signal/drag/domain/log/scaling/source/atomic-failure/color cases. Each baseline
+  suite owns an independent backend; the focused suite owns another. Apply is
+  acknowledged through the actual API commit rather than a toast hidden by a modal.
+- /tmp/hict-oe-tracks-02/results.json and controls/results.json add 13+6 cases,
+  including independent coverage totals, guarded drafts, resized canvas pixels,
+  both source weight modes and source capability hints.
+- /tmp/hict-oe-responsive-02/results.json adds 15 cases at six widths down to 640 px.
+- /tmp/hict-oe-regression-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-03/results.json
+  adds all 90 established scientific/selection/sequence/export/save scenarios.
+
+Together these are 149 passing browser scenarios with successful process exits.
+Intentional injected console/HTTP failures are expected only in their failure
+cases. Existing benchmark setup and controlled-chooser substitutions remain.
+Visual review includes the custom translucent O/E map/rail and ratio node editor.
+Diagnostic -01 through -09 runs include the reproduced drag/live bugs and corrected
+fixture, selector, ratio-endpoint and toast expectations; they are not final gates.
+
+Backend JAR hict_server-2.0.31-f08ec1b-webui_293038a-fat.jar SHA-256:
+85907de031ac5b4f38c3f1d43f2843f8adee22e1604d5dc14566a53616775b21.
+Final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+0c076eec9350723b76f7e4de7df15e5dc911a82d013ba7a9b55be89ddcc1c886.
+The JAR embeds the preceding WebUI; acceptance serves the matching final assets
+separately. Combined SFX/native packages, other platforms, dense-map latency,
+retina/touch/accessibility, custom O/E figure-output matrix and mixed soak remain
+pending. P6 and the full publication release stay in progress. Protected
+files/plans remain untouched. Nothing was pushed, merged or tagged.

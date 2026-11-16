@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TileVisualizationProcessorRgbaTest {
   @Test void undefinedRatiosAreTransparentWhileMeasuredZeroIsBlue() throws Exception {
     var bounds = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
-      32, java.awt.Color.WHITE, java.awt.Color.BLACK, 0.5, 2.0);
+      32, new java.awt.Color(0x2166ac), new java.awt.Color(0xb2182b), 0.5, 2.0);
     double[][] ratios = {{Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -1, 0, 1}};
     var tile = image(TileVisualizationProcessor.mapObservedOverExpectedRgba(ratios, bounds), 6, 1);
     for (int i = 0; i < 4; i++) assertEquals(0, tile.getRGB(i, 0));
@@ -20,7 +20,7 @@ class TileVisualizationProcessorRgbaTest {
 
   @Test void observedOverExpectedUsesReciprocalBoundsAndANeutralMidpoint() throws Exception {
     var bounds = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
-      32, java.awt.Color.WHITE, java.awt.Color.BLACK, 0.5, 2.0);
+      32, new java.awt.Color(0x2166ac), new java.awt.Color(0xb2182b), 0.5, 2.0);
     double[][] ratios = {{0, 0.5, Math.sqrt(0.5), 1, Math.sqrt(2), 2, 4}};
     var tile = image(TileVisualizationProcessor.mapObservedOverExpectedRgba(ratios, bounds), 7, 1);
     assertEquals(0xff2166ac, tile.getRGB(0, 0));
@@ -30,6 +30,20 @@ class TileVisualizationProcessorRgbaTest {
     assertEquals(0xffb2182b, tile.getRGB(6, 0));
     assertEquals(144, (tile.getRGB(2, 0) >> 16) & 0xff, 1);
     assertEquals(140, (tile.getRGB(4, 0) >> 8) & 0xff, 1);
+  }
+
+  @Test void observedExpectedHonorsChosenEndpointsAlphaAndAsymmetricLimits() throws Exception {
+    var bounds = new ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.SimpleLinearGradient(
+      32, new java.awt.Color(10,20,30,80), new java.awt.Color(150,160,170,200), 0.25, 8);
+    var tile = image(TileVisualizationProcessor.mapObservedOverExpectedRgba(
+      new double[][]{{0,0.25,0.5,1,Math.sqrt(8),8,Double.NaN}}, bounds), 7, 1);
+    assertEquals(0x500a141e, tile.getRGB(0,0));
+    assertEquals(0x500a141e, tile.getRGB(1,0));
+    assertEquals(0xa8858a8f, tile.getRGB(2,0));
+    assertEquals(0xffffffff, tile.getRGB(3,0));
+    assertEquals(0xe4cbd0d5, tile.getRGB(4,0));
+    assertEquals(0xc896a0aa, tile.getRGB(5,0));
+    assertEquals(0, tile.getRGB(6,0));
   }
 
   @Test void javaFallbackPreservesEveryColormapPixelIncludingNonfiniteAndAlpha() throws Exception {

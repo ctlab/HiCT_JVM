@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Honor O/E endpoint colors and alpha, remember separate Expected/O/E palettes, and add a neutral-at-1 ratio palette to pipeline colormap nodes.
+- Keep slider limits steady during adjustment and apply live threshold changes, with O/E handles staying on the correct side of neutral.
+
 - Explain square-root coverage with the row-sum definition, diagonal convention and whole-map scale factor, with an optional formula and worked guide.
 
 - Keep menus, Jobs and file badges within narrow windows, and make the stacked sidebar scrollable with usable signal controls.

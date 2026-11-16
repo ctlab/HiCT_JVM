@@ -26,7 +26,7 @@ describe earlier releases; they must not override the decisions below.
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
-| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: row-sum/diagonal definition, optional formula and worked coverage guide implemented and primary Chromium verified against both sources; O/E pipeline colors/persistence and inline histogram levels pending |
+| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help verified against both sources; O/E colors/alpha and palette persistence, shared ratio-palette nodes and stable/live threshold controls implemented and Chromium verified; direct active-O/E pipeline projection, palette presets, inline histogram levels and broader qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
@@ -460,6 +460,24 @@ round trip loses a chosen [0.25,4] range and returns [0.5,2]. The audit identifi
 the standard-renderer bypass and dedicated O/E color path, plus the current
 250 ms limits-only refresh. Evidence is in reinforcement-validation.md; these
 existing paths cannot qualify items 19/22 or the publication release.
+
+
+## O/E palette and slider prerequisites
+
+O/E now honors its endpoint colors/alpha and retains its own palette across mode
+switches, reload and sessions. Expected has independent palette memory. The
+Observed graph keeps its original state, and a ratio-palette mode shares the
+same neutral-at-1 mapping in pipeline nodes. The user guide documents both paths.
+Direct active-O/E pipeline projection, named palette presets and inline viewport
+histogram/levels remain pending, so this does not complete item 19 or P6.
+
+Browser checks also reproduced and fixed a shrinking-domain drag and suppressed
+live threshold publication. Limits stay fixed during adjustment, O/E guards keep
+handles around neutral 1, and changes now update pixels without Apply. The native
+loaded-range test explicitly uses native coordinates; base-grid histogram support
+remains open. Full JVM checks pass (588 tests, seven optional skips), WebUI checks
+pass, and 149 final browser scenarios pass on the exact recorded artifact pair.
+Evidence, exclusions and hashes are in reinforcement-validation.md.
 
 ## Mandatory release gates
 
