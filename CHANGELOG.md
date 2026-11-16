@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Open the bundled Electron interface when the hosted page is unavailable, with a Reconnect action that protects unsaved assembly edits.
+- Preserve bundled-interface preferences across restarts and include packaged icons without weakening browser or backend access controls.
+
 - Stream Electron FASTA/AGP exports in the main process with native destination selection, revision guards and no file-sized renderer IPC.
 - Cancel owned transfers on navigation and wait for staged-file cleanup on graceful quit; show clear filesystem failures and preserve native session save/readback.
 

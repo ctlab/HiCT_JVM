@@ -374,12 +374,33 @@ in [reinforcement-validation.md](reinforcement-validation.md).
 P3 remains in progress. Tauri still needs streaming and its Rust 1.88/WebKit SDK;
 download-only browsers still buffer exports. Other platforms, portals/Wayland,
 legacy-Blob shutdown/crash durability, source/chooser/accessibility coverage and
-final combined-SFX qualification remain open. Static inspection found an
-additional release task: `HiCT_WebUI/src/electron/main/main.ts::fallbackFileUrl`
-assumes the development directory layout, whereas the packaged main sits one
-level closer to `index.html`. Correct that path and exercise offline startup and
-reconnection from the built payload. The online native-export acceptance does
-not qualify that offline path.
+final combined-SFX qualification remain open. The packaged offline-start defect identified during that inspection is now fixed
+and qualified below.
+
+## Electron bundled recovery
+
+The portable and development layouts now locate the bundled public interface.
+If the hosted page is refused or returns an HTTP error, an owned read-only
+127.0.0.1 listener serves it with the existing CSP and a small Reconnect notice.
+The wrapper revalidates the hosted entry page, including after an online visit,
+so a cached success cannot hide offline recovery. Reconnect uses the existing
+save/discard/cancel guard and cannot be requested by an online page.
+
+Real Linux Electron 41.10.7 acceptance covers offline startup, repeated refusal,
+HTTP 503, live backend attachment and edits, cancelled/approved reconnection,
+return online, offline restart preferences, explicit reset and the notice at
+1024 px. No unexpected page errors or dialogs occur. Native exports and the
+90 existing browser cases also pass on the final build. Evidence and exact
+artifact identities are in [reinforcement-validation.md](reinforcement-validation.md).
+
+The listener claims its port before navigation and releases it on quit. A busy
+preferred port gets a newly owned port, which changes the browser storage origin;
+read-only profiles also cannot guarantee a stable origin. Normal writable-profile
+restarts retain it. Host/path/symlink checks and occupied-port behavior have focused
+regressions. JVM bind/CORS, Electron file fuses and renderer isolation are unchanged.
+Tauri, other platforms, Wayland/portals, wider accessibility and input coverage,
+soak/performance and final combined-SFX qualification remain open. P3 and the full
+publication release remain in progress.
 
 ## Mandatory release gates
 

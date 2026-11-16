@@ -3515,3 +3515,78 @@ open. Static inspection also found that the packaged Electron fallback path need
 separate offline-start qualification/fix (`fallbackFileUrl` assumes the development
 layout). P3 and the full publication release are not complete. Protected files,
 plans and manuscript remain untouched.
+
+
+## Packaged Electron offline recovery (2026-11-16)
+
+The packaged wrapper now serves its bundled public UI through a lazy owned
+127.0.0.1 HTTP listener when the configured page is unavailable. Both development
+and portable directory layouts resolve correctly, including paths with spaces.
+The payload includes root icons/notices as well as hashed assets. GET/HEAD public
+resources receive the existing CSP and no-store headers; HEAD releases its unread
+file body; canonical containment,
+blocked main/preload files and an exact Host check restrict serving. There is no
+API proxy. The server owns its listener before navigation, remembers a usable
+port for the profile, falls back to an owned ephemeral port on collision, and
+closes connections on quit. A collision or unwritable profile can change its
+storage origin; migration across such origins remains a qualification limit.
+
+Hosted navigation revalidates its entry response. Offline/HTTP-error loads return
+to a complete interface with a compact Reconnect notice. Concurrent retries share
+one operation; online pages cannot request recovery navigation. The existing
+session save/discard/cancel guard protects reconnection. Approved departure skips
+only the duplicate unload prompt for that exact history identity. Window loss,
+cancelled navigation and missing resources have focused lifecycle checks.
+
+Real runtime evidence changed the implementation: file-loaded ES modules fail in
+the packaged runtime with GrantFileProtocolExtraPrivileges disabled. A trial
+custom scheme rendered but the unchanged JVM CorsHandler rejected its origin
+with HTTP 403. Direct origin probes confirmed ordinary HTTP is accepted. Neither
+fuses, webSecurity, isolation, sandbox settings nor JVM CORS/binding were relaxed.
+A subsequent offline restart revealed Chromium reusing the hosted page from
+cache; entry-response revalidation fixes that observed case. Initial acceptance
+scripts also needed the existing alertdialog role and a window wait after async
+storage reset. Those failed runs are excluded from final acceptance.
+
+Checks: npm run build:web (including recovery/resource/port regressions) and
+npm run electron:compile pass. The existing bundle-size warning remains. The full
+JVM run in /tmp/hict-recovery-jvm.log passes: 585 tests, zero failures/errors,
+seven optional skips. Java production code is unchanged in this increment.
+
+Final packaged acceptance: /tmp/hict-recovery-ui-10/results.json has eight passing
+workflows: unassisted offline bootstrap with native preload/icons, refused retry,
+HTTP 503 without a loop, real API attachment/edit/cancel, approved departure
+without a duplicate dialog, restored hosted UI with recovery IPC denied there,
+offline restart after an online visit with retained preferences, and explicit
+reset with a 1024 px recovery notice. Page errors and unexpected dialogs are empty;
+the immutable HDF5 input hash is unchanged. Screenshots offline-start.png,
+reconnect-edits.png, reconnected.png and offline-1024.png were visually inspected.
+This qualifies the notice and edit prompt, not every existing compact-screen
+layout. The driver is scripts/check_electron_recovery.py, using a private X display
+and isolated profile on the same documented Linux host.
+
+Native transfer regression: /tmp/hict-recovery-native-03/results.json passes all
+nine real GTK workflows, including 518,400,010 FASTA bytes, exact selection/AGP,
+cancellation/failure, session readback and last-window cleanup/exit 0. Independent
+FASTA SHA-256 is 6a6897c500a89f7b643ff6ae37af34616e89e2d10205d4350cf56d27794cfb1c.
+Sampled main RSS is 197,595,136 to 297,312,256 bytes; no coordinate requests occur
+in the renderer. This remains a synthetic sparse-map transfer measurement.
+
+Final browser evidence: /tmp/hict-recovery-final-{sequence_view,selection_modes,
+fasta_measurement,alignment_runs,sequence_tracks,feature_edge_cuts,
+file_destinations}-browser/results.json. All 90 scenarios pass against the final
+WebUI assets with their documented controlled picker fixtures.
+
+Immutable test JAR SHA-256:
+c9b83af70c95730e400787841978c926f2e311172be7cd01ac9f9df77c9595c0.
+WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+db2e2aac985331611186c92e958e7ce58c009e629be46e4ff8c7ec4080e71ba8.
+Compiled Electron tree SHA-256 (same method rooted at dist/electron):
+dbfbd053fb55cd22fad3bac1b584725839653a499ccfe873e04db4bfb6099357.
+Payload /tmp/hict recovery payload 05, Electron 41.10.7, manifest tree SHA-256:
+6ba3bd6711a757718073f65faed02efb27245f59c19e85bb3a6242c7cef8fb33.
+The JAR embeds the preceding WebUI; these tests serve the final matching WebUI
+separately or from the copied payload, not from the JAR. Final combined-SFX,
+other platforms, unresponsive-server timing, Wayland/portals, accessibility,
+origin-conflict preference migration and the full publication gates remain open.
+Plans, protected files and manuscript remain untouched.
