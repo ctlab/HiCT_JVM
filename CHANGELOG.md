@@ -18,6 +18,9 @@
 
 ### Sequence analysis and sessions
 
+- Add an explicit sequence-scale tile projection that clips native contact colors to exact fragment widths, keeps base-level upper/lower source choices and declares the stored contact resolution.
+- Keep shared references colored throughout the pipeline and preserve hidden-bin weights and feature samples in numeric BINS queries.
+
 - Weight repeated exact-cut references once per unordered source-bin pair in expected fitting, keep fitting consistent across tile chunks, and label histogram counts as displayed samples.
 
 - Preserve stored fractional values and genuine weights in ordinary Cooler re-export, retain int64 counts in mixed pyramids, and report cis totals separately from interchromosomal contacts.

@@ -853,6 +853,8 @@ public class Track1DManager implements AutoCloseable {
       return new double[0];
     }
 
+    if (units == QueryLengthUnit.BINS) return sampleAssemblyBins(chunkedFile, track, start, end, bpResolution);
+
     final var segmentsBuildResult =
       buildSourceToAssemblySegments(chunkedFile, this.linkedFastaAliasesBySource, bpResolution);
     final var totalVisiblePixels = segmentsBuildResult.totalVisiblePixels();
@@ -916,6 +918,43 @@ public class Track1DManager implements AutoCloseable {
       }
     }
     return values;
+  }
+
+  /** Numeric native-bin and sequence-scale rendering includes bins hidden from the map pyramid. */
+  private double[] sampleAssemblyBins(ChunkedFile file, TrackState track, long start, long end, long resolution) {
+    final long length = Math.subtractExact(end, start);
+    if (length < 0 || length > 1_048_576)
+      throw new IllegalArgumentException("Track bin sample window must contain at most 1048576 bins");
+    final var result = new double[(int) length];
+    if (length == 0) return result;
+    final var descriptor = ResolutionDescriptor.fromBpResolution(resolution, file);
+    final long total = file.getContigTree().getLengthInUnits(QueryLengthUnit.BINS, descriptor);
+    final long from = Math.max(0, start), to = Math.min(total, end);
+    if (to <= from) return result;
+    if (track.dataSource() instanceof CoolerWeightsTrackDataSource) {
+      final var atus = file.matrixQueries().getATUsForRange(descriptor, from, to, false);
+      final var weights = file.matrixQueries().weightsFor(atus, descriptor.getResolutionOrderInArray());
+      for (int i = 0; i < weights.length; i++)
+        result[Math.toIntExact(from-start)+i] = Double.isFinite(weights[i]) ? Math.max(0,weights[i]) : 0;
+      return result;
+    }
+    final var segments = buildSourceToAssemblySegments(file, this.linkedFastaAliasesBySource, resolution, true);
+    final var bins = queryBinsForTrack(track.type(),file,track.dataSource(),segments.sourceToAssemblySegments(),
+      segments.orderedSegments(),from,to,Math.toIntExact(to-from),resolution,track.bamRenderMode(),track.bigWigAggregationMode());
+    Arrays.fill(result, Double.NaN);
+    for (var bin : bins) {
+      final long binStart = bin.getStartPx() != null ? bin.getStartPx()
+        : mapAssemblyBpToVisiblePx(bin.getStartBp(),segments.orderedSegments(),resolution,total);
+      final long binEnd = bin.getEndPx() != null ? bin.getEndPx()
+        : mapAssemblyBpToVisiblePx(Math.max(bin.getStartBp(),bin.getEndBp()-1),segments.orderedSegments(),resolution,total)+1;
+      final int first = Math.toIntExact(Math.max(0,Math.min(length,binStart-start)));
+      final int last = Math.toIntExact(Math.max(0,Math.min(length,binEnd-start)));
+      if (!Double.isFinite(bin.getValue())) continue;
+      for (int i = first; i < last; i++)
+        result[i] = Double.isNaN(result[i]) ? bin.getValue() : Math.max(result[i],bin.getValue());
+    }
+    for (int i = 0; i < result.length; i++) if (!Double.isFinite(result[i])) result[i] = 0;
+    return result;
   }
 
   private static @NotNull ChunkedFile resolveChunkedFileForTrack(final @NotNull ChunkedFile primaryChunkedFile,
@@ -1812,6 +1851,12 @@ public class Track1DManager implements AutoCloseable {
   private @NotNull SegmentBuildResult buildSourceToAssemblySegments(final @NotNull ChunkedFile chunkedFile,
                                                                     final @NotNull Map<String, String> linkedFastaAliasesBySource,
                                                                     final long bpResolution) {
+    return buildSourceToAssemblySegments(chunkedFile, linkedFastaAliasesBySource, bpResolution, false);
+  }
+
+  private @NotNull SegmentBuildResult buildSourceToAssemblySegments(
+    ChunkedFile chunkedFile, Map<String, String> linkedFastaAliasesBySource, long bpResolution, boolean includeHidden
+  ) {
     final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
     if (resolutionOrder == null) {
       throw new IllegalArgumentException("Unsupported resolution for 1D track query: " + bpResolution);
@@ -1831,7 +1876,7 @@ public class Track1DManager implements AutoCloseable {
       final var sourceEnd = sourceStart + descriptor.getLengthBp();
       final var assemblyStart = assemblyCursor;
       final var assemblyEnd = assemblyCursor + descriptor.getLengthBp();
-      final var visibleAtResolution = descriptor.getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN;
+      final var visibleAtResolution = includeHidden || descriptor.getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN;
       final var lengthPxAtResolution = descriptor.getLengthBinsAtResolution()[resolutionOrder];
       if (visibleAtResolution && lengthPxAtResolution > 0L) {
         final var segment = new AssemblySegment(

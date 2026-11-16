@@ -785,6 +785,17 @@ paths:
           schema: { type: string, enum: [PRIMARY, SECONDARY] }
           description: Request one source. An omitted source returns the composed tile.
         - in: query
+          name: sequenceScale
+          required: false
+          schema: { type: boolean, default: false }
+          description: >-
+            Draw source-bin colors on a uniform one-base display grid. Requires an
+            explicit source and cannot be combined with gridBpResolution or
+            gridSampleFactor. bpResolution still selects a stored contact level;
+            no counts or contact positions are interpolated. Tile coordinates
+            (or row/col with PNG_BY_PIXELS) now index assembly bases, including
+            sequence in components hidden at the stored matrix level.
+        - in: query
           name: gridBpResolution
           required: false
           schema: { type: integer, format: int64, minimum: 1 }
@@ -821,6 +832,12 @@ paths:
             x-hict-cancelled:
               description: True only when superseded work was cancelled.
               schema: { type: boolean }
+            x-hict-display-grid:
+              description: SEQUENCE_BP for an explicitly requested one-base display grid.
+              schema: { type: string }
+            x-hict-source-bp-resolution:
+              description: Original stored contact resolution for a sequence-scale tile.
+              schema: { type: integer, format: int64 }
           content:
             application/json:
               schema:
@@ -2626,6 +2643,21 @@ components:
         image:
           type: string
           description: data:image/png;base64,...
+        displayGrid:
+          type: object
+          description: >-
+            Present only for sequenceScale=true. Native-cell statistics are omitted
+            for this image so their counts cannot be mistaken for base samples.
+          properties:
+            unit: { type: string, enum: [BASE_PAIRS] }
+            bpPerPixel: { type: integer, enum: [1] }
+            sourceBpResolution: { type: integer, format: int64 }
+            cellSemantics: { type: string, enum: [SOURCE_BIN_REFERENCE_COLORS] }
+            contactValuesInterpolated: { type: boolean, enum: [false] }
+            startRowBp: { type: integer, format: int64 }
+            endRowBp: { type: integer, format: int64 }
+            startColBp: { type: integer, format: int64 }
+            endColBp: { type: integer, format: int64 }
         ranges:
           type: object
           properties:

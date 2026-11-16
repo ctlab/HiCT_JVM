@@ -21,7 +21,7 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: guarded exact API, source synchronization, v4 replay, long offsets and opt-in approximate Cooler export implemented; shared-bin expected fitting and histogram sample semantics verified; scissors/feature UI, sequence-scale display and broader qualification pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: guarded exact API, source synchronization, v4 replay, long offsets and opt-in approximate Cooler export implemented; shared-bin expected fitting and histogram sample semantics verified; sequence-grid backend verified; scissors/feature UI, main-map sequence-scale integration and broader qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
@@ -129,6 +129,20 @@ and packaged CLI outputs match independent Cooler reads exactly. Existing output
 survive failed/cancelled exports. Optional tool-backed balancing, large-map
 performance and final native/package qualification remain pending. Each stored resolution is estimated independently,
 not asserted to be an exact aggregation of the finest estimated level.
+
+A bounded sequence-grid rendering primitive now draws native cell colors at one
+base per output pixel. It clips short/reversed fragments to their retained
+sequence widths, includes hidden native bins, leaves absent sequence contacts
+transparent and preserves base-grid upper/lower branches and Swap. Stored contact
+resolution remains explicit; no new counts are interpolated. Native pipeline
+bounds now accommodate shared assembly references, and numeric BINS track inputs
+retain hidden-bin weights/features. Chromium decoded every PNG channel for both
+sources and two levels with standard/graph renderers, with zero error and no
+page errors: `/tmp/hict-sequence-grid-qualified/results.json`. See
+[the rendering contract](sequence-scale-rendering.md). This is a backend primitive;
+the current WebUI still uses its native bin-grid geometry. Main-map transitions,
+rulers, FASTA, selections, exports and exact-cut entry points must be integrated
+and qualified together before enabling the scissors.
 
 The scissors still use the historical endpoint. Before switching the UI, finish
 sequence-scale display and broader shared-bin qualification. Source offsets now use

@@ -144,8 +144,13 @@ public final class RenderPipelineConfig {
   public int evaluateSourceArgb(final @NotNull String sourceName,
                                 final @NotNull MutablePixelContext context,
                                 final @NotNull SimpleVisualizationOptions options) {
+    return evaluateSourceArgb(sourceName, context.rowPx <= context.colPx, context, options);
+  }
+
+  /** Sequence-scale display can split a native diagonal cell into two base-grid triangles. */
+  public int evaluateSourceArgb(String sourceName, boolean upper, MutablePixelContext context,
+                                SimpleVisualizationOptions options) {
     final var branches = this.sourceBranches.get("SECONDARY".equalsIgnoreCase(sourceName.trim()) ? "SECONDARY" : "PRIMARY");
-    final boolean upper = context.rowPx <= context.colPx;
     final var root = branches[(this.swapUpperLower ? !upper : upper) ? 0 : 1];
     return root == null ? 0x00000000 : root.evalArgb(context, options);
   }

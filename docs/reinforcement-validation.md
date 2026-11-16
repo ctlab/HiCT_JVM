@@ -2853,3 +2853,57 @@ qualification, not packaged UI or cross-platform release qualification. The
 screenshots still show the current bin-grid stretching of short fragments.
 Uniform sequence-scale geometry, the main scissors transition and broader
 performance/native/package gates remain pending. The full goal remains active.
+
+
+## Native contact colors on a uniform sequence grid (2026-11-16)
+
+Added an explicitly requested one-base display grid to `/get_tile`, backed by
+`SequenceGridProjector`. Native contacts are read and colored at the chosen stored
+resolution, then clipped/copied onto retained sequence intervals. This preserves
+one-base fragments, source-forward bin origins, reversal, terminal-bin widths
+and hidden components. Out-of-assembly bases or sequence without bins remain
+transparent. No source data is rewritten, apportioned or interpolated. Responses
+distinguish display scale from native resolution and omit misleading native-cell
+histogram counts. Bounds and cancellation cover preparation and output copying.
+Upper/lower graph branches are resolved per displayed base, including within
+native diagonal cells and after Swap. [Contract](sequence-scale-rendering.md).
+
+This also fixes a pre-existing pipeline bound that compared assembly-bin indices
+with the physical source-bin count. Exact cuts can increase the former through
+shared references; those valid rows/columns must remain colored. All three
+pipeline paths now use current assembly BINS length. Numeric BINS dynamics and
+track inputs retain their own coordinate axis. BINS track samples include hidden
+components and padding, including exact ATU weights and feature projections;
+visible 1D-track queries keep their existing path.
+
+`./gradlew test shadowJar -x copyWebUI --offline` passed: 571 tests, zero
+failures/errors, seven optional skips. New regressions enumerate every interior
+cut of the 17 bp fixture on both strands at 4/10 bp, plus nested cuts, reordering,
+weights, hidden/missing bins, padding, positions beyond 2.5 Gb, cancellation and
+base-grid triangle assignment. A separate hidden one-base feature/weight test
+checks BINS sampling without altering the visible track path. Optional large-file
+track formats remain subject to their existing release qualification gates.
+
+Chromium decoded real server PNG tiles for primary/secondary physical fixture
+copies at both stored levels, through standard and graph renderers. All eight
+cases match native colors exactly (3,452 checked pixels), including transparent
+padding and native references beyond the original physical bin count. Four more
+triangle/Swap cases verify 1,156 base pixels. JSON grid metadata, absence of native
+sample statistics, numeric pipeline bounds and invalid parameter combinations
+also pass. Source hashes are unchanged and there are no page errors. Observed
+local tiny-fixture requests were 2.6–5.2 ms; these are not large-map latency or
+p95 qualification. The diagnostic side-by-side PNG preview was visually inspected
+and shows the short terminal/cut intervals at their proper base widths.
+
+Evidence: `/tmp/hict-sequence-grid-qualified/{results.json,sequence-grid-comparison.png}`.
+Immutable server SHA-256:
+`54084fca05782496981908daa62348448b94638243c892e08782039000bba73f`.
+An earlier comparison used pre-reversal source-triangle masks as its oracle and
+was rejected. The qualified checker separates full-source color parity from
+current base-grid triangle assignment and checks both explicitly.
+
+WebUI production code was unchanged. The checker uses its existing built WebUI
+and a diagnostic preview of actual tile images; the main UI transition remains
+pending. Current map geometry, rulers, FASTA, selections, exports and edit
+coordinates must be coordinated next. P1 and the full release/publication goal
+remain active, including all platform, large-map and final soak gates.
