@@ -121,6 +121,71 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void pipelineBinQueriesProjectDisjointSecondaryLevelsIncludingHiddenPrimaryBins() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary-grid", java.util.List.of(4L, 10L, 100L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "fine-grid", java.util.List.of(1L));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"primary-grid.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"fine-grid.hict.hdf5\"}").statusCode());
+    var file = ((ShareableWrappers.ChunkedFileWrapper) vertx.sharedData().getLocalMap("hict_server").get("chunkedFile")).getChunkedFile();
+    assertEquals(0, file.getContigTree().getLengthInUnits(ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit.PIXELS,
+      ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(100, file)));
+    for (long resolution : new long[]{4, 10, 100}) {
+      int bins = (int) Math.ceilDiv(17L, resolution);
+      double[] expected = resolution == 4 ? new double[]{1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11}
+        : resolution == 10 ? new double[]{21,0,0,11} : new double[]{32};
+      for (boolean explicitType : new boolean[]{true, false}) {
+        var expression = new JsonObject().put("source", "SECONDARY");
+        if (explicitType) expression.put("type", "source");
+        var query = new JsonObject().put("bpResolution", resolution).put("unit", "BINS")
+          .put("startRowBin", 0).put("startColBin", 0).put("endRowBin", bins).put("endColBin", bins)
+          .put("signalMode", "PIPELINE_SIGNAL").put("expression", expression).put("format", "JSON");
+        var response = post("/matrix/query", query.encode());
+        assertEquals(200, response.statusCode(), response.body());
+        var values = new JsonObject(response.body()).getJsonArray("values");
+        assertEquals(expected.length, values.size());
+        for (int i = 0; i < expected.length; i++) assertEquals(expected[i], values.getDouble(i), 1e-10);
+      }
+    }
+  }
+
+  @Test
+  void pipelineBinQueriesReadHiddenCoarserSecondaryAndSkipUnusedSource() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary-grid", java.util.List.of(4L, 10L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "coarse-grid", java.util.List.of(100L));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"primary-grid.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"coarse-grid.hict.hdf5\"}").statusCode());
+    var query = new JsonObject().put("bpResolution", 4L).put("unit", "BINS")
+      .put("startRowBin", 0).put("startColBin", 0).put("endRowBin", 5).put("endColBin", 5)
+      .put("signalMode", "PIPELINE_SIGNAL").put("expression", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+      .put("format", "JSON");
+    var response = post("/matrix/query", query.encode());
+    assertEquals(200, response.statusCode(), response.body());
+    var values = new JsonObject(response.body()).getJsonArray("values");
+    assertEquals(25, values.size());
+    double total = 0;
+    for (int row=0;row<5;row++) for (int col=0;col<5;col++) {
+      double expected = 22d * (row==4 ? 1 : 4) * (col==4 ? 1 : 4) / (17d*17d);
+      assertEquals(expected, values.getDouble(row*5+col), 1e-10);
+      total += values.getDouble(row*5+col);
+    }
+    assertEquals(22d, total, 1e-10);
+    query.put("expression", new JsonObject().put("type", "source").put("source", "PRIMARY"));
+    response = post("/matrix/query", query.encode());
+    assertEquals(200, response.statusCode(), response.body());
+    assertEquals(11d, new JsonObject(response.body()).getJsonArray("values").getDouble(24));
+  }
+
+  @Test
   void cancelledTileAndMatrixResponsesAreExplicitAndPngIsTransparent() throws Exception {
     final var started = new CountDownLatch(2);
     final var release = new CountDownLatch(1);

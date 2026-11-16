@@ -27,7 +27,7 @@ describe earlier releases; they must not override the decisions below.
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
-| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first example downloads, retained attempt history, byte/indeterminate progress, scoped cancellation, recovery and opening intent implemented; primary Chromium workflows and FASTA-only AGP verified; cache discovery/opening integrity implemented; quick-start conversion handoff and recipe-preserving results implemented; wider wizard, OSD/resolution and release qualification pending |
+| P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads and quick-start conversions, guarded opening, cache integrity and recipe-preserving results implemented; Info transitions and independent yeast diagonal provenance verified; wider wizard/public examples, provenance transfer and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
@@ -719,3 +719,39 @@ reinforcement-validation.md. P7 remains active for larger/public examples, live
 conversion cancellation qualification, wider wizard workflows, catalog/session
 provenance transfer, OSD resolution/diagonal behavior and release/platform gates.
 Protected plans and owner files remain unchanged; nothing pushed, merged or tagged.
+
+## Info responsiveness and source-supported Micro-C diagonals
+
+Info now selects its current source/resolution from layer and view metadata,
+without GPU tile-pixel reads. It refreshes a stationary pointer during delayed
+resolution changes and when existing field/position settings change. Replaced
+controls release their settings watchers; contig names display literally and
+coordinates outside the assembly remain empty. The OSD design is preserved.
+
+Real-map qualification exposed a map-switch renderer crash in vue-sonner 0.4.2's
+programmatic dismissal. The exact small NaN-weighted-map reproduction now passes
+with pinned vue-sonner 2.0.9 and its explicit stylesheet. Masking notices, prompts
+and late callbacks belong to their originating map. Notification history remains
+available. Mixed native pyramids also exposed an HTTP 500 in numeric pipeline BINS
+queries: required Secondary signals now use the existing native projection path,
+including hidden bins on both grids. Primary-only expressions skip unused reads.
+Two new HTTP regressions verify exact cells and projected mass; native input
+counts are unchanged.
+
+Independent source comparison matches all 669,584 raw cells in 17 windows over
+three chromosomes and three resolutions. A full stored cis-diagonal scan confirms
+the fine-resolution empty band already exists in the deposited Cooler. The
+coarser diagonal contains contacts. The example card and
+[Info/Micro-C guide](info-and-microc-diagonal.md) explain the result without
+inventing an upstream filter or biological cause.
+
+The final development pair passes 602 JVM tests with zero failures/errors and
+seven optional skips, the WebUI build/type/numerical checks, and 121 actual-control
+Chromium cases. Screenshots were inspected for delayed tiles, literal names,
+replacement maps, notification failures, track resizing and responsive layouts.
+Artifacts, input hashes and limits are in reinforcement-validation.md. This does
+not qualify a combined native/SFX package or all large-map/platform performance.
+P7 remains active for live conversion cancellation, wider wizard/public examples
+and catalog/session provenance transfer. P8/P9 and remaining release/publication
+qualification remain open. Protected plans and owner files remain unchanged;
+nothing pushed, merged or tagged.

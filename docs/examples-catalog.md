@@ -248,3 +248,11 @@ are in `dnazoo-cheetah-direct.deoIcg/evidence-oracle-continuation` and
 `dnazoo-aedes-direct.h6xCK3/evidence`. The initial Cheetah conversion/open timing
 is retained in its original evidence directory. Tardigrade evidence is named by
 `/tmp/hict-u13-strand-final-tardigrade-dir`.
+
+## Near-diagonal support in the yeast example
+
+The deposited 50 bp matrix has no stored cis contacts on offsets 0–3; at 100 bp,
+offsets 0–1 are empty. The 500 bp diagonal is populated. HiCT raw counts match
+669,584 checked cells exactly. The card now identifies this source property;
+[Info and Micro-C diagonal](info-and-microc-diagonal.md) explains the resolution
+dependence, validation and limits of attributing an upstream filter.

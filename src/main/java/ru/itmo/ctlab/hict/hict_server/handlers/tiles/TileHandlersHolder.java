@@ -87,7 +87,8 @@ public class TileHandlersHolder extends HandlersHolder {
   private static final int MAX_TILE_EDGE = 1024;
   private static final int MAX_PROJECTION_GRIDS_PER_SOURCE = 8;
 
-  private record ProjectionGridCache(Object root, Map<Integer, AssemblyBinGrid> levels) { }
+  private record ProjectionGridKey(int order, boolean visibleOnly) { }
+  private record ProjectionGridCache(Object root, Map<ProjectionGridKey, AssemblyBinGrid> levels) { }
 
   public static void clearExpectedProfileCache(final @NotNull LocalMap<String, Object> map) {
     map.remove(EXPECTED_PROFILE_LOCAL_MAP_KEY);
@@ -1147,19 +1148,17 @@ public class TileHandlersHolder extends HandlersHolder {
         if ("SECONDARY".equals(requestedSource)) {
           throw new IllegalArgumentException("PIPELINE_SIGNAL queries are supported only for the primary source");
         }
-        final var secondaryMatrixWithWeights = !visibleOnly && secondaryChunkedFile != null
-          ? secondaryChunkedFile.matrixQueries().getSubmatrix(
-            ResolutionDescriptor.fromBpResolution(bpResolution, secondaryChunkedFile),
-            startRowPx, startColPx, endRowPx, endColPx, false)
-          : querySecondarySubmatrix(primaryChunkedFile, secondaryChunkedFile, bpResolution,
-            matrixWithWeights.startRowIncl(), matrixWithWeights.startColIncl(),
-            matrixWithWeights.startRowIncl() + rowCount, matrixWithWeights.startColIncl() + columnCount);
         // Diagnostics evaluate a supplied numeric branch without changing the
         // active rendering configuration or its tile cache version.
         final var expression = request.getJsonObject("expression");
         final var diagnosticPipeline = expression == null ? renderPipelineConfig
           : RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
             .put("upperExpression", expression).put("lowerExpression", expression));
+        final var secondaryMatrixWithWeights = diagnosticPipeline.requiresSecondarySource()
+          ? querySecondarySubmatrix(primaryChunkedFile, secondaryChunkedFile, bpResolution,
+            matrixWithWeights.startRowIncl(), matrixWithWeights.startColIncl(),
+            matrixWithWeights.startRowIncl() + rowCount, matrixWithWeights.startColIncl() + columnCount, visibleOnly)
+          : null;
         signalMatrix = computePipelineSignalMatrix(
           primaryChunkedFile,
           secondaryChunkedFile,
@@ -2425,25 +2424,41 @@ public class TileHandlersHolder extends HandlersHolder {
     final long endRowPx,
     final long endColPx
   ) {
+    return querySecondarySubmatrix(primaryChunkedFile, secondaryChunkedFile, bpResolution,
+      startRowPx, startColPx, endRowPx, endColPx, true);
+  }
+
+  private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights querySecondarySubmatrix(
+    ChunkedFile primaryChunkedFile, @Nullable ChunkedFile secondaryChunkedFile, long bpResolution,
+    long startRowPx, long startColPx, long endRowPx, long endColPx, boolean visibleOnly
+  ) {
     if (secondaryChunkedFile == null) {
       return null;
     }
     final var exactOrder = secondaryChunkedFile.getResolutionToIndex().get(bpResolution);
     if (exactOrder != null) {
-      return querySourceSubmatrix(secondaryChunkedFile, ResolutionDescriptor.fromResolutionOrder(exactOrder),
-        startRowPx, startColPx, endRowPx, endColPx);
+      return visibleOnly ? querySourceSubmatrix(secondaryChunkedFile, ResolutionDescriptor.fromResolutionOrder(exactOrder),
+        startRowPx, startColPx, endRowPx, endColPx) : secondaryChunkedFile.matrixQueries().getSubmatrix(
+          ResolutionDescriptor.fromResolutionOrder(exactOrder), startRowPx, startColPx, endRowPx, endColPx, false);
     }
     final int nearest = ResolutionSelection.nearestOrder(secondaryChunkedFile.getResolutions(), bpResolution);
     if (nearest < 0) return null;
     return queryProjectedSubmatrix(primaryChunkedFile, ResolutionDescriptor.fromBpResolution(bpResolution, primaryChunkedFile),
-      secondaryChunkedFile, ResolutionDescriptor.fromResolutionOrder(nearest), startRowPx, startColPx, endRowPx, endColPx, 1);
+      secondaryChunkedFile, ResolutionDescriptor.fromResolutionOrder(nearest), startRowPx, startColPx, endRowPx, endColPx, 1, visibleOnly);
   }
 
   private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights queryProjectedSubmatrix(
     ChunkedFile primary, ResolutionDescriptor grid, ChunkedFile source, ResolutionDescriptor nativeLevel,
     long rowStart, long colStart, long rowEnd, long colEnd, int sampleFactor
   ) {
-    final long visible = Math.multiplyExact(primary.getContigTree().getLengthInUnits(QueryLengthUnit.PIXELS, grid), sampleFactor);
+    return queryProjectedSubmatrix(primary, grid, source, nativeLevel, rowStart, colStart, rowEnd, colEnd, sampleFactor, true);
+  }
+
+  private @Nullable ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights queryProjectedSubmatrix(
+    ChunkedFile primary, ResolutionDescriptor grid, ChunkedFile source, ResolutionDescriptor nativeLevel,
+    long rowStart, long colStart, long rowEnd, long colEnd, int sampleFactor, boolean visibleOnly
+  ) {
+    final long visible = Math.multiplyExact(primary.getContigTree().getLengthInUnits(visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, grid), sampleFactor);
     final long firstRow = Math.max(0, rowStart);
     final long firstCol = Math.max(0, colStart);
     final long lastRow = Math.min(visible, rowEnd);
@@ -2454,11 +2469,11 @@ public class TileHandlersHolder extends HandlersHolder {
       case ALIGNMENT_PRESENCE -> ProjectedMatrix.Reducer.PRESENCE;
       default -> ProjectedMatrix.Reducer.COUNTS;
     };
-    return ProjectedMatrix.query(projectionGrid(primary, grid), projectionGrid(source, nativeLevel),
-      source, grid, nativeLevel, firstRow, firstCol, lastRow, lastCol, sampleFactor, reducer);
+    return ProjectedMatrix.query(projectionGrid(primary, grid, visibleOnly), projectionGrid(source, nativeLevel, visibleOnly),
+      source, grid, nativeLevel, firstRow, firstCol, lastRow, lastCol, sampleFactor, reducer, visibleOnly);
   }
 
-  private AssemblyBinGrid projectionGrid(ChunkedFile file, ResolutionDescriptor resolution) {
+  private AssemblyBinGrid projectionGrid(ChunkedFile file, ResolutionDescriptor resolution, boolean visibleOnly) {
     final var tree = file.getContigTree();
     final var lock = tree.getRootLock().readLock();
     lock.lock();
@@ -2472,11 +2487,12 @@ public class TileHandlersHolder extends HandlersHolder {
         }
         final var levels = cached.levels();
         final int order = resolution.getResolutionOrderInArray();
-        final var existing = levels.get(order);
+        final var key = new ProjectionGridKey(order, visibleOnly);
+        final var existing = levels.get(key);
         if (existing != null) return existing;
-        final var grid = new AssemblyBinGrid(file, resolution);
+        final var grid = new AssemblyBinGrid(file, resolution, visibleOnly);
         if (levels.size() == MAX_PROJECTION_GRIDS_PER_SOURCE) levels.remove(levels.keySet().iterator().next());
-        levels.put(order, grid);
+        levels.put(key, grid);
         return grid;
       }
     } finally {

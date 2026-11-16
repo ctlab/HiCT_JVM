@@ -929,6 +929,10 @@ paths:
         bin runs for each axis, allowing repeated references to be identified.
         Pipeline values are display-grid expressions and may depend on tracks or
         other sources; their axis provenance describes the selected source grid.
+        `PIPELINE_SIGNAL` projects a required secondary input onto the primary grid when stored resolution levels differ.
+        `BINS` queries include hidden assembly components on both sources; `PIXELS` queries use visible components.
+        A primary-only expression does not read an unused secondary matrix. Projected values are display-grid signals,
+        not new native contact observations.
       operationId: queryMatrix
       requestBody:
         required: true

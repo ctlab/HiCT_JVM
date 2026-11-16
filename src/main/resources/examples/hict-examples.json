@@ -202,7 +202,7 @@
         "Micro-C",
         "17 chromosomes"
       ],
-      "description": "A 166.94 MB wild-type Micro-C map with the 3.82 MB UCSC sacCer3 reference. All 17 chromosome names and lengths match directly. Includes 50 bp detail.",
+      "description": "A 166.94 MB wild-type Micro-C map with the 3.82 MB UCSC sacCer3 reference. All 17 chromosome names and lengths match directly. Includes 50 bp detail. The short-range empty band at 50/100 bp is present in the deposited raw counts.",
       "publications": [
         {
           "title": "Cohesin acetylation and ATPase activity control cohesion and loop architecture through distinct mechanisms",

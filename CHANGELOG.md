@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Keep Info current while zoom tiles load without reading tile pixels, and explain the yeast Micro-C example's source-supported short-range empty band.
+- Dismiss map-specific masking notices safely when changing maps, and support numeric pipeline queries across different resolution pyramids, including hidden bins.
+
 - Follow quick-start example conversions in Jobs, retain their FASTA when reopening results, offer clear errors and a direct retry, and revoke automatic opening when closing progress or changing workspace.
 - Keep map startup quiet by removing internal sensitivity notices and redundant example preparation notifications.
 

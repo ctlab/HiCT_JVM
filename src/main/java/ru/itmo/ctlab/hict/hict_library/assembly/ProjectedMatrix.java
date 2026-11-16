@@ -45,6 +45,15 @@ public final class ProjectedMatrix {
     ResolutionDescriptor primaryResolution, ResolutionDescriptor nativeResolution,
     long rowStart, long colStart, long rowEnd, long colEnd, int sampleFactor, Reducer reducer
   ) {
+    return query(primaryGrid, nativeGrid, nativeFile, primaryResolution, nativeResolution,
+      rowStart, colStart, rowEnd, colEnd, sampleFactor, reducer, true);
+  }
+
+  public static MatrixQueries.MatrixWithWeights query(
+    AssemblyBinGrid primaryGrid, AssemblyBinGrid nativeGrid, ChunkedFile nativeFile,
+    ResolutionDescriptor primaryResolution, ResolutionDescriptor nativeResolution,
+    long rowStart, long colStart, long rowEnd, long colEnd, int sampleFactor, Reducer reducer, boolean visibleOnly
+  ) {
     final int rows = Math.toIntExact(rowEnd - rowStart);
     final int cols = Math.toIntExact(colEnd - colStart);
     final var rowBlocks = axis(primaryGrid, nativeGrid, rowStart, rows, sampleFactor);
@@ -68,7 +77,7 @@ public final class ProjectedMatrix {
         checkCancelled();
         final var colBlock = colBlocks.get(c);
         final var nativeMatrix = nativeFile.matrixQueries().getSubmatrix(nativeResolution,
-          rowBlock.start, colBlock.start, rowBlock.end, colBlock.end, true);
+          rowBlock.start, colBlock.start, rowBlock.end, colBlock.end, visibleOnly);
         if (c == 0) addWeights(rowBlock, nativeMatrix.rowWeights(), rowWeights, rowLengths);
         if (r == 0) addWeights(colBlock, nativeMatrix.colWeights(), colWeights, colLengths);
         accumulate(nativeMatrix.matrix(), rowBlock, colBlock, reducer, values, scoreAreas);
@@ -84,7 +93,7 @@ public final class ProjectedMatrix {
     finishWeights(rowWeights, rowLengths);
     finishWeights(colWeights, colLengths);
     return new MatrixQueries.MatrixWithWeights(new MatrixQueries.DoubleMatrix(values), rowWeights, colWeights,
-      rowStart, colStart, rowEnd, colEnd, QueryLengthUnit.PIXELS, primaryResolution);
+      rowStart, colStart, rowEnd, colEnd, visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, primaryResolution);
   }
 
   private static List<AxisBlock> axis(AssemblyBinGrid primary, AssemblyBinGrid nativeGrid, long start, int size, int factor) {

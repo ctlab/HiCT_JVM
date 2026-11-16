@@ -4435,3 +4435,68 @@ pair. Broad rendering/cut/sequence/performance/native suites were not rerun. Liv
 conversion cancellation, large/public examples, wider wizard workflows, catalog/
 session provenance transfer, OSD/diagonal behavior and release/publication gates
 remain open. Protected plans/owner files are unchanged; nothing pushed/merged/tagged.
+
+
+### Info, map-switch notifications and disjoint-resolution diagnostics
+
+Info uses view/layer metadata rather than TileLayer.getData. The before-fix real
+yeast probe (`/tmp/hict-osd-baseline-01/results.json`) made 425 pixel reads for 25
+pointer moves with Info hidden and 425 with it visible; a stationary delayed zoom
+left Info blank. Final `/tmp/hict-osd-ui-08/results.json` passes 16 cases with empty
+window errors, zero reads in both probes and maximum measured update durations
+0.1 ms hidden/0.4 ms visible. Four real resolution transitions hold tile replies;
+current guidance remains populated. Loaded tiles, stationary pan/toggle/settings,
+literal markup names, released old watchers, outside-assembly coordinates, mixed
+pyramids and a genuinely late old-map masking callback are covered. These small
+probes are not broad latency or large-map performance qualification.
+
+The exact tiny NaN-weighted-map switch reproduced a renderer exit with
+vue-sonner 0.4.2: its delete watch effect fed height updates back into itself.
+Pinned 2.0.9 uses the maintained dismissal path and requires the explicit CSS
+import. Final `/tmp/hict-osd-notification-02/results.json` passes the one-case real
+notice/dismiss/map-replacement regression with empty errors and unchanged inputs.
+The real mixed-pyramid UI also uncovered a BINS PIPELINE_SIGNAL HTTP 500; the
+existing projection now respects BINS/PIXELS visibility on both grids and skips
+Secondary for Primary-only expressions. Two new HTTP tests assert all projected
+cells/mass for disjoint fine/coarse levels and hidden Primary/Secondary bins,
+including the legacy omitted-type source expression. Full final JVM
+`/tmp/hict-osd-jvm-full-02.log` and XML: 602 tests, zero failures/errors, seven
+optional skips. WebUI `/tmp/hict-osd-web-04.log` build/type/numerical checks pass;
+five WebUI files pass Prettier and three new Python scripts pass Black.
+
+Final independent `/tmp/hict-osd-ui-08/diagonal.json` matches all 669,584 raw cells
+in 17 windows on chrI/chrVI/chrM at 50/100/500 bp against Cooler balance=False.
+Scanning all source stored cis pixels confirms offsets 0–3 at 50 bp and 0–1 at
+100 bp are empty, while the 500 bp diagonal contains 3,418,162 contacts. Bin offsets
+are not exact read-pair distances. The source establishes that this band predates
+HiCT import; the upstream processing description does not establish its precise
+cause. `source-hashes.json` confirms immutable physical copies: source.mcool
+SHA-256 `11a8e588694cfd686958ab23576aa3030dcf69f0c868d760082b34fc5d918a4b`,
+yeast.hict.hdf5 `dff20b25ee9cdaa6d01802c59e3f251e0694d36c10f025cc69fa221c32e7f722`.
+Reproduce with check_osd_resolution_browser.py using --jar, --webui, --source-dir,
+--output and --hdf-python (Cooler/h5py/NumPy). It invokes the independent
+check_microc_diagonal.py after opening the copied map on a fresh server.
+
+Final browser evidence adds transactions-02 (16), examples-01 (23),
+other-jobs-01/browser (10), failures-02/browser (6), tracks-01 plus controls (13+8),
+responsive-01 (15) and histogram-01 (13), all under `/tmp/hict-osd-`, all exit zero.
+Together with the 16 Info and one dismissal case, these are 121 cases. Error arrays
+are empty where captured; failure-reporting deliberately injects errors. Histogram
+qualification runs in isolation and observes at most four tile transfers. Screenshot
+review covers delayed-tile guidance, literal names, absent old-map notice, current
+error-toast styling, dark track edges after resizing and responsive controls.
+Initial helper failures (Done/Close selector, ruler versus map pointer target,
+incomplete Secondary frontend setup and NumPy scalar serialization) are corrected
+and excluded. The old-library renderer crashes and actual BINS HTTP failure are
+recorded as fixed defects, not environmental flakiness; incomplete runs are not
+counted. No out-of-memory kill was observed.
+
+Frozen separately served dist SHA-256 (sorted relative paths/NUL/bytes, excluding
+electron): `613bc21dde832be5db24a4112517b94ef12baad19223229d7963efd0f4109065`.
+Development JAR `hict_server-2.0.40-c99eabd-webui_d5c1bc0-fat.jar` SHA-256:
+`ac1a8107093f9a8860bdfb95f395837c13999fc077a78d861fdd13619133f664`.
+This qualifies the development pair, not older embedded assets or a combined
+SFX/native release. Broader sequence/cut/native/performance suites were not rerun.
+Live conversion cancellation, larger/public examples, wider wizard workflows,
+catalog/session provenance transfer and release/publication gates remain open.
+Protected plans/owner files are unchanged; nothing pushed, merged or tagged.

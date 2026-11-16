@@ -200,9 +200,13 @@ public final class RenderPipelineConfig {
     return null;
   }
 
+  public boolean requiresSecondarySource() {
+    return enabled && (referencesSource(upperExpressionJson, "SECONDARY") || referencesSource(lowerExpressionJson, "SECONDARY"));
+  }
+
   private static boolean referencesSource(final @NotNull JsonObject node,
                                           final @NotNull String sourceName) {
-    final var nodeType = node.getString("type", "").trim().toUpperCase(Locale.ROOT);
+    final var nodeType = node.getString("type", "source").trim().toUpperCase(Locale.ROOT);
     if ("SOURCE".equals(nodeType)) {
       return sourceName.equals(node.getString("source", "PRIMARY").trim().toUpperCase(Locale.ROOT));
     }
