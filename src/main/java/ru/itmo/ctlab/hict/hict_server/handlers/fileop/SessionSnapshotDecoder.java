@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 /** Pure structural decoder for the resource portion of a session.
- * This is the internal snapshot version, not the portable v3 envelope.
+ * This is the internal snapshot version, not the portable session envelope.
  * Does not open files or trust the producer's verification flags.
  */
 public final class SessionSnapshotDecoder {
@@ -38,13 +38,13 @@ public final class SessionSnapshotDecoder {
     if (input.encode().getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) fail("snapshot", "exceeds 8 MiB");
     // Own the input tree so later caller changes cannot alter the prepared document.
     var root = input.copy();
-    if (integer(root, "snapshotVersion", "snapshot", 1, MAX_INTEGER) != 1) fail("snapshot.snapshotVersion", "unsupported version");
+    final int snapshotVersion = (int) integer(root, "snapshotVersion", "snapshot", 1, 2);
     var primary = object(root, "primary", "snapshot");
-    source(primary, "primary");
+    source(primary, "primary", snapshotVersion);
     JsonObject secondary = null;
     if (root.getValue("secondary") != null) {
       secondary = object(root, "secondary", "snapshot");
-      source(secondary, "secondary");
+      source(secondary, "secondary", snapshotVersion);
     }
     String active = choice(root, "assemblySource", "snapshot", "PRIMARY", "SECONDARY");
     if (active.equals("SECONDARY") && secondary == null) fail("snapshot.assemblySource", "secondary source is missing");
@@ -84,7 +84,7 @@ public final class SessionSnapshotDecoder {
     SessionVisualizationCodec.decode(visualization);
     var workspace = object(root, "workspace", "snapshot");
     workspace(workspace, active.equals("SECONDARY") ? secondary : primary);
-    return new Decoded(new SessionSnapshotDTO(1,
+    return new Decoded(new SessionSnapshotDTO(snapshotVersion,
       bool(root, "assemblyVerified", "snapshot"), bool(root, "filesFingerprinted", "snapshot"),
       bool(root, "tracksVerified", "snapshot"), primary, secondary, active, graph, trackArray, workspace, visualization),
       List.copyOf(definitions));
@@ -145,7 +145,7 @@ public final class SessionSnapshotDecoder {
     }
   }
 
-  private static void source(JsonObject source, String path) {
+  private static void source(JsonObject source, String path, int snapshotVersion) {
     string(source, "filename", path, false);
     String fasta = string(source, "fastaFilename", path, true);
     fingerprint(object(source, "fileFingerprint", path), path + ".fileFingerprint");
@@ -167,6 +167,8 @@ public final class SessionSnapshotDecoder {
         integer(split, "sourceOffsetBp", field, 0, Integer.MAX_VALUE);
         final long length = integer(split, "parentLengthBp", field, 2, MAX_INTEGER);
         bool(split, "reversed", field);
+        if (split.containsKey("exact") && bool(split, "exact", field) && snapshotVersion < 2)
+          fail(field + ".exact", "exact cuts require snapshot version 2");
         integer(split, "splitOffsetBp", field, 1, length - 1);
         final long left = integer(split, "leftId", field, parent + 1, Integer.MAX_VALUE - 1);
         if (left <= previousRightId) fail(field + ".leftId", "split IDs must increase");
@@ -194,6 +196,13 @@ public final class SessionSnapshotDecoder {
       var bins = object(contig, "contigLengthBins", field);
       var visibility = object(contig, "contigPresenceAtResolution", field);
       if (!bins.fieldNames().equals(visibility.fieldNames())) fail(field, "resolution fields disagree");
+      if (contig.containsKey("contigBinOffsets")) {
+        var offsets = object(contig, "contigBinOffsets", field);
+        for (String key : offsets.fieldNames()) {
+          if (!bins.containsKey(key)) fail(field + ".contigBinOffsets." + key, "unknown resolution");
+          integer(offsets, key, field + ".contigBinOffsets", -MAX_INTEGER, MAX_INTEGER);
+        }
+      }
       if (resolutions == null) resolutions = Set.copyOf(bins.fieldNames());
       else if (!resolutions.equals(bins.fieldNames())) fail(field, "contig resolution sets disagree");
       for (String key : bins.fieldNames()) {

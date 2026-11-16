@@ -507,7 +507,7 @@ class ApiHttpIntegrationTest {
     assertEquals(new JsonObject(ru.itmo.ctlab.hict.hict_server.handlers.fileop.SessionVisualizationCodec
         .encode(visualization).encode()),
       snapshot.getJsonObject("visualizationOptions"));
-    assertEquals(1, snapshot.getInteger("snapshotVersion"));
+    assertEquals(2, snapshot.getInteger("snapshotVersion"));
     assertTrue(snapshot.getBoolean("assemblyVerified"));
     assertEquals(graph, snapshot.getJsonObject("renderPipeline"));
     var source = snapshot.getJsonObject("primary");

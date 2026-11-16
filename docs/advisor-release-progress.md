@@ -21,7 +21,7 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: explicit source-bin origins delivered to WebUI; exact operation/session/export changes pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: explicit bin origins, exact library cuts and v4 session replay implemented; public cut API/UI, shared-bin accounting, sequence-scale display and approximate export pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
@@ -58,6 +58,31 @@ All bases of the independent 4 kb fixture were checked against enumerated source
 intervals at 100/200 bp after a cut and reversal. This does not change cut
 semantics yet. Legacy destructive split replay and coarse empty footprints are
 still preserved until the new exact operation is implemented.
+
+## P1 exact library cuts and sessions
+
+`ScaffoldingOperations.splitContigAtBp` cuts an oriented contig at an exact base
+boundary. Each child's ATUs retain all intersecting original bins; crossing bins
+are shared, without rewriting contacts. Sequence intervals meet exactly, and
+one-base fragments are retained. The operation is atomic and checkpoints preserve
+its typed exact-cut lineage. New snapshot v2/session v4 captures support exact
+replay; older snapshots and bin-removing edits remain readable. Historical
+snapshots missing the recently added bin-origin fields also restore correctly.
+
+Validated: 523 JVM tests (zero failures/errors, seven optional skips), WebUI build,
+18 existing browser session checks, and a new browser test restoring two exact
+cuts plus reversal, checking every base's pixel coordinates and gap-free FASTA,
+then saving/closing/reopening through actual session controls. Evidence:
+`/tmp/hict-exact-cut-ui/results.json` and
+`/tmp/hict-exact-cut-session/snapshots/results.json`.
+
+The scissors still use the historical endpoint. Before switching the UI, finish
+the guarded exact-cut endpoint, primary/secondary source synchronization,
+shared-bin statistics/normalization and numeric-query provenance, explicit
+approximate Cooler export, and sequence-scale display. Source offsets still use
+the existing int descriptor field: exact slices fail on overflow rather than
+wrapping; long-offset migration remains part of P1. This increment does not
+qualify P1 or the release as complete.
 
 ## Mandatory release gates
 

@@ -548,7 +548,7 @@ paths:
                 type: object
                 required: [snapshotVersion, assemblyVerified, filesFingerprinted, tracksVerified, primary, assemblySource, renderPipeline, tracks, workspace]
                 properties:
-                  snapshotVersion: { type: integer, enum: [1] }
+                  snapshotVersion: { type: integer, enum: [1, 2], description: New captures use v2 with explicit bin origins and exact-cut replay support. V1 snapshots remain readable with their original destructive split semantics. }
                   filesFingerprinted: { type: boolean }
                   tracksVerified: { type: boolean }
                   assemblyVerified: { type: boolean, description: Whether isolated candidate assembly reconstruction succeeded for all open sources. Does not verify source content fingerprints or complete session restoration. }
@@ -2427,6 +2427,7 @@ components:
               splitOffsetBp: { type: integer, format: int64, minimum: 1 }
               leftId: { type: integer, format: int32, minimum: 1 }
               rightId: { type: integer, format: int32, minimum: 2 }
+              exact: { type: boolean, default: false, description: With snapshot v2, retain every base and reference crossing source bins in both children. Absent or false replays the historical bin-removing operation. }
         capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
     SecondarySourceStatus:
       type: object

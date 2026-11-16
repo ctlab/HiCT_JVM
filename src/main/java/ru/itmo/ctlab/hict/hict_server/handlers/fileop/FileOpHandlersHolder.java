@@ -528,7 +528,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final boolean verifyTracks = (Boolean) tracksValue;
         final var visualization = (ShareableWrappers.SimpleVisualizationOptionsWrapper) map.get("visualizationOptions");
         if (visualization == null) throw new IllegalStateException("Visualization options are unavailable");
-        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify, fingerprintFiles, verifyTracks,
+        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(2, verify, fingerprintFiles, verifyTracks,
           ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
             String.valueOf(map.getOrDefault("openedFilename", "")),
             String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, ""))),

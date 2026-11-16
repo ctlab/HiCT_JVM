@@ -116,7 +116,14 @@ public final class SessionAssemblyRestorer {
         ChunkedFile.validateDisplayName(name);
         candidate.getScaffoldNameOverrides().put(Long.parseLong(entry.getKey()), name);
       }
-      require(expected.equals(JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(candidate))),
+      final var actualInfo = JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(candidate));
+      // Older snapshots predate explicit bin origins. Their bin counts, source
+      // intervals and ATU reconstruction are still checked above and separately.
+      for (int index = 0; index < contigs.size(); index++) {
+        if (!contigs.getJsonObject(index).containsKey("contigBinOffsets"))
+          actualInfo.getJsonArray("contigDescriptors").getJsonObject(index).remove("contigBinOffsets");
+      }
+      require(expected.equals(actualInfo),
         "assemblyInfo", "restored descriptors differ from the saved assembly");
       final var restored = SessionSnapshotDTO.source(candidate, "", "");
       require(hash.equals(restored.getString("agpSha256")), "agpSha256", "assembly cannot round-trip this AGP without loss");

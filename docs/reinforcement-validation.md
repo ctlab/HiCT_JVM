@@ -2550,3 +2550,38 @@ trips, selection exports and the new source-bin oracle. Evidence:
 because the new scenario reloads the page: historical notification assertions
 now run before that reload, preserving their original coverage. Focused ESLint
 returned success with existing schema-resolution notices and no code errors.
+
+## Advisor P1 exact-cut library and v4 sessions (2026-11-16)
+
+The library now supports exact oriented-contig boundary cuts with atomic rollback,
+intersecting ATU slices and typed exact lineage. Both children reference a bin
+crossing the cut; their source sequence intervals are disjoint and exhaustive.
+No contacts are rewritten. Unit tests enumerate every interior boundary of the
+17 bp source on both strands at 4/10 bp resolutions, compare physical stripe/bin
+references, check gap-free FASTA and unchanged source-file bytes, and exercise
+repeated cuts, reversal, checkpoint undo/redo, invalid cuts and session replay.
+Legacy cuts retain bin removal and their original replay path.
+
+New captures use snapshot v2 and portable session v4. The readers still accept
+snapshot v1 and portable sessions v1-v3. Exact lineage requires snapshot v2;
+geometry fields are validated when present. A regression restores historical
+snapshots lacking bin-origin fields without silently reintroducing sequence
+removed by the older cut operation.
+
+Validation: 523 JVM tests, zero failures/errors, seven optional skips; WebUI build
+and included regression checks pass. Existing session browser suite passed all
+18 checks with zero page errors (`/tmp/hict-exact-cut-session/snapshots/results.json`).
+The new `check_exact_cut_session_browser.py` restores a prepared two-cut/reversed
+library state through the real v4 file chooser, compares every retained base's
+pixel/bin projection with independently enumerated source intervals, verifies the
+17-base reverse-complement FASTA, then saves/closes/reopens it. All checks passed
+(`/tmp/hict-exact-cut-ui/results.json`); the restored view screenshot was inspected.
+The script uses disposable physical copies and its own server. Initial version
+assertions in the HTTP test were updated from v1 to the new v2 capture contract;
+all v1 compatibility tests remain. Focused ESLint has no errors and two existing
+explicit-any warnings in MainUIComponent.vue.
+
+Scope still open: HTTP exact-cut entry point and scissors/feature actions,
+primary/secondary synchronization, native shared-bin statistics/provenance,
+approximate Cooler export, long source offsets and sequence-scale display.
+No claim of completed advisor item 21 or release readiness is made here.

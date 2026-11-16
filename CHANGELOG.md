@@ -18,6 +18,8 @@
 
 ### Sequence analysis and sessions
 
+- Save sessions in format v4 with explicit support for exact sequence-cut lineage, while retaining older session readers and historical cut behavior.
+
 - Deliver completed overlays and search tracks through Jobs even after progress dialogs close, retain overlay/triangle choices, and default generation levels from finest through current.
 - Keep primary and secondary palettes and custom graphs intact through Observed/Expected/O/E changes, mask undefined O/E ratios, and prevent unusably narrow threshold intervals.
 - Pick overlapping track features by their displayed lanes and offer Zoom to feature at readable FASTA scale.

@@ -16,6 +16,22 @@ import static org.junit.jupiter.api.Assertions.*;
 class SessionAssemblyRestorerTest {
   @TempDir Path directory;
 
+  @Test void restoresPreGeometrySnapshotsWithoutChangingLegacySplitSemantics() throws Exception {
+    var path = ReinforcementHdf5Fixture.create(directory, "legacy", List.of(4L, 10L));
+    var options = new ChunkedFile.ChunkedFileOptions(path, 1, 2);
+    try (var live = new ChunkedFile(options); var candidate = new ChunkedFile(options)) {
+      live.scaffoldingOperations().splitContigAtBin(8, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      var saved = SessionSnapshotDTO.source(live, "legacy", "");
+      for (var entry : saved.getJsonObject("assemblyInfo").getJsonArray("contigDescriptors"))
+        ((io.vertx.core.json.JsonObject) entry).remove("contigBinOffsets");
+      saved.getJsonArray("splitEdits").getJsonObject(0).remove("exact");
+      SessionAssemblyRestorer.restore(candidate, saved);
+      SessionAssemblyRestorer.verifyContactBinMapping(live, candidate);
+      assertEquals(13, candidate.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum());
+      assertFalse(candidate.getSplitEdits().getFirst().exact());
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void restoresNativeSplitWithIdenticalContactBins(boolean reversed) throws Exception {

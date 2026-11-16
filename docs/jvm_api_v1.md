@@ -177,6 +177,16 @@ Oversized windows are rejected before matrix allocation.
 |---|---|---|
 | `POST` | `/session/snapshot` | Save assembly lineage, inputs, tracks and visualization |
 | `POST` | `/session/restore` | Validate inputs and atomically restore a saved session |
+
+New captures use internal snapshot v2, saved by the WebUI in portable session v4.
+The server continues to read snapshot v1, and the WebUI reads session v1–v3 with
+their existing limitations. Split lineage records may declare `exact: true` in
+snapshot v2: the cut retains all bases, and both children reference a crossing
+source bin. Absent/false `exact` preserves historical bin removal; restoring an
+older session never silently adds back its removed sequence. Bin origins are
+validated against reconstructed descriptors when the saved snapshot supplies
+them. Historical snapshots lacking those fields retain bin-count, source-interval,
+and assembly reconstruction checks.
 | `GET` | `/jobs` | Snapshot existing background services with result actions |
 | `POST` | `/jobs/cancel` | Cancel a service-prefixed job ID |
 | `POST` | `/examples/catalog` | Read the bundled and local example catalog |

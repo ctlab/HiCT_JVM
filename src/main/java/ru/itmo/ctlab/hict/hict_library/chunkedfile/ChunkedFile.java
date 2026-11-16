@@ -229,7 +229,14 @@ public class ChunkedFile implements AutoCloseable {
 
   /** Native split coordinates are relative to the parent in its orientation at the time of the edit. */
   public record SplitEdit(int parentId, String sourceName, int sourceOffsetBp, long parentLengthBp,
-                          boolean reversed, long splitOffsetBp, int leftId, int rightId) {}
+                          boolean reversed, long splitOffsetBp, int leftId, int rightId,
+                          @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+                          boolean exact) {
+    public SplitEdit(int parentId, String sourceName, int sourceOffsetBp, long parentLengthBp,
+                     boolean reversed, long splitOffsetBp, int leftId, int rightId) {
+      this(parentId, sourceName, sourceOffsetBp, parentLengthBp, reversed, splitOffsetBp, leftId, rightId, false);
+    }
+  }
 
   void recordSplit(SplitEdit split) {
     splitEdits.put(split.leftId(), split);
