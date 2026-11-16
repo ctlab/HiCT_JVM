@@ -24,7 +24,7 @@ describe earlier releases; they must not override the decisions below.
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
-| P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: feature Center/Zoom corrected and copied-coordinate grouping removed, browser verified after exact cuts; track/source UI separation, resize and broader track qualification pending |
+| P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; track/source UI separation, resize, broad formats and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | Pending; existing wheel-to-letters verified |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | Pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
@@ -155,8 +155,7 @@ errors). PNG and PDF output were visually inspected. BINS and PIXELS expected
 profiles now have independent caches; both fit-window isolation probes match an
 independent oracle exactly: `/tmp/hict-shared-expected-bins-browser-03/results.json`.
 
-This is a qualified primary workflow, not completion of P1. Quantitative 1D
-tracks still sample stored bins, and hidden/no-bin track components, the full
+This is a qualified primary workflow, not completion of P1. The full
 secondary/disjoint-pyramid UI matrix, selection/whole-map
 exports, saved-bookmark migration, large-map latency and platform/package gates
 remain open. The browser served the current WebUI distribution separately from
@@ -186,6 +185,20 @@ sequence-view/export/session workflow also passes:
 Broad track/source, entity navigation, layout and packaged release gates remain
 open. A sidebar control overflow seen in the feature-zoom screenshot belongs in
 the pending layout work; this increment does not qualify every responsive layout.
+
+## Base-grid track qualification
+
+Base-grid track queries now project features and quantitative intervals directly
+in assembly BP, including hidden/binless components, on servers advertising the
+new optional capability. Native-sidecar axes are not reused. Weight tracks retain
+native values/resolution and missing support through cuts, reversal and coarse
+max aggregation; normalization availability uses the stored level. Per-base
+BED/GTF/indexed-BAM/weights tests, disjoint secondary weights and >2.5 Gb positions
+pass. Chromium verifies a physical binless/hidden/visible fixture, real hidden
+feature cutting, values/tooltips, normalization availability and session restore:
+`/tmp/hict-base-tracks-browser-04/results.json` (13 checks, no page errors).
+Native bytes are unchanged. BigWig/VCF, all aggregation modes, large-file latency,
+the broader secondary UI matrix, layout and package/platform gates remain open.
 
 ## Mandatory release gates
 

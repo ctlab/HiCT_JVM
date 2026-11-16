@@ -3030,3 +3030,68 @@ Final embedded-package/platform, all annotation formats, secondary/disjoint leve
 all entity-navigation callers and large-map performance are not qualified here.
 The feature-zoom screenshot also exposes sidebar control overflow to address in
 P4 layout work. P1/P4 and the complete release/publication goal remain active.
+
+## Base-grid 1D features, signals and native weights — 2026-11-16
+
+The old BP track adapter first projected onto visible native bins, which could
+omit hidden/binless sequence and stretch quantitative intervals beyond their
+retained bases. New servers advertise additive `sequenceScaleTracks=true`.
+Explicit `sequenceScale=true`, BP-unit requests build a uniform assembly-base
+axis and bypass native precompute sidecars. Responses retain the stored source
+level separately from the 1 bp display axis. Existing native queries and BINS
+pipeline samples retain their paths; older servers retain the former adapter.
+
+Source features and quantitative intervals project directly through source
+offsets/strand at base scale. Cooler weights keep their actual source-bin values,
+including hidden references, and report per-track native resolution. A disjoint
+secondary source uses its finest stored level if the primary level is absent.
+Missing bins and non-finite weights have no support. Coarse max buckets retain
+support intervals separately so they cannot paint missing bases. Weight output
+is capped at 16,384 intervals; queries cap width at 8192 and span at 1,048,576 BP.
+Out-of-assembly queries return empty data. Explicit invalid flags/units and
+oversized queries are rejected. Tooltips identify native weights and one-based
+inclusive assembly coordinates. Normalization availability now checks the stored
+source level rather than the virtual display level.
+
+`SequenceTrackQueryTest` compares every base of a 17 bp independent fixture after
+nested cuts, with hidden and binless children, before/after reversal at two stored
+levels. BED values, one-base GTF features, indexed BAM coverage and native weights
+match source-coordinate oracles. Native NaN masks and binless bases remain missing
+even in a single coarse display bucket. Disjoint secondary weights retain their
+own stored level/strand, and a feature beyond 2.5 Gb needs no stored 1 bp level.
+Feature context, empty ranges, bounds, cancellation and unchanged native bytes pass.
+DTO/capability checks verify explicit transport and native sampling metadata.
+
+Full JVM `./gradlew test shadowJar -x copyWebUI --offline` passed: 574 tests, zero
+failures/errors, seven optional skips. Full `npm run build:web` passed, including
+type checks and existing regressions; the known large-chunk warning remains.
+Logs: `/tmp/hict-base-tracks-final-jvm.log` and
+`/tmp/hict-base-tracks-final-web.log`.
+
+`SequenceTrackBrowserFixture.java` creates physical sources with one binless BP,
+two hidden BP and 4 kb visible sequence. The real browser observes GTF features
+on the first two components, BED values `[7,9,9,4,4]`, and native weights
+`[missing,20,20,100,100]` at their first five assembly positions. Ordinary native
+queries retain their visibility behavior. Both stored levels, base feature
+context, source-level normalization availability, tooltip metadata, a real cut
+inside hidden sequence, full reversal, session save/restore and invalid request
+rejection pass. A coarse weight bucket also excludes the binless base. All 13
+checks pass without page errors and the native hash is unchanged. The map/track
+screenshots were visually inspected. Evidence:
+`/tmp/hict-base-tracks-browser-04/{results.json,hidden-binless-tracks.png,restored-sequence-tracks.png}`.
+
+Immutable server SHA-256:
+`5ce5c27cab211e87cb30ae760ddc351198703a620b0166c21152d01f287e593e`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`3f4bd4a18458c2c5abd70cee1baaea6bf607ef783a0baa8e8a2304fd0a87e1ef`.
+The established 17-case sequence/export/session and 15-case feature-action browser
+workflows also pass after the base-track transport change:
+`/tmp/hict-base-tracks-sequence-browser/results.json` and
+`/tmp/hict-base-tracks-feature-browser/results.json`. Those two runs used server
+SHA-256 `4d769d70674accdf8df29fe7fcee0a735d4a19bce1ac589e8e37b324b3678834`,
+before the final coarse-weight support correction; neither loads a weights track.
+
+BigWig/VCF and all signal modes, large-file latency (including contention with
+native precompute), the full secondary UI matrix, responsive layout and final
+embedded/platform qualification remain open. This increment establishes numerical
+and primary browser correctness; it does not certify all tracks or performance.

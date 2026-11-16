@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Project base-scale 1D features and signals across hidden and binless sequence, with bounded queries and native-bin weight provenance.
+- Keep normalization availability tied to stored source resolution and label base-scale track coordinates explicitly.
+
 - Cut exactly at GTF/GFF feature edges with stale-menu guards, preserve the BP view after cuts, and make Center/Zoom actions distinct across native/base scales.
 - Copy genome coordinates without thousands separators; fit BP navigation ranges through the active coordinate model.
 

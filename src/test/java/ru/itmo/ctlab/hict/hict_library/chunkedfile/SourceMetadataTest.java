@@ -38,6 +38,7 @@ class SourceMetadataTest {
     // Rendering support belongs to the running server, even for legacy inputs.
     assertTrue(legacy.sequenceScaleTiles());
     assertTrue(converted.sequenceScaleTiles());
+    assertTrue(legacy.sequenceScaleTracks());
   }
 
   @Test void explicitContactsAndPerResolutionWeightsRemainDistinctFromUnitVectors() throws Exception {

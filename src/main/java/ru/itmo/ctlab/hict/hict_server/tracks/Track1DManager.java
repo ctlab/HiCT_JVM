@@ -47,6 +47,7 @@ import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.hdf5.HDF5LibraryInitializer;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.ATUDirection;
+import ru.itmo.ctlab.hict.hict_library.domain.BinCoordinateMapper;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigDirection;
 import ru.itmo.ctlab.hict.hict_library.domain.ContigHideType;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
@@ -644,6 +645,116 @@ public class Track1DManager implements AutoCloseable {
     return queryVisibleTracks(chunkedFile, null, start, end, widthPx, bpResolution, units);
   }
 
+  /** Uniform assembly-BP display, including hidden and binless sequence components.
+   * This is a display axis, not a request for a stored 1 bp contact resolution. */
+  public @NotNull QueryResult querySequenceTracks(ChunkedFile primary, @Nullable ChunkedFile secondary,
+                                                  long startBp, long endBp, int widthPx, long sourceBpResolution) {
+    if (!primary.getResolutionToIndex().containsKey(sourceBpResolution) || sourceBpResolution <= 0)
+      throw new IllegalArgumentException("Unsupported source resolution for sequence tracks: " + sourceBpResolution);
+    if (widthPx < 1 || widthPx > 8192)
+      throw new IllegalArgumentException("Sequence track width must be between 1 and 8192 pixels");
+    if (Math.subtractExact(Math.max(startBp,endBp),Math.min(startBp,endBp)) > 1_048_576)
+      throw new IllegalArgumentException("Sequence track query must span at most 1048576 bases");
+    final var segments = buildSourceToAssemblySegments(primary, linkedFastaAliasesBySource, sourceBpResolution, true, true);
+    final long total = segments.totalVisiblePixels();
+    final long start = Math.max(0,Math.min(total,Math.min(startBp,endBp)));
+    final long end = Math.max(start,Math.min(total,Math.max(startBp,endBp)));
+    final var renders = new ArrayList<TrackRender>();
+    this.lock.readLock().lock();
+    try {
+      for (var track : this.tracks.values()) {
+        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+        if (!track.visible) continue;
+        try {
+          if (start == end) renders.add(track.toEmptyRender());
+          else if (track.dataSource() instanceof CoolerWeightsTrackDataSource) {
+            var file = resolveChunkedFileForTrack(primary, secondary, track);
+            long resolution = file.getResolutionToIndex().containsKey(sourceBpResolution) ? sourceBpResolution
+              : Arrays.stream(file.getResolutions()).filter(r -> r > 0).min().orElseThrow();
+            var bins = querySequenceWeights(file,start,end,widthPx,resolution);
+            var render = new TrackRender(track.trackId(),track.name(),track.type().name(),track.color(),
+              track.dataSource().renderStyle().name(),bins,bins.stream().mapToDouble(TrackBin::getValue).max().orElse(0),null);
+            render.samplingBpResolution = resolution;
+            renders.add(render);
+          } else {
+            // Native-bin precompute sidecars have a different axis and must not be reused here.
+            renders.add(track.query(primary,segments.sourceToAssemblySegments(),segments.orderedSegments(),start,end,widthPx,1L));
+          }
+        } catch (java.util.concurrent.CancellationException cancelled) { throw cancelled; }
+        catch (RuntimeException failure) {
+          renders.add(track.toErrorRender(failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage()));
+        }
+      }
+    } finally { this.lock.readLock().unlock(); }
+    var result = new QueryResult(start,end,start,end,widthPx,1L,renders);
+    result.displayGrid = "SEQUENCE_BP";
+    result.sourceBpResolution = sourceBpResolution;
+    return result;
+  }
+
+  private static List<TrackBin> querySequenceWeights(ChunkedFile file,long start,long end,int width,long resolution) {
+    var descriptor = ResolutionDescriptor.fromBpResolution(resolution,file);
+    int order = descriptor.getResolutionOrderInArray();
+    double bucketSpan = Math.max(1d,(end-start)/(double)width);
+    double[] maxima = new double[width];
+    long[] counts = new long[width];
+    // Coarse display buckets may span missing bases. Retain their finite support
+    // separately so an aggregate weight never paints a binless/masked interval.
+    var support = new ArrayList<LongInterval>();
+    long runStart = -1, lastSupported = -2;
+    long bpOffset = 0, binOffset = 0;
+    for (var tuple : file.getAssemblyInfo().contigs()) {
+      if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+      var contig = tuple.descriptor();
+      long length = contig.getLengthBp(), bins = contig.getLengthBinsAtResolution()[order];
+      long from = Math.max(0,start-bpOffset), to = Math.min(length,end-bpOffset);
+      if (bins > 0 && to > from) {
+        boolean reversed = tuple.direction() == ContigDirection.REVERSED;
+        long origin = file.firstOwnedBinOffset(contig,order);
+        long first = BinCoordinateMapper.bpToBin(from,length,bins,resolution,origin,reversed);
+        long last = BinCoordinateMapper.bpToBin(to-1,length,bins,resolution,origin,reversed);
+        if (last-first+1 > 1_048_576) throw new IllegalArgumentException("Sequence weight window spans too many native bins");
+        var atus = file.matrixQueries().getATUsForRange(descriptor,binOffset+first,binOffset+last+1,false);
+        var weights = file.matrixQueries().weightsFor(atus,order);
+        for (long local = from; local < to; local++) {
+          if ((local & 1023) == 0 && Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+          long bin = BinCoordinateMapper.bpToBin(local,length,bins,resolution,origin,reversed);
+          double value = weights[Math.toIntExact(bin-first)];
+          if (!Double.isFinite(value)) continue;
+          long position = bpOffset+local;
+          if (position != lastSupported+1) {
+            if (runStart >= 0) {
+              support.add(new LongInterval(runStart,lastSupported+1));
+              if (support.size() > 16384) throw new IllegalArgumentException("Zoom in to display fragmented native weights");
+            }
+            runStart = position;
+          }
+          lastSupported = position;
+          int bucket = Math.min(width-1,(int)((bpOffset+local-start)/bucketSpan));
+          maxima[bucket] = counts[bucket] == 0 ? value : Math.max(maxima[bucket],value);
+          counts[bucket]++;
+        }
+      }
+      bpOffset = Math.addExact(bpOffset,length);
+      binOffset = Math.addExact(binOffset,bins);
+      if (bpOffset >= end) break;
+    }
+    if (runStart >= 0) support.add(new LongInterval(runStart,lastSupported+1));
+    var result = new ArrayList<TrackBin>();
+    int supportIndex = 0;
+    for (int i=0;i<width;i++) if (counts[i]>0) {
+      long first = start+(long)Math.ceil(i*bucketSpan), last = Math.min(end,start+(long)Math.ceil((i+1)*bucketSpan));
+      while (supportIndex < support.size() && support.get(supportIndex).end() <= first) supportIndex++;
+      for (int j=supportIndex;j<support.size() && support.get(j).start()<last;j++) {
+        long from = Math.max(first,support.get(j).start()), to = Math.min(last,support.get(j).end());
+        if (to<=from) continue;
+        if (result.size() >= 16384) throw new IllegalArgumentException("Zoom in to display fragmented native weights");
+        result.add(new TrackBin(from,to,maxima[i],to-from,null,from,to));
+      }
+    }
+    return result;
+  }
+
   public @NotNull QueryResult queryVisibleTracks(final @NotNull ChunkedFile primaryChunkedFile,
                                                  final @Nullable ChunkedFile secondaryChunkedFile,
                                                  final long start,
@@ -796,6 +907,18 @@ public class Track1DManager implements AutoCloseable {
                                                              final int widthPx,
                                                              final long bpResolution,
                                                              final double marginScreens) {
+    return queryFeatureContextInternal(chunkedFile,null,startBp,endBp,widthPx,bpResolution,marginScreens,false);
+  }
+
+  public FeatureContextResponse querySequenceFeatureContext(ChunkedFile primary, @Nullable ChunkedFile secondary,
+                                                            long start,long end,int width,long sourceResolution,double margin) {
+    return queryFeatureContextInternal(primary,secondary,start,end,width,sourceResolution,margin,true);
+  }
+
+  private FeatureContextResponse queryFeatureContextInternal(ChunkedFile chunkedFile,@Nullable ChunkedFile secondary,
+                                                              long startBp,long endBp,int widthPx,long sourceResolution,
+                                                              double marginScreens,boolean sequenceGrid) {
+    final long bpResolution = sequenceGrid ? 1 : sourceResolution;
     final var safeStartBp = Math.max(0L, Math.min(startBp, endBp));
     final var safeEndBp = Math.max(safeStartBp + 1L, Math.max(startBp, endBp));
     final var safeMarginScreens = Double.isFinite(marginScreens)
@@ -816,7 +939,9 @@ public class Track1DManager implements AutoCloseable {
       safeWidthPx,
       Math.min(8192, (int) Math.ceil(safeWidthPx * (1.0d + 2.0d * safeMarginScreens)))
     );
-    final var contextQuery = queryVisibleTracks(
+    final var contextQuery = sequenceGrid
+      ? querySequenceTracks(chunkedFile,secondary,contextStartBp,contextEndBp,contextWidthPx,sourceResolution)
+      : queryVisibleTracks(
       chunkedFile,
       contextStartBp,
       contextEndBp,
@@ -1857,6 +1982,12 @@ public class Track1DManager implements AutoCloseable {
   private @NotNull SegmentBuildResult buildSourceToAssemblySegments(
     ChunkedFile chunkedFile, Map<String, String> linkedFastaAliasesBySource, long bpResolution, boolean includeHidden
   ) {
+    return buildSourceToAssemblySegments(chunkedFile,linkedFastaAliasesBySource,bpResolution,includeHidden,false);
+  }
+
+  private @NotNull SegmentBuildResult buildSourceToAssemblySegments(
+    ChunkedFile chunkedFile, Map<String,String> linkedFastaAliasesBySource, long bpResolution, boolean includeHidden, boolean sequenceGrid
+  ) {
     final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
     if (resolutionOrder == null) {
       throw new IllegalArgumentException("Unsupported resolution for 1D track query: " + bpResolution);
@@ -1876,8 +2007,8 @@ public class Track1DManager implements AutoCloseable {
       final var sourceEnd = sourceStart + descriptor.getLengthBp();
       final var assemblyStart = assemblyCursor;
       final var assemblyEnd = assemblyCursor + descriptor.getLengthBp();
-      final var visibleAtResolution = includeHidden || descriptor.getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN;
-      final var lengthPxAtResolution = descriptor.getLengthBinsAtResolution()[resolutionOrder];
+      final var visibleAtResolution = sequenceGrid || includeHidden || descriptor.getPresenceAtResolution().get(resolutionOrder) == ContigHideType.SHOWN;
+      final var lengthPxAtResolution = sequenceGrid ? descriptor.getLengthBp() : descriptor.getLengthBinsAtResolution()[resolutionOrder];
       if (visibleAtResolution && lengthPxAtResolution > 0L) {
         final var segment = new AssemblySegment(
           sourceStart,
@@ -1887,7 +2018,7 @@ public class Track1DManager implements AutoCloseable {
           tuple.direction() == ContigDirection.REVERSED,
           visiblePxCursor,
           visiblePxCursor + lengthPxAtResolution,
-          chunkedFile.firstOwnedBinOffset(descriptor, resolutionOrder)
+          sequenceGrid ? 0L : chunkedFile.firstOwnedBinOffset(descriptor, resolutionOrder)
         );
         orderedSegments.add(segment);
         sourceToAssemblySegments.computeIfAbsent(sourceName, key -> new ArrayList<>()).add(segment);
@@ -5133,6 +5264,10 @@ public class Track1DManager implements AutoCloseable {
     private final int widthPx;
     private final long bpResolution;
     private final @NotNull List<TrackRender> tracks;
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String displayGrid;
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private Long sourceBpResolution;
   }
 
   @Getter
@@ -5174,6 +5309,8 @@ public class Track1DManager implements AutoCloseable {
     private final String error;
     private String statusMessage;
     private String analysisWarning;
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private Long samplingBpResolution;
   }
 
   @Getter
@@ -5358,6 +5495,10 @@ public class Track1DManager implements AutoCloseable {
         dataSource.renderStyle().name(), List.of(), 0.0d, null);
       render.statusMessage = message;
       return render;
+    }
+
+    private TrackRender toEmptyRender() {
+      return new TrackRender(trackId,name,type.name(),color,dataSource.renderStyle().name(),List.of(),0d,null);
     }
 
     private TrackRender toErrorRender(final @NotNull String message) {

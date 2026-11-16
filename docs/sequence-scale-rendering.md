@@ -108,11 +108,52 @@ wheel zoom to letters, overview navigation, viewport PNG/SVG/PDF and session
 save/close/restore. See `scripts/check_sequence_view_browser.py` and the validation
 ledger. This does not yet qualify the full secondary/disjoint-pyramid UI matrix,
 all track formats, hidden/no-bin 1D features, selection and
-whole-map exports, or native desktop platforms. Quantitative 1D tracks still sample
-stored native bins before their positions are mapped onto the base axis; full
-base-scale quantitative and hidden-component track behavior remains P1/P4 work.
+whole-map exports, or native desktop platforms. Base-scale track projection now
+has its own explicit query path, described below; broad format/performance
+qualification remains P1/P4 work.
 The additional primary GTF/GFF3 browser workflow checks both feature edges on
 forward/reversed contigs, vertical/horizontal menus, a one-base feature, disabled
 joins, delayed actions after undo, BP view preservation, actual clipboard output,
 distinct Center/Zoom actions and restored sessions. It does not qualify feature
 edits on every track format or secondary-source assembly combination.
+
+## Base-grid 1D tracks
+
+Servers advertising `sequenceScaleTracks=true` accept `sequenceScale=true` on
+`/tracks/query_1d` and `/tracks/feature_context`, with `unit=BP`. The requested
+`bpResolution` is a stored source level. Results explicitly declare
+`displayGrid=SEQUENCE_BP`, `bpResolution=1` and `sourceBpResolution`. Their pixel
+bounds are assembly BP; this does not request or create a stored 1 bp contact map.
+Older servers retain the previous native-bin adapter. Ordinary native queries
+and numeric pipeline BINS samples keep their previous paths.
+
+The base-grid builder includes every contig-tree sequence interval, regardless
+of native visibility or bin ownership. Source features and quantitative intervals
+project directly onto this axis, including partial/reversed fragments. Native
+precompute sidecars cannot supply these results because their axes differ.
+Queries clamp to retained assembly bounds, return empty data outside the assembly,
+and are limited to 8192 requested display pixels and 1,048,576 requested bases. Context
+margins are measured on the base axis. Cancellation is checked between tracks,
+weight components and during bounded weight projection.
+
+Cooler weights retain the selected source's actual native values. They are mapped
+through retained source-bin origins and strands, including hidden bins, then
+clipped to their sequence intervals. Binless or non-finite-weight bases remain
+missing. If a secondary source lacks the requested level, its finest stored
+level is used and reported in that track's `samplingBpResolution`. Display
+buckets take the maximum finite weight; their support counts describe display
+bases, not independent contact observations. Finite support is kept separate
+from coarse buckets, so masked or binless bases remain missing after aggregation.
+Weight output is bounded to 16,384 intervals; highly fragmented support asks the
+user to zoom in. Tooltips state the native weight
+resolution and distinguish one-based inclusive assembly BP from native bin
+indices. Normalization availability also uses the actual stored source level.
+
+Validation covers per-base BED signal, GTF features and indexed BAM coverage,
+shared references, reversed/hidden/binless fragments, both stored levels,
+disjoint secondary weight levels and positions beyond 2.5 Gb. Chromium verifies
+the actual hidden/binless/visible fixture, quantitative signal and weight values,
+tooltips, normalization availability, a feature cut inside hidden sequence,
+reversal and portable session restoration. BigWig/VCF, all aggregation modes,
+large-file responsiveness, the full secondary UI matrix and packaged platforms
+are still separate gates.

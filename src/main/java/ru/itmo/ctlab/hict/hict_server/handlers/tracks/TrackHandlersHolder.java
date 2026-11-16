@@ -32,6 +32,7 @@ import io.vertx.core.shareddata.LocalMap;
 import io.vertx.ext.web.Router;
 import lombok.NonNull;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
 import ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit;
 import ru.itmo.ctlab.hict.hict_server.HandlersHolder;
@@ -418,6 +419,8 @@ public class TrackHandlersHolder extends HandlersHolder {
       }
       final var secondaryChunkedFile = extractSecondaryChunkedFile(map);
       final var resolvedUnits = resolveUnits(request);
+      final Boolean sequenceGrid = sequenceGrid(ctx,request,resolvedUnits);
+      if (sequenceGrid == null) return;
       final var start = resolveStart(request, resolvedUnits);
       final var end = resolveEnd(request, resolvedUnits, start + 1L);
 
@@ -425,7 +428,8 @@ public class TrackHandlersHolder extends HandlersHolder {
         ctx,
         RequestTaskScheduler.RequestPriority.TRACK,
         RequestTaskScheduler.CancellationDomain.TRACK,
-        () -> manager.queryVisibleTracks(chunkedFile, secondaryChunkedFile, start, end, widthPx, bpResolution, resolvedUnits),
+        () -> sequenceGrid ? manager.querySequenceTracks(chunkedFile,secondaryChunkedFile,start,end,widthPx,bpResolution)
+          : manager.queryVisibleTracks(chunkedFile, secondaryChunkedFile, start, end, widthPx, bpResolution, resolvedUnits),
         result -> ctx.response()
           .putHeader("content-type", "application/json")
           .end(Json.encode(result)),
@@ -501,6 +505,8 @@ public class TrackHandlersHolder extends HandlersHolder {
         return;
       }
       final var resolvedUnits = resolveUnits(request);
+      final Boolean sequenceGrid = sequenceGrid(ctx,request,resolvedUnits);
+      if (sequenceGrid == null) return;
       final var start = resolveStart(request, resolvedUnits);
       final var end = resolveEnd(request, resolvedUnits, start + 1L);
       scheduler.submit(
@@ -508,6 +514,8 @@ public class TrackHandlersHolder extends HandlersHolder {
         RequestTaskScheduler.RequestPriority.TRACK,
         RequestTaskScheduler.CancellationDomain.TRACK,
         () -> {
+          if (sequenceGrid) return manager.querySequenceFeatureContext(chunkedFile,extractSecondaryChunkedFile(map),
+            start,end,widthPx,bpResolution,marginScreens);
           final var initialQuery = manager.queryVisibleTracks(
             chunkedFile,
             start,
@@ -550,6 +558,19 @@ public class TrackHandlersHolder extends HandlersHolder {
           )))
       );
     });
+  }
+
+  private static @Nullable Boolean sequenceGrid(io.vertx.ext.web.RoutingContext ctx,io.vertx.core.json.JsonObject request,QueryLengthUnit units) {
+    if (request.containsKey("sequenceScale") && !(request.getValue("sequenceScale") instanceof Boolean)) {
+      ctx.response().setStatusCode(400).putHeader("content-type","application/json").end(new io.vertx.core.json.JsonObject().put("error","sequenceScale must be a boolean").encode());
+      return null;
+    }
+    boolean enabled = request.getBoolean("sequenceScale",false);
+    if (enabled && units != QueryLengthUnit.BASE_PAIRS) {
+      ctx.response().setStatusCode(400).putHeader("content-type","application/json").end(new io.vertx.core.json.JsonObject().put("error","Sequence track queries require BP units").encode());
+      return null;
+    }
+    return enabled;
   }
 
   private static @NotNull QueryLengthUnit resolveUnits(final @NotNull io.vertx.core.json.JsonObject request) {

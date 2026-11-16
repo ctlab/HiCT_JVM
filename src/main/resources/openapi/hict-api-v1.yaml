@@ -1681,6 +1681,15 @@ paths:
       tags: [Tracks]
       summary: Query visible 1D track segments in given unit/range
       operationId: queryTracks1D
+      description: >-
+        With sequenceScale=true and BP units, uses a uniform assembly-base display
+        including hidden and binless components. bpResolution remains a stored
+        source level. Response bpResolution is 1 and displayGrid is SEQUENCE_BP,
+        with sourceBpResolution explicit. Native-bin sidecars are not reused.
+        Cooler weights retain their source-bin values and report each track's
+        actual samplingBpResolution; an unavailable secondary level falls back to
+        that source's finest stored level. Width is limited to 8192 and span to
+        1048576 bases. No contact counts are interpolated by this track query.
       requestBody:
         required: true
         content:
@@ -2538,6 +2547,7 @@ components:
       properties:
         schemaVersion: { type: integer, enum: [1] }
         sequenceScaleTiles: { type: boolean, description: Server can project stored source-bin colors onto an explicit one-base display grid. Omitted by older servers. This does not add a stored contact resolution. }
+        sequenceScaleTracks: { type: boolean, description: Server supports explicit assembly-BP track queries including hidden and binless sequence. Omitted by older servers. }
         units: { type: string, enum: [CONTACT_COUNT, ALIGNMENT_SAMPLE_COUNT, ALIGNMENT_PRESENCE, IDENTITY_PERCENT, SEQUENCE_ONLY, UNKNOWN] }
         scoreScale: { type: number, minimum: 0, exclusiveMinimum: true }
         contactDataState: { type: string, enum: [PRESENT, ABSENT, UNKNOWN] }
@@ -3020,6 +3030,7 @@ components:
       properties:
         widthPx: { type: integer, default: 512 }
         bpResolution: { type: integer, format: int64 }
+        sequenceScale: { type: boolean, default: false, description: Requires BP units. Uses an explicit uniform base display axis while retaining stored source resolution metadata. }
         unit:
           type: string
           enum: [PIXELS, BINS, BP]
@@ -3048,6 +3059,7 @@ components:
       properties:
         widthPx: { type: integer, minimum: 1, default: 1024 }
         bpResolution: { type: integer, format: int64 }
+        sequenceScale: { type: boolean, default: false, description: Requires BP units. Context margins and sampling use the assembly-base display axis. }
         marginScreens: { type: number, format: double, default: 1.0 }
         unit:
           type: string
