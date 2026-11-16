@@ -840,6 +840,53 @@ class ApiHttpIntegrationTest {
     assertEquals(2.0, after.getJsonObject("visualizationOptions").getDouble("postLogBase"));
   }
 
+  @Test void exactCutRequiresDisplayedRevisionAndSynchronizesIndependentPyramidsWithUndoRedo() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "exact-primary", List.of(4L, 10L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "exact-secondary", List.of(3L, 7L));
+    startServerWithInfoAndFileHandlers(router -> {
+      new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, scheduler).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder(vertx).addHandlersToRouter(router);
+    });
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    final var body = new JsonObject().put("contigId", 0).put("offsetBp", 5).put("expectedRevision", 0);
+    assertEquals(404, post("/split_contig_at_bp", body.encode()).statusCode());
+    assertEquals(200, post("/open", "{\"filename\":\"exact-primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"exact-secondary.hict.hdf5\",\"allowMismatch\":true}").statusCode());
+    var history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    final String session = history.getString("session");
+    final long revision = history.getLong("revision");
+    final var headers = Map.of("X-HiCT-History-Session", session, "X-HiCT-History-Revision", Long.toString(revision));
+    body.put("expectedRevision", revision);
+    assertEquals(400, post("/split_contig_at_bp", body.encode()).statusCode());
+    assertEquals(400, post("/split_contig_at_bp", body.copy().put("offsetBp", 1.5).encode(), headers).statusCode());
+    assertEquals(409, post("/split_contig_at_bp", body.copy().put("expectedRevision", revision + 1).encode(), headers).statusCode());
+    final var cut = post("/split_contig_at_bp", body.encode(), headers);
+    assertEquals(200, cut.statusCode(), cut.body());
+    assertEquals(409, post("/split_contig_at_bp", body.encode(), headers).statusCode());
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    for (String key : List.of("chunkedFile", "chunkedFileSecondary")) {
+      var file = ((ShareableWrappers.ChunkedFileWrapper) map.get(key)).getChunkedFile();
+      assertEquals(List.of(5L, 12L), file.getAssemblyInfo().contigs().stream().map(t -> t.descriptor().getLengthBp()).toList());
+      assertTrue(file.getAssemblyInfo().contigs().stream().allMatch(t -> t.descriptor().isSharedBinSlice()));
+    }
+    var capture = post("/session/snapshot", "{\"verifyAssemblyRoundTrip\":true}");
+    assertEquals(200, capture.statusCode(), capture.body());
+    history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    assertTrue(history.getBoolean("canUndo"));
+    assertEquals(200, post("/assembly/history/restore", new JsonObject().put("session", session)
+      .put("revision", history.getLong("revision")).put("action", "undo").encode()).statusCode());
+    for (String key : List.of("chunkedFile", "chunkedFileSecondary"))
+      assertEquals(1, ((ShareableWrappers.ChunkedFileWrapper) map.get(key)).getChunkedFile().getAssemblyInfo().contigs().size());
+    history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    assertEquals(200, post("/assembly/history/restore", new JsonObject().put("session", session)
+      .put("revision", history.getLong("revision")).put("action", "redo").encode()).statusCode());
+    assertEquals(new JsonObject(capture.body()).getJsonObject("primary").getJsonObject("assemblyInfo"),
+      new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getJsonObject("assemblyInfo"));
+  }
+
   private void startServerWithInfoAndFileHandlers() throws Exception {
     startServerWithInfoAndFileHandlers(router -> {});
   }
@@ -917,12 +964,16 @@ class ApiHttpIntegrationTest {
 
   private HttpResponse<String> post(final @NotNull String path,
                                     final @NotNull String body) throws IOException, InterruptedException {
-    final var request = HttpRequest.newBuilder()
+    return post(path, body, Map.of());
+  }
+
+  private HttpResponse<String> post(String path, String body, Map<String, String> headers) throws IOException, InterruptedException {
+    final var builder = HttpRequest.newBuilder()
       .uri(URI.create("http://127.0.0.1:" + port + path))
       .timeout(java.time.Duration.ofMinutes(2))
       .header("content-type", "application/json")
-      .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-      .build();
-    return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+      .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+    headers.forEach(builder::header);
+    return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
   }
 }

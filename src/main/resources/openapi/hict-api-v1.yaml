@@ -16,6 +16,12 @@ info:
     The optional `contigBinOffsets` object on compact-v1 assembly snapshots maps
     contig IDs to these same sparse objects, without changing the nine contig
     row columns. An omitted compact map denotes zero origins for current servers.
+    Legacy contig descriptors may also include `contigSharedBinSlice: true`;
+    compact-v1 uses an optional `sharedBinContigs` array of unique contig IDs.
+    These fragments retain every intersecting original contact bin. Adjacent
+    fragments can reference the same bin; these references are not additional
+    contact observations. Session snapshot v2 preserves this policy when a
+    secondary source uses a different resolution pyramid.
 servers:
   - url: /
 tags:
@@ -953,6 +959,39 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /split_contig_at_bp:
+    post:
+      tags: [Scaffolding]
+      summary: Cut an oriented contig at an exact base boundary without sequence loss
+      description: |
+        Requires the displayed X-HiCT-History-Session and X-HiCT-History-Revision
+        headers. expectedRevision must match both the displayed header and live
+        journal. offsetBp bases remain in the left child. Crossing source bins
+        are referenced by both children; no base or contact block is removed.
+        Secondary sources are reprojected through their own resolution pyramids.
+        The response describes the active source with its new tile version.
+      operationId: splitContigAtBp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contigId, offsetBp, expectedRevision]
+              properties:
+                contigId: { type: integer, format: int32, minimum: 0 }
+                offsetBp: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+                expectedRevision: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                assemblyFormat: { type: string, enum: [compact-v1] }
+      responses:
+        '200':
+          description: Complete updated assembly, new tile version and journal header
+        '400':
+          description: Invalid boundary, request or missing displayed-history headers
+        '404':
+          description: No map is open
+        '409':
+          description: Stale or inconsistent displayed assembly revision
   /split_contig_at_bin:
     post:
       tags: [Scaffolding]

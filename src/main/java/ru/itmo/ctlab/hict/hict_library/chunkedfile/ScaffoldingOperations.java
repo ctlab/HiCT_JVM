@@ -593,7 +593,7 @@ public class ScaffoldingOperations {
         newContigPresenceAtResolution.get(i),
         newContigAtus.get(i),
         newContigNamesInSourceFasta.get(i),
-        newContigOffsetsInSourceFasta.get(i)
+        newContigOffsetsInSourceFasta.get(i), oldContigDescriptor.isSharedBinSlice()
       )).toList();
 
       newCds.forEach(cd -> contigTree.getContigDescriptors().put(cd.getContigId(), cd));

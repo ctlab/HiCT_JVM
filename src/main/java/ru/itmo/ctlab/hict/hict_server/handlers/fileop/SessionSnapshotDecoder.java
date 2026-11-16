@@ -183,6 +183,8 @@ public final class SessionSnapshotDecoder {
     for (int i = 0; i < contigs.size(); i++) {
       String field = path + ".assemblyInfo.contigDescriptors[" + i + "]";
       var contig = asObject(contigs.getValue(i), field);
+      if (contig.containsKey("contigSharedBinSlice") && bool(contig, "contigSharedBinSlice", field) && snapshotVersion < 2)
+        fail(field + ".contigSharedBinSlice", "intersecting source bins require snapshot version 2");
       long id = integer(contig, "contigId", field, 0, Integer.MAX_VALUE);
       if (!contigIds.add(id)) fail(field + ".contigId", "duplicate ID");
       name(contig, "contigName", field);

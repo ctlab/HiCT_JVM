@@ -21,7 +21,7 @@ describe earlier releases; they must not override the decisions below.
 
 | Package | Advisor items | Status |
 |---|---|---|
-| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: explicit bin origins, exact library cuts and v4 session replay implemented; public cut API/UI, shared-bin accounting, sequence-scale display and approximate export pending |
+| P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: explicit bin origins, guarded exact API, source synchronization and v4 session replay implemented; scissors/feature UI, remaining shared-bin accounting, sequence-scale display and approximate export pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | Pending |
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | Pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | Pending |
@@ -76,9 +76,16 @@ then saving/closing/reopening through actual session controls. Evidence:
 `/tmp/hict-exact-cut-ui/results.json` and
 `/tmp/hict-exact-cut-session/snapshots/results.json`.
 
+The guarded `/split_contig_at_bp` API and WebUI request adapter now require the
+displayed history session and revision. Source synchronization retains every
+intersecting immutable bin across different resolution pyramids, including late
+attachment and switching assembly authority. Session v2 snapshots preserve this
+policy through optional descriptor flags, even for projected sources without
+their own cut history. Coverage preparation already scans unique stored contacts;
+a regression proves its weights remain identical after repeated exact cuts.
+
 The scissors still use the historical endpoint. Before switching the UI, finish
-the guarded exact-cut endpoint, primary/secondary source synchronization,
-shared-bin statistics/normalization and numeric-query provenance, explicit
+remaining shared-bin statistics/normalization and numeric-query provenance, explicit
 approximate Cooler export, and sequence-scale display. Source offsets still use
 the existing int descriptor field: exact slices fail on overflow rather than
 wrapping; long-offset migration remains part of P1. This increment does not

@@ -36,7 +36,8 @@ import java.util.Map;
 public record CompactAssemblyInfoDTO(String format, long[] resolutions,
                                     List<Object[]> contigs, List<Object[]> scaffolds,
                                     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-                                    Map<Integer, Map<Long, Long>> contigBinOffsets) {
+                                    Map<Integer, Map<Long, Long>> contigBinOffsets,
+                                    @JsonInclude(JsonInclude.Include.NON_EMPTY) List<Integer> sharedBinContigs) {
   public static final String FORMAT = "compact-v1";
 
   public record Response(CompactAssemblyInfoDTO assemblyInfo, long version) {}
@@ -55,7 +56,8 @@ public record CompactAssemblyInfoDTO(String format, long[] resolutions,
       if (!values.isEmpty()) offsets.put(tuple.descriptor().getContigId(), values);
     });
     return new Response(new CompactAssemblyInfoDTO(dto.format, dto.resolutions, dto.contigs,
-      dto.scaffolds, offsets), version);
+      dto.scaffolds, offsets, snapshot.contigs().stream().filter(t -> t.descriptor().isSharedBinSlice())
+        .map(t -> t.descriptor().getContigId()).toList()), version);
   }
 
   static CompactAssemblyInfoDTO fromSnapshot(AssemblyInfo snapshot, long[] resolutions,
@@ -78,6 +80,6 @@ public record CompactAssemblyInfoDTO(String format, long[] resolutions,
       return new Object[]{d.scaffoldId(), scaffoldAliases.getOrDefault(d.scaffoldId(), d.scaffoldName()),
         d.scaffoldName(), d.spacerLength(), borders == null ? null : new long[]{borders.startBP(), borders.endBP()}};
     }).toList();
-    return new CompactAssemblyInfoDTO(FORMAT, keys, contigs, scaffolds, Map.of());
+    return new CompactAssemblyInfoDTO(FORMAT, keys, contigs, scaffolds, Map.of(), List.of());
   }
 }

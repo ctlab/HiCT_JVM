@@ -66,7 +66,7 @@ def main():
                 with page.expect_file_chooser() as chooser:
                     check.menu('File', 'Open session')
                 chooser.value.set_files(path)
-                page.get_by_text('Session restored. Undo history starts from the restored assembly.', exact=True).wait_for()
+                page.get_by_text('Session restored. Undo history starts from the restored assembly.', exact=True).last.wait_for()
                 check.settle()
 
             restore(exact)
@@ -111,8 +111,48 @@ def main():
             assert json.loads(app.http('/sequence/region', {'startBp': 0, 'endBp': 17}))['sequence'] == expected
             assert not check.errors, check.errors
             page.screenshot(path=str(output / 'restored-exact-cuts.png'))
+            # Exercise the real request adapter and strict displayed-revision
+            # endpoint. The scissors continue to use the compatibility path
+            # until export/statistics handling is ready for the new geometry.
+            with page.expect_request('**/split_contig_at_bp') as cut_request:
+                page.evaluate("""async () => {
+                    const m=window.__hictBenchmark.manager();
+                    const id=m.contigDimensionHolder.contigDescriptors[0].contigId;
+                    const assembly=await m.networkManager.requestManager.splitContigAtBp(id,5);
+                    m.eventManager.applyAssemblyInfo(assembly);
+                    await m.reloadVisuals();
+                }""")
+            check.settle()
+            cut_headers = {k:v for k,v in cut_request.value.headers.items() if k.startswith('x-hict-history-')}
+            conflict = page.request.post(app.url + '/split_contig_at_bp',
+                data=cut_request.value.post_data_json, headers=cut_headers)
+            assert conflict.status == 409, conflict.text()
+            lengths = lambda: page.evaluate("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors.map(d=>d.contigLengthBp)")
+            assert lengths() == [5,7,2,3], lengths()
+            assert page.evaluate("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors.every(d=>d.contigSharedBinSlice===true)")
+            page.locator('#hic-contact-map').click(position={'x':100,'y':100})
+            with page.expect_response('**/assembly/history/restore') as undo:
+                page.keyboard.press('Control+z')
+            assert undo.value.ok, undo.value.text()
+            check.settle()
+            assert lengths() == [12,2,3], lengths()
+            with page.expect_response('**/assembly/history/restore') as redo:
+                page.keyboard.press('Control+y')
+            assert redo.value.ok, redo.value.text()
+            check.settle()
+            assert lengths() == [5,7,2,3], lengths()
+            assert json.loads(app.http('/sequence/region', {'startBp':0,'endBp':17}))['sequence'] == expected
+            with page.expect_download() as download:
+                check.menu('File','Save session')
+            api_saved = output / 'api-cut-session.json'
+            download.value.save_as(api_saved)
+            check.menu('File','Close')
+            restore(api_saved)
+            assert lengths() == [5,7,2,3], lengths()
+            assert not check.errors, check.errors
+            page.screenshot(path=str(output/'api-cut-restored.png'))
             (output / 'results.json').write_text(json.dumps({'status': 'ok', 'state': state, 'sequence': sequence,
-                'checks': ['v4 save', 'exact restore', 'source-bin coordinate parity', 'gap-free sequence', 'save/close/reopen']}, indent=2))
+                'checks': ['v4 save', 'exact restore', 'source-bin coordinate parity', 'gap-free sequence', 'save/close/reopen', 'guarded API cut', 'stale cut rejected', 'keyboard undo/redo', 'API cut save/restore']}, indent=2))
             browser.close()
     finally:
         static.shutdown()

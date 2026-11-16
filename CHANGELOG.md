@@ -18,6 +18,8 @@
 
 ### Sequence analysis and sessions
 
+- Preserve exact-cut source bins across secondary maps with different resolutions and saved sessions, and reject exact-cut API requests from an outdated assembly view.
+
 - Save sessions in format v4 with explicit support for exact sequence-cut lineage, while retaining older session readers and historical cut behavior.
 
 - Deliver completed overlays and search tracks through Jobs even after progress dialogs close, retain overlay/triangle choices, and default generation levels from finest through current.

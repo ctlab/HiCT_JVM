@@ -56,6 +56,6 @@ public final class ExactContigSlice {
       atus.add(List.copyOf(pieces));
     }
     return new ContigDescriptor(id, parent.getContigNameInSourceFASTA() + "_" + sourceStart + "_" + sourceEnd,
-      to - from, lengths, visibility, atus, parent.getContigNameInSourceFASTA(), offset);
+      to - from, lengths, visibility, atus, parent.getContigNameInSourceFASTA(), offset, true);
   }
 }

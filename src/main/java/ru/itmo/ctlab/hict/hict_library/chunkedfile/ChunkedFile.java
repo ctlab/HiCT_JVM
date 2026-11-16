@@ -603,12 +603,21 @@ public class ChunkedFile implements AutoCloseable {
 
   public ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGP(final @NotNull Reader tsvReader,
       final ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy policy) throws IOException, NoSuchFieldException {
+    return importAGP(tsvReader, policy, false);
+  }
+
+  public ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGPWithSharedBins(Reader reader) throws IOException, NoSuchFieldException {
+    return importAGP(reader, ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.EXCLUDE, true);
+  }
+
+  private ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGP(Reader tsvReader,
+      ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy policy, boolean sharedBins) throws IOException, NoSuchFieldException {
     final var records = this.agpProcessor.parseRecords(tsvReader);
     final var contigLock = this.contigTree.getRootLock().writeLock();
     final var scaffoldLock = this.scaffoldTree.getRootLock().writeLock();
     contigLock.lock();
     scaffoldLock.lock();
-    try { return this.agpProcessor.importRecords(records, policy); }
+    try { return sharedBins ? this.agpProcessor.importRecordsWithSharedBins(records, policy) : this.agpProcessor.importRecords(records, policy); }
     finally { scaffoldLock.unlock(); contigLock.unlock(); }
   }
 

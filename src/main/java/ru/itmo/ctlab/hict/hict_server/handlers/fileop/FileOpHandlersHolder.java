@@ -1309,7 +1309,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
         return;
       }
       try (final var reader = new StringReader(targetAgp)) {
-        target.importAGP(reader);
+        if (source.getAssemblyInfo().contigs().stream().anyMatch(t -> t.descriptor().isSharedBinSlice()))
+          target.importAGPWithSharedBins(reader);
+        else target.importAGP(reader);
       }
       synchronizeTargetVisibilityFromSource(source, target);
       log.info("Synchronized {} assembly layout into {} source for overlay rendering",
@@ -1485,7 +1487,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         java.util.Arrays.stream(targetDescriptor.getLengthBinsAtResolution()).skip(1).boxed().toList(),
         visibility.subList(1, visibility.size()),
         targetDescriptor.getAtus().subList(1, targetDescriptor.getAtus().size()),
-        targetDescriptor.getContigNameInSourceFASTA(), targetDescriptor.getOffsetInSourceFASTA());
+        targetDescriptor.getContigNameInSourceFASTA(), targetDescriptor.getOffsetInSourceFASTA(), targetDescriptor.isSharedBinSlice());
     });
   }
 
@@ -1510,7 +1512,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     } else {
       lengthBins = Math.max(1L, (descriptor.getLengthBp() + resolution - 1L) / resolution);
     }
-    return lengthBins > 0L && descriptor.getLengthBp() >= resolution
+    return lengthBins > 0L && (descriptor.isSharedBinSlice() || descriptor.getLengthBp() >= resolution)
       ? ContigHideType.SHOWN
       : ContigHideType.HIDDEN;
   }

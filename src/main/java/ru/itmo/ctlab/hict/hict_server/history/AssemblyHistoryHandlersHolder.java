@@ -24,6 +24,7 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
   private static final Map<String, String> EDITS = Map.ofEntries(
     Map.entry("/reverse_selection_range", "Reverse selection"), Map.entry("/move_selection_range", "Move selection"),
     Map.entry("/split_contig_at_bin", "Split contig"), Map.entry("/group_contigs_into_scaffold", "Group into scaffold"),
+    Map.entry("/split_contig_at_bp", "Cut contig at base"),
     Map.entry("/ungroup_contigs_from_scaffold", "Ungroup scaffold"), Map.entry("/unscaffold_all", "Unscaffold all"), Map.entry("/move_selection_to_debris", "Move to debris"),
     Map.entry("/load_agp", "Import AGP"), Map.entry("/apply_juicebox_assembly", "Import Juicebox assembly"),
     Map.entry("/names/contig", "Rename contig"), Map.entry("/names/scaffold", "Rename scaffold"),
@@ -98,6 +99,20 @@ public final class AssemblyHistoryHandlersHolder extends HandlersHolder implemen
     var label = EDITS.get(ctx.normalizedPath());
     var before = label != null && journal != null ? capture() : null;
     try {
+      if (ctx.normalizedPath().equals("/split_contig_at_bp")) {
+        if (journal == null) throw new io.vertx.ext.web.handler.HttpException(404, "Open a map before cutting a contig");
+        final String session = ctx.request().getHeader("X-HiCT-History-Session");
+        final String revision = ctx.request().getHeader("X-HiCT-History-Revision");
+        if (session == null || revision == null)
+          throw new io.vertx.ext.web.handler.HttpException(400, "Exact cuts require the displayed history session and revision headers");
+        final long expected = ctx.body().asJsonObject().getLong("expectedRevision");
+        final long displayedRevision;
+        try { displayedRevision = Long.parseLong(revision); }
+        catch (NumberFormatException invalid) { throw new io.vertx.ext.web.handler.HttpException(400, "Invalid displayed history revision"); }
+        if (displayedRevision != expected)
+          throw new io.vertx.ext.web.handler.HttpException(409, "The cut revision does not match the displayed assembly");
+        requireVersion(session, expected);
+      }
       boolean sequenceSnapshot = ctx.normalizedPath().startsWith("/sequence/")
         && (ctx.normalizedPath().endsWith("/jobs") || ctx.normalizedPath().equals("/sequence/region")
           || ctx.normalizedPath().equals("/sequence/alignment_detail"));

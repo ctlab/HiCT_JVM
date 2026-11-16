@@ -2585,3 +2585,31 @@ Scope still open: HTTP exact-cut entry point and scissors/feature actions,
 primary/secondary synchronization, native shared-bin statistics/provenance,
 approximate Cooler export, long source offsets and sequence-scale display.
 No claim of completed advisor item 21 or release readiness is made here.
+
+## Advisor P1 guarded exact edits and source synchronization (2026-11-16)
+
+The new exact-cut endpoint requires the displayed history session and revision
+in headers and a matching revision in its strictly validated body. Stale edits
+return 409. The existing journal snapshots both sources for undo/redo and
+rollback. The WebUI adapter uses this contract; scissors retain their legacy
+behavior until sequence display, statistics and export prerequisites are ready.
+
+Synchronization now projects exact sequence components from immutable original
+ATUs using all intersecting bins. This fixes the old AGP start-ownership policy
+dropping crossing bins when the secondary pyramid differs. Optional legacy
+descriptor flags/compact ID lists carry the policy, including projected sources
+without local cut lineage. Session restoration reconstructs those ATUs and IDs.
+Tests cover late attachment, repeated cuts, reversal, changing authority and
+secondary-session replay at 4/10 versus 3/7 bp levels. A separate regression
+confirms coverage preparation scans unique stored contacts and is unchanged by
+repeated exact cuts.
+
+Validation: 526 JVM tests, zero failures/errors, seven optional skips; WebUI build
+and DTO checks passed. Chromium passed all nine exact-cut checks including the
+request adapter, stale rejection, keyboard undo/redo and save/close/reopen; the
+restored screenshot was inspected (`/tmp/hict-exact-api-browser-final/results.json`).
+The existing session suite passed all 18 checks with zero page errors
+(`/tmp/hict-exact-sync-session-browser/snapshots/results.json`). The new HTTP test
+initially lacked the harness's visualization options required for session capture;
+adding the production-equivalent options fixed it. A repeated-success notification
+needed a nonunique-toast-aware browser locator. These were test setup failures.

@@ -33,21 +33,25 @@ public final class SessionAssemblyRestorer {
       final var expected = source.getJsonObject("assemblyInfo");
       final var contigs = expected.getJsonArray("contigDescriptors");
       final var scaffolds = expected.getJsonArray("scaffoldDescriptors");
+      final var componentIds = new ArrayList<Integer>(contigs.size());
+      final var sharedBinIds = new HashSet<Integer>();
+      for (int index = 0; index < contigs.size(); index++) {
+        final var saved = contigs.getJsonObject(index);
+        final int id = saved.getInteger("contigId");
+        componentIds.add(id);
+        if (saved.getBoolean("contigSharedBinSlice", false)) sharedBinIds.add(id);
+      }
       final var splits = source.getJsonArray("splitEdits");
-      if (splits == null || splits.isEmpty()) {
+      if ((splits == null || splits.isEmpty()) && sharedBinIds.isEmpty()) {
         candidate.importAGP(new StringReader(agp));
       } else {
-        for (int index = 0; index < splits.size(); index++) {
+        for (int index = 0; splits != null && index < splits.size(); index++) {
           final var edit = splits.getJsonObject(index).mapTo(ChunkedFile.SplitEdit.class);
           final var parent = candidate.getAgpProcessor().resolveSessionComponent(
             edit.parentId(), edit.sourceName(), edit.sourceOffsetBp(), edit.parentLengthBp());
           candidate.scaffoldingOperations().replaySplit(edit, parent);
         }
-        final var componentIds = new ArrayList<Integer>(contigs.size());
-        for (int index = 0; index < contigs.size(); index++) {
-          componentIds.add(contigs.getJsonObject(index).getInteger("contigId"));
-        }
-        candidate.getAgpProcessor().importSessionRecords(new StringReader(agp), componentIds);
+        candidate.getAgpProcessor().importSessionRecords(new StringReader(agp), componentIds, sharedBinIds);
       }
       final var imported = candidate.getAssemblyInfo().contigs();
       require(imported.size() == contigs.size(), "contigDescriptors", "AGP changed the number of components");
@@ -80,7 +84,7 @@ public final class SessionAssemblyRestorer {
         ChunkedFile.validateDisplayName(originalName);
         replacements.put(actual.getContigId(), new ContigDescriptor(actual.getContigId(), originalName,
           actual.getLengthBp(), bins, presence, actual.getAtus().subList(1, actual.getAtus().size()),
-          actual.getContigNameInSourceFASTA(), actual.getOffsetInSourceFASTA()));
+          actual.getContigNameInSourceFASTA(), actual.getOffsetInSourceFASTA(), actual.isSharedBinSlice()));
       }
       candidate.getContigTree().mapDescriptors(d -> replacements.get(d.getContigId()));
       // AGP does not carry empty scaffold spacer defaults or stable scaffold IDs.
@@ -122,6 +126,8 @@ public final class SessionAssemblyRestorer {
       for (int index = 0; index < contigs.size(); index++) {
         if (!contigs.getJsonObject(index).containsKey("contigBinOffsets"))
           actualInfo.getJsonArray("contigDescriptors").getJsonObject(index).remove("contigBinOffsets");
+        if (!contigs.getJsonObject(index).containsKey("contigSharedBinSlice"))
+          actualInfo.getJsonArray("contigDescriptors").getJsonObject(index).remove("contigSharedBinSlice");
       }
       require(expected.equals(actualInfo),
         "assemblyInfo", "restored descriptors differ from the saved assembly");
