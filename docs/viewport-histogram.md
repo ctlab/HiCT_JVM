@@ -36,6 +36,8 @@ limits; measured zeros remain counted and receive the depleted color. Neutral is
 always 1. If samples do not provide a bound on a side of 1, the corresponding
 0.5 or 2 default is used. Other source colors and the numeric graph stay unchanged.
 Changes publish through the same live update workflow as typed thresholds.
+Pending edits and normalization follow the rules in
+[Applying visualization changes](visualization-transactions.md).
 
 The curve uses 64 display-axis bins with square-root count height and a bounded
 Catmull–Rom spline. Smoothing is only a drawing aid; percentiles are calculated

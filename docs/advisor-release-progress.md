@@ -26,7 +26,7 @@ describe earlier releases; they must not override the decisions below.
 | P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
-| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds and inline viewport histogram/percentile fitting implemented and Chromium verified; normalization/refit draft race, draggable midpoint, broader native/performance and final qualification pending |
+| P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, inline viewport histogram/percentile fitting and protection of newer visualization drafts during normalization implemented and Chromium verified; draggable midpoint, broader native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | Pending; baseline checks verified |
 | P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
@@ -552,3 +552,31 @@ serialize/coalesce source-scoped visualization writes and protect newer user dra
 from hydration/refitting. Add a delayed-refit browser regression for thresholds,
 transforms and source switching, proving actual graph/options/pixels and session
 state. This is the next P6 prerequisite alongside the draggable midpoint.
+
+## Visualization draft ownership through normalization
+
+The preceding normalization race is now fixed. Visualization edits carry field
+revisions and their original source/colormap/mode. Serial writes read fresh graph
+state; obsolete queued range writes coalesce. Late reads and acknowledgements
+cannot hydrate over newer drafts. Manual palette edits supersede normalization
+refits; processing-only edits defer the fit until their transform is committed.
+Source switching, source/whole-graph presets, mode changes, session capture and
+opening Rendering Pipeline respect pending changes. Failed graph reads and atomic
+writes retain the committed map and show a retryable pending draft.
+
+The committed baseline reproduced Log2/Upper=100 ending at Linear/11. The final
+build passes a new 16-case browser suite with delayed requests and actual backend,
+numeric-input, pixel and session assertions. All 185 established browser scenarios
+also pass, for 201 total. The separately repeated FASTA measurement suite replaces
+an interrupted wrapper run; incomplete runs are not counted. Final fixture sampled
+pan acknowledgements are 21.6–25.2 ms with at most four active image transfers.
+This is fixture qualification, not production-size or packaged-build performance.
+Visual review covers final desktop, failure recovery and 640 px navigation captures.
+
+WebUI build, type checks and existing/new numerical regressions pass. JVM runtime
+is unchanged, so the previous 589-test baseline is retained rather than rerun or
+presented as fresh. Evidence and artifact hashes are in reinforcement-validation.md;
+user guidance is visualization-transactions.md. Draggable midpoint/gamma, derived
+view whole-resolution exact-scan semantics, wider custom graphs/NaN provenance,
+native/platform/performance/accessibility qualification and the remaining packages
+stay open. P6 and the overall release/publication goal remain in progress.

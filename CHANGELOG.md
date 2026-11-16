@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Preserve newer thresholds, transforms and source-specific edits through delayed normalization, reads and preset writes, with clear pending and retry status.
+- Apply pending visualization changes before session snapshots and opening Rendering Pipeline, and preserve committed graph state when a request fails.
+
 - Show a viewport signal histogram below the color slider with sampled-data labels, threshold marks and Fit levels, and reserve transfer capacity for interactive requests.
 - Preserve missing O/E support as missing in numeric diagnostics, while keeping measured zeros distinct and using meaningful positive ratios for fitted O/E limits.
 

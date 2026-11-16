@@ -4045,3 +4045,74 @@ Combined SFX/native packages, other platforms, dense-map latency/soak, retina/to
 full accessibility and figure-output qualification remain pending. Draggable color
 midpoint/gamma is not delivered; O/E neutral must remain 1. P6 and the overall goal
 remain active. Protected plans/files are unchanged. Nothing pushed, merged or tagged.
+
+## Visualization transaction and normalization draft regression
+
+WebUI commit `b994994`; matching version
+`2.0.35-7909e72-webui_b994994`.
+
+The committed preceding WebUI reproduced the rapid-edit defect in
+`/tmp/hict-viz-transactions-red-01`: choosing normalization then entering Log2 and
+Upper=100 ended at Linear/11. The final implementation records field revisions,
+captures source/target/mode, serializes mutations, coalesces obsolete queued
+applications and merges pending fields over fresh server state. Manual palette
+edits cancel automatic refitting; processing-only edits defer it until committed.
+Fresh reads are generation guarded. Presets, display-mode changes, session capture
+and opening the graph editor wait behind pending visualization changes. A failed
+graph read cannot be interpreted as a disabled pipeline. Failed writes retain the
+draft for retry without replacing the last committed graph/map.
+
+Final WebUI build: `/tmp/hict-viz-transactions-web-10.log`, including type checking,
+all existing numerical/DTO/streaming checks and new field-revision/projection
+checks. Explicit Prettier checks pass for all 11 changed/new WebUI files; the new
+Python browser driver passes Black checking. No JVM runtime source changed; the
+preceding 589 tests, zero failures/errors and seven optional skips remain the JVM
+baseline (`/tmp/hict-inline-hist-jvm-full-03.log`), not a new execution.
+
+Final Chromium runs, all successful process exits:
+
+- `/tmp/hict-viz-transactions-ui-07/results.json`: 16 new delayed-normalization,
+  transform/range, source switching, coalescing, stale-read, failed-read/write,
+  session, mode, source/global preset and editor-opening cases. Actual backend
+  options/graphs, numeric inputs, map pixels and saved session are asserted.
+- `/tmp/hict-viz-transactions-oe-03/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 existing palette/mode/signal cases.
+- `/tmp/hict-viz-transactions-responsive-01/results.json`: 15 responsive cases.
+  `/tmp/hict-viz-transactions-tracks-01/{results.json,controls/results.json}`:
+  13+8 tracks/source/control cases.
+- `/tmp/hict-viz-transactions-regression-{sequence_view,selection_modes,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-01/results.json`
+  plus `/tmp/hict-viz-transactions-regression-fasta_measurement-02/results.json`:
+  90 existing sequence, selection, exact-cut and file-destination cases.
+- `/tmp/hict-viz-transactions-observed-02/browser/results.json`: 12 existing
+  Observed graph-editor cases. `/tmp/hict-viz-transactions-legacy-01/browser/results.json`:
+  four detailed histogram cases. Both 154,317,488 byte physical real-map copies
+  remain unchanged, SHA-256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- `/tmp/hict-viz-transactions-hist-01/results.json`: 13 inline histogram cases,
+  including unchanged contact hashes, O/E missing-versus-zero, actual fit pixels,
+  sampling limits and network-image peak four. Isolated fixture pan acknowledgements
+  are 16.4–21.1 ms; sampled pans 21.6–25.2 ms, below the 150 ms fixture gate.
+
+Together: 201 passing final-build browser scenarios. The first long scientific
+wrapper exited 143 during FASTA measurement; that incomplete run is excluded and
+its standalone -02 rerun passed all 12. Earlier iterations exposed and corrected
+an inherited Primary weight policy mislabeled on Secondary, Vue-proxy identity
+comparison in refit ownership, and a rejected mode request leaving an optimistic
+header while Secondary was selected. The existing inactive-O/E guard message is
+preserved. Intermediate builds/runs are diagnostic, not final acceptance. Expected
+503 console errors are allowed only in the explicitly injected failure cases;
+final capture-phase window errors are empty. Final screenshot review covers the
+16-case driver's desktop/range/failure captures and 640 px responsive Help menu.
+
+Frozen final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding
+dist/electron): `da24080446d6c179614ab8842abd7caf182faec9b83ca0528fc993a7725ba375`.
+Development backend `hict_server-2.0.33-1f68b42-webui_0a1e9fd-fat.jar` SHA-256:
+`64fd988b0bddf228f2197ecdf72f2b20c1af69ea0746fbc5d6353defc367a429`.
+Browser acceptance serves the frozen new assets separately from the JAR's older
+embedded interface. This does not qualify a combined SFX/native package. Shared
+FILE/coverage vector selection remains global; arbitrary graph-editor publication
+and local preset track/background styling are not all moved into this queue.
+Draggable midpoint/gamma, derived-view exact-scan applicability, broader graph/NaN
+provenance, dense-map/soak/accessibility and release/publication gates remain open.
+All protected plans/owner files remain unchanged. Nothing pushed, merged or tagged.
