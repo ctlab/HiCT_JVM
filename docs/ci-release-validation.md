@@ -76,3 +76,18 @@ pass locally in `/tmp/hict-ci-macos-alias-fixture-01.log`. A new macOS run must
 confirm the correction. The prior four active older-SHA JVM runs were cancelled
 after their replacements started, as authorized; receipt:
 `/tmp/hict-ci-superseded-cancellations-01.json`.
+
+## Windows portable staged-writer fixture
+
+Both Java matrices for `55448708` finish successfully:
+[push](https://github.com/ctlab/HiCT_JVM/actions/runs/44140457432) and
+[PR](https://github.com/ctlab/HiCT_JVM/actions/runs/44140477889).
+The [Windows portable job](https://github.com/ctlab/HiCT_JVM/actions/runs/44140457590/job/134245495808)
+fails the shared Rust test `failed_rename_and_window_disposal_clean_temporary_files`
+at its initial `begin`, with Windows error 87 while copying a directory's
+permissions to the staged file. The test now creates the obstructing directory
+after opening/writing a valid destination, then asserts failed commit, preserved
+directory and removal of staging. This exercises the intended OS rename failure
+on each platform. All 16 shared tests pass locally in
+`/tmp/hict-tauri-windows-rename-fixture-01.log`; the full WebUI build also passes.
+Windows confirmation and the portable publication gate remain required.

@@ -6263,3 +6263,58 @@ required regression was disabled and publication still requires passing gates.
   `a73cfa59c532d89c29f8218caab52415b85ecb21827455cdd7b87b1cc2c7749c`,
   identical to the native GUI-qualified development executable.
 - Portable publication and the fixture's replacement macOS jobs remain pending.
+
+
+### Cancel preparation when a FASTA export client disconnects
+
+- `/tmp/hict-export-disconnect-red-01.log`: a real TCP disconnect before headers
+  fails the new assertion that the preparation worker stops.
+- Export requests now install the existing per-request cancellation handler,
+  including the already-closed response check needed after metadata capture.
+  Assembly mutations retain their ordered, independent behavior.
+- `/tmp/hict-export-disconnect-green-02.log`: running preparation/temp removal,
+  interrupted transfer/temp removal, queued export isolation and late submission
+  pass alongside existing scheduler/download tests.
+- `/tmp/hict-release-66-integrated-build-01.exit.json`: integrated development
+  build exit 0; 646 JVM tests, no failures/errors, two optional skips and passing
+  native parity. This intermediate build precedes the coordinated WebUI commit
+  and must not be substituted for the final committed package identity.
+- `/tmp/hict-tauri-windows-rename-fixture-01.log`: all 16 shared Rust tests pass
+  after moving the rename obstruction to the intended test phase.
+- `/tmp/hict-export-disconnect-web-build-01.log`: full local WebUI build passes.
+- Version-65 producer and archive identity pass (3,114 entries), but its run-13
+  workflow gate stops on ENOSPC and its qualification file is truncated. Its
+  coordinator/logs are retained; no full-gate pass is claimed.
+- Version-65 native trial 09 passes four lifecycle cases and seven coordinate
+  cases; final native close times out during the storage incident. The initial
+  coordinate attempt also records the stale driver-session setup failure.
+- Trial 10's extra pre-header probes are not passing evidence: the first misses
+  the transient Cancel control, and the second reaches an invalid driver session
+  with a native process still present. Diagnostics/screenshot remain under that
+  trial. Repeat the normal suites in a fresh private environment.
+- The release runner now checks physical-copy space plus 2 GiB headroom and
+  writes evidence by temporary-file replacement. An ad-hoc preflight probe saw
+  increased free space before invocation, then failed due to omitted Playwright
+  PYTHONPATH; its observer note explicitly disclaims refusal-branch coverage.
+- `/tmp/hict-release-65-redundant-test-output-cleanup.json`: owner-approved four
+  duplicate files checked against originals/retained copies or exact gzip, with
+  no active consumers, reclaiming 1,906,694,306 bytes. The absent old plan-audit
+  temporary map was replaced in verification by its exact original under /mnt.
+
+
+The fresh native development trial 11 now passes all eight ordinary coordinate
+export cases on the version-66 server code. The 512-Mb FASTA retains its file
+and sequence hashes; recorded frame p95 is 20 ms and acknowledgement p95 is
+11.95 ms. Native window close cleans staging in 243 ms. This uses an immutable
+intermediate server JAR and packaged version-65 runtime/WebUI/native snapshots,
+so final committed package qualification remains required. Receipt:
+`/tmp/hict-tauri-streaming-native-11/native-coordinate-qa-01/qualification.json`.
+
+
+Fresh native development trial 12 also passes all four lifecycle cases on the
+intermediate version-66 server: Blob refresh, late chooser answer, HTTP refresh
+and SIGTERM. Recorded HTTP refresh cleanup is 85 ms and SIGTERM cleanup 136 ms.
+Receipt: `/tmp/hict-tauri-streaming-native-12/lifecycle-qa-01/qualification.json`.
+The coordinated source increment pins WebUI `e15f17d2b8440544e61a4ba62b7547ca3671e592`
+and version `2.0.66-5544870-webui_e15f17d`; its post-commit WebUI build passes.
+Final package and replacement platform CI gates remain pending.

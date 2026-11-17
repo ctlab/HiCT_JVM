@@ -47,6 +47,11 @@ def main():
     out.mkdir(exist_ok=False)
     data = out / "data"
     data.mkdir()
+    required = sum(Path(source).stat().st_size for source in args.source_map) + 2 * (1 << 30)
+    assert shutil.disk_usage(out).free >= required, (
+        f"Release qualification needs {required} free bytes for physical input copies "
+        "and 2 GiB of working headroom; free space before starting"
+    )
     jar = app / "lib/hict.jar"
     assert jar.is_file() and (app / "webui/index.html").is_file()
     evidence = {
@@ -57,7 +62,12 @@ def main():
     }
 
     def save():
-        (out / "qualification.json").write_text(json.dumps(evidence, indent=2))
+        pending = out / ".qualification.json.tmp"
+        try:
+            pending.write_text(json.dumps(evidence, indent=2))
+            pending.replace(out / "qualification.json")
+        finally:
+            pending.unlink(missing_ok=True)
 
     save()
     with (out / "fixture.log").open("w") as log:

@@ -91,6 +91,64 @@ class RequestTaskSchedulerTest {
   }
 
   @Test
+  void disconnectedQueuedExportsAreRemovedWithoutCancellingOtherExports() throws Exception {
+    var router = Router.router(vertx);
+    router.get("/:kind").handler(ctx -> scheduler.submit(ctx, RequestPriority.EXPORT,
+      CancellationDomain.EXPORT, () -> {
+        if (ctx.pathParam("kind").equals("block")) {
+          active.countDown();
+          release.await();
+        } else queuedCalls.incrementAndGet();
+        return "ready";
+      }, value -> ctx.response().end(value)));
+    var server = vertx.createHttpServer().requestHandler(router).listen(0)
+      .toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+    port = server.actualPort();
+    var first = request("block");
+    until(() -> active.getCount() == 1);
+    var second = request("block");
+    assertTrue(active.await(3, TimeUnit.SECONDS));
+    try (var socket = new java.net.Socket("127.0.0.1", port)) {
+      socket.getOutputStream().write("GET /queued HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+      socket.getOutputStream().flush();
+      until(() -> scheduler.diagnosticsSnapshot().pools().get(RequestPriority.EXPORT).queueSize() == 1);
+    }
+    until(() -> scheduler.diagnosticsSnapshot().pools().get(RequestPriority.EXPORT).queueSize() == 0);
+    assertEquals(0, queuedCalls.get());
+    assertEquals(2, scheduler.diagnosticsSnapshot().pools().get(RequestPriority.EXPORT).activeCount());
+    release.countDown();
+    assertEquals(200, first.get(3, TimeUnit.SECONDS).statusCode());
+    assertEquals(200, second.get(3, TimeUnit.SECONDS).statusCode());
+    assertEquals(0, queuedCalls.get());
+  }
+
+  @Test
+  void anExportSubmittedAfterItsClientDisconnectedNeverRuns() throws Exception {
+    var submitted = new CountDownLatch(1);
+    var router = Router.router(vertx);
+    router.get("/late").handler(ctx -> ctx.response().closeHandler(ignored -> {
+      assertTrue(ctx.response().closed());
+      scheduler.submit(ctx, RequestPriority.EXPORT, CancellationDomain.EXPORT,
+        () -> { queuedCalls.incrementAndGet(); return "obsolete"; }, value -> ctx.response().end(value));
+      submitted.countDown();
+    }));
+    router.get("/health").handler(ctx -> scheduler.submit(ctx, RequestPriority.EXPORT,
+      CancellationDomain.EXPORT, () -> "ready", value -> ctx.response().end(value)));
+    var server = vertx.createHttpServer().requestHandler(router).listen(0)
+      .toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+    port = server.actualPort();
+    try (var socket = new java.net.Socket("127.0.0.1", port)) {
+      socket.getOutputStream().write("GET /late HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+      socket.getOutputStream().flush();
+    }
+    assertTrue(submitted.await(3, TimeUnit.SECONDS));
+    assertEquals(200, request("health").get(3, TimeUnit.SECONDS).statusCode());
+    assertEquals(0, queuedCalls.get());
+  }
+
+  @Test
   void assemblyCommandsCannotOverlapAndKeepFifoOrder() throws Exception {
     var calls = new java.util.concurrent.CopyOnWriteArrayList<String>();
     var entered = new CountDownLatch(1);

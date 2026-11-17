@@ -1454,3 +1454,55 @@ fixture's assumption that TempDir is canonical. Its canonical branch now calls
 cross-platform regression. Focused cache/provenance tests pass locally; the
 replacement macOS/package gates remain required. The integrated version-64 JAR
 build passes with the committed WebUI and the exact GUI-qualified Tauri binary.
+
+
+## Export disconnects and the remaining Windows portable regression
+
+JVM `55448708` passes both four-platform Java matrices and WebUI `3804e455`
+passes its four-platform matrix. Portable Windows then fails a Rust writer
+fixture before its intended rename failure: copying directory permissions onto
+a file returns Windows error 87. The fixture now opens a valid destination,
+writes staged bytes, then creates the blocking directory before committing.
+No assertion or native test is skipped. All 16 shared Rust writer tests and the
+full local WebUI build pass; replacement Windows CI remains required.
+
+A real TCP disconnect test reproduces another issue: a client can leave while
+the JVM continues preparing FASTA. Export-domain requests now cancel only their
+own worker on connection closure, discard queued work and reject work submitted
+after its client already disconnected. Four new tests cover preparation/temp
+cleanup, transfer cleanup, queued isolation and late submission. Full local
+validation passes 646 JVM tests, two optional skips and native parity.
+
+The version-65 archive identity passes, but its subsequent packaged gate does
+not qualify: local disk exhaustion interrupted evidence persistence during the
+structural stage. Four packaged native lifecycle cases pass; the coordinate
+suite completes seven cases and then times out on the final close case during
+the same storage incident. A later native pre-header probe cannot be counted
+as passed after an invalid WebDriver session; its diagnostics and screenshot
+are retained. Fresh native/package qualification of the next increment remains
+required. The runner now requires input-copy space plus 2 GiB headroom and
+atomically replaces its result file so failed writes retain the prior evidence.
+
+The owner also authorizes cleanup of task-created duplicate test inputs/exports
+under `/tmp/hict-*` after exact verification against retained originals/lossless
+archives and checks for active consumers. Original datasets, release archives
+and test logs/results remain protected. The first authorized batch reclaims
+1,906,694,306 bytes; receipt is retained.
+
+
+The fresh native development trial 11 now passes all eight ordinary coordinate
+export cases on the version-66 server code. The 512-Mb FASTA retains its file
+and sequence hashes; recorded frame p95 is 20 ms and acknowledgement p95 is
+11.95 ms. Native window close cleans staging in 243 ms. This uses an immutable
+intermediate server JAR and packaged version-65 runtime/WebUI/native snapshots,
+so final committed package qualification remains required. Receipt:
+`/tmp/hict-tauri-streaming-native-11/native-coordinate-qa-01/qualification.json`.
+
+
+Fresh native development trial 12 also passes all four lifecycle cases on the
+intermediate version-66 server: Blob refresh, late chooser answer, HTTP refresh
+and SIGTERM. Recorded HTTP refresh cleanup is 85 ms and SIGTERM cleanup 136 ms.
+Receipt: `/tmp/hict-tauri-streaming-native-12/lifecycle-qa-01/qualification.json`.
+The coordinated source increment pins WebUI `e15f17d2b8440544e61a4ba62b7547ca3671e592`
+and version `2.0.66-5544870-webui_e15f17d`; its post-commit WebUI build passes.
+Final package and replacement platform CI gates remain pending.
