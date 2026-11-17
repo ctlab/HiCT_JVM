@@ -29,7 +29,7 @@ describe earlier releases; they must not override the decisions below.
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; live-provider success and platform qualification pending |
-| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions and portable named cut/scaffold/ModDotPlot comparisons implemented and verified; publication presets/artifacts and final release qualification pending |
+| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions and portable named cut/scaffold/ModDotPlot comparisons implemented and verified; 86/178 mm physical-size presets implemented; final real-example publication artifacts and release qualification pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
 P10 is independent and is being completed before the coordinated P1 changes.
@@ -1003,3 +1003,29 @@ open, as do P8 live provider success and the wider performance/platform/release
 gates. This validates separately served API/assets, not a combined native/SFX
 package. Protected plans and owner files remain unchanged; nothing pushed,
 merged or tagged.
+
+## Physical figure sizes and PDF page integrity
+
+P9's Export dialog now offers captured size and 86/178 mm column widths, matching
+the current Bioinformatics figure-width guidance. All formats record the same
+physical dimensions, original raster dimensions, effective DPI and pixel-preserving
+policy. SVG retains its coordinate viewBox with millimetre dimensions, PDF uses
+that physical page and PNG replaces only physical-size/provenance chunks. Matrix
+pixels, fitting inputs, captured vector geometry and stored snapshots remain
+unchanged. Returning to captured size gives the original PNG bytes.
+
+The audit also found jsPDF silently caps pages above 14,400 points. Oversized
+captured/print pages now reject with a smaller-size/area recovery message rather
+than publish clipped drawing. Focused Node checks cover that guard and independent
+PNG chunk/CRC/image-data validation, and run in build:web. The full WebUI build,
+62 Chromium cases and independent SVG/PDF rasterization checks pass. Portrait
+comparisons, saved-snapshot independence, physical sizes, editable labels and
+640-pixel controls were checked; screenshots were inspected. Exact artifacts are
+in reinforcement-validation.md. JVM runtime source is unchanged in this increment.
+
+The DPI shown is derived from existing capture pixels, not a claim of added
+resolution or publication acceptance. Final real-example figure composition,
+readability at print size, archival artifacts and the remaining release gates
+are still required. The tested API/static-assets pair is not a packaged/native
+release. Protected plans/owner files remain unchanged; nothing pushed, merged
+or tagged.

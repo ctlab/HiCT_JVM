@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Export frozen figures at 86 mm or 178 mm column width with matching SVG/PDF/PNG physical sizes, preserved matrix pixels and recorded effective raster resolution.
+- Reject oversized PDF pages with a clear recovery message instead of silently clipping the drawing.
+
 - Store and view named figure snapshots, compare cut/scaffold/reversed states, and retain original pixels, vector labels and per-panel provenance in portable sessions.
 - Validate stored figures before replacing a session, protect snapshot changes during delayed saves, preserve legacy AGP fragment IDs after reordered assembly edits, and avoid redundant fine-grid loading in projected comparisons.
 

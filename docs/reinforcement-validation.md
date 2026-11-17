@@ -5077,3 +5077,69 @@ raising the timeout or accepting unfinished drawing. Prior passing retries do
 not qualify that defect. P9 publication figures/presets and remaining release,
 platform, performance and P8 successful live-provider gates stay open. Protected
 plans and owner files are unchanged; nothing pushed, merged or tagged.
+
+## Physical figure output sizes
+
+Development pair: unchanged JVM JAR
+`build/libs/hict_server-2.0.47-33c7972-webui_a2540fa-fat.jar`, SHA-256
+`3f8a156018cc844f2c7c3b55c83af853722c43e6b0c83be27d64c6d268cfa278`,
+with WebUI dist SHA-256
+`800b1435ab5e12c554dad8f344ca94ec19c362e62160659782d638f4cb982812`
+(sorted relative paths/NUL/bytes, excluding electron). JAR snapshots isolate
+acceptance from build output; no assets were rebuilt during final browser checks.
+Runtime Java is unchanged; the preceding 625-test JVM result, with zero
+failures/errors and seven optional skips, remains the backend baseline. This
+increment does not qualify embedded/SFX/native or cross-platform packages.
+
+- `/tmp/hict-print-size-web-02.log`: full `npm run build:web`, terminal zero,
+  type/DTO/numerical checks pass. New `check-figure-print-size.mjs` is included in
+  the viewport checks. Independent PNG generation/CRC/zlib checks prove physical
+  metadata replacement preserves compressed and decoded image data, removes the
+  old physical/provenance chunks, and records a single current value. Invalid
+  sizes and both oversized captured and extremely tall print PDF pages reject
+  before the encoder can silently cap them. Existing intentional error fixtures
+  still log their handled failures; they do not indicate a failing build.
+- `/tmp/hict-print-size-ui-03/results.json`: five cases, empty errors, terminal
+  zero. Real export controls save 86/178 mm SVG/PDF/PNG; parsed SVG physical size,
+  pdfinfo page dimensions and PNG pHYs agree within format rounding. UTF-8 PNG
+  metadata, SVG root record and PDF XMP are equal. Original PNG image chunks and
+  every decoded pixel are identical. Each print width independently matches 729
+  flat interior matrix samples across PNG, rsvg-convert SVG and Poppler PDF,
+  within four channel units. PDF text extraction retains track labels. A vertical
+  comparison proves portrait page size and vector panel captions. Saving a
+  snapshot while a print preset is selected preserves its original pixel-sized
+  vector scene and unmodified capture provenance. At 640 pixels the controls wrap
+  within the viewport. Returning to captured size produces the original PNG
+  bytes. Native SHA-256 stays
+  `ebde927029745e8fc3dfceada018da3686de0440fb0884e7b5f91c0a7e9e0ac1`.
+- `/tmp/hict-print-size-snapshots-01/results.json`: fourteen cases, empty errors,
+  terminal zero. Actual cut/scaffold comparisons, session v5 restore, retained
+  PNG bytes, SVG/PDF parity, malformed import rejection, delayed save revisions
+  and cancellation cleanup remain correct.
+- `/tmp/hict-print-size-sequence-01/summary.json`: nineteen cases, status ok,
+  terminal zero and explicit driver exit zero. Actual native ModDotPlot with
+  tracks, three-format figure colors, named before/after Reverse comparisons,
+  exact-coordinate tools and selection exports pass.
+- `/tmp/hict-print-size-frozen-01/results.json`: ten cases, empty errors,
+  terminal zero. Existing captured-size encodings, scientific metadata, exact
+  cuts, stale/cancelled capture and responsive controls remain correct.
+- `/tmp/hict-print-size-viewer-01/results.json`: fourteen cases, empty errors,
+  terminal zero. Export reopening, PNG pixel equality, SVG inertness, fit/zoom,
+  chooser memory and late-decoding cleanup remain correct.
+
+Total: 62 final Chromium cases. Changed-file Prettier, focused Python Black/compile
+and both repository whitespace checks pass. Screenshots were inspected for the
+print-size status, 640-pixel layout and portrait comparison. The print-width
+references are the current
+[Bioinformatics author guidelines](https://academic.oup.com/bioinformatics/pages/author-guidelines),
+checked 2026-11-17. Presets preserve aspect ratio and captured pixels; integer PNG
+pixels-per-metre values introduce only encoding rounding. SVG/PDF labels remain
+vector, while embedded matrices retain their captured resolution. The UI reports
+effective raster DPI without silently upsampling or claiming journal acceptance.
+Final real-example print readability, publication artifacts and the broader
+release gates remain open.
+
+Earlier ui-01 passed the four-case draft before the PDF size guard; ui-02 passed
+that subset before portrait/snapshot-independence coverage. Both are superseded
+by ui-03 and web-02; only the final runs above qualify this increment. Protected
+plans and owner files are unchanged; nothing pushed, merged or tagged.

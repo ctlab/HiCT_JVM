@@ -154,3 +154,32 @@ P9 still requires the final publication composition/preset and real example
 artifacts at their intended print size, alongside wider source/performance and
 release qualification. The stored comparison journey now covers cut/scaffold
 states and real generated ModDotPlot plus tracks before and after Reverse.
+
+
+## Print size
+
+Choose **Captured size**, **Single column · 86 mm** or **Double column · 178 mm**
+in the export dialog. The column choices follow the current
+[Bioinformatics author guidelines](https://academic.oup.com/bioinformatics/pages/author-guidelines)
+(checked 2026-11-17). Height follows the captured aspect ratio. SVG uses physical
+millimetre dimensions while retaining its original coordinate viewBox; PDF uses
+the corresponding physical page; PNG records pixels per metre in its pHYs chunk.
+Integer pixels-per-metre encoding can introduce a small physical-size rounding
+error. The original PNG image chunks and decoded pixels remain unchanged.
+
+All three formats record the same outputSize provenance: physical dimensions,
+captured raster dimensions, effective raster DPI and PRESERVE_CAPTURE_PIXELS
+policy. Changing print size never refits a profile, re-queries the map, resamples
+contacts or adds image detail. Source snapshots retain their original capture,
+independently of the selected output size. Captured size returns the original
+PNG bytes. SVG/PDF text remains vector; embedded matrix imagery retains its
+captured resolution. Inspect labels and signals at the intended print size.
+
+The journal's colour/halftone guidance is 350 dpi and its line-art guidance is
+1200 dpi; the reported effective raster DPI describes the existing capture and
+is not a promise that every exported panel meets those targets. Prepare the
+final research figure and any required TIFF derivative from actual qualified
+source data, verify readability and keep its provenance. This print-size control
+alone does not qualify a manuscript figure. PDF pages beyond the encoder's
+14,400-point limit are rejected with a smaller-size/area recovery message rather
+than silently cropped.

@@ -155,6 +155,11 @@ job state. Cancelled downloads retain partial files for an explicit retry.
 
 ## Export
 
+**Print size** offers the captured size or 86/178 mm column widths. The physical
+size is retained in SVG, PDF and PNG; height follows the figure's aspect ratio.
+The displayed DPI describes captured pixels, which are preserved without adding
+image detail. Check labels at print size; SVG/PDF retain vector labels.
+
 **Export** above the map opens a figure dialog and captures a preview. Choose
 the viewport, whole map or selected rectangle, and whether to include rulers/FASTA
 and 1D tracks. After changing options, choose **Refresh capture**. PNG, SVG and PDF
