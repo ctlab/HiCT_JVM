@@ -1,0 +1,14 @@
+{
+  "generator": "Python 3.12 / pyBigWig 0.3.25",
+  "sha256": "fc99cf06951fd8c41cb5cf342f8e04f09cff0ba2e7a7624d234dd5acb10be19d",
+  "reference": {
+    "tiny": 17
+  },
+  "intervals": [
+    {
+      "start": 0,
+      "end": 1,
+      "value": "inf"
+    }
+  ]
+}

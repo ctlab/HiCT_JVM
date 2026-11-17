@@ -55,16 +55,29 @@ final class PinnedDownloadClient implements AutoCloseable {
         request.putHeader("Range", "bytes=" + offset + "-");
         if (validator != null) request.putHeader("If-Range", validator);
       }
-      // Install backpressure and terminal handlers on the event loop before handing off the body.
-      return request.send().map(response -> {
-        if (cancelled.get()) { request.reset(); throw new java.util.concurrent.CancellationException("Cancelled"); }
-        response.pause();
-        final var headers = new HashMap<String, List<String>>();
-        for (var name : response.headers().names()) headers.put(name, response.headers().getAll(name));
-        final var stream = new DownloadStream(request, response);
-        active = stream;
-        return new Response(response.statusCode(), HttpHeaders.of(headers, (name, value) -> true), stream);
-      }).toCompletionStage().toCompletableFuture().get(65, TimeUnit.SECONDS);
+      // send(handler) registers the response callback before ending the request.
+      // send().map(...) can attach after a fast response has already ended,
+      // too late to install backpressure/body handlers (notably for redirects).
+      final var received = new java.util.concurrent.CompletableFuture<Response>();
+      request.send(result -> {
+        if (result.failed()) {
+          received.completeExceptionally(result.cause());
+          return;
+        }
+        try {
+          if (cancelled.get()) { request.reset(); throw new java.util.concurrent.CancellationException("Cancelled"); }
+          final var response = result.result();
+          response.pause();
+          final var headers = new HashMap<String, List<String>>();
+          for (var name : response.headers().names()) headers.put(name, response.headers().getAll(name));
+          final var stream = new DownloadStream(request, response);
+          active = stream;
+          received.complete(new Response(response.statusCode(), HttpHeaders.of(headers, (name, value) -> true), stream));
+        } catch (Exception failure) {
+          received.completeExceptionally(failure);
+        }
+      });
+      return received.get(65, TimeUnit.SECONDS);
     } catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt();
       throw new java.util.concurrent.CancellationException("Download interrupted");

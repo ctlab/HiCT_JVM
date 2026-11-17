@@ -23,6 +23,16 @@ it does not show an unnormalized sum. For values 7, a gap, 9, 4 and 4 across fiv
 positions, these modes produce 9, 6 and 4.8. Existing saved sessions retain their
 values; the earlier `SUM` identifier denotes the gap-filled mean.
 
+BigWig signs are preserved, including all-negative intervals and cached maxima.
+Automatic range includes zero and the visible negative/positive extrema. Both
+axes draw signed bars from zero. The **log** switch uses symmetric
+`sign(x) * log(1 + abs(x))` for ranges containing negatives; nonnegative tracks
+retain their existing log1p scale. NaN and infinite observations produce an
+explicit query/preparation error with source coordinates. HiCT does not silently
+replace them or publish a partial signal; correct the source and add it again.
+See the [UCSC data-value rules](https://genome.ucsc.edu/goldenPath/help/wiggle.html)
+for signed values and missing observations.
+
 BAM **Aligned-base depth** counts aligned reference bases (`M`, `=` and `X`).
 Deleted and skipped regions, insertions and clipped bases do not add depth.
 At coarse scale the value is the mean depth over the displayed bucket.

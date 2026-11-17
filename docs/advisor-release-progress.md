@@ -1629,3 +1629,28 @@ The coordinated candidate is `2.0.70-e77dd80-webui_a331682`, with WebUI
 232 reviewed control contracts (227 inspected, five historical ambiguities);
 it does not infer runtime outcomes. Source-matched packaged acceptance and
 replacement platform Actions remain required.
+
+
+## Signed signals and Examples CI repair
+
+The signal audit now preserves negative BigWig values through means, negative-only
+maxima, persistent caches, exact edits and restored sessions. Both axes use zero
+baselines and signed automatic ranges; log scaling preserves sign. Non-finite
+source records produce explicit errors with coordinates. Twenty-four signed
+browser checks pass across two grids, including independently checked draw
+rectangles and visual review; the source suite passes 659 JVM tests with two
+optional skips, native parity and the frontend build.
+
+Candidate-70 WebUI CI and PR Java matrix are green. Its push Java matrix fails
+on Windows and Apple Silicon with the same existing Examples response-handler
+race. The prepared client change registers handlers before sending; full local
+regressions pass without relaxing any assertion. Replacement platform evidence
+remains required. Broader formats/secondary sources, accessibility/download-only
+browsers, dense-track performance, Linux AppImage, final source-matched portable
+qualification and dependency advisory triage remain open. Version-68 package
+qualification keeps its exact-byte scope; the overall goal remains active.
+
+The coordinated follow-up is `2.0.71-0241054-webui_d6f771b`, with WebUI
+`d6f771b3a5c6d70da1c52064946519df5db23ce4`. All 232 static control contracts reconcile;
+no runtime outcomes are inferred. Replacement CI and final portable gates
+remain required.

@@ -1505,7 +1505,7 @@ public class Track1DManager implements AutoCloseable {
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
     final boolean bpWeighted = strategy == PrecomputeAggregationStrategy.MEAN_BP_WEIGHTED;
-    final var nativeAggregation = bpWeighted ? null : NativeProcessingService.getInstance().tryAggregatePrecomputedSeries(
+    final var nativeAggregation = (bpWeighted || strategy == PrecomputeAggregationStrategy.MAX_SIGNED) ? null : NativeProcessingService.getInstance().tryAggregatePrecomputedSeries(
       series.values(),
       series.support(),
       queryStartPx,
@@ -1530,7 +1530,7 @@ public class Track1DManager implements AutoCloseable {
       final var safeEndPx = Math.max(startPx + 1L, endPx);
       final int from = (int) Math.max(0L, Math.min(startPx, series.values().length - 1L));
       final int to = (int) Math.max(from + 1L, Math.min(safeEndPx, series.values().length));
-      double maxValue = 0.0d;
+      double maxValue = strategy == PrecomputeAggregationStrategy.MAX_SIGNED ? Double.NEGATIVE_INFINITY : 0.0d;
       double sumValue = 0.0d;
       double weightedSum = 0.0d;
       long supportSum = 0L;
@@ -1539,7 +1539,7 @@ public class Track1DManager implements AutoCloseable {
       for (int idx = from; idx < to; idx++) {
         final var value = series.values()[idx];
         final var support = series.support()[idx];
-        maxValue = Math.max(maxValue, value);
+        if (strategy != PrecomputeAggregationStrategy.MAX_SIGNED || support > 0L) maxValue = Math.max(maxValue, value);
         sumValue += value;
         if (bpWeighted && Double.isFinite(value)) {
           weightedSum += value * support;
@@ -1551,7 +1551,7 @@ public class Track1DManager implements AutoCloseable {
         }
       }
       final double value = switch (strategy) {
-        case MAX -> maxValue;
+        case MAX, MAX_SIGNED -> maxValue;
         case MEAN_ALL_PIXELS -> sumValue / Math.max(1.0d, to - from);
         case MEAN_PRESENT_PIXELS -> supportCount > 0L ? (sumValue / supportCount) : 0.0d;
         case MEAN_BP_WEIGHTED -> supportSum > 0L ? weightedSum / supportSum : 0.0d;
@@ -1814,10 +1814,10 @@ public class Track1DManager implements AutoCloseable {
   }
 
   private static String precomputeCacheVersion(TrackType type) {
-    // Signal caches now use base-weighted means; BAM also uses CIGAR blocks
-    // and immutable source centers. Other formats retain their valid caches.
-    return type == TrackType.BAM || type == TrackType.BIGWIG
-      ? SIGNAL_PRECOMPUTE_CACHE_VERSION : PRECOMPUTE_CACHE_VERSION;
+    // BigWig v4 preserves signed values; v3 stored magnitudes. BAM v3 retains
+    // base-weighted depth and source centers. Other caches remain compatible.
+    if (type == TrackType.BIGWIG) return "4";
+    return type == TrackType.BAM ? SIGNAL_PRECOMPUTE_CACHE_VERSION : PRECOMPUTE_CACHE_VERSION;
   }
 
   private @NotNull Path sidecarPathForTrackCache(final @NotNull String sourceIdentity,
@@ -1979,7 +1979,7 @@ public class Track1DManager implements AutoCloseable {
   private static @NotNull PrecomputeAggregationStrategy aggregationStrategy(final @NotNull TrackState track) {
     return switch (track.type()) {
       case BIGWIG -> switch (track.bigWigAggregationMode()) {
-        case MAX -> PrecomputeAggregationStrategy.MAX;
+        case MAX -> PrecomputeAggregationStrategy.MAX_SIGNED;
         case MEAN, SUM -> PrecomputeAggregationStrategy.MEAN_BP_WEIGHTED;
       };
       case BAM -> switch (track.bamRenderMode()) {
@@ -1996,7 +1996,7 @@ public class Track1DManager implements AutoCloseable {
       case MEAN_ALL_PIXELS -> 2;
       case MEAN_PRESENT_PIXELS -> 3;
       case SUM -> 4;
-      case MEAN_BP_WEIGHTED -> throw new IllegalArgumentException("BP-weighted signals use their stored base support");
+      case MEAN_BP_WEIGHTED, MAX_SIGNED -> throw new IllegalArgumentException("Signed/base-weighted signals use their stored support");
     };
   }
 
@@ -2718,7 +2718,7 @@ public class Track1DManager implements AutoCloseable {
       clippedAssemblyEnd,
       clippedStartPx,
       clippedEndPx,
-      Math.max(0.0d, value),
+      value,
       label,
       null,
       null,
@@ -2893,7 +2893,7 @@ public class Track1DManager implements AutoCloseable {
     final var bucketCount = Math.max(1, widthPx);
     final var span = Math.max(1L, queryEndPx - queryStartPx);
     final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
-    final var nativeAggregation = tryAggregateProjectedFeaturesNative(
+    final var nativeAggregation = projectedFeatures.stream().anyMatch(f -> f.value() < 0) ? null : tryAggregateProjectedFeaturesNative(
       projectedFeatures,
       queryStartPx,
       queryEndPx,
@@ -2915,7 +2915,7 @@ public class Track1DManager implements AutoCloseable {
     final double[] weightedSums = new double[bucketCount];
     final double[] overlapSums = new double[bucketCount];
     final long[] counts = new long[bucketCount];
-    Arrays.fill(maxValues, 0.0d);
+    Arrays.fill(maxValues, Double.NEGATIVE_INFINITY);
     for (final var feature : projectedFeatures) {
       int left = (int) Math.floor((feature.startPx() - queryStartPx) / bucketSpan);
       int right = (int) Math.ceil((feature.endPx() - queryStartPx) / bucketSpan) - 1;
@@ -4404,6 +4404,16 @@ public class Track1DManager implements AutoCloseable {
       }
     }
 
+    private double finiteValue(WigItem item) {
+      double value = item.getWigValue();
+      if (!Double.isFinite(value)) {
+        throw new IllegalArgumentException("BigWig contains a non-finite value at " + item.getChromosome()
+          + ":" + item.getStartBase() + "-" + item.getEndBase()
+          + ". Remove invalid values from the source and add the corrected file.");
+      }
+      return value;
+    }
+
     @Override
     public long featureCountHint() {
       return -1L;
@@ -4459,7 +4469,7 @@ public class Track1DManager implements AutoCloseable {
               segment,
               itemStart,
               itemEnd,
-              Math.abs(item.getWigValue()),
+              finiteValue(item),
               null,
               queryStartPx,
               queryEndPx,
@@ -4487,6 +4497,7 @@ public class Track1DManager implements AutoCloseable {
       final var span = Math.max(1L, queryEndPx - queryStartPx);
       final var bucketSpan = Math.max(1.0d, span / (double) bucketCount);
       final double[] maxValues = new double[bucketCount];
+      Arrays.fill(maxValues, Double.NEGATIVE_INFINITY);
       final double[] weightedSums = new double[bucketCount];
       final double[] overlapSums = new double[bucketCount];
       final long[] counts = new long[bucketCount];
@@ -4528,7 +4539,7 @@ public class Track1DManager implements AutoCloseable {
               segment,
               item.getStartBase(),
               item.getEndBase(),
-              Math.abs(item.getWigValue()),
+              finiteValue(item),
               null,
               queryStartPx,
               queryEndPx,
@@ -4858,6 +4869,7 @@ public class Track1DManager implements AutoCloseable {
 
   private enum PrecomputeAggregationStrategy {
     MAX,
+    MAX_SIGNED,
     MEAN_ALL_PIXELS,
     MEAN_PRESENT_PIXELS,
     MEAN_BP_WEIGHTED,

@@ -19,3 +19,18 @@ with pyBigWig.open('signal-with-gap.bw', 'w') as writer:
 The JVM regression uses the independent IGV BigWig reader and hand-enumerated
 base intervals, including partial native bins, cuts, reversal and cached means.
 No Python package or downloaded dataset is required to run that regression.
+
+
+`signed-signal.bw` contains -7 at [0,1), -9 at [2,3), -4 at [3,5),
+6 at [7,9), and measured zero at [10,11). Its area is -12 across seven
+observed bases: covered mean -12/7 and zero-filled mean -12/17. An all-negative
+[0,5) window has maximum -4, covered mean -6 and zero-filled mean -4.8.
+Missing positions remain distinct from the measured zero. The regression also
+reopens the persisted cache and checks that no preparation is scheduled.
+
+`nonfinite-nan.bw` and `nonfinite-infinity.bw` deliberately contain one invalid
+observation at [0,1). Query and preparation must report the invalid value,
+without publishing an invented zero. JSON companions record generation inputs
+and SHA256. All three use the same writer/header as the first example; pass
+the companion intervals' start/end/value arrays to `addEntries`, converting
+`"nan"` / `"inf"` to Python floats for the invalid fixtures.

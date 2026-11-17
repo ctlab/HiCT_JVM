@@ -6464,3 +6464,44 @@ The coordinated candidate is `2.0.70-e77dd80-webui_a331682`, with WebUI
 232 reviewed control contracts (227 inspected, five historical ambiguities);
 it does not infer runtime outcomes. Source-matched packaged acceptance and
 replacement platform Actions remain required.
+
+
+## Signed BigWig and fast Examples responses
+
+Independent signed fixtures reproduce loss of sign: a -7 observation appears as
++7, and the visible -9 minimum becomes zero in the frontend. The corrected reader
+preserves finite signs; native and cached all-negative maxima initialize from
+observations, not zero. BigWig caches advance to version 4; BAM remains at 3 and
+other formats remain at 2. Signed/native means retain base support. Signed MAX
+uses the Java support-aware path because the existing native kernel clamps to
+zero. Tests include native 1/4/10-bp levels, partial/shared bins, cuts/reversal,
+measured zero versus missing data, and immediate disk-cache reuse without Jobs.
+
+Both axes draw bars from zero and automatically include signed visible extrema.
+The signed log scale uses symmetric log1p; nonnegative scaling remains unchanged.
+A production-code UI regression fails before the fix and passes afterward.
+NaN/infinity fixtures now produce explicit coordinate-bearing query and Jobs
+errors rather than invented zeros. The browser's signed variant passes 24
+checks across two grids: real controls, signed modes, edits/session restore and
+linear/log drawing on both axes. Actual draw rectangles are checked against the
+independent source signs; restored-view and detached-axis screenshots are retained.
+
+Version-70 push Java CI reveals a separate Examples response-handoff race on
+Windows and Apple Silicon: both fail with “Response already ended”. The exact
+JUnit XML is retained. Vert.x 4.5.36 bytecode shows that send() ends before it
+returns its response future, whereas send(handler) installs its callback before
+ending. The client now uses the latter, installing pause/body/end/error handlers
+before handing the body to its blocking consumer. Redirect bounds, cancellation,
+verification and network policies stay intact; existing tests remain unchanged.
+
+Final local validation passes 659 JVM tests, zero failures/errors, two optional
+skips, and a freshly executed native parity case. Targeted downloader/track
+suites and the complete WebUI build pass. Receipts are retained under
+`build/release-evidence/signed-bigwig/`. The prototype browser receipt predates
+the independent Examples client fix; that fix is covered by the final full JVM
+suite. Replacement Windows/macOS CI and final packaged acceptance remain required.
+
+The coordinated follow-up is `2.0.71-0241054-webui_d6f771b`, with WebUI
+`d6f771b3a5c6d70da1c52064946519df5db23ce4`. All 232 static control contracts reconcile;
+no runtime outcomes are inferred. Replacement CI and final portable gates
+remain required.

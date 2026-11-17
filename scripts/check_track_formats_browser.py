@@ -5,6 +5,7 @@ Needs Python 3.12 with Playwright, NumPy and pyBigWig; fixtures use the supplied
 JAR and a host JDK. Uses only fresh physical /tmp inputs and owned processes.
 """
 import argparse
+import base64
 import functools
 import gzip
 import hashlib
@@ -24,6 +25,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('jar', 'webui', 'data-dir', 'output'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--signed', action='store_true', help='Qualify signed BigWig values and drawing')
     args = parser.parse_args()
     data, out = Path(args.data_dir).absolute(), Path(args.output).absolute()
     for path in (data, out):
@@ -51,11 +53,15 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
         handle.write(vcf)
     with pyBigWig.open(str(data / 'signal.bw'), 'w') as handle:
         handle.addHeader([('tiny', 17)])
-        handle.addEntries(['tiny'] * 3, [0, 2, 3], ends=[1, 3, 5], values=[7.0, 9.0, 4.0])
+        if args.signed:
+            handle.addEntries(['tiny'] * 5, [0, 2, 3, 7, 10], ends=[1, 3, 5, 9, 11], values=[-7., -9., -4., 6., 0.])
+        else:
+            handle.addEntries(['tiny'] * 3, [0, 2, 3], ends=[1, 3, 5], values=[7.0, 9.0, 4.0])
     with pyBigWig.open(str(data / 'signal.bw')) as handle:
         independent = handle.values('tiny', 0, 17)
     oracle = [None if math.isnan(value) else value for value in independent]
-    assert oracle == [7, None, 9, 4, 4] + [None] * 12
+    assert oracle == ([-7, None, -9, -4, -4, None, None, 6, 6, None, 0] + [None] * 6
+                      if args.signed else [7, None, 9, 4, 4] + [None] * 12)
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in data.iterdir() if p.is_file()}
 
@@ -175,7 +181,7 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                 choose_bam_mode('COVERAGE')
 
                 aggregates = {}
-                for mode, expected in (('MAX', 9), ('MEAN', 6), ('SUM', 4.8)):
+                for mode, expected in (('MAX', -4), ('MEAN', -6), ('SUM', -4.8)) if args.signed else (('MAX', 9), ('MEAN', 6), ('SUM', 4.8)):
                     if mode != 'MAX':
                         choose_mode(mode)
                     verify_features()
@@ -280,6 +286,55 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                     assert abs(point['roundTrip'] - point['bp']) < 1e-9, coordinates
                     if coordinates['sequenceGrid']:
                         assert abs(point['px'] - point['bp']) < 1e-9, coordinates
+                if args.signed:
+                    drawings = []
+                    for log in (False, True):
+                        open_manager()
+                        row = dialog.get_by_role('group', name='Track Signal', exact=True)
+                        row.locator('summary').filter(has_text='Signal settings').click()
+                        row.get_by_role('checkbox', name='log', exact=True).set_checked(log)
+                        close_manager()
+                        drawing = page.evaluate('''({track,log})=>{
+                            const linear=window.__hictBenchmark.manager().linearTrackManager;
+                            const summary=linear.tracks.find(t=>t.trackId===track.trackId);
+                            if(summary.logScale!==log) throw Error('Log checkbox did not persist');
+                            const result=[];
+                            for(const orientation of ['horizontal','vertical']) {
+                                const canvas=document.createElement('canvas'),scale=24,cross=220;
+                                canvas.width=orientation==='horizontal'?17*scale:cross;
+                                canvas.height=orientation==='horizontal'?cross:17*scale;
+                                const ctx=canvas.getContext('2d'),fills=[],original=ctx.fillRect.bind(ctx),color='#9b27c5';
+                                ctx.fillRect=(x,y,w,h)=>{if(ctx.fillStyle===color)fills.push({x,y,w,h});original(x,y,w,h)};
+                                const viewport={startPx:0,endPx:17,startBp:0,endBp:17,bpResolution:1,
+                                    visibleWidthPx:17*scale,scopeStartPx:0,scopeEndPx:17,pxToScreen:p=>p*scale};
+                                linear.drawTrackCanvas(canvas,orientation,{tracks:[{...track,color}]},viewport,undefined,false);
+                                const range=linear.resolveSignalRange(summary,track.bins,viewport,1);
+                                const transform=linear.buildScaleTransform(range.min,range.max,log,10);
+                                result.push({orientation,fills,zero:cross-2-(cross-4)*transform.normalize(0),range,
+                                    png:canvas.toDataURL('image/png')});
+                            }
+                            return result;
+                        }''', {'track': query()['Signal'], 'log': log})
+                        for axis in drawing:
+                            assert axis['range'] == {'min': -9, 'max': 6}, axis
+                            for position, value in enumerate(oracle[::-1]):
+                                def covers(rect):
+                                    start, size = (rect['x'], rect['w']) if axis['orientation'] == 'horizontal' else (rect['y'], rect['h'])
+                                    return start <= (position + .5) * 24 < start + size
+                                bars = [r for r in axis['fills'] if covers(r)]
+                                if value is None or value == 0:
+                                    assert not bars, (position, value, bars)
+                                    continue
+                                assert len(bars) == 1, (position, value, bars)
+                                rect = bars[0]
+                                start, size = (rect['y'], rect['h']) if axis['orientation'] == 'horizontal' else (rect['x'], rect['w'])
+                                assert start >= axis['zero'] - 1e-9 if value < 0 else start + size <= axis['zero'] + 1e-9, (value, axis)
+                            png = axis.pop('png').split(',', 1)[1]
+                            (case / f"signed-{'log' if log else 'linear'}-{axis['orientation']}.png").write_bytes(base64.b64decode(png))
+                        drawings.append({'log': log, 'axes': drawing})
+                        check.step('signed-' + ('log' if log else 'linear') + '-both-axis-bars', lambda: None)
+                        page.screenshot(path=str(case / f"signed-{'log' if log else 'linear'}-restored.png"))
+                    (case / 'signed-drawing-results.json').write_text(json.dumps(drawings, indent=2))
                 assert not check.errors, check.errors
                 results.append({'grid': 'sequence' if sequence else 'native', 'checks': check.rows,
                     'aggregates': aggregates, 'coordinates': coordinates, 'modeDescriptions': mode_descriptions,
@@ -288,7 +343,7 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
         for name, digest in hashes.items():
             assert hashlib.sha256((data / name).read_bytes()).hexdigest() == digest, name
         (out / 'results.json').write_text(json.dumps({'status': 'passed', 'cases': results,
-            'independentReader': 'pyBigWig ' + pyBigWig.__version__, 'sourceValues': oracle,
+            'independentReader': 'pyBigWig ' + pyBigWig.__version__, 'signed': args.signed, 'sourceValues': oracle,
             'sourceHashesUnchanged': hashes}, indent=2))
     finally:
         static.shutdown()

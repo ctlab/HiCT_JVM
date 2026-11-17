@@ -164,3 +164,24 @@ Both version-69 Autobuild Release runs (44169303701, 44169319469) and Java
 push/PR matrices (44169303698, 44169319389) are successful. Sequence tools and
 other portable platforms remain running at this checkpoint; refresh their
 conclusions before claiming the complete release workflow passes.
+
+
+## Candidate-70 fast-response failure
+
+[Java push run 44181839176](https://github.com/ctlab/HiCT_JVM/actions/runs/44181839176)
+fails ExampleDownloaderTest on Windows (unpinned cache refresh) and Apple Silicon
+(redirect repetition 4/20), both with `IllegalStateException: Response already
+ended`. Linux and Intel macOS pass. The concurrent
+[PR matrix 44181853301](https://github.com/ctlab/HiCT_JVM/actions/runs/44181853301)
+and [WebUI CI 44181662816](https://github.com/ctlab/HiCT_WebUI/actions/runs/44181662816)
+pass; they do not erase the push failures. Both exact failing JUnit XML files
+are retained under `build/release-evidence/signed-bigwig/`.
+
+The client correction uses `request.send(handler)` to register the callback
+before ending the request, rather than attaching a map to `send()` afterward.
+The actual pinned dependency bytecode confirms that ordering difference. The
+existing downloader suite, including 20 redirect repetitions and every strict
+cancellation/verification assertion, passes locally; the complete 659-test JVM
+suite and native parity pass too. Replacement platform CI is still required.
+Portable run 44169303713 is retained while its useful native caches/platform
+jobs finish; candidate-70 Portable is pending behind it at this checkpoint.

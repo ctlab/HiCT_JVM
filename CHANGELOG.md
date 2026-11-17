@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve signed BigWig signals through aggregation, caches, both track axes and log scaling; report non-finite source values explicitly.
+
+- Attach example-download response handlers before sending, preventing fast-response races observed in Windows and macOS CI.
+
 - Correct BAM aligned-base depth and source read centers, weight coarse BAM/BigWig means by represented bases, and rebuild their older caches.
 
 - Explain BigWig averaging and BAM modes with readable controls, backed by independent signal fixtures and browser edit/session checks.
