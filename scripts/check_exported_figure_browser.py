@@ -118,8 +118,9 @@ def main():
                     path = out / ("actual-map." + extension)
                     download.value.save_as(path)
                     files[extension] = path
-                    # Close the persistent export menu without changing the map.
-                    page.get_by_role("button", name="Export", exact=True).click()
+                    page.get_by_role(
+                        "dialog", name="Export figure", exact=True
+                    ).get_by_role("button", name="Close", exact=True).last.click()
                     open_viewer()
                     choose(path)
                     expect(preview).to_be_visible()

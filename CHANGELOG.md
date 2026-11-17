@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Preview figure exports in a dedicated dialog, choose area and annotation panels, and save PNG, SVG and PDF from one frozen capture.
+- Retain scientific source, assembly and rendering provenance in all three formats, reject concurrent changes during capture, and preserve crop metadata without invalid narrow-panel SVG text.
+
 - Reopen exported PNG and SVG figures inside HiCT with fit, actual-size and zoom controls, remembered browser file choices, and clear invalid-image errors.
 
 - Search NCBI nucleotide databases with explicit query-upload consent, independent Jobs cancellation and bounded provider waiting while local analysis remains available.

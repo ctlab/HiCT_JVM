@@ -164,6 +164,7 @@ def main():
                     page.wait_for_function('ext=>window.__fileQA.last.endsWith("."+ext)',arg=extension);check.settle()
                     path=artifact('figure.'+extension);assert path.stat().st_size>1000
                     assert page.evaluate('window.__fileQA.calls.at(-1).id')=='hict-figure'
+                page.get_by_role('dialog',name='Export figure',exact=True).get_by_role('button',name='Close',exact=True).last.click()
             check.step('png-svg-pdf-user-actions-use-destinations',figures)
             def fallback():
                 reverse();page.evaluate('window.showSaveFilePicker=undefined')

@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from sequence_browser_harness import BrowserCheck
 
 
@@ -109,10 +109,16 @@ def main():
             print('PASS: Save session')
 
             reason = 'The export renderer could not produce an image.'
-            page.evaluate('message => { window.__hictBenchmark.manager().exportCurrentMapPng = async () => { throw new Error(message); }; }', reason)
+            page.evaluate('message => { window.__hictBenchmark.manager().saveCapturedFigure = async () => { throw new Error(message); }; }', reason)
             page.locator('#export-dropdown-toggle').click()
-            page.get_by_title('Export selected area as PNG').click()
-            check_toast(reason, 'Export PNG')
+            export_dialog = page.get_by_role('dialog', name='Export figure', exact=True)
+            expect(export_dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+            export_dialog.locator('#export-png-button').click()
+            expect(export_dialog.get_by_role('alert')).to_have_text(reason)
+            assert page.get_by_text(reason, exact=True).count() == 1
+            checks.append('Export PNG')
+            print('PASS: Export PNG')
+            export_dialog.get_by_role('button', name='Close', exact=True).last.click()
 
             page.evaluate('''() => {
               console.error("Console-only diagnostic");

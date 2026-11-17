@@ -4761,3 +4761,116 @@ result delivery. No additional query is submitted while that probe runs, and P8
 remains unqualified for live-provider success. Detailed tracing is not enabled in
 normal HiCT runs. See the
 [NCBI tracing documentation](https://ncbi.github.io/cxx-toolkit/pages/ch_debug).
+
+
+### Frozen figure export dialog and cross-format provenance
+
+The new dialog replaces the image-export dropdown, captures a preview once and
+saves all three formats from that immutable scene. Controls cover viewport,
+whole-map/selected rectangle, crop, rulers/FASTA and 1D tracks. Option changes
+require refresh. Source/assembly/rendering configuration and client presentation
+are compared around rendering; stale/closed captures cannot publish. Existing
+direct export methods remain available. SVG metadata stays at the root through
+cropping. PNG stores the same JSON in a CRC-checked UTF-8 iTXt chunk; PDF uses
+escaped XMP. File identification retains HICT-QUICK-1 rather than calling sampled
+fingerprints full-file hashes. Metadata distinguishes requested and rendered
+views, records map offset/size, base bounds and CSS-pixel crop geometry.
+
+`/tmp/hict-frozen-figure-web-08.log` passes the full WebUI build/type/numerical
+checks, including the new provenance/PNG regression. Its independent Node zlib
+CRC check verifies every chunk and that all original image chunks are byte
+identical. An independent Pillow/zlib decode of the Unicode golden fixture also
+passes. Current source fields preserve IDENTITY_PERCENT with scoreScale=10000.
+The canvas recorder's actual-browser scene check passes exclusion/live-widget,
+vector label, single root metadata and hook restoration assertions, including
+nonpositive/infinite text widths omitted exactly as canvas omits them.
+`/tmp/hict-frozen-figure-scene-01.log` records that check. Changed WebUI sources
+pass Prettier; new/touched focused Python drivers pass Black and all changed
+Python drivers compile. Legacy dense test files are not broadly reformatted.
+
+`/tmp/hict-frozen-figure-jvm-full-01.log` reports BUILD SUCCESSFUL in 52 seconds;
+XML totals 616 tests, zero failures/errors, seven optional skips. This increment
+changes no JVM production logic. The owned test server now explicitly passes
+--serve-webui=false: the CLI's default had overridden the harness environment
+setting and caused irrelevant port-8080 bind failures in earlier development
+runs. No application bind/CORS behavior or owner process is changed.
+
+Final browser evidence, all under `/tmp/hict-frozen-figure-`:
+
+- ui-08/results.json: ten cases, empty errors, terminal zero. A three-format
+  capture has identical metadata. Composition changes, 640×600 controls, fitted
+  whole map with exact live-view restoration, selected rectangle base/crop bounds,
+  byte-identical old PNG after an exact cut, new assembly/history identity,
+  rejection of a real concurrent visualization edit and ignored late provenance
+  after close all pass. Source input hashes remain unchanged.
+- sequence-07/summary.json: 18 cases, status ok, terminal zero. Seventeen existing
+  real-tool/local-sequence/coordinate cases remain green. The added case generates
+  an actual ModDotPlot, applies the Hi-C-above/identity-below preset with tracks,
+  exports PNG/SVG/PDF through the dialog and verifies matching metadata. The
+  legacy fixture primary honestly retains UNKNOWN units; its generated Secondary
+  records IDENTITY_PERCENT and scale 10000. Independently rasterized SVG/PDF match
+  2,279 flat interior map samples within the declared four-channel-unit limit.
+  These samples exclude antialiased text/track edges. The original native HDF
+  SHA-256 remains c1a636000d8cf196ca15020604ff387be194c3a6184fe516a87345305a79c555.
+- viewer-03/results.json: 14 cases, empty errors, terminal zero. Actual exported
+  PNG/SVG reopen with correct image content, full PNG pixel parity, fit/zoom,
+  responsive controls, inert SVG and picker/late-decode cleanup.
+- failures-02/browser/results.json: six cases, terminal zero. Export failure is
+  injected at the new captured-save boundary and appears exactly once inside the
+  dialog. Other failed actions retain their existing reporting.
+- other-02/browser/results.json: ten Jobs/FASTA-only AGP cases, terminal zero.
+- destinations-02/results.json: 14 cases, status ok, terminal zero. All three
+  format buttons use the figure save purpose and real controlled writes. Existing
+  session, delayed chooser, exact FASTA/AGP, cancellation/failure and folder-memory
+  checks remain green. Total: 72 Chromium cases.
+
+Screenshot review covers actual map/annotation content, small-window controls,
+options awaiting refresh, exact cut, stale capture, cancellation and a readable
+whole-map image. Before this change a small whole-map figure was 17×17 pixels;
+the fitted map-only fixture is now 533×560 while retaining its native signal.
+The live view is exactly restored; export resizing no longer reclamps its panels.
+
+Excluded intermediate attempts: web-01 lacked Array.from for the project's DOM
+iterator target; ui-01 exposed nested crop metadata; ui-02 exposed negative SVG
+textLength from hidden panels. Sequence-01 assumed the direct fixture converter
+had declared contact units; it is a legacy UNKNOWN source, and the test now checks
+that exact fact. Sequence-02 sampled antialiased annotation edges in the map-color
+oracle; the oracle now checks flat interior map pixels with a separate vector
+label test. Sequence-03 exposed a stale workspace write during an administrative
+fixture reset; the driver now navigates its old client away before replacing the
+server state and retains strict error checks. Ui-04 wrapped an API visualization
+body incorrectly; the real endpoint uses a flat DTO. Ui-07 exposed live panel
+clamping and restoration during export, fixed in the workspace observer and
+fitted capture path. Earlier passing subsets do not qualify the final pair.
+
+Final development JAR hict_server-2.0.45-c1c00fd-webui_6493d85-fat.jar SHA-256:
+`57ec318f8866e3604d54d846b33abedea472875fd6516a5da9d7ccbaa425f425`.
+Frozen dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`85031445adad3cdbddee1ac78b275d08de63f9258d4ed463765805bc8c1c8050`.
+This is a development API/static-assets pair, not embedded/SFX/native release
+qualification. Protected plans and owner files remain unchanged; nothing pushed,
+merged or tagged.
+
+Expected/O/E follow-up is not counted among those 72 passing cases. The separate
+`/tmp/hict-expected-figure-audit-02/results.json` records requests for a native-4-bp input
+profile at rows 1152–1853/columns 1345–2071, followed during whole capture by an
+intermediate window, full 0–3005 window, then the original window on restoration.
+Those refreshes are asynchronous and not part of ordinary visualization-option
+comparison. The probe also contains initial default-connection failures because
+it omitted the standard route before opening; it is an audit trace, not a green
+browser acceptance run. Audit-01 used the tiny filename for the mixed fixture
+and failed before opening, so it is excluded. A pinned/recorded fitting context
+and runtime parity/rollback across scopes are a required next scientific capture
+gate. Stored cut/scaffold snapshots, comparison/session persistence, publication
+figures and remaining release gates also stay open.
+
+NCBI follow-up: live-05's real bundled client reaches its selected thirty-minute
+limit (1800.248 seconds), kills its owned client and publishes no output. Its
+assertion exits one. A read of the already accepted public RID FR9P7TGF016 after
+client exit records Status=WAITING / Searching after 31 minutes; a later read at
+06:34 local still records WAITING. Files public-rid-status*.txt/json under that
+probe directory preserve the NCBI response and requested URLs/times. Neither GET
+submits a new query. This isolates accepted submission/provider waiting from
+HiCT transport failure but does not prove result delivery; P8 live qualification
+remains open. Only the hashed public 160-base reference is used, never a project
+sequence. No automatic resubmission or provider-latency claim is made.

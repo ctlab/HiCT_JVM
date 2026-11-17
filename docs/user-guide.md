@@ -155,11 +155,21 @@ job state. Cancelled downloads retain partial files for an explicit retry.
 
 ## Export
 
-Choose PNG, SVG or PDF through Export above the map. Select the visible viewport
-or a fitted whole map. Visible letter-scale alignment detail is included in all
-three formats. Whole-map exports use their fitted scale. Assembly exports are
-available through Assembly. FASTA export requires a linked sequence reference.
-Check the exported layout and sequence against your analysis requirements.
+**Export** above the map opens a figure dialog and captures a preview. Choose
+the viewport, whole map or selected rectangle, and whether to include rulers/FASTA
+and 1D tracks. After changing options, choose **Refresh capture**. PNG, SVG and PDF
+use the same frozen capture and each asks for a save destination. A concurrent
+assembly/source/rendering change rejects the capture with a refresh message.
+Closing during capture leaves the current workspace available.
+
+Visible ModDotPlot split/overlay layers and letter-scale alignment detail are
+included. Arrange the desired layers before opening Export. Figure metadata
+records source units, assembly identity, rendering settings, base bounds for a
+selection, rendered grid and crop geometry. File fingerprints identify their
+algorithm; ordinary captures use quick fingerprints, not a fresh full-file hash.
+See [figure capture and provenance](figure-capture.md). Check the final layout
+and sequence against your analysis requirements. Assembly exports remain under
+Assembly; FASTA export requires a linked reference.
 
 **File → Open exported figure…** opens a read-only PNG/SVG viewer, including
 when no map is open. Choose a file, use Fit or Actual size, and zoom with the

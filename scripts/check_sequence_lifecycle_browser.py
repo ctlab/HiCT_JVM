@@ -14,6 +14,7 @@ def main():
     parser.add_argument('--webui', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--geometry-only', action='store_true', help='Run only the independent clipped-bin browser oracle')
+    parser.add_argument('--figure-export', action='store_true', help='Also qualify PNG/SVG/PDF capture of the real generated ModDotPlot and tracks')
     args = parser.parse_args()
     suite = Path(args.suite).resolve() if args.suite else Path(__file__).resolve().parents[1]
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=False)
@@ -240,6 +241,59 @@ class OverlayFixture { public static void main(String[] a) {
             assert versions[0] != versions[1] and versions[0].exists(), versions
             assert versions[1].is_file()
             (out / 'moddotplot-jobs.json').write_text(json.dumps(jobs, indent=2))
+        def frozen_identity_figure():
+            import hashlib
+            import xml.etree.ElementTree as ET
+            from PIL import Image
+            native_hash = hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()
+            page.get_by_role('combobox',name='Visualization preset',exact=True).select_option(label='ModDotPlot: Hi-C above, identity below')
+            page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()')
+            check.settle()
+            page.locator('#export-dropdown-toggle').click()
+            dialog=page.get_by_role('dialog',name='Export figure',exact=True)
+            dialog.locator('#export-png-button').wait_for(state='visible')
+            from playwright.sync_api import expect
+            expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+            assert not dialog.locator('input[type="range"]').count()
+            for extension in ('png','svg','pdf'):
+                with page.expect_download(timeout=90000) as download:
+                    dialog.locator('#export-'+extension+'-button').click()
+                download.value.save_as(out/('identity-figure.'+extension))
+            dialog.get_by_role('button',name='Close',exact=True).last.click()
+            svg=ET.parse(out/'identity-figure.svg').getroot()
+            metadata=json.loads(svg.find('{http://www.w3.org/2000/svg}metadata').text)
+            # The direct library fixture converter leaves this legacy primary untyped.
+            # Figure metadata must retain UNKNOWN rather than invent declared contact units.
+            assert metadata['provenance']['primary']['capabilities']['units']=='UNKNOWN'
+            assert metadata['provenance']['secondary']['capabilities']['units']=='IDENTITY_PERCENT'
+            assert metadata['provenance']['secondary']['capabilities']['scoreScale']==10000
+            assert metadata['provenance']['renderPipeline']['lowerExpression']['mode']=='MODDOTPLOT_IDENTITY'
+            assert metadata['provenance']['tracks'] and metadata['composition']['tracks']
+            with Image.open(out/'identity-figure.png') as image:
+                assert json.loads(image.text['HiCT provenance'])==metadata
+            xmp=ET.fromstring(subprocess.check_output(['pdfinfo','-meta',str(out/'identity-figure.pdf')]))
+            assert json.loads(xmp.find('.//{urn:hict:figure#}metadata').text)==metadata
+            subprocess.run(['rsvg-convert',str(out/'identity-figure.svg'),'-o',str(out/'identity-figure-svg.png')],check=True,timeout=120)
+            subprocess.run(['pdftoppm','-png','-r','96','-singlefile',str(out/'identity-figure.pdf'),str(out/'identity-figure-pdf')],check=True,timeout=120,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            original=Image.open(out/'identity-figure.png').convert('RGB')
+            alternatives=[Image.open(out/('identity-figure-'+kind+'.png')).convert('RGB') for kind in ('svg','pdf')]
+            import math
+            offset=[math.ceil(value) for value in metadata['renderedView']['mapOffset']]
+            samples=[]
+            for y in range(offset[1]+10,original.height-10,7):
+                for x in range(offset[0]+10,original.width-10,7):
+                    color=original.getpixel((x,y))
+                    if max(color)-min(color)<30:continue
+                    if any(original.getpixel((x+dx,y+dy))!=color for dx,dy in ((-3,0),(3,0),(0,-3),(0,3))):continue
+                    for other in alternatives:
+                        point=(round(x*other.width/original.width),round(y*other.height/original.height))
+                        actual=other.getpixel(point)
+                        assert max(abs(a-b) for a,b in zip(actual,color))<=4,(point,color,actual)
+                    samples.append([x,y,list(color)])
+            assert len(samples)>=20,len(samples)
+            assert hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()==native_hash
+            (out/'identity-figure-validation.json').write_text(json.dumps({'metadata':metadata,'matchingColorSamples':samples,'nativeSha256':native_hash},indent=2))
+
         def identity_presets():
             page.get_by_role('combobox', name='Visualization preset', exact=True).select_option(label='ModDotPlot: Hi-C above, identity below')
             check.settle()
@@ -617,14 +671,18 @@ class OverlayFixture { public static void main(String[] a) {
             # Start from the independent 4 kb source fixture. A legacy cut at
             # source bp 200 removes [200,300), leaving a coarse 200 bp bin
             # clipped to [300,400) in the right child.
+            # Administrative fixture resets must not leave a stale interactive client
+            # posting its debounced workspace into the replacement history session.
+            page.goto('about:blank')
             app.http('/close', {})
             app.http('/open', {'filename': 'known.hict.hdf5'})
             app.http('/split_contig_at_bin', {'splitPx': 2, 'bpResolution': 100})
             checks = []
             for reversed_layout in (False, True):
                 if reversed_layout:
+                    page.goto('about:blank')
                     app.http('/reverse_selection_range', {'startBP': 0, 'endBP': 3900})
-                page.reload()
+                page.goto(f'http://127.0.0.1:{static.server_port}/')
                 check.menu('File', 'Attach')
                 check.settle()
                 result = page.evaluate("""() => {
@@ -683,6 +741,7 @@ class OverlayFixture { public static void main(String[] a) {
             check.step('search-warning-after-edit', search_warning)
             check.step('minimap-clipping', minimap_clipping)
             check.step('generate-display-and-accumulate-moddotplot', moddotplot)
+            if args.figure_export:check.step('frozen-contact-identity-and-track-figure-parity',frozen_identity_figure)
             check.step('identity-presets-and-pipeline-roundtrip', identity_presets)
             check.step('selection-menu-exports-and-moddotplot', selection_actions)
             check.step('selection-alignment-dotplot',alignment_dotplot)

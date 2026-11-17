@@ -29,7 +29,7 @@ describe earlier releases; they must not override the decisions below.
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; live-provider success and platform qualification pending |
-| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: read-only exported PNG/SVG viewer implemented and browser verified; composition dialog, ModDotPlot panels, immutable paired snapshots and session provenance pending |
+| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions, stored paired comparisons and session persistence pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
 P10 is independent and is being completed before the coordinated P1 changes.
@@ -884,3 +884,42 @@ A longer public-reference probe with NCBI tracing confirms an accepted provider
 request ID and responses without connection errors; provider result success is
 still pending. No project sequence is uploaded. Protected plans and owner files
 remain unchanged; nothing pushed, merged or tagged.
+
+
+## Frozen figure previews and scientific configuration provenance
+
+Export now opens a dedicated preview dialog, captures the current map once and
+uses that immutable scene for PNG, SVG and PDF saves. Area and ruler/FASTA/1D-track
+choices require an explicit refresh. Displayed ModDotPlot layers use their real
+rendering graph; a native-tool journey generates and exports a split Hi-C/identity
+map with tracks. Exports retain source fingerprints/units, assembly hashes,
+rendering settings, client presentation, actual rendered grid, exact selection
+bounds and crop geometry. SVG has one root record; PNG uses UTF-8 iTXt without
+changing image chunks; PDF uses escaped XMP. Quick fingerprints are labeled and
+are not full-file verification. See figure-capture.md.
+
+Two UI findings were fixed: cropped metadata had been nested in the drawing,
+and hidden narrow panels produced invalid SVG text widths. Whole-map checks
+also exposed temporary export resizing clamping live track-panel sizes and
+shifting the restored view. The workspace observer now ignores export-only
+layout; small whole maps are fitted to a readable size. Native count bytes are
+unchanged, and a retained capture stays byte-identical after an exact cut.
+
+Final development-pair validation: 616 JVM tests, zero failures/errors, seven
+optional skips; WebUI build/type/numerical checks; 72 Chromium cases, including
+three-format ModDotPlot parity and exact-cut/stale/cancelled capture. Independent
+SVG/PDF rasterization matches 2,279 flat interior map samples. Screenshots were
+reviewed at ordinary and 640-pixel sizes. Artifacts and limits are in
+reinforcement-validation.md; these are separately served assets, not a qualified
+combined SFX/native package.
+
+A further Expected/O/E audit records multiple asynchronous profile-window updates
+during whole-map capture. That state is outside ordinary configuration snapshots.
+Pinning and recording the fitting context is the next required scientific
+capture transaction before those modes are qualified. Named cut/scaffold
+snapshot comparisons, session persistence and final publication figures remain
+open. The NCBI public-reference job reached its thirty-minute client limit; its
+existing request still reports WAITING at the provider, without another query
+submission. P8 live success and the other release/performance/platform gates
+remain open. Protected plans and owner files remain unchanged; nothing pushed,
+merged or tagged.

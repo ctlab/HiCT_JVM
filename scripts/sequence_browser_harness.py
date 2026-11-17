@@ -39,7 +39,7 @@ class HictTestServer:
         try:
             self.stream = self.log.open("w")
             self.process = subprocess.Popen(
-                ["java", "-Xmx2g", "-jar", str(self.artifact), "start-server"],
+                ["java", "-Xmx2g", "-jar", str(self.artifact), "start-server", "--serve-webui=false"],
                 cwd=self.log.parent,
                 env=environment,
                 stdout=self.stream,
