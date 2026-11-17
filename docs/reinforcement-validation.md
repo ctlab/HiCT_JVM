@@ -5143,3 +5143,156 @@ Earlier ui-01 passed the four-case draft before the PDF size guard; ui-02 passed
 that subset before portrait/snapshot-independence coverage. Both are superseded
 by ui-03 and web-02; only the final runs above qualify this increment. Protected
 plans and owner files are unchanged; nothing pushed, merged or tagged.
+
+## Exact portable artifact selection and integrated Linux candidate
+
+Package builders had a reproducible selection error in a populated build/libs:
+lexicographic sorting chooses 2.0.9 ahead of 2.0.49, while Windows modification-time
+selection can choose an unrelated recently touched JAR. Linux/macOS/Windows now
+require `hict_server-${VERSION}-fat.jar`. A missing current artifact fails without
+falling back. CI payload verification, native validation, launch smoke checks and
+upload paths use the same stamped version; missing package JARs do not fall back
+to a different build. Explicit `set_release_version.py --github-env` records
+HICT_BUILD_VERSION for action upload inputs. Local stamping has no implicit CI
+file write. Linux glibc/musl selectors use their actual package naming scheme.
+
+- `/tmp/hict-integrated-release-safeguards-05.log`: 25 Node cases pass, zero
+  failures/skips. Six new focused cases execute actual Bash/PowerShell selection
+  blocks with current and stale JARs, misleading timestamps, path spaces,
+  missing-current rejection and glibc/musl roots; the wiring check covers versioned
+  CI upload and smoke-check declarations. Existing checkout/publishing gates pass.
+- `/tmp/hict-portable-version-tests-02.log`: five Python cases pass. Explicit CI
+  assignment appends the exact written version while retaining prior entries;
+  ordinary stamping leaves an inherited CI file untouched; missing GITHUB_ENV
+  rejects before changing version.txt. Stable tags and run-derived versions keep
+  existing behavior.
+- `/tmp/hict-integrated-release-build-01.log`: full
+  `./gradlew test shadowJar -PrequireBundledWebUI=true --offline`, terminal zero,
+  BUILD SUCCESSFUL in 1m11s. This includes copyWebUI, the real WebUI build and
+  native processing verification. XML totals: 625 tests, zero failures/errors,
+  seven optional skips. WebUI source remains committed/clean at
+  `2041143e61d8551d610a61c77bb0f55cdc6f9c45`.
+- `/tmp/hict-integrated-portable-01.log`: real Linux package build, terminal zero,
+  using `HICT_SKIP_GRADLE=1 HICT_PORTABLE_DIST_DIR=/tmp/hict-integrated-portable-01
+  HICT_RUN_PAYLOAD_XZ_THREADS=2 scripts/portable/build_portable_linux.sh`. The
+  directory still contains the old 2.0.9 JAR. Packaged JAR equals the exact current
+  integrated JAR, SHA-256
+  `159e1ed08d9dc480717af1ff43f84f02d9902c5368368ae4ae68721f83035243`.
+  Embedded version is `2.0.49-48912d2-webui_2041143`. The .run extraction and
+  toolchain smoke checks complete. `sha256sum -c` from build/distributions verifies
+  both published-file candidates: .run
+  `1e5a3dad18cb24c3bd911846cda80a7530d620c80433472b92bab81653531d93`,
+  .tar.gz `de615ebba0b2f9af3295bda14681b59d16474333ed80bf2f62ca0fd586e09b86`.
+  Distribution basename:
+  `HiCT-2.0.49-48912d2-webui_2041143-linux-x86_64`.
+- `/tmp/hict-integrated-tools-01.log`: the extracted package's bin/hict
+  `check-toolchains --require-hictk --require-dotplot --require-sequence-tools`,
+  terminal zero. Actual bundled conversion/alignment, SeqKit, upstream ModDotPlot,
+  overlay adapter and BLAST executable smoke tests pass.
+- Actionlint validates both changed workflows. Bash syntax, full Windows script
+  PowerShell parse, changed Python Black/compile, focused JS Prettier and both
+  repository whitespace checks pass. The regression workflow includes the new
+  artifact-selection cases. No current-source remote CI is claimed or triggered.
+
+`scripts/check_packaged_release_browser.py` now owns a sequential extracted-package
+qualifier: its embedded runtime, actual served assets, disposable fixtures,
+metadata, menus, structural edits, offline workflows, strict performance gates
+and thirty-minute mixed soak. It compares the served index and 53 asset files
+against the package bytes before browser stages, keeps per-stage terminal status,
+checks native source/JAR hashes and stops only its owned process group. Separate
+fixture/browser Python environments are supported. See release-qualification.md.
+
+Current run `/tmp/hict-integrated-release-05` has passed metadata, both-size
+mouse/keyboard menu checks and seven structural edit round trips with exact
+Undo/Redo. Offline/performance/full-duration soak are pending; these running
+stages do not establish completion. The old structural driver waited for
+split_contig_at_bin even though scissors now uses split_contig_at_bp; the updated
+driver also checks all bases are retained and exact-cut replay lineage exists,
+while preserving original equality assertions. The runtime/package itself did
+not change for this driver correction.
+
+Excluded intermediate qualifier attempts: release-01 exposed separate Python
+environments missing Playwright in browser subprocesses; --browser-python now
+selects their interpreter explicitly. Release-02's fixture import pulled in an
+unneeded browser dependency; fixture preparation is now importable independently.
+Release-03 selected a deliberately sparse mixed fixture for a general diagonal
+color oracle; menu checking now uses the independent populated structural map.
+Release-04 passed metadata/menus and six edit round trips before the obsolete
+split-endpoint wait. Only release-05 and its terminal stages can qualify the
+corrected sequence. A checksum command initially used the repository root rather
+than the manifest directory; rerunning from build/distributions verified both
+files. No artifacts were rebuilt under the running qualifier.
+
+Read-only NCBI follow-up: existing public RID FR9P7TGF016 reports READY/has hits
+at 2026-11-17 06:03:23 UTC. A bounded GET at 06:04:16 returns ten hits with a
+160-base query and first accession NR_180316, retained as
+`/tmp/hict-remote-blast-live-05/public-rid-result-after-packaging.{xml,json}`.
+Status/URLs/times are preserved separately. This submits no sequence and uses
+no project DNA. The original HiCT client timed out before provider completion;
+P8 late-result recovery and live HiCT result delivery remain open. Provider GET
+semantics are documented by the
+[NCBI Common URL API](https://blast.ncbi.nlm.nih.gov/doc/blast-help/urlapi.html).
+Protected plans/owner files are unchanged; nothing pushed, merged or tagged.
+
+### Corrected incomplete-file validation and candidate 50
+
+The candidate-49 sequence passed offline recovery/export/API docs and the first
+two performance gates before stopping at `mat18_100k.hict.hdf5`. That file contains
+only treap_coo/block_rows, block_cols and block_length; it lacks contact offsets,
+values, stripes and contig metadata. It is not a usable HiCT map, so it cannot be
+a valid navigation fixture. The server's rejection was correct but its 500 status
+and technical message were not. `ChunkedFile` now raises a bad-input exception
+with a recreation action and filename. No incomplete file is accepted or modified.
+
+The strengthened API replacement regression first fails with expected 400/actual
+500 (`/tmp/hict-incomplete-map-red-01.log`). Green-01 exposed the test router's
+old classification of all non-HttpException errors as 500; its failure handler now
+matches MainVerticle's existing IllegalArgumentException -> 400 rule. Green-02
+passes, retaining exact primary/secondary identity, FASTA, tracks, workspace,
+statistics and every matrix cell through failure. The full integrated JVM test
+build `/tmp/hict-integrated-release-build-02.log` passes 625 tests with zero
+failures/errors and seven optional skips. After the ordinary patch-version stamp,
+`/tmp/hict-integrated-release-build-03.log` rebuilds the embedded-WebUI JAR,
+terminal zero. Version changes; runtime source is the same tested correction.
+
+`/tmp/hict-incomplete-ui-focused-01/browser/results.json` passes two actual picker
+attempts, terminal zero, no unexpected errors. HTTP 400 and the recovery message
+are visible; the same edited manager, snapshot and 25 native cells survive.
+Screenshots were inspected. Its immutable API snapshot and separately served
+previously extracted WebUI qualify this focused development pair; it does not
+replace the new integrated-package run.
+
+Candidate 50: `2.0.50-a614f88-webui_2041143`, JAR SHA-256
+`e52f06a50a67f01a1336c69c8546ab7db7a559cbfcb20d4daa45e98ad49f5c1d`.
+`/tmp/hict-integrated-portable-02.log` reaches both built-artifact records and
+checksum generation, though its tool wrapper reports terminal 143; the reason is
+undetermined and that exit is not counted as success. Independent artifact
+qualification is explicit instead: both `.run` and `.tar.gz` verify against their
+manifest (`/tmp/hict-integrated-package-checksums-02.log`, terminal zero), and the
+actual .run self-extracts successfully with subprocess exit zero
+(`/tmp/hict-integrated-run-verification-02.{log,json}`). The tested extraction is
+`/tmp/hict-integrated-run-extracted-02/HiCT-2.0.50-a614f88-webui_2041143-linux-x86_64`.
+Actual archive hashes:
+
+- .run: `896279c0d1f7a91a8c7ec6992c78c515325d3176f78510ab32d07552c8eb2f24`
+- .tar.gz: `89b54067cdc9ce51ed77c6e0b6d97262cda7655e6cdd2bb45466d745fd8df300`
+
+Fresh sequential qualifier `/tmp/hict-integrated-release-06` uses that .run's
+runtime and assets. Supplied inputs are complete physical copies: mat18_100k-1
+(96 contigs), combined_ind2_4DN (1,765), and AGWG.draft (7,790). Input hashes equal
+source hashes before the run; final native hashes must remain unchanged. Its
+mixed fixture also has a matching deterministic 12,017-base FASTA for sequence
+and mixed-grid soak checks. The new incomplete-file UI check is a declared stage.
+Only its terminal stages qualify this candidate. Performance and thirty-minute
+soak are still pending; no limits are relaxed. Previous candidate-49 .run/tar
+hashes refer to their retained archives and extracted JAR, not the subsequently
+rebuilt loose 49 JAR.
+
+Private-display Launcher follow-up initially could not start because the old
+/tmp Xvfb installation had been removed. Distro Xvfb/libxfont2/libunwind8 packages
+were downloaded and extracted only under /tmp, without changing the system.
+`/tmp/hict-integrated-launcher-reset-02.log` then passes with terminal zero:
+private-display Java Launcher reset/cancellation, minimum-window controls, reset
+acknowledgement, real server start/process-tree Stop and return to the simple view.
+This uses the current classes/JAR and a host JDK; it is separate from native
+browser-shell and cross-platform GUI qualification. Protected owner files and plans are unchanged.

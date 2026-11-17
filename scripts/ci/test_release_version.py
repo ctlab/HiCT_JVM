@@ -8,6 +8,46 @@ from set_release_version import release_version
 
 
 class ReleaseVersionTest(unittest.TestCase):
+    def test_explicit_ci_environment_receives_exact_written_version(self):
+        script = Path(__file__).with_name("set_release_version.py").resolve()
+        with tempfile.TemporaryDirectory() as folder:
+            version_file = Path(folder) / "version.txt"
+            env_file = Path(folder) / "github env.txt"
+            version_file.write_text("2.0.49\n")
+            env_file.write_text("PREVIOUS=value\n")
+            environment = {**os.environ, "GITHUB_ENV": str(env_file)}
+            subprocess.run(
+                [sys.executable, str(script), "--version", "2.0.50", "--github-env"],
+                cwd=folder,
+                env=environment,
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual(version_file.read_text(), "2.0.50\n")
+            self.assertEqual(
+                env_file.read_text(), "PREVIOUS=value\nHICT_BUILD_VERSION=2.0.50\n"
+            )
+            # Local stamping has no implicit side effect on an inherited CI file.
+            subprocess.run(
+                [sys.executable, str(script), "--version", "2.0.51"],
+                cwd=folder,
+                env=environment,
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                env_file.read_text(), "PREVIOUS=value\nHICT_BUILD_VERSION=2.0.50\n"
+            )
+            environment.pop("GITHUB_ENV")
+            result = subprocess.run(
+                [sys.executable, str(script), "--version", "2.0.52", "--github-env"],
+                cwd=folder,
+                env=environment,
+                capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(version_file.read_text(), "2.0.51\n")
+
     def test_shared_and_incrementing(self):
         self.assertEqual(
             release_version("1.0.211", "20", "1", "abcdef012345"), "1.0.231-ci1-abcdef0"

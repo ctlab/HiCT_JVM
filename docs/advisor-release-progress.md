@@ -28,7 +28,7 @@ describe earlier releases; they must not override the decisions below.
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
-| P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; live-provider success and platform qualification pending |
+| P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; the provider has returned results after the client timeout; HiCT late-result recovery, successful live delivery and platform qualification pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions and portable named cut/scaffold/ModDotPlot comparisons implemented and verified; 86/178 mm physical-size presets implemented; final real-example publication artifacts and release qualification pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
@@ -1029,3 +1029,51 @@ readability at print size, archival artifacts and the remaining release gates
 are still required. The tested API/static-assets pair is not a packaged/native
 release. Protected plans/owner files remain unchanged; nothing pushed, merged
 or tagged.
+
+
+## Exact package identity and integrated Linux candidate
+
+Portable packagers previously chose an alphabetically last JAR on Linux/macOS
+and a newest-by-mtime JAR on Windows. The current working directory contains a
+2.0.9 artifact that sorts after 2.0.49, so a fresh package could silently contain
+an old application. All packagers now require the exact versioned JAR and reject
+its absence. CI native checks, smoke checks and uploads use the stamped version,
+including platform paths, instead of selecting unrelated files or falling back
+to another JAR. Explicit CI version assignment records HICT_BUILD_VERSION;
+ordinary local stamping has no environment-file side effect.
+
+Six focused selection/wiring cases execute Bash and PowerShell against current
+and stale artifacts, misleading timestamps, spaces and missing-current cases.
+The complete Node safeguard set passes 25 cases, version tests pass five cases,
+workflow actionlint and changed-script syntax/format checks pass. The integrated
+build embeds the current WebUI and passes 625 JVM tests with zero failures/errors
+and seven optional skips. Linux .run and .tar.gz packages build, validate their
+checksums, contain the expected JAR and pass bundled native/sequence-tool smoke
+checks. Their identities and the sequential qualifier are documented in
+release-qualification.md and reinforcement-validation.md.
+
+The extracted package's runtime serves 53 checked asset files byte-for-byte.
+Packaged metadata and both-size mouse/keyboard menu checks pass. The structural
+review exposed a historical driver still waiting for the removed-bin split API;
+it now checks the exact-base endpoint, retained total bases and replay lineage,
+with its original Undo/Redo equality assertions retained. The corrected structural suite and offline workflow pass on the first candidate.
+The 4- and 1,765-contig performance fixtures meet the unchanged limits. A later
+input has no complete HiCT metadata; it is correctly rejected, but its HTTP 500
+exposed a poor error classification. The library now reports that condition as
+bad input with an actionable recreation message. JVM coverage retains the edited
+primary/secondary, FASTA, tracks, workspace and matrix cells, and two Chromium
+picker attempts retain the same manager and exact pixels. The corrected 50
+candidate passes the full 625-test suite and independent checksum/self-extraction
+checks. Sequential qualification is running under /tmp/hict-integrated-release-06
+from that .run extraction, with complete 96-, 1,765- and 7,790-contig inputs.
+Performance/soak and current-source cross-platform/native GUI gates remain open.
+Protected plans and owner files remain unchanged; nothing pushed, merged or tagged.
+
+A read-only follow-up of the existing public 160-base NCBI request at
+2026-11-17 06:03 UTC reports READY with hits. Its bounded result was retrieved
+at 06:04 UTC: ten hits, the expected query length, first accession NR_180316.
+Files public-rid-status/result-after-packaging under /tmp/hict-remote-blast-live-05
+retain the responses. No query was resubmitted and no project DNA was uploaded.
+The earlier HiCT client had already timed out, so successful provider completion
+still does not prove HiCT's live result delivery. Late-result recovery remains
+required before closing P8.

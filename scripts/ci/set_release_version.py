@@ -32,7 +32,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--version", help="Assign an explicit stable semantic release version"
     )
+    parser.add_argument(
+        "--github-env",
+        action="store_true",
+        help="Record HICT_BUILD_VERSION for exact CI artifact paths",
+    )
     args = parser.parse_args()
+    if args.github_env and not os.environ.get("GITHUB_ENV"):
+        parser.error("--github-env requires GITHUB_ENV")
     path = Path("version.txt")
     release_tag = os.environ.get("GITHUB_REF_NAME", "").removeprefix("v")
     if (
@@ -53,4 +60,7 @@ if __name__ == "__main__":
             os.environ["GITHUB_SHA"],
         )
     path.write_text(version + "\n")
+    if args.github_env:
+        with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+            env_file.write(f"HICT_BUILD_VERSION={version}\n")
     print(f"Portable release version: {version}")

@@ -5,7 +5,6 @@ import argparse
 import json
 import re
 from pathlib import Path
-from playwright.sync_api import sync_playwright
 from sequence_browser_harness import BrowserCheck
 
 
@@ -78,6 +77,8 @@ class StructuralFixture {
 
 
 def main():
+    from playwright.sync_api import sync_playwright
+
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("url", "api", "output"):
         parser.add_argument("--" + name, required=True)
@@ -157,7 +158,7 @@ def main():
             with page.expect_response(
                 lambda response: response.url.endswith(endpoint)
             ) as response:
-                page.locator('button[aria-label=' + json.dumps(name) + ']').click()
+                page.locator("button[aria-label=" + json.dumps(name) + "]").click()
             assert response.value.ok, response.value.text()
             check.settle()
 
@@ -258,16 +259,24 @@ def main():
                     "button", name="Enter translocation mode", exact=True
                 ).click()
                 before_escape = snapshot()
-                assert page.evaluate(
-                    "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.activeTool"
-                ) == 0
+                assert (
+                    page.evaluate(
+                        "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.activeTool"
+                    )
+                    == 0
+                )
                 page.keyboard.press("Escape")
-                assert page.evaluate(
-                    "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.activeTool"
-                ) is None
+                assert (
+                    page.evaluate(
+                        "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.activeTool"
+                    )
+                    is None
+                )
                 assert snapshot() == before_escape
-                assert page.evaluate("""() => window.__hictBenchmark.manager().viewAndLayersManager
-                    .layersHolder.contigTranslocationArrowsLayers.every(layer=>!layer.getVisible())""")
+                assert page.evaluate(
+                    """() => window.__hictBenchmark.manager().viewAndLayersManager
+                    .layersHolder.contigTranslocationArrowsLayers.every(layer=>!layer.getVisible())"""
+                )
                 select_orders()
                 page.get_by_role(
                     "button", name="Enter translocation mode", exact=True
@@ -332,6 +341,11 @@ def main():
             select_orders()
 
             def split():
+                before = snapshot()
+                before_bases = sum(
+                    c["contigLengthBp"]
+                    for c in before["assemblyInfo"]["contigDescriptors"]
+                )
                 # Existing selection handles consume double-clicks at their border.
                 page.evaluate(
                     "() => {window.__hictBenchmark.manager().eventManager.resetSelection();}"
@@ -344,19 +358,34 @@ def main():
                     const p=m.getMap().getPixelFromCoordinate([px,-px]),r=m.getMap().getViewport().getBoundingClientRect();
                     return [r.left+p[0],r.top+p[1]];
                 }""")
-                page.wait_for_function("""point => {
+                page.wait_for_function(
+                    """point => {
                     const m=window.__hictBenchmark.manager(),r=m.getMap().getViewport().getBoundingClientRect();
                     const pixel=[point[0]-r.left,point[1]-r.top];
                     return !m.getView().getAnimating() &&
                       m.viewAndLayersManager.layersHolder.hicDataLayers.some(layer=>layer.getVisible() && layer.getData(pixel));
-                }""", arg=target)
-                with page.expect_response("**/split_contig_at_bin") as response:
+                }""",
+                    arg=target,
+                )
+                with page.expect_response("**/split_contig_at_bp") as response:
                     page.mouse.dblclick(*target)
                 assert response.value.ok, response.value.text()
                 page.wait_for_function(
                     "window.__hictBenchmark.manager().contigDimensionHolder.contig_count===5"
                 )
                 check.settle()
+                after = snapshot()
+                assert (
+                    sum(
+                        c["contigLengthBp"]
+                        for c in after["assemblyInfo"]["contigDescriptors"]
+                    )
+                    == before_bases
+                )
+                assert len(after["assemblyInfo"]["contigDescriptors"]) == 5
+                assert after.get(
+                    "splitEdits"
+                ), "The exact cut must retain its replay lineage"
 
             round_trip("split", split)
             assert not errors and not check.errors, errors + check.errors

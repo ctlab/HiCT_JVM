@@ -140,7 +140,9 @@ public class ChunkedFile implements AutoCloseable {
         .toList();
       Initializers.reportProgress("Validating resolution metadata", 1.0);
       if (effectiveResolutions.isEmpty() && requestedResolutions.isEmpty()) {
-        throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
+        throw new IllegalArgumentException(
+          "This file contains no complete HiCT resolution and may be incomplete or unsupported. " +
+            "Recreate it from the original matrix: " + this.hdfFilePath.getFileName());
       }
       if (effectiveResolutions.isEmpty()) {
         throw new IllegalArgumentException(

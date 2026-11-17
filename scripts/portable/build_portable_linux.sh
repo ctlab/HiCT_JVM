@@ -27,7 +27,7 @@ Outputs:
   build/distributions/HiCT-<version>[-musl]-linux-x86_64.sha256
 
 Environment overrides:
-  HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
+  HICT_SKIP_GRADLE=1                 Reuse the exact versioned fat JAR from build/libs.
   HICT_RUNTIME_MODULES=<modules>     Override jlink modules.
   HICT_PORTABLE_DIST_DIR=<dir>       Override staging directory.
   HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload, default 2.
@@ -85,9 +85,9 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   )
 fi
 
-FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
-if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
-  echo "Fat JAR was not found under ${PROJECT_DIR}/build/libs" >&2
+FAT_JAR="${PROJECT_DIR}/build/libs/hict_server-${VERSION}-fat.jar"
+if [[ ! -f "${FAT_JAR}" ]]; then
+  echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
   exit 1
 fi
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then

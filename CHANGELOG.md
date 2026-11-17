@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Package the exact requested JVM build on Linux, macOS and Windows, and keep release uploads and smoke checks on that version instead of selecting stale artifacts.
+- Explain incomplete HiCT files as input errors with a recovery action, preserving the edited workspace when opening them fails.
+
 - Export frozen figures at 86 mm or 178 mm column width with matching SVG/PDF/PNG physical sizes, preserved matrix pixels and recorded effective raster resolution.
 - Reject oversized PDF pages with a clear recovery message instead of silently clipping the drawing.
 

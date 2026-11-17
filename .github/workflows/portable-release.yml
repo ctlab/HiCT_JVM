@@ -223,7 +223,7 @@ jobs:
       - name: Assign run-specific release version
         run: |
           python scripts/ci/test_release_version.py
-          python scripts/ci/set_release_version.py
+          python scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -530,7 +530,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Validate fat JAR
@@ -565,7 +566,8 @@ jobs:
             echo "Keeping bundled JHDF5/HDF5 native libraries; GLIBC check policy is ${policy}."
             exit 0
           fi
-          fat_jar="$(find build/libs -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          fat_jar="build/libs/hict_server-${version}-fat.jar"
           [[ -n "${fat_jar}" && -f "${fat_jar}" ]] || { echo "::error::Fat JAR was not found under build/libs; cannot strip JHDF5/HDF5 natives."; exit 1; }
           echo "Stripping bundled Linux JHDF5/HDF5 native libraries from ${fat_jar}."
           zip -d "${fat_jar}" \
@@ -604,12 +606,11 @@ jobs:
           fi
           max_allowed="${HICT_GLIBC_MAX:-2.17}"
           jhdf5_policy="${HICT_LINUX_JHDF5_NATIVE_POLICY:-warn-only}"
-          root="$(find build/portable -mindepth 1 -maxdepth 1 -type d -name 'HiCT-*-linux-x86_64' | sort | tail -n 1)"
-          [[ -n "${root}" && -d "${root}" ]] || { echo "::error::Portable Linux root was not found under build/portable."; exit 1; }
-          jar_file="$(find "${root}" -path '*/lib/hict.jar' -type f | sort | tail -n 1)"
-          if [[ -z "${jar_file}" || ! -f "${jar_file}" ]]; then
-            jar_file="$(find build/libs -maxdepth 1 -type f \( -name '*-fat.jar' -o -name '*.jar' \) ! -name '*-sources.jar' ! -name '*-javadoc.jar' | sort | tail -n 1)"
-          fi
+          version="$(tr -d '[:space:]' < version.txt)"
+          root="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}-linux-x86_64"
+          [[ -d "${root}" ]] || { echo "::error::Current portable Linux root was not found: ${root}"; exit 1; }
+          jar_file="${root}/lib/hict.jar"
+          [[ -f "${jar_file}" ]] || { echo "::error::Current portable JAR was not found: ${jar_file}"; exit 1; }
           tmp="$(mktemp -d)"
           trap 'rm -rf "${tmp}"' EXIT
           if [[ -n "${jar_file}" && -f "${jar_file}" ]]; then
@@ -657,7 +658,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: hict-jvm-fat-jar
-          path: build/libs/*-fat.jar
+          path: build/libs/hict_server-${{ env.HICT_BUILD_VERSION }}-fat.jar
           if-no-files-found: error
 
       - name: Upload Linux package artifact
@@ -665,9 +666,9 @@ jobs:
         with:
           name: hict-linux-portable${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.run
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.tar.gz
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.tar.gz
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.sha256
           if-no-files-found: error
 
       - name: Upload Linux AppImage artifact
@@ -676,8 +677,8 @@ jobs:
         with:
           name: hict-linux-appimage${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-x86_64.AppImage
-            build/distributions/HiCT-*-x86_64.AppImage.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-x86_64.AppImage
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-x86_64.AppImage.sha256
           if-no-files-found: error
 
       - name: Upload Linux runfile artifact
@@ -685,16 +686,19 @@ jobs:
         with:
           name: hict-linux-runfile${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.run
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.sha256
           if-no-files-found: error
 
       - name: Validate Linux artifacts after upload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: |
           set -uo pipefail
-          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-linux_x86_64.run' -o -name 'HiCT-*-linux-x86_64.run' | sort | tail -n 1)"
-          portable_bin="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          abi_suffix=""
+          if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then abi_suffix="-musl"; fi
+          runfile="build/distributions/HiCT-${version}${abi_suffix}-linux-x86_64.run"
+          portable_bin="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}${abi_suffix}-linux-x86_64/bin/hict"
           failed=0
           check_binary() {
             local label="$1" path="$2" warning_only="${3:-false}"
@@ -719,7 +723,7 @@ jobs:
           if [[ -n "${portable_bin}" && -x "${portable_bin}" ]]; then
             "${portable_bin}" check-toolchains --require-hictk --require-dotplot || failed=1
           fi
-          appimage="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-x86_64.AppImage' | sort | tail -n 1)"
+          appimage="build/distributions/HiCT-${version}-x86_64.AppImage"
           if [[ -n "${appimage}" && -x "${appimage}" ]]; then
             export APPIMAGE_EXTRACT_AND_RUN=1
             check_binary "portable AppImage" "${appimage}" || failed=1
@@ -788,7 +792,7 @@ jobs:
         run: |
           python scripts/ci/test_release_version.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/ci/set_release_version.py
+          python scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         shell: pwsh
@@ -1202,7 +1206,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Stop Gradle daemons
@@ -1219,9 +1224,9 @@ jobs:
         with:
           name: hict-windows-portable
           path: |
-            build/distributions/HiCT-*-windows-x86_64-portable.zip
-            build/distributions/HiCT-*-windows-x86_64.exe
-            build/distributions/HiCT-*-windows-x86_64.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64-portable.zip
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.exe
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.sha256
 
       - name: Upload Windows EXE artifact
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
@@ -1229,8 +1234,8 @@ jobs:
         with:
           name: hict-windows-exe
           path: |
-            build/distributions/HiCT-*-windows-x86_64.exe
-            build/distributions/HiCT-*-windows-x86_64.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.exe
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.sha256
           if-no-files-found: error
 
       - name: Validate Windows artifacts after upload
@@ -1287,11 +1292,10 @@ jobs:
 
           $failed = $false
 
-          $exe = Get-ChildItem -Path "build\distributions" -Filter "HiCT-*-windows-x86_64.exe" |
-            Sort-Object LastWriteTime |
-            Select-Object -Last 1
+          $version = (Get-Content -LiteralPath "version.txt" -Raw).Trim()
+          $exePath = Join-Path "build\distributions" "HiCT-$version-windows-x86_64.exe"
 
-          if (-not (Test-BinarySmoke -Label "portable exe" -Path $(if ($exe) { $exe.FullName } else { "" }))) {
+          if (-not (Test-BinarySmoke -Label "portable exe" -Path $exePath)) {
             $failed = $true
           }
           if (-not (Test-BinarySmoke -Label "hictk" -Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
@@ -1350,7 +1354,7 @@ jobs:
         run: |
           python3 scripts/ci/test_release_version.py
           python3 scripts/ci/test_macos_compatibility.py
-          python3 scripts/ci/set_release_version.py
+          python3 scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -1481,7 +1485,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Upload macOS Apple Silicon HiCT native processing artifact
@@ -1532,16 +1537,18 @@ jobs:
         with:
           name: hict-darwin-arm64-portable
           path: |
-            build/distributions/HiCT-*-darwin-arm64.run
-            build/distributions/HiCT-*-darwin-arm64.tar.gz
-            build/distributions/HiCT-*-darwin-arm64.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.tar.gz
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.sha256
           if-no-files-found: error
       - name: Validate macOS Apple Silicon artifacts (post-upload)
         run: |
           set -euo pipefail
-          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-arm64.run' | sort | tail -n 1)"
-          launcher="$(find build/portable -path '*/bin/hict-darwin-arm64' -type f | sort | tail -n 1)"
-          shell_launcher="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          root="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}-darwin-arm64"
+          runfile="build/distributions/HiCT-${version}-darwin-arm64.run"
+          launcher="${root}/bin/hict-darwin-arm64"
+          shell_launcher="${root}/bin/hict"
           [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS arm64 native processing payload."; exit 1; }
           find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS arm64 native processing dylibs found."; exit 1; }
           [[ -x toolchains-dist/darwin_arm64/bin/hictk ]] || { echo "::error::Missing macOS arm64 hictk."; exit 1; }
@@ -1625,7 +1632,7 @@ jobs:
         run: |
           python3 scripts/ci/test_release_version.py
           python3 scripts/ci/test_macos_compatibility.py
-          python3 scripts/ci/set_release_version.py
+          python3 scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -1756,7 +1763,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Upload macOS Intel HiCT native processing artifact
@@ -1807,16 +1815,18 @@ jobs:
         with:
           name: hict-darwin-x86_64-portable
           path: |
-            build/distributions/HiCT-*-darwin-x86_64.run
-            build/distributions/HiCT-*-darwin-x86_64.tar.gz
-            build/distributions/HiCT-*-darwin-x86_64.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.tar.gz
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.sha256
           if-no-files-found: error
       - name: Validate macOS Intel artifacts (post-upload)
         run: |
           set -euo pipefail
-          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-x86_64.run' | sort | tail -n 1)"
-          launcher="$(find build/portable -path '*/bin/hict-darwin-x86_64' -type f | sort | tail -n 1)"
-          shell_launcher="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          root="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}-darwin-x86_64"
+          runfile="build/distributions/HiCT-${version}-darwin-x86_64.run"
+          launcher="${root}/bin/hict-darwin-x86_64"
+          shell_launcher="${root}/bin/hict"
           [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS Intel native processing payload."; exit 1; }
           find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS Intel native processing dylibs found."; exit 1; }
           [[ -x toolchains-dist/darwin_x86_64/bin/hictk ]] || { echo "::error::Missing macOS Intel hictk."; exit 1; }
@@ -1901,7 +1911,7 @@ jobs:
       - name: Assign run-specific release version
         run: |
           python scripts/ci/test_release_version.py
-          python scripts/ci/set_release_version.py
+          python scripts/ci/set_release_version.py --github-env
 
       - name: Download packaged artifacts
         uses: actions/download-artifact@v6

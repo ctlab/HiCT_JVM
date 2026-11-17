@@ -882,6 +882,10 @@ class ApiHttpIntegrationTest {
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "secondary", java.util.List.of(4L, 10L));
     Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
     Files.writeString(tempDataDir.resolve("broken.hict.hdf5"), "Not an HDF5 file");
+    try (var partial = ch.systemsx.cisd.hdf5.HDF5Factory.open(tempDataDir.resolve("incomplete.hict.hdf5").toFile())) {
+      partial.object().createGroup("/resolutions/100000/treap_coo");
+      partial.int64().writeArray("/resolutions/100000/treap_coo/block_length", new long[]{1});
+    }
     startServerWithInfoAndFileHandlers();
     assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
     assertEquals(200, post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\"}").statusCode());
@@ -899,9 +903,13 @@ class ApiHttpIntegrationTest {
     var resolution = ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(4, file);
     var pixels = file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 5, 5, false).matrix();
     var attachedBefore = post("/attach", "{}").body();
-    for (String name : java.util.List.of("missing.hict.hdf5", "broken.hict.hdf5", "broken.hict.hdf5")) {
+    for (String name : java.util.List.of("missing.hict.hdf5", "broken.hict.hdf5", "incomplete.hict.hdf5", "broken.hict.hdf5")) {
       var failed = post("/open", new JsonObject().put("filename", name).encode());
       assertTrue(failed.statusCode() >= 400, failed.body());
+      if (name.equals("incomplete.hict.hdf5")) {
+        assertEquals(400, failed.statusCode(), failed.body());
+        assertTrue(failed.body().contains("Recreate"), failed.body());
+      }
       org.junit.jupiter.api.Assertions.assertSame(primary, map.get("chunkedFile"));
       org.junit.jupiter.api.Assertions.assertSame(secondary, map.get("chunkedFileSecondary"));
       org.junit.jupiter.api.Assertions.assertSame(tracks, map.get("Track1DManager"));
@@ -1239,7 +1247,9 @@ class ApiHttpIntegrationTest {
       final var message = ctx.failure() != null && ctx.failure().getMessage() != null
         ? ctx.failure().getMessage()
         : "Request failed";
-      final int status = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getStatusCode() : 500;
+      // Match MainVerticle's input-validation classification.
+      final int status = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getStatusCode()
+        : ctx.failure() instanceof IllegalArgumentException ? 400 : 500;
       final var payload = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getPayload() : null;
       ctx.response()
         .putHeader("content-type", "application/json")
