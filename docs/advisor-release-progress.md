@@ -1167,3 +1167,10 @@ A fresh integrated package and full qualification remain required. Current
 platform CI, real publication figures, wider source/native coverage and P8
 late-result delivery remain open; the existing public RID can be retrieved in
 documented JSON format, but HiCT recovery is not implemented.
+
+
+Notification cleanup validation also uses platform-native file URLs rather than
+URL pathname, so Windows drive letters/escaped paths reach the actual dependency
+entry. Focused regression passes; this is not Windows runtime qualification.
+Candidate 54's full integrated build passes 625 JVM tests (zero failures/errors,
+seven skips); the final revision needs a fresh stamped build before packaging.

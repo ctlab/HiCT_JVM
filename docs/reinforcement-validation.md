@@ -5643,3 +5643,15 @@ implemented HiCT recovery or successful live delivery. Those P8 gates remain ope
 A new integrated candidate and complete qualification remain required after the
 notification fix. The source-controlled release/soak drivers now use real Shift
 selection and actual export/dialog/picker controls; no gate is relaxed.
+
+
+### Platform-native notification validation paths
+
+The notification regression now converts its module URL with fileURLToPath and
+realpathSync before passing it to the production/development adapters. URL
+pathname is not a native Windows path (drive prefix and percent encoding differ).
+This changes the test path, not application behavior. The real-Vue published/fixed
+100-lifecycle regression passes again; Windows/macOS CI remains unqualified here.
+The preceding integrated candidate-54 test/shadowJar build finishes zero with
+625 JVM tests, zero failures/errors and seven skips. The follow-up version also
+needs an integrated rebuild so its metadata identifies the final WebUI revision.

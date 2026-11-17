@@ -4,7 +4,7 @@
 
 ### Navigation and visualization
 
-- Release notification listeners when messages close, preventing listener accumulation during long editing and export sessions.
+- Release notification listeners when messages close, preventing listener accumulation during long editing and export sessions, with portable release checks.
 
 - Reuse unchanged contig and scaffold borders during navigation, retaining exact geometry and independently fitted labels while avoiding repeated spatial-index rebuilds.
 
