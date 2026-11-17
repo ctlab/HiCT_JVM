@@ -1133,8 +1133,37 @@ The complete 7,790-contig development gate now passes: fresh/repeat frame p95
 16.8 ms, acknowledgement below 40 ms, unchanged 33/100-ms limits. Six real border
 control/pixel checks and 67 structural/Expected/snapshot/frozen/sequence checks
 pass. Full WebUI build and focused lint/type/numerical checks pass (existing lint
-warnings recorded). Candidate-53 integrated package qualification is next; no
-full-soak or release-readiness claim follows from development-pair checks.
+warnings recorded). Candidate-53 integrated package qualification now runs under
+/tmp/hict-integrated-release-08. Its full integrated build passes 625 JVM tests
+(zero failures/errors, seven skips), and package generation, archive verification,
+actual .run extraction and served metadata/assets pass. Performance and full
+soak remain pending; no release-readiness claim follows from development checks.
 Weighted-source readability, late remote-result delivery, final publication
 figures and wider native/platform/source-format gates remain open. Protected
 plans/owner changes are untouched; nothing pushed, merged or tagged.
+
+
+Candidate-53 run 08 passes the complete packaged performance matrix: eight
+fresh/repeat samples, frame p95 <=16.8 ms, acknowledgement p95 <=35.8 ms and
+zero long tasks. Its first soak edit exposes an obsolete test shortcut: a region
+is not an entity selection. The run ends failed with no memory samples. The
+soak now uses a real Shift click and verifies selected IDs. Fresh run 09 repeats
+the full sequence with the same verified package; the full soak remains open.
+
+
+Run 09 completes 30 minutes/223 cycles and fails the listener-growth gate:
+251 to 282 versus an allowed +20. Frame p95 16.7 ms, edit acknowledgement p95
+47.18 ms and browser/JVM memory slopes pass. Native inputs remain unchanged.
+The cause is the pinned notification dependency's missing document-listener
+cleanup. A version/signature-guarded production and development bundler fix now
+registers Vue cleanup correctly, without changing other notification behavior.
+
+A real-Vue regression reproduces 100 leaks in the published hook and zero in the
+fix. The old real-browser export test fails after one notification; twelve
+production and four live-development save/dismiss cycles pass against the fix.
+Old/new exported figure pixels are identical. Full WebUI checks pass. The
+corrected soak driver uses actual Shift selection and export/picker controls.
+A fresh integrated package and full qualification remain required. Current
+platform CI, real publication figures, wider source/native coverage and P8
+late-result delivery remain open; the existing public RID can be retrieved in
+documented JSON format, but HiCT recovery is not implemented.

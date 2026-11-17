@@ -1,9 +1,10 @@
 # Platform release checklist
 
 The owner deferred these Windows and macOS GUI checks on 2026-11-11 for future
-internal qualification work. Automated CI evidence supports the current release
-for these platforms. Complete this checklist on each target when desktop access
-is available. Allow about ten minutes per platform with the small example. Use a
+internal qualification work. Current-source platform CI and artifact receipts
+must be recorded before claiming support for this advisor-release candidate;
+historical 2.0.0 CI results do not qualify it. Complete this checklist on each
+target when desktop access is available. Allow about ten minutes per platform with the small example. Use a
 fresh writable data folder and retain the screenshots and logs.
 
 ## Evidence record
@@ -50,6 +51,8 @@ fresh writable data folder and retain the screenshots and logs.
 | macOS arm64 | Deferred by owner on 2026-11-11 | Complete the interactive checklist and attach tester, revision, checksum and evidence records |
 | macOS x86-64 | Deferred by owner on 2026-11-11 | Complete the interactive checklist and attach tester, revision, checksum and evidence records |
 
-The release validation report records the current automated CI and local Linux
-results. These future checks will add platform-specific desktop interaction,
-installation and native-dialog evidence.
+The current candidate and local Linux evidence are recorded in
+[release-qualification.md](release-qualification.md). Current-source Windows/macOS
+CI and all unfilled records above remain pending. GUI deferral does not count as
+a pass. Future checks must identify their exact revisions and artifacts and add
+platform-specific desktop interaction, installation and native-dialog evidence.

@@ -10,8 +10,9 @@ import time
 from pathlib import Path
 
 import numpy as np
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from check_reinforcement_baseline_browser import percentile
+from sequence_browser_harness import install_download_picker
 
 
 def main():
@@ -62,6 +63,7 @@ def main():
             ),
         )
         page = context.new_page()
+        install_download_picker(page)
         page.set_default_timeout(60000)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on(
@@ -197,17 +199,24 @@ def main():
                     before = page.request.post(
                         args.api + "/sequence/region", data={"startBp": 0, "endBp": 100}
                     ).json()["sequence"]
-                    page.evaluate("""() => {
-                        const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
-                        const p=l.currentViewState.resolutionDesciptor.pixelResolution;
-                        l.selectionInteractions.contigSelectExtent.setExtent([p,-2*p,2*p,-p]);
-                    }""")
+                    # Structural edits use entity selection. A persistent region
+                    # belongs to sequence/export tools and must not stand in for it.
+                    page.keyboard.down("Shift")
+                    try:
+                        page.mouse.click(viewport["x"], viewport["y"])
+                    finally:
+                        page.keyboard.up("Shift")
+                    page.wait_for_function(
+                        "window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.selectedContigIds.length > 0"
+                    )
                     for button, endpoint in [
                         ("Reverse Selection", "/reverse_selection_range"),
                         ("Undo assembly edit", "/assembly/history/restore"),
                     ]:
                         if button == "Undo assembly edit":
-                            page.get_by_role("button", name="Journal", exact=True).click()
+                            page.get_by_role(
+                                "button", name="Journal", exact=True
+                            ).click()
                         action_started = time.monotonic()
                         with page.expect_response(
                             lambda response: response.url.endswith(endpoint)
@@ -224,13 +233,20 @@ def main():
                         args.api + "/sequence/region", data={"startBp": 0, "endBp": 100}
                     ).json()["sequence"]
                     assert before == after, "Undo changed the linked sequence"
+                    page.locator("#export-dropdown-toggle").click()
+                    dialog = page.get_by_role(
+                        "dialog", name="Export figure", exact=True
+                    )
+                    expect(dialog.locator("#export-png-button")).to_be_enabled(
+                        timeout=90000
+                    )
                     with page.expect_download() as download:
-                        page.evaluate(
-                            "async () => {await window.__hictBenchmark.manager().exportCurrentMapPng(undefined,{scope:'viewport'});}"
-                        )
+                        dialog.locator("#export-png-button").click()
                     exported = output / "latest-viewport.png"
                     download.value.save_as(exported)
                     assert exported.stat().st_size > 500
+                    dialog.get_by_role("button", name="Close", exact=True).last.click()
+                    expect(dialog).to_have_count(0)
                 page.get_by_role("link", name="File", exact=True).click()
                 page.get_by_role("link", name="Close", exact=True).click()
                 page.wait_for_function("!window.__hictBenchmark.manager()")

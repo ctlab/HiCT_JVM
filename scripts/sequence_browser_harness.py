@@ -103,23 +103,28 @@ class HictTestServer:
             self.artifact.unlink(missing_ok=True)
 
 
+def install_download_picker(page):
+    """Provide a writable browser save picker backed by observable downloads."""
+    page.add_init_script('''(() => {
+      window.showOpenFilePicker=undefined;
+      window.showSaveFilePicker=async options=>{
+        let content;
+        return {name:options.suggestedName,
+          getFile:async()=>new File([content],options.suggestedName,{type:content.type}),
+          createWritable:async()=>{const chunks=[];return {write:async chunk=>{chunks.push(chunk);},close:async()=>{
+            content=new Blob(chunks,{type:chunks[0]?.type||'text/plain'});
+            const a=document.createElement('a'),url=URL.createObjectURL(content);
+            a.href=url;a.download=options.suggestedName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+          },abort:async()=>{}};}};
+      };
+    })();''')
+
+
 class BrowserCheck:
     def __init__(self, page, output):
         # Normal map/sequence checks use a writable picker backed by browser downloads.
         # File-destination acceptance overrides it to exercise cancel/failure/fallback paths.
-        page.add_init_script('''(() => {
-          window.showOpenFilePicker=undefined;
-          window.showSaveFilePicker=async options=>{
-            let content;
-            return {name:options.suggestedName,
-              getFile:async()=>new File([content],options.suggestedName,{type:content.type}),
-              createWritable:async()=>{const chunks=[];return {write:async chunk=>{chunks.push(chunk);},close:async()=>{
-                content=new Blob(chunks,{type:chunks[0]?.type||'text/plain'});
-                const a=document.createElement('a'),url=URL.createObjectURL(content);
-                a.href=url;a.download=options.suggestedName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-              },abort:async()=>{}};}};
-          };
-        })();''')
+        install_download_picker(page)
         self.page = page
         self.output = Path(output)
         self.rows = []

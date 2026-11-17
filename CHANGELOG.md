@@ -4,6 +4,8 @@
 
 ### Navigation and visualization
 
+- Release notification listeners when messages close, preventing listener accumulation during long editing and export sessions.
+
 - Reuse unchanged contig and scaffold borders during navigation, retaining exact geometry and independently fitted labels while avoiding repeated spatial-index rebuilds.
 
 - Avoid measuring ruler names in bands narrower than their required padding, preserving visible labels while reducing work on dense assemblies.

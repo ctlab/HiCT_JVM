@@ -5513,3 +5513,133 @@ suite passes all nineteen cases, including exact partial-bin coordinates and
 real before/after Reverse composition. Together with structural-03 and borders-04,
 73 functional cases pass. The strict large-map development gate is separate
 evidence; full integrated performance and the thirty-minute soak are still open.
+
+Candidate 53 integrates the committed WebUI and JVM: the full test/shadowJar
+build (`/tmp/hict-border-reuse-integrated-build-01.log`) finishes zero with
+625 JVM tests, zero failures/errors and seven optional skips. Version
+`2.0.53-8d54602-webui_daea115`, JAR SHA-256
+`e157d8c49d76c58d082e0b1a3b4d6fa4352ce7344af8515a550b292ddbef6e0f`. Linux package generation
+finishes with explicit exitCode=0 in
+`/tmp/hict-border-reuse-package-01.exit.json`. Archive hashes:
+
+- .run: `33a813637f25d274ccf809e6ef2f61d1617cc6bef8963c62f1bbb9b09a90a4bb`
+- .tar.gz: `346f51c9a0aaa077e4454897cacc1331c3ed29bbe5b3bdb5036b7ef28e92b2c1`
+
+The manifest verifies both archives; actual .run self-extraction exits zero and
+its JAR matches. Only the completed owned staging directory (2.08 GB) is removed.
+`/tmp/hict-integrated-release-08` uses this extracted package's own runtime, UI
+and toolchains with fresh physical copies of the three complete real maps.
+Metadata and index/53 served assets pass. Remaining sequential stages and the
+full-duration soak are running, with explicit driver receipts; they are not
+counted as passed. See docs/release-qualification.md for the current candidate.
+
+Run 08 finishes terminal failed with explicit exitCode=1. All pre-soak gates pass:
+metadata, 53 asset identities, menus, seven structural edits/Undo/Redo, two
+incomplete-input recoveries and offline workflows. Eight strict fresh/repeat
+samples across the structural, 96-, 1,765- and 7,790-contig maps pass: frame p95
+<=16.8 ms and acknowledgement p95 <=35.8 ms, with zero long tasks.
+
+The soak fails on its first edit, before any memory sample: the old driver sets
+the persistent region extent and expects Reverse to act on it. Under the verified
+two-selection contract, structural edits require entity selection. No edit
+request is issued, and waiting for its response times out after 60 seconds.
+The driver now performs a real Shift click at the navigated map position, releases
+Shift in finally, and waits for selected contig IDs before Reverse/Undo. It does
+not invoke a private selection shortcut or change the 33/100-ms or memory gates.
+Python compilation, Black and diff checks pass.
+
+Fresh run `/tmp/hict-integrated-release-09` reuses the byte-verified extracted
+candidate 53 and repeats the full sequence on fresh physical data copies. The
+prior run stays failed. Driver handle/receipts are recorded separately; no
+full-duration qualification is inferred from the earlier performance passes.
+
+Static follow-through on the soak exposed a second obsolete path before run 09
+reaches it: direct export bypassed the new destination/dialog contract and did
+not provide a writable browser picker. The harness now shares its existing
+download-backed writable-picker installation through a small helper; BrowserCheck
+keeps exactly the same picker behavior. The soak uses actual Export figure and
+PNG buttons and closes the dialog after saving, rather than calling the map
+manager's export method. Limits and collection windows remain unchanged. The
+platform manual checklist also explicitly distinguishes historical CI from the
+unqualified current-source Windows/macOS candidate. These are validation/document
+changes; candidate-53 application bytes remain unchanged.
+
+Run 09 passes every pre-soak stage and starts collecting real memory samples.
+Its performance samples retain frame p95 <=16.8 ms and acknowledgement p95
+<=38 ms on all four maps. Unlike run 08, its observer records several 51–114 ms
+long tasks, including on the tiny fixture; zero long tasks is not generalized
+from run 08. The original p95 limits still pass. The first mixed-source sequence
+cycle performs real entity selection, Reverse/Undo and dialog/picker PNG export.
+The resulting PNG was inspected: the expected primary red and secondary blue
+points and correctly positioned bp rulers are visible. No full-duration memory
+or release qualification is claimed while the soak remains running.
+
+
+### Notification cleanup and full-duration baseline
+
+Candidate-53 run 09 reaches 1,801.53 seconds and 223 mixed cycles, then finishes
+failed with explicit driver exitCode=1. Browser frame p95 is 16.7 ms and edit
+acknowledgement p95 47.18 ms. Browser post-warmup heap growth is 1.80 MB with
+0.0797 MiB/min slope; JVM heap slope is 0.0899 MiB/min and RSS slope is -1.65
+MiB/min. DOM nodes remain 632. The failed gate is listener growth: early maximum
+251, late maximum 282, exceeding the unchanged +20 allowance. There are no
+unexpected errors. All three real native inputs still match their original
+qualification SHA-256 values after the full run. This is a completed-duration
+workload with a failed qualification, not a passed soak.
+
+Static inspection identifies vue-sonner 2.0.9 useIsDocumentHidden: it registers
+on document, returns a cleanup Vue watchEffect ignores, and names window as the
+cleanup target. This matches the one-listener-per-success-notification trend and
+[upstream issue 168](https://github.com/xiaoluoboding/vue-sonner/issues/168).
+The installed version and upstream main still contain the defect. No dependency
+files are edited in place. A version/signature-guarded Vite pre-transform registers
+Vue onCleanup against document, scoped only to that dependency hook. A matching
+esbuild onLoad transform covers development prebundling. Both guards require a
+review on dependency upgrade; the dev plugin identity invalidates the old optimizer
+cache. Other hooks and notification behavior remain unchanged.
+
+Focused real-Vue effect-scope regression: 100 published-hook lifecycles retain
+100 listeners; 100 corrected lifecycles retain none, while hidden/visible updates
+still work. Unknown signatures, repeated patching and unrelated-module handling
+are checked. Full build:web, Prettier and focused eslint without --fix pass;
+eslint emits only the existing configuration-schema diagnostics.
+
+Real browser proof uses actual Export figure, PNG save and toast-close controls,
+a writable picker and CDP's document event listeners (debug handles released):
+
+- `/tmp/hict-notification-cleanup-red-01`: published package fails after one
+  export, two visibility listeners versus baseline one, no unrelated errors.
+- `/tmp/hict-notification-cleanup-green-01`: twelve production-bundle cycles
+  pass, always returning to baseline one, no unexpected errors.
+- `/tmp/hict-notification-cleanup-dev-03`: four live Vite-dev cycles pass with
+  the same baseline and no unexpected errors. Its isolated driver exits zero.
+
+The exported old/new PNG pixels are identical, and the final UI screenshot was
+inspected. Each independently generated native fixture remains byte-unchanged
+within its own test; their HDF5 creation metadata produces distinct input hashes.
+These tests use the immutable JVM-53 JAR with newly built/current WebUI and do
+not qualify a new integrated package.
+
+Development startup attempts 01/02 did not reach a browser: their urllib root
+probe omitted Accept: text/html, and Vite's SPA fallback returned 404. Attempt 01
+ended 143 without a final receipt; its exact owned leftover Vite process group
+was stopped. Attempt 02 reaches its explicit 30-second diagnostic deadline.
+Attempt 03 sends the proper HTML Accept header and completes with explicit
+exitCode=0. No failed startup attempt is counted as UI coverage.
+
+To preserve space, three redundant physical inputs from terminal failed run 07
+were removed only after verifying identical SHA-256 copies in both runs 08 and
+09. Originals and failed-run logs/receipts remain retained; the cleanup manifest
+is `/tmp/hict-redundant-run-07-input-cleanup.json`. No protected file changed.
+
+P8 research only: a bounded GET for existing public RID FR9P7TGF016 returns the
+documented JSON2_S format (16,804 bytes, ten hits/HSPs, original 160-base query).
+`/tmp/hict-remote-blast-live-05/public-rid-documented-json2-result{,-summary}.json`
+records the response and digest. This uses the
+[NCBI Common URL API](https://blast.ncbi.nlm.nih.gov/doc/blast-help/urlapi.html);
+no new search is submitted. It establishes a supported retrieval format, not
+implemented HiCT recovery or successful live delivery. Those P8 gates remain open.
+
+A new integrated candidate and complete qualification remain required after the
+notification fix. The source-controlled release/soak drivers now use real Shift
+selection and actual export/dialog/picker controls; no gate is relaxed.
