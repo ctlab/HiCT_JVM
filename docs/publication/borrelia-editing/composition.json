@@ -1,0 +1,47 @@
+{
+  "status": "passed",
+  "widthMm": 178,
+  "heightMm": 179.1055900621118,
+  "widthUnits": 644.0,
+  "heightUnits": 648.0,
+  "smallestVectorTextPoints": 7.05126953125,
+  "compositionScriptSha256": "5369d7c501238a045d9746f11fa211fa7f547988b3b3493678317b64659b7676",
+  "rsvgVersion": "rsvg-convert version 2.58.0",
+  "fontFiles": {
+    "DejaVuSans.ttf": "ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280",
+    "DejaVuSans-Bold.ttf": "5c1247acef7f2b8522a31742c76d6adcb5569bacc0be7ceaa4dc39dd252ce895",
+    "DejaVuSansMono.ttf": "c805f9436dbc268644c1d9584f01a601a653e028e08fd74b9b949f6cf8304d88"
+  },
+  "panels": [
+    {
+      "name": "A-original",
+      "images": 1,
+      "pixelScale": 1,
+      "offset": [
+        8,
+        40
+      ],
+      "sourceSvgSha256": "a8b9e6e879b6b0e952dff064e7f30877e587e1fd8707fcf384d05689c977d0b0"
+    },
+    {
+      "name": "B-exact-cut",
+      "images": 1,
+      "pixelScale": 1,
+      "offset": [
+        8,
+        360.0
+      ],
+      "sourceSvgSha256": "4b9bccc3a427a4545c4c64c8dff8ba30fddaba5604483130e7919bbe8be55e0d"
+    },
+    {
+      "name": "C-scaffolded",
+      "images": 1,
+      "pixelScale": 1,
+      "offset": [
+        326.0,
+        360.0
+      ],
+      "sourceSvgSha256": "96919b8b97a0ee32d8d9a52301f4a01523f604120747e5435593b3cd56c56b73"
+    }
+  ]
+}

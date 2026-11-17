@@ -37,6 +37,7 @@ def main():
             ['inherited 14px', '<g font-size="14"><text>Label</text></g>',14],
             ['scaled and rotated', '<g transform="rotate(90) scale(2)"><text font-size="9">Label</text></g>',18],
             ['nested viewport', '<svg width="100" height="50" viewBox="0 0 200 100"><text font-size="12">Label</text></svg>',6],
+            ['nested viewport inside a scaled outer group', '<g transform="scale(2)"><svg width="100" height="50" viewBox="0 0 200 100"><text font-size="12">Label</text></svg></g>',12],
             ['tspan override', '<text font-size="14">Label<tspan font-size="8">small</tspan></text>',8],
             ['no text', '<rect width="20" height="20"/>',null],
           ];

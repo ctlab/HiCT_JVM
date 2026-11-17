@@ -1,0 +1,2007 @@
+{
+  "status": "passed",
+  "sources": {
+    "borrelia.hict.hdf5": "f3f47e2f9af9eda24a4dd65e4dcef9972504b56203a6ba72b52183fc28e4932e",
+    "borrelia-matching.fa": "ca26a9bd04a3d5cbdd9e80c67a2b2a8c5c10f7c0fc98fad4163daf4716c85b94"
+  },
+  "resolution": 10000,
+  "cutOffsetBp": 450123,
+  "hideMapNames": true,
+  "jarSha256": "21275d9ab1a5298665af230909d92d9d768298b000fb88a97df9e832aef51648",
+  "preparationScriptSha256": "54665dcdf7335fd1c1a7ffb24245325967f966662147fc0f31da827b660fd129",
+  "captures": [
+    {
+      "name": "A-original",
+      "files": {
+        "svg": "a8b9e6e879b6b0e952dff064e7f30877e587e1fd8707fcf384d05689c977d0b0",
+        "png": "8d1746aba81c75f3595d154f245010269d44b712dfd42c6f81442c38dd07ab16",
+        "pdf": "d2fae75c70e1c83072e7b21b9df5e7e1e39c13e6be70f845b1b182b02f681ad3"
+      },
+      "width": 309.0,
+      "height": 279.0,
+      "metadata": {
+        "format": "hict-figure",
+        "version": 1,
+        "application": {
+          "webuiVersion": "2.0.0",
+          "webuiCommit": "d27c8ac43ca6045d1195e38b97e9df369330a5f6",
+          "backend": {
+            "webuiVersion": "2.0.0",
+            "version": "2.0.59-0878f4d-webui_d27c8ac"
+          }
+        },
+        "capturedAt": "2026-11-17T11:15:23.674Z",
+        "scope": "whole-map",
+        "wholeMapSizing": "NATIVE_GRID",
+        "cropToMap": true,
+        "composition": {
+          "map": true,
+          "rulers": true,
+          "tracks": true
+        },
+        "history": {
+          "session": "f456b2dc-811b-4fa5-81e9-e8ea77d5b7ed",
+          "revision": 0,
+          "currentId": 0
+        },
+        "inputGrid": {
+          "sourceName": "PRIMARY",
+          "bpResolution": 10000,
+          "pixelResolution": 10,
+          "layerResolutionBorders": {
+            "minResolutionInclusive": 10,
+            "maxResolutionExclusive": 20
+          },
+          "imageSizeIndex": 9
+        },
+        "axisScopes": {
+          "row": {
+            "kind": "all",
+            "label": "All Rows"
+          },
+          "column": {
+            "kind": "all",
+            "label": "All Columns"
+          }
+        },
+        "selectedRegion": null,
+        "inputView": {
+          "center": [
+            915.9420289855072,
+            -790
+          ],
+          "resolution": 2.0816864295125166,
+          "rotation": 0
+        },
+        "provenance": {
+          "primary": {
+            "filename": "borrelia.hict.hdf5",
+            "fastaFilename": "borrelia-matching.fa",
+            "agpSha256": "799110bc2e72ed4b9337edc015f1cedd71e61b11ef315916ddaf8635a96a8632",
+            "fileFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 1922077,
+              "sha256": "cb8d8e75844bb2f081c3b584f4023943b1018bdcd2108c63a639f531629c8ebc"
+            },
+            "fastaFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 1477994,
+              "sha256": "f35ea9c267f8c81cb791954badf6fe051a98d91cb53c854d45b1d56e1ed7af3f"
+            },
+            "capabilities": {
+              "schemaVersion": 1,
+              "units": "UNKNOWN",
+              "scoreScale": 1,
+              "contactDataState": "UNKNOWN",
+              "resolutions": [
+                1000,
+                2000,
+                5000,
+                10000,
+                20000,
+                50000,
+                100000,
+                200000,
+                500000,
+                1000000,
+                2000000,
+                5000000,
+                10000000
+              ],
+              "importedWeightResolutions": [
+                1000,
+                2000,
+                5000,
+                10000,
+                20000,
+                50000,
+                100000,
+                200000,
+                500000,
+                1000000,
+                2000000,
+                5000000,
+                10000000
+              ],
+              "weightMetadataComplete": true,
+              "contactNormalization": {
+                "state": "UNKNOWN",
+                "reasonCode": "LEGACY_SOURCE_UNITS",
+                "reason": "This file does not declare its signal units. Check the source before applying contact normalization."
+              },
+              "importedWeights": {
+                "state": "AVAILABLE",
+                "reasonCode": "",
+                "reason": ""
+              },
+              "sequenceScaleTiles": true,
+              "sequenceScaleTracks": true
+            }
+          },
+          "secondary": {
+            "filename": "processed/sequence-analysis/019f1091-2718-4047-bc0c-36038a668d43/moddotplot.hict.hdf5",
+            "fastaFilename": "",
+            "agpSha256": "799110bc2e72ed4b9337edc015f1cedd71e61b11ef315916ddaf8635a96a8632",
+            "fileFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 79840,
+              "sha256": "b1f6a8f481c18cd856c7158663ed5878136035a93c28f59973bf2117274dec71"
+            },
+            "capabilities": {
+              "schemaVersion": 1,
+              "units": "IDENTITY_PERCENT",
+              "scoreScale": 10000,
+              "contactDataState": "ABSENT",
+              "resolutions": [
+                10000
+              ],
+              "importedWeightResolutions": [],
+              "weightMetadataComplete": true,
+              "contactNormalization": {
+                "state": "UNAVAILABLE",
+                "reasonCode": "NOT_CONTACT_DATA",
+                "reason": "Contact normalization and resolution scaling do not apply to this source."
+              },
+              "importedWeights": {
+                "state": "UNAVAILABLE",
+                "reasonCode": "NOT_CONTACT_DATA",
+                "reason": "Imported contact balancing weights do not apply to this source."
+              },
+              "sequenceScaleTiles": true,
+              "sequenceScaleTracks": true
+            }
+          },
+          "assemblySource": "PRIMARY",
+          "assemblyVerified": true,
+          "filesFingerprinted": true,
+          "tracksVerified": true,
+          "renderPipeline": {
+            "enabled": true,
+            "swapUpperLower": false,
+            "upperExpression": {
+              "type": "colormap",
+              "mode": "LINEAR",
+              "input": {
+                "type": "binary",
+                "op": "MUL",
+                "left": {
+                  "type": "source",
+                  "source": "PRIMARY"
+                },
+                "right": {
+                  "type": "binary",
+                  "op": "MUL",
+                  "left": {
+                    "type": "track1d",
+                    "trackId": "__builtin_cooler_weights__",
+                    "axis": "ROW"
+                  },
+                  "right": {
+                    "type": "track1d",
+                    "trackId": "__builtin_cooler_weights__",
+                    "axis": "COL"
+                  }
+                }
+              },
+              "startColor": "#ffffffff",
+              "endColor": "#e80000ff",
+              "minSignal": 0,
+              "maxSignal": 0.061295490711927414
+            },
+            "lowerExpression": {
+              "type": "colormap",
+              "mode": "MODDOTPLOT_IDENTITY",
+              "input": {
+                "type": "binary",
+                "op": "DIV",
+                "left": {
+                  "type": "source",
+                  "source": "SECONDARY"
+                },
+                "right": {
+                  "type": "constant",
+                  "value": 10000
+                }
+              },
+              "startColor": "#31369500",
+              "endColor": "#a50026ff",
+              "minSignal": 80,
+              "maxSignal": 100
+            }
+          },
+          "visualizationOptions": {
+            "preLogBase": 0,
+            "postLogBase": -1,
+            "applyCoolerWeights": true,
+            "resolutionScaling": false,
+            "resolutionLinearScaling": false,
+            "autoThresholdEnabled": false,
+            "autoThresholdQuantile": 0.995,
+            "signalDisplayMode": "OBSERVED",
+            "coolerWeightsNaNPolicy": "REPLACE_NANS_WITH_ZERO",
+            "colormap": {
+              "type": "SimpleLinearGradient",
+              "bitDepth": 32,
+              "startColor": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "endColor": [
+                0.9098039,
+                0,
+                0,
+                1
+              ],
+              "minSignal": 0,
+              "maxSignal": 0.061295490711927414
+            }
+          },
+          "tracks": [
+            {
+              "trackId": "trk_1",
+              "name": "GC fraction",
+              "type": "BIGWIG",
+              "sourceFile": "GC-fraction-10kb.bw",
+              "color": "#4e79a7",
+              "visible": true,
+              "featureCount": -1,
+              "renderStyle": "SIGNAL",
+              "renderMode": "COVERAGE",
+              "aggregationMode": "MAX",
+              "logScale": false,
+              "rangeAuto": true,
+              "rangeMin": 0,
+              "rangeMax": 1,
+              "importWarnings": [],
+              "fileFingerprint": {
+                "algorithm": "HICT-QUICK-1",
+                "sizeBytes": 35986,
+                "sha256": "a49557e0e7e7c3270dc4305f1a965573585ada8050a175a1487b255c0d5565ae"
+              }
+            },
+            {
+              "trackId": "trk_2",
+              "name": "Cut marker",
+              "type": "GFF_GTF",
+              "sourceFile": "Illustrative-cut.gff3",
+              "color": "#f28e2b",
+              "visible": true,
+              "featureCount": 1,
+              "renderStyle": "FEATURE",
+              "renderMode": "COVERAGE",
+              "aggregationMode": "MAX",
+              "logScale": false,
+              "rangeAuto": true,
+              "rangeMin": 0,
+              "rangeMax": 1,
+              "importWarnings": [],
+              "fileFingerprint": {
+                "algorithm": "HICT-QUICK-1",
+                "sizeBytes": 93,
+                "sha256": "7231d372edd1826f0f1935b4698f54a07ef0474f97745b5db344202f11679a62"
+              }
+            }
+          ]
+        },
+        "presentation": {
+          "version": 1,
+          "background": "rgba(255,255,255,1)",
+          "trackStyles": {
+            "contigs": {
+              "borderColor": "rgba(61, 167, 221, 1)",
+              "fillColor": "rgba(0, 127, 127, 0.0)",
+              "width": 2,
+              "borderOutline": false,
+              "labelSize": 12,
+              "labelOffsetMultiplier": 1.25,
+              "labelBold": true,
+              "labelOutline": true,
+              "labelOutlineWidth": 2,
+              "labelColor": "rgba(255, 64, 64, 1.0)",
+              "borderStyle": 1,
+              "namePlacement": 2
+            },
+            "scaffolds": {
+              "borderColor": "rgba(100, 104, 111, 0.698)",
+              "fillColor": "rgba(64, 64, 255, 0.0)",
+              "width": 4,
+              "borderOutline": false,
+              "labelSize": 12,
+              "labelOffsetMultiplier": 1.25,
+              "labelBold": true,
+              "labelOutline": true,
+              "labelOutlineWidth": 2,
+              "labelColor": "rgba(255, 255, 0, 1)",
+              "borderStyle": 1,
+              "namePlacement": 2
+            }
+          },
+          "exportFlags": {
+            "contigBorders": true,
+            "scaffoldBorders": true,
+            "contigNames": true,
+            "scaffoldNames": true,
+            "translocationArrows": true
+          },
+          "axisTrackVisibility": {
+            "horizontalHidden": [],
+            "verticalHidden": []
+          },
+          "trackLogBases": {
+            "trk_1": 10,
+            "trk_2": 10
+          },
+          "axisScopes": {
+            "row": {
+              "kind": "all",
+              "label": "All Rows"
+            },
+            "column": {
+              "kind": "all",
+              "label": "All Columns"
+            }
+          },
+          "enabledResolutions": [
+            10000
+          ],
+          "matrixView": {
+            "presentationMode": "split",
+            "horizontalFastaSource": "PRIMARY",
+            "verticalFastaSource": "PRIMARY",
+            "activeVisualizationSource": "SECONDARY",
+            "activeVisualizationTargetId": null,
+            "layersSwapped": false,
+            "halvesLinked": true,
+            "activeVisualizationHalf": "upper"
+          },
+          "rulerMode": "global",
+          "view": {
+            "center": [
+              915.9420289855072,
+              -790
+            ],
+            "centerBp": [
+              910430.2028985508,
+              790000
+            ],
+            "resolution": 2.0816864295125166,
+            "rotation": 0,
+            "displayGrid": "NATIVE",
+            "bpResolution": 10000
+          }
+        },
+        "renderCapture": {
+          "schemaVersion": 1,
+          "signalDisplayMode": "OBSERVED",
+          "expectedProfile": null,
+          "primaryNormalization": {
+            "applyCoolerWeightsOption": true,
+            "mode": "FILE",
+            "algorithmVersion": null
+          },
+          "secondaryNormalization": {
+            "applyCoolerWeightsOption": true,
+            "mode": "FILE",
+            "algorithmVersion": null
+          },
+          "id": "c9e89156-59db-4466-b36c-9fffdb70939f"
+        },
+        "renderedGrid": {
+          "sourceName": "PRIMARY",
+          "bpResolution": 10000,
+          "pixelResolution": 10,
+          "layerResolutionBorders": {
+            "minResolutionInclusive": 10,
+            "maxResolutionExclusive": 20
+          },
+          "imageSizeIndex": 9
+        },
+        "renderedView": {
+          "mapViewportSize": [
+            155,
+            155
+          ],
+          "mapOffset": [
+            154,
+            124
+          ],
+          "center": [
+            775,
+            -775
+          ],
+          "resolution": 10,
+          "rotation": 0
+        },
+        "imageCrop": {
+          "units": "CSS_PIXELS",
+          "left": 154,
+          "top": 124,
+          "width": 155,
+          "height": 155,
+          "marginLeft": 154,
+          "marginTop": 124
+        }
+      },
+      "trackTextBounds": [
+        {
+          "text": "GC fraction",
+          "left": 6,
+          "right": 76,
+          "top": 2.359375,
+          "bottom": 15.359375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "GC fraction",
+          "left": 6,
+          "right": 76,
+          "top": 2.359375,
+          "bottom": 15.359375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "0",
+          "left": 146,
+          "right": 151,
+          "top": 16.84375,
+          "bottom": 26.84375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "0",
+          "left": 146,
+          "right": 151,
+          "top": 16.84375,
+          "bottom": 26.84375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "0.478",
+          "left": 126,
+          "right": 151,
+          "top": 0.84375,
+          "bottom": 10.84375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "0.478",
+          "left": 126,
+          "right": 151,
+          "top": 0.84375,
+          "bottom": 10.84375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "Cut marker",
+          "left": 6,
+          "right": 74,
+          "top": 32.359375,
+          "bottom": 45.359375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "Cut marker",
+          "left": 6,
+          "right": 74,
+          "top": 32.359375,
+          "bottom": 45.359375,
+          "width": 155,
+          "height": 60
+        },
+        {
+          "text": "GC fraction",
+          "left": 8.359375,
+          "right": 21.359375000000004,
+          "top": 81,
+          "bottom": 151,
+          "width": 60,
+          "height": 155
+        },
+        {
+          "text": "GC fraction",
+          "left": 8.359375,
+          "right": 21.359375000000004,
+          "top": 81,
+          "bottom": 151,
+          "width": 60,
+          "height": 155
+        },
+        {
+          "text": "0",
+          "left": 16.84375,
+          "right": 26.84375,
+          "top": 3,
+          "bottom": 8,
+          "width": 60,
+          "height": 155
+        },
+        {
+          "text": "0",
+          "left": 16.84375,
+          "right": 26.84375,
+          "top": 3,
+          "bottom": 8,
+          "width": 60,
+          "height": 155
+        },
+        {
+          "text": "0.478",
+          "left": 0.8437499999999984,
+          "right": 10.84375,
+          "top": 3,
+          "bottom": 28,
+          "width": 60,
+          "height": 155
+        },
+        {
+          "text": "0.478",
+          "left": 0.8437499999999984,
+          "right": 10.84375,
+          "top": 3,
+          "bottom": 28,
+          "width": 60,
+          "height": 155
+        },
+        {
+          "text": "Cut marker",
+          "left": 38.359375,
+          "right": 51.359375,
+          "top": 83,
+          "bottom": 151,
+          "width": 60,
+          "height": 155
+        },
+        {
+          "text": "Cut marker",
+          "left": 38.359375,
+          "right": 51.359375,
+          "top": 83,
+          "bottom": 151,
+          "width": 60,
+          "height": 155
+        }
+      ]
+    },
+    {
+      "name": "B-exact-cut",
+      "files": {
+        "svg": "4b9bccc3a427a4545c4c64c8dff8ba30fddaba5604483130e7919bbe8be55e0d",
+        "png": "d042b6e31c10da6f863546ab663dcc3a79c2f5a15e78ccd4e2f4ac3024a3f9de",
+        "pdf": "b66a862818386f5b83292ce4983dd090d78d6ad0a3f0916b9650c90f78c653d5"
+      },
+      "width": 310.0,
+      "height": 280.0,
+      "metadata": {
+        "format": "hict-figure",
+        "version": 1,
+        "application": {
+          "webuiVersion": "2.0.0",
+          "webuiCommit": "d27c8ac43ca6045d1195e38b97e9df369330a5f6",
+          "backend": {
+            "webuiVersion": "2.0.0",
+            "version": "2.0.59-0878f4d-webui_d27c8ac"
+          }
+        },
+        "capturedAt": "2026-11-17T11:15:26.720Z",
+        "scope": "whole-map",
+        "wholeMapSizing": "NATIVE_GRID",
+        "cropToMap": true,
+        "composition": {
+          "map": true,
+          "rulers": true,
+          "tracks": true
+        },
+        "history": {
+          "session": "f456b2dc-811b-4fa5-81e9-e8ea77d5b7ed",
+          "revision": 1,
+          "currentId": 1
+        },
+        "inputGrid": {
+          "sourceName": "PRIMARY",
+          "bpResolution": 10000,
+          "pixelResolution": 10,
+          "layerResolutionBorders": {
+            "minResolutionInclusive": 10,
+            "maxResolutionExclusive": 20
+          },
+          "imageSizeIndex": 9
+        },
+        "axisScopes": {
+          "row": {
+            "kind": "all",
+            "label": "All Rows"
+          },
+          "column": {
+            "kind": "all",
+            "label": "All Columns"
+          }
+        },
+        "selectedRegion": null,
+        "inputView": {
+          "center": [
+            465.0622658702036,
+            -465.0622658702036
+          ],
+          "resolution": 0.02,
+          "rotation": 0
+        },
+        "provenance": {
+          "primary": {
+            "filename": "borrelia.hict.hdf5",
+            "fastaFilename": "borrelia-matching.fa",
+            "agpSha256": "27ad283c2ae55b45fc1a1f5556fac5fa8af59dfd25e36c9220e47fe16b0c6b90",
+            "fileFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 1922077,
+              "sha256": "cb8d8e75844bb2f081c3b584f4023943b1018bdcd2108c63a639f531629c8ebc"
+            },
+            "fastaFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 1477994,
+              "sha256": "f35ea9c267f8c81cb791954badf6fe051a98d91cb53c854d45b1d56e1ed7af3f"
+            },
+            "capabilities": {
+              "schemaVersion": 1,
+              "units": "UNKNOWN",
+              "scoreScale": 1,
+              "contactDataState": "UNKNOWN",
+              "resolutions": [
+                1000,
+                2000,
+                5000,
+                10000,
+                20000,
+                50000,
+                100000,
+                200000,
+                500000,
+                1000000,
+                2000000,
+                5000000,
+                10000000
+              ],
+              "importedWeightResolutions": [
+                1000,
+                2000,
+                5000,
+                10000,
+                20000,
+                50000,
+                100000,
+                200000,
+                500000,
+                1000000,
+                2000000,
+                5000000,
+                10000000
+              ],
+              "weightMetadataComplete": true,
+              "contactNormalization": {
+                "state": "UNKNOWN",
+                "reasonCode": "LEGACY_SOURCE_UNITS",
+                "reason": "This file does not declare its signal units. Check the source before applying contact normalization."
+              },
+              "importedWeights": {
+                "state": "AVAILABLE",
+                "reasonCode": "",
+                "reason": ""
+              },
+              "sequenceScaleTiles": true,
+              "sequenceScaleTracks": true
+            }
+          },
+          "secondary": {
+            "filename": "processed/sequence-analysis/019f1091-2718-4047-bc0c-36038a668d43/moddotplot.hict.hdf5",
+            "fastaFilename": "",
+            "agpSha256": "27ad283c2ae55b45fc1a1f5556fac5fa8af59dfd25e36c9220e47fe16b0c6b90",
+            "fileFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 79840,
+              "sha256": "b1f6a8f481c18cd856c7158663ed5878136035a93c28f59973bf2117274dec71"
+            },
+            "capabilities": {
+              "schemaVersion": 1,
+              "units": "IDENTITY_PERCENT",
+              "scoreScale": 10000,
+              "contactDataState": "ABSENT",
+              "resolutions": [
+                10000
+              ],
+              "importedWeightResolutions": [],
+              "weightMetadataComplete": true,
+              "contactNormalization": {
+                "state": "UNAVAILABLE",
+                "reasonCode": "NOT_CONTACT_DATA",
+                "reason": "Contact normalization and resolution scaling do not apply to this source."
+              },
+              "importedWeights": {
+                "state": "UNAVAILABLE",
+                "reasonCode": "NOT_CONTACT_DATA",
+                "reason": "Imported contact balancing weights do not apply to this source."
+              },
+              "sequenceScaleTiles": true,
+              "sequenceScaleTracks": true
+            }
+          },
+          "assemblySource": "PRIMARY",
+          "assemblyVerified": true,
+          "filesFingerprinted": true,
+          "tracksVerified": true,
+          "renderPipeline": {
+            "enabled": true,
+            "swapUpperLower": false,
+            "upperExpression": {
+              "type": "colormap",
+              "mode": "LINEAR",
+              "input": {
+                "type": "binary",
+                "op": "MUL",
+                "left": {
+                  "type": "source",
+                  "source": "PRIMARY"
+                },
+                "right": {
+                  "type": "binary",
+                  "op": "MUL",
+                  "left": {
+                    "type": "track1d",
+                    "trackId": "__builtin_cooler_weights__",
+                    "axis": "ROW"
+                  },
+                  "right": {
+                    "type": "track1d",
+                    "trackId": "__builtin_cooler_weights__",
+                    "axis": "COL"
+                  }
+                }
+              },
+              "startColor": "#ffffffff",
+              "endColor": "#e80000ff",
+              "minSignal": 0,
+              "maxSignal": 0.061295490711927414
+            },
+            "lowerExpression": {
+              "type": "colormap",
+              "mode": "MODDOTPLOT_IDENTITY",
+              "input": {
+                "type": "binary",
+                "op": "DIV",
+                "left": {
+                  "type": "source",
+                  "source": "SECONDARY"
+                },
+                "right": {
+                  "type": "constant",
+                  "value": 10000
+                }
+              },
+              "startColor": "#31369500",
+              "endColor": "#a50026ff",
+              "minSignal": 80,
+              "maxSignal": 100
+            }
+          },
+          "visualizationOptions": {
+            "preLogBase": 0,
+            "postLogBase": -1,
+            "applyCoolerWeights": true,
+            "resolutionScaling": false,
+            "resolutionLinearScaling": false,
+            "autoThresholdEnabled": false,
+            "autoThresholdQuantile": 0.995,
+            "signalDisplayMode": "OBSERVED",
+            "coolerWeightsNaNPolicy": "REPLACE_NANS_WITH_ZERO",
+            "colormap": {
+              "type": "SimpleLinearGradient",
+              "bitDepth": 32,
+              "startColor": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "endColor": [
+                0.9098039,
+                0,
+                0,
+                1
+              ],
+              "minSignal": 0,
+              "maxSignal": 0.061295490711927414
+            }
+          },
+          "tracks": [
+            {
+              "trackId": "trk_1",
+              "name": "GC fraction",
+              "type": "BIGWIG",
+              "sourceFile": "GC-fraction-10kb.bw",
+              "color": "#4e79a7",
+              "visible": true,
+              "featureCount": -1,
+              "renderStyle": "SIGNAL",
+              "renderMode": "COVERAGE",
+              "aggregationMode": "MAX",
+              "logScale": false,
+              "rangeAuto": true,
+              "rangeMin": 0,
+              "rangeMax": 1,
+              "importWarnings": [],
+              "fileFingerprint": {
+                "algorithm": "HICT-QUICK-1",
+                "sizeBytes": 35986,
+                "sha256": "a49557e0e7e7c3270dc4305f1a965573585ada8050a175a1487b255c0d5565ae"
+              }
+            },
+            {
+              "trackId": "trk_2",
+              "name": "Cut marker",
+              "type": "GFF_GTF",
+              "sourceFile": "Illustrative-cut.gff3",
+              "color": "#f28e2b",
+              "visible": true,
+              "featureCount": 1,
+              "renderStyle": "FEATURE",
+              "renderMode": "COVERAGE",
+              "aggregationMode": "MAX",
+              "logScale": false,
+              "rangeAuto": true,
+              "rangeMin": 0,
+              "rangeMax": 1,
+              "importWarnings": [],
+              "fileFingerprint": {
+                "algorithm": "HICT-QUICK-1",
+                "sizeBytes": 93,
+                "sha256": "7231d372edd1826f0f1935b4698f54a07ef0474f97745b5db344202f11679a62"
+              }
+            }
+          ]
+        },
+        "presentation": {
+          "version": 1,
+          "background": "rgba(255,255,255,1)",
+          "trackStyles": {
+            "contigs": {
+              "borderColor": "rgba(61, 167, 221, 1)",
+              "fillColor": "rgba(0, 127, 127, 0.0)",
+              "width": 2,
+              "borderOutline": false,
+              "labelSize": 12,
+              "labelOffsetMultiplier": 1.25,
+              "labelBold": true,
+              "labelOutline": true,
+              "labelOutlineWidth": 2,
+              "labelColor": "rgba(255, 64, 64, 1.0)",
+              "borderStyle": 1,
+              "namePlacement": 2
+            },
+            "scaffolds": {
+              "borderColor": "rgba(100, 104, 111, 0.698)",
+              "fillColor": "rgba(64, 64, 255, 0.0)",
+              "width": 4,
+              "borderOutline": false,
+              "labelSize": 12,
+              "labelOffsetMultiplier": 1.25,
+              "labelBold": true,
+              "labelOutline": true,
+              "labelOutlineWidth": 2,
+              "labelColor": "rgba(255, 255, 0, 1)",
+              "borderStyle": 1,
+              "namePlacement": 2
+            }
+          },
+          "exportFlags": {
+            "contigBorders": true,
+            "scaffoldBorders": true,
+            "contigNames": true,
+            "scaffoldNames": true,
+            "translocationArrows": true
+          },
+          "axisTrackVisibility": {
+            "horizontalHidden": [],
+            "verticalHidden": []
+          },
+          "trackLogBases": {
+            "trk_1": 10,
+            "trk_2": 10
+          },
+          "axisScopes": {
+            "row": {
+              "kind": "all",
+              "label": "All Rows"
+            },
+            "column": {
+              "kind": "all",
+              "label": "All Columns"
+            }
+          },
+          "enabledResolutions": [
+            10000
+          ],
+          "matrixView": {
+            "presentationMode": "split",
+            "horizontalFastaSource": "PRIMARY",
+            "verticalFastaSource": "PRIMARY",
+            "activeVisualizationSource": "SECONDARY",
+            "activeVisualizationTargetId": null,
+            "layersSwapped": false,
+            "halvesLinked": true,
+            "activeVisualizationHalf": "upper"
+          },
+          "rulerMode": "global",
+          "view": {
+            "center": [
+              465.0622658702036,
+              -465.0622658702036
+            ],
+            "centerBp": [
+              455123.00000000006,
+              455123.00000000006
+            ],
+            "resolution": 0.02,
+            "rotation": 0,
+            "displayGrid": "NATIVE",
+            "bpResolution": 10000
+          }
+        },
+        "renderCapture": {
+          "schemaVersion": 1,
+          "signalDisplayMode": "OBSERVED",
+          "expectedProfile": null,
+          "primaryNormalization": {
+            "applyCoolerWeightsOption": true,
+            "mode": "FILE",
+            "algorithmVersion": null
+          },
+          "secondaryNormalization": {
+            "applyCoolerWeightsOption": true,
+            "mode": "FILE",
+            "algorithmVersion": null
+          },
+          "id": "4fc419be-c2b7-4b0a-8dac-90d8af4308ad"
+        },
+        "renderedGrid": {
+          "sourceName": "PRIMARY",
+          "bpResolution": 10000,
+          "pixelResolution": 10,
+          "layerResolutionBorders": {
+            "minResolutionInclusive": 10,
+            "maxResolutionExclusive": 20
+          },
+          "imageSizeIndex": 9
+        },
+        "renderedView": {
+          "mapViewportSize": [
+            156,
+            156
+          ],
+          "mapOffset": [
+            154,
+            124
+          ],
+          "center": [
+            780,
+            -780
+          ],
+          "resolution": 10,
+          "rotation": 0
+        },
+        "imageCrop": {
+          "units": "CSS_PIXELS",
+          "left": 154,
+          "top": 124,
+          "width": 156,
+          "height": 156,
+          "marginLeft": 154,
+          "marginTop": 124
+        }
+      },
+      "trackTextBounds": [
+        {
+          "text": "GC fraction",
+          "left": 6,
+          "right": 76,
+          "top": 2.359375,
+          "bottom": 15.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "GC fraction",
+          "left": 6,
+          "right": 76,
+          "top": 2.359375,
+          "bottom": 15.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0",
+          "left": 147,
+          "right": 152,
+          "top": 16.84375,
+          "bottom": 26.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0",
+          "left": 147,
+          "right": 152,
+          "top": 16.84375,
+          "bottom": 26.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0.478",
+          "left": 127,
+          "right": 152,
+          "top": 0.84375,
+          "bottom": 10.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0.478",
+          "left": 127,
+          "right": 152,
+          "top": 0.84375,
+          "bottom": 10.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "Cut marker",
+          "left": 6,
+          "right": 74,
+          "top": 32.359375,
+          "bottom": 45.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "Cut marker",
+          "left": 6,
+          "right": 74,
+          "top": 32.359375,
+          "bottom": 45.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "GC fraction",
+          "left": 8.359375,
+          "right": 21.359375000000004,
+          "top": 82,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "GC fraction",
+          "left": 8.359375,
+          "right": 21.359375000000004,
+          "top": 82,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0",
+          "left": 16.84375,
+          "right": 26.84375,
+          "top": 3,
+          "bottom": 8,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0",
+          "left": 16.84375,
+          "right": 26.84375,
+          "top": 3,
+          "bottom": 8,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0.478",
+          "left": 0.8437499999999984,
+          "right": 10.84375,
+          "top": 3,
+          "bottom": 28,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0.478",
+          "left": 0.8437499999999984,
+          "right": 10.84375,
+          "top": 3,
+          "bottom": 28,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "Cut marker",
+          "left": 38.359375,
+          "right": 51.359375,
+          "top": 84,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "Cut marker",
+          "left": 38.359375,
+          "right": 51.359375,
+          "top": 84,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        }
+      ]
+    },
+    {
+      "name": "C-scaffolded",
+      "files": {
+        "svg": "96919b8b97a0ee32d8d9a52301f4a01523f604120747e5435593b3cd56c56b73",
+        "png": "ffd312eb975c7956b943730e410f0481143729856e453b31a16a3a589e811ecb",
+        "pdf": "8aef078be9ec4a6197a12f3ba9e48b714317e64f261fdd29455cb6d660b0b85b"
+      },
+      "width": 310.0,
+      "height": 280.0,
+      "metadata": {
+        "format": "hict-figure",
+        "version": 1,
+        "application": {
+          "webuiVersion": "2.0.0",
+          "webuiCommit": "d27c8ac43ca6045d1195e38b97e9df369330a5f6",
+          "backend": {
+            "webuiVersion": "2.0.0",
+            "version": "2.0.59-0878f4d-webui_d27c8ac"
+          }
+        },
+        "capturedAt": "2026-11-17T11:15:29.875Z",
+        "scope": "whole-map",
+        "wholeMapSizing": "NATIVE_GRID",
+        "cropToMap": true,
+        "composition": {
+          "map": true,
+          "rulers": true,
+          "tracks": true
+        },
+        "history": {
+          "session": "f456b2dc-811b-4fa5-81e9-e8ea77d5b7ed",
+          "revision": 2,
+          "currentId": 2
+        },
+        "inputGrid": {
+          "sourceName": "PRIMARY",
+          "bpResolution": 10000,
+          "pixelResolution": 10,
+          "layerResolutionBorders": {
+            "minResolutionInclusive": 10,
+            "maxResolutionExclusive": 20
+          },
+          "imageSizeIndex": 9
+        },
+        "axisScopes": {
+          "row": {
+            "kind": "all",
+            "label": "All Rows"
+          },
+          "column": {
+            "kind": "all",
+            "label": "All Columns"
+          }
+        },
+        "selectedRegion": null,
+        "inputView": {
+          "center": [
+            465.0622658702036,
+            -465.0622658702036
+          ],
+          "resolution": 0.02,
+          "rotation": 0
+        },
+        "provenance": {
+          "primary": {
+            "filename": "borrelia.hict.hdf5",
+            "fastaFilename": "borrelia-matching.fa",
+            "agpSha256": "194508a5667fd0b107354103d18e9079b7bb170b433afb0ae3d0b199261dadd6",
+            "fileFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 1922077,
+              "sha256": "cb8d8e75844bb2f081c3b584f4023943b1018bdcd2108c63a639f531629c8ebc"
+            },
+            "fastaFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 1477994,
+              "sha256": "f35ea9c267f8c81cb791954badf6fe051a98d91cb53c854d45b1d56e1ed7af3f"
+            },
+            "capabilities": {
+              "schemaVersion": 1,
+              "units": "UNKNOWN",
+              "scoreScale": 1,
+              "contactDataState": "UNKNOWN",
+              "resolutions": [
+                1000,
+                2000,
+                5000,
+                10000,
+                20000,
+                50000,
+                100000,
+                200000,
+                500000,
+                1000000,
+                2000000,
+                5000000,
+                10000000
+              ],
+              "importedWeightResolutions": [
+                1000,
+                2000,
+                5000,
+                10000,
+                20000,
+                50000,
+                100000,
+                200000,
+                500000,
+                1000000,
+                2000000,
+                5000000,
+                10000000
+              ],
+              "weightMetadataComplete": true,
+              "contactNormalization": {
+                "state": "UNKNOWN",
+                "reasonCode": "LEGACY_SOURCE_UNITS",
+                "reason": "This file does not declare its signal units. Check the source before applying contact normalization."
+              },
+              "importedWeights": {
+                "state": "AVAILABLE",
+                "reasonCode": "",
+                "reason": ""
+              },
+              "sequenceScaleTiles": true,
+              "sequenceScaleTracks": true
+            }
+          },
+          "secondary": {
+            "filename": "processed/sequence-analysis/019f1091-2718-4047-bc0c-36038a668d43/moddotplot.hict.hdf5",
+            "fastaFilename": "",
+            "agpSha256": "bee34b357c7199841bb5809787ced18709296149ff62c22846f380a172dbad4c",
+            "fileFingerprint": {
+              "algorithm": "HICT-QUICK-1",
+              "sizeBytes": 79840,
+              "sha256": "b1f6a8f481c18cd856c7158663ed5878136035a93c28f59973bf2117274dec71"
+            },
+            "capabilities": {
+              "schemaVersion": 1,
+              "units": "IDENTITY_PERCENT",
+              "scoreScale": 10000,
+              "contactDataState": "ABSENT",
+              "resolutions": [
+                10000
+              ],
+              "importedWeightResolutions": [],
+              "weightMetadataComplete": true,
+              "contactNormalization": {
+                "state": "UNAVAILABLE",
+                "reasonCode": "NOT_CONTACT_DATA",
+                "reason": "Contact normalization and resolution scaling do not apply to this source."
+              },
+              "importedWeights": {
+                "state": "UNAVAILABLE",
+                "reasonCode": "NOT_CONTACT_DATA",
+                "reason": "Imported contact balancing weights do not apply to this source."
+              },
+              "sequenceScaleTiles": true,
+              "sequenceScaleTracks": true
+            }
+          },
+          "assemblySource": "PRIMARY",
+          "assemblyVerified": true,
+          "filesFingerprinted": true,
+          "tracksVerified": true,
+          "renderPipeline": {
+            "enabled": true,
+            "swapUpperLower": false,
+            "upperExpression": {
+              "type": "colormap",
+              "mode": "LINEAR",
+              "input": {
+                "type": "binary",
+                "op": "MUL",
+                "left": {
+                  "type": "source",
+                  "source": "PRIMARY"
+                },
+                "right": {
+                  "type": "binary",
+                  "op": "MUL",
+                  "left": {
+                    "type": "track1d",
+                    "trackId": "__builtin_cooler_weights__",
+                    "axis": "ROW"
+                  },
+                  "right": {
+                    "type": "track1d",
+                    "trackId": "__builtin_cooler_weights__",
+                    "axis": "COL"
+                  }
+                }
+              },
+              "startColor": "#ffffffff",
+              "endColor": "#e80000ff",
+              "minSignal": 0,
+              "maxSignal": 0.061295490711927414
+            },
+            "lowerExpression": {
+              "type": "colormap",
+              "mode": "MODDOTPLOT_IDENTITY",
+              "input": {
+                "type": "binary",
+                "op": "DIV",
+                "left": {
+                  "type": "source",
+                  "source": "SECONDARY"
+                },
+                "right": {
+                  "type": "constant",
+                  "value": 10000
+                }
+              },
+              "startColor": "#31369500",
+              "endColor": "#a50026ff",
+              "minSignal": 80,
+              "maxSignal": 100
+            }
+          },
+          "visualizationOptions": {
+            "preLogBase": 0,
+            "postLogBase": -1,
+            "applyCoolerWeights": true,
+            "resolutionScaling": false,
+            "resolutionLinearScaling": false,
+            "autoThresholdEnabled": false,
+            "autoThresholdQuantile": 0.995,
+            "signalDisplayMode": "OBSERVED",
+            "coolerWeightsNaNPolicy": "REPLACE_NANS_WITH_ZERO",
+            "colormap": {
+              "type": "SimpleLinearGradient",
+              "bitDepth": 32,
+              "startColor": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "endColor": [
+                0.9098039,
+                0,
+                0,
+                1
+              ],
+              "minSignal": 0,
+              "maxSignal": 0.061295490711927414
+            }
+          },
+          "tracks": [
+            {
+              "trackId": "trk_1",
+              "name": "GC fraction",
+              "type": "BIGWIG",
+              "sourceFile": "GC-fraction-10kb.bw",
+              "color": "#4e79a7",
+              "visible": true,
+              "featureCount": -1,
+              "renderStyle": "SIGNAL",
+              "renderMode": "COVERAGE",
+              "aggregationMode": "MAX",
+              "logScale": false,
+              "rangeAuto": true,
+              "rangeMin": 0,
+              "rangeMax": 1,
+              "importWarnings": [],
+              "fileFingerprint": {
+                "algorithm": "HICT-QUICK-1",
+                "sizeBytes": 35986,
+                "sha256": "a49557e0e7e7c3270dc4305f1a965573585ada8050a175a1487b255c0d5565ae"
+              }
+            },
+            {
+              "trackId": "trk_2",
+              "name": "Cut marker",
+              "type": "GFF_GTF",
+              "sourceFile": "Illustrative-cut.gff3",
+              "color": "#f28e2b",
+              "visible": true,
+              "featureCount": 1,
+              "renderStyle": "FEATURE",
+              "renderMode": "COVERAGE",
+              "aggregationMode": "MAX",
+              "logScale": false,
+              "rangeAuto": true,
+              "rangeMin": 0,
+              "rangeMax": 1,
+              "importWarnings": [],
+              "fileFingerprint": {
+                "algorithm": "HICT-QUICK-1",
+                "sizeBytes": 93,
+                "sha256": "7231d372edd1826f0f1935b4698f54a07ef0474f97745b5db344202f11679a62"
+              }
+            }
+          ]
+        },
+        "presentation": {
+          "version": 1,
+          "background": "rgba(255,255,255,1)",
+          "trackStyles": {
+            "contigs": {
+              "borderColor": "rgba(61, 167, 221, 1)",
+              "fillColor": "rgba(0, 127, 127, 0.0)",
+              "width": 2,
+              "borderOutline": false,
+              "labelSize": 12,
+              "labelOffsetMultiplier": 1.25,
+              "labelBold": true,
+              "labelOutline": true,
+              "labelOutlineWidth": 2,
+              "labelColor": "rgba(255, 64, 64, 1.0)",
+              "borderStyle": 1,
+              "namePlacement": 2
+            },
+            "scaffolds": {
+              "borderColor": "rgba(100, 104, 111, 0.698)",
+              "fillColor": "rgba(64, 64, 255, 0.0)",
+              "width": 4,
+              "borderOutline": false,
+              "labelSize": 12,
+              "labelOffsetMultiplier": 1.25,
+              "labelBold": true,
+              "labelOutline": true,
+              "labelOutlineWidth": 2,
+              "labelColor": "rgba(255, 255, 0, 1)",
+              "borderStyle": 1,
+              "namePlacement": 2
+            }
+          },
+          "exportFlags": {
+            "contigBorders": true,
+            "scaffoldBorders": true,
+            "contigNames": true,
+            "scaffoldNames": true,
+            "translocationArrows": true
+          },
+          "axisTrackVisibility": {
+            "horizontalHidden": [],
+            "verticalHidden": []
+          },
+          "trackLogBases": {
+            "trk_1": 10,
+            "trk_2": 10
+          },
+          "axisScopes": {
+            "row": {
+              "kind": "all",
+              "label": "All Rows"
+            },
+            "column": {
+              "kind": "all",
+              "label": "All Columns"
+            }
+          },
+          "enabledResolutions": [
+            10000
+          ],
+          "matrixView": {
+            "presentationMode": "split",
+            "horizontalFastaSource": "PRIMARY",
+            "verticalFastaSource": "PRIMARY",
+            "activeVisualizationSource": "SECONDARY",
+            "activeVisualizationTargetId": null,
+            "layersSwapped": false,
+            "halvesLinked": true,
+            "activeVisualizationHalf": "upper"
+          },
+          "rulerMode": "global",
+          "view": {
+            "center": [
+              465.0622658702036,
+              -465.0622658702036
+            ],
+            "centerBp": [
+              455123.00000000006,
+              455123.00000000006
+            ],
+            "resolution": 0.02,
+            "rotation": 0,
+            "displayGrid": "NATIVE",
+            "bpResolution": 10000
+          }
+        },
+        "renderCapture": {
+          "schemaVersion": 1,
+          "signalDisplayMode": "OBSERVED",
+          "expectedProfile": null,
+          "primaryNormalization": {
+            "applyCoolerWeightsOption": true,
+            "mode": "FILE",
+            "algorithmVersion": null
+          },
+          "secondaryNormalization": {
+            "applyCoolerWeightsOption": true,
+            "mode": "FILE",
+            "algorithmVersion": null
+          },
+          "id": "633bd26e-af0a-4b9c-8506-91a2d91bdcb1"
+        },
+        "renderedGrid": {
+          "sourceName": "PRIMARY",
+          "bpResolution": 10000,
+          "pixelResolution": 10,
+          "layerResolutionBorders": {
+            "minResolutionInclusive": 10,
+            "maxResolutionExclusive": 20
+          },
+          "imageSizeIndex": 9
+        },
+        "renderedView": {
+          "mapViewportSize": [
+            156,
+            156
+          ],
+          "mapOffset": [
+            154,
+            124
+          ],
+          "center": [
+            780,
+            -780
+          ],
+          "resolution": 10,
+          "rotation": 0
+        },
+        "imageCrop": {
+          "units": "CSS_PIXELS",
+          "left": 154,
+          "top": 124,
+          "width": 156,
+          "height": 156,
+          "marginLeft": 154,
+          "marginTop": 124
+        }
+      },
+      "trackTextBounds": [
+        {
+          "text": "GC fraction",
+          "left": 6,
+          "right": 76,
+          "top": 2.359375,
+          "bottom": 15.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "GC fraction",
+          "left": 6,
+          "right": 76,
+          "top": 2.359375,
+          "bottom": 15.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0",
+          "left": 147,
+          "right": 152,
+          "top": 16.84375,
+          "bottom": 26.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0",
+          "left": 147,
+          "right": 152,
+          "top": 16.84375,
+          "bottom": 26.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0.478",
+          "left": 127,
+          "right": 152,
+          "top": 0.84375,
+          "bottom": 10.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "0.478",
+          "left": 127,
+          "right": 152,
+          "top": 0.84375,
+          "bottom": 10.84375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "Cut marker",
+          "left": 6,
+          "right": 74,
+          "top": 32.359375,
+          "bottom": 45.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "Cut marker",
+          "left": 6,
+          "right": 74,
+          "top": 32.359375,
+          "bottom": 45.359375,
+          "width": 156,
+          "height": 60
+        },
+        {
+          "text": "GC fraction",
+          "left": 8.359375,
+          "right": 21.359375000000004,
+          "top": 82,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "GC fraction",
+          "left": 8.359375,
+          "right": 21.359375000000004,
+          "top": 82,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0",
+          "left": 16.84375,
+          "right": 26.84375,
+          "top": 3,
+          "bottom": 8,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0",
+          "left": 16.84375,
+          "right": 26.84375,
+          "top": 3,
+          "bottom": 8,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0.478",
+          "left": 0.8437499999999984,
+          "right": 10.84375,
+          "top": 3,
+          "bottom": 28,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "0.478",
+          "left": 0.8437499999999984,
+          "right": 10.84375,
+          "top": 3,
+          "bottom": 28,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "Cut marker",
+          "left": 38.359375,
+          "right": 51.359375,
+          "top": 84,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        },
+        {
+          "text": "Cut marker",
+          "left": 38.359375,
+          "right": 51.359375,
+          "top": 84,
+          "bottom": 152,
+          "width": 60,
+          "height": 156
+        }
+      ]
+    }
+  ],
+  "descriptors": [
+    {
+      "name": "Ch1",
+      "length": 910724
+    },
+    {
+      "name": "cp26",
+      "length": 26498
+    },
+    {
+      "name": "cp32-1",
+      "length": 30750
+    },
+    {
+      "name": "cp32-3",
+      "length": 30223
+    },
+    {
+      "name": "cp32-4",
+      "length": 30299
+    },
+    {
+      "name": "cp32-6",
+      "length": 29838
+    },
+    {
+      "name": "cp32-7",
+      "length": 30800
+    },
+    {
+      "name": "cp32-8",
+      "length": 30885
+    },
+    {
+      "name": "cp32-9",
+      "length": 30651
+    },
+    {
+      "name": "lp17",
+      "length": 16821
+    },
+    {
+      "name": "lp21",
+      "length": 18777
+    },
+    {
+      "name": "lp25",
+      "length": 24177
+    },
+    {
+      "name": "lp28-1",
+      "length": 28155
+    },
+    {
+      "name": "lp28-2",
+      "length": 29766
+    },
+    {
+      "name": "lp28-3",
+      "length": 28601
+    },
+    {
+      "name": "lp28-4",
+      "length": 27323
+    },
+    {
+      "name": "lp36",
+      "length": 36849
+    },
+    {
+      "name": "lp38",
+      "length": 38829
+    },
+    {
+      "name": "lp54",
+      "length": 53657
+    }
+  ],
+  "moddotplotJob": {
+    "jobId": "019f1091-2718-4047-bc0c-36038a668d43",
+    "kind": "moddotplot",
+    "status": "finished",
+    "createdAtMs": 1794914121346,
+    "finishedAtMs": 1794914121814,
+    "outputFile": "processed/sequence-analysis/019f1091-2718-4047-bc0c-36038a668d43/moddotplot.hict.hdf5",
+    "mapFilename": "borrelia.hict.hdf5",
+    "snapshot": "e2122511287b743f547e818eada2e40d53f2e2cb96665f7eb288f1163137b1a8",
+    "sequenceLength": 1453623,
+    "hits": 0,
+    "searchTarget": "LOCAL_ASSEMBLY",
+    "remoteDatabase": null,
+    "remoteRequestId": null,
+    "fragments": 0,
+    "analysisNs": 440315042,
+    "error": null,
+    "requestedThreads": 2,
+    "effectiveThreads": 1,
+    "threadMode": "explicit",
+    "logs": [
+      "ModDotPlot threads: requested=2, effective=1, mode=explicit, allocatedCPUs=24",
+      "Dotplots use source-bin anchored windows in the captured active assembly. Existing scores move with edits; changed joins are not silently recomputed.",
+      "Creating a separate overlay version",
+      "Sketched 155/155 source-bin windows at 10000 bp",
+      "ModDotPlot block executor: workers=1, blocks=1, blockSize=256",
+      "Compared 155/155 rows",
+      "Finished ModDotPlot in 0.089 s: /tmp/hict-borrelia-publication-10-archive/data/processed/sequence-analysis/019f1091-2718-4047-bc0c-36038a668d43/moddotplot.hict.hdf5.pending",
+      "Saved overlay: processed/sequence-analysis/019f1091-2718-4047-bc0c-36038a668d43/moddotplot.hict.hdf5. Generation is complete; display attachment is a separate step."
+    ]
+  },
+  "secondary": {
+    "attached": true,
+    "filename": "processed/sequence-analysis/019f1091-2718-4047-bc0c-36038a668d43/moddotplot.hict.hdf5",
+    "assemblySource": "PRIMARY",
+    "compatibility": {
+      "sameResolutions": false,
+      "sameMatrixSizes": true,
+      "sharedReference": true,
+      "exactMatch": false,
+      "primaryMaxBins": 1461,
+      "secondaryMaxBins": 155,
+      "primaryResolutions": [
+        10000000,
+        5000000,
+        2000000,
+        1000000,
+        500000,
+        200000,
+        100000,
+        50000,
+        20000,
+        10000,
+        5000,
+        2000,
+        1000
+      ],
+      "secondaryResolutions": [
+        10000
+      ],
+      "primaryPixelResolutions": [
+        10000000.0,
+        5000000.0,
+        2000000.0,
+        1000000.0,
+        500000.0,
+        200000.0,
+        100000.0,
+        50000.0,
+        20000.0,
+        10000.0,
+        5000.0,
+        2000.0,
+        1000.0
+      ],
+      "secondaryPixelResolutions": [
+        10000.0
+      ],
+      "primaryBinsByResolution": [
+        0,
+        0,
+        0,
+        0,
+        2,
+        5,
+        10,
+        21,
+        79,
+        155,
+        301,
+        738,
+        1461
+      ],
+      "secondaryBinsByResolution": [
+        155
+      ],
+      "mismatchedResolutionOrders": []
+    },
+    "sequenceAnalysis": {
+      "kind": "moddotplot",
+      "scoreUnit": "identity_percent",
+      "scoreScale": 10000.0,
+      "minimumIdentity": 80.0
+    },
+    "capabilities": {
+      "schemaVersion": 1,
+      "units": "IDENTITY_PERCENT",
+      "scoreScale": 10000.0,
+      "contactDataState": "ABSENT",
+      "resolutions": [
+        10000
+      ],
+      "importedWeightResolutions": [],
+      "weightMetadataComplete": true,
+      "contactNormalization": {
+        "state": "UNAVAILABLE",
+        "reasonCode": "NOT_CONTACT_DATA",
+        "reason": "Contact normalization and resolution scaling do not apply to this source."
+      },
+      "importedWeights": {
+        "state": "UNAVAILABLE",
+        "reasonCode": "NOT_CONTACT_DATA",
+        "reason": "Imported contact balancing weights do not apply to this source."
+      },
+      "sequenceScaleTiles": true,
+      "sequenceScaleTracks": true
+    }
+  },
+  "afterCut": [
+    450123,
+    460601,
+    26498,
+    30750,
+    30223,
+    30299,
+    29838,
+    30800,
+    30885,
+    30651,
+    16821,
+    18777,
+    24177,
+    28155,
+    29766,
+    28601,
+    27323,
+    36849,
+    38829,
+    53657
+  ],
+  "derivedTrack": {
+    "filename": "GC-fraction-10kb.bw",
+    "sha256": "aaf87ca795940669e63033844d9404635c456cfa7f984ada358d92bf0f3e333d",
+    "windowBp": 10000,
+    "definition": "GC / ACGT among called bases, exact final partial window",
+    "converterSha256": "53656f9b89ac7052f86c4b054c7e4914ef3e5d972bd4deb0c2b28e5385d986ed"
+  },
+  "snapshots": [
+    {
+      "name": "A-original",
+      "id": "figure-mwkliyc2-1qs1eoyfnvz4c"
+    },
+    {
+      "name": "B-exact-cut",
+      "id": "figure-mwklj0td-1cjmu8d10zeec8"
+    },
+    {
+      "name": "C-scaffolded",
+      "id": "figure-mwklj38f-1ucoaje129dogi"
+    }
+  ],
+  "browserErrors": []
+}

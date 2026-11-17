@@ -1,0 +1,34 @@
+{
+  "status": "passed",
+  "capturedBuild": {
+    "webuiVersion": "2.0.0",
+    "webuiCommit": "d27c8ac43ca6045d1195e38b97e9df369330a5f6",
+    "backend": {
+      "webuiVersion": "2.0.0",
+      "version": "2.0.59-0878f4d-webui_d27c8ac"
+    }
+  },
+  "jarSha256": "21275d9ab1a5298665af230909d92d9d768298b000fb88a97df9e832aef51648",
+  "minimumVectorTextPoints": 7.05126953125,
+  "pdfProvenanceMatchesSvg": true,
+  "sourceContactImagesRetained": 3,
+  "visualInspection": {
+    "reviewed": true,
+    "surfaces": [
+      "standalone rendered SVG",
+      "browser physical-size SVG preview",
+      "three source panels"
+    ],
+    "checks": [
+      "full track titles",
+      "both numerical scale maxima",
+      "distinct cut and scaffold boundaries",
+      "readable rendering key",
+      "white background"
+    ]
+  },
+  "limits": [
+    "Journal artwork-resolution and TIFF derivative check remains open",
+    "Not portable package or cross-platform qualification"
+  ]
+}

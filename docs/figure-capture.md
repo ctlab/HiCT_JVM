@@ -150,10 +150,14 @@ entry if necessary; data is not silently downsampled. The server assembly/track
 snapshot limits are independent and unchanged. Reference matrices/FASTA are not
 embedded in the session file.
 
-P9 still requires the final publication composition/preset and real example
-artifacts at their intended print size, alongside wider source/performance and
-release qualification. The stored comparison journey now covers cut/scaffold
-states and real generated ModDotPlot plus tracks before and after Reverse.
+A real-data figure candidate is retained in
+[publication/borrelia-editing](publication/borrelia-editing/README.md): map,
+generated ModDotPlot and GC/feature tracks before cutting, after an exact cut and
+after scaffolding. Its 178-mm composition has measured minimum 7.05-pt vector
+text, source-data checks, caption and alt text. Final journal artwork-resolution/
+TIFF checks and wider source/performance/release qualification remain open. The
+stored comparison journey also covers real ModDotPlot/tracks before and after
+Reverse.
 
 
 ## Print size
@@ -174,6 +178,13 @@ contacts or adds image detail. Source snapshots retain their original capture,
 independently of the selected output size. Captured size returns the original
 PNG bytes. SVG/PDF text remains vector; embedded matrix imagery retains its
 captured resolution. Inspect labels and signals at the intended print size.
+
+The dialog reports the smallest vector text at the chosen print width, including
+inherited fonts, rotated labels and nested viewport/group transforms. This does
+not measure text embedded in images. For a compact whole-map panel, turn off
+**Expand small maps to fit window**, then **Refresh capture**. The default stays
+expanded. Compact captures use the native grid; provenance records the sizing
+choice. Smaller figures can retain readable text when composing several panels.
 
 The journal's colour/halftone guidance is 350 dpi and its line-art guidance is
 1200 dpi; the reported effective raster DPI describes the existing capture and

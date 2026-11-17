@@ -1,0 +1,19 @@
+Title:           HiCT Borrelia editing
+Subject:         GSM7056007 public-data editing demonstration
+Creator:         HiCT publication figure composition
+Producer:        cairo 1.18.0 (https://cairographics.org)
+CreationDate:    Tue Nov 17 15:24:34 2026 +04
+Custom Metadata: no
+Metadata Stream: yes
+Tagged:          no
+UserProperties:  no
+Suspects:        no
+Form:            none
+JavaScript:      no
+Pages:           1
+Encrypted:       no
+Page size:       504.567 x 507.701 pts
+Page rot:        0
+File size:       271806 bytes
+Optimized:       no
+PDF version:     1.3

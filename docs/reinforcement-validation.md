@@ -5865,3 +5865,72 @@ their package qualification. A diagnostic 178-mm composition has 7.05-pt scale
 text and preserved embedded image bytes, but it still needs a newly stamped
 capture/archive and the final print/legend/alt-text checks. Protected plans and
 owner files remain unchanged; no push, merge or tag is performed.
+
+### Retained Borrelia figure candidate and outer SVG transforms
+
+`/tmp/hict-publication-integrated-build-03.log` finishes zero for
+`2.0.59-0878f4d-webui_d27c8ac`, 641 JVM tests, zero failures/errors, seven optional
+skips. JAR SHA-256 is
+`21275d9ab1a5298665af230909d92d9d768298b000fb88a97df9e832aef51648`.
+`/tmp/hict-borrelia-publication-10-archive/results.json` passes all three actual
+UI captures against those committed sources. It retains complete track title/
+scale bounds, both maxima, job/settings fingerprints, unmodified native/FASTA
+hashes, exact cut-crossing sequence and matching pipelines. Duplicate map-name
+captions are hidden through the existing layer control; ruler bands and borders
+remain visible. The resulting figure candidate is archived under
+`docs/publication/borrelia-editing/`, with original panels, caption/alt text,
+source/derived-data checks, composition and checksums. No manuscript is edited.
+
+`/tmp/hict-borrelia-composition-07-archive` finishes zero. A 178×179.106-mm
+three-panel/rendering-key layout preserves panel geometry and embedded image
+attributes/bytes. The measured minimum vector text is 7.05127 pt. PDF fonts are
+embedded DejaVu faces from the actual bundled TTFs, not renderer fallbacks; page
+size and extracted text are checked. Matching XMP and attached JSON provenance
+are added with pypdf while preserving page drawing commands. SVG/PDF and final
+browser/standalone previews were visually inspected. Native image sampling is
+not falsely described as additional genomic detail; final journal artwork-
+resolution/TIFF checks remain open.
+
+An independent numerical check uses the pinned public Cooler cache after a
+fresh direct FTP-host HTTPS request times out without receiving any data. All
+24,025 raw 10-kb cells match exactly (155×155; upper-triangle sum 14,700,881).
+Native storage/query weights are identical to each other; the persisted source
+coefficients differ from the pinned Cooler by <=1.005e-14 absolute and
+<=2.995e-13 relative. An initial bitwise-equality assertion correctly fails and
+is not reported as an exact weight match. The archive explicitly records the
+declared 1e-12 coefficient comparison, exact eleven-bin exclusion mask and exact
+RGB equality for every cell at the actual plotted palette. No coefficients or
+source files are changed. Independent Bio.SeqIO/pyBigWig reads compare all 155
+derived GC windows against the original FASTA: maximum absolute error 1.610e-8.
+The archived oracles contain values, tolerances and source hashes.
+
+Composition diagnostics are retained: 01 exposes missing font aliases (Noto
+fallback), 02/03 use the bundled DejaVu aliases but predate final track-scale
+fixes. Attempt 04's getCTM-only physical-text check omits the outer physical-size
+conversion and fails. Attempt 05 uses screen transforms and passes that check,
+then fails Playwright's full-page screenshot of a standalone SVG document.
+Attempt 06 measures the same SVG in a normal HTML host and passes. Attempt 07
+also embeds and verifies standalone PDF provenance. No failed attempt is counted
+as final qualification.
+
+This investigation adds an independent nested-viewport/outer-group regression
+to the application text-size checker. Red run
+`/tmp/hict-print-text-outer-transform-red-01` shows 6 px instead of the correct
+12 px. The checker now normalizes full screen matrices to the root capture,
+including transforms outside the closest nested SVG. Green run
+`/tmp/hict-print-text-outer-transform-green-01` passes all seven cases plus the
+root-font assertion. `/tmp/hict-publication-print-regression-01/results.json`
+passes all five real-browser 86/178-mm, three-format, unchanged-pixel/provenance,
+narrow-control and portrait-snapshot checks. Full WebUI build
+`/tmp/hict-figure-outer-transform-web-01.log` and focused eslint
+`/tmp/hict-print-outer-transform-lint-01.log` exit zero; only the existing
+directive-schema diagnostics remain. No Java application change is made.
+
+The new readout fix is newer than the archived version-59 figure and does not
+change that figure's drawing. Its development checks do not extend candidate-55
+portable qualification. Overall release, wider formats, native GUI/platforms,
+remaining P8 recovery scope and final artwork-resolution checks stay open.
+The archived font license is copied byte-for-byte from the bundled source and
+retains its upstream trailing whitespace. Staged whitespace checks pass for
+project code/documentation with that verbatim license excluded; its checksum
+and source identity are verified separately.

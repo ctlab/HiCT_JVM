@@ -1,1 +1,1 @@
-2.0.59-0878f4d-webui_d27c8ac
+2.0.60-cbcbdf6-webui_3bf3b68

@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "replicons": 19,
+  "windows": 155,
+  "maxAbsoluteError": 1.6097844113271975e-08,
+  "reader": "pyBigWig 0.3.25",
+  "referenceReader": "Bio.SeqIO",
+  "fastaSha256": "ca26a9bd04a3d5cbdd9e80c67a2b2a8c5c10f7c0fc98fad4163daf4716c85b94",
+  "bigWigSha256": "aaf87ca795940669e63033844d9404635c456cfa7f984ada358d92bf0f3e333d"
+}

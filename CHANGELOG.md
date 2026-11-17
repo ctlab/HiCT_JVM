@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Provide a reproducible public-data map/ModDotPlot/track editing figure with source checks, caption, alt text and retained provenance, and measure printed text correctly through nested SVG transforms.
+
 - Keep 1D-track names and scale values inside both axis panels and exported figures, with tick marks at their actual signal positions.
 
 - Keep small whole-map figures compact at their native contact grid, making readable multi-panel cut/scaffold comparisons possible while retaining the existing expanded default.

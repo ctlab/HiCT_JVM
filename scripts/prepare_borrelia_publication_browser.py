@@ -29,6 +29,7 @@ def main():
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--resolution", type=int, choices=[10000, 20000], default=10000)
     parser.add_argument("--bedgraph-to-bigwig", required=True, help="UCSC bedGraphToBigWig executable used only to prepare the derived GC track")
+    parser.add_argument("--hide-map-names", action="store_true", help="Keep names in the ruler bands, hide duplicate captions inside the map")
     args = parser.parse_args()
     out = Path(args.output).absolute()
     assert out == out.resolve() and out.is_relative_to("/tmp")
@@ -73,7 +74,7 @@ def main():
 
     web = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(Path(args.webui).resolve())))
     threading.Thread(target=web.serve_forever, daemon=True).start()
-    receipt = {"status": "running", "sources": hashes, "resolution": args.resolution, "cutOffsetBp": cut, "captures": []}
+    receipt = {"status": "running", "sources": hashes, "resolution": args.resolution, "cutOffsetBp": cut, "hideMapNames": args.hide_map_names, "jarSha256": sha(Path(args.jar).resolve()), "preparationScriptSha256": sha(Path(__file__).resolve()), "captures": []}
     try:
         with HictTestServer(args.jar, data, out / "server.log") as api, sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
@@ -166,6 +167,8 @@ def main():
                     borders.click()
                 for name in ("Contig names", "Scaffold names"):
                     page.get_by_label(name + " caption side", exact=True).select_option(label="Inside")
+                    if args.hide_map_names:
+                        page.locator(".layer-record").filter(has=page.get_by_label(name + " caption side", exact=True)).locator(".visibility-btn").click()
                 for name in ("Horizontal tracks panel height", "Vertical tracks panel width"):
                     separator = page.get_by_role("separator", name=name, exact=True)
                     separator.focus()

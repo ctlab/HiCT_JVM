@@ -29,7 +29,7 @@ describe earlier releases; they must not override the decisions below.
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled submission/lifecycle checks and live known-RID recovery pass, including ten public-reference hits, map-independent delivery and exports; automatic recovery without a known RID and platform/package qualification pending |
-| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions and portable named cut/scaffold/ModDotPlot comparisons implemented and verified; 86/178 mm physical-size presets implemented; final real-example publication artifacts and release qualification pending |
+| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, three-format captures, Expected/O/E fitting contexts, portable snapshots, 86/178 mm sizes and compact native-grid captures verified; a real public-data cut/scaffold figure candidate, caption, alt text and numerical provenance are archived at 178 mm with 7.05-pt minimum vector text; final journal artwork-resolution/TIFF and release qualification pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
 P10 is independent and is being completed before the coordinated P1 changes.
@@ -1275,3 +1275,28 @@ track/workspace regressions pass, as do the full WebUI build and focused lint.
 The preceding integrated version-58 build passes 641 JVM tests, zero failures/
 errors, seven optional skips. A newly stamped final figure archive remains next;
 no portable qualification is inferred from these development checks.
+
+## Retained public-data figure and transformed text measurement
+
+`docs/publication/borrelia-editing/` now retains the real-data composition,
+three original SVG panels, matching SVG/PDF provenance, embedded fonts, GC/marker
+inputs, caption/alt text and reproduction commands. Fresh version-59 captures
+pass source/sequence/pipeline and both-axis text-bound checks. Native counts
+match all 24,025 cells of the pinned public Cooler exactly. All 155 GC windows
+match independent FASTA/BigWig reads. Eleven excluded-weight bins match the
+source mask; persisted coefficients differ only at <=2.995e-13 relative, explicitly
+recorded rather than called bitwise equal. Every displayed palette cell matches.
+
+The 178×179.106-mm composition has measured minimum 7.051-pt vector text.
+Original contact-image bytes are retained; PDF XMP and an attached JSON record
+match the SVG's scientific provenance. The figure and both scale maxima were
+visually inspected. The manuscript is unchanged. This closes the real-data
+composition/readability artifact prerequisite, while final journal artwork-
+resolution/TIFF and overall release/native/platform gates remain open.
+
+A new independent nested-SVG test also exposes a print-readout error: getCTM
+stops at the nearest viewport and omits an outer group's scale. Measurement now
+uses screen matrices normalized to the root capture. Seven browser transform
+cases (plus root-font preservation), all five physical-export checks, full WebUI
+build and focused lint pass. The archived images remain from committed
+`2.0.59-0878f4d-webui_d27c8ac`; this newer readout fix does not change their drawing.
