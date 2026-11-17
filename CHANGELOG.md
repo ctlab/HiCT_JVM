@@ -4,6 +4,8 @@
 
 ### Navigation and visualization
 
+- Reuse unchanged contig and scaffold borders during navigation, retaining exact geometry and independently fitted labels while avoiding repeated spatial-index rebuilds.
+
 - Avoid measuring ruler names in bands narrower than their required padding, preserving visible labels while reducing work on dense assemblies.
 
 - Finish map loading reliably after obsolete tiles leave the queue, keeping histogram and export completion current without repainting during active transfers.

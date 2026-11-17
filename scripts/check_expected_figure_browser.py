@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import threading
 import xml.etree.ElementTree as ET
+from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import expect, sync_playwright
 from sequence_browser_harness import BrowserCheck, HictTestServer
 
@@ -506,8 +507,28 @@ def main():
                         (data / "mixed-primary.hict.hdf5").read_bytes()
                     ).hexdigest()
                 )
+                failed_capture_id = parse_qs(urlparse(failed_tiles[0]).query)[
+                    "renderCapture"
+                ][0]
+                # The injected failure releases its lease while other requests can
+                # already be in flight on the server. Only that released context
+                # may return an expired-lease tile response during cleanup.
+                cleanup_tile_conflicts = [
+                    failure
+                    for failure in failures
+                    if failure["status"] == 409
+                    and urlparse(failure["url"]).path == "/get_tile"
+                    and parse_qs(urlparse(failure["url"]).query).get("renderCapture")
+                    == [failed_capture_id]
+                    and failed_capture_id in released
+                    and json.loads(failure["body"])
+                    == {
+                        "error": "The figure rendering context expired. Capture the figure again."
+                    }
+                ]
                 assert all(
-                    (
+                    failure in cleanup_tile_conflicts
+                    or (
                         failure["status"] == 409
                         and "/visualization/captures/" in failure["url"]
                         and failure["url"].endswith("/validate")
@@ -530,6 +551,7 @@ def main():
                             "errors": errors,
                             "sourceSha256": original,
                             "profileRequests": requests,
+                            "controlledFailureCleanupConflicts": cleanup_tile_conflicts,
                         },
                         indent=2,
                     )

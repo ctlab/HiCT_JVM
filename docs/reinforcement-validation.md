@@ -5440,3 +5440,76 @@ associated vector-source events; further profiling/optimization and complete
 packaged qualification including the full soak remain required. No backend
 behavior changes; the previous integrated JVM suite remains 625 tests, zero
 failures/errors, seven skips. Protected plans and owner changes are untouched.
+
+
+### Reuse unchanged boundary features during navigation
+
+The optimized dense-map profile still showed roughly 1.8 seconds in vector
+viewport rebuilding and 0.6 seconds in source refresh. Contig/scaffold geometry
+does not change within one display resolution, but every label-layout bucket
+was creating new OpenLayers features and clearing their complete spatial index.
+
+Border tracks now retain at most 8,192 features for one prefix-array/scale/style/
+border-shape context. Descriptor identity, bounds and name are also checked.
+Assembly snapshot/grid/style changes invalidate reuse; exports always build
+independent features. The cache context and storage retain raw identities through
+Vue. Labels continue to use the current viewport and collision rules. Source
+refresh removes/adds only changed features, with fast clear retained for wholesale
+replacement. No borders are faded or omitted.
+
+Node regressions exercise reactive identity, descriptor/prefix/scale/bounds/name/
+style/shape invalidation, export isolation and bounded eviction. Real OpenLayers
+source tests verify retained border listeners/index membership, replacement of
+labels, scoped hiding and wholesale replacement. Full build:web, changed-file
+Prettier pass; eslint without --fix exits zero with nine existing warnings and
+configuration-schema warnings, with no new warning introduced. Initial test-fixture errors (an omitted
+currentViewState and destructuring the fixture wrapper) are corrected; failed
+web-02 is excluded. web-03 passes; web-04 includes the final raw context guard.
+
+Unprofiled `/tmp/hict-large-gate-02/browser` is terminal passed with strict
+limits enabled on the complete 7,790-contig AGWG map: fresh/repeat frame p95
+16.8/16.8 ms and input acknowledgement p95 39.525/38.7 ms. Fresh includes one
+53-ms long task; repeat none. No limit was relaxed. This is a development-pair
+measurement using packaged JVM 51 and current WebUI assets, not an integrated
+release qualification. The assets digest (sorted relative paths/NUL/bytes,
+excluding electron) is
+`2a66876b06487306a6b4ccced44a73a08031dd596273bb365529338599b50b75`.
+
+`/tmp/hict-border-reuse-browser-03` passes six cases with no page, console or HTTP
+errors: three repeated rebuilds retain identical geometry and map pixels with
+zero border add/remove events, then actual sidebar controls cycle all three
+border styles and replace stale contig features. Screenshots of full and
+partial border styles were inspected. AGP identity and native input SHA-256
+remain unchanged (`e1a1aba982bd4f8659f89182704572fceb2c83dd1190800a8b9b34266bea87c4`).
+Browser-01 used an obsolete displayed-name locator; browser-02 assumed the initial
+border shape was zero. These driver failures are excluded; browser-03 resolves
+the displayed control and derives the actual initial shape.
+
+Broader structural/figure/sequence qualification is recorded after completion
+below. functional-02 ended with exit 143 before final results; only its separately
+terminal successful borders stage is usable. Its owned leftover server was
+stopped and functional-03 runs with an isolated driver and explicit exit receipt.
+The completed candidate-51 packaging staging directory alone was removed to
+recover 2.08 GB; artifacts, extracted app and evidence remain retained.
+
+Final build:web run web-05 passes after removing two newly introduced non-null
+assertions (explicit oldest-key and missing-prefix checks). Final asset SHA-256:
+`95af3ff19d2dcc9cb46db0d3a7ddfe6f5718d8f2ee8bd3b12d603df6fa0c147e`. functional-03 passes all seven real structural-edit
+and exact Undo/Redo cases. Its Expected suite passes all seventeen scenario
+assertions but fails its terminal HTTP classifier on expired-lease responses
+from tiles already in flight when the deliberately failed capture releases.
+The classifier now permits only expired-context tile 409s matching that one
+injected-failure context and a confirmed successful release. Unrelated tile
+409s, other contexts and other errors still fail. This changes the adversarial
+test classification, not capture semantics or release limits.
+
+functional-04 runs against final assets. Six pixel/actual-border-control,
+seventeen Expected/O/E, fourteen snapshot/session and ten frozen-figure cases
+pass with no unexpected errors. Sequence completion is recorded below.
+
+functional-04 completes with explicit exitCode=0 in
+`/tmp/hict-border-reuse-functional-04.exit.json`. Its sequence/ModDotPlot/track
+suite passes all nineteen cases, including exact partial-bin coordinates and
+real before/after Reverse composition. Together with structural-03 and borders-04,
+73 functional cases pass. The strict large-map development gate is separate
+evidence; full integrated performance and the thirty-minute soak are still open.

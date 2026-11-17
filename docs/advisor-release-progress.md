@@ -1121,3 +1121,20 @@ The separate unprofiled large-map gate still fails at 33.3 ms frame p95;
 acknowledgement remains below 41 ms. Boundary-feature rebuilds are the next
 measured target. This is a verified optimization, not release qualification;
 the integrated matrix and soak remain open. See reinforcement-validation.md.
+
+
+Unchanged contig/scaffold border geometry now survives pan/zoom within a display
+resolution. The bounded cache invalidates on assembly/grid/style/name/bounds
+changes; viewport labels and independent exports retain their rules. Vector
+sources update changed features while retaining unchanged spatial-index entries.
+No borders are faded or omitted.
+
+The complete 7,790-contig development gate now passes: fresh/repeat frame p95
+16.8 ms, acknowledgement below 40 ms, unchanged 33/100-ms limits. Six real border
+control/pixel checks and 67 structural/Expected/snapshot/frozen/sequence checks
+pass. Full WebUI build and focused lint/type/numerical checks pass (existing lint
+warnings recorded). Candidate-53 integrated package qualification is next; no
+full-soak or release-readiness claim follows from development-pair checks.
+Weighted-source readability, late remote-result delivery, final publication
+figures and wider native/platform/source-format gates remain open. Protected
+plans/owner changes are untouched; nothing pushed, merged or tagged.
