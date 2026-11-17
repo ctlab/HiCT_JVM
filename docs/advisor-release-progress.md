@@ -1443,3 +1443,14 @@ two optional skips, one native-baseline parity test and 25 workflow contracts.
 Remote Windows/macOS validation of the next exact commits remains required.
 See `ci-release-validation.md`; keep checking branch CI before commits/pushes and
 monitor replacement runs, preserving the existing publication gate.
+
+
+## Published lifecycle fixes and platform CI follow-up
+
+WebUI `3804e455` is green on all four GitHub platforms. JVM `2f923de3` passes
+Windows and Linux in push/PR CI; macOS ARM identifies an error in the new alias
+fixture's assumption that TempDir is canonical. Its canonical branch now calls
+`toRealPath()` explicitly, retaining both lookup cases and the original
+cross-platform regression. Focused cache/provenance tests pass locally; the
+replacement macOS/package gates remain required. The integrated version-64 JAR
+build passes with the committed WebUI and the exact GUI-qualified Tauri binary.

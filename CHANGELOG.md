@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Exercise true canonical paths in the macOS example-provenance regression, including when the temporary directory itself uses an alias.
+
 - Preserve example conversion provenance across canonical/aliased data-root paths and release Windows BAM indexes when tracks close.
 
 - Cancel native exports on page replacement and Unix launcher Stop, prevent duplicate save dialogs, and apply the same guarded writer to legacy clients.

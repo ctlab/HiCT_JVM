@@ -6243,3 +6243,23 @@ Windows BAM tracks use nonmapped index I/O; actual Windows CI confirmation is
 pending. Full local validation passes 642 JVM tests with zero failures/errors,
 two optional skips, native-baseline parity and all 25 workflow contracts. No
 required regression was disabled and publication still requires passing gates.
+
+
+### macOS alias fixture follow-up after the authorized push
+
+- WebUI `3804e455`: four-platform CI successful, run 44138402420.
+- JVM `2f923de3`: Windows/Linux push and PR jobs successful; macOS ARM's
+  only failed test is the new alias fixture, line 122. The original provenance
+  regression passes. Full log retained in the connected audit and Actions
+  artifact 14353647264.
+- Correct the fixture's canonical-root branch with `root.toRealPath()` because
+  macOS TempDir can itself use `/var`. Both alias/canonical assertions remain.
+- `/tmp/hict-ci-macos-alias-fixture-01.log`: focused provenance/cache tests pass.
+- `/tmp/hict-release-64-integrated-build-01.exit.json`: integrated build exit 0,
+  JVM tests/native parity passed; JAR SHA256
+  `e423901b8005742fbe569cf5f1fb7b24f54c19f515ea4f405c3235d37c1ad711`.
+- `/tmp/hict-tauri-sdk-01/compile-11.exit.json`: producer exit 0, 23 Rust tests;
+  production payload executable SHA256
+  `a73cfa59c532d89c29f8218caab52415b85ecb21827455cdd7b87b1cc2c7749c`,
+  identical to the native GUI-qualified development executable.
+- Portable publication and the fixture's replacement macOS jobs remain pending.

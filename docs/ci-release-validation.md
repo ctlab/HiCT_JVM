@@ -58,3 +58,21 @@ The next coordinated source increment is WebUI `3804e45` and JVM patch
 `2.0.64-2f49203-webui_3804e45`, with desktop lifecycle hardening and both
 cross-platform regression fixes. Local validation passed before commit/push.
 Remote run conclusions must be recorded against the resulting exact SHAs.
+
+## First pushed replacement and macOS fixture correction
+
+WebUI `3804e455` passes all four jobs in [WebUI CI](https://github.com/ctlab/HiCT_WebUI/actions/runs/44138402420).
+JVM `2f923de3e1e7ba66408a2b31889df419e9b11c29` passes Linux and Windows
+in both push/PR matrices, including the original conversion-provenance and BAM
+cleanup regressions. Its ARM macOS job fails only the newly added alias fixture:
+`@TempDir` itself uses `/var`, so its second conversion root was another alias,
+not the canonical root the test intended to exercise.
+
+The fixture now explicitly uses `root.toRealPath()` for that branch and reports
+the tested conversion-root spelling on failure. Both supplied-alias and canonical
+branches remain exercised; production lookup and cache validation are unchanged.
+The original all-platform test remains enabled. Focused provenance/cache tests
+pass locally in `/tmp/hict-ci-macos-alias-fixture-01.log`. A new macOS run must
+confirm the correction. The prior four active older-SHA JVM runs were cancelled
+after their replacements started, as authorized; receipt:
+`/tmp/hict-ci-superseded-cancellations-01.json`.

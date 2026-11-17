@@ -113,13 +113,15 @@ class ExampleSourceProvenanceTest {
     Files.createSymbolicLink(alias, root);
     var output = alias.resolve("examples/provenance-fixture/fixture.hict.hdf5");
     Files.writeString(output, "Converted output bytes");
-    for (var conversionRoot : java.util.List.of(alias, root)) {
+    // TempDir may itself use /var rather than /private/var on macOS.
+    // Exercise the supplied alias and the actual canonical root independently.
+    for (var conversionRoot : java.util.List.of(alias, root.toRealPath())) {
       var cache = new MatrixConversionCacheManager(conversionRoot, alias.resolve("processed"), new FileFingerprintService());
       cache.dropAllMetadata();
       cache.recordSuccessfulConversion(conversionRoot.resolve("examples/provenance-fixture/fixture.mcool"),
         conversionRoot.resolve("examples/provenance-fixture/fixture.hict.hdf5"), ConversionDirection.MCOOL_TO_HICT);
       var provenance = ExampleSourceProvenance.capture(alias, alias.resolve("processed"), output, new FileFingerprintService());
-      assertNotNull(provenance);
+      assertNotNull(provenance, () -> "Missing provenance for conversion root " + conversionRoot);
       assertEquals("CURRENT_CONVERSION_CACHE", provenance.getString("matrixAssociation"));
       assertEquals("examples/provenance-fixture/fixture.hict.hdf5", provenance.getString("matrixOpenedFilename"));
       assertDoesNotThrow(() -> ExampleSourceProvenance.validate(provenance, "examples/provenance-fixture/fixture.hict.hdf5"));
