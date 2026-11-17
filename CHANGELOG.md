@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Report the selected WebUI package version from JARs built with a remote checkout.
+
+- Cache the verified Linux toolchain for Autobuild JARs so warm builds can reuse BLAST and the other bundled commands.
+
+- Keep native CI cache keys stable across generated Python bytecode and reuse exact source-built Linux Conan dependencies.
+
+- Run source regression checks alongside portable packaging while retaining every publication gate.
+
 - Update native WebView dependencies and prevent an optimized Linux string-iterator crash with a verified upstream backport.
 
 - Verify real Firefox download-only exports, session restoration and unsaved-edit protection without a writable-picker shim.

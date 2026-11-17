@@ -68,7 +68,6 @@ val doOnChange = "${projectDir}/gradlew classes"
 
 val versionFile = file("${project.projectDir}/version.txt")
 val changelogFile = file("${project.projectDir}/CHANGELOG.md")
-val webUiPackageJson = file("${project.projectDir}/../HiCT_WebUI/package.json")
 
 val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
 val explicitWebUIRef = !webUIRefOverride.isNullOrBlank() && !webUIRefOverride.trim().equals("same-as-jvm", ignoreCase = true)
@@ -1207,6 +1206,9 @@ tasks.named("clean") {
 }
 
 tasks.named<ProcessResources>("processResources") {
+  from(webUIRepositoryDirectory.file("package.json")) {
+    rename { "webui-package.json" }
+  }
   inputs.file(versionFile)
   mustRunAfter("incrementPatchVersion")
   if (completeNativeBuildRequested) dependsOn(prepareBundledTools)
@@ -1347,13 +1349,6 @@ tasks.named<ProcessResources>("processResources") {
       Files.copy(
         changelogFile.toPath(),
         layout.buildDirectory.file("resources/main/CHANGELOG.md").get().asFile.toPath(),
-        StandardCopyOption.REPLACE_EXISTING
-      )
-    }
-    if (webUiPackageJson.exists()) {
-      Files.copy(
-        webUiPackageJson.toPath(),
-        layout.buildDirectory.file("resources/main/webui-package.json").get().asFile.toPath(),
         StandardCopyOption.REPLACE_EXISTING
       )
     }

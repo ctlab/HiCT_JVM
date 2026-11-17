@@ -332,10 +332,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64-${{ env.HICT_LINUX_ABI_MODE }}
-          key: hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git') }}
+          key: hictk-source-conan-v3-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-${{ steps.tool-sources.outputs.sources }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/ci/linux_container_build.sh') }}
           restore-keys: |
+            hictk-source-conan-v3-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-
             hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-
-            hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
 
       - name: Restore Linux container JDK cache
         id: cache-linux-container-jdk
@@ -349,7 +349,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+          key: hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
@@ -384,7 +384,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-linux-toolchains.outputs.cache-hit != 'true'
@@ -430,6 +430,10 @@ jobs:
 
       - name: Build hictk in Docker
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-linux-toolchain.outputs.hictk_ready != 'true' }}
+        env:
+          # Only this exact source-built ABI cache can reuse compiled packages.
+          # Prefix/legacy restores still rebuild from source, avoiding foreign ABI binaries.
+          HICTK_CONAN_BUILD_POLICY: ${{ steps.cache-hictk-conan.outputs.cache-hit == 'true' && 'missing' || '*' }}
         run: scripts/ci/linux_container_build.sh hictk
 
       - name: Build minimap2 in Docker
@@ -859,7 +863,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
@@ -892,7 +896,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/windows_x86_64
-          key: toolchain-v4-windows-x86_64-mm2plus-${{ env.MM2PLUS_REF }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1', 'scripts/toolchains/build_mm2plus_windows.ps1') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v4-windows-x86_64-mm2plus-${{ env.MM2PLUS_REF }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1', 'scripts/toolchains/build_mm2plus_windows.ps1') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-hictk.outputs.cache-hit != 'true'
@@ -1427,7 +1431,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
         shell: bash
@@ -1446,7 +1450,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_arm64
-          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
       - name: Discard non-exact compiled cache
         if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
         shell: bash
@@ -1705,7 +1709,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}
+          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
         shell: bash
@@ -1724,7 +1728,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_x86_64
-          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
       - name: Discard non-exact compiled cache
         if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
         shell: bash
@@ -1876,8 +1880,9 @@ jobs:
         if: ${{ failure() }}
         run: echo "::error::macOS Intel build failed; publication is blocked."
 
+  # Source/JNI checks are independent of package artifacts; start them immediately.
+  # Publication below continues to require both their success and all four packages.
   regression-gate:
-    needs: [linux-portable, windows-portable, macos-portable, macos-intel-portable]
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish_before_tests) }}
     uses: ./.github/workflows/java-regressions.yml
 

@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}
-          key: sequence-payload-v2-${{ matrix.component }}-${{ matrix.target.os }}-${{ matrix.target.platform }}-${{ steps.runner-image.outputs.identity }}-python-${{ steps.python.outputs.python-version }}-go-1.25.5-${{ hashFiles('.github/workflows/sequence-tools.yml', 'scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', 'tests/toolchains/**') }}
+          key: sequence-payload-v2-${{ matrix.component }}-${{ matrix.target.os }}-${{ matrix.target.platform }}-${{ steps.runner-image.outputs.identity }}-python-${{ steps.python.outputs.python-version }}-go-1.25.5-${{ hashFiles('.github/workflows/sequence-tools.yml', 'scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', 'tests/toolchains/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
       - name: Discard any non-exact cache restoration
         if: steps.sequence-cache.outputs.cache-hit != 'true'
         shell: bash

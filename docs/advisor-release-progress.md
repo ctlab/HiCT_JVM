@@ -1710,3 +1710,13 @@ its complete release workflows remain running at this checkpoint.
 The coordinated candidate is `2.0.73-9b07395-webui_bce3207`, WebUI
 `bce320752ef4d903caccbbea21d757d4cbc9cac8`. Source-matched native payload and platform release
 qualification remain required; earlier package receipts retain their exact scope.
+
+## Portable CI cache validation — 2026-11-18
+
+Local workflow checks passed for stable native cache keys, Linux Conan reuse and
+parallel JVM regression checks. Hosted warm-cache timing and publication remain
+pending. See [CI validation](ci-release-validation.md#portable-ci-cache-stability-and-critical-path--2026-11-18).
+
+Autobuild JAR caching is prepared locally. Hosted cache-hit timing remains pending.
+
+The next JAR build includes the selected WebUI checkout’s package version in the version endpoint.

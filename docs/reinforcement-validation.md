@@ -6561,3 +6561,13 @@ its complete release workflows remain running at this checkpoint.
 The coordinated candidate is `2.0.73-9b07395-webui_bce3207`, WebUI
 `bce320752ef4d903caccbbea21d757d4cbc9cac8`. Source-matched native payload and platform release
 qualification remain required; earlier package receipts retain their exact scope.
+
+## Portable CI cache validation — 2026-11-18
+
+Local workflow checks passed for stable native cache keys, Linux Conan reuse and
+parallel JVM regression checks. Hosted warm-cache timing and publication remain
+pending. See [CI validation](ci-release-validation.md#portable-ci-cache-stability-and-critical-path--2026-11-18).
+
+Autobuild retains Gradle build verification and checks every bundled command before caching the Linux payload.
+
+Gradle refreshed the packaged manifest after changing only its version. A local JAR built with the remote checkout manifest and HDF5 native archive returned WebUI version 2.0.0 from /version.

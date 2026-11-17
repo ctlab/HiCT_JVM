@@ -224,3 +224,48 @@ and unchanged native inputs. Source/audit receipts are retained in
 `build/release-evidence/native-dependency-update/`. The new native graph retains
 ten explicitly reviewed maintenance notices; see `native-dependency-audit.md`.
 New platform Actions and final native/package qualification remain required.
+
+
+## Portable CI cache stability and critical path — 2026-11-18
+
+Prepared against pushed JVM `9b07395e079ee3073ff779f73e12465ce0a6a454`
+in an isolated worktree. The current Portable Packages run
+[44187130439](https://github.com/ctlab/HiCT_JVM/actions/runs/44187130439)
+continues unchanged; these improvements have not yet run on GitHub.
+
+Python unit tests ran before restoring native payload caches, creating bytecode
+inside broad source globs. Its checkout-dependent bytes changed cache keys even
+for identical source. All nine affected source fingerprints now exclude
+`__pycache__`, `.pyc` and `.pyo`; actual sources, build scripts, runner identity
+and upstream revisions remain fingerprinted. GitHub's official `@actions/glob`
+0.7.0 reproduces the old key changing with identical source and proves the new
+key stays stable while real Python/native source changes still invalidate it.
+
+Linux previously forced Conan to rebuild every package after exact cache
+restoration. A new source-built cache namespace includes ABI mode, upstream
+source fingerprint and build/container scripts. Only an exact hit permits
+`--build=missing`; cold, prefix and legacy hits retain forced source builds.
+Existing component ABI validation, payload checksums and fresh tool smoke tests
+remain required. Conan documents the distinction between these policies at
+https://docs.conan.io/2/reference/commands/install.html#build-modes .
+
+The ordinary source/JNI regression matrix now starts alongside packaging. It
+consumes no package artifacts. Publication still requires all four packages and
+the regression matrix to succeed; early publication remains disabled by default.
+This removes a serial stage but does not establish a measured delivery-time
+promise. The first run may still build cold caches; compare cache-hit receipts
+and end-to-end time on subsequent unchanged-toolchain runs.
+
+Local evidence under `build/release-evidence/portable-publication-priority/`:
+`cache-fingerprint-repro.json`, `cache-contracts-green-02.log` (28 passing
+contracts, no skips), and `cache-python-toolchains.log`. Remote validation and
+warm-cache timing remain pending. These receipts are in the main JVM checkout,
+not the isolated CI worktree.
+
+The read-only cache inventory reports 77 entries totaling 10,723,702,747 bytes
+(about 9.99 GiB), including 38 sequence payload entries using 3.889 GiB.
+Generated-key churn therefore also creates storage pressure. No remote caches
+were deleted, and PR checks continue to use the same build/verification path.
+Inventory receipt: `cache-inventory.json` in the main evidence directory.
+
+Autobuild logs show a separate BLAST compilation during the full Gradle build. The workflow now restores the complete Linux toolchain by exact runner, upstream revision and source fingerprint. Gradle verifies the restored seal and file checksums. The workflow checks upstream revisions again after building and saves verified payloads on branch runs.
