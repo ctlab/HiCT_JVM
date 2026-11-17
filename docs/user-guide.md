@@ -144,6 +144,10 @@ See [the method and limitations](repeat-measurement.md).
 
 Tools offers sequence search, alignment dotplots and ModDotPlot identity maps.
 Exact and substitution searches use SeqKit. BLAST uses the bundled BLAST+ tools.
+**Tools → Search NCBI databases…** offers an explicit remote search without a
+linked FASTA or contact map. It requires consent to upload the pasted queries and
+keeps external subject coordinates in a separate report. See
+[remote BLAST search and limits](remote-blast.md).
 The job panel keeps progress, cancellation, errors and result actions available
 when an analysis dialog is closed. Results retain their originating reference.
 Stopping HiCT cancels work and native children. A later launch starts with fresh

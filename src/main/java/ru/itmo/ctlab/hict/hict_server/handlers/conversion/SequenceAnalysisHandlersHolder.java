@@ -30,16 +30,26 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   private static final int MAX_ALIGNMENT_RECORDS = 256;
   private final ThreadPoolExecutor workers = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
     new ArrayBlockingQueue<>(8), runnable -> { var t = new Thread(runnable, "hict-sequence-analysis"); t.setDaemon(true); return t; });
+  private final ThreadPoolExecutor remoteWorkers = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
+    new ArrayBlockingQueue<>(2), runnable -> { var t = new Thread(runnable, "hict-remote-blast"); t.setDaemon(true); return t; });
 
   public SequenceAnalysisHandlersHolder(Vertx vertx) { this.vertx = vertx; }
 
   public List<BackgroundJob> backgroundJobs() {
-    return jobs.values().stream().map(job -> new BackgroundJob(
+    return jobs.values().stream().map(job -> {
+      if (job.kind.equals("remote_blast")) return new BackgroundJob(job.id, job.kind, job.state,
+        job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
+        job.state.equals("running") ? "Waiting for NCBI results. Cancel stops HiCT waiting; a submitted search may continue at NCBI." : job.state,
+        job.error, job.state.equals("finished") && job.output != null
+          ? List.of(new BackgroundJob.Output(job.id, "open_blast_results", null)) : List.of(),
+        new BackgroundJob.Details("NCBI BLAST · " + job.request.getString("remoteDatabase"), null, null, null));
+      return new BackgroundJob(
       job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
       job.repeatPeriod == null ? job.state : repeatSummary(job), job.error, job.output == null ? List.of() : List.of(
         new BackgroundJob.Output(job.output,
           job.kind.equals("search") ? "open_tracks"
-            : job.kind.equals("moddotplot") ? "attach_identity" : "attach_dotplot", null, null, job.mapFilename, job.kind.equals("search") ? null : resultDisplayMode(job.request))))).toList();
+            : job.kind.equals("moddotplot") ? "attach_identity" : "attach_dotplot", null, null, job.mapFilename, job.kind.equals("search") ? null : resultDisplayMode(job.request))));
+    }).toList();
   }
 
   static String resultDisplayMode(JsonObject request) {
@@ -147,6 +157,25 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     router.post("/sequence/jobs/list").handler(ctx -> ctx.response().putHeader("content-type", "application/json")
       .end(new JsonArray(jobs.values().stream().sorted(Comparator.comparingLong(j -> j.created))
         .map(Job::statusJson).toList()).encode()));
+    router.post("/sequence/remote_blast/result").handler(ctx -> {
+      var request = ctx.body().asJsonObject();
+      var id = request == null ? null : request.getValue("jobId");
+      var format = request == null ? "JSON" : request.getValue("format", "JSON");
+      if (!(id instanceof String) || !(format instanceof String fmt) || !Set.of("JSON", "TSV").contains(fmt)) {
+        ctx.fail(new HttpException(400, "jobId and a JSON or TSV result format are required")); return;
+      }
+      var job = jobs.get(id);
+      if (job == null || !job.kind.equals("remote_blast")) { ctx.fail(new HttpException(404, "Remote BLAST job not found")); return; }
+      if (!job.state.equals("finished") || job.output == null) { ctx.fail(new HttpException(409, "Remote BLAST results are not ready")); return; }
+      vertx.executeBlocking(() -> {
+        var path = job.directory.resolve(fmt.equals("TSV") ? "remote-blast.tsv" : "remote-blast.json");
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.size(path) > RemoteBlastRunner.MAX_OUTPUT_BYTES * 2)
+          throw new IOException("Remote BLAST result is unavailable or too large");
+        return Files.readString(path);
+      }, false).onSuccess(text -> ctx.response().putHeader("content-type", fmt.equals("TSV")
+          ? "text/tab-separated-values; charset=utf-8" : "application/json").end(text))
+        .onFailure(ctx::fail);
+    });
     router.post("/sequence/jobs/:jobId/stop").handler(ctx -> {
       var job = jobs.get(ctx.pathParam("jobId"));
       if (job == null) { ctx.fail(new HttpException(404, "Sequence analysis job not found")); return; }
@@ -371,8 +400,13 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     List<SequenceSearchQueries.Query> queries;
     SequenceSearchRunner.Options options;
     try {
-      queries = SequenceSearchQueries.parse(request.getString("queries"));
-      String mode = request.getString("mode");
+      if (!(request.getValue("queries") instanceof String input) || !(request.getValue("mode") instanceof String mode)
+        || !(request.getValue("scope") instanceof String) || !(request.getValue("bothStrands") instanceof Boolean))
+        throw new IllegalArgumentException("Choose valid sequence text, scope, strands and matching mode");
+      queries = SequenceSearchQueries.parse(input);
+      var target = request.getValue("searchTarget", "LOCAL_ASSEMBLY");
+      if ("NCBI_REMOTE".equals(target)) return submitRemoteSearch(request, queries);
+      if (!"LOCAL_ASSEMBLY".equals(target)) throw new IllegalArgumentException("Choose Local assembly or NCBI remote search explicitly");
       if ("blast".equals(mode)) blastOptions(request);
       if (!List.of("exact", "substitutions", "blast").contains(mode)) throw new IllegalArgumentException("Choose exact, substitutions or BLAST search");
       int mismatches = !mode.equals("substitutions") ? 0 : request.getInteger("mismatches", 1);
@@ -429,6 +463,86 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       throw new HttpException(429, "The sequence analysis queue is full; wait for a job to finish");
     }
     return job.statusJson();
+  }
+
+  private JsonObject submitRemoteSearch(JsonObject request, List<SequenceSearchQueries.Query> queries) throws Exception {
+    final RemoteBlastOptions options;
+    try { options = RemoteBlastOptions.fromJson(request, queries); }
+    catch (RuntimeException invalid) { throw new HttpException(400, invalid.getMessage()); }
+    var shared = vertx.sharedData().getLocalMap("hict_server");
+    var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    var executable = SequenceToolAvailability.require("blastn");
+    var outputRoot = data.resolve("processed/sequence-analysis");
+    Files.createDirectories(outputRoot);
+    if (!outputRoot.toRealPath().startsWith(data)) throw new HttpException(400, "Sequence output directory must remain inside DATA_DIR");
+    var id = UUID.randomUUID().toString();
+    var directory = Files.createDirectory(outputRoot.resolve(id));
+    var settings = request.copy().put("searchTarget", "NCBI_REMOTE").put("remoteDatabase", options.database())
+      .put("requestedThreads", null).put("effectiveThreads", null).put("threadMode", "remote")
+      .put("queryBases", queries.stream().mapToLong(q -> q.sequence().length()).sum());
+    var job = new Job(id, directory, data, new AssemblySequenceSnapshot(List.of()), settings, "", "remote_blast");
+    jobs.put(id, job);
+    final Runnable work = () -> runRemoteSearch(job, executable, queries, options);
+    job.removeQueuedWork = () -> remoteWorkers.remove(work);
+    try { remoteWorkers.execute(work); }
+    catch (RejectedExecutionException busy) {
+      jobs.remove(id);
+      Files.deleteIfExists(directory);
+      throw new HttpException(429, "The remote BLAST queue is full. Wait for a remote job to finish.");
+    }
+    return job.statusJson();
+  }
+
+  private void runRemoteSearch(Job job, Path executable, List<SequenceSearchQueries.Query> queries, RemoteBlastOptions options) {
+    job.thread = Thread.currentThread();
+    String terminal = "finished";
+    long started = System.nanoTime();
+    try (var log = Files.newBufferedWriter(job.directory.resolve("job.log"), StandardOpenOption.CREATE_NEW)) {
+      job.logWriter = log;
+      job.checkCancelled();
+      job.state = "preparing";
+      job.toolCommand = executable.toString();
+      job.toolSha256 = sha256(executable);
+      job.save();
+      var result = new RemoteBlastRunner().run(executable, job.directory, queries, options, job::log, process -> {
+        job.process = process;
+        if (process != null) {
+          try { job.inputSha256 = sha256(job.directory.resolve("queries.fasta")); }
+          catch (Exception failure) { throw new IllegalStateException("Could not fingerprint the submitted queries", failure); }
+          if (job.cancelled.get()) ProcessTree.stop(process);
+          else job.state = "running";
+        }
+      }, job.cancelled::get);
+      job.checkCancelled();
+      var report = new JsonObject(Files.readString(result.report()))
+        .put("jobId", job.id).put("client", "HiCT remote BLAST v1").put("toolSha256", job.toolSha256);
+      Files.writeString(result.report(), report.encode());
+      if (Files.size(result.report()) > RemoteBlastRunner.MAX_OUTPUT_BYTES * 2)
+        throw new IOException("Remote BLAST report exceeded the size limit");
+      job.output = job.data.relativize(result.report()).toString().replace('\\', '/');
+      job.inputSha256 = result.querySha256();
+      job.hits = result.hits();
+    } catch (Exception failure) {
+      terminal = job.cancelled.get() || failure instanceof InterruptedException || failure instanceof CancellationException ? "cancelled" : "failed";
+      job.error = terminal.equals("failed") ? Objects.toString(failure.getMessage(), "Remote BLAST failed") : null;
+      job.output = null;
+      job.log(job.error == null ? "Remote BLAST cancelled. A submitted NCBI request may continue remotely." : job.error);
+    } finally {
+      job.elapsedNs = System.nanoTime() - started;
+      job.logWriter = null;
+      job.process = null;
+      job.thread = null;
+      job.removeQueuedWork = null;
+      synchronized (job) {
+        if (job.cancelled.get()) { terminal = "cancelled"; job.output = null; }
+        job.finished = System.currentTimeMillis();
+        try { job.save(terminal); job.state = terminal; }
+        catch (IOException failure) { job.state = "failed"; job.output = null; job.error = "Could not save remote BLAST provenance: " + failure.getMessage(); }
+      }
+      job.snapshot = null;
+      trimCompletedJobs();
+      Thread.interrupted();
+    }
   }
 
   private void runSearch(Job job, FASTAProcessor processor, Path fasta, Stamp stamp, Path executable,
@@ -803,12 +917,13 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     volatile JsonObject alignmentDetail, repeatPeriod;
     volatile long finished, hits, fragments, elapsedNs;
     volatile Process process; volatile Thread thread; volatile BufferedWriter logWriter;
+    volatile Runnable removeQueuedWork;
     Job(String id, Path directory, Path data, AssemblySequenceSnapshot snapshot, JsonObject request, String mapFilename) {
       this(id, directory, data, snapshot, request, mapFilename, "search");
     }
     Job(String id, Path directory, Path data, AssemblySequenceSnapshot snapshot, JsonObject request, String mapFilename, String kind) {
       this.id = id; this.directory = directory; this.data = data; this.snapshot = snapshot; this.request = request; this.mapFilename = mapFilename; this.kind = kind;
-      this.snapshotId = snapshot.fingerprint(); this.sequenceLength = snapshot.length();
+      this.snapshotId = snapshot.fingerprint(); this.sequenceLength = kind.equals("remote_blast") ? request.getLong("queryBases", 0L) : snapshot.length();
     }
     void checkCancelled() { if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new CancellationException(); }
     synchronized void cancel() {
@@ -816,7 +931,12 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       cancelled.set(true); ProcessTree.stop(process);
       var t = thread;
       if (t != null) t.interrupt();
-      else { state = "cancelled"; finished = System.currentTimeMillis(); }
+      else {
+        var remove = removeQueuedWork;
+        if (remove != null) remove.run();
+        removeQueuedWork = null;
+        state = "cancelled"; finished = System.currentTimeMillis();
+      }
     }
     synchronized void log(String line) {
       String bounded = line.length() > 4096 ? line.substring(0, 4096) + "…" : line;
@@ -827,7 +947,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     synchronized JsonObject statusJson() {
       return new JsonObject().put("jobId", id).put("kind", kind).put("status", state).put("createdAtMs", created)
         .put("finishedAtMs", finished).put("outputFile", output).put("mapFilename", mapFilename)
-        .put("snapshot", snapshotId).put("sequenceLength", sequenceLength).put("hits", hits)
+        .put("snapshot", kind.equals("remote_blast") ? null : snapshotId).put("sequenceLength", sequenceLength).put("hits", hits)
+        .put("searchTarget", request.getString("searchTarget", "LOCAL_ASSEMBLY"))
+        .put("remoteDatabase", request.getString("remoteDatabase"))
         .put("fragments", fragments).put("analysisNs", elapsedNs).put("error", error)
         .put("requestedThreads", request.getInteger("requestedThreads", request.getInteger("threads", -1)))
         .put("effectiveThreads", request.getInteger("effectiveThreads"))
@@ -835,15 +957,19 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         .put("logs", new JsonArray(new ArrayList<>(logs)));
     }
     void save() throws IOException {
+      save(null);
+    }
+    void save(String terminalState) throws IOException {
       var provenance = statusJson().put("request", request).put("sourceFasta", sourceFasta).put("sourceStamp", sourceStamp)
         .put("toolCommand", toolCommand).put("toolSha256", toolSha256).put("preparedInputSha256", inputSha256)
         .put("sourceFragments", new JsonArray(snapshot.fragments().stream()
         .map(f -> new JsonObject().put("source", f.source()).put("start", f.start()).put("end", f.end()).put("reversed", f.reversed())).toList()));
+      if (terminalState != null) provenance.put("status", terminalState);
       var temp = directory.resolve("job.json.pending"); Files.writeString(temp, provenance.encodePrettily());
       try { Files.move(temp, directory.resolve("job.json"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
       catch (AtomicMoveNotSupportedException e) { Files.move(temp, directory.resolve("job.json"), StandardCopyOption.REPLACE_EXISTING); }
     }
   }
 
-  @Override public void close() { jobs.values().forEach(Job::cancel); workers.shutdownNow(); }
+  @Override public void close() { jobs.values().forEach(Job::cancel); workers.shutdownNow(); remoteWorkers.shutdownNow(); }
 }

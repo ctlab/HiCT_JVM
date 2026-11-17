@@ -4616,3 +4616,83 @@ Broader public-example/wizard/source/format and native/performance qualification
 restored-layout status presentation, provenance viewing/figure metadata and
 remaining release/publication packages remain open. Protected plans and owner
 files are unchanged; nothing pushed, merged or tagged.
+
+
+### Opt-in remote BLAST with bounded external-coordinate results
+
+A new fixed-argument BLAST+ remote runner accepts explicit consent, database
+scope, at most ten/100,000-base queries, 1–30 minute provider waits and up to 500
+subject records per query. Its independent single-worker/two-queued-job pool keeps
+local analysis available. Queued cancellation releases capacity without executing
+an upload. The process-wide client gate separates starts by ten seconds. Failure,
+timeout, cancellation or malformed/oversized output publishes no result action.
+The existing local assembly history guard remains intact; remote requests omit
+map history headers and do not read linked FASTA. JSON retains external one-based
+inclusive coordinates and provider/query/client provenance; full bounded raw TSV
+is exported as a Blob through the file-save flow.
+
+Final JVM build/test: `/tmp/hict-remote-blast-jvm-full-08.log`, BUILD SUCCESSFUL;
+XML totals 616 tests, zero failures/errors, seven optional skips. Nine new JUnit
+cases cover strict consent/settings, argv/private descriptions, gapped external
+HSPs, malformed values, owned process results, timeout and cancellation. The WebUI
+build/type/numerical and DTO/remote report checks pass in `/tmp/hict-remote-blast-web-10.log`. Screenshot review after
+web-09 exposed faint map text through the search surface; web-10 makes that
+dialog opaque. The final ui-06 run repeats the remote workflow with a computed
+opaque-surface assertion. The broader existing suites ran before this CSS-only
+correction.
+
+`/tmp/hict-remote-blast-ui-06/results.json` passes 18 cases with empty errors.
+It drives actual menus, forms, Jobs and downloads against the actual JVM handlers,
+using an identified controlled external executable, not fabricated job responses.
+Coverage includes missing consent, no-map submission, fresh consent after database
+change, external coordinates/literal unsafe accessions, bounded paging/filtering,
+complete JSON/TSV saves, local default, reopen after map change, ignored late reply,
+zero hits, bounded queue and queued cancellation, real local SeqKit during remote
+waiting, running cancellation, provider errors, selected one-minute timeout,
+exact 16S command alias, malformed results and 20,001 raw rows with 20,000-row JSON.
+Cancellation acknowledgement was 47.6 ms on this host, not a cross-platform latency
+claim. Generated uploaded FASTA excludes descriptions; source input hashes remain
+unchanged. Screenshot review confirms accessible controls at 640×600 and a
+scrollable data table, separate query/subject labels, safe literal text, fixed
+footer and honest failure/timeout messages.
+
+`/tmp/hict-remote-blast-local-03/summary.json` passes 17 existing local sequence
+journeys using the actual bundled tools, including real gapped BLAST, exact IUPAC
+strands/BED positions, ModDotPlot, alignment, clipping and clipped-bin parity.
+Other-01/browser/results.json passes ten Jobs/FASTA-only AGP cases; failures-01/
+browser/results.json passes six failure-reporting cases. All three process exits
+are zero. Together these are 51 browser cases. Lifecycle-02/results.json adds two
+HTTP/process cases: 33 MiB raw output is rejected and removed; a slow provider
+client dies after SIGTERM is sent only to its owning JVM. Group signalling is
+explicitly excluded from that assertion. Shutdown took 113.7 ms here.
+
+Earlier incomplete attempts are excluded: the test fixture initially omitted
+bothStrands in lifecycle-01; browser setup used an incorrect local FASTA record
+name before ui-04. UI findings fixed a filter label association and raw TSV being
+parsed as JSON. The initial live 16S attempt exposed a genuine remote-name error,
+now fixed as rRNA_typestrains/16S_ribosomal_RNA. An intermediate DTO test loader
+needed the real request class to test the new history-header exclusion. Full-04's
+log reported success but its observing shell returned 143; final full-08 is the
+qualifying run. Local-01 selected a Python environment without Cooler; local-03
+uses the HDF environment with Playwright appended to its module path.
+
+Live probes use only the public NCBI NR_024570.1 positions 1–160, independently
+fetched and hashed under `/tmp/hict-remote-blast-public-reference-01`. No project
+FASTA/contact map is submitted. Live-01 records NCBI's rejected short 16S database
+name. Live-02 uses the corrected name and reaches the selected three-minute
+provider timeout, killing the owned client without a result or automatic retry.
+Live-03 independently probes nt and reaches its selected ten-minute provider
+timeout (600.277 seconds), with no result or automatic retry. Its terminal status
+is retained under `/tmp/hict-remote-blast-live-03/status.json`; its assertion exits
+one because provider success was not established. Live-04 investigates the
+corrected 16S connection with NCBI connection-parameter logging enabled only in
+the owned test process. Controlled success does not qualify provider success. P8 live-provider and platform checks remain open.
+
+Frozen development JAR `hict_server-2.0.43-2114efe-webui_6bd484b-fat.jar` SHA-256:
+`4fdd9f119ae47b77e81102747f7e9e69e5a950bfcb70e48e558f8a615fcf70a2`.
+Dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`c85bd1064796149394e19d37d88fffaa5aedcb7cdfbd3c8a9deb4ace5380d6f9`.
+The API server and separately served WebUI qualify a development pair, not embedded
+assets or a combined native/SFX release. P7/P9 and the remaining release,
+performance, scientific and publication gates stay open. Protected plans and owner
+files are unchanged; nothing pushed, merged or tagged.

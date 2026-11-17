@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Search NCBI nucleotide databases with explicit query-upload consent, independent Jobs cancellation and bounded provider waiting while local analysis remains available.
+- Inspect external BLAST coordinates in a paginated, filterable report and save JSON provenance or complete raw TSV through the file-save flow.
+
 - Preselect example recipe tracks in the opening wizard, omit unavailable optional tracks, keep removed tracks from reappearing after a late probe, and show the loaded AGP in the header.
 - Retain each example source's recorded citations, attribution, recipe and file hashes through session save and restore, independently of later catalog changes.
 

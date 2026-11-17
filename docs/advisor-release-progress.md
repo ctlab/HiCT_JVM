@@ -28,7 +28,7 @@ describe earlier releases; they must not override the decisions below.
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
-| P8 Opt-in remote BLAST with external-subject results | 18 | Pending |
+| P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; live-provider success and platform qualification pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
@@ -822,3 +822,35 @@ viewing and figure provenance belong to subsequent publication work. P8/P9 and
 remaining scientific, performance, native/platform and release/publication gates
 remain open. Protected plans and owner files remain unchanged; nothing pushed,
 merged or tagged.
+
+
+## Opt-in remote BLAST and independent external reports
+
+Tools now offers Search NCBI databases without a contact map or linked FASTA.
+Ordinary sequence search still defaults to the local assembly. Remote requests
+require a fresh explicit upload decision, fixed supported database, bounded query
+count/length and timeout. Generated query IDs and pasted sequences are uploaded;
+FASTA descriptions stay local. A separate bounded worker queue keeps actual local
+SeqKit searches available while the provider client waits. Jobs retains progress,
+cancellation, useful diagnostics and report reopening across map changes.
+
+Reports retain external subject IDs, one-based inclusive coordinates, scores,
+parameters, dates and query/client hashes. They never create assembly BED tracks.
+The viewer filters and pages through a bounded JSON report; complete bounded raw
+TSV remains exportable through the file-save flow. Late report replies cannot
+reopen a dismissed viewer. See remote-blast.md for limits and provider semantics.
+
+Controlled qualification passes 18 new actual-control Chromium cases, 17 existing
+local sequence cases, ten other Jobs cases and six failure-reporting cases. Two
+further HTTP/process cases reject oversized output and confirm that signalling
+only the JVM stops its owned provider client. The full JVM suite passes 616 tests
+with zero failures/errors and seven optional skips. Screenshots were inspected at
+normal and 640-pixel widths. These controlled commands never contact NCBI and do
+not establish live service success. The first live public-reference query exposed
+a rejected 16S short database name; it now maps to the remote service name. A
+corrected-name attempt reached its selected three-minute timeout. The public nt
+probe is recorded separately in reinforcement-validation.md. No project reference
+was uploaded. P8 remains in progress until live-provider and platform gates are
+qualified. P7/P9 and the remaining scientific, performance, native and publication/
+release gates remain open. Protected plans and owner files are unchanged; nothing
+pushed, merged or tagged.
