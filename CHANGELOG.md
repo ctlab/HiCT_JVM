@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update five delivered JVM dependencies to patched releases, lock their resolved versions, and provide a reproducible runtime advisory audit.
+
 - Preserve signed BigWig signals through aggregation, caches, both track axes and log scaling; report non-finite source values explicitly.
 
 - Attach example-download response handlers before sending, preventing fast-response races observed in Windows and macOS CI.

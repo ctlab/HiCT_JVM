@@ -1,0 +1,20 @@
+import groovy.json.JsonOutput
+
+// Usage: ./gradlew hictRuntimeAuditInventory --offline -I scripts/runtime_dependency_inventory.init.gradle
+// Resolves existing runtime dependencies only; does not rebuild frontend assets.
+gradle.projectsEvaluated {
+  rootProject.tasks.register('hictRuntimeAuditInventory') {
+    doLast {
+      def config = rootProject.configurations.runtimeClasspath
+      def rows = config.resolvedConfiguration.resolvedArtifacts.collect { artifact ->
+        [group:artifact.moduleVersion.id.group, name:artifact.moduleVersion.id.name,
+         version:artifact.moduleVersion.id.version, file:artifact.file.name]
+      }.sort { a,b -> (a.group+':'+a.name) <=> (b.group+':'+b.name) }
+      def dest = new File(rootProject.projectDir, 'build/reports/runtime-dependency-inventory.json')
+      dest.parentFile.mkdirs()
+      dest.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+        components:rows, files:config.files.collect { it.name }.sort()])) + '\n'
+      println('Runtime dependency inventory: '+rows.size()+' Maven artifacts; '+dest)
+    }
+  }
+}

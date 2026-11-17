@@ -6505,3 +6505,27 @@ The coordinated follow-up is `2.0.71-0241054-webui_d6f771b`, with WebUI
 `d6f771b3a5c6d70da1c52064946519df5db23ce4`. All 232 static control contracts reconcile;
 no runtime outcomes are inferred. Replacement CI and final portable gates
 remain required.
+
+
+## Delivered runtime dependency follow-up
+
+The resolved runtime audit identifies eight advisories in Commons IO/Compress/
+Lang, JSON-java and Snappy-java. Reviewed upstream fixes and published release
+metadata support updating all five and locking every affected configuration.
+The new graph adds Commons Codec transitively: 77 Maven artifacts / 79 files.
+The repeated OSV query completes with zero flagged Maven components; two local
+JARs and native/tool/browser payloads are outside its coverage. Reproducible
+commands and exact versions are in `runtime-dependency-audit.md`.
+
+The full updated source suite passes 661 JVM tests, zero failures/errors and two
+optional skips, plus native parity. Two compatibility cases exercise delivered
+native Snappy arrays/streams and byte-preserving BZip2. Candidate 71's committed
+browser checks pass 24 signed-signal and ten secondary replacement cases under
+both assembly authorities, with unchanged source hashes. Both candidate-71 Java
+matrices and WebUI CI are green; complete release workflows and the dependency
+follow-up's replacement platform/artifact checks remain required. Receipts:
+`build/release-evidence/runtime-dependency-update/` and `build/release-evidence/2.0.71/`.
+
+The dependency candidate is `2.0.72-ccdf1e2-webui_d6f771b`; WebUI remains pinned to
+`d6f771b3a5c6d70da1c52064946519df5db23ce4`. Replacement Java/platform
+and portable results must qualify these updated runtime bytes.

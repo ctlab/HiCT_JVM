@@ -185,3 +185,22 @@ cancellation/verification assertion, passes locally; the complete 659-test JVM
 suite and native parity pass too. Replacement platform CI is still required.
 Portable run 44169303713 is retained while its useful native caches/platform
 jobs finish; candidate-70 Portable is pending behind it at this checkpoint.
+
+
+## Candidate-71 response-race confirmation and runtime follow-up
+
+Both candidate-71 Java matrices now pass all four platforms:
+[push 44184897410](https://github.com/ctlab/HiCT_JVM/actions/runs/44184897410),
+[PR 44184911620](https://github.com/ctlab/HiCT_JVM/actions/runs/44184911620).
+[WebUI CI 44184641424](https://github.com/ctlab/HiCT_WebUI/actions/runs/44184641424)
+also passes all four platforms. This confirms the Examples handler-order fix
+without suppressing the previously failing cases. Full portable/sequence and
+Autobuild results remain running/queued at this checkpoint.
+
+The next dependency candidate updates five runtime libraries and adds native
+Snappy/BZip2 compatibility checks. Its full 661-test local suite and native
+parity pass; the resolved Maven OSV scan has zero flagged components, with two
+local JARs explicitly uncovered. New platform CI must confirm the updated
+codec natives and runtime graph before release qualification. Superseded
+same-branch version-69/70 jobs were cancelled after replacement workflows existed;
+their useful successful tool/assembly results and failure evidence are retained.

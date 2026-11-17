@@ -571,7 +571,16 @@ dependencies {
   testRuntimeOnly("org.junit.platform:junit-platform-launcher:$junitPlatformVersion")
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
-  implementation("org.apache.commons:commons-lang3:3.12.0")
+  implementation("org.apache.commons:commons-lang3:3.22.0")
+
+  // Keep transitive runtime parsers/codecs on reviewed patched releases.
+  // See docs/runtime-dependency-audit.md for advisories and validation scope.
+  constraints {
+    implementation("commons-io:commons-io:2.22.0")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.json:json:20260814")
+    implementation("org.xerial.snappy:snappy-java:1.1.10.12")
+  }
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-pool2
   implementation("org.apache.commons:commons-pool2:2.11.1")
