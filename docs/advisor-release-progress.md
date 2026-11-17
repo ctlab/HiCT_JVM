@@ -1602,3 +1602,30 @@ The coordinated follow-up is version `2.0.69-bf6ee7a-webui_ea5c2c7`,
 with WebUI `ea5c2c76d80db1906c1202f7ac531bcbe72765e2`. Its post-commit
 WebUI build passes. Replacement CI and packaged acceptance remain required;
 the version-68 qualification above retains its exact source/artifact scope.
+
+
+## Signal semantics and current Windows confirmation
+
+The next source increment corrects BAM depth across skipped/deleted CIGAR bases,
+uses immutable source read centers, and weights BAM/BigWig coarse means by bases
+through native partial bins, cuts and reversal. It invalidates only their old
+precompute caches. BigWig and BAM mode labels now explain their operation and
+fit narrow windows. The source suite passes 657 tests (two optional skips),
+native parity and the WebUI build; twenty new browser checks plus thirteen
+sequence-track and fifteen feature-edge checks pass. Independent BigWig values,
+unchanged input hashes and exact restored sequence coordinates are retained
+under `build/release-evidence/signal-base-weighting/`.
+
+Version-69 Windows Portable Packages now passes, including all 23 native HTTP
+tests with zero ignored cases. Both JVM Autobuild Release runs and Java matrices
+are green. Portable Packages and Sequence tools remain in progress at this
+checkpoint. These results do not transfer package qualification from version 68
+to newer source. Signed/nonfinite BigWig handling, broader formats,
+accessibility/download-only browsers, Linux AppImage and the final source-matched
+package gate remain pending. The full production/publication goal stays active.
+
+The coordinated candidate is `2.0.70-e77dd80-webui_a331682`, with WebUI
+`a331682b0c9058acb4f5b73f430518a2582807bf`. Static reconciliation passes all
+232 reviewed control contracts (227 inspected, five historical ambiguities);
+it does not infer runtime outcomes. Source-matched packaged acceptance and
+replacement platform Actions remain required.

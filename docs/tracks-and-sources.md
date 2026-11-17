@@ -17,6 +17,25 @@ reference-block sample `LEN` to retain their reference span. Inserted sequence
 does not enlarge that reference interval. Feature-edge actions use the displayed
 record boundaries. Invalid interval lengths are rejected without adding a track.
 
+BigWig **Signal settings** offers Maximum, Mean (covered span), and Mean (gaps
+as zero). The latter divides the signal area by the whole displayed interval;
+it does not show an unnormalized sum. For values 7, a gap, 9, 4 and 4 across five
+positions, these modes produce 9, 6 and 4.8. Existing saved sessions retain their
+values; the earlier `SUM` identifier denotes the gap-filled mean.
+
+BAM **Aligned-base depth** counts aligned reference bases (`M`, `=` and `X`).
+Deleted and skipped regions, insertions and clipped bases do not add depth.
+At coarse scale the value is the mean depth over the displayed bucket.
+**Read centers** counts one midpoint of each original reference alignment span;
+cuts and viewport clipping do not create extra centers. All mapped alignment
+records are included; these modes apply no additional quality, duplicate or
+secondary-alignment filter. They count alignments, not paired-end fragments.
+Older BAM and BigWig preparation caches rebuild automatically for the corrected
+base-weighted semantics; missing BigWig observations remain distinguishable from
+measured zero values.
+See the [SAM specification](https://samtools.github.io/hts-specs/SAMv1.pdf)
+and [samtools depth's treatment of deletions](https://www.htslib.org/doc/samtools-depth.html).
+
 Choose **Map weights** under **Add track** to plot source-bin weights.
 Select the primary or an attached secondary map, then choose **Add weights**.
 An existing weights track is managed through the same list. With file weights selected, sources known to lack imported weights show a reason;

@@ -149,3 +149,18 @@ References: [Rust directory metadata](https://doc.rust-lang.org/std/fs/struct.Di
 and [Microsoft NTFS enumeration caveat](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstfilea).
 The failure excerpt is retained in
 `build/release-evidence/2.0.68/windows-portable-native-http-failure.log`.
+
+
+## Version-69 Windows portable confirmation
+
+[Portable Packages run 44169303713](https://github.com/ctlab/HiCT_JVM/actions/runs/44169303713)
+now completes its Windows portable ZIP/EXE job 134347933674 successfully. The
+shared writer suite passes 16 cases and the complete native HTTP suite passes
+23, zero ignored, including bounded cancellation while headers/bodies stall.
+This confirms the live-handle metadata observer correction on Windows without
+relaxing the two-second assertion. The retained excerpt is
+`build/release-evidence/2.0.69/windows-portable-native-confirmation.log`.
+Both version-69 Autobuild Release runs (44169303701, 44169319469) and Java
+push/PR matrices (44169303698, 44169319389) are successful. Sequence tools and
+other portable platforms remain running at this checkpoint; refresh their
+conclusions before claiming the complete release workflow passes.

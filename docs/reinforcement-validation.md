@@ -6427,3 +6427,40 @@ The coordinated follow-up is version `2.0.69-bf6ee7a-webui_ea5c2c7`,
 with WebUI `ea5c2c76d80db1906c1202f7ac531bcbe72765e2`. Its post-commit
 WebUI build passes. Replacement CI and packaged acceptance remain required;
 the version-68 qualification above retains its exact source/artifact scope.
+
+
+## BAM and BigWig base-weighted signal correctness
+
+Four BAM regressions and an independent BigWig oracle now cover native 1/4/10-bp
+grids, terminal and shared partial bins, exact cuts, reversal, cache migration and
+coarse means. Before the fixes, BAM CIGAR gaps received depth, a viewport could
+move the apparent read center, and native-4 BigWig covered mean was 5.3333 rather
+than the independently expected 6. The corrected aligned-base depth excludes
+CIGAR D/N; read centers are chosen once in source reference coordinates before
+clipping. Coarse BAM depth and BigWig means use actual represented/covered base
+support. The exclusive last-bin projection also respects clipped shared bins.
+
+Only BAM/BigWig precompute caches advance to version 3. An exact version-2
+sidecar fixture is ignored and rebuilt without modifying its bytes. Missing
+BigWig observations remain distinct from measured zero. Legacy session enums
+are unchanged; the displayed SUM mode accurately says “Mean (gaps as zero)”.
+The 635-byte BigWig fixture includes generation metadata and SHA256; tests use
+the IGV reader against a scalar oracle, with pyBigWig as a separate browser oracle.
+
+Final source validation: 657 JVM tests, zero failures/errors, two optional skips;
+native parity passes (unchanged baseline up-to-date in the final rerun). The
+complete WebUI build passes. Twenty actual browser checks pass across native
+and sequence grids, including file pickers, BAM modes, all BigWig modes, VCF cuts,
+reversal and session restore. All 17 base centers round-trip exactly. Every
+signal-mode option fits at 375/640/1600 pixels, with narrow/desktop screenshots
+reviewed. Existing sequence-track 13 and feature-edge 15 browser checks also pass.
+Receipts and red/green logs: `build/release-evidence/signal-base-weighting/`.
+These are source/prototype checks, not qualification of a new portable artifact.
+Signed/nonfinite BigWig policy remains open: the existing reader takes absolute
+values. Broader format, accessibility and final package gates remain required.
+
+The coordinated candidate is `2.0.70-e77dd80-webui_a331682`, with WebUI
+`a331682b0c9058acb4f5b73f430518a2582807bf`. Static reconciliation passes all
+232 reviewed control contracts (227 inspected, five historical ambiguities);
+it does not infer runtime outcomes. Source-matched packaged acceptance and
+replacement platform Actions remain required.

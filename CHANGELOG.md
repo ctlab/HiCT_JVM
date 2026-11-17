@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Correct BAM aligned-base depth and source read centers, weight coarse BAM/BigWig means by represented bases, and rebuild their older caches.
+
+- Explain BigWig averaging and BAM modes with readable controls, backed by independent signal fixtures and browser edit/session checks.
+
 - Preserve VCF structural-variant and reference-block spans through exact cuts, reversal and long coordinates, rejecting malformed interval lengths before adding a track.
 
 - Observe live staged-file sizes in Windows HTTP export tests, retain strict cancellation checks, and reconcile the current control and release evidence.
