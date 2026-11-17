@@ -4,6 +4,8 @@
 
 ### Navigation and visualization
 
+- Reopen exported PNG and SVG figures inside HiCT with fit, actual-size and zoom controls, remembered browser file choices, and clear invalid-image errors.
+
 - Search NCBI nucleotide databases with explicit query-upload consent, independent Jobs cancellation and bounded provider waiting while local analysis remains available.
 - Inspect external BLAST coordinates in a paginated, filterable report and save JSON provenance or complete raw TSV through the file-save flow.
 

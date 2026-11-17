@@ -29,7 +29,7 @@ describe earlier releases; they must not override the decisions below.
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; live-provider success and platform qualification pending |
-| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Pending |
+| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: read-only exported PNG/SVG viewer implemented and browser verified; composition dialog, ModDotPlot panels, immutable paired snapshots and session provenance pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
 P10 is independent and is being completed before the coordinated P1 changes.
@@ -854,3 +854,33 @@ was uploaded. P8 remains in progress until live-provider and platform gates are
 qualified. P7/P9 and the remaining scientific, performance, native and publication/
 release gates remain open. Protected plans and owner files are unchanged; nothing
 pushed, merged or tagged.
+
+
+## Read-only exported figure viewer
+
+File now offers Open exported figure independently of the current map. The
+viewer opens PNG/SVG through a local chooser, fits the image, provides actual-size
+and zoom buttons, and scrolls larger previews. Browser file handles remember the
+figure selection/folder and can begin from a figure save destination. Cancelled
+choices retain the preview; invalid files explain the problem without replacing
+a previously opened figure. SVG stays in image context, without inserting file
+markup into the application DOM. File size and pixel dimensions are bounded.
+Closing during image decoding cannot reopen the viewer and releases its URL.
+
+Fourteen focused Chromium cases reopen actual exported PNG/SVG, compare every PNG
+pixel, check zoom and 640-pixel controls, rejection/recovery, inert SVG content,
+chooser memory/cancellation and late decoding cleanup. The existing ten Jobs and
+six failure-reporting cases are rechecked for shared navigation/file flows.
+The WebUI build/type/numerical checks and 616 JVM tests pass with zero
+failures/errors and seven optional skips. Exact artifacts and evidence are in
+reinforcement-validation.md. The API and separately served assets qualify a
+development pair, not the combined native/SFX distributable.
+
+This implements the PNG/SVG reopening acceptance within P9. Composition, actual
+ModDotPlot/track figure panels, immutable cut/scaffold comparisons and stored
+snapshot provenance remain open, along with wider release qualification. P8 also
+remains active: its corrected 16S live-04 probe reached its ten-minute timeout.
+A longer public-reference probe with NCBI tracing confirms an accepted provider
+request ID and responses without connection errors; provider result success is
+still pending. No project sequence is uploaded. Protected plans and owner files
+remain unchanged; nothing pushed, merged or tagged.

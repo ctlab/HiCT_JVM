@@ -161,6 +161,14 @@ three formats. Whole-map exports use their fitted scale. Assembly exports are
 available through Assembly. FASTA export requires a linked sequence reference.
 Check the exported layout and sequence against your analysis requirements.
 
+**File → Open exported figure…** opens a read-only PNG/SVG viewer, including
+when no map is open. Choose a file, use Fit or Actual size, and zoom with the
+plus/minus buttons. Large previews scroll. Opening, cancelling or closing a
+figure does not replace the assembly. Supported browser pickers remember the
+figure folder; other environments use their standard file chooser. Previews
+accept non-empty files up to 64 MiB and images up to 128 megapixels. PDF remains
+an export format; this image viewer accepts PNG and SVG.
+
 File → Export matrix writes `.cool` or multiresolution `.mcool` files. Choose
 whether to export the current edited assembly or the saved source layout.
 Cooler export supports Deflate, with level 0 producing uncompressed output.

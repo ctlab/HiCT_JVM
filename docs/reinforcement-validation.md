@@ -4696,3 +4696,68 @@ The API server and separately served WebUI qualify a development pair, not embed
 assets or a combined native/SFX release. P7/P9 and the remaining release,
 performance, scientific and publication gates stay open. Protected plans and owner
 files are unchanged; nothing pushed, merged or tagged.
+
+
+### Reopen exported PNG/SVG figures inside the WebUI
+
+File → Open exported figure opens an independent read-only image viewer. It
+uses a remembered browser figure handle when available and the standard local
+file input otherwise. Actual-size/fit/zoom controls and a scrollable preview keep
+controls available at 640×600. Invalid/empty/oversized files report a recoverable
+error without discarding the previous preview. File bytes are limited to 64 MiB;
+PNG dimensions are checked before decoding and all decoded images are limited to
+128 megapixels. Disposed/obsolete decode replies cannot publish an image, and
+published/pending object URLs are released. SVG is loaded only through an image
+URL, never inserted as document markup; see
+[Mozilla's SVG image-context restrictions](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image).
+
+`/tmp/hict-figure-viewer-web-02.log` passes build/type/DTO/numerical checks. File
+picker regressions cover the figure purpose, remembered handle, cancellation and
+read failures while retaining existing session behavior. Four changed WebUI
+files pass Prettier; the new Python driver passes Black. Final JVM
+`/tmp/hict-figure-viewer-jvm-full-01.log` reports BUILD SUCCESSFUL, with 616 tests,
+zero failures/errors and seven optional skips. This increment changes no JVM
+production logic.
+
+Final `/tmp/hict-figure-viewer-ui-03/results.json` passes 14 cases with no browser
+errors. The driver generates fresh physical inputs, exports actual PNG/SVG from
+the map's controls, opens them through the viewer's file chooser and verifies
+correct dimensions. SHA-256 of every decoded PNG RGBA pixel matches an independent
+Pillow decode. Other cases check fit/actual size/zoom, 640-pixel layout, cancelled
+choices, malformed PNG, excessive dimensions rejected before decoding, inert SVG
+scripts/external references, Escape with identical primary session state,
+controlled browser picker memory/cancellation and a late real decode after close
+with its object URL released. Picker boundary stubs return actual exported bytes;
+they do not qualify a native OS dialog. Source file hashes remain unchanged.
+Screenshots were reviewed for image content, controls, responsive fit and errors.
+Other-01/browser/results.json adds ten Jobs/FASTA-only AGP cases and failures-01/
+browser/results.json adds six failure cases, giving 30 browser cases in total.
+
+Ui-01 passed the original 11 cases; ui-02 passed 12 before the driver accidentally
+returned its injected cancellation function to Playwright, which invoked it.
+The injection now uses a block returning undefined. Only ui-03 qualifies all 14
+cases on the final pair; earlier incomplete runs are excluded.
+
+Development JAR `hict_server-2.0.44-ec1b976-webui_041569a-fat.jar` SHA-256:
+`111f03cab89d18c472dbc829f04b2a1a351d48aece04b121b2d61f0bf7a32376`.
+Dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`a2d692302592681d5cf99b0a2dd1a9b46d93468fac83c9be03a6ac64b4228fa6`.
+Separately served assets are not combined native/SFX qualification. P9 composition,
+immutable cut/scaffold comparisons, ModDotPlot panels, snapshot/session provenance
+and release/publication gates remain open. Protected plans and owner files remain
+unchanged; nothing pushed, merged or tagged.
+
+Remote-provider follow-up: `/tmp/hict-remote-blast-live-04/status.json` records
+the corrected 16S name reaching its ten-minute timeout (600.192 seconds). It
+publishes no output and the assertion exits one. Parameter-only diagnostics did
+not explain the delay. The kernel disallowed a read-only strace attach to that
+owned test child; no tracing or process control was thereby applied. Live-05 uses
+NCBI's documented CONN_DEBUG_PRINTOUT=ALL, DIAG_POST_LEVEL=Info and DIAG_TRACE=1
+only in the owned test environment, with a selected 30-minute limit. The query
+remains the same hashed public 160-base NCBI reference. The trace confirms NCBI
+returned a request ID over HTTPS and subsequent provider replies without logged
+connection errors. This establishes submission/connectivity, not successful
+result delivery. No additional query is submitted while that probe runs, and P8
+remains unqualified for live-provider success. Detailed tracing is not enabled in
+normal HiCT runs. See the
+[NCBI tracing documentation](https://ncbi.github.io/cxx-toolkit/pages/ch_debug).
