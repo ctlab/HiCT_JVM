@@ -1506,3 +1506,35 @@ Receipt: `/tmp/hict-tauri-streaming-native-12/lifecycle-qa-01/qualification.json
 The coordinated source increment pins WebUI `e15f17d2b8440544e61a4ba62b7547ca3671e592`
 and version `2.0.66-5544870-webui_e15f17d`; its post-commit WebUI build passes.
 Final package and replacement platform CI gates remain pending.
+
+
+## Patched Electron runtime and early native CI checks
+
+The next source increment updates only Electron in the npm lockfile, from
+41.10.7 to exact 43.8.10. The full audit no longer flags that delivered runtime,
+while 28 other development/build advisories remain. The production-only audit
+alone is insufficient because Electron is declared as a devDependency.
+
+The development executable and built payload each pass nine native export cases;
+the built payload also passes eight offline/reconnect/storage cases and fourteen
+real-map histogram, SVG/PNG/PDF rendering, restart and reset checks. Native GTK
+controls and the 512-Mb byte identity are exercised. The figure checker now
+accepts the built payload directly. The WebUI matrix adds the actual shared
+Rust writer tests on Windows, Linux and both macOS architectures, before the
+longer complete portable build can be mistaken for native test coverage.
+
+The version-66 package gate fails the large map's first frame p95 (33.3 ms,
+limit 33 ms) during concurrent GUI QA. A targeted run without that QA passes
+16.7/16.8 ms and about 35-ms acknowledgements. Its limit is unchanged; the
+failed complete gate remains retained and does not qualify the package. Repeat
+the final package gate/soak without competing agent GUI tests. See
+`electron-native-validation.md` for the source pin, evidence and limits.
+
+
+The coordinated runtime increment pins WebUI
+`72a4d80991802e6cf40e8b93751dceaa37165e19` and version
+`2.0.67-bef9025-webui_72a4d80`. Its post-commit WebUI/production Electron
+payload build passes; the integrated JVM build passes 646 tests, two optional
+skips and native parity. The Tauri payload is being rebuilt against the same
+committed frontend assets. Final native/package tests and platform release
+conclusions remain required.

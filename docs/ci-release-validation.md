@@ -91,3 +91,21 @@ directory and removal of staging. This exercises the intended OS rename failure
 on each platform. All 16 shared tests pass locally in
 `/tmp/hict-tauri-windows-rename-fixture-01.log`; the full WebUI build also passes.
 Windows confirmation and the portable publication gate remain required.
+
+
+## Follow-up CI on the cancellation increment
+
+JVM `bef9025c` passes both full four-platform Java matrices:
+[push](https://github.com/ctlab/HiCT_JVM/actions/runs/44147044470) and
+[PR](https://github.com/ctlab/HiCT_JVM/actions/runs/44147058709).
+WebUI `e15f17d2` passes all four platforms in
+[WebUI CI](https://github.com/ctlab/HiCT_WebUI/actions/runs/44146880847).
+The old portable run was kept only until all eight native components and four
+assemblies succeeded, then cancelled to release its fixed successor. Native
+cache validation/source keys remain unchanged. The newer portable run and
+Autobuild runs still require terminal confirmation.
+
+The Electron runtime follow-up adds shared Rust save-writer checks directly to
+the WebUI CI matrix. It installs the stable minimal Rust toolchain explicitly;
+missing Rust or a failed test fails the job. This complements the complete
+wrapper and portable gates and gives earlier Windows filesystem feedback.

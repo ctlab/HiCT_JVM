@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update the delivered Electron runtime to patched 43.8.10 and run native save ownership/cleanup checks in every WebUI CI platform job.
+
 - Stop disconnected FASTA export preparation, remove queued requests, and exercise native rename-failure cleanup consistently on Windows.
 
 - Exercise true canonical paths in the macOS example-provenance regression, including when the temporary directory itself uses an alias.

@@ -6318,3 +6318,52 @@ Receipt: `/tmp/hict-tauri-streaming-native-12/lifecycle-qa-01/qualification.json
 The coordinated source increment pins WebUI `e15f17d2b8440544e61a4ba62b7547ca3671e592`
 and version `2.0.66-5544870-webui_e15f17d`; its post-commit WebUI build passes.
 Final package and replacement platform CI gates remain pending.
+
+
+### Electron 43.8.10 payload and reference performance conditions
+
+- Targeted npm install changes exactly one locked package version: Electron
+  41.10.7 to 43.8.10. Runtime identity includes Chromium 150.0.7871.250 and
+  Node 24.22.1. The full audit stops flagging Electron; 28 other development/
+  build advisories remain. Receipts are retained in the workspace evidence.
+- `/tmp/hict-electron-43-web-build-01.log`: full build passes.
+- `/tmp/hict-electron-43-native-02/qa/results.json`: nine development native
+  export cases, including 512-Mb streaming, exact-region FASTA, AGP, session
+  readback, cancellation, permission failure, refresh and native close.
+- `/tmp/hict-electron-43-payload-qa-01/coordinate/results.json`: same nine cases
+  pass with the built payload and its production security fuses. Whole-file
+  identity is retained; renderer coordinate request list is empty.
+- `/tmp/hict-electron-43-payload-qa-01/recovery/results.json`: eight cases pass,
+  with no page errors or unexpected dialogs.
+- `/tmp/hict-electron-43-figure-01/qa/results.json`: fourteen real-map checks
+  pass, including actual native SVG/PNG/PDF saves, independent rasterizations,
+  histogram, cancelled save preservation and browser storage restart/reset.
+- `/tmp/hict-electron-43-figure-01/source-identity.json`: original and physical
+  map copy unchanged, SHA256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- First SDK probe cannot start Electron because libnspr4 is absent; the figure
+  SDK supplies NSS, ldd has no missing libraries and subsequent suites pass.
+- The WebUI workflow now explicitly installs stable Rust and executes the real
+  shared save-writer tests on all four platforms; CI must confirm that new step.
+- `/tmp/hict-integrated-release-14/qualification.json` is a preserved failure:
+  metadata, menus, structural edits, incomplete-open, offline and the first
+  three performance maps pass; the large map's fresh frame p95 is 33.3 ms
+  against 33 ms, so no soak is reached. Its result survives atomic persistence.
+- `/tmp/hict-release-66-large-performance-investigate-01/baseline/results.json`:
+  targeted run with other agent GUI QA stopped passes unchanged thresholds,
+  frames 16.7/16.8 ms and acknowledgements 34.33/34.58 ms. This supports, but
+  does not prove, a contention explanation and does not replace the full gate.
+- Version-66 producer/archive checks pass 3,128 entries; JAR SHA256 is
+  `0024e6864c7ad0a028996c5926cac51c625d8ee1428488bde7d61ab4f91b6e6d`.
+- Workspace copies are under `build/release-evidence/2.0.66` and
+  `build/release-evidence/electron-43.8.10`. Final committed package/soak and
+  platform-native GUI gates remain open.
+
+
+The coordinated runtime increment pins WebUI
+`72a4d80991802e6cf40e8b93751dceaa37165e19` and version
+`2.0.67-bef9025-webui_72a4d80`. Its post-commit WebUI/production Electron
+payload build passes; the integrated JVM build passes 646 tests, two optional
+skips and native parity. The Tauri payload is being rebuilt against the same
+committed frontend assets. Final native/package tests and platform release
+conclusions remain required.
