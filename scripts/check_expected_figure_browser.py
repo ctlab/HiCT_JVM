@@ -248,6 +248,18 @@ def main():
                     and attached["compatibility"]["sharedReference"]
                 )
                 check.settle()
+                # Force the native sequence -> projected grid transition that
+                # previously left a second fine-grid raster visible underneath.
+                native_camera = camera()
+                page.evaluate(
+                    "()=>window.__hictBenchmark.manager().getView().setResolution(0.001)"
+                )
+                check.settle()
+                page.evaluate(
+                    "resolution=>window.__hictBenchmark.manager().getView().setResolution(resolution)",
+                    native_camera[1],
+                )
+                check.settle()
                 for mode in ("EXPECTED", "OBSERVED_OVER_EXPECTED"):
                     page.locator('select:has(option[value="EXPECTED"])').select_option(
                         mode
@@ -291,6 +303,14 @@ def main():
                             "bpResolution"
                         ] in (4, 10)
                         assert camera() == before
+                        visible_secondary = page.evaluate("""()=>{
+                            const l=window.__hictBenchmark.manager().viewAndLayersManager;
+                            return l.layersHolder.secondaryHiCDataLayers
+                                .filter(x=>x.getVisible())
+                                .map(x=>({projection:x.get('projectionKey')??null}));
+                        }""")
+                        assert len(visible_secondary) == 1, visible_secondary
+                        assert visible_secondary[0]["projection"], visible_secondary
                         record(mode.lower() + "-mixed-native-grids-" + scope)
                         close()
                         check.settle()
@@ -378,7 +398,7 @@ def main():
                 normalization = metadata["renderCapture"]["primaryNormalization"]
                 assert normalization["mode"] == "SQRT_COVERAGE"
                 assert (
-                    normalization["weightsApplied"]
+                    normalization["applyCoolerWeightsOption"]
                     and normalization["algorithmVersion"]
                 )
                 record("oe-figure-records-active-coverage-algorithm-and-weights")

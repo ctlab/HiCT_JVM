@@ -171,6 +171,17 @@ See [figure capture and provenance](figure-capture.md). Check the final layout
 and sequence against your analysis requirements. Assembly exports remain under
 Assembly; FASTA export requires a linked reference.
 
+To keep a before/after panel, enter a **Snapshot name** and choose **Save
+snapshot**. After cutting, reversing or scaffolding, capture again and open
+**Snapshots**. Select a saved name to view/export it, or **Compare to snapshot**
+to pair it with the current capture. Choose panel labels and a side-by-side or
+vertical layout, then **Update comparison**. Removing a snapshot offers Undo.
+Save the session to keep the library; unsaved snapshot changes are protected
+when closing or replacing the map. Sessions with figures require a version of
+HiCT that supports session v5. The file limit is 32 MiB, including up to eight
+snapshots with a combined 24 MiB storage budget. Reference datasets remain
+separate files. See the figure guide for image and decoding limits.
+
 **File → Open exported figure…** opens a read-only PNG/SVG viewer, including
 when no map is open. Choose a file, use Fit or Actual size, and zoom with the
 plus/minus buttons. Large previews scroll. Opening, cancelling or closing a
@@ -191,7 +202,8 @@ leaves balancing unavailable.
 |---|---|
 | Pan | Drag on the map |
 | Zoom | Mouse wheel or zoom buttons |
-| Select range | Shift-drag |
+| Select contigs/scaffolds | Shift-drag |
+| Keep a rectangle for sequence/dotplot analysis | Ctrl-drag |
 | Open selected file | Enter or double-click |
 | Arm Split and choose cut | Split button, then double-click on the map |
 | Cancel armed Split or Move | Escape |

@@ -52,7 +52,9 @@ counts, fitting semantics and SHA-256 of the actual means and domains. Base-leve
 sequence views still fit native BINS; their one-base colors do not invent contact
 measurements. Secondary-source processing keeps its own rendering graph.
 The record also identifies each source's active FILE or SQRT_COVERAGE weights,
-whether weights are applied, and the active coverage algorithm version.
+the traditional applyCoolerWeights option, and the active coverage algorithm
+version. That option is not a claim that every custom graph uses weights: the
+recorded rendering graph determines its own operations.
 
 Tile requests carry the context id and use server-rendered PNG colors. Source,
 assembly, normalization, rendering or track generations changing during drawing
@@ -90,15 +92,65 @@ The workspace resize observer ignores that temporary layout while exporting.
 Small whole-map captures are enlarged to a readable fitted size; large maps keep
 the selected data grid and existing export bounds.
 
-`encodeFrozenFigure` currently receives only HiCT's own captured scenes. Do not
-pass arbitrary session-imported SVG markup to its PDF/vector path. A stored-image
-restore path must validate bounded content and preserve the image-only boundary,
-or rebuild a trusted scene before vector encoding. Keep imported markup out of
-the application DOM.
+`encodeFrozenFigure` receives captured scenes or snapshots rebuilt through the
+restricted scene reader. Arbitrary exported-image viewer markup must not enter
+its PDF/vector path. Imported session scenes are rebuilt with an explicit SVG
+vocabulary, numeric/resource limits and local clipping references. Styles and
+font programs from session files are not accepted. Restored vector text uses the
+bundled HiCT fonts; the original PNG bytes remain unchanged. No imported scene
+is inserted into the application DOM. Embedded rasters must be bounded PNGs with
+valid chunk checksums; animation, external resources, active markup, conflicting
+provenance/dimensions/times and broken references are rejected before the live
+session replacement request.
 
-P9 next requires named immutable snapshots before/after cutting and scaffolding,
-comparison composition, portable session persistence/validation, and final
-publication-figure artifacts. Those workflows must reuse the captured data and
-provenance, preserve source identity across changes, and qualify session restore
-and malformed/obsolete inputs before claiming completion. The current dialog
-does not yet provide that stored comparison library.
+## Named snapshots and comparisons
+
+Name the preview and choose **Save snapshot**. It saves the scene currently shown,
+including a comparison if one is displayed. The library is included when you
+save the session. **Snapshots** opens the list. Select a name to view and export
+that saved panel alone, or choose **Compare to snapshot** to pair it with the
+current map capture. **Current capture** returns to the map preview. Viewing and
+comparing never restore an old assembly or query the old fitting context.
+
+Capture before cutting, make the edit, reopen Export and capture again. Give the
+new panel a meaningful label. Comparisons can be side by side or above/below;
+**Update comparison** applies label/layout changes. All three format buttons use
+the completed comparison. Panels retain their own coordinate axes, regions,
+source/assembly identities, graph, normalization inputs and capture time. Their
+raster pixels are placed at one output pixel per captured pixel against a white
+comparison background. Vector geometry/text is retained, and per-panel clip IDs
+are made unique. Root metadata contains both complete panel records and offsets.
+A layout does not rescale contact values or rerender old data. Check that the
+chosen regions, scales and rendering settings answer the intended biological
+question.
+
+Removing a snapshot offers **Undo remove**. Added/removed snapshots are unsaved
+session changes: closing/replacing the map or leaving the page protects them.
+A confirmed session write marks only the captured library revision saved; newer
+snapshots stay unsaved if a write finishes late. A download-started receipt still
+requires the user to verify the downloaded file, as with assembly edits. Closing
+during PNG preparation or comparison ignores late results and releases temporary
+URLs. Ordinary Attach retains the window's existing snapshot library.
+
+Sessions containing snapshots use client envelope version 5, so older clients
+report that an update is needed instead of dropping figures. Existing sessions
+without figures retain versions 3/4 and remain supported. Figure records contain
+canonical vector scenes and original PNG data. Their CRC32 and PNG chunk checks
+are corruption checks, not authenticity signatures; historical metadata remains
+a recorded declaration. Full-file dataset hashes and exact release artifacts
+still belong with publication evidence.
+
+The client session file limit is 32 MiB. Stored figure data has a 24 MiB aggregate
+budget, at most eight entries, 64 megapixels per image and 128 megapixels combined.
+Scene parsing also bounds nodes, nesting and embedded rasters. Metadata JSON is
+limited to 160 nesting levels and 250,000 values, with finite numeric values.
+The limit is
+checked before publishing a library change. Use a smaller capture or remove an
+entry if necessary; data is not silently downsampled. The server assembly/track
+snapshot limits are independent and unchanged. Reference matrices/FASTA are not
+embedded in the session file.
+
+P9 still requires the final publication composition/preset and real example
+artifacts at their intended print size, alongside wider source/performance and
+release qualification. The stored comparison journey now covers cut/scaffold
+states and real generated ModDotPlot plus tracks before and after Reverse.

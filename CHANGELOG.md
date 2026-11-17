@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Store and view named figure snapshots, compare cut/scaffold/reversed states, and retain original pixels, vector labels and per-panel provenance in portable sessions.
+- Validate stored figures before replacing a session, protect snapshot changes during delayed saves, preserve legacy AGP fragment IDs after reordered assembly edits, and avoid redundant fine-grid loading in projected comparisons.
+
 - Pin Expected/O/E figure fitting profiles across viewport, whole-map, rectangle and sequence-level captures, recording actual profile fingerprints and active normalization inputs.
 - Reject incomplete figure tiles and changed scientific inputs, restore the shared overview and live camera, and bound capture work, retained profiles and abandoned-context leases.
 

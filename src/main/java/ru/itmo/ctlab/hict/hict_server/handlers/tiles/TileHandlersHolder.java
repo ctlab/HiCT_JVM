@@ -684,7 +684,7 @@ public class TileHandlersHolder extends HandlersHolder {
   private static JsonObject normalizationMetadata(ChunkedFile file, boolean applied) {
     if (file == null) return null;
     var weights = file.getNormalizationWeights().snapshot();
-    return new JsonObject().put("weightsApplied", applied).put("mode", weights.mode().name())
+    return new JsonObject().put("applyCoolerWeightsOption", applied).put("mode", weights.mode().name())
       .put("algorithmVersion", weights.usesCoverage() ? weights.prepared().algorithmVersion() : null);
   }
 

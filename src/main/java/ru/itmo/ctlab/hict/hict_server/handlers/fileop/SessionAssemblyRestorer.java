@@ -42,17 +42,15 @@ public final class SessionAssemblyRestorer {
         if (saved.getBoolean("contigSharedBinSlice", false)) sharedBinIds.add(id);
       }
       final var splits = source.getJsonArray("splitEdits");
-      if ((splits == null || splits.isEmpty()) && sharedBinIds.isEmpty()) {
-        candidate.importAGP(new StringReader(agp));
-      } else {
-        for (int index = 0; splits != null && index < splits.size(); index++) {
-          final var edit = splits.getJsonObject(index).mapTo(ChunkedFile.SplitEdit.class);
-          final var parent = candidate.getAgpProcessor().resolveSessionComponent(
-            edit.parentId(), edit.sourceName(), edit.sourceOffsetBp(), edit.parentLengthBp());
-          candidate.scaffoldingOperations().replaySplit(edit, parent);
-        }
-        candidate.getAgpProcessor().importSessionRecords(new StringReader(agp), componentIds, sharedBinIds);
+      for (int index = 0; splits != null && index < splits.size(); index++) {
+        final var edit = splits.getJsonObject(index).mapTo(ChunkedFile.SplitEdit.class);
+        final var parent = candidate.getAgpProcessor().resolveSessionComponent(
+          edit.parentId(), edit.sourceName(), edit.sourceOffsetBp(), edit.parentLengthBp());
+        candidate.scaffoldingOperations().replaySplit(edit, parent);
       }
+      // AGP row order does not encode stable fragment IDs. Use the recorded IDs
+      // for legacy imported slices too, or a Reverse silently reassigns them.
+      candidate.getAgpProcessor().importSessionRecords(new StringReader(agp), componentIds, sharedBinIds);
       final var imported = candidate.getAssemblyInfo().contigs();
       require(imported.size() == contigs.size(), "contigDescriptors", "AGP changed the number of components");
       final var replacements = new HashMap<Integer, ContigDescriptor>();

@@ -4967,3 +4967,113 @@ A read-only follow-up of public NCBI RID FR9P7TGF016 at
 It submits no new query and uploads no project sequence. P8 successful live
 result delivery remains unqualified. Protected plans and owner files are
 unchanged; nothing pushed, merged or tagged.
+
+## Portable figure snapshots and cut/scaffold comparisons
+
+Qualified development pair: JVM
+`build/libs/hict_server-2.0.47-33c7972-webui_a2540fa-fat.jar`, SHA-256
+`3f8a156018cc844f2c7c3b55c83af853722c43e6b0c83be27d64c6d268cfa278`,
+and WebUI dist SHA-256
+`44e9f6c9220d80d21c46e88a357a738a4581df5a0d922612d9ca3997cf895402`
+(sorted relative paths/NUL/bytes, excluding electron). The source includes this
+increment even though artifact version labels describe the preceding commits.
+Harnesses snapshot the JAR and no assets were rebuilt during acceptance. Native,
+embedded/SFX and cross-platform package qualification are separate outstanding
+release gates.
+
+- `/tmp/hict-snapshots-jvm-full-03.log`: `./gradlew test shadowJar -x copyWebUI
+  --offline`, BUILD SUCCESSFUL, 625 tests, zero failures/errors, seven optional
+  skips. Legacy AGP reverse/regroup restore retains fragment IDs, both 4/10-bp
+  matrices, intervals and snapshot equality; an identity collision rejects and
+  rolls back. These two new parameterized cases first failed with the old restore
+  path. Existing API coverage passes with the accurately named
+  `applyCoolerWeightsOption` provenance flag. The actual rendering graph determines
+  whether that option participates in a custom pipeline.
+- `/tmp/hict-snapshots-web-13.log`: full `npm run build:web`, terminal zero,
+  type/DTO/numerical checks pass. Session DTO tests cover v5, corruption, duplicate
+  IDs, budgets and compatible envelopes without figures. Changed-file Prettier,
+  focused Python Black/compile and both repository whitespace checks pass.
+- `/tmp/hict-snapshot-scenes-final-03.log`: real Chromium DOM boundary check,
+  terminal zero. PNG bytes round-trip, Unicode names/vector labels survive,
+  aggregate budgets fail atomically and late saves retain dirty state. Seventeen
+  rejected inputs cover active/remote SVG/CSS, XML/namespace hazards, corrupt PNG,
+  duplicate provenance, time mismatches, excessive JSON nesting and non-finite
+  numbers. No external resource request occurs. This focused test stubs fonts;
+  the full UI journeys exercise the actual bundled fonts and encoders.
+- `/tmp/hict-snapshots-ui-09/results.json`: fourteen cases, empty errors,
+  terminal zero. Real controls capture before/after exact cut and scaffold,
+  switch comparison layouts, export three formats, save/close/reopen session v5,
+  view the original stored PNG/SVG, store a comparison and undo removal. A
+  malformed scene with a recomputed CRC is rejected before `/session/restore`;
+  the current map remains intact. Delayed session writes preserve newer dirty
+  snapshots; closing during PNG preparation or comparison ignores late results
+  and releases URLs. `comparison-parity.json` records 1,436 flat interior samples
+  matching PNG against independently rasterized SVG/PDF within four channel
+  units, plus editable PDF captions/track labels. Native SHA-256 stays
+  `cc6a14ca907a66dd060f88c2d5aacb0d860170c6823ea1d1be4a7fd3d67c2f4c`.
+- `/tmp/hict-snapshots-sequence-06/summary.json`: nineteen cases, status ok,
+  terminal zero (`.driver.exit` also records zero). Command:
+  `check_sequence_lifecycle_browser.py --figure-export --snapshot-comparison`
+  with the normal JAR/webui/output arguments. Actual native ModDotPlot generation,
+  split contact/identity map and tracks are captured before and after Reverse.
+  All formats retain per-panel source units and distinct AGP provenance; both
+  PNG panels equal the original pixels. Undo restores the original assembly.
+  `identity-figure-validation.json` records 2,279 independent SVG/PDF interior
+  color matches; `identity-snapshot-validation.json` records panel parity and
+  native SHA-256 `04f851c210e6eaa0fa31842363f39ce94ef9266d48d07d5ee4612635cc4a50b0`.
+  The screenshot uses a separate `-ui.png` path and never overwrites the PNG
+  artifact under test.
+- `/tmp/hict-snapshots-expected-04/results.json`: seventeen cases, empty errors,
+  terminal zero. All pinned Expected/O/E scopes, coverage, concurrent changes,
+  tile failure and late-context cleanup pass. A forced sequence-to-projected
+  transition asserts exactly one visible secondary projection. This prevents
+  the redundant native secondary underlay from consuming the tile queue.
+- `/tmp/hict-snapshots-frozen-03/results.json`: ten cases, empty errors,
+  terminal zero. Frozen three-format metadata, composition, exact cuts, stale
+  captures, close and 640-pixel controls remain correct.
+- `/tmp/hict-snapshots-viewer-02/results.json`: fourteen cases, empty errors,
+  terminal zero. Actual exported PNG/SVG reopening, pixel equality, navigation,
+  inert SVG, chooser memory and late-decode cleanup pass.
+
+- `/tmp/hict-snapshots-destinations-05/results.json`: fourteen cases, empty
+  errors, terminal zero. Confirmed/cancelled/denied/failed/delayed writes, exact
+  selection FASTA and remembered paths remain correct. Fixture and output use
+  fresh sibling directories.
+- `/tmp/hict-snapshots-expected-06/results.json`: the full seventeen-case suite
+  repeats with empty errors and terminal zero after the visibility fix. Explicit
+  Python/shell exit records are zero; teardown tracing records SIGTERM directed
+  to the owned Java group, distinct from the driver group. Both
+  final runs cross native/sequence and projected grids and require the correct
+  single secondary layer. Total: 88 primary browser cases plus this 17-case
+  repeat, independent of the focused scene boundary check.
+
+Screenshots were inspected for the original saved
+snapshot, real ModDotPlot/track comparison and 640-pixel wrapping. Interior color
+samples do not establish pixel equality of font/annotation antialiasing. Portable
+sessions have a 32 MiB client file limit, 24 MiB figure budget, eight snapshots,
+64 megapixels per image and 128 megapixels combined. SVG/JSON/PNG parsing has
+independent work bounds; figures retain original PNG bytes and reconstructed
+vector labels with trusted bundled fonts. CRC32 is corruption detection, not a
+signature, and dataset quick fingerprints are not full-file verification.
+
+Excluded intermediates: JVM red-01 had a test-method compilation error; red-02
+reproduced the actual legacy identity defect. Boundary unit-01/02 had test quoting
+and an overbroad string assertion. UI-01 exposed Vue unwrapping the library's
+private refs; the per-manager library is now markRaw. UI-02 used an invalid
+synthetic grouping DTO; UI-04 assumed a feature label that the actual track does
+not display; both drivers now follow real behavior. UI-06 exposed the missing
+snapshot-name action, fixed and verified in UI-09. Earlier subsets/builds are
+superseded. Sequence-03 had a screenshot overwrite its PNG artifact; sequence-04
+passed assertions but terminated with 143 for an undetermined cleanup/environment
+reason, so neither qualifies the final pair. Expected-05 likewise completed
+all assertions but its tool exit was 143; it is excluded from terminal-success
+evidence. Sequence-06 retains separate PNG
+and screenshot and records a terminal zero. Destination-03 supplied overlapping
+fixture/output directories and failed its preflight; the final run uses fresh
+siblings. Expected-03 is a real product failure: diagnostics show 2,209 fine-grid
+secondary tiles queued underneath a 144-tile projected layer, reaching the strict
+60-second timeout. The visibility fix removes that redundant layer rather than
+raising the timeout or accepting unfinished drawing. Prior passing retries do
+not qualify that defect. P9 publication figures/presets and remaining release,
+platform, performance and P8 successful live-provider gates stay open. Protected
+plans and owner files are unchanged; nothing pushed, merged or tagged.

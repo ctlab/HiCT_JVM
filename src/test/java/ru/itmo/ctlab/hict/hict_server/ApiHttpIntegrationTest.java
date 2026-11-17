@@ -1030,7 +1030,7 @@ class ApiHttpIntegrationTest {
       var id = metadata.getString("id");
       assertEquals(mode, metadata.getString("signalDisplayMode"));
       assertEquals("FILE", metadata.getJsonObject("primaryNormalization").getString("mode"));
-      assertFalse(metadata.getJsonObject("primaryNormalization").getBoolean("weightsApplied"));
+      assertFalse(metadata.getJsonObject("primaryNormalization").getBoolean("applyCoolerWeightsOption"));
       assertEquals(513L, metadata.getJsonObject("expectedProfile").getLong("endRowPx"));
       assertTrue(metadata.getJsonObject("expectedProfile").getString("sha256").matches("[a-f0-9]{64}"));
       assertSame(live, map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY));

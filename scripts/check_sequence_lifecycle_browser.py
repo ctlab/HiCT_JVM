@@ -14,6 +14,7 @@ def main():
     parser.add_argument('--webui', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--geometry-only', action='store_true', help='Run only the independent clipped-bin browser oracle')
+    parser.add_argument('--snapshot-comparison', action='store_true', help='Also store and compare real ModDotPlot/track captures before and after Reverse')
     parser.add_argument('--figure-export', action='store_true', help='Also qualify PNG/SVG/PDF capture of the real generated ModDotPlot and tracks')
     args = parser.parse_args()
     suite = Path(args.suite).resolve() if args.suite else Path(__file__).resolve().parents[1]
@@ -293,6 +294,74 @@ class OverlayFixture { public static void main(String[] a) {
             assert len(samples)>=20,len(samples)
             assert hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()==native_hash
             (out/'identity-figure-validation.json').write_text(json.dumps({'metadata':metadata,'matchingColorSamples':samples,'nativeSha256':native_hash},indent=2))
+
+        def snapshot_identity_comparison():
+            import hashlib
+            import xml.etree.ElementTree as ET
+            from PIL import Image
+            from playwright.sync_api import expect
+            native_hash=hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()
+            def open_figure():
+                page.locator('#export-dropdown-toggle').click()
+                dialog=page.get_by_role('dialog',name='Export figure',exact=True)
+                expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+                return dialog
+            def save(dialog,name,extension):
+                with page.expect_download(timeout=90000) as download:
+                    dialog.locator('#export-'+extension+'-button').click()
+                path=out/(name+'.'+extension);download.value.save_as(path);return path
+            def store(dialog,name):
+                dialog.get_by_label('Snapshot name',exact=True).fill(name)
+                dialog.get_by_role('button',name='Save snapshot',exact=True).click()
+                expect(dialog).to_contain_text('Snapshot “'+name+'” added.')
+            dialog=open_figure()
+            before=save(dialog,'identity-before-reverse','png')
+            store(dialog,'Before reverse')
+            original=page.evaluate('window.__hictBenchmark.manager().figureSnapshots.documents()[0]')
+            dialog.get_by_role('button',name='Close',exact=True).last.click()
+            page.evaluate("""()=>{const m=window.__hictBenchmark.manager(),h=m.contigDimensionHolder;
+                m.viewAndLayersManager.selectEntityRangeByBp(0,h.prefix_sum_bp.at(-1));}""")
+            with page.expect_response(lambda response: response.url.endswith('/reverse_selection_range')) as reversed_response:
+                page.evaluate('window.__hictBenchmark.manager().eventManager.onReverseSelectionClicked()')
+            assert reversed_response.value.ok,reversed_response.value.text()
+            check.settle()
+            dialog=open_figure()
+            after=save(dialog,'identity-after-reverse','png')
+            store(dialog,'After reverse')
+            dialog.get_by_role('button',name='Snapshots (2)',exact=True).click()
+            dialog.locator('li').filter(has=page.get_by_text('Before reverse',exact=True)).get_by_role('button',name='Compare to snapshot',exact=True).click()
+            expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+            dialog.get_by_label('Current panel label',exact=True).fill('After reverse')
+            dialog.get_by_role('button',name='Update comparison',exact=True).click()
+            expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+            paths={extension:save(dialog,'identity-snapshot-comparison',extension) for extension in ('png','svg','pdf')}
+            metadata=json.loads(ET.parse(paths['svg']).getroot().find('{http://www.w3.org/2000/svg}metadata').text)
+            with Image.open(paths['png']) as image:assert json.loads(image.text['HiCT provenance'])==metadata
+            xmp=ET.fromstring(subprocess.check_output(['pdfinfo','-meta',str(paths['pdf'])]))
+            assert json.loads(xmp.find('.//{urn:hict:figure#}metadata').text)==metadata
+            panels=metadata['comparison']['panels']
+            assert panels[0]['provenance']['provenance']['primary']['agpSha256']!=panels[1]['provenance']['provenance']['primary']['agpSha256']
+            for panel in panels:
+                state=panel['provenance']['provenance']
+                assert state['secondary']['capabilities']['units']=='IDENTITY_PERCENT'
+                assert state['secondary']['capabilities']['scoreScale']==10000
+                assert state['tracks'] and state['renderPipeline']['lowerExpression']['mode']=='MODDOTPLOT_IDENTITY'
+            with Image.open(paths['png']).convert('RGBA') as image:
+                for panel,path in zip(panels,(before,after)):
+                    x,y=panel['offset']['x'],panel['offset']['y']
+                    with Image.open(path).convert('RGBA') as source:
+                        assert image.crop((x,y,x+panel['width'],y+panel['height'])).tobytes()==source.tobytes()
+            assert page.evaluate('window.__hictBenchmark.manager().figureSnapshots.documents()[0]')==original
+            page.screenshot(path=str(out/'identity-snapshot-comparison-ui.png'))
+            dialog.get_by_role('button',name='Close',exact=True).last.click()
+            page.evaluate("async()=>await window.__hictBenchmark.manager().networkManager.requestManager.restoreAssemblyHistory('undo')")
+            check.settle()
+            restored=page.evaluate('async()=>await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true)')
+            assert restored['primary']['agpSha256']==panels[0]['provenance']['provenance']['primary']['agpSha256']
+            assert hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()==native_hash
+            (out/'identity-snapshot-validation.json').write_text(json.dumps({'metadata':metadata,'nativeSha256':native_hash,'panelPixelsUnchanged':True,'undoRestoresAssembly':True},indent=2))
+            # The surrounding legacy journey owns its original fixture and close prompts.
+            page.evaluate('window.__hictBenchmark.manager().figureSnapshots.restore([])')
 
         def identity_presets():
             page.get_by_role('combobox', name='Visualization preset', exact=True).select_option(label='ModDotPlot: Hi-C above, identity below')
@@ -742,6 +811,7 @@ class OverlayFixture { public static void main(String[] a) {
             check.step('minimap-clipping', minimap_clipping)
             check.step('generate-display-and-accumulate-moddotplot', moddotplot)
             if args.figure_export:check.step('frozen-contact-identity-and-track-figure-parity',frozen_identity_figure)
+            if args.snapshot_comparison:check.step('named-identity-track-snapshots-before-and-after-reverse',snapshot_identity_comparison)
             check.step('identity-presets-and-pipeline-roundtrip', identity_presets)
             check.step('selection-menu-exports-and-moddotplot', selection_actions)
             check.step('selection-alignment-dotplot',alignment_dotplot)

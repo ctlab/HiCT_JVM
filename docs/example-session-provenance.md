@@ -36,6 +36,7 @@ fingerprints. A full-file session fingerprint remains a separate explicit option
 Removing or invalidating cache metadata before opening a local file can leave it
 without an example association; provenance is never guessed from a similar name.
 
-The declaration remains available in the saved JSON for citation and audit. A
-dedicated provenance viewer and figure metadata belong to subsequent publication
-work; they are not implied by this persistence feature.
+The declaration remains available in saved session JSON and captured figure
+provenance for citation and audit. Named figure snapshots retain it across
+comparison and session restore; see [figure capture](figure-capture.md). A
+dedicated provenance viewer remains separate publication work.

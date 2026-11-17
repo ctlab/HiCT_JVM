@@ -29,7 +29,7 @@ describe earlier releases; they must not override the decisions below.
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; live-provider success and platform qualification pending |
-| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions, stored paired comparisons and session persistence pending |
+| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions and portable named cut/scaffold/ModDotPlot comparisons implemented and verified; publication presets/artifacts and final release qualification pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
 P10 is independent and is being completed before the coordinated P1 changes.
@@ -963,3 +963,43 @@ combined native/SFX distributable. P8 live provider success remains open: a spar
 read of the existing public NCBI RID at 07:31 local still reports WAITING, without
 resubmitting any sequence. Protected plans and owner files remain unchanged;
 nothing pushed, merged or tagged.
+
+## Portable named snapshots and immutable comparisons
+
+P9 now stores named captures independently of subsequent assembly edits. The
+Export dialog can reopen an original snapshot, compare it with the current
+capture horizontally or vertically, retain the comparison itself, and export
+PNG/SVG/PDF with vector labels and complete per-panel provenance. Removing a
+snapshot has an Undo action. The library starts collapsed and its controls wrap
+at 640 pixels. Stored figures travel in session envelope v5; sessions without
+figures keep their compatible v3/v4 envelopes.
+
+Snapshot changes participate in close/replace/navigation protection. Confirmed
+writes mark only the captured revision saved; newer figures remain unsaved after
+a delayed write. Session import validates and decodes bounded, reconstructed SVG
+and PNG records before replacing the live workspace. It rejects active/external
+content, malformed chunks, dimension/provenance mismatches and excessive metadata.
+CRC32 detects corruption; recorded scientific provenance is not authentication.
+
+The real session journey uncovered legacy AGP fragment IDs being reassigned after
+Reverse. Restore now imports recorded identities for legacy and exact-cut
+snapshots while retaining strict source interval, ATU, matrix and rollback checks.
+Repeated Expected/O/E capture also exposed a native secondary layer surviving a
+switch to the projected grid, unnecessarily loading thousands of hidden-underlay
+tiles. Only the current projected pair is visible now; the browser regression
+explicitly crosses sequence/native and projected grids.
+
+Validation uses 625 JVM tests, zero failures/errors and seven optional skips,
+full WebUI build/type/numerical checks, 88 primary Chromium cases plus a repeated
+17-case Expected/O/E qualification, and a DOM boundary check rejecting 17 unsafe
+records. Independent SVG/PDF rasterization matches 1,436 comparison samples and
+2,279 real ModDotPlot samples; original snapshot PNG bytes and each comparison
+panel's pixels survive unchanged. Exact commands, hashes, exclusions and artifacts
+are in reinforcement-validation.md. Screenshots were inspected for the stored
+original, real identity/track comparison and narrow layout.
+
+Publication presets and final real-example figures at intended print size remain
+open, as do P8 live provider success and the wider performance/platform/release
+gates. This validates separately served API/assets, not a combined native/SFX
+package. Protected plans and owner files remain unchanged; nothing pushed,
+merged or tagged.
