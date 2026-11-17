@@ -4505,6 +4505,11 @@ public class Track1DManager implements AutoCloseable {
     private BamTrackDataSource(final @NotNull Path path) {
       this.path = path;
       final SamReaderFactory factory = SamReaderFactory.makeDefault().validationStringency(ValidationStringency.SILENT);
+      if (System.getProperty("os.name", "").startsWith("Windows")) {
+        // HTSJDK's mapped index buffer is released by GC, not reader.close().
+        // Regular index I/O lets Windows release and replace a closed BAM track.
+        factory.enable(SamReaderFactory.Option.DONT_MEMORY_MAP_INDEX);
+      }
       try {
         this.reader = factory.open(path.toFile());
         if (!this.reader.hasIndex()) {

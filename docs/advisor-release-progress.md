@@ -15,7 +15,10 @@ describe earlier releases; they must not override the decisions below.
   contacts stay unchanged; shared references are not new contact observations.
 - Target an Application Note. The supplied manuscript is read-only.
 - Keep protected files and pre-existing dirty documents untouched. Commit by
-  explicit paths per verified increment. Never push, merge or create release tags.
+  explicit paths per verified increment. The owner explicitly authorized pushes
+  and cancellation of superseded Actions runs on 2026-11-17; check CI before
+  each commit/push and monitor the replacement runs. Never merge or manually
+  create release tags.
 
 ## Execution and coverage
 
@@ -1392,3 +1395,51 @@ supply actual saved files through WebDriver file input. Native navigation,
 renderer loss, broader real-data native workflows, other platforms and final
 installer/package gates remain open. See `tauri-native-validation.md` and the
 reinforcement evidence for exact hashes, receipts and reproduction commands.
+
+
+## Version-63 package qualification and native lifecycle follow-up
+
+The version-63 producer succeeds. The actual .run-created application, staged
+application and all 3,100 tar/extracted file/link entries match in bytes and modes.
+Its ten-stage packaged Chromium gate passes, including 225 mixed cycles over
+1800.56 s: frame p95 16.7 ms, input acknowledgement p95 48.03 ms, unchanged
+632-node and 224-listener maxima. Ordinary packaged Tauri coordinate cases and
+real-map export checks also pass. This does not erase the later lifecycle failures.
+
+A controlled native Blob writer left 64 KiB staged after refresh. Actual SIGTERM,
+matching Unix launcher Stop, left an 87-MB staged FASTA. A late native chooser
+also exposed Tauri's custom-protocol-to-postMessage retry opening a second dialog.
+All failures are retained as negative controls; original final destinations were
+not replaced by partial files.
+
+Tauri 0.1.3 now gives each page an independently revocable generation, captures
+it before showing a chooser, rejects stale writes/commits/answers, and cleans only
+the replaced generation. Navigation invalidation does not wait on the disk mutex.
+A window-scoped chooser guard prevents overlapping/replayed dialogs. Unix
+SIGTERM/SIGINT route through awaited application cleanup, and legacy byte-array
+saves share the registered staged writer. No bind/CORS or remote submission
+behavior changes. Existing dependency pins/checksums remain intact.
+
+The final development executable passes 23 Rust tests, four native lifecycle
+cases, eight coordinate-export cases, 17 real-map/render/export/reset checks and
+nine legacy IPC checks. Native HTTP refresh cleanup takes 78 ms and SIGTERM
+cleanup 111 ms in the recorded run. The 512-Mb output retains its independent
+sequence/file hashes. The full WebUI build passes. Source/payload commits and the
+updated portable artifact are the next gates; these development checks do not
+qualify Windows/macOS, hard kills or arbitrary portal/runtime variants.
+
+
+## GitHub Actions audit before the next push
+
+The owner now authorizes pushes and cancellation of superseded Actions runs.
+WebUI CI is green on its published head. JVM Windows/macOS tests fail because
+example provenance canonicalizes a data-root spelling used in conversion-cache
+keys; Windows also retains mapped BAM index state during temporary-folder cleanup.
+These failures block the portable publication gate even when package builds pass.
+A new Linux alias test reproduces the provenance defect before the fix. Lookup
+now supports supplied/canonical spellings with real-file identity preserved, and
+Windows uses nonmapped BAM index I/O. Full local validation passes 642 JVM tests,
+two optional skips, one native-baseline parity test and 25 workflow contracts.
+Remote Windows/macOS validation of the next exact commits remains required.
+See `ci-release-validation.md`; keep checking branch CI before commits/pushes and
+monitor replacement runs, preserving the existing publication gate.

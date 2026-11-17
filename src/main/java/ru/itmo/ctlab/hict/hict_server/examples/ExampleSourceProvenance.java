@@ -19,6 +19,7 @@ public final class ExampleSourceProvenance {
 
   public static JsonObject capture(Path root, Path processed, Path opened, FileFingerprintService fingerprints) {
     try {
+      var suppliedRoot = root.normalize().toAbsolutePath();
       root = root.toRealPath();
       opened = opened.toRealPath();
       if (!opened.startsWith(root)) return null;
@@ -36,10 +37,19 @@ public final class ExampleSourceProvenance {
       if (input.equals(opened)) {
         association = "DECLARED_HICT";
       } else {
-        var resolved = new MatrixConversionCacheManager(root, processed, fingerprints)
-          .resolveOpenPath(root.relativize(input).toString());
-        if (resolved.action() != MatrixConversionCacheManager.MatrixOpenAction.REUSE_CONVERTED
-          || !root.resolve(resolved.resolvedFilename()).normalize().equals(opened)) return null;
+        // Cache keys retain the spelling used at conversion time. macOS /var
+        // aliases and Windows short paths can differ from the real data root.
+        boolean current = false;
+        for (var cacheRoot : java.util.List.of(suppliedRoot, root)) {
+          var resolved = new MatrixConversionCacheManager(cacheRoot, processed, fingerprints)
+            .resolveOpenPath(root.relativize(input).toString());
+          if (resolved.action() == MatrixConversionCacheManager.MatrixOpenAction.REUSE_CONVERTED
+            && cacheRoot.resolve(resolved.resolvedFilename()).toRealPath().equals(opened)) {
+            current = true;
+            break;
+          }
+        }
+        if (!current) return null;
         association = "CURRENT_CONVERSION_CACHE";
       }
       var result = new JsonObject().put("schemaVersion", 1).put("capturedAt", Instant.now().toString())

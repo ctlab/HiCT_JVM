@@ -2,14 +2,15 @@
 
 ## Current advisor-release qualification — 2026-11-17
 
-Latest qualified Linux candidate: `2.0.62-d50d6aa-webui_3bf3b68`, with exact
-archive/JAR hashes and evidence below. The full packaged Chromium gate and
-30-minute mixed soak pass. Real native sequence jobs have verified bundled tool
-origins and hashes. The public-data publication artwork is retained and checked.
-Overall release qualification remains in progress: Tauri 0.1.2 passes complete-wrapper Linux development checks, while its updated
-final portable artifact, broader native workflows and other platform/native
-dialog gates remain open. The older GO statements below retain their original
-artifact and workflow scope. Protected plans and manuscript remain unchanged.
+Latest qualified Linux browser candidate: `2.0.63-09c6962-webui_2eb9f29`.
+Its full packaged Chromium gate and 30-minute mixed soak pass; archive, JAR and
+extracted-entry identity are verified. Ordinary packaged Linux Tauri save flows
+and real-map rendering/export checks pass. Subsequent refresh/termination tests
+exposed native lifecycle defects, so this is not an overall native release GO.
+Tauri 0.1.3 fixes pass the development gates described below; the updated final
+portable artifact and other platform/native gates remain open. Earlier GO
+statements retain their original artifact/workflow scope. Protected plans and
+manuscript remain unchanged.
 
 ## Publication qualification — 2026-11-13
 
@@ -6152,3 +6153,93 @@ non-null assertion warnings). The full finalized WebUI build under
 `/tmp/hict-tauri-native-final-web-build-01.log` exits zero. A fresh build stamped
 with the committed WebUI, rebuilt native payload and package-level qualification
 are the next gates; development-pair results above do not substitute for them.
+
+
+## Version-63 exact package and complete browser gate — 2026-11-17
+
+`/tmp/hict-tauri-archive-qualification.json` passes. The producer exits zero;
+all 3,100 staged/tar/extracted file/link entries match in bytes and modes.
+The actual .run-created application was moved intact to
+`/tmp/hict-tauri-extracted-01/HiCT-2.0.63-09c6962-webui_2eb9f29-linux-x86_64`.
+Redundant staging/private payload was removed only after identity verification
+and checking for active consumers. Archives and receipts are retained.
+
+- JAR SHA-256: `074e703cb02e0a7d7a319660a5a1a5ccd3e31b26c708966e8c87234b72b9ed1f`.
+- .run SHA-256: `3d6ef06431c52c879108ab8a9d2d90a286412fe7d6595ced7616a826cba5dd74`.
+- tar.gz SHA-256: `6e5fa86d77279fefdf18e62e09004ea470cd27a91e7819dff6e020b4a832f828`.
+- Payload SHA-256: `94e873acf20673b9290c0f4bddb14eeee8e9c84d3dd694179c916ca4e4f1b401`.
+- Native producer repeat 07 and payload identity checks pass; attempt 05's
+  unmounted output failure is retained, followed by successful preparation/repeat.
+- `/tmp/hict-integrated-release-12/qualification.json` and `.exit.json`: all ten
+  stages pass. Four map performance gates pass. The soak runs 225 cycles over
+  1800.561 s: frame p95 16.7 ms, acknowledgement p95 48.032 ms, JS heap slope
+  0.09271 MiB/min, JVM heap slope 0.07665 MiB/min, stable 632-node/224-listener
+  maxima and no recorded browser errors. Input/JAR/native identities remain intact.
+- `/tmp/hict-tauri-streaming-native-05/native-coordinate-qa-01/qualification.json`:
+  eight ordinary native cases pass in one fresh run using exact version-63
+  runtime/JAR and asset/executable snapshots. HTML open choosers remain suppressed
+  by automation; actual saved session files are supplied through file input.
+- `/tmp/hict-tauri-realmap-native-01/qualification.json`: 17 normal native
+  rendering/histogram/export/reset checks pass on staging subsequently verified
+  identical to the extracted archive. Independent SVG/PDF rasterizations match
+  the saved PNG within the established tolerance; original data hashes match.
+  The harness's private-display captures were inspected. An additional screenshot
+  that guessed DISPLAY :0 captured the host lockscreen instead and was excluded
+  and removed, with an exclusion receipt. It is not UI qualification evidence.
+
+This qualifies the exercised packaged Chromium and ordinary native workflows,
+not native page replacement/termination: later negative controls below supersede
+any broader interpretation. The protected manuscript and plans remain unchanged.
+
+## Native page replacement, signal shutdown and compatibility — 2026-11-17
+
+The final development executable is SHA-256
+`a73cfa59c532d89c29f8218caab52415b85ecb21827455cdd7b87b1cc2c7749c`.
+`/tmp/hict-tauri-sdk-01/compile-10.log` and `.exit.json` pass the full wrapper
+build and 23 Rust tests. The shared filesystem implementation's 16 isolated tests
+pass independently. Lock audit preserves all prior dependency versions/checksums;
+Tokio signal support uses the already locked signal-hook-registry dependency.
+`/tmp/hict-tauri-lifecycle-web-build-01.log` exits zero. Native commands/capability
+remain aligned and the existing localhost origins and bind/CORS policy stay intact.
+
+Four native lifecycle cases pass under
+`/tmp/hict-tauri-streaming-native-08/lifecycle-qa-01/qualification.json`:
+64-KiB partial Blob refresh, a real late chooser answer after refresh, actual
+FASTA transfer refresh and SIGTERM. The latter two clean up in 0.078/0.111 s,
+with no final file, destination temporary or JVM spool left. The termination
+check is inside the Unix launcher's two-second graceful-stop window.
+
+The same executable passes eight ordinary coordinate cases under trial 08,
+17 real-map/render/export/reset cases under `hict-tauri-realmap-native-03`, and
+nine legacy-IPC cases under `hict-tauri-legacy-native-01`. The eight-case run
+retains the 512-million-base sequence/file hashes, 17-ms frame p95 and 8.36-ms
+acknowledgement p95; its 1.339-s interval starts after the chooser closes and is
+not an end-to-end timing claim. Legacy figures retain exact input bytes through
+real native dialogs. Both integrated figure runs use a controlled command page;
+ordinary/lifecycle runners operate the actual copied WebUI.
+
+Negative controls remain: trial 05's Blob refresh and Unix SIGTERM leave partial
+files with native 0.1.2; trial 07 exposes a duplicate chooser/empty stage when
+Tauri retries interrupted custom-protocol IPC through postMessage. The final
+per-window chooser guard, page-generation checks and shared legacy writer pass
+those observed cases. Owned test leftovers were cleaned only after recording
+failure receipts or by verified native shutdown. Hard kills, renderer crashes
+and other platform/runtime variants remain unqualified. Updated final package
+qualification remains required.
+
+## Live GitHub Actions audit and cross-platform fixes — 2026-11-17
+
+The owner explicitly authorizes pushes and cancellation of superseded Actions
+runs, replacing the earlier no-push constraint. See
+[the CI validation record](ci-release-validation.md). Latest WebUI CI is green;
+Windows/macOS JVM regression failures block portable publication. Downloaded
+Windows XML confirms converted example provenance is missing, plus temporary
+folder cleanup failure in the BAM sequence-track test.
+
+A synthetic aliased-root provenance case reproduces the cache-key mismatch on
+Linux before the fix. Supplied/canonical cache lookup and real output identity
+checks now pass both cache spellings without invalidating existing metadata.
+Windows BAM tracks use nonmapped index I/O; actual Windows CI confirmation is
+pending. Full local validation passes 642 JVM tests with zero failures/errors,
+two optional skips, native-baseline parity and all 25 workflow contracts. No
+required regression was disabled and publication still requires passing gates.

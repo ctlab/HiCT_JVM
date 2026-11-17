@@ -4,6 +4,8 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection;
 import ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService;
 import ru.itmo.ctlab.hict.hict_server.util.cache.MatrixConversionCacheManager;
@@ -100,6 +102,27 @@ class ExampleSourceProvenanceTest {
       var invalid = valid.copy();
       mutate.accept(invalid);
       assertThrows(IllegalArgumentException.class, () -> ExampleSourceProvenance.validate(invalid, "examples/provenance-fixture/fixture.hict.hdf5"));
+    }
+  }
+
+  @Test
+  @EnabledOnOs({OS.LINUX, OS.MAC})
+  void convertedProvenanceFindsTheExistingCacheThroughAnAliasedDataRoot() throws Exception {
+    example("fixture.mcool", "mcool");
+    var alias = root.resolve("data-root-alias");
+    Files.createSymbolicLink(alias, root);
+    var output = alias.resolve("examples/provenance-fixture/fixture.hict.hdf5");
+    Files.writeString(output, "Converted output bytes");
+    for (var conversionRoot : java.util.List.of(alias, root)) {
+      var cache = new MatrixConversionCacheManager(conversionRoot, alias.resolve("processed"), new FileFingerprintService());
+      cache.dropAllMetadata();
+      cache.recordSuccessfulConversion(conversionRoot.resolve("examples/provenance-fixture/fixture.mcool"),
+        conversionRoot.resolve("examples/provenance-fixture/fixture.hict.hdf5"), ConversionDirection.MCOOL_TO_HICT);
+      var provenance = ExampleSourceProvenance.capture(alias, alias.resolve("processed"), output, new FileFingerprintService());
+      assertNotNull(provenance);
+      assertEquals("CURRENT_CONVERSION_CACHE", provenance.getString("matrixAssociation"));
+      assertEquals("examples/provenance-fixture/fixture.hict.hdf5", provenance.getString("matrixOpenedFilename"));
+      assertDoesNotThrow(() -> ExampleSourceProvenance.validate(provenance, "examples/provenance-fixture/fixture.hict.hdf5"));
     }
   }
 

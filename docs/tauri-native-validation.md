@@ -1,6 +1,6 @@
 # Linux Tauri native export qualification
 
-Tauri 0.1.2 uses request-only Rust HTTP downloads for coordinate FASTA/AGP and
+Tauri 0.1.3 uses request-only Rust HTTP downloads for coordinate FASTA/AGP and
 64-KiB acknowledged binary IPC for locally generated Blobs. Choose a destination
 before starting an HTTP request. Keep the original destination until an fsync and
 rename succeed. Export IDs are owned by the choosing window; cancellation,
@@ -130,3 +130,49 @@ Final packaged runtime/artifact identity, broader real map/track native workflow
 other platforms, Wayland/portal variants and hard-crash durability remain separate
 release qualifications. Existing Chromium/Electron and publication-artwork
 receipts retain their original exact version and scope.
+
+## Page ownership and launcher termination follow-up
+
+Tauri 0.1.3 adds page-generation cancellation, a per-window chooser guard and
+Unix signal handling. Navigation invalidates the old generation immediately,
+without waiting for the disk mutex. A queued cleanup removes only exports from
+that generation. A chooser captures its generation before opening, so a late
+answer cannot create a file for a replaced page. The chooser guard also rejects
+overlapping IPC retries while the original dialog is pending. SIGTERM/SIGINT
+enter the awaited application-exit cleanup path; the Unix launcher uses SIGTERM
+and allows two seconds before forcing termination. Legacy byte-array clients now
+use the same registered staged writer; their renderer transport remains buffered.
+
+`check_tauri_lifecycle.py` reuses the coordinate runner's private-display setup:
+
+```bash
+python3 scripts/check_tauri_lifecycle.py \
+  --environment /tmp/hict-tauri-streaming-native-08/environment.json \
+  --container hict-tauri-gui-08 \
+  --binary /tmp/hict-tauri-streaming-native-08/native-bin/hict-tauri-browser \
+  --source-fasta /tmp/hict-tauri-streaming-native-01/data/assembly.fa \
+  --output /tmp/hict-tauri-streaming-native-08/lifecycle-qa-01
+```
+
+The four cases are a paused 64-KiB native Blob followed by document refresh, a
+real chooser answered after refresh, refresh during a real FASTA transfer, and
+SIGTERM during a real FASTA transfer. They pass on native SHA-256
+`a73cfa59c532d89c29f8218caab52415b85ecb21827455cdd7b87b1cc2c7749c`.
+HTTP refresh/termination observe 20,242,432/6,438,912 staged bytes and clean up
+in 0.078/0.111 s. This is a development pair with immutable version-63 JVM/WebUI,
+not yet the updated final package.
+
+The same native executable passes 23 Rust tests, eight ordinary native-coordinate
+cases, 17 integrated real-map/figure/reset checks and nine legacy IPC checks.
+The latter uses actual retained SVG/PNG/PDF bytes, including the 13-MB whole-map
+SVG, through the older save command. The real-map harness injects its controlled
+command page; its capture/compare results establish rendering and native I/O,
+not unmodified startup navigation. Ordinary/lifecycle runners use the actual
+WebUI. Full WebUI build and lock audit pass; all previously locked dependency
+versions/checksums remain unchanged.
+
+Negative controls remain under trials 05 and 07: version 63 leaves 64 KiB staged
+after Blob refresh and an 87-MB FASTA after SIGTERM; the first lifecycle prototype
+allows Tauri's interrupted custom-protocol request to retry through postMessage
+and open another chooser. The final chooser guard closes that observed race.
+SIGKILL, renderer hard crashes and platform variants remain separate gates.

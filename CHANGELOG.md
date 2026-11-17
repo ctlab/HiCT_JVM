@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve example conversion provenance across canonical/aliased data-root paths and release Windows BAM indexes when tracks close.
+
+- Cancel native exports on page replacement and Unix launcher Stop, prevent duplicate save dialogs, and apply the same guarded writer to legacy clients.
+
 - Stream FASTA/AGP directly from the JVM to Tauri save destinations without buffering sequence bytes in WebKit, and stage other exports through bounded binary transfers with cancellation and graceful-exit cleanup.
 
 - Restore executable permissions for every checksummed Linux portable command, including nested sequence tools, so first use runs the delivered tools directly.

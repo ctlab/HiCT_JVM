@@ -163,12 +163,16 @@ class NativeCheck:
     def dialog(self, menu, label, target=None, replace=False):
         self.click(menu)
         self.click(label)
-        def visible():
-            try:
-                return self.docker('xdotool', 'search', '--onlyvisible', '--name', '^Save HiCT export$').splitlines()[-1]
-            except (subprocess.CalledProcessError, IndexError):
-                return None
-        window = until(visible)
+        self.select_destination(target, replace)
+
+    def visible_save_dialog(self):
+        try:
+            return self.docker('xdotool', 'search', '--onlyvisible', '--name', '^Save HiCT export$').splitlines()[-1]
+        except (subprocess.CalledProcessError, IndexError):
+            return None
+
+    def select_destination(self, target=None, replace=False):
+        window = until(self.visible_save_dialog)
         self.docker('xdotool', 'windowfocus', window)
         if target is None:
             self.docker('xdotool', 'key', '--clearmodifiers', 'Escape')
@@ -180,10 +184,10 @@ class NativeCheck:
             time.sleep(.5)
             self.screenshot(target.name + '-overwrite.png')
             self.docker('xdotool', 'key', '--clearmodifiers', 'alt+r')
-        until(lambda: not visible())
+        until(lambda: not self.visible_save_dialog())
 
     def clean(self):
-        assert not list(self.saved.glob('.hict-save-*.tmp'))
+        until(lambda: not list(self.saved.glob('.hict-save-*.tmp')))
         until(lambda: not list(Path(self.args.environment).parent.joinpath('java-tmp').glob('hict-fasta-export-*.fa')))
 
     def rss(self):
@@ -211,16 +215,36 @@ class NativeCheck:
                 # Native exit can beat WebDriver's click acknowledgement. The
                 # process-exit and filesystem checks below must still succeed.
                 pass
-        else:
+        elif mode == 'navigation':
+            self.command('POST', '/refresh', {})
+        elif mode == 'sigterm':
+            # Match the Unix launcher's Process.destroy(), not SIGKILL or the
+            # WebDriver browser-close command. Identify only this test binary.
+            code = ('from pathlib import Path;import os,signal,json;found=[]\n'
+                    'for proc in Path("/proc").iterdir():\n'
+                    ' if proc.name.isdecimal():\n'
+                    '  try:\n'
+                    '   first=(proc/"cmdline").read_bytes().split(b"\\0")[0].decode()\n'
+                    '   if first==' + repr(self.args.binary) + ':found.append(int(proc.name))\n'
+                    '  except (OSError,UnicodeError):pass\n'
+                    'assert len(found)==1,found\n'
+                    'os.kill(found[0],signal.SIGTERM)\n')
+            self.docker('python3', '-c', code)
+        elif mode == 'native-window-close':
             window = self.docker('xdotool', 'search', '--onlyvisible', '--name', '^HiCT$').splitlines()[-1]
             self.docker('python3', '-c', WM_DELETE, window)
-        if mode != 'cancel':
+        else:
+            raise ValueError('Unknown interruption mode: ' + mode)
+        if mode not in ('cancel', 'navigation'):
             until(lambda: 'hict-tauri-brow' not in subprocess.check_output(
                 ['docker', 'top', self.args.container, '-eo', 'pid,comm'], text=True))
         self.clean()
         assert not target.exists()
+        elapsed = time.monotonic() - started
+        if mode == 'sigterm':
+            assert elapsed < 2, 'Cleanup exceeded the Unix launcher\'s graceful-stop window'
         self.record(mode + ' during transfer', observedStagingBytes=amount,
-                    cleanupSeconds=time.monotonic() - started)
+                    cleanupSeconds=elapsed)
 
     def run(self):
         source = Path(self.args.source_fasta)

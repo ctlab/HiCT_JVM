@@ -53,7 +53,7 @@ The main process opens the native chooser first, then fetches and writes chunks
 sequentially to a staged sibling file. It validates the existing trusted-local
 host policy and export endpoint allowlist, rejects redirects/error content, and
 never sends the file bytes through renderer IPC. Older wrappers without this
-capability retain their compatibility path. Tauri 0.1.2 provides the same
+capability retain their compatibility path. Tauri 0.1.3 provides the same
 request-only path through its Rust HTTP client, with 64-KiB sequential disk writes,
 normal TLS validation, no redirects or automatic retries, bounded idle waiting
 and checks of the response type and complete byte count. It forwards only the
@@ -65,10 +65,14 @@ trusted-LAN workflow ([API reference](https://developer.mozilla.org/en-US/docs/W
 
 Electron permits one coordinate transfer per window. Tauri permits at most four
 active staged exports in the application, each owned by its choosing window. Cancellation requires
-the matching window and operation ID. Electron navigation, renderer loss and destruction abort owned work. Tauri
-user cancellation, native window-manager close and graceful application exit
-remove owned files; navigation and renderer-process-loss qualification remain
-separate gates. Graceful quit cancels transfers and waits for their cleanup;
+the matching window and operation ID. Electron navigation, renderer loss and destruction abort owned work. Tauri user cancellation, document navigation, native window-manager close and
+graceful application exit remove owned files. Each chooser captures its page
+generation; page replacement immediately revokes old readers/writers without
+waiting for disk I/O, and delayed cleanup cannot remove a newer page's exports.
+Only one chooser may be open per window, including during a fallback IPC retry.
+Unix SIGTERM/SIGINT use the application cleanup path. Legacy byte-array clients
+use the same registered staged writer, although their renderer transfer remains
+buffered. Renderer hard-crash recovery remains a separate gate. Graceful quit cancels transfers and waits for their cleanup;
 an unanswered chooser owns no file and its aborted signal prevents later I/O.
 Rename commits the file; cancellation after that point cannot turn a completed
 save into a cancelled result. Permission and storage errors have concise messages;
@@ -138,3 +142,14 @@ genome-scale behavior across all browsers. Tauri/download streaming, broader
 bounded-memory qualification, all secondary-source/chooser routes,
 large directories, accessibility and restart behavior remain P3 work. No release
 readiness claim follows from these primary workflow checks.
+
+
+Tauri 0.1.3 lifecycle follow-up passes 23 Rust tests and four actual native
+lifecycle cases: partial Blob refresh, late chooser response after refresh,
+refresh during actual FASTA transfer and Unix SIGTERM during transfer. The latter
+finishes cleanup in 111 ms in the recorded run, inside the launcher's two-second
+graceful-stop interval. Eight ordinary coordinate-export cases, 17 real-map/
+figure/reset checks and nine legacy IPC checks pass on the same native executable.
+These are development-pair results using the immutable version-63 JVM/WebUI and a
+new wrapper snapshot. Final updated package qualification remains required; see
+[the native validation record](tauri-native-validation.md).
