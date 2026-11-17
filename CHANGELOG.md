@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep 1D-track names and scale values inside both axis panels and exported figures, with tick marks at their actual signal positions.
+
 - Keep small whole-map figures compact at their native contact grid, making readable multi-panel cut/scaffold comparisons possible while retaining the existing expanded default.
 
 - Show the smallest vector text size at the selected figure print width, helping choose a readable capture or comparison layout without changing captured pixels.

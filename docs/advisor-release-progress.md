@@ -1257,3 +1257,21 @@ The edit marker is explicitly illustrative, not a claimed misassembly or gene.
 Final figure composition, caption/alt text, readable print inspection and an
 archive from the committed build remain required. This does not qualify a new
 portable package or the wider platform/source-format gates.
+
+## Real-data track-title and scale clipping
+
+Composing the public-data panels exposed two defects. Vertical titles inherited
+center alignment from a preceding signal scale, cropping the start of the next
+track name. Horizontal scale labels assumed a fixed width, truncating the real
+GC maximum 0.478 to 0.4; rotated vertical scale labels could extend above their
+canvas and clamped tick positions could suppress the maximum.
+
+Track titles now set their own alignment/baseline. Scale labels reserve their
+measured text width and stay inside the panel; ticks use actual normalized plot
+positions. Tiny regions omit scale annotations that cannot fit. A real-data
+red/green browser check verifies both titles and numerical bounding boxes, with
+all three cut/scaffold captures passing. Eleven frozen-export and thirteen
+track/workspace regressions pass, as do the full WebUI build and focused lint.
+The preceding integrated version-58 build passes 641 JVM tests, zero failures/
+errors, seven optional skips. A newly stamped final figure archive remains next;
+no portable qualification is inferred from these development checks.

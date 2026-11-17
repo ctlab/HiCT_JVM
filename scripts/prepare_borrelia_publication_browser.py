@@ -105,8 +105,23 @@ def main():
                     download.value.save_as(path)
                     files[extension] = sha(path)
                 root = ET.parse(out / f"{name}.svg").getroot()
+                titles = [n for n in root.iter() if n.tag.endswith("}text") and n.text in ("GC fraction", "Cut marker")]
+                assert titles and all(n.get("text-anchor") == "start" for n in titles), "Track titles inherit the preceding scale's centered alignment and may be clipped"
+                if args.resolution == 10000:
+                    maximum = f"{max(float(line.split()[3]) for line in gc):.3f}".rstrip("0").rstrip(".")
+                    assert sum(n.text == maximum for n in root.iter() if n.tag.endswith("}text")) == 4, "Both axes must retain the GC maximum (fill and outline)"
+                text_bounds = page.evaluate("""source=>{
+                  const host=document.createElement('div');host.style.cssText='position:fixed;left:0;top:0;opacity:0;pointer-events:none';
+                  host.innerHTML=source;document.body.append(host);
+                  try{return Array.from(host.querySelectorAll('text')).filter(n=>['GC fraction','Cut marker'].includes(n.textContent)||getComputedStyle(n).fontFamily.includes('HiCT Mono')).map(n=>{
+                    const svg=n.ownerSVGElement,b=n.getBBox(),m=svg.getCTM().inverse().multiply(n.getCTM()),v=svg.viewBox.baseVal;
+                    const p=[[b.x,b.y],[b.x+b.width,b.y],[b.x,b.y+b.height],[b.x+b.width,b.y+b.height]].map(([x,y])=>new DOMPoint(x,y).matrixTransform(m));
+                    return {text:n.textContent,left:Math.min(...p.map(p=>p.x)),right:Math.max(...p.map(p=>p.x)),top:Math.min(...p.map(p=>p.y)),bottom:Math.max(...p.map(p=>p.y)),width:v.width,height:v.height};
+                  });}finally{host.remove();}
+                }""", (out / f"{name}.svg").read_text())
+                assert all(b["left"] >= 0 and b["top"] >= 0 and b["right"] <= b["width"] and b["bottom"] <= b["height"] for b in text_bounds), text_bounds
                 metadata = json.loads(root.find("{http://www.w3.org/2000/svg}metadata").text)
-                receipt["captures"].append({"name": name, "files": files, "width": float(root.get("width")), "height": float(root.get("height")), "metadata": metadata})
+                receipt["captures"].append({"name": name, "files": files, "width": float(root.get("width")), "height": float(root.get("height")), "metadata": metadata, "trackTextBounds": text_bounds})
                 page.screenshot(path=str(out / f"{name}-ui.png"))
                 dialog.get_by_role("button", name="Close", exact=True).last.click()
                 print("Captured", name, root.get("width"), root.get("height"), flush=True)

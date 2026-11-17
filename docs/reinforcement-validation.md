@@ -5823,3 +5823,45 @@ final script uses supported BigWig, explicitly opens Borders and uses a GFF3
 feature track with a focused live view before its context action. No app bug or
 source mutation is inferred from these preparation errors. A final archive from
 committed code, figure legend/alt text and print inspection remain required.
+
+### Track text remains inside both axis panels
+
+The real-data figure diagnostic exposes canvas-state leakage: vertical signal
+scale drawing leaves textAlign=center. The following feature-track title starts
+at the lower inset but remains centered and is clipped. Titles now explicitly
+set left alignment and top baseline, and each track-canvas render starts with
+left alignment. `/tmp/hict-borrelia-publication-06-red` fails the exported-title
+anchor assertion on the unchanged implementation; run 07 passes all captures
+after this fix, including full vertical names in the inspected composition.
+
+The next independent text-bounds check catches a second defect. The horizontal
+GC maximum 0.478 occupies local x=142..167 in a 155-pixel panel; a vertical zero
+extends to y=-2. Fixed label insets also shift tick marks away from their true
+normalized positions and suppress the vertical maximum at a 30-pixel lane.
+`/tmp/hict-borrelia-publication-08-scale-red` is terminal failed on these bounds.
+
+Scale drawing now reserves the widest formatted value, right-aligns horizontal
+values with a margin, places rotated vertical values below the panel top and
+uses the actual normalized value coordinate for tick marks. Labels are clamped
+independently of their marks. Regions too small for the annotation omit it rather
+than drawing clipped numbers. `/tmp/hict-borrelia-publication-09-scale-green`
+passes all three real-data captures, scientific invariants and both-axis text
+bounds. The full 0.478 maximum appears in both axes (fill/outline); source native
+matrix/FASTA bytes and pipeline equality remain verified. Derived GC has actual
+maximum 0.47774372, making 0.478 the appropriate displayed rounding.
+
+`/tmp/hict-track-scale-frozen-01/results.json` passes eleven composition, native-
+grid/camera, three-format, immutable-snapshot and capture-race cases with no
+browser errors. `/tmp/hict-track-scale-workspace-01/results.json` passes thirteen
+track/source/weight, keyboard, three-size resize/pixel, lifecycle and legacy
+provenance cases. Full WebUI build `/tmp/hict-track-title-web-02.log` and focused
+eslint `/tmp/hict-track-scale-lint-01.log` exit zero; lint retains six existing
+non-null warnings and the existing directive-schema diagnostics.
+
+The earlier fresh integrated version-58 build is terminal zero under
+`/tmp/hict-publication-integrated-build-02.log`: 641 JVM tests, zero failures/
+errors and seven optional skips. It precedes these WebUI text changes and is not
+their package qualification. A diagnostic 178-mm composition has 7.05-pt scale
+text and preserved embedded image bytes, but it still needs a newly stamped
+capture/archive and the final print/legend/alt-text checks. Protected plans and
+owner files remain unchanged; no push, merge or tag is performed.
