@@ -3698,7 +3698,7 @@ public class Track1DManager implements AutoCloseable {
           final long pos1Based = parseLongOrThrow(fields[1], "VCF POS", lineNo);
           final long start = Math.max(0L, pos1Based - 1L);
           final var ref = fields[3];
-          final long end = start + Math.max(1, ref.length());
+          final long end = VcfReferenceInterval.endExclusive(fields, pos1Based, lineNo);
           final var id = (fields[2] != null && !fields[2].isBlank() && !".".equals(fields[2])) ? fields[2] : null;
           final var alt = fields[4];
           final var label = (id != null) ? id : (ref + ">" + alt);

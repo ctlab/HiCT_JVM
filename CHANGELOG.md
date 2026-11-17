@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve VCF structural-variant and reference-block spans through exact cuts, reversal and long coordinates, rejecting malformed interval lengths before adding a track.
+
+- Observe live staged-file sizes in Windows HTTP export tests, retain strict cancellation checks, and reconcile the current control and release evidence.
+
 - Replace obsolete frontend chunks during incremental JVM builds so the bundled WebUI exactly matches the current build, while retaining the optional API-only fallback.
 
 - Update the delivered Electron runtime to patched 43.8.10 and run native save ownership/cleanup checks in every WebUI CI platform job.

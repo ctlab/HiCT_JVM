@@ -3,11 +3,62 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
-The current implementation is version `2.0.55-ecfd475-webui_95866d5` and passes
-the full integrated build (625 JVM tests, zero failures/errors, seven skips).
-JAR SHA-256: `ed1e66599d945319525dfd7ca326a1b3ed27ce72b57e42b858a5259713930170`.
-Package generation is running under `/tmp/hict-sonner-cleanup-package-01.log`.
-It still needs archive/extraction checks and full qualification.
+## Current candidate: 2.0.68
+
+The qualified candidate contains JVM
+`bf6ee7a3987487994ebd5046384458f209be8eed`, WebUI
+`72a4d80991802e6cf40e8b93751dceaa37165e19`, version
+`2.0.68-56bf2bd-webui_72a4d80`. Its integrated build passes 646 JVM tests,
+zero failures/errors, two optional skips and native parity. The JAR contains
+exactly the current 64 frontend files, with identical bytes and no stale chunks.
+
+| Candidate artifact | SHA-256 |
+|---|---|
+| JAR | `9cd3899fa3e0fe787a7f24e4f699ecd3145fe6fc455d14dccc77e6c1ab0cce54` |
+| Linux `.run` | `da9fc201d23557bc487b00045b3edbbd71f2add672923201ede6548331890c99` |
+| Linux `.tar.gz` | `6095b14b7c8d31cda35a9e58003247f2d5e858e6c44c758275bb4fdcc202fa4d` |
+
+The actual `.run` extraction and tar/staging comparison pass all 3,102 entries,
+including bytes, modes and links. Final Linux Tauri passes eight native
+coordinate/export cases and four lifecycle cases. Final Linux Electron passes
+nine native export cases, eight recovery cases and fourteen figure/rendering/
+storage cases. These 43 cases use the final packaged payloads and JRE; a full
+JDK is used only for fixture generation. Receipts are retained under
+`build/release-evidence/2.0.68/final-*`.
+
+The complete serial package run `/tmp/hict-integrated-release-15` passes metadata,
+menus, structural edits, incomplete-open recovery, offline workflows and all four
+maps' strict fresh/repeat navigation gates. Its 1,803.74-second mixed soak passes
+227 cycles: frame p95 16.7 ms, acknowledgement p95 44.34 ms, browser heap slope
+0.0781 MiB/min and JVM heap slope 0.0606 MiB/min. JVM RSS trends downward; DOM
+maxima remain 632 and listener maxima decrease from 228 to 224. There are no
+unexpected errors, and source/JAR hashes remain unchanged. Other agent GUI QA
+and compiler jobs stayed stopped throughout this run. Earlier failures remain
+retained, including version 66's
+33.3-ms frame p95 against an unchanged 33-ms limit during concurrent GUI QA.
+
+Current-source Java push/PR matrices and WebUI CI pass all four platforms,
+including sixteen shared native save tests per WebUI platform. The Windows
+Portable Packages job fails a separate HTTP cancellation test while waiting for
+directory-entry metadata to report staged bytes. A test-only live-handle metadata
+change passes all 23 full native tests locally; replacement Windows validation
+is still required. Both current Autobuild Release runs pass. Other portable
+conclusions, AppImage qualification, broader formats and
+accessibility remain open. Windows/macOS interactive GUI checks are explicitly
+owner-deferred in `release-manual-checklist.md`; deferral is not a pass.
+
+The coordinated `2.0.69-bf6ee7a-webui_ea5c2c7` source follow-up corrects VCF
+reference intervals and reviews current
+control-contract anchors. All five original VCF regressions fail meaningfully
+before the fix; six VCF and three existing sequence-track cases pass afterward,
+including fifteen rejected malformed/overflow inputs. The full updated source
+suite passes 652 JVM tests (zero failures/errors, two optional skips), native
+parity and the complete WebUI build. Its WebUI pin is
+`ea5c2c76d80db1906c1202f7ac531bcbe72765e2`. These changes are not covered by
+the version-68 candidate's packaged runtime results. Replacement platform CI
+and packaged acceptance remain required. This is not an overall release sign-off.
+
+## Historical packaged candidates
 
 The latest fully packaged Linux candidate contains backend version
 `2.0.53-8d54602-webui_daea115` and WebUI commit

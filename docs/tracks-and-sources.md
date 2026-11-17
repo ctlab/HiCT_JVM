@@ -11,6 +11,12 @@ and vertical axis buttons, color, name, order and Remove controls. Expand
 Changes to a field are committed when you leave it. Background refreshes preserve
 the value while you are typing.
 
+VCF tracks show reference record intervals, including the REF padding base.
+Structural variants and reference blocks use `END`, symbolic `SVLEN` or the
+reference-block sample `LEN` to retain their reference span. Inserted sequence
+does not enlarge that reference interval. Feature-edge actions use the displayed
+record boundaries. Invalid interval lengths are rejected without adding a track.
+
 Choose **Map weights** under **Add track** to plot source-bin weights.
 Select the primary or an attached secondary map, then choose **Add weights**.
 An existing weights track is managed through the same list. With file weights selected, sources known to lack imported weights show a reason;

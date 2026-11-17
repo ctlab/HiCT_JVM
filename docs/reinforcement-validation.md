@@ -6392,3 +6392,38 @@ conclusions remain required.
 - WebUI CI run 44153475239 passes all four platforms, including actual shared
   Rust writer tests (16 passed, zero ignored on Windows). Full wrapper/package
   qualification remains a separate gate.
+
+## Final Linux payload evidence on version 68
+
+JVM `bf6ee7a3987487994ebd5046384458f209be8eed` / WebUI
+`72a4d80991802e6cf40e8b93751dceaa37165e19` passes the integrated 646-test build
+(two optional skips, no failures/errors, plus native parity). Its actual `.run`
+extraction and tar/staging comparison verify 3,102 entries. Final Linux payload
+acceptance passes Tauri coordinate/export 8, Tauri lifecycle 4, Electron
+coordinate/export 9, Electron recovery 8 and Electron figure/rendering/storage
+14 cases, using the packaged JRE and final payloads. Receipts are under
+`build/release-evidence/2.0.68/final-*` and exact artifact hashes in
+`release-qualification.md`.
+
+The serial complete package workflow and all four maps' strict fresh/repeat
+performance gates pass. Its complete 1,803.74-second soak also passes 227
+cycles, frame p95 16.7 ms, acknowledgement p95 44.34 ms, stable DOM/listener
+maxima and unchanged source/JAR hashes, without unexpected errors. Browser
+and JVM heap slopes are 0.0781 and 0.0606 MiB/min, with downward JVM RSS.
+No competing agent GUI QA or compiler ran during it. Prior failed candidates remain retained, including version 66's
+33.3-ms frame result against the unchanged 33-ms limit.
+
+Current control-contract review passes all 232 static contracts after four
+reviewed anchor/interaction updates. This establishes no additional runtime
+outcomes. Fifteen checkout/publication and ten workflow/artifact contracts also
+pass. All five original VCF interval regressions fail meaningfully before the
+reader fix. Six VCF and three existing sequence-track cases pass afterward,
+including fifteen malformed/overflow rejection cases. The full updated source suite passes 652 JVM tests (zero failures/errors, two
+optional skips), native parity and the complete WebUI build. The Windows HTTP cancellation fixture's live-handle observer
+change passes all 23 full native tests locally; Windows confirmation remains
+required. These source changes are newer than the qualified version-68 package.
+
+The coordinated follow-up is version `2.0.69-bf6ee7a-webui_ea5c2c7`,
+with WebUI `ea5c2c76d80db1906c1202f7ac531bcbe72765e2`. Its post-commit
+WebUI build passes. Replacement CI and packaged acceptance remain required;
+the version-68 qualification above retains its exact source/artifact scope.

@@ -2,11 +2,16 @@
 
 ## Current reviewed source
 
-The current WebUI review is `95866b5d89a7946d44de2b5bee8ec09db70637b9`.
-Fresh static reconciliation passes for all 232 contracts, with 227 inspected
-bindings, five historical ambiguities and 162 literal source candidates.
-`/tmp/hict-u13-final-control-reconciliation.json` records fixture digests and the
-reviewed revision. The runtime ledger below retains scenario-specific evidence.
+The current static WebUI review is `ea5c2c76d80db1906c1202f7ac531bcbe72765e2`.
+Fresh reconciliation passes for all 232 contracts, with 227 inspected bindings,
+five historical ambiguities and 158 literal source candidates. Four stale
+anchors were reviewed: Reload now belongs to NavigationBar, the weights
+explanation uses its current NaN-policy control, and the two historical weight
+toggles now map to Add track / Map weights plus the added track's visibility.
+The expected effects describe those current interactions.
+`build/release-evidence/2.0.69/current-control-reconciliation.json` records the
+fixture digests and reviewed revision. It certifies zero runtime outcomes.
+The runtime ledger below retains scenario-specific historical evidence.
 The release report records current application and artifact qualification.
 Earlier capture sections retain their historical revisions and scope.
 

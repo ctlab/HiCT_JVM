@@ -26,7 +26,7 @@ describe earlier releases; they must not override the decisions below.
 |---|---|---|
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
-| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron/Tauri request streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Linux Tauri native development checks also pass; final updated payload, download-only browsers, other platforms and wider chooser coverage pending |
+| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron/Tauri request streaming, per-purpose file memory and File Examples implemented; final version-68 Linux Electron/Tauri payloads pass native coordinate/export, cancellation, lifecycle and recovery cases; download-only browsers, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
@@ -1555,3 +1555,50 @@ fetching another checkout. Full validation passes 646 JVM tests, two optional
 skips and native parity. The source pin remains WebUI `72a4d809`, whose new
 four-platform CI step passes all 16 native writer tests, including the Windows
 rename failure. Final artifact/native/workflow/soak gates remain required.
+
+## Version-68 native acceptance and remaining format audit
+
+Compared with November 15, 18:00 UTC+4, the committed branch has 68 JVM and 52
+WebUI increments. The full source/commit comparison and task-level progress
+report are retained under `build/release-evidence/2.0.68/`. Commit counts describe
+history, not completed acceptance requirements.
+
+The actual version-68 `.run` extraction passes the 3,102-entry archive identity
+check. Its final Tauri payload passes eight coordinate/export and four lifecycle
+cases. Its final Electron payload passes nine coordinate/export, eight recovery
+and fourteen figure/rendering/storage cases. All 43 cases use the final packaged
+payloads and JRE; a full JDK is used only for fixture generation. Native tests
+retain exact 512-million-base FASTA byte/sequence checks, real GTK controls,
+failed-write preservation, session readback and refresh/shutdown cleanup.
+Small receipts are archived durably under `build/release-evidence/2.0.68/final-*`.
+
+The complete serial package gate passes all workflow stages and all four maps'
+strict fresh/repeat performance checks. The full mixed soak passes 1,803.74 seconds / 227 cycles: frame p95 16.7 ms,
+acknowledgement p95 44.34 ms, no unexpected errors and unchanged native/JAR
+hashes. DOM maxima remain 632; listener maxima fall from 228 to 224. Browser
+and JVM heap slopes are 0.0781 and 0.0606 MiB/min; JVM RSS trends downward.
+Current Java push/PR and WebUI matrices
+are green on four platforms; the sequence-tool matrix passes all eight native
+components and four assemblies. Both push and PR Autobuild Release pass. The
+Windows Portable Packages job fails before its HTTP cancellation assertion,
+while its directory-entry metadata observer waits for the staging size. A
+live-handle metadata change is prepared, preserving the two-second cancellation
+bound and every assertion; all 23 full native tests pass locally, while replacement Windows validation
+remains required. See `ci-release-validation.md`.
+
+The remaining static control audit finds four stale anchors. Their reviewed
+updates now reconcile all 232 contracts, with 227 inspected bindings, five
+historical ambiguities and no inferred runtime passes. The broader format audit
+also finds that VCF reference spans ignore INFO/END. New regression tests cover
+legacy and modern symbolic/reference-block spans, exact cuts/reversal, gzip,
+long coordinates and malformed-input preservation. All five original cases fail meaningfully before the reader correction.
+Afterward, six VCF and three existing sequence-track cases pass, including
+fifteen rejected malformed/overflow inputs. The full updated source suite passes 652 JVM tests (zero failures/errors,
+two optional skips), native parity and the complete WebUI build; final packaged acceptance of the new reader remains required. A separate BigWig
+aggregation/label audit and broader formats, accessibility, download-only browser
+and AppImage qualification remain open. This is not a final release sign-off.
+
+The coordinated follow-up is version `2.0.69-bf6ee7a-webui_ea5c2c7`,
+with WebUI `ea5c2c76d80db1906c1202f7ac531bcbe72765e2`. Its post-commit
+WebUI build passes. Replacement CI and packaged acceptance remain required;
+the version-68 qualification above retains its exact source/artifact scope.

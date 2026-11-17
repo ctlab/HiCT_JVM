@@ -5,7 +5,7 @@ map or linking FASTA. Paste DNA sequences or FASTA records, choose a database an
 confirm that these sequences may be sent to NCBI. Ordinary **Find sequences**
 continues to search the linked assembly locally by default.
 
-Remote search requires the bundled `blastn` client to be available. It sends only
+Starting a new remote search requires the bundled `blastn` client. It sends only
 the pasted sequences and generated query IDs. FASTA descriptions stay in the local
 report. Linked references, contact maps and assembly coordinates are not uploaded.
 Consent is required for each new search and is reset when changing the database
@@ -40,6 +40,31 @@ may continue at NCBI; cancellation does not promise remote deletion. HiCT does n
 automatically resubmit failed, timed-out or cancelled work. Inspect the diagnostic
 in Jobs and explicitly start a new search when appropriate. Provider availability
 and queue latency are outside HiCT's control.
+
+## Recover an existing request
+
+If you already have an NCBI request ID (RID) for a completed search, open
+**Recover an existing NCBI request** in the same search dialog. Enter the RID
+and paste the original queries with their original FASTA headers. Confirm the
+displayed retrieval choice, then start the recovery job. Progress and results
+appear in Jobs, even without an open map.
+
+Recovery sends only the RID to NCBI. The pasted queries stay on the HiCT server
+for comparison with the returned query labels, lengths and aligned bases. The
+report distinguishes full, partial and absent aligned-base verification; a
+matching label or length alone does not establish sequence identity. Inspect
+**Queries and provenance** in the results for those details.
+
+This path downloads existing results and does not require the local `blastn`
+client. It never starts a new provider search, including against an older HiCT
+server lacking retrieval support. Identity, e-value, per-HSP coverage and target
+limits filter the downloaded alignments; they do not change the original NCBI
+search. Original provider settings and local retrieval filters are recorded
+separately.
+
+An interrupted submission that never supplied a RID cannot be recovered through
+this form. HiCT does not guess a request ID or automatically upload the queries
+again. A new search remains a separate explicit submission.
 
 ## Read and save results
 

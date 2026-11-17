@@ -125,3 +125,27 @@ files and matching bytes, and a missing optional frontend leaves its fallback
 untouched. This fixes local incremental artifacts; clean CI checkouts still
 require the complete frontend/package gates. Source/native compilation and
 publication conclusions must remain tied to each replacement commit.
+
+## Windows HTTP cancellation observation
+
+JVM `bf6ee7a3` passes both current four-platform Java matrices. The Windows job
+in [Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44156848158/job/134307409296)
+passes 22 full native Rust tests and fails
+`cancellation_interrupts_waiting_headers_and_stalled_bodies` at the five-second
+wait for staging size to become nonzero. This occurs before the cancellation
+assertion. The sixteen shared save-writer tests in WebUI CI remain green on
+Windows; they do not include these HTTP tests.
+
+The observer uses `DirEntry::metadata()`, which Rust documents as using directory
+enumeration data on Windows. Microsoft warns that NTFS enumeration attributes
+can be stale and recommends querying an open file handle for current values.
+The prepared test-only change opens each staging file and reads its handle
+metadata. Production transfer/writer behavior, the two-second cancellation bound
+and all assertions remain unchanged. All 23 full native Rust tests now pass locally, including the HTTP cancellation
+case. Replacement Windows CI must still validate this diagnosis; it is not yet
+a confirmed Windows fix. Both current JVM Autobuild Release runs are green.
+
+References: [Rust directory metadata](https://doc.rust-lang.org/std/fs/struct.DirEntry.html#method.metadata)
+and [Microsoft NTFS enumeration caveat](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstfilea).
+The failure excerpt is retained in
+`build/release-evidence/2.0.68/windows-portable-native-http-failure.log`.
