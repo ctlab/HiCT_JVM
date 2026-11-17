@@ -4,6 +4,9 @@
 
 ### Navigation and visualization
 
+- Pin Expected/O/E figure fitting profiles across viewport, whole-map, rectangle and sequence-level captures, recording actual profile fingerprints and active normalization inputs.
+- Reject incomplete figure tiles and changed scientific inputs, restore the shared overview and live camera, and bound capture work, retained profiles and abandoned-context leases.
+
 - Preview figure exports in a dedicated dialog, choose area and annotation panels, and save PNG, SVG and PDF from one frozen capture.
 - Retain scientific source, assembly and rendering provenance in all three formats, reject concurrent changes during capture, and preserve crop metadata without invalid narrow-panel SVG text.
 

@@ -73,6 +73,8 @@ import java.util.stream.IntStream;
 @Slf4j
 public class TileHandlersHolder extends HandlersHolder {
   private final Vertx vertx;
+  private final RenderCaptureRegistry renderCaptures = new RenderCaptureRegistry();
+  private final java.util.concurrent.Semaphore captureFitting = new java.util.concurrent.Semaphore(1);
   private final String statisticsInstance = java.util.UUID.randomUUID().toString();
   private record StatisticsExpectedProfile(String revision, long bpResolution,
                                            DistanceExpectedNormalizer.DiagonalProfile profile) { }
@@ -85,6 +87,7 @@ public class TileHandlersHolder extends HandlersHolder {
   private static final String TRANSPARENT_PNG_BASE64 = Base64.getEncoder().encodeToString(TRANSPARENT_PNG_BYTES);
   private static final int MAX_MATRIX_QUERY_ELEMENTS = Integer.getInteger("HICT_MATRIX_QUERY_MAX_ELEMENTS", 16_777_216);
   private static final int MAX_TILE_EDGE = 1024;
+  private static final int MAX_CAPTURE_AXIS_BINS = 65_536;
   private static final int MAX_PROJECTION_GRIDS_PER_SOURCE = 8;
 
   private record ProjectionGridKey(int order, boolean visibleOnly) { }
@@ -232,141 +235,79 @@ public class TileHandlersHolder extends HandlersHolder {
         null,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
-          final var chunkedFileWrapper = (ShareableWrappers.ChunkedFileWrapper) map.get("chunkedFile");
+          final var stamp = captureStamp(map, scheduler);
+          final var chunkedFileWrapper = (ShareableWrappers.ChunkedFileWrapper) stamp.primary();
           if (chunkedFileWrapper == null) {
             throw new RuntimeException("Chunked file is not present in the local map, maybe the file is not yet opened?");
           }
           final var visualizationOptionsWrapper =
-            (ShareableWrappers.SimpleVisualizationOptionsWrapper) map.get("visualizationOptions");
+            (ShareableWrappers.SimpleVisualizationOptionsWrapper) stamp.visualization();
           if (visualizationOptionsWrapper == null) {
             throw new RuntimeException("Visualization options are not present in the local map, maybe the file is not yet opened?");
           }
           final var options = visualizationOptionsWrapper.getSimpleVisualizationOptions();
           if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
-            clearExpectedProfileCache(map);
+            synchronized (map) {
+              requireSameStamp(stamp, captureStamp(map, scheduler));
+              clearExpectedProfileCache(map);
+            }
             return new JsonObject().put("status", "cleared");
           }
 
-          final var bpResolution = requestJSON.getLong("bpResolution");
-          if (bpResolution == null || bpResolution <= 0L) {
-            throw new IllegalArgumentException("Field 'bpResolution' must be a positive integer");
+          final var fit = fitExpectedProfile(map, chunkedFileWrapper.getChunkedFile(), options, requestJSON, false);
+          synchronized (map) {
+            requireSameStamp(stamp, captureStamp(map, scheduler));
+            final var key = requestJSON.getString("unit", "PIXELS").equals("PIXELS")
+              ? EXPECTED_PROFILE_LOCAL_MAP_KEY : EXPECTED_PROFILE_BINS_KEY;
+            if (fit.profile() == null) map.remove(key);
+            else map.put(key, new ShareableWrappers.DiagonalExpectedProfileWrapper(fit.profile()));
           }
-          final var startRowPx = requestJSON.getLong("startRowPx");
-          final var endRowPx = requestJSON.getLong("endRowPx");
-          final var startColPx = requestJSON.getLong("startColPx");
-          final var endColPx = requestJSON.getLong("endColPx");
-          if (startRowPx == null || endRowPx == null || startColPx == null || endColPx == null) {
-            throw new IllegalArgumentException("Viewport expected profile request must include start/end pixel coordinates");
-          }
-          if (endRowPx <= startRowPx || endColPx <= startColPx) {
-            throw new IllegalArgumentException("Viewport expected profile bounds must define a positive area");
-          }
-
-          final var chunkedFile = chunkedFileWrapper.getChunkedFile();
-          final var unit = requestJSON.getString("unit", "PIXELS");
-          if (!unit.equals("PIXELS") && !unit.equals("BINS")) throw new IllegalArgumentException("Expected profile unit must be PIXELS or BINS");
-          final boolean visibleOnly = unit.equals("PIXELS");
-          final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
-          if (resolutionOrder == null) {
-            throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
-          }
-          final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
-          final var totalAssemblyLength = chunkedFile.getContigTree().getLengthInUnits(
-            visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS,
-            resolutionDescriptor
-          );
-          final long clampedStartRowPx = Math.max(0L, Math.min(startRowPx, totalAssemblyLength));
-          final long clampedEndRowPx = Math.max(
-            clampedStartRowPx,
-            Math.min(endRowPx, totalAssemblyLength)
-          );
-          final long clampedStartColPx = Math.max(0L, Math.min(startColPx, totalAssemblyLength));
-          final long clampedEndColPx = Math.max(
-            clampedStartColPx,
-            Math.min(endColPx, totalAssemblyLength)
-          );
-          if (clampedEndRowPx <= clampedStartRowPx || clampedEndColPx <= clampedStartColPx) {
-            clearExpectedProfileCache(map);
-            return new JsonObject()
-              .put("status", "empty")
-              .put("resolutionOrder", resolutionOrder)
-              .put("startRowPx", clampedStartRowPx)
-              .put("endRowPx", clampedEndRowPx)
-              .put("startColPx", clampedStartColPx)
-              .put("endColPx", clampedEndColPx);
-          }
-
-          final var expectedDomains = buildExpectedDomains(
-            chunkedFile,
-            resolutionDescriptor,
-            clampedStartRowPx,
-            clampedEndRowPx,
-            clampedStartColPx,
-            clampedEndColPx, visibleOnly
-          );
-          final var chunkSize = Math.max(
-            32,
-            ((Number) map.getOrDefault("tileSize", 256)).intValue()
-          );
-          final var accumulator = DistanceExpectedNormalizer.newSegmentedAccumulator(
-            resolutionOrder,
-            clampedStartRowPx,
-            clampedEndRowPx,
-            clampedStartColPx,
-            clampedEndColPx,
-            expectedDomains
-          );
-          final var sampleWeights = expectedSampleWeights(chunkedFile, resolutionDescriptor,
-            clampedStartRowPx, clampedEndRowPx, clampedStartColPx, clampedEndColPx, visibleOnly);
-          for (long chunkStartRowPx = clampedStartRowPx; chunkStartRowPx < clampedEndRowPx; chunkStartRowPx += chunkSize) {
-            final var chunkEndRowPx = Math.min(clampedEndRowPx, chunkStartRowPx + chunkSize);
-            for (long chunkStartColPx = clampedStartColPx; chunkStartColPx < clampedEndColPx; chunkStartColPx += chunkSize) {
-              final var chunkEndColPx = Math.min(clampedEndColPx, chunkStartColPx + chunkSize);
-              final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
-                resolutionDescriptor,
-                chunkStartRowPx,
-                chunkStartColPx,
-                chunkEndRowPx,
-                chunkEndColPx,
-                visibleOnly
-              );
-              final var baseSignal = chunkedFile.tileVisualizationProcessor().prepareSignalMatrix(
-                matrixWithWeights,
-                options
-              );
-              accumulator.addSignal(
-                baseSignal,
-                matrixWithWeights.startRowIncl(),
-                matrixWithWeights.startColIncl(),
-                sampleWeights
-              );
-            }
-          }
-          final var profile = accumulator.toProfile();
-          map.put(
-            visibleOnly ? EXPECTED_PROFILE_LOCAL_MAP_KEY : EXPECTED_PROFILE_BINS_KEY,
-            new ShareableWrappers.DiagonalExpectedProfileWrapper(profile)
-          );
-          return new JsonObject()
-            .put("status", "ok")
-            .put("resolutionOrder", resolutionOrder)
-            .put("startRowPx", clampedStartRowPx)
-            .put("endRowPx", clampedEndRowPx)
-            .put("startColPx", clampedStartColPx)
-            .put("endColPx", clampedEndColPx)
-            .put("unit", unit)
-            .put("sampleSemantics", "UNIQUE_UNORDERED_SOURCE_PAIR_MASS")
-            .put("distanceSemantics", "DISPLAY_BIN_DISTANCE")
-            .put("sharedReferenceWeighting", sampleWeights != null)
-            .put("domainCount", expectedDomains.length)
-            .put("minDiagonal", profile.minDiagonal())
-            .put("diagonalCount", profile.means().length);
+          return fit.metadata();
         },
         response -> ctx.response()
           .putHeader("content-type", "application/json")
           .setStatusCode(200)
           .end(response.encode())
       );
+    });
+
+    router.post("/visualization/captures").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      final var request = ctx.body().asJsonObject();
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.UI_UX, null, () -> {
+        if (!captureFitting.tryAcquire()) throw new io.vertx.ext.web.handler.HttpException(429, "Another figure is being fitted. Retry when it finishes.");
+        try {
+          final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+          final var stamp = captureStamp(map, scheduler);
+          if (!(stamp.primary() instanceof ShareableWrappers.ChunkedFileWrapper primary)
+              || !(stamp.visualization() instanceof ShareableWrappers.SimpleVisualizationOptionsWrapper visualization))
+            throw new io.vertx.ext.web.handler.HttpException(409, "Open a map before capturing a figure");
+          final var options = visualization.getSimpleVisualizationOptions();
+          final var expected = options.getSignalDisplayMode() != SignalDisplayMode.OBSERVED;
+          final var fit = expected ? fitExpectedProfile(map, primary.getChunkedFile(), options, request, true) : null;
+          if (expected && fit.profile() == null) throw new io.vertx.ext.web.handler.HttpException(409, "The figure does not intersect the map");
+          requireSameStamp(stamp, captureStamp(map, scheduler));
+          final var secondary = stamp.secondary() instanceof ShareableWrappers.ChunkedFileWrapper wrapper ? wrapper.getChunkedFile() : null;
+          final var metadata = new JsonObject().put("schemaVersion", 1).put("signalDisplayMode", options.getSignalDisplayMode().name())
+            .put("expectedProfile", expected ? RenderCaptureRegistry.profileMetadata(fit.profile(), request.getLong("bpResolution"),
+              request.getString("unit", "PIXELS").equals("PIXELS")) : null)
+            .put("primaryNormalization", normalizationMetadata(primary.getChunkedFile(), options.isApplyCoolerWeights()))
+            .put("secondaryNormalization", normalizationMetadata(secondary, options.isApplyCoolerWeights()));
+          final var capture = renderCaptures.register(stamp, expected ? fit.profile() : null, metadata);
+          return capture.metadata().put("id", capture.id());
+        } finally { captureFitting.release(); }
+      }, result -> ctx.json(result));
+    });
+    router.post("/visualization/captures/:id/validate").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+      ctx.json(renderCaptures.require(ctx.pathParam("id"), captureStamp(map, scheduler)).metadata());
+    });
+    router.post("/visualization/captures/:id/release").handler(ctx -> {
+      renderCaptures.release(ctx.pathParam("id"));
+      ctx.json(new JsonObject().put("status", "released"));
     });
 
     router.post("/render_pipeline/get").handler(ctx -> {
@@ -607,7 +548,157 @@ public class TileHandlersHolder extends HandlersHolder {
     });
   }
 
+  private record ExpectedFit(DistanceExpectedNormalizer.DiagonalProfile profile, JsonObject metadata) { }
+
+  private ExpectedFit fitExpectedProfile(LocalMap<String, Object> map, ChunkedFile chunkedFile,
+    ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
+    JsonObject requestJSON, boolean bounded) {
+    final var bpResolution = requestJSON.getLong("bpResolution");
+    if (bpResolution == null || bpResolution <= 0L) {
+      throw new IllegalArgumentException("Field 'bpResolution' must be a positive integer");
+    }
+    final var startRowPx = requestJSON.getLong("startRowPx");
+    final var endRowPx = requestJSON.getLong("endRowPx");
+    final var startColPx = requestJSON.getLong("startColPx");
+    final var endColPx = requestJSON.getLong("endColPx");
+    if (startRowPx == null || endRowPx == null || startColPx == null || endColPx == null) {
+      throw new IllegalArgumentException("Viewport expected profile request must include start/end pixel coordinates");
+    }
+    if (endRowPx <= startRowPx || endColPx <= startColPx) {
+      throw new IllegalArgumentException("Viewport expected profile bounds must define a positive area");
+    }
+
+    final var unit = requestJSON.getString("unit", "PIXELS");
+    if (!unit.equals("PIXELS") && !unit.equals("BINS")) throw new IllegalArgumentException("Expected profile unit must be PIXELS or BINS");
+    final boolean visibleOnly = unit.equals("PIXELS");
+    final var resolutionOrder = chunkedFile.getResolutionToIndex().get(bpResolution);
+    if (resolutionOrder == null) {
+      throw new IllegalArgumentException("Requested bpResolution is not present in opened file: " + bpResolution);
+    }
+    final var resolutionDescriptor = ResolutionDescriptor.fromResolutionOrder(resolutionOrder);
+    final var totalAssemblyLength = chunkedFile.getContigTree().getLengthInUnits(
+      visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS,
+      resolutionDescriptor
+    );
+    final long clampedStartRowPx = Math.max(0L, Math.min(startRowPx, totalAssemblyLength));
+    final long clampedEndRowPx = Math.max(
+      clampedStartRowPx,
+      Math.min(endRowPx, totalAssemblyLength)
+    );
+    final long clampedStartColPx = Math.max(0L, Math.min(startColPx, totalAssemblyLength));
+    final long clampedEndColPx = Math.max(
+      clampedStartColPx,
+      Math.min(endColPx, totalAssemblyLength)
+    );
+    if (clampedEndRowPx <= clampedStartRowPx || clampedEndColPx <= clampedStartColPx) {
+      return new ExpectedFit(null, new JsonObject().put("status", "empty"));
+    }
+
+    if (bounded) validateCaptureFitWindow(clampedEndRowPx - clampedStartRowPx, clampedEndColPx - clampedStartColPx);
+    final var expectedDomains = buildExpectedDomains(
+      chunkedFile,
+      resolutionDescriptor,
+      clampedStartRowPx,
+      clampedEndRowPx,
+      clampedStartColPx,
+      clampedEndColPx, visibleOnly
+    );
+    final var chunkSize = Math.max(
+      32,
+      ((Number) map.getOrDefault("tileSize", 256)).intValue()
+    );
+    final var accumulator = DistanceExpectedNormalizer.newSegmentedAccumulator(
+      resolutionOrder,
+      clampedStartRowPx,
+      clampedEndRowPx,
+      clampedStartColPx,
+      clampedEndColPx,
+      expectedDomains
+    );
+    final var sampleWeights = expectedSampleWeights(chunkedFile, resolutionDescriptor,
+      clampedStartRowPx, clampedEndRowPx, clampedStartColPx, clampedEndColPx, visibleOnly);
+    for (long chunkStartRowPx = clampedStartRowPx; chunkStartRowPx < clampedEndRowPx; chunkStartRowPx += chunkSize) {
+      if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Figure fitting cancelled");
+      final var chunkEndRowPx = Math.min(clampedEndRowPx, chunkStartRowPx + chunkSize);
+      for (long chunkStartColPx = clampedStartColPx; chunkStartColPx < clampedEndColPx; chunkStartColPx += chunkSize) {
+        final var chunkEndColPx = Math.min(clampedEndColPx, chunkStartColPx + chunkSize);
+        final var matrixWithWeights = chunkedFile.matrixQueries().getSubmatrix(
+          resolutionDescriptor,
+          chunkStartRowPx,
+          chunkStartColPx,
+          chunkEndRowPx,
+          chunkEndColPx,
+          visibleOnly
+        );
+        final var baseSignal = chunkedFile.tileVisualizationProcessor().prepareSignalMatrix(
+          matrixWithWeights,
+          options
+        );
+        accumulator.addSignal(
+          baseSignal,
+          matrixWithWeights.startRowIncl(),
+          matrixWithWeights.startColIncl(),
+          sampleWeights
+        );
+      }
+    }
+    final var profile = accumulator.toProfile();
+    return new ExpectedFit(profile, new JsonObject()
+      .put("status", "ok")
+      .put("resolutionOrder", resolutionOrder)
+      .put("startRowPx", clampedStartRowPx)
+      .put("endRowPx", clampedEndRowPx)
+      .put("startColPx", clampedStartColPx)
+      .put("endColPx", clampedEndColPx)
+      .put("unit", unit)
+      .put("sampleSemantics", "UNIQUE_UNORDERED_SOURCE_PAIR_MASS")
+      .put("distanceSemantics", "DISPLAY_BIN_DISTANCE")
+      .put("sharedReferenceWeighting", sampleWeights != null)
+      .put("domainCount", expectedDomains.length)
+      .put("minDiagonal", profile.minDiagonal())
+      .put("diagonalCount", profile.means().length));
+  }
+
+  private static RenderCaptureRegistry.Stamp captureStamp(LocalMap<String, Object> map, RequestTaskScheduler scheduler) {
+    synchronized (map) {
+      return new RenderCaptureRegistry.Stamp(map.get("chunkedFile"), map.get("chunkedFileSecondary"),
+        map.get("visualizationOptions"), map.get(RenderPipelineConfig.LOCAL_MAP_KEY),
+        scheduler.currentGeneration(RequestTaskScheduler.CancellationDomain.TILE),
+        scheduler.currentGeneration(RequestTaskScheduler.CancellationDomain.TRACK));
+    }
+  }
+
+  /** Bound diagonal/provenance arrays as well as cell work, including very thin rectangles. */
+  static void validateCaptureFitWindow(long rows, long cols) {
+    if (rows < 1 || cols < 1) throw new IllegalArgumentException("A positive fitting window is required");
+    if (rows > MAX_CAPTURE_AXIS_BINS || cols > MAX_CAPTURE_AXIS_BINS || rows > MAX_MATRIX_QUERY_ELEMENTS / cols)
+      throw new io.vertx.ext.web.handler.HttpException(413,
+        "The Expected fitting window is too large for figure capture. Choose a coarser view.");
+  }
+
+  private static void requireSameStamp(RenderCaptureRegistry.Stamp before, RenderCaptureRegistry.Stamp after) {
+    if (!before.matches(after)) throw new io.vertx.ext.web.handler.HttpException(409,
+      "The assembly, normalization, tracks or rendering changed during figure capture. Capture the figure again.");
+  }
+
+  private static JsonObject normalizationMetadata(ChunkedFile file, boolean applied) {
+    if (file == null) return null;
+    var weights = file.getNormalizationWeights().snapshot();
+    return new JsonObject().put("weightsApplied", applied).put("mode", weights.mode().name())
+      .put("algorithmVersion", weights.usesCoverage() ? weights.prepared().algorithmVersion() : null);
+  }
+
   private TileResponsePayload computeTileResponse(final @NotNull io.vertx.ext.web.RoutingContext ctx) {
+    final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+    final var id = ctx.request().getParam("renderCapture");
+    final var capture = id == null ? null : renderCaptures.require(id, captureStamp(map, getScheduler(ctx)));
+    final var response = computeTileResponse(ctx, capture);
+    if (capture != null) renderCaptures.validate(capture, captureStamp(map, getScheduler(ctx)));
+    return response;
+  }
+
+  private TileResponsePayload computeTileResponse(final @NotNull io.vertx.ext.web.RoutingContext ctx,
+    RenderCaptureRegistry.Capture capture) {
     final var row = Long.parseLong(ctx.request().getParam("row", "0"));
     final var col = Long.parseLong(ctx.request().getParam("col", "0"));
     final var requestedVersion = Long.parseLong(ctx.request().getParam("version", "0"));
@@ -700,7 +791,7 @@ public class TileHandlersHolder extends HandlersHolder {
           || ctx.request().getParam("gridSampleFactor") != null)
         throw new io.vertx.ext.web.handler.HttpException(400, "Sequence-scale tiles require an explicit source and cannot use another projection grid");
       return sequenceScaleTile(map, requestedChunkedFile, requestedSource, resolutionDescriptor,
-        startRowPx, endRowPx, startColPx, endColPx, options, renderPipelineConfig, track1DManager, format, stats, chunkedFile);
+        startRowPx, endRowPx, startColPx, endColPx, options, renderPipelineConfig, track1DManager, format, stats, chunkedFile, capture);
     }
 
     if (isSequenceOnly(requestedChunkedFile)
@@ -764,7 +855,7 @@ public class TileHandlersHolder extends HandlersHolder {
         );
       } else {
         final var selectedExpectedProfile = "PRIMARY".equals(requestedSource)
-          ? resolveExpectedProfileForTile(map, gridFile, selectedMatrixWithWeights, options)
+          ? capturedExpectedProfile(capture, map, gridFile, selectedMatrixWithWeights, options, true)
           : null;
         sourceImage = gridFile.tileVisualizationProcessor().visualizeTile(
           selectedMatrixWithWeights,
@@ -799,7 +890,7 @@ public class TileHandlersHolder extends HandlersHolder {
       endRowPx,
       endColPx
     );
-    final var expectedProfile = resolveExpectedProfileForTile(map, chunkedFile, matrixWithWeights, options);
+    final var expectedProfile = capturedExpectedProfile(capture, map, chunkedFile, matrixWithWeights, options, true);
 
     final BufferedImage image;
     if (renderPipelineConfig.enabled() && options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) {
@@ -842,7 +933,7 @@ public class TileHandlersHolder extends HandlersHolder {
     long rowStartBp, long rowEndBp, long colStartBp, long colEndBp,
     ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options,
     RenderPipelineConfig pipeline, Track1DManager tracks, TileFormat format,
-    TileStatisticHolder statistics, ChunkedFile primary
+    TileStatisticHolder statistics, ChunkedFile primary, RenderCaptureRegistry.Capture capture
   ) {
     final BufferedImage image;
     if (isSequenceOnly(file)) {
@@ -855,7 +946,7 @@ public class TileHandlersHolder extends HandlersHolder {
           file, matrix, options, pipeline, source, tracks, null, 1, QueryLengthUnit.BINS, upper));
       } else {
         image = projection.render(matrix -> {
-          final var expected = "PRIMARY".equals(source) ? resolveExpectedProfileForTile(map, file, matrix, options, false) : null;
+          final var expected = "PRIMARY".equals(source) ? capturedExpectedProfile(capture, map, file, matrix, options, false) : null;
           return file.tileVisualizationProcessor().visualizeTile(matrix, options, expected);
         });
       }
@@ -1362,6 +1453,24 @@ public class TileHandlersHolder extends HandlersHolder {
     }
     final var profile = accumulator.toProfile();
     statisticsExpectedProfile = new StatisticsExpectedProfile(revision, bpResolution, profile);
+    return profile;
+  }
+
+  private DistanceExpectedNormalizer.DiagonalProfile capturedExpectedProfile(
+    RenderCaptureRegistry.Capture capture, LocalMap<String, Object> map, ChunkedFile file,
+    ru.itmo.ctlab.hict.hict_library.chunkedfile.MatrixQueries.MatrixWithWeights matrix,
+    ru.itmo.ctlab.hict.hict_library.visualization.SimpleVisualizationOptions options, boolean visibleOnly) {
+    if (capture == null) return resolveExpectedProfileForTile(map, file, matrix, options, visibleOnly);
+    if (options.getSignalDisplayMode() == SignalDisplayMode.OBSERVED) return null;
+    var profile = capture.profile();
+    var metadata = capture.metadata().getJsonObject("expectedProfile");
+    if (profile == null || profile.resolutionOrder() != matrix.resolutionDescriptor().getResolutionOrderInArray()
+        || !metadata.getString("unit").equals(visibleOnly ? "PIXELS" : "BINS")) {
+      renderCaptures.invalidate(capture);
+      throw new io.vertx.ext.web.handler.HttpException(409, "Figure tiles do not match the captured fitting grid");
+    }
+    // Edge tiles extend past the fitted viewport. Their clipped margins are not visible;
+    // retaining one profile is essential rather than fitting a second tile-local model.
     return profile;
   }
 

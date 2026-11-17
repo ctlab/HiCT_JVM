@@ -923,3 +923,43 @@ existing request still reports WAITING at the provider, without another query
 submission. P8 live success and the other release/performance/platform gates
 remain open. Protected plans and owner files remain unchanged; nothing pushed,
 merged or tagged.
+
+## Expected/O/E figure transactions and rendering failure isolation
+
+P9 now pins a server-side fitting context independently of the live viewport.
+Expected/O/E figures use one actual primary profile across tiles and retain its
+SHA-256, domains, native grid and units. Base-level captures fit BINS rather than
+the synthetic one-base axis. Figure provenance also records effective FILE or
+SQRT_COVERAGE normalization, application of weights and coverage algorithm.
+Source/configuration and tile/track generations invalidate stale captures.
+Concurrent navigation can update the live viewport profile without changing the
+figure. Counts remain native and unchanged.
+
+Contexts are bounded by count, retained profile/metadata budget, lease and fit
+work; both cell count and thin-rectangle axes are checked before allocation.
+Success, error and close release the context, including a late creation reply.
+Tile request/cancellation/decode failures reject an incomplete figure promptly.
+The stricter checks exposed a shared coarser overview source requesting the wrong
+fitting grid; the overview is paused for capture and restored. Repeated
+mixed-resolution captures also exposed a projected-overlay transition timeout.
+Capture now promotes the complete overlay without a cross-fade while ordinary
+navigation retains transitions. The actual camera and interactions are restored.
+
+Final development-pair validation: 623 JVM tests, zero failures/errors, seven
+optional skips; full WebUI build/type/numerical checks; 59 Chromium cases. These
+include 17 Expected/O/E cases across scopes, mixed native grids, sequence zoom,
+real prepared coverage and concurrent rendering/weight changes; ten frozen
+figure cases; eighteen real sequence/ModDotPlot/track cases; fourteen reopened
+figure cases. The existing independent SVG/PDF rasterization comparison matches
+2,279 flat interior map samples. Screenshots were inspected, including whole-map,
+coverage, responsive and error states. See reinforcement-validation.md and
+figure-capture.md for exact artifacts, limits and excluded intermediate attempts.
+
+This closes the fitting-context prerequisite within P9, not P9 or the release.
+Named immutable cut/scaffold snapshots, comparison composition, portable session
+persistence, publication figures and the remaining platform/performance/release
+gates remain open. This is an API/static-assets development pair, not a qualified
+combined native/SFX distributable. P8 live provider success remains open: a sparse
+read of the existing public NCBI RID at 07:31 local still reports WAITING, without
+resubmitting any sequence. Protected plans and owner files remain unchanged;
+nothing pushed, merged or tagged.

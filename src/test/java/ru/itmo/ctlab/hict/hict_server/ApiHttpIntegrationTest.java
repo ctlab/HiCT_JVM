@@ -63,6 +63,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -993,6 +997,96 @@ class ApiHttpIntegrationTest {
     var after = new JsonObject(post("/session/snapshot", "{}").body());
     assertEquals(graph, after.getJsonObject("renderPipeline"));
     assertEquals(2.0, after.getJsonObject("visualizationOptions").getDouble("postLogBase"));
+  }
+
+  @Test
+  void figureTilesPinTheirOwnExpectedProfileWithoutMutatingTheViewportOrNativeCounts() throws Exception {
+    var source = ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "figure", List.of(4L), 2052,
+      new long[][]{{0, 0, 2}, {2048, 2048, 8}, {0, 2048, 4}});
+    var digest = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(source));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        -1, -1, false, false, false, new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"figure.hict.hdf5\"}").statusCode());
+    var options = new JsonObject(post("/get_visualization_options", "{}").body())
+      .put("preLogBase", -1).put("postLogBase", -1).put("applyCoolerWeights", false)
+      .put("resolutionScaling", false).put("resolutionLinearScaling", false);
+    var full = new JsonObject().put("bpResolution", 4).put("startRowPx", 0).put("endRowPx", 513)
+      .put("startColPx", 0).put("endColPx", 513);
+    var tilePath = "/get_tile?source=PRIMARY&bpResolution=4&row=1&col=1&tile_size=512";
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    for (var mode : List.of("EXPECTED", "OBSERVED_OVER_EXPECTED")) {
+      assertEquals(200, post("/set_visualization_options", options.copy().put("signalDisplayMode", mode).encode()).statusCode());
+      assertEquals(200, post("/visualization/expected_profile", full.encode()).statusCode());
+      var reference = get(tilePath);
+      assertEquals(200, reference.statusCode(), reference.body());
+      var referenceImage = new JsonObject(reference.body()).getString("image");
+      assertEquals(200, post("/visualization/expected_profile", full.copy().put("endRowPx", 1).put("endColPx", 1).encode()).statusCode());
+      var live = map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY);
+      var created = post("/visualization/captures", full.encode());
+      assertEquals(200, created.statusCode(), created.body());
+      var metadata = new JsonObject(created.body());
+      var id = metadata.getString("id");
+      assertEquals(mode, metadata.getString("signalDisplayMode"));
+      assertEquals("FILE", metadata.getJsonObject("primaryNormalization").getString("mode"));
+      assertFalse(metadata.getJsonObject("primaryNormalization").getBoolean("weightsApplied"));
+      assertEquals(513L, metadata.getJsonObject("expectedProfile").getLong("endRowPx"));
+      assertTrue(metadata.getJsonObject("expectedProfile").getString("sha256").matches("[a-f0-9]{64}"));
+      assertSame(live, map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY));
+      var pinned = get(tilePath + "&renderCapture=" + id);
+      assertEquals(200, pinned.statusCode(), pinned.body());
+      assertEquals(referenceImage, new JsonObject(pinned.body()).getString("image"));
+      // Another client's navigation changes only the viewport profile, not this figure.
+      assertEquals(200, post("/visualization/expected_profile", full.copy().put("startRowPx", 512).put("startColPx", 512).encode()).statusCode());
+      pinned = get(tilePath + "&renderCapture=" + id);
+      assertEquals(200, pinned.statusCode(), pinned.body());
+      assertEquals(referenceImage, new JsonObject(pinned.body()).getString("image"));
+      var validated = post("/visualization/captures/" + id + "/validate", "{}");
+      assertEquals(200, validated.statusCode(), validated.body());
+      metadata.remove("id");
+      assertEquals(metadata, new JsonObject(validated.body()));
+      assertEquals(200, post("/visualization/captures/" + id + "/release", "{}").statusCode());
+      assertEquals(409, post("/visualization/captures/" + id + "/validate", "{}").statusCode());
+      assertEquals(409, get(tilePath + "&renderCapture=" + id).statusCode());
+    }
+    // Native-bin profile stays correct when colors are expanded into one-base sequence tiles.
+    var bins = full.copy().put("unit", "BINS");
+    assertEquals(200, post("/visualization/expected_profile", bins.encode()).statusCode());
+    var sequencePath = "/get_tile?source=PRIMARY&bpResolution=4&sequenceScale=true&row=512&col=512&tile_size=4";
+    var sequenceReference = new JsonObject(get(sequencePath).body()).getString("image");
+    var binCaptureResponse = post("/visualization/captures", bins.encode());
+    assertEquals(200, binCaptureResponse.statusCode(), binCaptureResponse.body());
+    var binCapture = new JsonObject(binCaptureResponse.body());
+    var binId = binCapture.getString("id");
+    assertEquals("BINS", binCapture.getJsonObject("expectedProfile").getString("unit"));
+    assertEquals(200, post("/visualization/expected_profile", bins.copy().put("endRowPx", 1).put("endColPx", 1).encode()).statusCode());
+    var sequencePinned = get(sequencePath + "&renderCapture=" + binId);
+    assertEquals(200, sequencePinned.statusCode(), sequencePinned.body());
+    assertEquals(sequenceReference, new JsonObject(sequencePinned.body()).getString("image"));
+    // A wrong grid must poison validation, rather than permit a figure with failed tiles.
+    assertEquals(409, get(tilePath + "&renderCapture=" + binId).statusCode());
+    assertEquals(409, post("/visualization/captures/" + binId + "/validate", "{}").statusCode());
+    assertEquals(200, post("/visualization/captures/" + binId + "/release", "{}").statusCode());
+    assertEquals(200, post("/set_visualization_options", options.put("signalDisplayMode", "OBSERVED").encode()).statusCode());
+    var observed = post("/visualization/captures", "{}");
+    assertEquals(200, observed.statusCode(), observed.body());
+    var id = new JsonObject(observed.body()).getString("id");
+    assertNull(new JsonObject(observed.body()).getJsonObject("expectedProfile"));
+    assertEquals(200, post("/set_visualization_options", options.copy().put("postLogBase", 2).encode()).statusCode());
+    assertEquals(409, post("/visualization/captures/" + id + "/validate", "{}").statusCode());
+    assertEquals(409, get(tilePath + "&renderCapture=" + id).statusCode());
+    assertEquals(200, post("/visualization/captures/" + id + "/release", "{}").statusCode());
+    var active = new java.util.ArrayList<String>();
+    for (int index = 0; index < 4; index++) {
+      var response = post("/visualization/captures", "{}");
+      assertEquals(200, response.statusCode(), response.body());
+      active.add(new JsonObject(response.body()).getString("id"));
+    }
+    assertEquals(429, post("/visualization/captures", "{}").statusCode());
+    for (var captureId : active)
+      assertEquals(200, post("/visualization/captures/" + captureId + "/release", "{}").statusCode());
+    assertArrayEquals(digest, java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(source)));
   }
 
   @Test

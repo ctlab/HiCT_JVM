@@ -687,6 +687,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericMap'
+  /visualization/captures:
+    post:
+      tags: [Rendering]
+      summary: Pin immutable rendering inputs for figure tiles
+      operationId: createRenderCapture
+      description: >-
+        Creates a five-minute context independent of the live viewport profile.
+        Send its id as renderCapture on every figure tile, validate after drawing,
+        and release on success, failure or cancellation. Source, assembly,
+        normalization, rendering and track changes invalidate it. Expected/O/E
+        fit one primary profile with actual-means SHA-256 and grid provenance.
+        At most four contexts and 64 MiB are retained; one fit runs at a time.
+        Expected fitting windows are limited to 16777216 cells and 65536 bins per axis; use a coarser view
+        for larger figures. Observed contexts do not fit an Expected profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedProfileViewportRequest' }
+      responses:
+        '200':
+          description: Context id, signal mode, normalization inputs and optional Expected profile provenance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409': { description: Map missing or inputs changed during fitting }
+        '413': { description: Expected fitting window exceeds the capture work budget }
+        '429': { description: Context count, memory or concurrent fitting budget exhausted }
+  /visualization/captures/{id}/validate:
+    post:
+      tags: [Rendering]
+      summary: Check that a figure still uses the captured scientific inputs
+      operationId: validateRenderCapture
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Valid capture provenance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409': { description: Context expired, released or invalidated }
+  /visualization/captures/{id}/release:
+    post:
+      tags: [Rendering]
+      summary: Release a figure context and its fitted arrays
+      operationId: releaseRenderCapture
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Released or already absent }
   /render_pipeline/get:
     post:
       tags: [Rendering]
@@ -756,6 +807,11 @@ paths:
       summary: Fetch map tile or arbitrary pixel rectangle
       operationId: getTile
       parameters:
+        - name: renderCapture
+          in: query
+          required: false
+          description: Pinned figure context returned by POST /visualization/captures
+          schema: { type: string, format: uuid }
         - in: query
           name: row
           required: true

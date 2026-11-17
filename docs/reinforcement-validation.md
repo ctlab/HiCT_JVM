@@ -4874,3 +4874,96 @@ submits a new query. This isolates accepted submission/provider waiting from
 HiCT transport failure but does not prove result delivery; P8 live qualification
 remains open. Only the hashed public 160-base reference is used, never a project
 sequence. No automatic resubmission or provider-latency claim is made.
+
+## Pinned Expected/O/E figure rendering contexts
+
+Final qualification uses JVM JAR
+`build/libs/hict_server-2.0.46-1e4e101-webui_eb6caf7-fat.jar`, SHA-256
+`8323e9544c50e6172cb3b30f1db77339c6eca8651b5ca3d95ec4d46eb7eefe80`,
+and separately served WebUI dist SHA-256 (sorted relative paths/NUL/bytes,
+excluding electron)
+`7f074ed540b094ad9aa9d7195de651d78697b9936e57daef2061352a60c23fe3`.
+The packaged OpenAPI bytes equal the current API source. Browser harnesses
+snapshot the JAR; no dist was rebuilt under a live acceptance browser. This
+qualifies the development API/assets pair only, not an embedded/native/SFX
+release or a cross-platform package.
+
+- `/tmp/hict-render-capture-jvm-full-04.log`: `gradlew test shadowJar -x
+  copyWebUI --offline`, BUILD SUCCESSFUL in 52s; 623 tests, zero failures/errors,
+  seven optional skips. New registry tests cover expiry/release, permanent
+  identity/generation invalidation, budgets, independent metadata and actual
+  means/domain/grid fingerprints. HTTP tests compare pinned Expected/O/E tile
+  images byte-for-byte with a full-window reference while replacing the live
+  viewport profile, including native-BINS sequence expansion. Wrong-grid tiles
+  poison final validation; release, rendering changes, context count and native
+  source SHA preservation are checked. Fit-budget tests reject oversized square
+  and thin windows without integer overflow. Existing OpenAPI coverage passes.
+- `/tmp/hict-render-capture-web-05.log`: full `npm run build:web`, terminal zero,
+  including type/DTO/numerical and source lifecycle checks. The lifecycle fixture
+  now initializes its real WeakMap field and proves failed tiles affect only the
+  active capture. Explicit changed-file Prettier, focused Python Black/compile
+  and both repository diff whitespace checks pass.
+- `/tmp/hict-render-capture-expected-07/results.json`: seventeen cases, empty
+  unexpected errors, terminal zero. Real export-dialog controls cover viewport,
+  whole-map and rectangle in Expected/O/E; shared-reference sources with distinct
+  native grids; native-BINS fitting during sequence-level zoom; active prepared
+  SQRT_COVERAGE algorithm/weights; real rendering and weights edits invalidating
+  drawing; a controlled failed tile rejecting promptly; late-create cleanup.
+  Camera, context namespace, interactions, release and unchanged primary source
+  SHA-256 `59c272d9e10bdcab891102911c5c89e8be4d5dc27b94a960d4a82c08c1a9120a`
+  are checked. Only intentional validate-409 and the exact injected tile-503
+  responses are allowed; an unexpected tile-409 fails the driver. Temporary
+  whole-map layouts do not refit the shared viewport profile. Actual SVG figures,
+  screenshots and bounded render diagnostics are retained in that directory.
+- `/tmp/hict-render-capture-frozen-05/results.json`: ten cases, empty errors,
+  terminal zero. Shared PNG/SVG/PDF scientific metadata, fixed captured bytes,
+  composition, 640-pixel controls, exact cut, stale input and close are rechecked.
+- `/tmp/hict-render-capture-sequence-03/summary.json`: eighteen cases, status ok,
+  terminal zero. Real native sequence tools, actual generated ModDotPlot with
+  tracks, exact coordinates, selection exports and assembly reattachment pass.
+  `identity-figure-validation.json` retains three-format metadata and 2,279 flat
+  interior map colors independently rasterized from SVG/PDF, within four channel
+  units. Native SHA remains
+  `87c6b9c6de9ab5c8397eb3c06145d524a9aa21378b0f1ce586048605b9d97a20`.
+- `/tmp/hict-render-capture-viewer-01/results.json`: fourteen cases, empty errors,
+  terminal zero. Actual captured PNG/SVG reopening, full PNG pixel equality,
+  fit/zoom, responsive controls, inert SVG and chooser/late-decode cleanup pass.
+  Total: 59 final Chromium cases. Expected/O/E dialog cases exercise SVG capture;
+  the shared three-format encoders are rechecked with Observed and real identity
+  captures. Font/annotation-edge antialiasing is not claimed pixel-identical.
+
+Screenshots were inspected for whole-map and sequence/coverage content, complete
+previews, controlled failure messaging and existing responsive figure controls.
+The sparse mixed fixture contains mostly empty contacts; blank off-diagonal
+regions do not establish a rendering defect. Scientific Expected fitting retains
+its existing unique unordered source-pair support and display-bin distance.
+The context fingerprint hashes actual profile means/domains, not merely a
+requested rectangle. Effective normalization is recorded independently of
+ordinary visualization option equality.
+
+Retained limits: four contexts, 64 MiB profile/metadata budget, five-minute lease
+checked on registry access, one active fit, default 16,777,216 cells and at most
+65,536 native bins per axis. Larger fits ask for a coarser view without silently
+changing the grid. Contexts release on all normal completion/failure/close paths;
+lost replies rely on bounded expiry. This does not establish whole-genome latency
+budgets on every supported machine. Stored cut/scaffold comparisons, session
+persistence, publication artifacts and wider release gates remain open.
+
+Excluded intermediates: focused-02 omitted newly used JUnit static imports;
+web-02's prototype-only lifecycle fixture lacked the new WeakMap initializer.
+Expected-01 passed the early seven-case subset before later fixes. Expected-02/03
+exposed the shared overview sending coarser tile requests under the primary
+profile. Expected-04 reached its functional assertions but its synthetic 503
+response omitted the exposed cancellation header, causing a strict browser
+console failure; the controlled response now carries that header. Expected-05
+exposed a repeated mixed-grid projected-overlay render timeout; expected-06 was
+timing-dependent and is superseded by the explicit capture overlay promotion.
+Earlier frozen/sequence subsets and pre-budget builds do not qualify the final
+pair. Final evidence is only the runs named above.
+
+A read-only follow-up of public NCBI RID FR9P7TGF016 at
+2026-11-17 03:31:05 UTC (07:31 local) still records WAITING in
+`/tmp/hict-remote-blast-live-05/public-rid-status-after-figure-capture.{txt,json}`.
+It submits no new query and uploads no project sequence. P8 successful live
+result delivery remains unqualified. Protected plans and owner files are
+unchanged; nothing pushed, merged or tagged.
