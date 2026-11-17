@@ -23,7 +23,7 @@ describe earlier releases; they must not override the decisions below.
 |---|---|---|
 | P1 Exact cuts, clipped bin geometry, sessions and exports | 21 | In progress: exact API/scissors/feature-edge actions, source synchronization, v4 replay, long offsets, approximate Cooler export and main-map base scale implemented; primary FASTA/BED6/GTF/GFF3 cuts, wheel/overview/viewport exports/session workflows verified; broader tracks/secondary/selection coverage and release qualification pending |
 | P2 Entity/region selection, coordinates, FASTA measurement | 2, 7, 13, 17 | In progress: entity/region gestures, coordinates, scoped borders and FASTA interval/repeat measurement implemented and primary Chromium verified; platform, secondary-source, accessibility and large-map qualification pending |
-| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Tauri/download streaming, other platforms and wider chooser coverage pending |
+| P3 File destinations, saved/cancelled/failed results, sessions | 4, 6, 15 | In progress: shared save outcomes, confirmed sessions, frozen revision-guarded FASTA/AGP, browser/Electron/Tauri request streaming, per-purpose file memory and File Examples implemented; primary browser and real Linux Electron dialog/512 Mb transfer/quit workflows verified; Linux Tauri native development checks also pass; final updated payload, download-only browsers, other platforms and wider chooser coverage pending |
 | P4 Tracks/sources separation, feature actions, resize | 9, 10, 11 | In progress: Center/Zoom and copied coordinates corrected; base-grid features/signals include hidden/binless sequence with native-weight provenance, browser verified; 1D/source tabs, file/map-weight Add choices, guarded editing and aligned resizing implemented; final acceptance is recorded below, with broad formats, platforms and performance pending |
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
@@ -1338,3 +1338,57 @@ A fresh portable artifact, cold-prefix analysis and current-version release
 qualification remain open. The earlier version-55 soak remains scoped to its
 original exact artifact; native tool byte identity did not establish prefix
 origin. See the reinforcement record for evidence paths and precise scope.
+
+
+Version 62 additionally passes 19 real sequence-browser cases using its staged
+runtime, JAR, assets and tools. All 11 saved native jobs have verified command
+paths and executable hashes under that prefix; the private Java temporary
+directory has no fallback toolchain extraction. Snapshots/figure exports and
+overlay/comparison screenshots pass. The completed Linux producer and independent archive/extracted-entry identity
+checks pass, including all executable modes. The actual .run-created application
+is retained under `/tmp/hict-command-permissions-extracted-01`. The full
+version-62 release gate under `/tmp/hict-integrated-release-11` passes all ten
+stages, including four performance checks and 225 mixed cycles over 1806.54
+seconds. Frame p95 is 16.7 ms and input acknowledgement p95 is 50.93 ms, with
+no recorded browser errors, unchanged native/JAR bytes, stable DOM maxima and
+listener growth within the gate. This qualifies the exercised packaged Chromium
+and native-tool workflows, not Tauri or other platform dialogs. Interrupted packaging
+attempts are recorded explicitly in the reinforcement evidence.
+
+
+## Bounded Tauri coordinate downloads and native save qualification
+
+Tauri 0.1.2 now opens the native chooser before connecting, then downloads
+revision-frozen FASTA/AGP directly in Rust and writes 64-KiB chunks to an owned
+sibling temporary file. Sequence bytes do not cross the WebView. Blob exports
+use ordered acknowledged binary IPC with the same staged commit and per-window
+ownership. Storage failures/cancellation preserve the original, successful saves
+alone advance per-purpose directories, and graceful native close/Quit wait for
+cleanup. App command handlers, generated permissions and the existing localhost
+capability agree. Bind/CORS and the native local-host policy remain unchanged.
+
+The isolated Ubuntu 22.04/Rust 1.88/WebKit 4.1 SDK builds the full wrapper and all
+18 Rust tests pass. Full WebUI build and transfer-contract checks pass. A real
+GTK bounded-IPC-only prototype exposed WebKit's response buffering; the native
+HTTP implementation resolves that transfer path. The final development binary
+saved 512,000,000 sequence bases (518,400,014 file bytes) in 3.04 seconds, with
+17-ms frame p95 and 7.22-ms acknowledgement p95. Its output matches the retained
+byte hash and independent sequence checksum. These are host measurements.
+
+The committed repeatable runner passes eight cases in trial 04: chooser Cancel,
+confirmed AGP overwrite, complete FASTA identity/responsiveness, 8-MiB full-volume
+preservation, session save/restore, transfer Cancel, File Quit and native
+WM_DELETE_WINDOW close. The last two resumed after correcting an observer that
+mistook the expected lost click acknowledgement on Quit for a failure. Earlier
+late attach-notification and truncated-process-name observer errors are recorded.
+No source dataset changed. Real SVG/PNG/PDF saves and opening the saved SVG also
+pass in trial 03, including an 887,503-byte multi-chunk SVG.
+
+This qualifies the exercised Linux native development pair, not an updated final
+portable artifact. WebDriver DELETE /window left a partial file in both
+prototypes; do not equate it to graceful native close or claim hard-crash orphan
+recovery. Automated WebKit suppresses HTML open choosers, so restore/view checks
+supply actual saved files through WebDriver file input. Native navigation,
+renderer loss, broader real-data native workflows, other platforms and final
+installer/package gates remain open. See `tauri-native-validation.md` and the
+reinforcement evidence for exact hashes, receipts and reproduction commands.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Stream FASTA/AGP directly from the JVM to Tauri save destinations without buffering sequence bytes in WebKit, and stage other exports through bounded binary transfers with cancellation and graceful-exit cleanup.
+
 - Restore executable permissions for every checksummed Linux portable command, including nested sequence tools, so first use runs the delivered tools directly.
 
 - Supply verified vector-cell PDF/SVG and a lossless 900-dpi TIFF for the public-data editing figure, preserving native cell colours and scientific provenance.

@@ -1,5 +1,16 @@
 # Reinforcement implementation evidence
 
+## Current advisor-release qualification — 2026-11-17
+
+Latest qualified Linux candidate: `2.0.62-d50d6aa-webui_3bf3b68`, with exact
+archive/JAR hashes and evidence below. The full packaged Chromium gate and
+30-minute mixed soak pass. Real native sequence jobs have verified bundled tool
+origins and hashes. The public-data publication artwork is retained and checked.
+Overall release qualification remains in progress: Tauri 0.1.2 passes complete-wrapper Linux development checks, while its updated
+final portable artifact, broader native workflows and other platform/native
+dialog gates remain open. The older GO statements below retain their original
+artifact and workflow scope. Protected plans and manuscript remain unchanged.
+
 ## Publication qualification — 2026-11-13
 
 This R1–R6 record supersedes the archived W/U progress below. Both repositories
@@ -6012,3 +6023,132 @@ runners. Linux shell syntax, both artifact/workflow Node suites and four
 portable-extraction tests pass. Application Java/WebUI code is unchanged, so
 no new visual behavior is claimed. A fresh packaged release and cold-prefix
 analysis remain necessary. Protected plans and owner documents are untouched.
+
+
+### Version-62 staged runtime and native browser checks
+
+`09c69626` implements the permission fix; the version-62 integrated JAR build
+finishes zero in `/tmp/hict-command-permissions-integrated-build-01.log`.
+The packaged source is `2.0.62-d50d6aa-webui_3bf3b68`.
+`/tmp/hict-command-permissions-browser-02/summary.json` passes all 19 sequence
+UI cases, including cross-join search, gapped BLAST, ModDotPlot accumulation,
+selection alignment, source-bin geometry, named snapshots and three-format
+figure exports. The server ran the staged package's Java runtime and copied
+JAR; fixture compilation used the host JDK. Assets and native tools came from
+the staged package. Overlay and comparison screenshots were visually inspected.
+
+`tool-origin-validation.json` verifies all 11 saved native jobs as finished,
+with commands under the staged toolchain prefix and matching executable hashes.
+The private Java temporary directory contains no fallback toolchain extraction.
+`staged-package-files.json` retains the exact staged file/link identities and
+modes used for these checks. This is staged-runtime qualification until the
+completed archive/extraction is independently verified.
+
+The first browser attempt stopped before startup because its Python lacked
+Cooler. The successful run combines the installed fixture and Playwright
+dependencies without changing application code. An initial origin observer
+incorrectly expected command fields in public Jobs status; those fields are
+intentionally in saved job provenance. The final origin check reads and hashes
+that provenance directly. These setup/observer failures are retained separately
+from the passing browser and native results.
+
+Package attempt 01 ended with signal 143 during extraction, without completing
+producer checks. Attempt 02's background shell ended without a completion
+receipt. Attempt 03 uses an independent process group and finishes zero, recorded in
+`/tmp/hict-command-permissions-package-03.exit.json`. Its producer extraction,
+launcher, HDF5/native smoke and archive SHA checks pass. No readiness claim is
+based on interrupted producer attempts.
+
+`/tmp/hict-command-permissions-archive-qualification.json` independently verifies
+archive SHA-256, the complete .run payload against its extraction marker and all
+3,086 extracted file/link identities and modes against the browser-tested stage.
+The actual .run-created application was moved intact to
+`/tmp/hict-command-permissions-extracted-01/HiCT-2.0.62-d50d6aa-webui_3bf3b68-linux-x86_64`.
+Redundant staging/payload files were removed only after verification. JAR SHA-256
+is `de07da6c2f6b56ea855069b0e5383bf4fe82666fb5e309294b97a023f86ade2a`;
+.run SHA is `131b64876ea7eccb2209f0a8d4af62fafd7f66a23182850dabfe4f820e3a9f94`;
+.tar.gz SHA is `28bdbb9bac9e1a783d4c4348fcf1b4211bfda4945220325c7c0d8f1996df23ff`.
+`/tmp/hict-integrated-release-11` starts the full packaged-browser, structural,
+menu, offline, performance and 30-minute soak gate on this artifact with three
+fresh physical performance-input copies. It finishes zero: all ten stages pass,
+including four performance checks and 225 mixed cycles over 1806.54 seconds.
+Frame p95 is 16.7 ms and acknowledgement p95 is 50.93 ms. Browser heap slope
+is 0.0971 MiB/min and JVM heap slope is 0.0722 MiB/min; JVM RSS slope is
+-0.7985 MiB/min. DOM maxima stay 632/632, listener maxima 224/228, with no
+recorded browser errors. All native inputs and JAR bytes remain unchanged.
+This qualifies the exact candidate for the exercised packaged Chromium and
+native-tool workflows. Tauri native dialogs and other platforms are not
+implicitly qualified. New working-tree Tauri streaming code is tested separately.
+
+
+## Tauri native request streaming and complete Linux wrapper — 2026-11-17
+
+Scope: immutable version-62 JVM with copied current WebUI assets and a newly
+compiled Tauri 0.1.2 executable. This is a development pair, not package-level
+qualification. Existing packaged Chromium/soak qualification retains version 62.
+The reproducible SDK and actual-UI runner are documented in
+[tauri-native-validation.md](tauri-native-validation.md).
+
+- SDK image: `sha256:20611bc911ea8371adf3b6f2492527e227d1bd8617f24f71a3ec4350b91922bf`.
+  Rust 1.88, Ubuntu 22.04, WebKit 4.1, tauri-driver 2.0.6. No host toolchain change.
+- Final development executable SHA-256:
+  `0a9570bc260fd78455b3e247ccc986f2fd5add8e054a89bb40d71000e21553b9`.
+  `/tmp/hict-tauri-sdk-01/compile-04.log` and `.exit.json`: full wrapper builds,
+  18 real Rust tests pass, zero failures/ignored. Previous builds 01–03 also
+  pass; early capability review fixed handler/manifest/ACL agreement before GUI
+  qualification. Existing dependency pins are retained; native HTTP adds TLS/
+  decompression dependencies and explicit Linux OpenSSL 3 runtime requirements.
+- WebUI full build: `/tmp/hict-tauri-native-http-web-build-01.log`, terminal zero.
+  File-save contracts cover bounded binary buffers, backpressure, chooser-before-
+  request metadata, cancelled/failed/confirmed commit outcomes and legacy paths.
+- Trial 01 is a red control: binary IPC alone still allowed WebKit response
+  buffering, about 1.49 GiB process-group RSS growth. This was not accepted.
+- Trial 02: `/tmp/hict-tauri-streaming-native-02/large-save-validation.json`,
+  `chooser-cancel-validation.json`, `overwrite-validation.json`,
+  `disk-full-validation.json`, `transfer-cancel-validation.json` and
+  `quit-during-transfer-validation.json` pass. 512 Mb save 2.85 s, 18.2 MiB
+  additional transfer RSS from the chooser baseline, frame p95 17 ms, input
+  acknowledgement p95 5.66 ms. Chooser RSS growth is separately recorded;
+  neither that measurement nor the renderer's fixed footprint is called zero.
+- Trial 03 final development binary: `large-save-validation.json` passes at
+  3.04 s, frame p95 17 ms and acknowledgement p95 7.22 ms; recorded transfer RSS
+  growth from the chooser baseline 0.684 MiB is specific to that warmed run.
+  Native WM_DELETE_WINDOW after 2.9 MiB cleans up in 0.228 s.
+  `native-figures-validation.json` records real GTK saves of SVG 887,503 bytes,
+  PNG 19,791 bytes and PDF 147,335 bytes, plus opening the actual saved SVG.
+  `native-export-dialog.png` and `native-exported-svg-viewer.png` are actual
+  X-root screenshots, not incomplete WebDriver compositor screenshots.
+- Reusable runner: `/tmp/hict-tauri-streaming-native-04/native-coordinate-qa-01/qualification.json`,
+  eight passed cases, source bytes unchanged. Full FASTA has 512,000,000 bases;
+  sequence SHA-256 `1e077476b6d3eaf57a98b4ac46ed60aed534a4374e8d631c61d346b871d38858`;
+  file SHA-256 `8768c249260c53c2f10c479415672f5459a3868ca5dc631d29431c02b2dc3129`.
+  Session saved through native Blob IPC restores the actual file. The bounded
+  full-volume failure preserves the original, emits no Saved outcome and removes
+  staged files. Cancel/quit/native close remove both destination and JVM spools.
+  Final Quit/native-close repeats observe 14,770,176/423,168 staged bytes and
+  finish cleanup in 0.186/0.416 s respectively.
+
+Failed attempts are retained. The first trial-02 large save encountered actual
+insufficient disk space while the JVM spooled a complete FASTA and the client
+wrote its destination; it did not falsely report success. The repeat succeeded
+after verified duplicate-output/cache cleanup. Trial-03's first reusable-runner
+attempt observed a late attach notice instead of the export result. Trial-04
+passed six cases, then its Quit click lost acknowledgement as the app exited;
+its `failure.json` is retained and the two remaining cases pass using `--resume`
+after narrowing the observer. The runner now checks the real truncated Linux
+process name and records its session for reproducible continuation.
+
+Both prototypes leave a partial file on WebDriver DELETE /window, including
+with the application ExitRequested guard. That automation operation is not
+qualified as graceful close. Separate native window-manager close and File Quit
+pass. No hard-crash cleanup, native navigation/renderer-loss behavior, HTML
+manual open chooser, other platforms or updated installer is implied. Protected
+plans, manuscript and pre-existing dirty documents remain untouched.
+
+
+The implementation is committed as WebUI `2eb9f29` with matching JVM patch 63.
+The final focused checks pass (zero lint errors; three pre-existing Electron
+non-null assertion warnings). The full finalized WebUI build under
+`/tmp/hict-tauri-native-final-web-build-01.log` exits zero. A fresh build stamped
+with the committed WebUI, rebuilt native payload and package-level qualification
+are the next gates; development-pair results above do not substitute for them.

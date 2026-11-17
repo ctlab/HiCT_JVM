@@ -53,14 +53,22 @@ The main process opens the native chooser first, then fetches and writes chunks
 sequentially to a staged sibling file. It validates the existing trusted-local
 host policy and export endpoint allowlist, rejects redirects/error content, and
 never sends the file bytes through renderer IPC. Older wrappers without this
-capability retain their compatibility path. Tauri has not yet implemented it.
+capability retain their compatibility path. Tauri 0.1.2 provides the same
+request-only path through its Rust HTTP client, with 64-KiB sequential disk writes,
+normal TLS validation, no redirects or automatic retries, bounded idle waiting
+and checks of the response type and complete byte count. It forwards only the
+captured history headers and JSON options to the three allowed export endpoints.
+Sequence bytes do not pass through the WebView.
 Operation IDs use 128 random bits from `Crypto.getRandomValues`, which supports
 HTTP contexts; this avoids adding a secure-context-only UUID dependency to the
 trusted-LAN workflow ([API reference](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues)).
 
-Each window owns at most one native coordinate transfer. Cancellation requires
-the matching window and operation ID. Navigation, renderer loss and destruction
-abort owned work. Graceful quit cancels transfers and waits for their cleanup;
+Electron permits one coordinate transfer per window. Tauri permits at most four
+active staged exports in the application, each owned by its choosing window. Cancellation requires
+the matching window and operation ID. Electron navigation, renderer loss and destruction abort owned work. Tauri
+user cancellation, native window-manager close and graceful application exit
+remove owned files; navigation and renderer-process-loss qualification remain
+separate gates. Graceful quit cancels transfers and waits for their cleanup;
 an unanswered chooser owns no file and its aborted signal prevents later I/O.
 Rename commits the file; cancellation after that point cannot turn a completed
 save into a cancelled result. Permission and storage errors have concise messages;
@@ -88,8 +96,9 @@ denial, failed close, delayed close, actual session restore and stale coordinate
 Other browser regressions use a controlled writer that emits real downloads so
 the output bytes can be inspected. These checks do not qualify OS-native dialogs.
 Electron's actual IPC handler is exercised against real temporary files, including
-injected rename failure. The actual Tauri filesystem function is compiled and
-tested independently; this does not qualify the complete Tauri wrapper.
+injected rename failure. The Tauri filesystem implementation has independent native tests. Its complete
+Linux wrapper is also compiled with Rust 1.88 against Ubuntu 22.04/WebKit 4.1;
+real GTK dialog and transfer evidence is described below.
 
 Nine acceptance checks pass with the built Linux Electron 41.10.7 payload and
 real GTK save/cancel dialogs on a private X display, including 512 Mb FASTA,
@@ -100,9 +109,23 @@ transfer creates no renderer coordinate-download requests. Other platforms,
 Wayland/portal variants, hard-crash durability and full installer integration
 remain unqualified.
 
-The audit host has Rust 1.75, which cannot read the wrapper's v4 Cargo lockfile;
-the project requires Rust 1.88, and WebKit 4.1 development metadata is absent.
-Full Tauri compilation and its updated native GUI checks remain required.
+The host itself has Rust 1.75 and no WebKit 4.1 SDK. The isolated validation
+SDK supplies Rust 1.88, WebKit 4.1 and tauri-driver; this does not change the host
+or add those test dependencies to the application. See
+[the native validation instructions](tauri-native-validation.md).
+
+Tauri 0.1.2 was exercised with actual GTK save/cancel/overwrite dialogs, a 512 Mb
+FASTA, AGP, an 8-MiB full destination volume, session save/restore, multi-chunk
+SVG/PNG/PDF saves, user cancellation and graceful Quit/window-manager close.
+The 518,400,014-byte FASTA matches the retained independent sequence checksum;
+the final development binary saved it in 3.04 seconds on this host, with
+17-ms frame p95. This is a development JVM/WebUI/native pair, not final installer
+qualification. Automated WebKit suppresses HTML file-open choosers, so actual
+saved session/SVG files were supplied through its file-input protocol. Its
+DELETE /window operation left a partial file even with the application exit
+guard; it must not be reported as equivalent to the passing native
+WM_DELETE_WINDOW close. Hard process termination/orphan recovery, other
+platforms and portal variants remain outside this qualification.
 Whole-Blob buffering in older Electron/Tauri and download-only browsers
 (including Tauri's per-byte array conversion) is not qualified for large FASTA.
 Browser streaming is qualified on a 512 Mb synthetic assembly with
