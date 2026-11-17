@@ -16,6 +16,9 @@ import java.util.function.*;
 
 /** External subject coordinates are retained as BLAST coordinates and never converted to assembly BED. */
 public final class RemoteBlastRunner {
+  private final Supplier<NcbiBlastResultRetriever> retrievalFactory;
+  public RemoteBlastRunner() { this(NcbiBlastResultRetriever::new); }
+  RemoteBlastRunner(Supplier<NcbiBlastResultRetriever> retrievalFactory) { this.retrievalFactory = Objects.requireNonNull(retrievalFactory); }
   static final long MAX_OUTPUT_BYTES = 32L * 1024 * 1024;
   static final int MAX_REPORT_HITS = 20_000;
   private static final Semaphore REMOTE_CLIENT = new Semaphore(1, true);
@@ -44,13 +47,22 @@ public final class RemoteBlastRunner {
     boolean acquired = false, succeeded = false;
     Process process = null;
     try {
-      log.accept("Waiting for the NCBI remote BLAST client. Only the pasted queries and generated query IDs are uploaded.");
+      log.accept(options.requestId() == null
+        ? "Waiting for the NCBI remote BLAST client. Only the pasted queries and generated query IDs are uploaded."
+        : "Waiting to download the existing NCBI request. Pasted queries remain local for result verification.");
       while (!(acquired = REMOTE_CLIENT.tryAcquire(200, TimeUnit.MILLISECONDS))) checkCancelled(cancelled);
       checkCancelled(cancelled);
       long remaining;
       while (hasStarted && (remaining = spacing.toNanos() - (System.nanoTime() - lastStartedNanos)) > 0) {
         checkCancelled(cancelled);
         TimeUnit.NANOSECONDS.sleep(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(200)));
+      }
+      if (options.requestId() != null) {
+        var result = retrievalFactory.get().retrieve(directory, queries, options, sha, log, cancelled, timeout, () -> {
+          lastStartedNanos = System.nanoTime(); hasStarted = true;
+        });
+        succeeded = true;
+        return result;
       }
       var command = command(executable, queryFile, raw, queries, options);
       var builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(diagnostics.toFile());
@@ -77,16 +89,7 @@ public final class RemoteBlastRunner {
         + " Check the connection and database settings before submitting a new search. No automatic resubmission was made.");
       if (!Files.isRegularFile(raw) || Files.size(raw) > MAX_OUTPUT_BYTES) throw new IOException("Remote BLAST returned no usable bounded output");
       var parsed = parse(raw, queries);
-      var document = new JsonObject().put("format", "hict-remote-blast").put("version", 1)
-        .put("provider", "NCBI BLAST+").put("database", options.database()).put("remoteDatabaseName", options.remoteDatabaseName())
-        .put("startedAt", started.toString()).put("completedAt", Instant.now().toString())
-        .put("querySha256", sha).put("coordinateSystem", "ONE_BASED_INCLUSIVE")
-        .put("externalSubjects", true).put("task", task(queries)).put("lowComplexityMasking", true)
-        .put("thresholds", new JsonObject().put("evalue", options.alignment().evalue()).put("identity", options.alignment().identity())
-          .put("coverage", options.alignment().coverage()).put("maxTargets", options.alignment().maxTargets()))
-        .put("queries", new JsonArray(queries.stream().map(q -> new JsonObject().put("id", q.id())
-          .put("description", q.description()).put("length", q.sequence().length())).toList()))
-        .put("hitCount", parsed.count).put("truncated", parsed.count > MAX_REPORT_HITS).put("hits", parsed.hits);
+      var document = reportDocument(queries, options, parsed, sha, started);
       Files.writeString(report, document.encode(), StandardOpenOption.CREATE_NEW);
       if (Files.size(report) > MAX_OUTPUT_BYTES * 2) throw new IOException("Remote BLAST report exceeded the size limit");
       succeeded = true;
@@ -101,6 +104,20 @@ public final class RemoteBlastRunner {
       try { if (!succeeded) { Files.deleteIfExists(raw); Files.deleteIfExists(report); } }
       finally { if (interrupted) Thread.currentThread().interrupt(); }
     }
+  }
+
+  static JsonObject reportDocument(List<SequenceSearchQueries.Query> queries, RemoteBlastOptions options,
+                                   Parsed parsed, String sha, Instant started) {
+    return new JsonObject().put("format", "hict-remote-blast").put("version", 1)
+      .put("provider", "NCBI BLAST+").put("database", options.database()).put("remoteDatabaseName", options.remoteDatabaseName())
+      .put("startedAt", started.toString()).put("completedAt", Instant.now().toString())
+      .put("querySha256", sha).put("coordinateSystem", "ONE_BASED_INCLUSIVE")
+      .put("externalSubjects", true).put("task", task(queries)).put("lowComplexityMasking", true)
+      .put("thresholds", new JsonObject().put("evalue", options.alignment().evalue()).put("identity", options.alignment().identity())
+          .put("coverage", options.alignment().coverage()).put("maxTargets", options.alignment().maxTargets()))
+      .put("queries", new JsonArray(queries.stream().map(q -> new JsonObject().put("id", q.id())
+          .put("description", q.description()).put("length", q.sequence().length())).toList()))
+      .put("hitCount", parsed.count).put("truncated", parsed.count > MAX_REPORT_HITS).put("hits", parsed.hits);
   }
 
   static List<String> command(Path executable, Path query, Path raw, List<SequenceSearchQueries.Query> queries, RemoteBlastOptions options) {

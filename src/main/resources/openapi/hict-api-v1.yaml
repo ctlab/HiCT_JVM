@@ -2232,11 +2232,42 @@ paths:
       operationId: cleanupSequenceOverlays
       responses:
         '200': {description: Number of removed matrices; original data and provenance retained}
+  /sequence/remote_blast/retrieve:
+    post:
+      tags: [Sequence analysis]
+      summary: Download a completed NCBI RID without submitting any sequence search
+      description: Only the RID is sent to NCBI using GET and documented JSON2_S output. Pasted queries remain on the HiCT server and validate returned labels, lengths and aligned bases. Verification scope is recorded for partial/no-hit queries. Identity, e-value, per-HSP coverage, strands and target limits filter retrieved alignments locally. A separate endpoint prevents older servers from treating recovery as a new submission. Global remote-client spacing, a one-minute per-RID interval, bounded output, timeout and Jobs cancellation apply. This does not require linked FASTA or a local BLAST executable.
+      operationId: retrieveRemoteBlast
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [queries, scope, mode, searchTarget, bothStrands, remoteConsent, remoteDatabase, remoteRequestId]
+              properties:
+                queries: {type: string, description: Original FASTA records or one DNA sequence per line, with matching query headers}
+                scope: {type: string, enum: [database]}
+                mode: {type: string, enum: [blast]}
+                searchTarget: {type: string, enum: [NCBI_REMOTE]}
+                remoteConsent: {type: boolean, enum: [true], description: Confirm downloading the RID and that it belongs to these queries}
+                remoteRequestId: {type: string, maxLength: 128, description: Existing NCBI RID, normalized to uppercase after trimming; 8–64 letters/digits are required}
+                remoteDatabase: {type: string, enum: [nt, refseq_rna, 16S_ribosomal_RNA]}
+                remoteTimeoutMinutes: {type: integer, minimum: 1, maximum: 30, default: 10}
+                bothStrands: {type: boolean}
+                evalue: {type: number, exclusiveMinimum: 0, default: 0.00001}
+                identity: {type: number, minimum: 0, maximum: 100, default: 70}
+                coverage: {type: number, minimum: 0, maximum: 100, default: 50}
+                maxTargets: {type: integer, minimum: 1, maximum: 500, default: 50}
+      responses:
+        '202': {description: Download-only remote_blast job queued}
+        '400': {description: Invalid RID, consent, query or retrieval settings}
+        '429': {description: Remote queue full}
   /sequence/search/jobs:
     post:
       tags: [Conversion]
       summary: Search a local frozen assembly or explicitly submit pasted queries to NCBI BLAST
-      description: Local search creates a source-anchored BED. NCBI_REMOTE requires BLAST mode, database scope and explicit remoteConsent. Only generated query IDs and pasted sequences are uploaded; no linked FASTA is read. Remote results retain external subject coordinates in JSON/TSV, with a separate bounded worker, one active remote client, a 1–30 minute provider timeout and Jobs cancellation. Cancelling stops the client; NCBI may continue a submitted request. No automatic resubmission occurs.
+      description: Local search creates a source-anchored BED. NCBI_REMOTE requires BLAST mode, database scope and explicit remoteConsent. Only generated query IDs and pasted sequences are uploaded; no linked FASTA is read. Existing RIDs must use the separate download-only retrieval endpoint. Remote results retain external subject coordinates in JSON/TSV, with a separate bounded worker, one active remote client, a 1–30 minute provider timeout and Jobs cancellation. Cancelling stops the client; NCBI may continue a submitted request. No automatic resubmission occurs.
       operationId: startSequenceSearch
       requestBody:
         required: true

@@ -1174,3 +1174,41 @@ URL pathname, so Windows drive letters/escaped paths reach the actual dependency
 entry. Focused regression passes; this is not Windows runtime qualification.
 Candidate 54's full integrated build passes 625 JVM tests (zero failures/errors,
 seven skips); the final revision needs a fresh stamped build before packaging.
+
+
+Candidate 55 (notification cleanup plus portable regression paths) now passes
+the full integrated build: 625 JVM tests, zero failures/errors and seven skips.
+Its Linux package producer, archive verification, actual extraction and full
+qualification subsequently pass (terminal receipts below). Obsolete 50/51 software-only copies
+were removed after full archive/content verification, preserving original
+inputs and all evidence. See reinforcement-validation.md for receipts.
+
+Candidate 55 passes the complete integrated Linux qualification in
+`/tmp/hict-integrated-release-10/qualification.json`, including its own extracted
+runtime/assets/toolchains, strict navigation gates and a 1,805.96-second mixed
+soak (229 cycles). Frame p95 is 16.7 ms and edit acknowledgement p95 42.08 ms.
+Browser heap slope is 0.0898 MiB/min; JVM RSS slope is 0.8516 MiB/min. DOM remains
+632 and listeners grow by four, within the unchanged limits. No unexpected
+errors occur; package JAR and native source bytes remain unchanged. This closes
+the integrated candidate-55 Linux performance/soak gate, not the overall release.
+
+P8 now adds download-only recovery for a known completed NCBI RID. A separate
+capability-checked endpoint prevents an older server from submitting the pasted
+queries. The server sends only the RID to NCBI, validates returned aligned bases
+against the locally pasted original query, records full/partial/no-alignment
+verification honestly, and delivers external results through Jobs without an
+open map or local BLAST executable. Local retrieval filters and provider settings
+are recorded separately; no assembly annotation is fabricated.
+
+Five live browser checks recover the existing approved public-reference request
+FR9P7TGF016, verify ten hits and export JSON/TSV. Eighteen controlled submission
+browser checks pass, including cancellation, timeouts and narrow layout. All
+641 JVM tests pass (zero failures/errors, seven optional skips), including reverse
+query validation and deletion of partial output after a malformed late hit.
+Full WebUI build and focused lint pass (existing warnings). This development
+increment is newer than candidate 55 and is not package qualified. Native
+submissions that time out without exposing a RID still lack automatic recovery;
+P8 remains open. Final publication figures/readability, wider formats and native
+GUI/platform qualification also remain required. Protected plans remain unchanged.
+The final live recovery run also passes a sixth check at 640 pixels, with
+visually inspected wrapping, horizontally scrollable data and visible exports.

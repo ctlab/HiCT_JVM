@@ -6,7 +6,10 @@ import java.util.List;
 import java.util.Set;
 
 /** An explicit upload decision, independent of the linked FASTA and assembly scope. */
-public record RemoteBlastOptions(String database, int timeoutSeconds, BlastSearchRunner.Options alignment) {
+public record RemoteBlastOptions(String database, int timeoutSeconds, BlastSearchRunner.Options alignment, String requestId) {
+  public RemoteBlastOptions(String database, int timeoutSeconds, BlastSearchRunner.Options alignment) {
+    this(database, timeoutSeconds, alignment, null);
+  }
   public static final Set<String> DATABASES = Set.of("nt", "refseq_rna", "16S_ribosomal_RNA");
   public String remoteDatabaseName() {
     return database.equals("16S_ribosomal_RNA") ? "rRNA_typestrains/16S_ribosomal_RNA" : database;
@@ -25,9 +28,13 @@ public record RemoteBlastOptions(String database, int timeoutSeconds, BlastSearc
       throw new IllegalArgumentException("Remote BLAST accepts at most 10 queries and 100,000 total bases per job");
     if (!(request.getValue("outputFilename", "") instanceof String output) || !output.isBlank())
       throw new IllegalArgumentException("Remote results are saved as a report, not a BED track. Export them from the results viewer.");
+    var ridValue = request.getValue("remoteRequestId", "");
+    if (!(ridValue instanceof String rid) || rid.length() > 128) throw new IllegalArgumentException("NCBI request ID must be text");
+    rid = rid.strip().toUpperCase(java.util.Locale.ROOT);
+    if (!rid.isEmpty() && !rid.matches("[A-Z0-9]{8,64}")) throw new IllegalArgumentException("Enter a valid NCBI request ID (RID)");
     return new RemoteBlastOptions(database, timeout * 60,
       new BlastSearchRunner.Options(request.getBoolean("bothStrands"), number(request, "evalue", 1e-5),
-        number(request, "identity", 70), number(request, "coverage", 50), targets));
+        number(request, "identity", 70), number(request, "coverage", 50), targets), rid.isEmpty() ? null : rid);
   }
 
   private static int integer(JsonObject request, String key, int fallback, int min, int max) {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Recover completed NCBI BLAST requests by RID without resubmitting sequences, with verified query provenance, Jobs delivery and JSON/TSV exports even without local BLAST+.
+
 ### Navigation and visualization
 
 - Release notification listeners when messages close, preventing listener accumulation during long editing and export sessions, with portable release checks.

@@ -5655,3 +5655,81 @@ This changes the test path, not application behavior. The real-Vue published/fix
 The preceding integrated candidate-54 test/shadowJar build finishes zero with
 625 JVM tests, zero failures/errors and seven skips. The follow-up version also
 needs an integrated rebuild so its metadata identifies the final WebUI revision.
+
+Candidate 55 integrated build (`/tmp/hict-sonner-cleanup-integrated-build-02.log`)
+finishes with exit zero: 625 JVM tests, zero failures/errors, seven optional skips.
+Version `2.0.55-ecfd475-webui_95866d5`, JAR SHA-256
+`ed1e66599d945319525dfd7ca326a1b3ed27ce72b57e42b858a5259713930170`.
+Its isolated Linux package producer finishes zero under
+`/tmp/hict-sonner-cleanup-package-01.log` and `.exit.json`. Archive verification,
+actual `.run` extraction and the complete integrated qualification subsequently
+pass, as recorded below.
+
+Before packaging, obsolete 50/51 software caches and temporary extractions were
+checked for active process references, compared file-for-file and by SHA-256
+against their retained verified archives, then removed. The first cleanup stopped
+on an extra file and removed nothing; inspection identified the packager's own
+`.payload.sha256` marker. The second run verifies that marker against the cache
+identity and rejects any other extra/missing file. It completes zero, retaining
+archives, logs, receipts, current candidate 53 and all original input datasets.
+Receipt: `/tmp/hict-obsolete-package-cleanup-02.json`.
+
+### Candidate 55 integrated qualification and completed-RID recovery
+
+`/tmp/hict-integrated-release-10/qualification.json` is terminal passed with
+`qualifiesThirtyMinuteSoak=true`. Its own extracted Linux runtime, native tools,
+JAR and 53 served assets pass metadata/menu/structural/incomplete-open/offline
+and all strict performance stages. `soak/results.json` records 1,805.95765 seconds
+and 229 mixed cycles, frame p95 16.7 ms, acknowledgement p95 42.083424 ms,
+browser heap growth 1,825,816 bytes (0.08983148 MiB/min), JVM heap growth
+1,601,536 bytes (0.0948700 MiB/min), and RSS growth 18,243,584 bytes
+(0.8516401 MiB/min). DOM maxima remain 632; listeners 224 to 228. All unchanged
+limits pass. No unexpected errors occur and input/JAR hashes remain unchanged.
+`docs/release-qualification.md` records exact artifact hashes and receipt paths.
+
+The newer P8 increment implements completed-request retrieval using documented
+NCBI `CMD=Get`, `RID`, `FORMAT_TYPE=JSON2_S`. It never submits a new search or
+sends the pasted DNA to NCBI. Dedicated DTO/route/capability/consent handling
+prevents submission fallback, including against an older server. Shared bounded
+queue/rate limits, cancellable HTTP, a streaming size cap, bounded JSON parsing,
+scientific alignment checks and failure cleanup protect this independent path.
+Reports retain provider parameters and distinguish all-base, aligned-base-only
+and label/length-only verification, including zero-hit searches. Retrieved filters
+are explicitly local; original provider settings are not reconstructed.
+
+Evidence uses only the previously approved public 160-base NR_024570.1 query
+and its existing RID FR9P7TGF016. Offline fixtures retain the original downloaded
+JSON2_S bytes (SHA-256
+`f23cff0f973104d79293007203ab899605a02bdf2b5764676ac37134934618a8`).
+No new remote search was submitted. `/tmp/hict-remote-rid-browser-01/results.json`
+passes five actual-browser checks: invalid/old-server fallback prevention,
+completion after map close without BLAST+, Jobs/provenance and JSON/TSV export.
+Ten real alignments are recovered, first NR_180316.1, query 1–160, subject
+10–169, 100% identity, bit score 289.825 and e-value 3.01593e-78.
+The result screenshot was visually inspected: readable provenance, explicit
+external coordinates, literal titles, safe accession links and reachable exports.
+Run 02 stops on an ambiguous test selector matching both Close buttons; it does
+not count as narrow-layout coverage. After selecting the footer button explicitly,
+`/tmp/hict-remote-rid-browser-03/results.json` passes all six checks, including
+640-pixel provenance/export layout. Its screenshot was inspected: text wraps,
+the data table scrolls horizontally within the dialog and footer actions remain
+visible. These runs only retrieve the same existing RID, without new searches.
+
+`/tmp/hict-ncbi-recovery-native-browser-01/results.json` passes all eighteen
+controlled native-submission regressions, including 640-pixel layout, bounded
+results, queue/cancellation/timeouts and unchanged local-search default. Provider
+commands are controlled test executables, not additional live submissions.
+`/tmp/hict-ncbi-recovery-full-tests-01.log` finishes zero: 641 JVM tests, zero
+failures/errors, seven optional skips. New scientific regressions cover a
+nonpalindromic reverse query, strand filtering, gapped reverse subject, malformed
+late-hit cleanup, streaming limits, cancellation and pending/HTTP timeout failures.
+`/tmp/hict-ncbi-recovery-web-04.log` completes full `npm run build:web`;
+`/tmp/hict-ncbi-recovery-lint-01.log` exits zero, with eight existing warnings
+and the existing directive-schema diagnostics. No lint autofix was run.
+The OpenAPI YAML parses and all operation IDs remain unique.
+
+These recovery checks use a development API/static-WebUI pair and do not extend
+candidate-55 package qualification. Known-RID recovery does not recover an RID
+that native `blastn -remote` never exposed. P8 and the remaining publication,
+source-format and native/platform gates remain open. Protected plans, manuscript
+and owner changes are untouched; no push, merge or release was performed.

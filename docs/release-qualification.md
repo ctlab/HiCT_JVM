@@ -3,7 +3,13 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
-The latest assembled Linux candidate contains backend version
+The current implementation is version `2.0.55-ecfd475-webui_95866d5` and passes
+the full integrated build (625 JVM tests, zero failures/errors, seven skips).
+JAR SHA-256: `ed1e66599d945319525dfd7ca326a1b3ed27ce72b57e42b858a5259713930170`.
+Package generation is running under `/tmp/hict-sonner-cleanup-package-01.log`.
+It still needs archive/extraction checks and full qualification.
+
+The latest fully packaged Linux candidate contains backend version
 `2.0.53-8d54602-webui_daea115` and WebUI commit
 `daea115944446d62f6b77ee72999d1d0eddb15df`. Its integrated build uses
 `./gradlew test shadowJar -PrequireBundledWebUI=true --offline`, without excluding
@@ -57,6 +63,31 @@ run is diagnostic and is not a thirty-minute qualification. Source and package
 JAR hashes must still match after all stages. Server teardown targets only its
 owned process group. Running stages update qualification.json and stage logs;
 only terminal success supports completion.
+
+Run `/tmp/hict-integrated-release-10` is terminal **passed** for candidate
+`2.0.55-ecfd475-webui_95866d5`. The producer and driver both exit zero. Verified
+`.run` extraction supplies the tested JAR, runtime, native tools and 53 served
+assets. Metadata, two-size menu inspection, structural edits/Undo/Redo,
+incomplete-open recovery, offline workflows and all strict fresh/repeat
+performance samples pass. The mixed soak lasts 1,805.96 seconds/229 cycles:
+frame p95 16.7 ms, edit acknowledgement p95 42.08 ms, browser heap slope
+0.0898 MiB/min and JVM RSS slope 0.8516 MiB/min. DOM remains 632; listener
+maxima are 224 then 228, within the unchanged +20 limit. No unexpected errors
+occur, and native input/JAR hashes are unchanged after testing.
+
+Artifact SHA-256 values:
+
+- JAR: `ed1e66599d945319525dfd7ca326a1b3ed27ce72b57e42b858a5259713930170`
+- Linux `.run`: `b2791e77116a3f24f22712e22b9e97396053ece26cab61e3d5be27182953356d`
+- Linux `.tar.gz`: `5c288d6158feec6491286556fe83c1e444c59dd2cbb6d504dff0638f4150cc61`
+
+Receipts: `/tmp/hict-sonner-cleanup-package-01.exit.json`,
+`/tmp/hict-sonner-cleanup-qualification-01.json`,
+`/tmp/hict-integrated-release-10.driver.exit.json`, and the run's
+`qualification.json` and `soak/results.json`. Qualification applies to those
+exact bytes. Subsequent RID-recovery development is not covered by this run.
+Publication figures/readability, wider source formats and current native GUI/
+Windows/macOS qualification remain open; this is not an overall release sign-off.
 
 Run `/tmp/hict-integrated-release-09` is terminal failed after 1,801.53 seconds
 and 223 mixed cycles. All pre-soak gates pass. Soak frame p95 is 16.7 ms and

@@ -115,7 +115,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         try {
           if (request != null && request.containsKey("gapLengthBp")) System.setProperty(AssemblyExportSettings.GAP_LENGTH_KEY, Long.toString(gapLength(request)));
           var result = new JsonObject().put("gapLengthBp", AssemblyExportSettings.gapLengthBp())
-            .put("blastBundlePlatforms", "Linux x86_64").put("repeatPeriod", true);
+            .put("blastBundlePlatforms", "Linux x86_64").put("repeatPeriod", true).put("remoteBlastRidRetrieval", true);
           var shared = vertx.sharedData().getLocalMap("hict_server");
           boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));
           result.put("mapOpen", shared.get(secondary ? "chunkedFileSecondary" : "chunkedFile") != null);
@@ -145,6 +145,17 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
         () -> submitSearch(ctx.body().asJsonObject()),
         result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(202).end(result.encode()));
+    });
+    router.post("/sequence/remote_blast/retrieve").handler(ctx -> {
+      var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server")
+        .get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (wrapper == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
+      wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        try {
+          var request = ru.itmo.ctlab.hict.hict_server.dto.request.sequence.RemoteBlastRetrievalRequestDTO.fromJson(ctx.body().asJsonObject());
+          return submitRemoteSearch(request.settings(), request.queries(), true);
+        } catch (IllegalArgumentException invalid) { throw new HttpException(400, invalid.getMessage()); }
+      }, result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(202).end(result.encode()));
     });
     for (String kind : List.of("moddotplot", "dotplot")) router.post("/sequence/" + kind + "/jobs").handler(ctx -> {
       var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server")
@@ -466,19 +477,24 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   }
 
   private JsonObject submitRemoteSearch(JsonObject request, List<SequenceSearchQueries.Query> queries) throws Exception {
+    return submitRemoteSearch(request, queries, false);
+  }
+  private JsonObject submitRemoteSearch(JsonObject request, List<SequenceSearchQueries.Query> queries, boolean retrievalOnly) throws Exception {
     final RemoteBlastOptions options;
     try { options = RemoteBlastOptions.fromJson(request, queries); }
     catch (RuntimeException invalid) { throw new HttpException(400, invalid.getMessage()); }
+    if (retrievalOnly != (options.requestId() != null)) throw new HttpException(400,
+      "Use the download-only NCBI retrieval endpoint for an existing request ID");
     var shared = vertx.sharedData().getLocalMap("hict_server");
     var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
-    var executable = SequenceToolAvailability.require("blastn");
+    var executable = options.requestId() == null ? SequenceToolAvailability.require("blastn") : null;
     var outputRoot = data.resolve("processed/sequence-analysis");
     Files.createDirectories(outputRoot);
     if (!outputRoot.toRealPath().startsWith(data)) throw new HttpException(400, "Sequence output directory must remain inside DATA_DIR");
     var id = UUID.randomUUID().toString();
     var directory = Files.createDirectory(outputRoot.resolve(id));
     var settings = request.copy().put("searchTarget", "NCBI_REMOTE").put("remoteDatabase", options.database())
-      .put("requestedThreads", null).put("effectiveThreads", null).put("threadMode", "remote")
+      .put("remoteRequestId", options.requestId()).put("requestedThreads", null).put("effectiveThreads", null).put("threadMode", "remote")
       .put("queryBases", queries.stream().mapToLong(q -> q.sequence().length()).sum());
     var job = new Job(id, directory, data, new AssemblySequenceSnapshot(List.of()), settings, "", "remote_blast");
     jobs.put(id, job);
@@ -501,8 +517,9 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       job.logWriter = log;
       job.checkCancelled();
       job.state = "preparing";
-      job.toolCommand = executable.toString();
-      job.toolSha256 = sha256(executable);
+      job.toolCommand = options.requestId() == null ? executable.toString() : "NCBI Common URL API (GET)";
+      job.toolSha256 = executable == null ? null : sha256(executable);
+      if (options.requestId() != null) job.state = "running";
       job.save();
       var result = new RemoteBlastRunner().run(executable, job.directory, queries, options, job::log, process -> {
         job.process = process;
@@ -950,6 +967,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         .put("snapshot", kind.equals("remote_blast") ? null : snapshotId).put("sequenceLength", sequenceLength).put("hits", hits)
         .put("searchTarget", request.getString("searchTarget", "LOCAL_ASSEMBLY"))
         .put("remoteDatabase", request.getString("remoteDatabase"))
+        .put("remoteRequestId", request.getString("remoteRequestId"))
         .put("fragments", fragments).put("analysisNs", elapsedNs).put("error", error)
         .put("requestedThreads", request.getInteger("requestedThreads", request.getInteger("threads", -1)))
         .put("effectiveThreads", request.getInteger("effectiveThreads"))
