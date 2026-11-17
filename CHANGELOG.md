@@ -4,6 +4,8 @@
 
 ### Navigation and visualization
 
+- Avoid measuring ruler names in bands narrower than their required padding, preserving visible labels while reducing work on dense assemblies.
+
 - Finish map loading reliably after obsolete tiles leave the queue, keeping histogram and export completion current without repainting during active transfers.
 
 - Package the exact requested JVM build on Linux, macOS and Windows, and keep release uploads and smoke checks on that version instead of selecting stale artifacts.

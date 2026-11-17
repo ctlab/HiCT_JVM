@@ -1112,3 +1112,12 @@ structural editing, invalid-input recovery and offline workflows. Map completion
 is healthy; large-map rendering needs profiling. The full soak was not reached. P8 late provider-result recovery, final publication figures,
 platform/native-shell and other release gates stay open. Protected plans and
 owner files remain unchanged; nothing pushed, merged or tagged.
+
+
+Dense-map ruler measurements now skip bands narrower than six-pixel padding.
+Profiled text-shaping self time falls from roughly 2.3 seconds to 28–32 ms per
+navigation sample, with identical ruler pixels and a passing full WebUI build.
+The separate unprofiled large-map gate still fails at 33.3 ms frame p95;
+acknowledgement remains below 41 ms. Boundary-feature rebuilds are the next
+measured target. This is a verified optimization, not release qualification;
+the integrated matrix and soak remain open. See reinforcement-validation.md.

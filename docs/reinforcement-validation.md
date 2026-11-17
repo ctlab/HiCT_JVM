@@ -5412,3 +5412,31 @@ not reached. This is a separate rendering-performance gate, not a recurrence of
 the obsolete-queue completion failure. The recovered-map screenshot
 was inspected; weighted source contrast is distinct from the benchmark's declared
 raw-count graph and still needs the wider readability/source qualification.
+
+
+### Dense-assembly ruler profiling and conservative label culling
+
+A CDP CPU profile of candidate 51 on the complete 7,790-contig AGWG map
+(`/tmp/hict-large-profile-01/browser`) attributes 2,285/2,364 ms of fresh/repeat
+self time to Canvas measureText; its parent is drawEntityBands. The ruler was
+measuring names even where the band was narrower than the six-pixel label
+padding. Skip text shaping in that case, after drawing the unchanged rectangle.
+This makes no assumptions about character width and preserves the exact fit
+boundary at six pixels. A regression checks narrow, boundary and fitting bands,
+including retained rectangles. Full build:web and formatting/diff checks pass.
+
+The corresponding profiled development pair
+(`/tmp/hict-large-profile-02/browser`) reduces measureText self time to 28/32 ms.
+Fresh and repeat horizontal ruler pixels are byte-identical before/after; both
+full screenshots were inspected. Differences in the full images are confined
+to the dynamic histogram/slider region. This diagnostic uses immutable packaged
+JVM 51 with newly built WebUI and does not qualify a new integrated release.
+
+A separate unprofiled strict run `/tmp/hict-large-gate-01/browser` finishes
+failed: fresh/repeat frame p95 33.3 ms exceeds the unchanged 33 ms gate; input
+acknowledgement p95 38.275/40.1 ms passes the 100 ms limit. No gate is relaxed.
+The optimized profile now points to visible boundary-feature rebuilding and
+associated vector-source events; further profiling/optimization and complete
+packaged qualification including the full soak remain required. No backend
+behavior changes; the previous integrated JVM suite remains 625 tests, zero
+failures/errors, seven skips. Protected plans and owner changes are untouched.
