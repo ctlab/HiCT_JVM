@@ -204,3 +204,23 @@ local JARs explicitly uncovered. New platform CI must confirm the updated
 codec natives and runtime graph before release qualification. Superseded
 same-branch version-69/70 jobs were cancelled after replacement workflows existed;
 their useful successful tool/assembly results and failure evidence are retained.
+
+
+## Native dependency and download-only follow-up
+
+Candidate 72's Java push/PR matrices both pass all four platforms. Complete
+portable/sequence/Autobuild workflows remain active at this checkpoint.
+The next coordinated source updates compatible Rust dependencies and carries
+only the upstream two-line GLib VariantStrIter soundness backport. Its optimized
+regression crashes with the registry original; all 24 Linux native tests pass
+with the pinned patch, zero ignored. Other platforms retain the existing 23
+native cases; the additional GLib regression is Linux-specific. The frontend
+build verifies the complete upstream archive and all 121 source files, preserving
+exact bytes across Windows checkouts. The full frontend build passes locally.
+
+Playwright 1.65.2 / Firefox 159.0 passes eleven real download-only file/session/
+figure cases with no writable-picker shim, exact scalar sequence comparisons
+and unchanged native inputs. Source/audit receipts are retained in
+`build/release-evidence/native-dependency-update/`. The new native graph retains
+ten explicitly reviewed maintenance notices; see `native-dependency-audit.md`.
+New platform Actions and final native/package qualification remain required.

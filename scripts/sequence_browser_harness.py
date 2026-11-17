@@ -121,10 +121,11 @@ def install_download_picker(page):
 
 
 class BrowserCheck:
-    def __init__(self, page, output):
+    def __init__(self, page, output, *, writable_picker=True):
         # Normal map/sequence checks use a writable picker backed by browser downloads.
         # File-destination acceptance overrides it to exercise cancel/failure/fallback paths.
-        install_download_picker(page)
+        if writable_picker:
+            install_download_picker(page)
         self.page = page
         self.output = Path(output)
         self.rows = []

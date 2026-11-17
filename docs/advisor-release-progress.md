@@ -1678,3 +1678,35 @@ follow-up's replacement platform/artifact checks remain required. Receipts:
 The dependency candidate is `2.0.72-ccdf1e2-webui_d6f771b`; WebUI remains pinned to
 `d6f771b3a5c6d70da1c52064946519df5db23ce4`. Replacement Java/platform
 and portable results must qualify these updated runtime bytes.
+
+
+## Native dependency soundness and real Firefox downloads
+
+The native audit finds fixable anyhow/Tokio/rustix/serde_with/XML issues. Their
+compatible updates build with the declared Rust 1.88 SDK. The Linux GTK stack's
+last compatible GLib 0.18.5 still contains the upstream iterator soundness bug.
+A new optimized regression crashes with SIGSEGV before its two-line upstream
+backport. With the pinned/verified source patch, all 24 native tests pass with
+zero ignored cases. Normal frontend builds verify the original archive, every
+one of its 121 files and the exact allowed two-line change; upstream licenses
+and checksums remain included. The complete frontend build passes.
+
+The repeated native OSV query checks 508 registry components and retains ten
+maintenance-only notices; local application/GLib are explicitly listed separately.
+The actual Linux feature graph excludes chrono. No blanket native-security
+clearance is claimed. Review details and reproducible commands are recorded in
+`native-dependency-audit.md`; cross-platform replacement builds remain required.
+
+Playwright 1.65.2 / Firefox 159.0 passes eleven real download-only cases without
+polyfilled writable/open-file APIs: reverse editing; session download/dirty state;
+unsaved guard and keyboard focus trapping; independently checked whole/selection
+FASTA and AGP; PNG/SVG/PDF; figure reopening; and ordinary HTML session input.
+Source bytes are unchanged. Receipts are in
+`build/release-evidence/native-dependency-update/firefox-download-01/`.
+The broader final native/package, AppImage, accessibility and performance gates
+remain open. Candidate 72's push/PR Java matrices are both green on four platforms;
+its complete release workflows remain running at this checkpoint.
+
+The coordinated candidate is `2.0.73-9b07395-webui_bce3207`, WebUI
+`bce320752ef4d903caccbbea21d757d4cbc9cac8`. Source-matched native payload and platform release
+qualification remain required; earlier package receipts retain their exact scope.

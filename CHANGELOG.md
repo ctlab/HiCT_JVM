@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update native WebView dependencies and prevent an optimized Linux string-iterator crash with a verified upstream backport.
+
+- Verify real Firefox download-only exports, session restoration and unsaved-edit protection without a writable-picker shim.
+
 - Update five delivered JVM dependencies to patched releases, lock their resolved versions, and provide a reproducible runtime advisory audit.
 
 - Preserve signed BigWig signals through aggregation, caches, both track axes and log scaling; report non-finite source values explicitly.
