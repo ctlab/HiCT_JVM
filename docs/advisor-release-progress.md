@@ -1077,3 +1077,38 @@ retain the responses. No query was resubmitted and no project DNA was uploaded.
 The earlier HiCT client had already timed out, so successful provider completion
 still does not prove HiCT's live result delivery. Late-result recovery remains
 required before closing P8.
+
+## Map completion after obsolete tile cancellation
+
+Candidate 50's integrated run passes offline recovery and its structural
+navigation timing, but stops before measuring the 96-contig map: tiles are
+loaded and the queue is empty while OpenLayers still reports an incomplete
+frame. This is distinct from the incomplete file rejected in the preceding
+candidate. A focused repetition reproduces it naturally; a diagnostic frame
+changes only completion state, not the camera, tile states or scientific data.
+
+The main map now observes OpenLayers loadstart/loadend. While loading, one
+100-ms timer checks queue and layer readiness; it requests the missing frame
+only after both are idle. It never marks tiles or frames complete. Completion
+and disposal stop polling and remove listeners. The small private readiness
+adapter is pinned to the installed OpenLayers version, with an upgrade guard.
+A controlled real-OpenLayers regression fails against the old bundle and passes
+six successive obsolete-queue cases plus disposal cleanup against the fix.
+
+Full WebUI build/type/numerical checks pass. Twelve fresh/repeat navigation
+samples retain the original limits: frame p95 <=16.8 ms, acknowledgement p95
+<=30.9 ms. Seventeen Expected/O/E, fourteen snapshot/session, nineteen real
+sequence/ModDotPlot/track and ten frozen-figure cases pass with no unexpected
+errors. The integrated JVM/WebUI build passes 625 JVM tests with zero
+failures/errors and seven optional skips. Exact artifacts, diagnostics and
+excluded attempts are in reinforcement-validation.md.
+
+Candidate 51, version 2.0.51-5cf6aaa-webui_1a37de6, passes package generation,
+checksum verification and actual .run extraction. Fresh sequential qualification
+/tmp/hict-integrated-release-07 is terminal failed on the 7,790-contig map:
+fresh/repeat frame p95 is 33.4 ms against the unchanged 33 ms limit. The
+structural, 96- and 1,765-contig navigation samples pass, as do metadata, menus,
+structural editing, invalid-input recovery and offline workflows. Map completion
+is healthy; large-map rendering needs profiling. The full soak was not reached. P8 late provider-result recovery, final publication figures,
+platform/native-shell and other release gates stay open. Protected plans and
+owner files remain unchanged; nothing pushed, merged or tagged.

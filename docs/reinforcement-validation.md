@@ -5296,3 +5296,119 @@ private-display Java Launcher reset/cancellation, minimum-window controls, reset
 acknowledgement, real server start/process-tree Stop and return to the simple view.
 This uses the current classes/JAR and a host JDK; it is separate from native
 browser-shell and cross-platform GUI qualification. Protected owner files and plans are unchanged.
+
+## Final frame after obsolete tile queue entries
+
+The candidate-50 qualifier `/tmp/hict-integrated-release-06` is terminal failed.
+Metadata, two-size menus, exact structural edits, incomplete-file recovery and
+offline workflows pass. Structural navigation passes, but the next, complete
+96-contig input times out waiting for rendering before timing starts. The failure
+is not a frame-budget result and is not the malformed mat18 file used earlier.
+
+`/tmp/hict-baseline-reproduce-01/run-2/results.json` reproduces the failure against
+the old bundle after two successful repetitions. At timeout: zero queued/loading
+requests, all 100 visible native tiles loaded (80 outside-extent tiles EMPTY),
+no pending layer renderer, no animation/interaction, no HTTP/page errors, but
+renderComplete_ false. A single diagnostic render after failure makes it true
+without changing tile states or camera. The preserved screenshot already shows
+the correct contact map. OpenLayers 9.1.0 computes frame readiness before its
+postrender queue reprioritization can discard the last obsolete entries; that
+path can leave no subsequent tile event to request another frame.
+
+`mapRenderCompletion.ts` observes public loadstart/loadend events and polls only
+during that loading lifecycle. At 100 ms it requests a frame only when the queue
+is empty, no transfers are loading and no layer renderer is pending. It never
+assigns completion state, changes tile data, clears queues or changes limits.
+Loadend/disposal clear the single timer and listeners. Private queue/readiness
+access is isolated and pinned to the installed OpenLayers version. Node checks
+cover pending transfers/renderers, the discarded-queue case, duplicate loadstart,
+completion and disposal. The existing viewport fixture now initializes its new
+cleanup callback and proves disposal calls it once.
+
+Development qualification uses unchanged backend
+`hict_server-2.0.50-a614f88-webui_2041143-fat.jar`, SHA-256
+`e52f06a50a67f01a1336c69c8546ab7db7a559cbfcb20d4daa45e98ad49f5c1d`,
+and WebUI dist SHA-256 `6844ad445d75abe1b5a326ec78577f14cf1dcf02c87a12a61116fc8815db306d`
+(sorted relative paths/NUL/bytes, excluding electron). No assets were rebuilt
+under the final acceptance browsers.
+
+- `/tmp/hict-render-completion-web-02.log`: full build:web, terminal zero;
+  type/DTO/numerical/lifecycle checks pass, including the new render-completion
+  regression in test:map-viewport. Focused changed-file Prettier, Python compile,
+  new-browser Black and both repository whitespace checks pass.
+- `/tmp/hict-render-completion-red-01.log`: the controlled browser case fails
+  against the old immutable WebUI. A real ImageTile is briefly wanted and then
+  invalidated between postrender and queue reprioritization. It must be discarded
+  without loading. Recovery is observed passively; the 1.5-second timeout is not
+  increased and the driver requests no repair frame during the assertion.
+- `/tmp/hict-render-completion-green-01/results.json`: seven cases, empty errors,
+  terminal zero. Six successive discarded-queue cases recover passively in
+  125–135 ms, retain exact camera/AGP, and never load the obsolete tile. Disposal
+  during that loading period removes the new timer. Native SHA-256 stays
+  `e1a1aba982bd4f8659f89182704572fceb2c83dd1190800a8b9b34266bea87c4`.
+- `/tmp/hict-baseline-reproduce-03/run-*/results.json`: six complete repetitions,
+  each fresh-browser and repeat-open, terminal zero. All twelve samples enforce
+  the original <=33 ms frame and <=100 ms acknowledgement limits. Maximum frame
+  p95 is 16.8 ms; maximum acknowledgement p95 is 30.85 ms. The baseline now records
+  passive queue/layer diagnostics and a screenshot on failure. Its optional
+  diagnostic frame is requested only after the gate has already failed and
+  cannot turn failure into a pass.
+- `/tmp/hict-render-completion-expected-01/results.json`: seventeen cases, empty
+  errors, terminal/explicit driver exit zero. Pinned Expected/O/E profiles, all
+  scopes, mixed native grids, sequence scale, coverage, invalidation, failed-tile
+  rejection and late-context release remain correct.
+- `/tmp/hict-render-completion-snapshots-01/results.json`: fourteen cases, empty
+  errors, terminal zero. Exact cut/scaffold comparisons, session persistence,
+  pixel/vector parity, unsafe import and delayed/cancelled capture cleanup pass.
+- `/tmp/hict-render-completion-sequence-01/summary.json`: nineteen cases, status
+  ok, terminal/explicit driver exit zero. Real native sequence tools, ModDotPlot
+  with tracks, frozen three-format scientific colors and named Reverse comparison
+  pass. Independent SVG/PDF color checks remain included.
+- `/tmp/hict-render-completion-frozen-01/results.json`: ten cases, empty errors,
+  terminal zero. Frozen formats, exact cuts, stale/failed input, cancellation and
+  responsive composition remain correct.
+
+Total: 67 focused functional browser cases plus twelve enforced navigation
+samples. The initial web-01 failed because a prototype-only viewport test fixture
+lacked the new constructor field. That fixture is corrected; no runtime fallback
+was added. Reproduce-02 accidentally ran before a successful build had emitted
+new assets, so its six old-bundle successes do not qualify the fix; they show the
+original race is timing-dependent. Reproduce-03 and the controlled old/new test
+are the final evidence. The standalone diagnostic probe and post-failure repair
+are not performance qualification.
+
+Integrated rebuild `/tmp/hict-render-completion-integrated-build-01.log` uses
+`./gradlew test shadowJar -PrequireBundledWebUI=true --offline`, includes copyWebUI,
+and passes 625 JVM tests with zero failures/errors and seven optional skips in
+1m9s. Committed WebUI is 1a37de6; candidate version is
+2.0.51-5cf6aaa-webui_1a37de6, JAR SHA-256
+`49170dd6284d691e1fbd88d20b09ab7b70fb009d3d5d41228b93395c49733092`.
+Packaging and integrated qualification are recorded below and are not inferred
+from development-pair checks. P8 late-result delivery, final
+publication figures and wider release gates remain open. Protected plans/owner
+files are unchanged; nothing pushed, merged or tagged.
+
+Candidate-51 package generation `/tmp/hict-render-completion-package-01.log`
+finishes with terminal zero and an explicit subprocess exitCode=0 receipt in
+`/tmp/hict-render-completion-package-01.exit.json`. This run isolates the producer
+process group and records its actual exit, rather than interpreting missing
+terminal records. The .run and .tar.gz verify against their checksum manifest;
+the actual .run self-extracts with exit zero and its JAR matches the integrated
+build (`/tmp/hict-render-completion-extraction-01.json`). Archive SHA-256:
+
+- .run: `2ff5bf621482bb4bd447563cf96b3cafaac778b05104a9249e991183097e51c5`
+- .tar.gz: `012bc0d62b291a9770e0c2fc70c320496dc85e93bebe02495eda5c8ab8b33fbb`
+
+The fresh `/tmp/hict-integrated-release-07` uses that extracted runtime/UI and
+complete 96-, 1,765- and 7,790-contig inputs. Metadata and served-asset identities
+pass. The driver is terminal failed (exit 1), with menus, structural edits,
+invalid-input recovery and offline workflows passing. Strict navigation passes
+on the structural, 96- and 1,765-contig maps. The 7,790-contig map fails the
+unchanged frame p95 limit: fresh/repeat 33.4 ms versus 33 ms; acknowledgement
+p95 is 32.6/32.775 ms, below 100 ms. Its final map completion is true, queue and
+loading counts are zero, and no page/HTTP errors occur. Fresh opening takes
+1496.6 ms and repeat 907.2 ms; fresh contains one 52 ms long task. The soak is
+not reached. This is a separate rendering-performance gate, not a recurrence of
+the obsolete-queue completion failure. The recovered-map screenshot
+was inspected; weighted source contrast is distinct from the benchmark's declared
+raw-count graph and still needs the wider readability/source qualification.

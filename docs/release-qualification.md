@@ -4,22 +4,22 @@ Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
 The current Linux candidate contains backend version
-`2.0.50-a614f88-webui_2041143` and WebUI commit
-`2041143e61d8551d610a61c77bb0f55cdc6f9c45`. Its integrated build uses
+`2.0.51-5cf6aaa-webui_1a37de6` and WebUI commit
+`1a37de6d51caa90be21f8918b01c1b1dd4a532cf`. Its integrated build uses
 `./gradlew test shadowJar -PrequireBundledWebUI=true --offline`, without excluding
 copyWebUI. The packager requires that version's exact JAR. It must not choose an
 arbitrary file from a directory containing earlier builds.
 
 | Candidate artifact | SHA-256 |
 |---|---|
-| JAR `hict_server-2.0.50-a614f88-webui_2041143-fat.jar` | `e52f06a50a67f01a1336c69c8546ab7db7a559cbfcb20d4daa45e98ad49f5c1d` |
-| Linux `.run` | `896279c0d1f7a91a8c7ec6992c78c515325d3176f78510ab32d07552c8eb2f24` |
-| Linux `.tar.gz` | `89b54067cdc9ce51ed77c6e0b6d97262cda7655e6cdd2bb45466d745fd8df300` |
+| JAR `hict_server-2.0.51-5cf6aaa-webui_1a37de6-fat.jar` | `49170dd6284d691e1fbd88d20b09ab7b70fb009d3d5d41228b93395c49733092` |
+| Linux `.run` | `2ff5bf621482bb4bd447563cf96b3cafaac778b05104a9249e991183097e51c5` |
+| Linux `.tar.gz` | `012bc0d62b291a9770e0c2fc70c320496dc85e93bebe02495eda5c8ab8b33fbb` |
 
 The distribution basename is
-`HiCT-2.0.50-a614f88-webui_2041143-linux-x86_64`. Artifacts remain local under
+`HiCT-2.0.51-5cf6aaa-webui_1a37de6-linux-x86_64`. Artifacts remain local under
 build/distributions; they are not published or tagged. Tested extracted package:
-`/tmp/hict-integrated-run-extracted-02/HiCT-2.0.50-a614f88-webui_2041143-linux-x86_64`.
+`/tmp/hict-render-completion-extracted-01/HiCT-2.0.51-5cf6aaa-webui_1a37de6-linux-x86_64`.
 
 ## Sequential runtime qualification
 
@@ -56,14 +56,20 @@ JAR hashes must still match after all stages. Server teardown targets only its
 owned process group. Running stages update qualification.json and stage logs;
 only terminal success supports completion.
 
-Current run: `/tmp/hict-integrated-release-06`. The corrected candidate passes
-full JVM checks, checksum verification, self-extraction and the focused picker
-regression. Its metadata, 53 served assets and both-size menu checks pass; remaining sequential
-stages, including the full soak, are pending. The preceding 49 candidate passed
-metadata/menus, exact structural edits, offline recovery and two performance
-fixtures; it exposed an incomplete input mislabeled as a real performance map.
-The corrected run uses complete 96-, 1,765- and 7,790-contig inputs instead.
-Incomplete files now return an actionable input error while retaining the edited
-workspace. Running stages are not reported as complete. Final real-example
-figures, source-format coverage, platform automation and native GUI checks remain
-separate requirements.
+Current run `/tmp/hict-integrated-release-07` uses candidate 51 from the actual
+.run extraction. Its checksums, self-extraction, embedded JAR identity, served
+assets and metadata pass. It is terminal failed: menus, structural edits, invalid-input
+recovery and offline workflows pass; navigation passes on the structural, 96- and
+1,765-contig maps, but the 7,790-contig map reaches 33.4 ms frame p95 on both
+fresh and repeat samples, exceeding the unchanged 33 ms limit. Input
+acknowledgement p95 remains below 33 ms. Map completion is true with no pending
+loads. The soak was not reached. Profile the large-map rendering before another
+qualification attempt. Final publication figures, source-format coverage,
+platform automation and native GUI checks also remain required.
+
+Candidate-50 run `/tmp/hict-integrated-release-06` is retained as terminal failed.
+It passed metadata/menus, structural edits, invalid-input recovery and offline
+workflows, but exposed the obsolete-queue completion race before measuring its
+complete 96-contig map. Candidate 51 contains the validated fix. Controlled
+old/new browser evidence and twelve passing navigation samples are documented
+in reinforcement-validation.md; they do not substitute for the full package run.

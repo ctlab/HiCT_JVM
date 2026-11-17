@@ -181,6 +181,31 @@ def main():
             assert not errors, errors
             assert not http_errors, http_errors
         finally:
+            # Preserve the renderer state on a settling failure. Observation
+            # stays passive until the measurement has already failed.
+            try:
+                diagnostic = """() => {
+                  const m=window.__hictBenchmark?.manager();if(!m)return null;
+                  const map=m.getMap(),v=m.getView();
+                  return {center:v.getCenter(),resolution:v.getResolution(),
+                    animating:v.getAnimating(),interacting:v.getInteracting(),
+                    loading:map.tileQueue_.getTilesLoading(),queued:map.tileQueue_.getCount(),
+                    complete:map.renderComplete_??null,hasCompleteListener:map.hasListener('rendercomplete'),
+                    notReady:map.getLoadingOrNotReady(),frameAnimating:map.frameState_?.animate,
+                    layers:m.viewAndLayersManager.layersHolder.hicDataLayers.filter(l=>l.getVisible()).map(l=>{
+                      const source=l.getSource(),states={};
+                      source.tileCache.forEach(t=>states[t.getState()]=(states[t.getState()]||0)+1);
+                      return {source:l.get('sourceName'),bpResolution:l.get('bpResolution'),states,
+                        requests:source.activeTileRequests.size};})};
+                }"""
+                results['finalRenderState'] = page.evaluate(diagnostic)
+                if len(results['runs']) < 2:
+                    page.screenshot(path=str(output/'settle-failure.png'))
+                    page.evaluate('window.__hictBenchmark?.manager()?.getMap().renderSync()')
+                    page.wait_for_timeout(100)
+                    results['afterDiagnosticFrame'] = page.evaluate(diagnostic)
+            except Exception as diagnostic_error:
+                results['diagnosticError'] = str(diagnostic_error)
             results.update(pageErrors=errors, httpErrors=http_errors)
             (output / "results.json").write_text(json.dumps(results, indent=2) + "\n")
             browser.close()
