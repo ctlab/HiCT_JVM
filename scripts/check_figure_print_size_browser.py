@@ -188,6 +188,12 @@ def main():
                         == 1
                     )
                     root = ET.parse(paths["svg"]).getroot()
+                    # Independent fixture oracle: its smallest labels are 9 captured pixels.
+                    # The print readout must use physical points, not CSS px or nominal DPI.
+                    expected_points = 9 * mm * 72 / (25.4 * dimensions[0])
+                    expect(dialog).to_contain_text(
+                        f"Smallest vector text: {expected_points:.1f} pt at this width."
+                    )
                     assert root.attrib["width"] == str(mm) + "mm"
                     assert (
                         abs(float(root.attrib["height"][:-2]) - info["heightMm"]) < 1e-9

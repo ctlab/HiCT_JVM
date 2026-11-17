@@ -5733,3 +5733,39 @@ candidate-55 package qualification. Known-RID recovery does not recover an RID
 that native `blastn -remote` never exposed. P8 and the remaining publication,
 source-format and native/platform gates remain open. Protected plans, manuscript
 and owner changes are untouched; no push, merge or release was performed.
+
+### Measured figure text at column width
+
+Export reports the smallest captured vector text in physical points. The
+measurement rebuilds the existing allowlisted portable scene, strips raster
+images before temporary DOM insertion, observes transformed text font heights
+and removes that DOM in a finally block. It includes inherited/root fonts,
+tspans and nested SVG viewports. Images are not OCR'd; the UI explicitly asks
+for inspection of any text inside them. A sub-6-pt cue suggests a smaller capture
+or vertical comparison. No font or contact pixel is enlarged automatically.
+
+The retained 1,894-pixel comparison with 9-pixel labels corresponds to 2.3977 pt
+at 178 mm, demonstrating why physical dimensions alone were insufficient.
+`/tmp/hict-print-text-transform-03/results.json` passes six independent real-
+Chromium plain/inherited/scaled/rotated/nested/tspan/no-text cases and an extra
+root-font assertion; DOM node count returns to baseline after each measurement.
+The first test bundling attempt fails before browser launch because the isolated
+esbuild invocation lacks font loaders. Attempt 02 adds data-URL font loaders and
+passes; attempt 03 additionally verifies preservation of a declared root font.
+
+`/tmp/hict-print-readability-ui-01/results.json` passes all five existing physical-
+export gates, now also checking the point-size UI against the independent
+9-pixel fixture oracle. Both 86/178 mm sizes agree across PNG/SVG/PDF provenance;
+decoded PNG pixels and IDAT bytes are unchanged, 729 sampled flat interiors
+match independently rendered vector outputs, PDF labels remain extractable,
+640-pixel controls fit, returning to captured size preserves original PNG bytes,
+and portrait comparisons retain their source captures. No browser errors occur;
+the native source hash stays unchanged. Inspected screenshots show the measured
+5.0-pt readout at 178 mm and accessible export controls.
+
+Final full WebUI build `/tmp/hict-print-readability-web-02.log` exits zero.
+Focused eslint `/tmp/hict-print-readability-lint-01.log` exits zero with only
+the existing directive-schema diagnostics. Java application code is unchanged
+from the preceding 641-test pass. This uses a development API/static-WebUI pair,
+not a new integrated release qualification. Actual publication composition and
+all remaining native/platform/source-format gates remain open.

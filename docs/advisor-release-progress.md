@@ -28,7 +28,7 @@ describe earlier releases; they must not override the decisions below.
 | P5 Alignment runs/full cells and FASTA navigation | 5, 8 | In progress: continuous exact-boundary lines, short-repeat profile, source-checked CIGARs and vector exports implemented and primary Chromium verified; broader source/platform/performance qualification pending |
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
-| P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled browser/lifecycle qualification passed; the provider has returned results after the client timeout; HiCT late-result recovery, successful live delivery and platform qualification pending |
+| P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled submission/lifecycle checks and live known-RID recovery pass, including ten public-reference hits, map-independent delivery and exports; automatic recovery without a known RID and platform/package qualification pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, composition dialog and frozen three-format captures implemented; real ModDotPlot/track exports and configuration provenance verified; Expected/O/E fitting-context transactions and portable named cut/scaffold/ModDotPlot comparisons implemented and verified; 86/178 mm physical-size presets implemented; final real-example publication artifacts and release qualification pending |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
@@ -1212,3 +1212,20 @@ P8 remains open. Final publication figures/readability, wider formats and native
 GUI/platform qualification also remain required. Protected plans remain unchanged.
 The final live recovery run also passes a sixth check at 640 pixels, with
 visually inspected wrapping, horizontally scrollable data and visible exports.
+
+## Physical text size in figure export
+
+Export now reports the smallest vector text in points at the chosen print width.
+It measures the immutable scene, including inherited fonts, tspan overrides,
+rotation, scale and nested comparison viewports. It uses an allowlisted scene
+and removes its temporary measurement DOM. Captured pixels and all output
+geometry remain unchanged. Text below 6 pt receives a concrete capture/layout
+suggestion; this is a readability cue, not a journal compliance certificate.
+
+An existing 1,894-pixel side-by-side comparison has 9-pixel labels: approximately
+2.4 pt at 178 mm. The verified 911-pixel single capture reports 5.0 pt at 178 mm
+and 2.4 pt at 86 mm. Real print-size browser checks pass in PNG/SVG/PDF with
+identical pixels/provenance, responsive controls and independent saved captures.
+Browser transform tests and the full WebUI build pass. Screenshots were inspected.
+Final real-example cut/scaffold/ModDotPlot publication figures and readable
+composition remain open, along with the recorded release/platform gates.
