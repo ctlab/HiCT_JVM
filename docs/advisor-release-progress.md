@@ -1229,3 +1229,31 @@ identical pixels/provenance, responsive controls and independent saved captures.
 Browser transform tests and the full WebUI build pass. Screenshots were inspected.
 Final real-example cut/scaffold/ModDotPlot publication figures and readable
 composition remain open, along with the recorded release/platform gates.
+
+## Compact native-grid captures on real public data
+
+Whole-map export now offers an explicit expansion choice. The existing expanded
+default is preserved; disabling it captures at the native grid instead of
+stretching a small map to the window. Changing it requires Refresh capture.
+Provenance records FIT_WINDOW/NATIVE_GRID; immutable previews, snapshots and
+output formats retain the selected geometry and actual physical text readout.
+
+Eleven frozen-export browser checks pass, including compact/native resolution,
+unchanged scientific provenance and restoration of the live camera. The full
+WebUI build and focused lint pass. The version-57 integrated JVM build also
+passes 641 tests with zero failures/errors and seven optional skips.
+
+The new reproducible Borrelia preparation script generates real ModDotPlot and
+a GC BigWig from the matched public FASTA, performs an exact feature-menu cut
+at 450,123 bp, groups its children through the scaffold button, and saves three
+named captures in PNG/SVG/PDF. Run 05 passes with no browser errors or source
+changes; the 200-base cut-crossing sequence matches before/after edits. Pipeline
+settings stay identical across all panels. Captures are 309×279 then 310×280
+pixels, suitable for composing a two-column figure without shrinking labels to
+the sizes exposed by the previous expanded capture. Independent BigWig checks
+match all 155 GC windows across 19 replicons within Float32 rounding.
+
+The edit marker is explicitly illustrative, not a claimed misassembly or gene.
+Final figure composition, caption/alt text, readable print inspection and an
+archive from the committed build remain required. This does not qualify a new
+portable package or the wider platform/source-format gates.

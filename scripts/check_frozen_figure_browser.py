@@ -216,6 +216,19 @@ def main():
                 record(
                     "whole-map-capture-records-rendered-geometry-and-restores-the-live-view"
                 )
+                assert whole["wholeMapSizing"] == "FIT_WINDOW"
+                dialog.get_by_label("Expand small whole maps to fit window", exact=True).uncheck()
+                expect(dialog.locator("#export-png-button")).to_be_disabled()
+                dialog.get_by_role("button", name="Refresh capture", exact=True).click()
+                expect(dialog.locator("#export-png-button")).to_be_enabled(timeout=90000)
+                compact = metadata(save("whole-map-native-grid", "png"))
+                assert compact["wholeMapSizing"] == "NATIVE_GRID"
+                assert compact["renderedView"]["resolution"] == compact["renderedGrid"]["pixelResolution"]
+                assert compact["provenance"] == whole["provenance"]
+                with Image.open(out / "whole-map-native-grid.png") as small, Image.open(out / "whole-map.png") as large:
+                    assert small.width < large.width and small.height < large.height, (small.size, large.size)
+                assert page.evaluate("()=>{const v=window.__hictBenchmark.manager().getView();return [v.getCenter(),v.getResolution(),v.getRotation()]}") == view_before
+                record("compact-whole-map-preserves-native-grid-provenance-and-restores-live-camera")
                 region = {"columnStart": 1, "columnEnd": 8, "rowStart": 4, "rowEnd": 12}
                 page.evaluate(
                     "region=>window.__hictBenchmark.manager().viewAndLayersManager.setRegionBounds(region)",

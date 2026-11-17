@@ -5769,3 +5769,57 @@ the existing directive-schema diagnostics. Java application code is unchanged
 from the preceding 641-test pass. This uses a development API/static-WebUI pair,
 not a new integrated release qualification. Actual publication composition and
 all remaining native/platform/source-format gates remain open.
+
+### Compact whole-map export and real-data cut/scaffold captures
+
+`FigureCaptureOptions.fitSmallWholeMap` now exposes the already implemented
+native-grid whole-map path. The Export dialog shows the expansion checkbox only
+for whole-map scope, preserves its previous expanded default, marks changes
+outdated until explicit recapture, and records FIT_WINDOW/NATIVE_GRID in figure
+provenance. It changes capture geometry rather than resizing an existing frozen
+scene. Scientific grid, labels, failure isolation and live-view restoration keep
+their existing contracts.
+
+`/tmp/hict-compact-figure-regression-01/results.json` passes eleven real-browser
+checks, including the new native-grid case: rendered resolution equals the
+native pixel resolution, output is smaller, scientific provenance is identical
+to the expanded capture, and camera position/rotation/resolution return exactly.
+Other checks cover three formats, 640-pixel controls, track/ruler composition,
+selected rectangles, exact-cut immutability and delayed/failed capture isolation.
+Full WebUI build `/tmp/hict-compact-figure-web-01.log` exits zero; focused eslint
+`/tmp/hict-compact-figure-lint-01.log` exits zero with five existing warnings and
+the existing directive-schema diagnostics. No Java application changes are made.
+
+The preceding fresh integrated version-57 build, including bundled WebUI, is
+`/tmp/hict-publication-integrated-build-01.log`, terminal zero: 641 JVM tests,
+zero failures/errors, seven optional skips. It precedes this compact-export UI
+change and does not qualify that change as a packaged release.
+
+`prepare_borrelia_publication_browser.py` copies only explicitly supplied public
+inputs into a fresh nonsymlinked /tmp directory. It checks the approved prepared
+FASTA hash, verifies all 19 map names/lengths, derives 10 kb called-base GC
+fractions and converts them with an explicitly supplied UCSC bedGraphToBigWig.
+An explicitly illustrative GFF3 region provides the exact-cut context menu.
+Real bundled ModDotPlot generates 155 source-bin windows at 10 kb. The actual
+feature-menu action cuts at 450,123 bp, yielding children 450,123 and 460,601 bp;
+the real scaffold button groups them. Three immutable named PNG/SVG/PDF captures
+retain matching pipelines and the primary/secondary/track provenance. A 200-base
+sequence spanning the cut matches the original before/after grouping. Original
+and copied native matrix/FASTA hashes are unchanged.
+
+Run `/tmp/hict-borrelia-publication-05/results.json` is passed with no browser
+errors. Images were inspected: Hi-C above the diagonal, ModDotPlot identity below,
+GC and illustrative marker tracks, and distinct cut/scaffold boundaries. An
+independent pyBigWig read checks all 155 windows/19 replicons against the derived
+bedGraph, maximum absolute error 1.4878e-8, in `gc-independent-oracle.json`.
+The original expanded capture is 913×883; compact captures are 309×279 and
+310×280, with the same contact grid. Final composition and print qualification
+remain separate from this successful capture workflow.
+
+Earlier preparation attempts are retained and excluded from coverage: 01 stops
+on unsupported bedGraph input; 02 does not expand the collapsed Borders panel;
+03/04 seek feature actions on a BED track's default signal presentation. The
+final script uses supported BigWig, explicitly opens Borders and uses a GFF3
+feature track with a focused live view before its context action. No app bug or
+source mutation is inferred from these preparation errors. A final archive from
+committed code, figure legend/alt text and print inspection remain required.
