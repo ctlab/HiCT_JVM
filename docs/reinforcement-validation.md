@@ -5975,3 +5975,40 @@ Artwork outputs and source/provenance records are archived in
 This closes the real figure's encoding/resolution/readability gate, not package,
 broader-format or native/platform qualification. Protected plans/manuscript/owner
 files remain unchanged; no push, merge or tag was performed.
+
+
+## Copied Linux tool commands and enabled native integrations
+
+The full version-60 suite was rerun with the real bundled seqkit, BLAST+,
+HiCT ModDotPlot and compiled AVX2 processing library enabled.
+`/tmp/hict-native-enabled-suite-02.log` finishes zero: 641 tests, no failures or
+errors, two optional large-dataset skips. Real substitution/both-strand search,
+gapped BLAST scores, HTTP search provenance, accumulated ModDotPlot versions
+and Java/native tile parity now ran rather than skipping. These local tests
+submitted no remote search. The remaining large-map/four-source and DNAZoo
+assembly conversion cases require disposable physical inputs and remain open.
+
+Enabling them exposed a delivery defect: nested sequence commands extracted
+from the version-55 JAR were mode 0644. A warm embedded cache masked it. The
+Linux builder now restores execute bits for all commands declared by the
+extracted manifest, after validating safe paths and SHA-256, then verifies the
+complete copied payload. Licenses and other files retain their original modes.
+The source toolchain directory no longer controls this extracted-payload step.
+
+`/tmp/hict-copied-tool-permissions-probe-01/permission-results.json` records a
+737-MB physical copy failing verification before restoration and passing after
+it, with all eight commands executable and every manifest payload hash intact.
+A real Java resolver, with a fresh private java.io.tmpdir, resolves all four
+sequence commands into that copied prefix. Each command's help/version exits
+zero, with no fallback cache extracted; paths and hashes are retained in
+`cold-resolver-results.json`. This is copied-payload qualification, not a fresh
+portable artifact or renewed soak qualification. Earlier tool-content checks
+proved bundled bytes but did not strictly prove prefix origin.
+
+Seven POSIX permission regressions pass: nested execution/unchanged bytes,
+idempotence, corrupt or undeclared commands, traversal, symlink escape and
+unsupported platforms. The CI Java regression workflow runs them on POSIX
+runners. Linux shell syntax, both artifact/workflow Node suites and four
+portable-extraction tests pass. Application Java/WebUI code is unchanged, so
+no new visual behavior is claimed. A fresh packaged release and cold-prefix
+analysis remain necessary. Protected plans and owner documents are untouched.

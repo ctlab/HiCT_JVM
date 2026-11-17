@@ -1320,3 +1320,21 @@ passes 641 JVM tests with zero failures/errors and seven optional skips. The
 figure's composition/artwork/readability requirements are now verified. This
 does not complete overall release/native/platform qualification or manuscript
 editing; the supplied manuscript remains unchanged.
+
+
+## Native integrations and portable command permissions
+
+All five formerly skipped real native checks now pass in the full 641-test
+suite: seqkit search, gapped BLAST, HTTP native search provenance, accumulated
+ModDotPlot versions and Java/native math. Two large-input integrations remain
+skipped; this does not qualify broader formats or other platforms.
+
+The Linux producer now restores every checksummed manifest command's execute
+bits after JAR extraction, including nested sequence tools. Seven regressions
+and a real 737-MB copied payload pass. A fresh-cache Java resolver and all four
+sequence CLI smoke checks run directly from that copy without extraction.
+This closes the identified permission defect at source and copied-payload level.
+A fresh portable artifact, cold-prefix analysis and current-version release
+qualification remain open. The earlier version-55 soak remains scoped to its
+original exact artifact; native tool byte identity did not establish prefix
+origin. See the reinforcement record for evidence paths and precise scope.

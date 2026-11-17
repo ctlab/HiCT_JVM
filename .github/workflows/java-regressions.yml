@@ -36,6 +36,9 @@ jobs:
           node-version: '22'
       - name: Verify pinned browser checkout and release safeguards
         run: node --test scripts/portable/check_webui_checkout.mjs scripts/ci/rolling_release.test.cjs scripts/ci/portable_workflow.test.cjs scripts/ci/portable_artifact_selection.test.cjs
+      - name: Check copied POSIX tool command permissions
+        if: runner.os != 'Windows'
+        run: python3 scripts/portable/test_copied_tool_permissions.py
       - name: Compile full JVM, build fat JAR, and check edit/render contracts
         shell: bash
         run: >-

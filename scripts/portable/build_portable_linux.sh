@@ -59,6 +59,7 @@ require_cmd sha256sum
 require_cmd awk
 require_cmd grep
 require_cmd tail
+require_cmd python3
 
 JLINK="${JAVA_HOME:-}/bin/jlink"
 if [[ ! -x "${JLINK}" ]]; then
@@ -118,33 +119,32 @@ fi
   cd "${APP_DIR}"
   "${JAR_TOOL}" xf "${APP_DIR}/lib/hict.jar" webui toolchains
 )
-if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" 2>/dev/null || true
-  if grep -q '"hictk"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+if [[ -f "${APP_DIR}/toolchains/linux_x86_64/manifest.json" ]]; then
+  python3 "${SCRIPT_DIR}/verify_copied_tools.py" \
+    --directory "${APP_DIR}/toolchains/linux_x86_64" --platform linux_x86_64 \
+    --restore-command-permissions
+  if grep -q '"hictk"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" ]]; then
       echo "Portable package is missing executable bundled hictk at toolchains/linux_x86_64/bin/hictk." >&2
       exit 1
     fi
     "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" --version >/dev/null
   fi
-  if grep -q '"minimap2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+  if grep -q '"minimap2"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" ]]; then
       echo "Portable package is missing executable bundled minimap2 at toolchains/linux_x86_64/bin/minimap2." >&2
       exit 1
     fi
     "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" --version >/dev/null
   fi
-  if grep -q '"mm2plus_avx2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+  if grep -q '"mm2plus_avx2"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" ]]; then
       echo "Portable package is missing executable bundled mm2-plus AVX2 at toolchains/linux_x86_64/bin/mm2plus-avx2." >&2
       exit 1
     fi
     "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null || "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --help >/dev/null || true
   fi
-  if grep -q '"mm2plus_avx512"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+  if grep -q '"mm2plus_avx512"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" ]]; then
       echo "Portable package is missing executable bundled mm2-plus AVX-512 at toolchains/linux_x86_64/bin/mm2plus-avx512." >&2
       exit 1

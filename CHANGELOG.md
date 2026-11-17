@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restore executable permissions for every checksummed Linux portable command, including nested sequence tools, so first use runs the delivered tools directly.
+
 - Supply verified vector-cell PDF/SVG and a lossless 900-dpi TIFF for the public-data editing figure, preserving native cell colours and scientific provenance.
 
 - Provide a reproducible public-data map/ModDotPlot/track editing figure with source checks, caption, alt text and retained provenance, and measure printed text correctly through nested SVG transforms.
