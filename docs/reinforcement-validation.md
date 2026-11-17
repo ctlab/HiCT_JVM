@@ -5934,3 +5934,44 @@ The archived font license is copied byte-for-byte from the bundled source and
 retains its upstream trailing whitespace. Staged whitespace checks pass for
 project code/documentation with that verbatim license excluded; its checksum
 and source identity are verified separately.
+
+### Vector-cell publication artwork and TIFF delivery
+
+`prepare_publication_artwork.py` replaces each captured PNG colour field with
+same-colour native-cell rectangles, merging only identical adjacent runs. Before
+output, every decoded RGBA pixel must be covered exactly once and reconstruct
+byte-for-byte. Native geometry, clipping, alpha and text are retained. Input
+budgets limit native pixels, scene size and the TIFF allocation; resized images
+and non-embedded resources are rejected with an explicit recovery message.
+
+`/tmp/hict-publication-vector-artwork-03` is terminal passed. The three original
+images contain 259,811 RGBA pixels and become 24,466 visible rectangles. Full-
+scene rendering at 644×648 native units equals the original composition exactly.
+The PDF has zero raster page images; fonts remain embedded and extractable text
+includes complete track maxima. Its XMP/JSON record includes source hashes and
+the original PNGs are attached verbatim. The 900-dpi RGB TIFF is 6307×6346,
+uncompressed internally, with physical dimensions and matching description
+provenance. The gzip wrapper is small enough for the repository and decompresses
+to exactly the recorded uncompressed SHA-256. PDF page dimensions match the
+178×179.106-mm source within 0.01 mm. No upsampling is claimed as extra genomic
+detail. Standalone output was visually inspected after validation.
+
+`/tmp/hict-publication-vector-unit-01.log` passes seven independent small-field
+tests: uniform merging, changed run widths, checkerboard/transparent RGB,
+single-column tails, alpha/placement, invalid/resized input and budget rejection.
+Runs 01/02 also pass the real artwork; 02 adds explicit coverage/budget/gzip
+checks and 03 records runtime versions and page-size/native-render fingerprints.
+`/tmp/hict-vector-artwork-viewer-01/results.json` passes fifteen real-browser
+checks, including the extra retained vector SVG opened/zoomed through File,
+ordinary PNG/SVG exports, 640-pixel controls, cancellation, invalid/oversized
+files, inert SVG image-context behavior, delayed decoding cleanup and unchanged
+assembly state. Its input SVG hash matches the final archived derivative.
+
+`/tmp/hict-vector-artwork-integrated-build-01.log` finishes zero for version 60:
+641 JVM tests, zero failures/errors and seven optional skips. The changes here
+are authoring/qualification files; Java and WebUI application code are unchanged.
+Artwork outputs and source/provenance records are archived in
+`docs/publication/borrelia-editing/artwork/`, covered by the parent checksum file.
+This closes the real figure's encoding/resolution/readability gate, not package,
+broader-format or native/platform qualification. Protected plans/manuscript/owner
+files remain unchanged; no push, merge or tag was performed.

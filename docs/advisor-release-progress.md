@@ -29,7 +29,7 @@ describe earlier releases; they must not override the decisions below.
 | P6 O/E controls, coverage explanation, viewport histogram | 19, 20, 22 | In progress: coverage help, O/E colors/alpha, persistence, presets, active primary O/E editor, ratio nodes, live thresholds, viewport histogram/levels, exact derived-view limits, normalization draft protection and draggable ordinary color midpoint implemented and Chromium verified; broader source/NaN, native/performance and final qualification pending |
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled submission/lifecycle checks and live known-RID recovery pass, including ten public-reference hits, map-independent delivery and exports; automatic recovery without a known RID and platform/package qualification pending |
-| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | In progress: PNG/SVG viewer, three-format captures, Expected/O/E fitting contexts, portable snapshots, 86/178 mm sizes and compact native-grid captures verified; a real public-data cut/scaffold figure candidate, caption, alt text and numerical provenance are archived at 178 mm with 7.05-pt minimum vector text; final journal artwork-resolution/TIFF and release qualification pending |
+| P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Implementation and primary publication artifact verified: PNG/SVG viewer, three-format captures, fitting contexts, portable snapshots, column sizes and compact grids; the real public-data figure has source checks, caption/alt text, 7.05-pt text, a zero-raster vector PDF/SVG and a verified 900-dpi TIFF; overall release/platform qualification remains open |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
 P10 is independent and is being completed before the coordinated P1 changes.
@@ -1300,3 +1300,23 @@ uses screen matrices normalized to the root capture. Seven browser transform
 cases (plus root-font preservation), all five physical-export checks, full WebUI
 build and focused lint pass. The archived images remain from committed
 `2.0.59-0878f4d-webui_d27c8ac`; this newer readout fix does not change their drawing.
+
+## Publication artwork encoding and resolution qualification
+
+The figure's `artwork/` directory now contains vector-cell PDF/SVG, a 900-dpi
+RGB TIFF in a gzip wrapper, preview, original contact PNGs and qualification
+receipts. All 259,811 captured RGBA pixels reconstruct exactly, without gaps or
+overlaps. Native-size whole-scene rendering is byte-identical to the immutable
+composition. The PDF contains zero raster page images, embedded fonts, XMP/JSON
+provenance and attached original PNGs. No genomic samples or finer binning are
+invented. The TIFF is 6307×6346, internally uncompressed, with physical DPI and
+provenance tags; gzip decompression restores the exact uncompressed file.
+
+Seven independent small-field cases and the complete real figure pass. Fifteen
+actual-browser file-viewer checks pass, including opening/zooming the retained
+vector SVG, narrow layout, cancellation, malformed/oversized files, image-context
+isolation and assembly preservation. The fresh version-60 integrated build
+passes 641 JVM tests with zero failures/errors and seven optional skips. The
+figure's composition/artwork/readability requirements are now verified. This
+does not complete overall release/native/platform qualification or manuscript
+editing; the supplied manuscript remains unchanged.

@@ -1,7 +1,8 @@
 # Borrelia editing figure
 
-[PDF](borrelia-editing.pdf) · [SVG](borrelia-editing.svg) ·
-[preview](borrelia-editing-preview.png) · [caption and alt text](caption.md)
+[Vector PDF](artwork/borrelia-editing.pdf) · [vector SVG](artwork/borrelia-editing.svg) ·
+[preview](artwork/borrelia-editing-preview.png) · [900-dpi TIFF](artwork/borrelia-editing-900dpi.tif.gz) ·
+[caption and alt text](caption.md)
 
 This real-data figure candidate demonstrates the advisor's map + ModDotPlot +
 tracks, exact cut and scaffold workflow. It is separate from the read-only
@@ -20,10 +21,34 @@ The SVG contains the original contact-image bytes and full per-panel provenance.
 The PDF includes matching XMP metadata and an attached `hict-provenance.json`;
 adding these preserves its page drawing commands. Three source panels are kept
 in [panels/](panels/). No contact image is resampled during composition.
-The PNG is a review preview, not additional genomic detail. Native contact-image
-sampling remains one pixel per displayed bin. Final journal artwork resolution/
-TIFF requirements still need checking; a 300-dpi preview alone cannot establish
-that embedded native imagery meets a photographic-resolution guideline.
+The original composition [PDF](borrelia-editing.pdf) and [SVG](borrelia-editing.svg)
+remain as provenance sources. The publication derivatives in [artwork/](artwork/)
+encode native RGBA cells as same-colour vector rectangles. This changes their
+encoding, not their values or genomic resolution. All 259,811 captured RGBA
+pixels reconstruct exactly, with no gaps or overlaps; full-scene rendering at
+native units is byte-identical. The final PDF has zero raster page images,
+embedded fonts, matching XMP/JSON provenance and attached original contact PNGs.
+The SVG contains no image elements. Both were visually inspected; the vector
+SVG also opens and zooms through HiCT's actual file viewer.
+
+The [publisher's artwork guidance](https://static.primary.prod.gcms.the-infra.com/static/site/journals/document/images-author-guidance.pdf?node=1bf05d0b2fbd9c529a23&version=490455%3A30c2211aa70bba63a5ee)
+distinguishes vector artwork from raster-resolution targets and suggests
+600–900 dpi for combined tonal/line artwork. The 900-dpi RGB TIFF is rendered
+from the vector geometry, retains its physical dimensions and includes matching
+provenance in its description tag. It is **uncompressed TIFF inside a gzip file**
+to keep the repository small. Decompression restores the exact submission file:
+
+```sh
+gzip -dc artwork/borrelia-editing-900dpi.tif.gz > /tmp/borrelia-editing-900dpi.tif
+```
+
+The TIFF is 6307×6346 pixels, approximately 178×179.106 mm at 900 dpi; its integer
+dimensions introduce normal sub-pixel physical-size rounding. The gzip round trip
+is checked against the full uncompressed file hash. Rendering resolution does
+not imply finer genomic sampling. PNG files remain review previews. The
+[artwork receipt](artwork/artwork-validation.json) records every check, source
+PNG/RGBA hash, software version and font hash. This closes the artwork encoding/
+resolution checks for this figure; editorial manuscript assembly is separate.
 
 ## Data and rendering
 
@@ -99,7 +124,20 @@ python3 scripts/compose_borrelia_publication_figure.py \
   --captures /tmp/borrelia-captures \
   --font-dir ../HiCT_WebUI/src/assets/fonts \
   --output /tmp/borrelia-composition
+
+python3 scripts/prepare_publication_artwork.py \
+  --figure /tmp/borrelia-composition/borrelia-editing.svg \
+  --font-dir ../HiCT_WebUI/src/assets/fonts \
+  --output /tmp/borrelia-artwork
 ```
+
+Artwork preparation additionally uses Pillow. It accepts embedded native PNGs
+without geometric resizing, with at most one million captured pixels, a bounded
+native scene and a 64-megapixel TIFF budget. Unsupported/resized sources receive
+an explicit error. The script generates the vector PDF/SVG and TIFF, verifies
+exact cell reconstruction, native-size rendered equality, PDF contents and TIFF
+round-trip, and retains the source PNGs. Seven small-field regressions run with
+`python3 scripts/test_publication_artwork.py`.
 
 Fresh timestamps/session identifiers change artifact hashes. The workflow,
 scientific values, source hashes, geometry and validation checks are reproducible;

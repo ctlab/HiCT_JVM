@@ -154,8 +154,9 @@ A real-data figure candidate is retained in
 [publication/borrelia-editing](publication/borrelia-editing/README.md): map,
 generated ModDotPlot and GC/feature tracks before cutting, after an exact cut and
 after scaffolding. Its 178-mm composition has measured minimum 7.05-pt vector
-text, source-data checks, caption and alt text. Final journal artwork-resolution/
-TIFF checks and wider source/performance/release qualification remain open. The
+text, source-data checks, caption and alt text. Its publication derivatives use
+verified vector native-colour cells and provide a 900-dpi TIFF; artwork encoding/
+resolution checks pass. Wider source/performance/release qualification remains open. The
 stored comparison journey also covers real ModDotPlot/tracks before and after
 Reverse.
 
@@ -186,11 +187,12 @@ not measure text embedded in images. For a compact whole-map panel, turn off
 expanded. Compact captures use the native grid; provenance records the sizing
 choice. Smaller figures can retain readable text when composing several panels.
 
-The journal's colour/halftone guidance is 350 dpi and its line-art guidance is
-1200 dpi; the reported effective raster DPI describes the existing capture and
-is not a promise that every exported panel meets those targets. Prepare the
-final research figure and any required TIFF derivative from actual qualified
-source data, verify readability and keep its provenance. This print-size control
-alone does not qualify a manuscript figure. PDF pages beyond the encoder's
+The [publisher's artwork guidance](https://static.primary.prod.gcms.the-infra.com/static/site/journals/document/images-author-guidance.pdf?node=1bf05d0b2fbd9c529a23&version=490455%3A30c2211aa70bba63a5ee)
+distinguishes vector artwork from raster-resolution targets; its suggested
+combination-artwork range is 600–900 dpi. The reported effective raster DPI
+describes the existing capture, not a guarantee about every panel. The retained
+Borrelia figure additionally has a vector-cell PDF/SVG with exactly reconstructed
+native RGBA values and a 900-dpi TIFF. This adds no genomic samples. This
+print-size control alone does not qualify a manuscript figure. PDF pages beyond the encoder's
 14,400-point limit are rejected with a smaller-size/area recovery message rather
 than silently cropped.

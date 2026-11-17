@@ -21,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("jar", "webui", "output"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--extra-figure", action="append", default=[], help="Also inspect a retained publication PNG/SVG through the real viewer")
     args = parser.parse_args()
     out = Path(args.output).absolute()
     assert out == out.resolve() and out.is_relative_to("/tmp")
@@ -101,6 +102,16 @@ def main():
                 open_viewer()
                 expect(viewer).to_contain_text("Choose an exported PNG or SVG")
                 record("figure-viewer-is-available-without-an-open-map")
+                for index, name in enumerate(args.extra_figure):
+                    path = Path(name).resolve()
+                    choose(path)
+                    expect(preview).to_be_visible()
+                    expect(viewer).to_contain_text(path.name)
+                    assert preview.evaluate("e=>e.complete && e.naturalWidth>0 && e.naturalHeight>0")
+                    viewer.get_by_role("button", name="Actual size", exact=True).click()
+                    viewer.get_by_role("button", name="Zoom in figure", exact=True).click()
+                    viewer.get_by_role("button", name="Fit", exact=True).click()
+                    record(f"retained-publication-figure-{index + 1}-opens-and-zooms")
                 close()
                 page.evaluate(
                     "async api=>await window.__hictBenchmark.open('tiny-primary.hict.hdf5',api)",

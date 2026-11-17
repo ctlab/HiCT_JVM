@@ -28,7 +28,16 @@
     ]
   },
   "limits": [
-    "Journal artwork-resolution and TIFF derivative check remains open",
     "Not portable package or cross-platform qualification"
-  ]
+  ],
+  "artwork": {
+    "method": "NATIVE_RGBA_RECTANGLES_V1",
+    "qualified": true,
+    "pdfRasterImages": 0,
+    "nativePixelsVerified": 259811,
+    "nativeUnitFullScenePixelEquality": true,
+    "tiffDpi": 900,
+    "tiffGzipRoundTripExact": true,
+    "receipt": "artwork/artwork-validation.json"
+  }
 }
