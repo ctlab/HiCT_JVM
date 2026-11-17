@@ -109,3 +109,19 @@ The Electron runtime follow-up adds shared Rust save-writer checks directly to
 the WebUI CI matrix. It installs the stable minimal Rust toolchain explicitly;
 missing Rust or a failed test fails the job. This complements the complete
 wrapper and portable gates and gives earlier Windows filesystem feedback.
+
+
+## Early native checks confirmed and incremental artifact cleanup
+
+WebUI `72a4d809` passes all four platforms in
+[WebUI CI](https://github.com/ctlab/HiCT_WebUI/actions/runs/44153475239), including
+its new native save tests. The Windows job reports 16 passed and zero ignored;
+the rename-failure regression now passes on Windows itself.
+
+The next JVM-only build fix makes `copyWebUI` synchronize generated files rather
+than append them. A local incremental JAR previously retained 56 obsolete JS
+chunks. Actual artifact comparison now verifies exactly 64 current frontend
+files and matching bytes, and a missing optional frontend leaves its fallback
+untouched. This fixes local incremental artifacts; clean CI checkouts still
+require the complete frontend/package gates. Source/native compilation and
+publication conclusions must remain tied to each replacement commit.

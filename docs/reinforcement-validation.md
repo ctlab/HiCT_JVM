@@ -6367,3 +6367,28 @@ payload build passes; the integrated JVM build passes 646 tests, two optional
 skips and native parity. The Tauri payload is being rebuilt against the same
 committed frontend assets. Final native/package tests and platform release
 conclusions remain required.
+
+
+### Synchronize generated frontend resources
+
+- `/tmp/hict-webui-stale-assets-red-01.json`: current frontend has 64 files;
+  version-67 JAR contains those exact bytes plus 56 obsolete generated JS chunks.
+- Gradle `copyWebUI` changes from Copy to Sync, guarded by the availability of
+  `dist/index.html` for the existing optional API-only fallback.
+- `/tmp/hict-webui-stale-assets-green-01.json`: the version-68 incremental JAR
+  has exactly the current 64 files, each byte-identical, no extras/missing files.
+  JAR SHA256 `9cd3899fa3e0fe787a7f24e4f699ecd3145fe6fc455d14dccc77e6c1ab0cce54`.
+- `/tmp/hict-webui-sync-optional-fallback-01.json` and `.log`: selecting an absent
+  alternate frontend with buildWebUI excluded skips copying, preserves all
+  existing frontend bytes and does not fetch a checkout.
+- `/tmp/hict-release-68-integrated-build-01.exit.json`: exit 0; 646 JVM tests,
+  zero failures/errors, two optional skips and passing native parity.
+- `/tmp/hict-tauri-sdk-01/compile-12.exit.json`: rebuilt production Tauri against
+  WebUI `72a4d809`, all 23 Rust tests pass; native executable SHA256
+  `351e5bf999981cbf4fd99da0bd9eed7be01e136a1849b05fe73c2b8e46af2683`.
+  Final native GUI qualification of these newly embedded assets remains pending.
+- The completed Cargo target cache is cleaned after preserving the payload;
+  no compiler or executing target consumer remains. Registry/payloads are kept.
+- WebUI CI run 44153475239 passes all four platforms, including actual shared
+  Rust writer tests (16 passed, zero ignored on Windows). Full wrapper/package
+  qualification remains a separate gate.

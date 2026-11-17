@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replace obsolete frontend chunks during incremental JVM builds so the bundled WebUI exactly matches the current build, while retaining the optional API-only fallback.
+
 - Update the delivered Electron runtime to patched 43.8.10 and run native save ownership/cleanup checks in every WebUI CI platform job.
 
 - Stop disconnected FASTA export preparation, remove queued requests, and exercise native rename-failure cleanup consistently on Windows.

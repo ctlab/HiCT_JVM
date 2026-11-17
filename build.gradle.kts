@@ -1181,8 +1181,11 @@ tasks.register("buildWebUI") {
   }
 }
 
-tasks.register<Copy>("copyWebUI") {
+tasks.register<Sync>("copyWebUI") {
   dependsOn("buildWebUI")
+  // Keep the optional API-only fallback when no frontend build is available.
+  // A real frontend build replaces its generated tree, including obsolete chunks.
+  onlyIf { webUIRepositoryDirectory.file("dist/index.html").asFile.isFile }
   doLast {
     Files.createDirectories(webUITargetDirectory.asFile.toPath())
   }

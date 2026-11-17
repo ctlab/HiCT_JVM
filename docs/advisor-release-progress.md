@@ -1538,3 +1538,20 @@ payload build passes; the integrated JVM build passes 646 tests, two optional
 skips and native parity. The Tauri payload is being rebuilt against the same
 committed frontend assets. Final native/package tests and platform release
 conclusions remain required.
+
+
+## Exact frontend resources in incremental builds
+
+Artifact comparison found 56 obsolete hashed JavaScript chunks in the local
+version-67 fat JAR: 120 bundled files versus 64 current frontend files. Every
+current file matched, but additive Gradle Copy retained old generated chunks.
+`copyWebUI` now synchronizes its generated destination. It skips synchronization
+when an optional frontend build is absent, preserving the API-only fallback.
+
+The version-68 incremental build now has exactly 64 frontend files in the JAR,
+all byte-identical to the current dist, with no extras or missing files. A
+missing alternate frontend probe also preserves all 64 existing files without
+fetching another checkout. Full validation passes 646 JVM tests, two optional
+skips and native parity. The source pin remains WebUI `72a4d809`, whose new
+four-platform CI step passes all 16 native writer tests, including the Windows
+rename failure. Final artifact/native/workflow/soak gates remain required.
