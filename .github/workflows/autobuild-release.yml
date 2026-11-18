@@ -55,11 +55,13 @@ jobs:
       - name: Identify native build inputs
         id: native-inputs
         env:
-          NATIVE_SCRIPTS_HASH: ${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          NATIVE_SCRIPTS_HASH: ${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/linux_container_build.sh', 'scripts/ci/configure_centos_mirrors.py', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          LEGACY_NATIVE_SCRIPTS_HASH: ${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
         run: |
           python scripts/ci/runner_cache_identity.py
           python scripts/ci/toolchain_cache_sources.py
           printf 'scripts=%s\n' "${NATIVE_SCRIPTS_HASH}" >> "${GITHUB_OUTPUT}"
+          printf 'legacy_scripts=%s\n' "${LEGACY_NATIVE_SCRIPTS_HASH}" >> "${GITHUB_OUTPUT}"
 
       - name: Restore complete Linux toolchain
         id: bundled-tools
@@ -68,9 +70,10 @@ jobs:
           path: toolchains-dist/linux_x86_64
           # Docker supplies the pinned compiler and ABI. Runner image updates
           # should not invalidate these binaries.
-          key: autobuild-linux-tools-v2-${{ runner.arch }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.scripts }}
+          key: autobuild-linux-tools-v3-${{ runner.arch }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.scripts }}
           restore-keys: |
-            autobuild-linux-tools-v1-${{ steps.native-inputs.outputs.identity }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.scripts }}
+            autobuild-linux-tools-v2-${{ runner.arch }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.legacy_scripts }}
+            autobuild-linux-tools-v1-${{ steps.native-inputs.outputs.identity }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.legacy_scripts }}
 
       - name: Prepare and verify Linux toolchain on a cache miss
         if: steps.bundled-tools.outputs.cache-hit != 'true'

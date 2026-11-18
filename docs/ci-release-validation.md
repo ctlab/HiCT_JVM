@@ -444,6 +444,14 @@ run with the new key restored the matching old cache, verified and reused the
 payload in seven seconds, saved the new key in five seconds, and completed
 successfully in 4m 25s. [Migration run](https://github.com/ctlab/HiCT_JVM/actions/runs/44230616495)
 
+The `2.0.387` workflow-test change also exposed an independent cache miss in
+the branch and pull-request Autobuilds. The Autobuild key still hashed all
+`scripts/ci/`. The revised key tracks the toolchain sources, sequence tools,
+third-party inputs, Linux container build script and CentOS mirror helper.
+The previous cache key can seed the new key when its existing fingerprints
+match. The existing toolchain seal and file verification still run before
+reuse. [Observed branch cache miss](https://github.com/ctlab/HiCT_JVM/actions/runs/44272192056)
+
 An official Actions glob fixture verified that nine build and verification
 inputs change the key while six unrelated inputs, including the portable
 workflow unit test and generated Python bytecode, leave it unchanged.
