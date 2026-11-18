@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker
 
 
 def main():
@@ -21,6 +22,7 @@ def main():
         context.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
         context.route('http://localhost:5000/**', lambda route: route.continue_(url=args.api + route.request.url.removeprefix('http://localhost:5000')))
         page = context.new_page()
+        install_download_picker(page)
         page.set_default_timeout(15000)
         page.on('pageerror', lambda error: result['pageErrors'].append(str(error)))
         try:
