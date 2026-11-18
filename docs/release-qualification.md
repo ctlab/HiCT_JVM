@@ -16,8 +16,20 @@ both macOS architectures. The macOS 12.3 deployment target audits checked
 The public Linux checksum manifest matches the runfile that passed ten
 Chromium selection workflows. These covered clipboard coordinates and PNG,
 typed selection coordinates, and an exact cut in a reversed contig followed
-by Undo. The full Linux soak and standalone AppImage offline check are in
-progress. Receipts are under
+by Undo. The packaged browser passed all nine stages before the soak, including
+offline editing and navigation on four fixtures. The 30-minute soak completed
+234 cycles at 16.7 ms frame p95 and 54.90 ms input acknowledgement p95, with no
+browser errors. The server's RSS grew at 1.029 MiB/min against the 1.0 MiB/min
+limit. Linux runfile qualification therefore remains open for the follow-up
+launcher.
+
+The exact public AppImage passed its standalone offline check in extract-and-run
+mode with only loopback networking. Bundled hictk converted the Cooler fixture.
+Chromium preserved edits through closing and restoring a session, exported PNG,
+SVG and PDF, and opened the bundled API documentation with no external requests
+or browser errors. The AppImage SHA-256 matches the public manifest.
+
+Receipts are under
 `build/release-evidence/portable-publication-priority/run-44272191879/`.
 [Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
 
