@@ -30,6 +30,10 @@ def main():
             app.http('/open',{'filename':native.name});app.http('/link_fasta',{'fastaFilename':'sequence.fa'})
             browser=pw.chromium.launch(headless=True)
             page=browser.new_page(viewport={'width':1600,'height':1100},accept_downloads=True)
+            page.context.grant_permissions(
+                ['clipboard-read', 'clipboard-write'],
+                origin=f'http://127.0.0.1:{static.server_port}',
+            )
             page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
             page.route('http://localhost:5000/**',lambda route:route.continue_(url=app.url+route.request.url.removeprefix('http://localhost:5000')))
             check=BrowserCheck(page,out);edits=[]
@@ -152,6 +156,41 @@ def main():
                 assert state()['region']==selected
                 assert page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.selectionInteractions.contigSelectExtent.extentOverlay_.getVisible()')
             check.step('selection-free-export-and-restoration',export_without_overlays)
+            def clipboard_selection():
+                dialog = coordinates()
+                fill(dialog, {
+                    'row-start': 101,
+                    'row-end': 900,
+                    'column-start': 201,
+                    'column-end': 1200,
+                })
+                dialog.get_by_role('button', name='Select region', exact=True).click()
+                dialog.wait_for(state='hidden')
+                check.settle()
+                before = state()
+                choose('Copy selection coordinates')
+                page.get_by_text('Selection coordinates copied', exact=True).wait_for()
+                assert page.evaluate('navigator.clipboard.readText()') == (
+                    'Assembly coordinates (bp, 1-based inclusive)\n'
+                    'Rows\t101\t900\nColumns\t201\t1200'
+                )
+
+                page.mouse.click(*point(500, 500), button='right')
+                menu = page.get_by_role('menu', name='Assembly actions')
+                menu.get_by_role('menuitem', name='Copy selection as PNG').click()
+                page.get_by_text('Selection copied as PNG', exact=True).wait_for()
+                png = page.evaluate('''async () => {
+                    const [item] = await navigator.clipboard.read();
+                    const image = await item.getType('image/png');
+                    const bitmap = await createImageBitmap(image);
+                    const dimensions = [bitmap.width, bitmap.height];
+                    bitmap.close();
+                    return dimensions;
+                }''')
+                assert min(png) > 0, png
+                after = state()
+                assert after['region'] == before['region'] and after['view'] == before['view']
+            check.step('selection-clipboard-text-and-png', clipboard_selection)
             def stale_dialog():
                 dialog=coordinates()
                 page.evaluate('''async()=>{const m=window.__hictBenchmark.manager();m.eventManager.applyAssemblyInfo(await m.networkManager.requestManager.splitContigAtBp(m.contigDimensionHolder.contigDescriptors[0].contigId,10));m.reloadVisuals();}''')

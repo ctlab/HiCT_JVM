@@ -5,7 +5,7 @@
 Choose **Open map…** and double-click a `.hict.hdf5` file, or select it and press
 Enter. The picker lists files inside the server's data directory. Use
 **Open with options…** for `.hic`, `.cool` and `.mcool` conversion and optional
-inputs. **Help → Examples… → Open example** prepares Borrelia Hi-C, yeast Micro-C
+inputs. **File → Open Examples… → Open example** prepares Borrelia Hi-C, yeast Micro-C
 or tardigrade with matching FASTA. Borrelia downloads about 2.31 MB and yeast
 about 170.76 MB. The Borrelia preparation selects its 19 mapped replicons and
 changes their headers while preserving every original base. Downloads need
@@ -15,6 +15,7 @@ Opening fits the initial color range to the visible signal. Excluded weighted
 bins are masked. The one-line note offers Change when you want another policy.
 A second browser can attach to the server's current map. Changes share one server
 assembly and save-conflict protection applies.
+The active Hi-C map, linked FASTA, and loaded AGP appear beside **Jobs**.
 
 ## Navigate and select
 
@@ -35,6 +36,14 @@ half-open coordinates are also available. Entry is validated against the current
 row/column scopes. The selection's BP endpoints stay exact when changing display
 scale. When both axes are narrowed, **Selection → Hide borders in scoped view**
 removes ordinary border clutter; selected entity borders remain highlighted.
+
+Use **Selection → Copy selection coordinates** for assembly positions you can
+paste into notes or a spreadsheet. Positions are one-based and inclusive.
+For a rectangle, the copied text gives the row and column bounds separately.
+Use **Selection → Copy selection as PNG** to paste the selected rectangle into
+another application. Both actions are also available by right-clicking inside
+the rectangle. If your browser blocks image clipboard writes, choose
+**Export selection as PNG** from that context menu to save a file.
 
 The search box locates
 contigs, scaffolds and genomic coordinates. Row and column scope selectors limit
