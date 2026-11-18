@@ -1962,6 +1962,8 @@ jobs:
         env:
           PUBLISH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target || '' }}
           SELECTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
+          PUBLISH_LINUX_APPIMAGE: ${{ github.event_name != 'workflow_dispatch' || inputs.build_linux_appimage == 'true' }}
+          PUBLISH_WINDOWS_EXE: ${{ github.event_name != 'workflow_dispatch' || inputs.create_windows_exe == 'true' }}
         run: |
           set -euo pipefail
 
@@ -2014,16 +2016,62 @@ jobs:
           required_assets=(
             "hict_server-${version}-fat.jar"
             "HiCT-${version}-linux-x86_64.run"
-            "HiCT-${version}-windows-x86_64.exe"
+            "HiCT-${version}-linux-x86_64.tar.gz"
+            "HiCT-${version}-linux-x86_64.sha256"
+            "HiCT-${version}-windows-x86_64-portable.zip"
+            "HiCT-${version}-windows-x86_64.sha256"
             "HiCT-${version}-darwin-arm64.run"
+            "HiCT-${version}-darwin-arm64.tar.gz"
+            "HiCT-${version}-darwin-arm64.sha256"
             "HiCT-${version}-darwin-x86_64.run"
+            "HiCT-${version}-darwin-x86_64.tar.gz"
+            "HiCT-${version}-darwin-x86_64.sha256"
           )
+          if [[ "${PUBLISH_LINUX_APPIMAGE}" == "true" ]]; then
+            required_assets+=("HiCT-${version}-x86_64.AppImage" "HiCT-${version}-x86_64.AppImage.sha256")
+          fi
+          if [[ "${PUBLISH_WINDOWS_EXE}" == "true" ]]; then
+            required_assets+=("HiCT-${version}-windows-x86_64.exe")
+          fi
           for asset in "${required_assets[@]}"; do
             [[ -s "release-dist/${asset}" ]] || {
               echo "::error::Missing ${asset}. Use Re-run all jobs to rebuild a consistent release after a failed attempt."
               exit 1
             }
           done
+
+          # Hash each package once for both provenance and the release manifest.
+          (
+            cd release-dist
+            find . -maxdepth 1 -type f -printf '%P\0' | sort -z | xargs -0 sha256sum
+          ) > release-asset-digests.txt
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def checksums(path):
+              entries = {}
+              for line in path.read_text(encoding="utf-8-sig").splitlines():
+                  digest, name = line.split(maxsplit=1)
+                  if name in entries:
+                      raise SystemExit(f"Duplicate asset {name} in {path}")
+                  entries[name] = digest
+              return entries
+
+          actual = checksums(Path("release-asset-digests.txt"))
+          for manifest in Path("release-dist").glob("*.sha256"):
+              base = manifest.stem
+              if base.endswith(".AppImage"):
+                  expected = {base}
+              elif base.endswith("-windows-x86_64"):
+                  expected = {f"{base}-portable.zip"}
+                  if f"{base}.exe" in actual:
+                      expected.add(f"{base}.exe")
+              else:
+                  expected = {f"{base}.run", f"{base}.tar.gz"}
+              reported = checksums(manifest)
+              if set(reported) != expected or any(actual.get(name) != reported[name] for name in reported):
+                  raise SystemExit(f"Package checksum mismatch in {manifest.name}")
+          PY
 
           provenance_file="release-dist/HiCT-${version}-build-origin.txt"
           {
@@ -2048,22 +2096,14 @@ jobs:
             echo "  hict_webui: ${HICT_WEBUI_REF}"
             echo
             echo "asset_sha256:"
-            (
-              cd release-dist
-              find . -maxdepth 1 -type f \
-                ! -name "HiCT-${version}-build-origin.txt" \
-                ! -name "HiCT-${version}-release-assets.sha256" \
-                -printf '%P\0' |
-                sort -z |
-                xargs -0 sha256sum
-            ) | sed 's/^/  /'
+            sed 's/^/  /' release-asset-digests.txt
           } > "${provenance_file}"
 
           checksum_file="HiCT-${version}-release-assets.sha256"
           (
             cd release-dist
-            rm -f "${checksum_file}"
-            sha256sum * | sort -k2 > "${checksum_file}"
+            { cat ../release-asset-digests.txt; sha256sum "$(basename "${provenance_file}")"; } |
+              sort -k2 > "${checksum_file}"
           )
 
           release_base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}"

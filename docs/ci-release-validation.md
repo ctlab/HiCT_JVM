@@ -382,6 +382,13 @@ attempt suffix, rebuild all platform packages together. A local collection
 fixture produced 17 release assets from a consistent set and refused a mixed
 attempt before producing provenance.
 
+The next publisher revision checks the complete requested package set and
+compares each platform checksum file with the downloaded bytes before upload.
+It hashes the packages once and reuses those hashes for provenance and the
+release checksum manifest. The fixture covers a standard release, ZIP-only
+Windows with AppImage disabled, missing archives, corrupted download bytes and
+incomplete platform checksum lists.
+
 ## Portable native cache inputs
 
 The upload-only change invalidated eight compiled caches because those keys
