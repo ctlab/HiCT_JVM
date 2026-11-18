@@ -1760,3 +1760,12 @@ through a keyboard paste event. Hi-C, FASTA and AGP remain grouped beside Jobs
 at widths of 640, 800, 1280 and 1440 px. The native desktop clipboard and
 hosted package require their own qualification. Browser receipts are under
 `build/release-evidence/portable-publication-priority/hosted-linux-qualification/`.
+
+Firefox, Linux Electron and Linux Tauri checks confirmed coordinate paste.
+Electron initially denied PNG writes. WebUI commit `ed184e8` grants only
+sanitized clipboard writes to the primary HiCT page. The isolated desktop test
+then pasted a 722 × 566 PNG. The bundled Tauri shell exported valid
+`image/png` at 1068 × 844, read and saved by an independent GTK process.
+A paste into WebKit's own test field gave an empty image event on that stack.
+The PNG and receipts are in the same evidence directory. GitHub's portable
+run 44215590944 pinned `ed184e8` for all platforms.

@@ -19,6 +19,10 @@ on:
       - 'scripts/ci/check_staged_linux_tools.py'
       - 'scripts/ci/configure_centos_mirrors.py'
       - 'scripts/ci/check_macos_compatibility.py'
+      - 'scripts/ci/check_windows_sequence_relocation.py'
+      - 'scripts/ci/runner_cache_identity.py'
+      - 'scripts/ci/smoke_sequence_cache.py'
+      - 'scripts/ci/verify_sequence_cache.py'
       - 'scripts/portable/macos_target.sh'
       - 'tests/toolchains/**'
       - 'third_party/**'
@@ -70,13 +74,34 @@ jobs:
         id: runner-image
         shell: bash
         run: python scripts/ci/runner_cache_identity.py
-      # Exact keys only: never accept a payload built from older sources/config.
+      # Hash the inputs to this payload and its verification. Other CI scripts
+      # and unit-test fixtures still run without invalidating native binaries.
       - name: Restore verified sequence payload
         id: sequence-cache
         uses: actions/cache/restore@v5
         with:
           path: sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}
-          key: sequence-payload-v2-${{ matrix.component }}-${{ matrix.target.os }}-${{ matrix.target.platform }}-${{ steps.runner-image.outputs.identity }}-python-${{ steps.python.outputs.python-version }}-go-1.25.5-${{ hashFiles('.github/workflows/sequence-tools.yml', 'scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', 'tests/toolchains/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          key: >-
+            sequence-payload-v3-${{ matrix.component }}-${{ matrix.target.os }}-${{ matrix.target.platform }}-${{ steps.runner-image.outputs.identity }}-python-${{ steps.python.outputs.python-version }}-go-1.25.5-${{
+              hashFiles(
+                '.github/workflows/sequence-tools.yml',
+                'scripts/toolchains/*blast*',
+                'scripts/toolchains/build_sequence_*',
+                'scripts/toolchains/merge_sequence_payload.py',
+                'scripts/sequence_analysis/**',
+                'scripts/ci/runner_cache_identity.py',
+                'scripts/ci/check_macos_compatibility.py',
+                'scripts/ci/check_windows_sequence_relocation.py',
+                'scripts/ci/smoke_sequence_cache.py',
+                'scripts/ci/verify_sequence_cache.py',
+                'scripts/portable/macos_target.sh',
+                'third_party/blast/**',
+                'third_party/moddotplot/**',
+                'third_party/seqkit/**',
+                '!**/__pycache__/**',
+                '!**/*.pyc',
+                '!**/*.pyo')
+            }}
       - name: Discard any non-exact cache restoration
         if: steps.sequence-cache.outputs.cache-hit != 'true'
         shell: bash

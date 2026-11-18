@@ -303,3 +303,17 @@ The checkout tests, workflow contracts and actionlint passed locally. The
 resolver's exact shell step also passed against a disposable Git repository
 for a matching branch, automatic fallback, annotated tag and rejection of an
 invalid explicit ref. Hosted validation remains pending.
+
+## Scope of sequence payload cache inputs
+
+The pinned release changed the portable workflow's unit test, which was
+enough to invalidate the older sequence payload keys. The sequence job now
+hashes its build and smoke scripts, pinned configuration and bundled notices.
+The portable workflow's independent tests, hictk build scripts and unrelated
+license inventories no longer invalidate these payloads. The validation
+suite still runs on every sequence job. The new namespace needs one cold
+build per platform and component before it can serve exact hits.
+
+An official Actions glob fixture verified that nine build and verification
+inputs change the key while six unrelated inputs, including the portable
+workflow unit test and generated Python bytecode, leave it unchanged.
