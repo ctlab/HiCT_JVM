@@ -3,6 +3,24 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Published portable release 2.0.387
+
+All six JVM workflows succeeded for `145eafad6992b32800c473d933cd377c60f62263`,
+with the portable build pinning WebUI `02292b68d8b939c020d57ca36e9a1c86f0231a1d`.
+GitHub published 17 verified assets in 1h 07m 41s. Hosted startup passed for
+the Windows command and EXE launchers, the Linux runfile and AppImage, and
+both macOS architectures. The macOS 12.3 deployment target audits checked
+1,109 Apple Silicon and 1,113 Intel binaries with zero errors.
+[Portable Packages run](https://github.com/ctlab/HiCT_JVM/actions/runs/44272191879)
+
+The public Linux checksum manifest matches the runfile that passed ten
+Chromium selection workflows. These covered clipboard coordinates and PNG,
+typed selection coordinates, and an exact cut in a reversed contig followed
+by Undo. The full Linux soak and standalone AppImage offline check are in
+progress. Receipts are under
+`build/release-evidence/portable-publication-priority/run-44272191879/`.
+[Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
+
 ## Unpublished portable candidate 2.0.385
 
 Linux and Apple Silicon portable jobs passed packaged startup.
