@@ -1,0 +1,31 @@
+name: Upload release artifact
+description: Upload already compressed packages and retry a failed transfer on the same runner
+inputs:
+  name:
+    description: Actions artifact name
+    required: true
+  path:
+    description: Package files to upload
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Upload packaged files
+      id: upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v6
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: error
+        compression-level: 0
+
+    - name: Retry package upload
+      if: ${{ steps.upload.outcome == 'failure' }}
+      uses: actions/upload-artifact@v6
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        if-no-files-found: error
+        compression-level: 0
+        overwrite: true

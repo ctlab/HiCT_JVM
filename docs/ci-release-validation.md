@@ -361,6 +361,27 @@ including archive assembly. The packaged native launcher then started the
 API and WebUI successfully. This is a hosted timing for one runner image.
 [Apple Silicon package job](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376/job/134595105195)
 
+## Portable artifact transfer recovery
+
+The `2.0.383-ci1-c29eaf5` Intel macOS installer served the expected API and
+WebUI and checked 2,149 binaries against macOS 12.3 with zero errors. Its
+artifact upload failed with `ENOTFOUND` on the hosted runner, so the workflow
+skipped publication. [Intel macOS job](https://github.com/ctlab/HiCT_JVM/actions/runs/44255574234/job/134639478853)
+
+Release package uploads now retry from the same runner and reuse the files
+created by the packager. The retry replaces an artifact of that name if the
+first transfer reached the service. A failed retry still fails its job. The
+transport ZIP uses compression level 0 for the already-compressed packages.
+
+The publisher downloads the six package archives needed for a standard
+release. Compared with the 55 archives in run 44241313376, that would avoid
+2,929,412,475 bytes of transfers at that run's recorded sizes. The publisher
+collects filenames for its exact version and requires a nonempty fat JAR and
+installer for each supported platform. For reruns that change the version's
+attempt suffix, rebuild all platform packages together. A local collection
+fixture produced 17 release assets from a consistent set and refused a mixed
+attempt before producing provenance.
+
 ## Linux Autobuild cache across runner updates
 
 The warm hosted Autobuild for `60bf63d9` finished in 3m 09s from workflow

@@ -687,40 +687,36 @@ jobs:
           [[ "${bad}" == "0" ]]
 
       - name: Upload JVM fat JAR artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-jvm-fat-jar
           path: build/libs/hict_server-${{ env.HICT_BUILD_VERSION }}-fat.jar
-          if-no-files-found: error
 
       - name: Upload Linux package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-linux-portable${{ matrix.artifact_suffix }}
           path: |
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.run
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.tar.gz
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.sha256
-          if-no-files-found: error
 
       - name: Upload Linux AppImage artifact
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_linux_appimage == 'true') }}
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-linux-appimage${{ matrix.artifact_suffix }}
           path: |
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-x86_64.AppImage
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-x86_64.AppImage.sha256
-          if-no-files-found: error
 
       - name: Upload Linux runfile artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-linux-runfile${{ matrix.artifact_suffix }}
           path: |
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.run
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.sha256
-          if-no-files-found: error
 
       - name: Validate Linux artifacts after upload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -1252,7 +1248,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Windows package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-windows-portable
           path: |
@@ -1262,13 +1258,12 @@ jobs:
 
       - name: Upload Windows EXE artifact
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-windows-exe
           path: |
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.exe
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.sha256
-          if-no-files-found: error
 
       - name: Validate Windows artifacts after upload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -1565,14 +1560,13 @@ jobs:
           path: browsers-dist/darwin_arm64
           if-no-files-found: error
       - name: Upload macOS Apple Silicon package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-darwin-arm64-portable
           path: |
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.run
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.tar.gz
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.sha256
-          if-no-files-found: error
       - name: Validate macOS Apple Silicon artifacts (post-upload)
         run: |
           set -euo pipefail
@@ -1843,14 +1837,13 @@ jobs:
           path: browsers-dist/darwin_x86_64
           if-no-files-found: error
       - name: Upload macOS Intel package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-darwin-x86_64-portable
           path: |
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.run
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.tar.gz
             build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.sha256
-          if-no-files-found: error
       - name: Validate macOS Intel artifacts (post-upload)
         run: |
           set -euo pipefail
@@ -1951,6 +1944,7 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           path: downloaded-artifacts
+          pattern: '{hict-jvm-fat-jar,hict-linux-portable*,hict-linux-appimage*,hict-windows-portable,hict-darwin-*-portable}'
 
       - name: Collect assets and provenance
         id: collect-assets
@@ -1997,7 +1991,7 @@ jobs:
           while IFS= read -r -d '' file; do
             cp -f "${file}" "release-dist/$(basename "${file}")"
           done < <(
-            find downloaded-artifacts -type f \( \
+            find downloaded-artifacts -type f \( -name "HiCT-${version}-*" -o -name "hict_server-${version}-fat.jar" \) \( \
               -name '*.jar' -o \
               -name '*.run' -o \
               -name '*.AppImage' -o \
@@ -2007,14 +2001,19 @@ jobs:
               -name '*.sha256' \
             \) -print0
           )
-          find release-dist -maxdepth 1 -type f \
-            ! -name 'HiCT-*' \
-            ! -name '*-fat.jar' \
-            -delete
-
-          compgen -G "release-dist/*-fat.jar" >/dev/null || { echo "No fat JAR was collected." >&2; exit 1; }
-          compgen -G "release-dist/HiCT-*-linux-x86_64.run" >/dev/null || { echo "No Linux .run artifact was collected." >&2; exit 1; }
-          compgen -G "release-dist/HiCT-*-windows-x86_64.exe" >/dev/null || { echo "No Windows .exe artifact was collected." >&2; exit 1; }
+          required_assets=(
+            "hict_server-${version}-fat.jar"
+            "HiCT-${version}-linux-x86_64.run"
+            "HiCT-${version}-windows-x86_64.exe"
+            "HiCT-${version}-darwin-arm64.run"
+            "HiCT-${version}-darwin-x86_64.run"
+          )
+          for asset in "${required_assets[@]}"; do
+            [[ -s "release-dist/${asset}" ]] || {
+              echo "::error::Missing ${asset}. Use Re-run all jobs to rebuild a consistent release after a failed attempt."
+              exit 1
+            }
+          done
 
           provenance_file="release-dist/HiCT-${version}-build-origin.txt"
           {
