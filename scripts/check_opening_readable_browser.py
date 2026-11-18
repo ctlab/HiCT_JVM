@@ -27,6 +27,8 @@ def main():
                         help='Fixtures whose weights have NaNs: the note about masked bins must appear for them')
     parser.add_argument('--floor', type=float, default=0.5, help='Minimum share of diagonal samples that must be drawn')
     parser.add_argument('--unusable-weights-file', help='A fixture with signal and no usable Cooler weights')
+    parser.add_argument('--delay-opening-hydration', action='store_true',
+                        help='Return the startup sidebar read after the opening preset commits')
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -195,9 +197,40 @@ def main():
             if args.unusable_weights_file:
                 for way, opener in (('manual', open_manual), ('wizard', open_wizard)):
                     fresh()
+                    held = []
+                    committed = []
+                    released = []
+                    if way == 'manual' and args.delay_opening_hydration:
+                        def hold_read(route):
+                            if held or released:
+                                route.fallback()
+                                return
+                            response = route.fetch(url=args.api + '/get_visualization_options')
+                            held.append((route, response))
+
+                        def mark_commit(response):
+                            if response.url.endswith('/set_visualization_options') and response.ok:
+                                committed.append(response.url)
+
+                        def release_on_tile(route):
+                            if committed and held:
+                                deferred, response = held.pop()
+                                released.append(response.json())
+                                deferred.fulfill(response=response)
+                            route.fallback()
+
+                        context.route('**/get_visualization_options', hold_read)
+                        context.route('**/get_tile?*', release_on_tile)
+                        page.on('response', mark_commit)
                     opener(args.unusable_weights_file)
                     tag = f'unusable-weights-{way}'
                     measure(tag)
+                    if way == 'manual' and args.delay_opening_hydration:
+                        context.unroute('**/get_visualization_options', hold_read)
+                        context.unroute('**/get_tile?*', release_on_tile)
+                        page.remove_listener('response', mark_commit)
+                        check(f'{tag}: delivered the pre-opening sidebar read after commit',
+                              bool(released) and released[0]['colormap']['maxSignal'] == 1)
                     state = server_state()
                     check(f'{tag}: source reports unusable weights', page.evaluate(
                         '() => window.__hictBenchmark.manager().getOptions().response.usableCoolerWeights'
@@ -206,6 +239,13 @@ def main():
                           state['options']['applyCoolerWeights'] is False and not uses_weights(state['pipeline']))
                     check(f'{tag}: no blocking prompt',
                           page.get_by_role('button', name='Do not use Cooler weights').count() == 0)
+                    page.get_by_role('button', name='Open notifications', exact=True).click()
+                    notice = page.get_by_role('dialog').get_by_text(
+                        'This file has no usable Cooler weights. HiCT opened the map without file weights.',
+                        exact=True,
+                    )
+                    notice.wait_for(state='visible')
+                    check(f'{tag}: fallback is explained in notifications', notice.count() == 1)
             for fixture in args.files:
                 stem = fixture.split('.')[0]
                 for way, opener in (('manual', open_manual), ('wizard', open_wizard), ('attach', open_attach)):

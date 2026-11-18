@@ -98,6 +98,22 @@ match the exact tested local files. [Public release](https://github.com/ctlab/Hi
 The receipt and screenshots are under
 `build/release-evidence/portable-publication-priority/run-44215590944/`.
 
+## Opening maps with unusable Cooler weights
+
+The checksum-verified Linux Actions JAR `2.0.379-ci1-31655aa` intermittently
+opened a nearly blank map in the manual picker. A synthetic fixture contains
+30,236 real bins with no usable Cooler weights. The API and sidebar already
+reported that file weights were off. The wizard drew the diagonal on the same
+fixture.
+
+A browser regression delayed the sidebar's pre-opening visualization response
+until after the opening preset committed. The hosted WebUI then drew only
+9% of the sampled manual-open diagonal. The revised WebUI ignores superseded
+option reads and sends the opening options explicitly. With the same hosted
+JVM and injected delay it drew all 240 sampled points in both opening routes,
+displayed the fallback notice and passed all 17 assertions. The new WebUI
+requires qualification in a portable package.
+
 ## Earlier rolling package 2.0.364
 
 The [published 2.0.364 build](https://github.com/ctlab/HiCT_JVM/actions/runs/44187130439)
