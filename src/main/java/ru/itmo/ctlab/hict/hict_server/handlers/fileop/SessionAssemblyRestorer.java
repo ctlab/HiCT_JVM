@@ -33,22 +33,24 @@ public final class SessionAssemblyRestorer {
       final var expected = source.getJsonObject("assemblyInfo");
       final var contigs = expected.getJsonArray("contigDescriptors");
       final var scaffolds = expected.getJsonArray("scaffoldDescriptors");
-      final var splits = source.getJsonArray("splitEdits");
-      if (splits == null || splits.isEmpty()) {
-        candidate.importAGP(new StringReader(agp));
-      } else {
-        for (int index = 0; index < splits.size(); index++) {
-          final var edit = splits.getJsonObject(index).mapTo(ChunkedFile.SplitEdit.class);
-          final var parent = candidate.getAgpProcessor().resolveSessionComponent(
-            edit.parentId(), edit.sourceName(), edit.sourceOffsetBp(), edit.parentLengthBp());
-          candidate.scaffoldingOperations().replaySplit(edit, parent);
-        }
-        final var componentIds = new ArrayList<Integer>(contigs.size());
-        for (int index = 0; index < contigs.size(); index++) {
-          componentIds.add(contigs.getJsonObject(index).getInteger("contigId"));
-        }
-        candidate.getAgpProcessor().importSessionRecords(new StringReader(agp), componentIds);
+      final var componentIds = new ArrayList<Integer>(contigs.size());
+      final var sharedBinIds = new HashSet<Integer>();
+      for (int index = 0; index < contigs.size(); index++) {
+        final var saved = contigs.getJsonObject(index);
+        final int id = saved.getInteger("contigId");
+        componentIds.add(id);
+        if (saved.getBoolean("contigSharedBinSlice", false)) sharedBinIds.add(id);
       }
+      final var splits = source.getJsonArray("splitEdits");
+      for (int index = 0; splits != null && index < splits.size(); index++) {
+        final var edit = splits.getJsonObject(index).mapTo(ChunkedFile.SplitEdit.class);
+        final var parent = candidate.getAgpProcessor().resolveSessionComponent(
+          edit.parentId(), edit.sourceName(), edit.sourceOffsetBp(), edit.parentLengthBp());
+        candidate.scaffoldingOperations().replaySplit(edit, parent);
+      }
+      // AGP row order does not encode stable fragment IDs. Use the recorded IDs
+      // for legacy imported slices too, or a Reverse silently reassigns them.
+      candidate.getAgpProcessor().importSessionRecords(new StringReader(agp), componentIds, sharedBinIds);
       final var imported = candidate.getAssemblyInfo().contigs();
       require(imported.size() == contigs.size(), "contigDescriptors", "AGP changed the number of components");
       final var replacements = new HashMap<Integer, ContigDescriptor>();
@@ -62,7 +64,7 @@ public final class SessionAssemblyRestorer {
         require(saved.getInteger("contigId") == actual.getContigId(), path + ".contigId", "AGP cannot preserve component identity");
         require(saved.getInteger("contigDirection") == tuple.direction().ordinal(), path + ".contigDirection", "AGP changed strand");
         require(saved.getLong("contigLengthBp") == actual.getLengthBp(), path + ".contigLengthBp", "AGP changed component length");
-        require(saved.getInteger("contigOffsetInSource") == actual.getOffsetInSourceFASTA(), path + ".contigOffsetInSource", "AGP changed source interval");
+        require(saved.getLong("contigOffsetInSource") == actual.getOffsetInSourceFASTA(), path + ".contigOffsetInSource", "AGP changed source interval");
         require(saved.getString("contigSourceName").equals(actual.getContigNameInSourceFASTA()), path + ".contigSourceName", "AGP changed source name");
         length = Math.addExact(length, actual.getLengthBp());
         final var bins = new ArrayList<Long>();
@@ -80,7 +82,7 @@ public final class SessionAssemblyRestorer {
         ChunkedFile.validateDisplayName(originalName);
         replacements.put(actual.getContigId(), new ContigDescriptor(actual.getContigId(), originalName,
           actual.getLengthBp(), bins, presence, actual.getAtus().subList(1, actual.getAtus().size()),
-          actual.getContigNameInSourceFASTA(), actual.getOffsetInSourceFASTA()));
+          actual.getContigNameInSourceFASTA(), actual.getOffsetInSourceFASTA(), actual.isSharedBinSlice()));
       }
       candidate.getContigTree().mapDescriptors(d -> replacements.get(d.getContigId()));
       // AGP does not carry empty scaffold spacer defaults or stable scaffold IDs.
@@ -116,7 +118,16 @@ public final class SessionAssemblyRestorer {
         ChunkedFile.validateDisplayName(name);
         candidate.getScaffoldNameOverrides().put(Long.parseLong(entry.getKey()), name);
       }
-      require(expected.equals(JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(candidate))),
+      final var actualInfo = JsonObject.mapFrom(AssemblyInfoDTO.generateFromChunkedFile(candidate));
+      // Older snapshots predate explicit bin origins. Their bin counts, source
+      // intervals and ATU reconstruction are still checked above and separately.
+      for (int index = 0; index < contigs.size(); index++) {
+        if (!contigs.getJsonObject(index).containsKey("contigBinOffsets"))
+          actualInfo.getJsonArray("contigDescriptors").getJsonObject(index).remove("contigBinOffsets");
+        if (!contigs.getJsonObject(index).containsKey("contigSharedBinSlice"))
+          actualInfo.getJsonArray("contigDescriptors").getJsonObject(index).remove("contigSharedBinSlice");
+      }
+      require(expected.equals(actualInfo),
         "assemblyInfo", "restored descriptors differ from the saved assembly");
       final var restored = SessionSnapshotDTO.source(candidate, "", "");
       require(hash.equals(restored.getString("agpSha256")), "agpSha256", "assembly cannot round-trip this AGP without loss");

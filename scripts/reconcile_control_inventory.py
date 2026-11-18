@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 
 def main():
@@ -14,6 +15,16 @@ def main():
     parser.add_argument('--contracts', type=Path, default=Path(__file__).resolve().parents[1]
                         / 'src/test/resources/reinforcement/control-contracts.json')
     args = parser.parse_args()
+    checked_revision = None
+    checked_source_dirty = None
+    if (args.webui / '.git').exists():
+        git = ['git', '-C', str(args.webui)]
+        checked_revision = subprocess.check_output(
+            [*git, 'rev-parse', '--verify', 'HEAD'], text=True
+        ).strip()
+        checked_source_dirty = bool(subprocess.check_output(
+            [*git, 'status', '--porcelain', '--untracked-files=all', '--', 'src/app'], text=True
+        ).strip())
     source = [(p.relative_to(args.webui).as_posix(), p.read_text().splitlines())
               for p in sorted((args.webui / 'src/app').rglob('*'))
               if p.suffix in ('.vue', '.ts')]
@@ -64,6 +75,8 @@ def main():
         'historicalSha256': hashlib.sha256(args.historical.read_bytes()).hexdigest(),
         'contractsSha256': hashlib.sha256(args.contracts.read_bytes()).hexdigest(),
         'reviewedWebuiRevision': reviewed['webuiRevision'],
+        'checkedWebuiRevision': checked_revision,
+        'checkedWebuiSourceDirty': checked_source_dirty,
         'controls': records}, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({'signatures': len(records),
         'withSourceCandidates': sum(bool(r['sourceCandidates']) for r in records),

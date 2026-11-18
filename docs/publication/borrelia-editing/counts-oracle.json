@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "sourceMcoolSha256": "c2c5be6303c2698391022c3c5bdddb34b0d7d61f9100a9b050363f188c60f5de",
+  "nativeSha256": "f3f47e2f9af9eda24a4dd65e4dcef9972504b56203a6ba72b52183fc28e4932e",
+  "bpResolution": 10000,
+  "shape": [
+    155,
+    155
+  ],
+  "cells": 24025,
+  "maxAbsoluteError": 0.0,
+  "sumSymmetric": 26082173,
+  "sumUpperTriangle": 14700881,
+  "sourceCache": "examples/geo-borrelia/borrelia.mcool",
+  "networkAttempt": "Direct FTP-host HTTPS request timed out before receiving data; pinned local cache verified instead",
+  "importedWeightsChecked": 155,
+  "excludedWeightBins": 11,
+  "weightsBitwiseExact": false,
+  "weightsRelativeTolerance": 1e-12,
+  "weightsMaxRelativeError": 2.994006386163112e-13,
+  "weightsMaxAbsoluteError": 1.0047518372857667e-14,
+  "excludedWeightMasksExact": true,
+  "displayedPaletteCellsExact": 24025,
+  "weightDifferenceNote": "Persisted native coefficients differ from the pinned source by at most 2.995e-13 relative; both read paths preserve their stored values. Excluded masks and every displayed RGB cell match."
+}

@@ -19,6 +19,10 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
     }
   }
   private record Interval(long start, long end) {}
+  @FunctionalInterface
+  interface ComponentSlicer {
+    ContigDescriptor slice(ContigDescriptor source, long from, long to, int id);
+  }
 
   public static AGPImportPlan prepare(List<AGPFileRecord> records,
       Collection<ContigDescriptor> originals, Function<String, ContigDescriptor> resolver,
@@ -30,6 +34,13 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
   static AGPImportPlan prepareComponents(List<AGPFileRecord> records,
       Collection<ContigDescriptor> originals, Function<ContigAGPRecord, ContigDescriptor> resolver,
       long[] resolutions, int firstNewId, MissingComponentsPolicy policy) {
+    return prepareComponents(records, originals, resolver, firstNewId, policy,
+      (source, from, to, id) -> slice(source, from, to, id, resolutions), false);
+  }
+
+  static AGPImportPlan prepareComponents(List<AGPFileRecord> records,
+      Collection<ContigDescriptor> originals, Function<ContigAGPRecord, ContigDescriptor> resolver,
+      int firstNewId, MissingComponentsPolicy policy, ComponentSlicer slicer, boolean sharedBins) {
     validateLayout(records);
     var selected = new ArrayList<ContigTree.ContigTuple>();
     var omitted = new ArrayList<ContigTree.ContigTuple>();
@@ -50,7 +61,7 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
       }
       covered.computeIfAbsent(source.getContigNameInSourceFASTA(), k -> new ArrayList<>()).add(new Interval(start, end));
       boolean partial = start != offset || end != offset + source.getLengthBp();
-      var descriptor = partial ? slice(source, start - offset, end - offset, nextId++, resolutions) : source;
+      var descriptor = partial ? slicer.slice(source, start - offset, end - offset, nextId++) : source;
       if (partial) { partials++; splitSources.add(source.getContigNameInSourceFASTA()); }
       if (c.getContigOrientation() == AGPContigOrientation.UNKNOWN || c.getContigOrientation() == AGPContigOrientation.IRRELEVANT) unknown++;
       if (unscaffoldedObjects.contains(c.getScaffoldName())) {
@@ -78,19 +89,20 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
         if (interval.end <= cursor || interval.start >= limit) continue;
         long end = Math.min(interval.start, limit);
         if (end > cursor) {
-          omitted.add(new ContigTree.ContigTuple(slice(source, cursor - start, end - start, nextId++, resolutions), ContigDirection.FORWARD));
+          omitted.add(new ContigTree.ContigTuple(slicer.slice(source, cursor - start, end - start, nextId++), ContigDirection.FORWARD));
           omittedBp += end - cursor;
         }
         cursor = Math.max(cursor, Math.min(interval.end, limit));
       }
       if (cursor < limit) {
-        omitted.add(new ContigTree.ContigTuple(cursor == start ? source : slice(source, cursor - start, limit - start, nextId++, resolutions), ContigDirection.FORWARD));
+        omitted.add(new ContigTree.ContigTuple(cursor == start ? source : slicer.slice(source, cursor - start, limit - start, nextId++), ContigDirection.FORWARD));
         omittedBp += limit - cursor;
       }
     }
     var warnings = new ArrayList<String>();
     if (partials > 0) warnings.add("AGP import split " + splitSources.size() + " source contigs into " + partials
-      + " partial components. Sequence coordinates are exact. Each crossing contact bin stays with the piece containing its start in the original contig; matrix boundaries may differ by up to one bin at each resolution. No contact bin was removed by splitting.");
+      + (sharedBins ? " partial components with exact sequence intervals. Crossing source bins are referenced by both adjacent fragments; these references are not new contacts."
+      : " partial components. Sequence coordinates are exact. Each crossing contact bin stays with the piece containing its start in the original contig; matrix boundaries may differ by up to one bin at each resolution. No contact bin was removed by splitting."));
     if (unknown > 0) warnings.add(unknown + " components have unknown orientation; displayed and exported to FASTA in forward orientation.");
     if (omittedBp > 0) warnings.add(omitted.size() + " omitted sequence pieces (" + omittedBp + " bp): " + switch (policy) {
       case APPEND_UNPLACED -> "appended as unplaced; included as unscaffolded FASTA records.";
@@ -105,7 +117,7 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
       });
     return new AGPImportPlan(List.copyOf(selected), List.copyOf(omitted),
       new ImportReport(splitSources.size(), partials, omitted.size(), omittedBp, unscaffoldedPieces, unscaffoldedBp, unknown, policy.name(),
-        "SOURCE_BIN_START_OWNS_BIN", List.copyOf(warnings)));
+        sharedBins ? "INTERSECTING_SOURCE_BINS" : "SOURCE_BIN_START_OWNS_BIN", List.copyOf(warnings)));
   }
 
   /** HiCT export convention, not a general interpretation of singleton AGP objects. */
@@ -155,7 +167,7 @@ public record AGPImportPlan(List<ContigTree.ContigTuple> selected,
     long absoluteStart = source.getOffsetInSourceFASTA() + from;
     return new ContigDescriptor(id, source.getContigNameInSourceFASTA() + ":" + (absoluteStart + 1) + "-" + (source.getOffsetInSourceFASTA() + to),
       to - from, lengths, source.getPresenceAtResolution().subList(1, resolutions.length), atus,
-      source.getContigNameInSourceFASTA(), Math.toIntExact(absoluteStart));
+      source.getContigNameInSourceFASTA(), absoluteStart);
   }
   private static long ceilDiv(long value, long divisor) { return value / divisor + (value % divisor == 0 ? 0 : 1); }
 }

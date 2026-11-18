@@ -1,5 +1,17 @@
 # Reinforcement implementation evidence
 
+## Current advisor-release qualification — 2026-11-17
+
+Latest qualified Linux browser candidate: `2.0.63-09c6962-webui_2eb9f29`.
+Its full packaged Chromium gate and 30-minute mixed soak pass; archive, JAR and
+extracted-entry identity are verified. Ordinary packaged Linux Tauri save flows
+and real-map rendering/export checks pass. Subsequent refresh/termination tests
+exposed native lifecycle defects, so this is not an overall native release GO.
+Tauri 0.1.3 fixes pass the development gates described below; the updated final
+portable artifact and other platform/native gates remain open. Earlier GO
+statements retain their original artifact/workflow scope. Protected plans and
+manuscript remain unchanged.
+
 ## Publication qualification — 2026-11-13
 
 This R1–R6 record supersedes the archived W/U progress below. Both repositories
@@ -2501,3 +2513,4076 @@ development dependency findings retain their documented scope. Qualification
 records and acceptance-helper updates follow the frozen application build.
 No Java, native processing or WebUI runtime source changes follow `c9b15edb` /
 `95866b5` in this validation-record package.
+# Advisor item 1: launcher return after Stop (2026-11-16)
+
+Stop now restores the activity/start card on the Swing event-dispatch thread only
+after owned server and browser processes have stopped. Configuration and logs
+are hidden without clearing settings or log contents. Close-after-stop retains
+its separate close behavior. Full JVM suite: 519 tests, zero failures/errors,
+seven optional skips. Extended `scripts/check_launcher_reset.py` passed against
+the rebuilt fat JAR on private Xvfb: a real server starts and serves `/version`,
+Stop from the configuration view terminates it, the simple card is visible, the
+log is hidden and the configuration toggle reads Show Configuration. Screenshot
+visually inspected: `/tmp/hict-launcher-reset-blgi6lri/after-stop.png`.
+Full native-wrapper/platform/repeated-start matrix remains pending; this check
+does not qualify Windows or macOS. One premature acceptance invocation overlapped
+JAR rebuilding and failed reading the incomplete archive; rerun after build
+completion passed without changing application behavior.
+
+## Advisor P1 prerequisite: explicit fragment-bin coordinates (2026-11-16)
+
+Assembly descriptors now expose sparse source-forward first-bin origins per
+resolution, derived from immutable physical ATU ownership. Compact responses
+retain the nine-column contig rows and add offsets by contig ID. The WebUI
+uses explicit origins for native-level integer and fractional coordinate
+conversion, including reversed partial bins. Older responses and synthetic
+levels retain their existing fallback path. No split algorithm is changed in
+this increment: exact non-loss cuts, native shared-bin identity accounting,
+session v4 and approximate matrix exports remain pending.
+
+Validation: full Java suite 519 tests, zero failures/errors, seven optional
+skips; WebUI build and included regressions passed. DTO checks cover legacy and
+compact parity, invalid offsets and older responses. Source interval enumeration
+checks cover partial bins and fractional inverse coordinates on both strands.
+The independent browser oracle checks every retained base of a 4 kb source at
+100/200 bp after a real legacy split, then after reversal. Focused evidence:
+`/tmp/hict-bin-geometry-focused/fragment-geometry.json`; screenshot inspected.
+The initial browser oracle caught native levels being marked ensured by the
+renderer, bypassing explicit geometry; tracking native levels separately fixed
+it. A reversed fractional lookup used a continuous position as an integer base
+index; flooring before bin lookup fixed its half-base error. A Java oracle
+initially assumed coarse bin ownership began at source bp 10; actual legacy
+ATUs retain the source bp 0 bin, so the corrected oracle records origin -12
+rather than changing historical cut semantics.
+
+Final browser suite: all 17 scenarios passed with zero page errors, including
+local BLAST, search delivery, ModDotPlot generation/accumulation, pipeline round
+trips, selection exports and the new source-bin oracle. Evidence:
+`/tmp/hict-bin-geometry-qualified/summary.json`. One harness-only rerun was needed
+because the new scenario reloads the page: historical notification assertions
+now run before that reload, preserving their original coverage. Focused ESLint
+returned success with existing schema-resolution notices and no code errors.
+
+## Advisor P1 exact-cut library and v4 sessions (2026-11-16)
+
+The library now supports exact oriented-contig boundary cuts with atomic rollback,
+intersecting ATU slices and typed exact lineage. Both children reference a bin
+crossing the cut; their source sequence intervals are disjoint and exhaustive.
+No contacts are rewritten. Unit tests enumerate every interior boundary of the
+17 bp source on both strands at 4/10 bp resolutions, compare physical stripe/bin
+references, check gap-free FASTA and unchanged source-file bytes, and exercise
+repeated cuts, reversal, checkpoint undo/redo, invalid cuts and session replay.
+Legacy cuts retain bin removal and their original replay path.
+
+New captures use snapshot v2 and portable session v4. The readers still accept
+snapshot v1 and portable sessions v1-v3. Exact lineage requires snapshot v2;
+geometry fields are validated when present. A regression restores historical
+snapshots lacking bin-origin fields without silently reintroducing sequence
+removed by the older cut operation.
+
+Validation: 523 JVM tests, zero failures/errors, seven optional skips; WebUI build
+and included regression checks pass. Existing session browser suite passed all
+18 checks with zero page errors (`/tmp/hict-exact-cut-session/snapshots/results.json`).
+The new `check_exact_cut_session_browser.py` restores a prepared two-cut/reversed
+library state through the real v4 file chooser, compares every retained base's
+pixel/bin projection with independently enumerated source intervals, verifies the
+17-base reverse-complement FASTA, then saves/closes/reopens it. All checks passed
+(`/tmp/hict-exact-cut-ui/results.json`); the restored view screenshot was inspected.
+The script uses disposable physical copies and its own server. Initial version
+assertions in the HTTP test were updated from v1 to the new v2 capture contract;
+all v1 compatibility tests remain. Focused ESLint has no errors and two existing
+explicit-any warnings in MainUIComponent.vue.
+
+Scope still open: HTTP exact-cut entry point and scissors/feature actions,
+primary/secondary synchronization, native shared-bin statistics/provenance,
+approximate Cooler export, long source offsets and sequence-scale display.
+No claim of completed advisor item 21 or release readiness is made here.
+
+## Advisor P1 guarded exact edits and source synchronization (2026-11-16)
+
+The new exact-cut endpoint requires the displayed history session and revision
+in headers and a matching revision in its strictly validated body. Stale edits
+return 409. The existing journal snapshots both sources for undo/redo and
+rollback. The WebUI adapter uses this contract; scissors retain their legacy
+behavior until sequence display, statistics and export prerequisites are ready.
+
+Synchronization now projects exact sequence components from immutable original
+ATUs using all intersecting bins. This fixes the old AGP start-ownership policy
+dropping crossing bins when the secondary pyramid differs. Optional legacy
+descriptor flags/compact ID lists carry the policy, including projected sources
+without local cut lineage. Session restoration reconstructs those ATUs and IDs.
+Tests cover late attachment, repeated cuts, reversal, changing authority and
+secondary-session replay at 4/10 versus 3/7 bp levels. A separate regression
+confirms coverage preparation scans unique stored contacts and is unchanged by
+repeated exact cuts.
+
+Validation: 526 JVM tests, zero failures/errors, seven optional skips; WebUI build
+and DTO checks passed. Chromium passed all nine exact-cut checks including the
+request adapter, stale rejection, keyboard undo/redo and save/close/reopen; the
+restored screenshot was inspected (`/tmp/hict-exact-api-browser-final/results.json`).
+The existing session suite passed all 18 checks with zero page errors
+(`/tmp/hict-exact-sync-session-browser/snapshots/results.json`). The new HTTP test
+initially lacked the harness's visualization options required for session capture;
+adding the production-equivalent options fixed it. A repeated-success notification
+needed a nonunique-toast-aware browser locator. These were test setup failures.
+
+## Advisor P1 numeric source-bin provenance (2026-11-16)
+
+`/matrix/query` now labels source-bin references versus pipeline display-grid
+expressions in JSON and browser-readable headers. Optional JSON-only provenance
+returns compact, oriented physical-bin runs and per-window reference/unique-bin
+counts. Padding is unrepresented by runs. Physical identity includes source and
+resolution as well as stripe and index. Run union accounting distinguishes
+different stripes and overlapping reversed ranges without expanding bins in
+memory. Raw and weighted values are unchanged. Statistics counts are explicitly
+labeled `DISPLAY_CELLS`; this is not a claim of independent-contact statistics.
+
+Unit/HTTP regressions check original contact parity after repeated cuts and
+reversal, query clipping and padding, hidden-vs-all-bin axes, immutable runs,
+cross-stripe identities, primary/secondary queries, opt-in behavior, binary
+semantics headers and rejection of binary provenance requests. All 528 JVM tests
+passed with zero failures/errors and seven optional skips. No WebUI source changed.
+
+Chromium passed all ten extended exact-cut/session checks against the built JAR,
+including actual cross-origin header access, every numeric cell mapped to its
+original physical bins and conservation after deduplicating unordered contacts.
+The 4 bp level has seven references to five unique bins; 10 bp has five references
+to two bins. Both retain the independently computed unique contact sum of 22.
+Evidence: `/tmp/hict-provenance-browser/results.json`; restored screenshot inspected.
+Remaining shared-bin expected/histogram accounting and approximate exports still
+require implementation and qualification before switching scissors.
+
+## Advisor P1 long source sequence offsets (2026-11-16)
+
+Source sequence offsets are now longs across contig descriptors, exact slices,
+historical cut arithmetic, AGP import, FASTA extraction calls, cut lineage and
+legacy/compact responses. Session restoration reads longs. Session decoding
+validates both offsets and complete source intervals against the maximum exact
+JavaScript integer, preventing unsafe JSON coordinates. Existing session versions
+and historical bin-removal semantics remain covered.
+
+A real Cooler-to-HiCT fixture declares a 3,000,000,017 bp contig with only four
+coarse bins. Tests cover nested exact cuts at source offsets 2,500,000,001 and
+2,500,000,002, one-base fragment snapshots, source-bin mapping/session parity,
+legacy AGP slices and historical cuts on both strands retaining the 3,000,000,000
+source offset. Decoder tests cover large accepted offsets and rejected unsafe or
+overflowing intervals. All 533 JVM tests passed with zero failures/errors and
+seven optional skips. No WebUI source changed.
+
+`check_long_source_offset_browser.py` passed all five acceptance checks with zero
+page errors through the real adapter and session download/file chooser. Compact
+responses, saved lineage, restored source intervals and AGP endpoints retain all
+digits. Evidence: `/tmp/hict-long-offset-browser/results.json`; restored screenshot
+inspected. Fixture generation uses `ReinforcementHdf5Fixture long-offset <tmp-dir>`
+on the built JAR plus test classes. This deliberately creates no multi-gigabase
+FASTA; large-FASTA I/O and proper sequence-scale display remain separate gates.
+
+## Advisor P1 explicit approximate Cooler export (2026-11-16)
+
+Added an opt-in sequence-overlap projection and float64 `.cool`/`.mcool` writer,
+wired through library conversion, single/batch jobs, both CLI entry points and
+the matrix export dialog. The native source is read-only. Projection uses
+original physical-bin identities, actual terminal-bin lengths and independent
+uniform endpoints. Source-diagonal contacts allocate twice the fraction product
+to distinct target bins. Partial retention is not renormalized. Each stored
+resolution is estimated independently, explicitly labeled in output metadata.
+The method, limits and API/CLI examples are in `approximate-cooler-export.md`.
+
+The writer uses a bounded endpoint cache and a bounded-memory/fan-in fractional
+COO merge sort. It records sequence coverage for gap bins, original/retained/
+exported totals and a conservation tolerance, and publishes only validated output.
+Cancellation and output failures preserve an existing target and remove owned
+intermediate files. Estimated exports bypass the ordinary conversion cache.
+Ordinary export still requires explicit consent before using this approximation.
+Incompatible balancing is rejected; the UI visibly selects internal, unbalanced
+output and restores earlier settings when approximation is deselected.
+
+Tests enumerate all interior cuts of the 17 bp fixture on both strands and compare
+every projected cell with independent base-endpoint enumeration. Additional cases
+cover repeated cuts, gaps, omitted sequence, short terminal bins, multiple physical
+stripes, ambiguous/copying layouts, empty Cooler output, multipass fractional
+sorting, cancellation, failure cleanup, CLI forms and older Jobs output schemas.
+All 548 JVM tests passed: zero failures/errors and seven optional skips. WebUI
+build and DTO regressions passed; focused ESLint has zero errors and five existing
+unused-import warnings. No new runtime dependency was added.
+
+The Chromium journey explicitly refuses export until consent, verifies control
+restoration, dismisses the export dialog, downloads its finished Jobs result, and
+then exercises batch export with default unbalanced output. Python Cooler opens
+both actual artifacts and a separate base-endpoint oracle checks every cell and
+the symmetric matrix reader. At 4/10 bp, both retain 22 unordered contacts; maximum
+cell error is 8.9e-16. Native source SHA-256 is unchanged and there are zero page
+errors. Evidence: `/tmp/hict-approximate-export-qualified/{results,cooler-parity,
+batch-cooler-parity}.json`; both final screenshots were inspected. Screenshot
+review prompted clearing corrected validation feedback and replacing raw Jobs
+download endpoints with readable filenames via an optional `displayName` field.
+
+Actual packaged `convert hict-to-mcool` CLI exports passed independent Cooler
+parity with both a bare approximation flag and the launcher's `yes` form:
+`/tmp/hict-approx-cli/{cooler-parity,boolean-cooler-parity}.json`. The guide includes
+the required `convert` command prefix. An initial opt-in test accidentally chose
+the generated input Cooler's filename as its output; a distinct export name fixed
+that test setup. The browser harness also needed the list endpoint's POST method.
+
+Remaining P1 gates include shared-bin expected/histogram accounting, uniform
+sequence-scale geometry, scissors/feature actions, larger-map performance and
+reimport provenance qualification. Neither P1 nor the publication release is
+claimed complete by this increment.
+
+## Advisor P1 estimated-source reimport provenance (2026-11-16)
+
+Reopening an approximate Cooler previously retained fractional values but lost
+its approximation marker. The importer now preserves the declared method,
+resolution policy, estimation AGP and level metadata in the native file. A new
+optional capability summary labels primary and secondary sources as Estimated
+without inventing their signal units or changing normalization availability.
+Session save/restore recomputes the declaration from the source file and retains
+it in the capture. Further approximate export marks already-estimated input.
+Sequence-derived overlays ignore contact-template estimation provenance.
+
+The hictk preparation path restores provenance from the original input after
+importing a prepared Cooler, since external preparation can drop root attributes.
+A single-Cooler-root regression covers this bridge independently of its optional
+group. Full tool-backed preparation still needs package qualification. The new
+round-trip regression also caught a small-map HDF5 assertion when default chunks
+exceeded axis dimensions; export chunks are now clamped to the level's bin count.
+
+All 552 JVM tests passed with zero failures/errors and seven optional skips.
+WebUI build and capability parser regressions passed. Focused ESLint has zero
+errors and three pre-existing unused-handler warnings in NavigationBar.vue.
+Tests check every fractional cell on both native levels with exact equality,
+the saved source capabilities, incomplete declarations, preparation restoration,
+already-estimated input and exclusion of sequence-derived score templates.
+
+The extended Chromium journey exports and downloads the file, reimports it as a
+background job, opens it through Jobs, attaches an estimated secondary source,
+and saves/closes/restores the session. All twelve checks passed with zero page
+errors. An independent Python Cooler reader confirms exact equality between the
+reopened BINS query and the actual export, including hidden contigs; its separate
+base-endpoint oracle still agrees to 8.9e-16. Evidence:
+`/tmp/hict-reimport-immutable/{results,reimport-parity}.json`; the final screenshot
+showing both Estimated labels was inspected. This does not qualify uniform
+sequence-scale geometry or sub-resolution contig visibility.
+
+One earlier browser run was invalidated by rebuilding its live JAR, causing JVM
+class-loading failures. It is excluded from the evidence. The common browser
+harness now snapshots the JAR before launch, rejects a source modified during
+copying, records its SHA-256 and removes the owned copy after shutdown. The final
+run used SHA-256 `b2a6e6b01b04b3597648ac5bef03c50887e1f174bf14c28685970e574abc4b92`
+(`server.artifact.sha256`) with no class-loading errors and no leftover owned JAR.
+
+Ordinary floating-point re-export remains explicitly unsupported by both legacy
+export engines, as reproduced in `/tmp/hict-reimport-audit/export.log`; it does
+not silently round the values. Closing that path remains required, together with
+shared-bin expected/histogram accounting, sequence-scale geometry and final
+release/publication qualification. The full goal is still active.
+
+
+## Ordinary floating-point Cooler export (2026-11-16)
+
+Closed the floating-point re-export gate identified above. The ordinary exporter
+selects float64 or int64 independently per stored resolution and remaps source
+bin identities without applying the approximate endpoint model again. Mixed
+pyramids preserve integer counts above 2^53. Source units, estimation provenance
+and genuine weights survive; reversing native bins or an AGP component reverses
+weights consistently. Known absent filler vectors are omitted. Integer output
+now uses int64 instead of narrowing to int32. Integer aggregate/duplicate overflow
+is rejected, including by bypassing unchecked native compaction for large counts.
+Both writers now distinguish cis totals from interchromosomal contacts.
+
+Ordinary library and job/CLI exports stage output beside the destination, publish
+only after success, and remove private files after failure/cancellation. Tests
+cancel after axes are emitted and inject a NaN source value; existing destinations
+and source bytes remain unchanged. Auto mode with balancing disabled uses the
+internal mixed-type writer without requiring hictk. Optional hictk balancing after
+this writer is implemented but remains a tool/platform qualification gate.
+
+`./gradlew test shadowJar -x copyWebUI --offline` passed: 560 tests, zero
+failures/errors, seven optional skips. Focused tests cover `.cool`/`.mcool`,
+both native/AGP reversal, mixed types, large counts, real two-chromosome cis
+accounting, overflow and reimport/ordinary re-export provenance. WebUI production
+code was unchanged. `git diff --check` passed for the owned increment.
+
+The extended Chromium journey passed all fourteen checks, with no page errors:
+explicit approximate export, actual Jobs download, independent base-endpoint
+oracle, import/Open result, primary/secondary Estimated labels, save/close/restore,
+then ordinary export with approximate rebinning off. Python Cooler compares every
+stored pixel/index and dense cell exactly at 4/10 bp. Both retain total 22, float64
+counts and estimation provenance, with no invented weights. Current-assembly
+chromosome names are checked against saved AGP because singleton scaffold names
+can differ from input chromosome names. A separate packaged CLI export in auto
+mode, without approximation or balancing, also matches exactly.
+
+Evidence: `/tmp/hict-stored-float-qualified/{results,stored-parity,cli-parity}.json`;
+`stored-export-job.png` was visually inspected. Immutable server SHA-256:
+`caea851620538947cd5273ea9091ed2ad8701d0f5fa3731108654fe470b08238`
+(`server.artifact.sha256`). This qualifies tiny-fixture correctness and Jobs delivery;
+it does not establish large-map latency, optional balancing or final package UX.
+Shared-bin expected/histogram accounting, sequence-scale geometry and the main
+scissors transition remain outstanding P1 dependencies. The goal remains active.
+
+
+## Shared-bin expected fitting and histogram semantics (2026-11-16)
+
+Exact-cut aliases now share one unit of support per unordered physical source-bin
+pair across the full fitting window. This includes repeated source-diagonal cells
+and symmetric A/B, B/A orientations with unequal multiplicities in rectangular
+views. Source keys include stripe identity. A sparse interval sweep computes
+reference counts without allocating arrays indexed by source stripe size. The
+same weights feed every tile chunk and scaffold domain. Expected means retain the
+existing positive-finite policy at absolute display-bin separations. Native values
+are not changed or summed into synthetic observations. See
+[the explicit method and limitations](shared-bin-statistics.md).
+
+Primary viewport profiles, raster fallbacks and normalized numeric queries share
+the policy. BINS queries fit their own axis, including hidden contigs, and do not
+reuse PIXELS caches. Color histograms intentionally remain display distributions;
+tile statistics now declare DISPLAY_CELLS, the dialog labels displayed matrix
+cells and explains repeated references for exact-cut assemblies. O/E's tooltip
+explains shared support. No additional routine dialog or control was introduced.
+
+All 564 JVM tests passed, zero failures/errors, seven optional skips. WebUI build,
+histogram/range aggregation and API DTO regression scripts passed. Focused ESLint
+exited successfully with no reported lint errors (the existing plugin schema
+resolver prints directiveConfigSchema diagnostics). Tests cover reversed/padded
+axes, stripe indices near two billion, weighted contact-support conservation,
+unequal reverse multiplicities, rectangular windows and per-cell chunk invariance.
+The existing expected/scaffold/native-rendering tests also pass.
+
+Chromium exercised two exact cuts, reversal, scaffolding, the Expected/O/E control
+and the real selection histogram. Four numerical windows (square, rectangular,
+unequal-alias rectangle and BINS) agree with an independent unordered-pair
+occurrence enumeration with maximum cell error zero. Cached and uncached primary
+fits agree. Tile statistics report 49 display cells for a 7x7 window. Native source
+SHA-256 is unchanged, and there are zero page errors. The histogram screenshot was
+visually inspected; its displayed-sample explanation is readable.
+
+Evidence: `/tmp/hict-shared-expected-qualified/{results.json,shared-histogram.png,shared-oe.png}`.
+Immutable server SHA-256:
+`27cb03a8414889983f42ab8622f828d9c16600234effe4daf2b16d58fb23d2ac`.
+The checker serves the built WebUI independently of the JAR; this is feature
+qualification, not packaged UI or cross-platform release qualification. The
+screenshots still show the current bin-grid stretching of short fragments.
+Uniform sequence-scale geometry, the main scissors transition and broader
+performance/native/package gates remain pending. The full goal remains active.
+
+
+## Native contact colors on a uniform sequence grid (2026-11-16)
+
+Added an explicitly requested one-base display grid to `/get_tile`, backed by
+`SequenceGridProjector`. Native contacts are read and colored at the chosen stored
+resolution, then clipped/copied onto retained sequence intervals. This preserves
+one-base fragments, source-forward bin origins, reversal, terminal-bin widths
+and hidden components. Out-of-assembly bases or sequence without bins remain
+transparent. No source data is rewritten, apportioned or interpolated. Responses
+distinguish display scale from native resolution and omit misleading native-cell
+histogram counts. Bounds and cancellation cover preparation and output copying.
+Upper/lower graph branches are resolved per displayed base, including within
+native diagonal cells and after Swap. [Contract](sequence-scale-rendering.md).
+
+This also fixes a pre-existing pipeline bound that compared assembly-bin indices
+with the physical source-bin count. Exact cuts can increase the former through
+shared references; those valid rows/columns must remain colored. All three
+pipeline paths now use current assembly BINS length. Numeric BINS dynamics and
+track inputs retain their own coordinate axis. BINS track samples include hidden
+components and padding, including exact ATU weights and feature projections;
+visible 1D-track queries keep their existing path.
+
+`./gradlew test shadowJar -x copyWebUI --offline` passed: 571 tests, zero
+failures/errors, seven optional skips. New regressions enumerate every interior
+cut of the 17 bp fixture on both strands at 4/10 bp, plus nested cuts, reordering,
+weights, hidden/missing bins, padding, positions beyond 2.5 Gb, cancellation and
+base-grid triangle assignment. A separate hidden one-base feature/weight test
+checks BINS sampling without altering the visible track path. Optional large-file
+track formats remain subject to their existing release qualification gates.
+
+Chromium decoded real server PNG tiles for primary/secondary physical fixture
+copies at both stored levels, through standard and graph renderers. All eight
+cases match native colors exactly (3,452 checked pixels), including transparent
+padding and native references beyond the original physical bin count. Four more
+triangle/Swap cases verify 1,156 base pixels. JSON grid metadata, absence of native
+sample statistics, numeric pipeline bounds and invalid parameter combinations
+also pass. Source hashes are unchanged and there are no page errors. Observed
+local tiny-fixture requests were 2.6–5.2 ms; these are not large-map latency or
+p95 qualification. The diagnostic side-by-side PNG preview was visually inspected
+and shows the short terminal/cut intervals at their proper base widths.
+
+Evidence: `/tmp/hict-sequence-grid-qualified/{results.json,sequence-grid-comparison.png}`.
+Immutable server SHA-256:
+`54084fca05782496981908daa62348448b94638243c892e08782039000bba73f`.
+An earlier comparison used pre-reversal source-triangle masks as its oracle and
+was rejected. The qualified checker separates full-source color parity from
+current base-grid triangle assignment and checks both explicitly.
+
+WebUI production code was unchanged. The checker uses its existing built WebUI
+and a diagnostic preview of actual tile images; the main UI transition remains
+pending. Current map geometry, rulers, FASTA, selections, exports and edit
+coordinates must be coordinated next. P1 and the full release/publication goal
+remain active, including all platform, large-map and final soak gates.
+
+## Main-map sequence-scale integration — 2026-11-16
+
+The WebUI now uses the bounded sequence-grid renderer on capable servers. It
+preserves a native coordinate snapshot, represents short fragments at their true
+base widths and keeps the stored resolution explicit in the header/Info. Scissors
+use revision-guarded exact cuts, and native raster extents update when shared
+references add bins. Saved viewport and bookmark records carry additive BP/grid
+fields, with legacy parsing retained. The overview uses a separate native
+projection. Native BINS diagnostics and expected-profile caches remain distinct
+from visible PIXELS; expanded base colors are not counted as new observations.
+
+`npm run build:web` passed with type checks and all existing regressions, including
+the newly enabled coordinate-snapshot suite, optional server capability parsing
+and saved BP/grid validation. The known large-chunk warning remains. JVM
+`./gradlew test shadowJar -x copyWebUI --offline` passed: 571 tests, zero
+failures/errors, seven optional skips. Logs:
+`/tmp/hict-sequence-view-resize-web.log` and
+`/tmp/hict-sequence-view-final-jvm.log`.
+
+`scripts/check_sequence_view_browser.py` creates physical disposable 4 kb
+Cooler/native, IUPAC FASTA and stranded BED6 fixtures. Chromium operates the real
+scissors twice (253 bp, then 1 bp), keyboard undo/redo and Reverse Selection.
+Final fragments are 3747/252/1 bp, with native raster axes 42/22 references at
+100/200 bp. Every retained base matches the full 4 kb reverse complement. The
+three-base feature occupies 60 screen pixels at 20 pixels/base. Native/base
+saved centers, real wheel events, overview clicks, O/E controls, viewport
+PNG/SVG/PDF, and save/close/open session pass. Eight wheel steps reach visible
+letters; each preserves the fixed-client pointer locus within 1e-5 bp. Overview
+click tolerance is 1e-3 bp to accommodate browser subpixel rounding. Export and
+session restoration retain the BP center, and the source native hash is unchanged.
+All 17 workflow checks pass without page errors. The real map, PNG and independently
+rasterized PDF were visually inspected. SVG is valid XML with no external image
+references; a standalone SVG-document screenshot timed out and is not counted as
+standalone-viewer qualification.
+The same SVG renders successfully as a Chromium image; that preview was visually
+inspected too (`svg-image-preview.png`). Its FASTA text uses a different fallback
+font outside the app. Portable SVG typography remains an export qualification
+item; this increment does not certify publication-ready typography.
+
+Evidence: `/tmp/hict-sequence-view-browser-19/`, including `results.json`,
+`restored-sequence-view.png`, `sequence-view.{png,svg,pdf}` and `pdf-preview.png`.
+Server SHA-256:
+`64f0d7259f6a42ffa1143f665aa80fcbc30d35f6b77f1230af154274439e9293`.
+WebUI distribution SHA-256 (sorted relative file names plus NUL plus file bytes):
+`9646c2b00a51e39feef11f92c14fd04ec55367374d900e10faf95ddd480842d0`.
+The JVM used an immutable artifact copy; WebUI was served separately. The artifact
+name's older WebUI suffix does not qualify an embedded package for this increment.
+
+`scripts/check_shared_expected_browser.py` now fits both units and verifies that
+different BINS/PIXELS fitting windows cannot overwrite each other's cached means.
+Four independent numerical comparisons and both cache-isolation probes have zero
+error. O/E and the base-scale histogram reference labels pass, with unchanged
+native bytes and no page errors. Evidence:
+`/tmp/hict-shared-expected-bins-browser-03/results.json`, same server hash.
+
+Browser failures during development exposed an active/future-grid lookup mix-up,
+BP bookmarks clamped before FASTA-strip layout, and zooms interrupted by generic
+gap handling or resized zoom limits. Those paths are corrected and exercised by
+the final checker. Test clicks were also moved clear of map controls, and wheel
+checks now wait for dispatch before waiting for animation completion.
+
+P1 remains open: full secondary/disjoint-pyramid UI coverage, hidden/no-bin and
+quantitative 1D tracks, feature-edge cuts, broader selection/export/bookmark
+migration, large-map performance and packaged-platform/soak qualification.
+Quantitative tracks still sample native bins before mapping their positions to
+the base axis. No production/release/publication-complete claim follows from this
+tiny-fixture qualification.
+
+## Feature-edge cuts and feature navigation — 2026-11-16
+
+GTF/GFF feature context menus now offer exact cuts at projected assembly start/end
+boundaries. Both axes and both biological strands use zero-based, half-open bounds.
+Existing joins/assembly endpoints are disabled. Targets retain their opening
+session/revision and are revalidated before a command; busy/read-only/exporting,
+disposed or changed assemblies cannot execute a stale target. The shared exact-cut
+path preserves the current BP center while updating native reference axes. Failed
+requests do not clear selection or apply a response; refresh failures are reported.
+
+Advisor item 9 exposed two actual navigation defects: Center used a helper that
+changed resolution, and Zoom calculated native pixel coordinates before entering
+the base grid. Center now retains scale; Zoom restores a BP midpoint at measured
+letter scale. General BP-range navigation uses the coordinate model too, with no
+single-bin-scale cap for large ranges. The old copied-coordinate grouping was
+explicit `toLocaleString("en-US")`; copied loci/ranges now use ASCII digits without
+grouping. Display rulers keep their existing formatting.
+
+`npm run build:web` passed, including type checks, existing regressions and the new
+default `scripts/check-feature-edge-cuts.mjs` checks. Those exercise oriented offsets,
+boundary validation, stale session/revision/menu targets, busy/read-only/export/
+disposal guards, rejected requests, preserved BP views, Center/Zoom scale semantics
+and large-range arithmetic. Existing clipboard/fallback checks pass with ungrouped
+loci. JVM `./gradlew test shadowJar -x copyWebUI --offline` passed: 571 tests, zero
+failures/errors, seven optional skips. Logs: `/tmp/hict-feature-actions-copy-web.log`
+and `/tmp/hict-feature-cuts-jvm.log`. The known large WebUI chunk warning remains.
+
+`scripts/check_feature_edge_cuts_browser.py` creates fresh physical 4 kb contacts,
+IUPAC FASTA, GTF and GFF3 inputs. Real horizontal GTF menu clicks cut the 4–6 inclusive
+source feature at assembly boundaries 3/6. After undo/reversal, vertical menu clicks
+cut its projected boundaries 3994/3997. GFF3 source feature 1–1 is one retained base;
+its reversed start creates a one-base terminal contig and its assembly-end cut is
+disabled. Final lengths are 3994/3/2/1. A captured target becomes stale after undo
+and sends no request. Every cut preserves its BP center exactly in this fixture,
+including the first native-scale cut. History, full reverse-complement sequence,
+save/close/restore, disabled joins and unchanged native bytes pass.
+
+Actual Center and Zoom actions after a native cut both target BP 1049.5. Center
+retains native resolution 0.006; Zoom reaches the visible FASTA letters at
+0.000505050505050505 and the same BP midpoint. Real clipboard output is
+`tiny_3_4000:1031-1063` (one-based inclusive, no separators). All 15 checks pass
+without page errors. Evidence: `/tmp/hict-feature-actions-browser-02/results.json`
+and screenshots, visually inspected. The existing scissors/wheel/overview/figure/
+session workflow also passes all 17 checks:
+`/tmp/hict-feature-actions-sequence-browser/results.json`.
+
+Immutable server SHA-256:
+`a42db34371d4cb70d29a3078de8889980593622131a297e08221662d53c60540`.
+Separately served WebUI distribution SHA-256 (same sorted-path/NUL/bytes method):
+`ae94799078646e2daab7a165234f7dade0cb46ab2251e627bf6756e4e9e4514f`.
+Final embedded-package/platform, all annotation formats, secondary/disjoint levels,
+all entity-navigation callers and large-map performance are not qualified here.
+The feature-zoom screenshot also exposes sidebar control overflow to address in
+P4 layout work. P1/P4 and the complete release/publication goal remain active.
+
+## Base-grid 1D features, signals and native weights — 2026-11-16
+
+The old BP track adapter first projected onto visible native bins, which could
+omit hidden/binless sequence and stretch quantitative intervals beyond their
+retained bases. New servers advertise additive `sequenceScaleTracks=true`.
+Explicit `sequenceScale=true`, BP-unit requests build a uniform assembly-base
+axis and bypass native precompute sidecars. Responses retain the stored source
+level separately from the 1 bp display axis. Existing native queries and BINS
+pipeline samples retain their paths; older servers retain the former adapter.
+
+Source features and quantitative intervals project directly through source
+offsets/strand at base scale. Cooler weights keep their actual source-bin values,
+including hidden references, and report per-track native resolution. A disjoint
+secondary source uses its finest stored level if the primary level is absent.
+Missing bins and non-finite weights have no support. Coarse max buckets retain
+support intervals separately so they cannot paint missing bases. Weight output
+is capped at 16,384 intervals; queries cap width at 8192 and span at 1,048,576 BP.
+Out-of-assembly queries return empty data. Explicit invalid flags/units and
+oversized queries are rejected. Tooltips identify native weights and one-based
+inclusive assembly coordinates. Normalization availability now checks the stored
+source level rather than the virtual display level.
+
+`SequenceTrackQueryTest` compares every base of a 17 bp independent fixture after
+nested cuts, with hidden and binless children, before/after reversal at two stored
+levels. BED values, one-base GTF features, indexed BAM coverage and native weights
+match source-coordinate oracles. Native NaN masks and binless bases remain missing
+even in a single coarse display bucket. Disjoint secondary weights retain their
+own stored level/strand, and a feature beyond 2.5 Gb needs no stored 1 bp level.
+Feature context, empty ranges, bounds, cancellation and unchanged native bytes pass.
+DTO/capability checks verify explicit transport and native sampling metadata.
+
+Full JVM `./gradlew test shadowJar -x copyWebUI --offline` passed: 574 tests, zero
+failures/errors, seven optional skips. Full `npm run build:web` passed, including
+type checks and existing regressions; the known large-chunk warning remains.
+Logs: `/tmp/hict-base-tracks-final-jvm.log` and
+`/tmp/hict-base-tracks-final-web.log`.
+
+`SequenceTrackBrowserFixture.java` creates physical sources with one binless BP,
+two hidden BP and 4 kb visible sequence. The real browser observes GTF features
+on the first two components, BED values `[7,9,9,4,4]`, and native weights
+`[missing,20,20,100,100]` at their first five assembly positions. Ordinary native
+queries retain their visibility behavior. Both stored levels, base feature
+context, source-level normalization availability, tooltip metadata, a real cut
+inside hidden sequence, full reversal, session save/restore and invalid request
+rejection pass. A coarse weight bucket also excludes the binless base. All 13
+checks pass without page errors and the native hash is unchanged. The map/track
+screenshots were visually inspected. Evidence:
+`/tmp/hict-base-tracks-browser-04/{results.json,hidden-binless-tracks.png,restored-sequence-tracks.png}`.
+
+Immutable server SHA-256:
+`5ce5c27cab211e87cb30ae760ddc351198703a620b0166c21152d01f287e593e`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`3f4bd4a18458c2c5abd70cee1baaea6bf607ef783a0baa8e8a2304fd0a87e1ef`.
+The established 17-case sequence/export/session and 15-case feature-action browser
+workflows also pass after the base-track transport change:
+`/tmp/hict-base-tracks-sequence-browser/results.json` and
+`/tmp/hict-base-tracks-feature-browser/results.json`. Those two runs used server
+SHA-256 `4d769d70674accdf8df29fe7fcee0a735d4a19bce1ac589e8e37b324b3678834`,
+before the final coarse-weight support correction; neither loads a weights track.
+
+BigWig/VCF and all signal modes, large-file latency (including contention with
+native precompute), the full secondary UI matrix, responsive layout and final
+embedded/platform qualification remain open. This increment establishes numerical
+and primary browser correctness; it does not certify all tracks or performance.
+
+## Independent selections and exact region entry — 2026-11-16
+
+Shift entity selection now uses a transient DragBox and stable contig/scaffold
+IDs, with stroke-only highlights drawn independently from ordinary border style.
+Ctrl/Command region selection uses a persistent Extent and authoritative half-open
+assembly BP bounds. The two modes clear each other. A plain click outside the
+region or Escape clears it; assembly/scope changes invalidate selections. Structural
+commands consume entity IDs, and analysis-region context menus exclude those edits.
+The Selection menu exposes mode, selection summary, coordinates and scoped border
+hiding. Border hiding retains selected outlines and names.
+
+The coordinate dialog accepts independent row/column assembly positions or
+current-contig offsets in explicit one-based inclusive/BED conventions. Parsing
+rejects unsafe integers, fractions, malformed grouping, ambiguous/unknown contigs,
+empty/inverted intervals and scope violations before changing selection. An open
+dialog captures assembly session/revision and scope revision. Native/base grid
+changes reproject its BP endpoints without native-bin rounding; FASTA export reads
+those endpoints directly. Export rendering hides/restores both selection layers.
+
+`check-region-selection.mjs` exercises the production parser and manager methods,
+including colon-containing names, >2.5 Gb positions, fractional native projection,
+grid changes, entity/region isolation and invalid-input preservation. It runs in
+the full WebUI build. `npm run build:web` passes, including types and existing
+regressions (`/tmp/hict-selection-final-web.log`); the known chunk warning remains.
+JVM `./gradlew test shadowJar -x copyWebUI --offline` passes with 574 tests, zero
+failures/errors and seven optional skips (`/tmp/hict-selection-jvm.log`). No JVM
+production source changed in this increment.
+
+`check_selection_modes_browser.py` creates a disposable physical 4 kb source,
+makes two exact cuts and uses real Shift/Ctrl pointer gestures and menu controls.
+Seven scenarios cover entity/scaffold highlights after zoom, transient box removal,
+region persistence/edit isolation, scoped border hiding, exact contig-coordinate
+entry, invalid/stale input, Escape, scale changes and downloads. FASTA records
+match independent source slices, including the default scaffold separator across
+the row interval. PNG exports with either entity highlights or a region are
+byte-identical to the clean PNG; selections are restored afterward. Evidence:
+`/tmp/hict-selection-browser-06/{results.json,coordinate-dialog.png,selected.fasta,clean-export.png,entity-export.png,region-export.png}`.
+The native hash is unchanged and no page errors occur. Screenshots of the selection
+menu, scoped border selection, coordinate form and restored region were inspected.
+
+The existing sequence-view/export/session (17), feature-cut/navigation/clipboard
+(15) and hidden/binless-track/session (13) workflows also pass without page errors:
+`/tmp/hict-selection-{view,feature,tracks}-browser-01/results.json`. These runs
+precede final label pluralization and unused-import cleanup; the seven selection
+scenarios are repeated on that final distribution. Immutable server SHA-256:
+`ebaaf550d99e0a5eb6881975d50c30c5677fb9cc6f1a2a4a306f80f538e7a7c1`.
+Final separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`045d85df832f2156cbaec06b48482765e779329b805d1379991af1b820e8f898`.
+
+FASTA-track repeat measurement, real macOS/native modifier behavior, secondary
+source interactions, large-map selection performance, whole-map export and final
+embedded/platform qualification remain pending. This does not complete P2 or
+the release gate. Plan files and protected initial changes remain untouched.
+
+## FASTA interval selection and repeat measurement — 2026-11-16
+
+FASTA strips now support Ctrl/Command-drag selection, a context-menu plain-drag
+selection mode, one-letter intervals and Shift-arrow extension within visible
+bases. Plain drag otherwise keeps its pan behavior. A shared card gives exact
+length/assembly coordinates and copies the frozen selected strand's sequence.
+The reverse row copies reverse-complement IUPAC sequence in reading direction.
+The highlight is a separate presentation element, excluded from figure captures.
+Escape cancels a partial gesture; edits, scope changes and FASTA changes clear
+the selection. Panning preserves it, and sessions do not serialize it.
+
+Explicit Estimate period submits a bounded immutable gapless window to the shared
+sequence worker through `/sequence/repeat_period`. History headers guard capture;
+source stamps, assembly fingerprints and interval SHA-256 identify the frozen input. Settings
+advertise support, DTO transport preserves long positions, and status/cancellation
+use existing Jobs infrastructure. Job summaries identify the captured interval.
+Late submissions/results cannot reopen or overwrite a cancelled/closed card.
+`ungapped-autocorrelation-v1` reports exact periodicity or a thresholded imperfect
+candidate, excluding ambiguous symbols and composition-biased similarity. The
+UI and [method document](repeat-measurement.md) explain thresholds, overlapping
+pair dependence and the lack of indel modeling/significance testing.
+
+Library tests compare exact motifs with an independent shift oracle, including
+the advisor's CT repeat pair, partial copies, a point substitution, homopolymers,
+ambiguity, composition bias, lowercase, size bounds and cancellation. DTO tests
+cover invalid inputs and >2.5 Gb offsets. The real HTTP test occupies the actual
+sequence worker, cancels queued jobs, fills/rejects the queue, modifies/reverses
+the live assembly and verifies frozen analysis/provenance. It also checks stale
+headers, missing/out-of-range requests, Jobs summaries, capability and unchanged
+native bytes. Full JVM checks pass with 581 tests, zero failures/errors and seven
+optional skips (`/tmp/hict-repeat-provenance-jvm.log`, full test/shadowJar).
+The queue saturation/cancellation checks also pass in
+`/tmp/hict-repeat-qualified-jvm.log`. Full WebUI build/regressions
+and type checks pass (`/tmp/hict-repeat-final-web.log`,
+`/tmp/hict-repeat-provenance-types.log`); the known chunk warning remains.
+
+The final Chromium measurement script passes 12 scenarios:
+`/tmp/hict-repeat-final-browser/results.json`. Real horizontal/vertical gestures,
+both strands, clipboard bytes, length/endpoints, exact/imperfect repeat jobs,
+ambiguity, Jobs summaries, input checksums, Escape mid-drag, delayed-response ownership, exact
+cross-bin cutting, reversal, pan preservation, compact card layout, clean exports
+and actual save/close/reopen all pass. The known one-substitution interval reports
+period 2 and 8/10 informative matches; all-N input reports no supported period.
+Selection-active and clean PNG bytes match exactly. Native source bytes remain
+unchanged and there are no page errors. Screenshots of the card, both strands,
+Jobs, and 1024×768 layout were visually inspected.
+
+Existing browser workflows also pass on the same runtime artifacts: independent
+selections (7), main sequence view/exports/sessions (17), hidden/binless tracks
+(13), and feature cuts/navigation/clipboard (15). Together with the 12 measurement
+scenarios, all 64 checks pass without page errors. Evidence:
+`/tmp/hict-repeat-final-{selection,view,tracks,feature}-browser/results.json`.
+Immutable server SHA-256:
+`916db831c7bdcd1f69e66c7bc29d56d664cfc087368c3d81f30dc0de6326e735`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`97d5786272388c617d3f6318a2e5d37d16454c79e9b8f066cc4604bf83c3b1cc`.
+
+The card fits the inspected compact viewport; existing surrounding toolbar/sidebar
+overflow remains part of the pending responsive-layout work. Real macOS/native
+modifier behavior, the secondary-source matrix, accessibility, large-map/queue
+latency and final embedded/platform qualification remain pending. No broad repeat
+annotation or publication-release claim is made. Plan files and protected initial
+changes remain untouched.
+
+## Continuous alignment preview and short repeats — 2026-11-16
+
+The preview replaces per-base icon points with continuous run polylines through
+each aligned base boundary. This spans the full letter intersection, preserves
+reverse slope and native fragment kinks, and distinguishes substitutions,
+ambiguity and indels with shared colors/dashes. Rendering is bounded to 4096
+runs and 65,536 vertices; malformed/oversized data fails atomically. The map and
+PNG/SVG/PDF use the same geometry; vector exports retain paths rather than icon
+images. The legend explains the visible local comparison without extra controls.
+
+The backend already processed all PAF records. A disposable native-tool probe
+showed that the original 7-BP seeds/chain thresholds returned zero hits for
+`CTCTCTCTCTCT × CTCTCTCTCT`. Tiny windows (both ≤64 BP) now use
+`short-window-v1` (k2/w1/m2/n1/s2); larger windows retain
+`seeded-window-v1` (k7/w3/m12/n2/s12). All reported extended-CIGAR alignments
+are retained, within the existing 256-record/4096-segment bounds. Canonical
+`=`/`X` operations are checked against the actual frozen source bases, including
+reverse complementation. This exposed and corrected a contradictory base in an
+older synthetic reverse-strand test. Ambiguous positions remain ambiguous.
+Responses add applied profile, method, interval/snapshot and input/tool checksums.
+The heuristic/local-comparison limits are documented in
+[alignment-preview.md](alignment-preview.md).
+
+Navigation cancels known jobs immediately. The initial submission is allowed to
+return its job ID, with a bounded 15-second transport timeout, so a late obsolete
+submission can be cancelled. Polling remains abortable; stale responses cannot
+redraw disabled/disposed/changed views. Grid metadata participates in the client
+request key. Controller regressions verify cancellation of both known and late
+submissions; transport tests verify its timeout and displayed history guard.
+
+Full JVM `test shadowJar -x copyWebUI --offline` passes with 583 tests, zero
+failures/errors and seven optional skips (`/tmp/hict-alignment-lines-final-jvm.log`).
+Full WebUI build/types/regressions pass
+(`/tmp/hict-alignment-lines-qualified-web-02.log`); the known large-chunk warning
+remains. Geometry tests cover all operations/strands, one-base substitutions,
+nonuniform mappings, >2.5 Gb positions and invalid/bounded input. Profile tests
+cover the 64/65-BP boundary. Source checks reject inconsistent canonical CIGARs.
+
+`check_alignment_runs_browser.py` passes 12 real Chromium scenarios on fresh
+physical HDF5/FASTA data: all ten CT diagonals checked against an independent
+maximal-diagonal oracle, a substitution, short and larger-window indels, reverse
+complements, ambiguity/no-hit, exact vertices, requested further letter zoom,
+PNG/SVG/PDF, disable/resume, precise shared-bin fragments, reversal, undo/redo and
+scoped session restoration. Input checksums match independent source slices.
+Evidence: `/tmp/hict-alignment-qualified-browser/results.json`. Native bytes are
+unchanged and there are no page errors. The current map/figure screenshots were
+visually inspected. Standalone SVG and PDF were rendered independently; orange
+substitution bounds in PNG/PDF agree within one pixel in the inspected figure:
+`/tmp/hict-alignment-lines-browser-02/{alignment-lines.png,alignment-lines-svg.png,alignment-lines-pdf.png,export-color-bounds.json}`.
+The later UI-only changes add the request timeout and simplify the legend text;
+the exported line geometry remains the same.
+
+The existing measurement (12), sequence-view/export/session (17), independent
+selection (7), hidden/binless tracks (13) and feature-action (15) browser suites
+also pass on the qualified runtime, for 76 total checks without page errors.
+Evidence: `/tmp/hict-alignment-qualified-{repeat,view,selection,tracks,feature}-browser/results.json`.
+Immutable server SHA-256:
+`53f12b3e5282712bbb5b957a36ed6244e84344eb056578612f0b1dda591d9f70`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`6a8ab67db4be78a7464e0a68bc8911ae6965321b740b822a7b244e1b99a64d0f`.
+
+Short-seed matches are exploratory sequence comparisons, not significance/homology
+calls or an exhaustive alignment enumeration. Broader secondary/source/platform,
+accessibility, dense-window latency and final embedded-package qualification
+remain open. Plan files and protected initial changes remain untouched.
+
+## File destinations and frozen downloads — 2026-11-16
+
+The shared WebUI save service requests a browser destination synchronously from
+the click, separates confirmed/cancelled/download-started outcomes and propagates
+failed writes. Picker denial does not trigger an unwanted download. Browser
+handles remember successful destinations per purpose. Electron/Tauri persist
+separate purpose directories only after staged write/sync/close/rename succeeds.
+Sessions mark only the captured revision saved after confirmation; later edits
+stay dirty. Cancellation/failure/download fallback cannot release the close
+guard. Errors within that guard render inline. File → Open Examples and validated
+session reopening are available; input selectors retain server/purpose folder
+and file choices and require an explicit Load click.
+
+New real HTTP tests first exposed that export-priority dispatch bypassed the
+assembly history interceptor. FASTA/AGP now perform short revision-checked capture
+on the assembly queue, then materialize immutable records/layout on the export
+pool. Cancellation is 409 with retry guidance, never a successful empty file.
+Frozen-layout tests export the original interval after real exact cut/reversal
+and verify unchanged source bytes. Legacy clients without history headers remain
+supported. External FASTA mutation during a download is not newly qualified.
+
+Full JVM test/shadowJar checks pass with 585 tests, zero failures/errors and seven
+optional skips (`/tmp/hict-file-save-qualified-jvm.log`). Full WebUI checks pass
+(`/tmp/hict-file-save-final-web-02.log`), retaining the known large-chunk warning.
+Electron compilation passes (`/tmp/hict-file-save-electron-types.log`). Actual
+Electron IPC real-disk tests include typed-array offsets, separate remembered
+directories, cancellation, injected rename failure, old-file preservation and
+temporary-file cleanup (`/tmp/hict-file-save-native-destination.log`). The actual
+Tauri filesystem function is extracted, compiled and executed unchanged by
+`scripts/check-tauri-export.mjs` (`/tmp/hict-file-save-tauri-function.log`). Full
+Tauri compilation fails before source compilation: installed Rust 1.75 cannot
+parse Cargo lockfile v4; the project requires 1.88
+(`/tmp/hict-file-save-tauri.log`). This is an environment qualification limit,
+not a passing native-wrapper build.
+
+Ninety Chromium scenarios pass, with fresh physical disposable fixtures:
+
+- File workflow (14): `/tmp/hict-file-save-final-browser/results.json`.
+- Alignment (12): `/tmp/hict-file-save-alignment-browser/results.json`.
+- Feature actions (15): `/tmp/hict-file-save-feature-browser/results.json`.
+- Hidden/binless tracks (13): `/tmp/hict-file-save-tracks-browser/results.json`.
+- Sequence view/exports/session (17): `/tmp/hict-file-save-final-sequence_view-browser/results.json`.
+- Independent selections (7): `/tmp/hict-file-save-final-selection_modes-browser/results.json`.
+- FASTA measurement (12): `/tmp/hict-file-save-final-fasta_measurement-browser/results.json`.
+
+The new workflow checks cover real session JSON/restore, cancellation, denied
+picker, write-close failure, inline guard failure, readback/open action, newer
+edits during close, assembly and exact-region FASTA bytes, AGP, stale picker-delayed
+selection rejected with 409, three figure formats, download-only dirty guards,
+and distinct server map/FASTA folder/file memory. Native input bytes are unchanged.
+The expected stale-selection HTTP 409 console message is recorded explicitly;
+there are no unexpected page errors. Failure/fallback/remembered-file screenshots
+were visually inspected. Save-picker outcomes are controlled fixtures, not
+native dialogs. Other suites now use a controlled writable handle that emits real
+downloads; their output checks remain active. This intentionally models confirmed
+writes separately from the dedicated unconfirmed-browser-download scenarios.
+
+Immutable server SHA-256:
+`d325099dffc264de6f8d060e6e6f09a21bdf670fb19103b529c01984f69fb572`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`e291ad29fcbc438052a7d8c2be07058bc28972cca803a0d65febda164e9ac9e9`.
+The API documentation update after these runs describes the tested guards; it
+does not change the qualified Java implementation. Final embedded/package,
+native-dialog/platform, streaming/large-memory, all chooser routes, secondary
+sources, accessibility, restart and large-directory gates remain open. Plan files
+and protected initial changes remain untouched. See [file-destinations.md](file-destinations.md).
+
+## Browser streaming FASTA/AGP — 2026-11-16
+
+FASTA/AGP exports use fetch streaming when the selected destination supports a
+writable byte stream. Each disk write completes before the next network chunk is
+pulled; this path creates no assembly-sized ArrayBuffer or Blob. HTTP errors and
+unexpected response types cancel without opening a writer. Read/write/close
+failures cancel the source and abort the writer; destination memory advances only
+after confirmed close. The progress notice cancels preparation/transfer, then
+reports one journal outcome. The existing desktop/download-only path is explicit
+and remains buffered; large-file qualification for those adapters is pending.
+
+Focused tests transfer 128 MiB in 64 KiB chunks while asserting at most two chunks
+of source pull-ahead. They cover reader/open/write/close failure, blocked-read
+cancellation, released locks, unchanged destination memory, captured revision,
+cancelled legacy transport, and one notification outcome. Adapter tests verify
+raw streaming DTO/headers/signal and discard HTTP/unexpected-content responses
+without buffering. The UI initially exposed a rendering loop from reused toast
+IDs/manual dismissal and replacement in the installed vue-sonner version. The
+final implementation uses one promise-managed notice, with no manual replacement;
+focused tests reject those unsafe operations and real UI workflows pass.
+
+Full WebUI build/types/regressions pass (`/tmp/hict-stream-web-03.log`), retaining
+the known large-chunk warning. JVM test/shadowJar checks pass with 585 tests,
+zero failures/errors and seven optional skips (`/tmp/hict-stream-jvm.log`).
+Java production code is unchanged in this increment; the fixture now supports
+bounded larger inputs while retaining its default 4 kb behavior.
+
+`check_streaming_exports_browser.py` passes six checks using a real persistent
+Chromium private-filesystem writer: 512 Mb of independent deterministic IUPAC
+sequence exports to 518,400,010 FASTA bytes in 4,530 writes. Maximum observed
+chunk is 2 MiB. The chooser is substituted; the writer and direct HTTP transfer
+are real. The output is downloaded from the file handle and checked with an
+independent sequence hash. Cancelled and injected-failure transfers abort the
+real writer; independent readback hashes prove that each retained the previously
+saved output. Both source files remain unchanged. Saved/error notices were
+visually inspected. Evidence: `/tmp/hict-stream-browser-09/results.json` and its
+PNG/FASTA artifacts. This qualifies the transfer/writer integration, not an
+OS-native destination dialog. Failure injection occurs before a real write; it
+does not simulate every filesystem failure mode.
+
+The final run samples 247 animation frames and 58 trusted browser pointer-move
+events injected through CDP
+throughout preparation/transfer: frame p95 16.7 ms, DOM event acknowledgement p95
+13.2 ms. No page errors occur. Linux Ryzen 9 7900X (24 logical CPUs), 64 GB host
+memory, Playwright Chromium headless 131.0.6778.33, persistent local profile,
+1600×1100 viewport. This is a sparse synthetic-map transfer workload; dense maps,
+all tracks, desktop OS input dispatch, and the release soak remain separate gates.
+Natural sampled peaks, without periodic GC during the transfer:
+
+| Metric | Baseline bytes | Peak bytes | Increase bytes |
+|---|---:|---:|---:|
+| JavaScript heap | 7,581,048 | 8,685,940 | 1,104,892 |
+| Renderer RSS | 173,563,904 | 330,190,848 | 156,626,944 |
+| All owned Chromium processes RSS | 544,477,184 | 716,996,608 | 172,519,424 |
+
+The JavaScript metric excludes native buffers; total process RSS is therefore
+reported separately. Earlier upload-backed and incognito-OPFS measurements were
+not accepted as production memory evidence: artificial uploads allocate extra
+buffers, and incognito private files reside in memory. The final fixture uses
+persistent disk-backed storage and direct fetch without Playwright interception.
+A prior isolated persistent run also passes (`/tmp/hict-stream-browser-08`), with
+16.7 ms frame p95 and 12.2 ms input p95. These two runs are not an exhaustive
+scaling or hardware benchmark.
+
+The 14 existing file workflows pass:
+`/tmp/hict-stream-file-browser-03/results.json`. The existing sequence view (17),
+independent selection (7), FASTA measurement (12) and alignment (12) workflows
+also pass on the same final build:
+`/tmp/hict-stream-final-{sequence_view,selection_modes,fasta_measurement,alignment_runs}-browser/results.json`.
+The hidden/binless-track (13) and feature-edge (15) workflows also pass:
+`/tmp/hict-stream-final-{sequence_tracks,feature_edges}-browser/results.json`.
+That is all 90 existing browser scenarios plus the six large-transfer checks on
+the final build, with no unexpected page errors.
+
+Immutable server SHA-256:
+`4226a8a70c429756c552e9906cf9f23e6ec047597f3e9959dce316d86f20a7ba`.
+Separately served WebUI SHA-256 (sorted relative path/NUL/file bytes):
+`e647bd1fc4b1f1efdfde04b5bc79cc9530445d474e2abd4245c78e88b701bdec`.
+The server artifact contains the preceding embedded WebUI; these runs explicitly
+serve the new WebUI separately. Final embedded/platform qualification is pending.
+Plans, manuscript and protected initial changes remain untouched. P3 and the
+full production/publication release remain incomplete.
+
+## Electron native streaming and graceful quit — 2026-11-16
+
+The current Electron adapter sends only a guarded coordinate-export request through
+IPC: URL, JSON options, captured journal identity and operation ID. The main
+process validates trusted-local URLs/read endpoints, rejects redirects and
+unexpected content, opens the native destination chooser, and sequentially writes
+fetch chunks to a uniquely owned sibling file. It synchronizes/closes before
+rename and remembers a destination only after that commit. Native file bytes
+never cross renderer IPC. Legacy/Tauri/download adapters remain compatible and
+buffered; their genome-scale memory qualification is still pending.
+
+One transfer belongs to each window. Matching operation IDs permit cancellation;
+other windows/tokens cannot cancel it. Navigation, destruction and renderer loss
+abort owned work. Graceful quit waits for transfer cleanup before retrying quit;
+unanswered choosers own no file and cannot start I/O after cancellation. Window
+IDs are captured before destruction. Streamed results advertise no browser file
+readback; Blob-backed sessions keep that capability. Permission/quota failures
+have actionable messages, and preload errors omit IPC internals.
+
+Full WebUI checks pass (`/tmp/hict-native-stream-web-final.log`), including the real
+HTTP/filesystem service tests. Focused checks after the final native-only changes
+also pass: `/tmp/hict-native-stream-api-final.log`,
+`/tmp/hict-native-stream-unit-last.log`,
+`/tmp/hict-native-stream-legacy-last.log` and
+`/tmp/hict-native-stream-electron-qualified.log`. Tests transfer and independently hash
+128 MiB, validate frozen headers, reject stale/HTML/truncated/redirected responses,
+exercise cancellation before/after chooser completion, ownership, overlapping
+operations, failed replacement, shutdown during I/O and a pending chooser, and
+verify previous files/preferences and temporary-file cleanup. Native bridge tests
+assert request-only payloads, cancellation IDs, stream bypass and readable errors.
+JVM test/shadowJar checks pass with 585 tests, zero failures/errors and seven
+optional skips (`/tmp/hict-native-stream-jvm.log`). Java production code is unchanged.
+
+`check_native_coordinate_exports.py` passes nine checks using real Electron
+41.10.7 preload/IPC, the built Linux payload and actual GTK save/cancel dialogs on
+an owned Xvfb display. It verifies 512 Mb FASTA (518,400,010 output bytes), exact
+selected FASTA, AGP, chooser cancellation without a fetch, in-progress cancellation,
+a real filesystem permission failure, session cancellation/confirmed v4 save and
+readback restore, navigation cancellation and last-window close during staged I/O.
+The latter asserts exit code zero and proves that graceful quit leaves no owned staging file. Original
+FASTA/HDF5 input hashes remain unchanged; no page errors occur. Native dialogs and
+saved/error notices were visually inspected. Evidence:
+`/tmp/hict-native-coordinate-08/results.json`, `native-dialog.png`, `saved.png`,
+`failed.png`, native exports and `chosen/session.json`.
+
+A test-only forwarding proxy delivers actual JVM responses, throttles transfer
+for cancellation, and gates a response so directory permission can change after
+the chooser. It preserves journal and cancellation response headers. Earlier
+proxy omissions blocked session capture and generated unsafe-header warnings;
+those runs were not accepted as final evidence. No production CORS policy changed.
+The final run uses localhost to reach the IPv4-bound proxy, exercising the native
+fetch resolver. Renderer observation records zero coordinate-download requests.
+The exported sequence hash matches an independently generated IUPAC reference.
+Main-process RSS grows from 202,498,048 to 303,726,592 bytes while transferring
+518,400,010 bytes; this is sampled natural RSS on the same Ryzen 9 7900X/64 GB Linux
+host, not a dense-map latency or universal scaling benchmark. The driver uses a
+private X display, disables GPU and uses the payload's Linux no-sandbox flag.
+It verifies isolated preload/no renderer Node globals, not OS sandbox qualification.
+
+All 90 existing browser scenarios also pass on the final WebUI assets:
+`/tmp/hict-native-qualified-{sequence_view,selection_modes,fasta_measurement,alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-browser/results.json`.
+They retain their documented controlled writable-picker fixtures. The final browser build includes the HTTP-compatible random operation IDs.
+Native main/preload lifecycle and error reporting use the same compiled tree
+qualified by the payload acceptance. This adds nine genuine native-dialog workflows.
+
+Immutable server SHA-256:
+`404e9a29fe6e6bcbbdcee6bafab644539c49aa4d4c724a0a00eb209872260ab0`.
+WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding `dist/electron`):
+`32f370a33022c1df640e3faec0d96030ade579b6b16173458cbeb9d925f4fae4`.
+Compiled Electron tree SHA-256 (same method, rooted at `dist/electron`):
+`b976c790c8accce73a9f282dadadb3d2e758e020fcb1f898920ef6d55a9ea809`.
+Built payload: `/tmp/hict-native-stream-payload-04`; its manifest tree SHA-256 is
+`bbf7198733a664d9ff9b0c1f900718beabab5f3dc62c5ec5d147f11acb9a6e14`.
+The packaged main/preload/module match the compiled files; the existing builder
+copies the complete main directory. The online UI is served separately from the
+matching current WebUI assets. The JAR still embeds the preceding WebUI, so this
+is not final combined-SFX qualification.
+
+Tauri's Rust 1.88/WebKit SDK setup and streaming, download-only browser streaming,
+other advertised platforms, portals/Wayland, multi-cycle and dense-map performance,
+hard-crash/legacy-Blob shutdown, accessibility and final combined packages remain
+open. Static inspection also found that the packaged Electron fallback path needs
+separate offline-start qualification/fix (`fallbackFileUrl` assumes the development
+layout). P3 and the full publication release are not complete. Protected files,
+plans and manuscript remain untouched.
+
+
+## Packaged Electron offline recovery (2026-11-16)
+
+The packaged wrapper now serves its bundled public UI through a lazy owned
+127.0.0.1 HTTP listener when the configured page is unavailable. Both development
+and portable directory layouts resolve correctly, including paths with spaces.
+The payload includes root icons/notices as well as hashed assets. GET/HEAD public
+resources receive the existing CSP and no-store headers; HEAD releases its unread
+file body; canonical containment,
+blocked main/preload files and an exact Host check restrict serving. There is no
+API proxy. The server owns its listener before navigation, remembers a usable
+port for the profile, falls back to an owned ephemeral port on collision, and
+closes connections on quit. A collision or unwritable profile can change its
+storage origin; migration across such origins remains a qualification limit.
+
+Hosted navigation revalidates its entry response. Offline/HTTP-error loads return
+to a complete interface with a compact Reconnect notice. Concurrent retries share
+one operation; online pages cannot request recovery navigation. The existing
+session save/discard/cancel guard protects reconnection. Approved departure skips
+only the duplicate unload prompt for that exact history identity. Window loss,
+cancelled navigation and missing resources have focused lifecycle checks.
+
+Real runtime evidence changed the implementation: file-loaded ES modules fail in
+the packaged runtime with GrantFileProtocolExtraPrivileges disabled. A trial
+custom scheme rendered but the unchanged JVM CorsHandler rejected its origin
+with HTTP 403. Direct origin probes confirmed ordinary HTTP is accepted. Neither
+fuses, webSecurity, isolation, sandbox settings nor JVM CORS/binding were relaxed.
+A subsequent offline restart revealed Chromium reusing the hosted page from
+cache; entry-response revalidation fixes that observed case. Initial acceptance
+scripts also needed the existing alertdialog role and a window wait after async
+storage reset. Those failed runs are excluded from final acceptance.
+
+Checks: npm run build:web (including recovery/resource/port regressions) and
+npm run electron:compile pass. The existing bundle-size warning remains. The full
+JVM run in /tmp/hict-recovery-jvm.log passes: 585 tests, zero failures/errors,
+seven optional skips. Java production code is unchanged in this increment.
+
+Final packaged acceptance: /tmp/hict-recovery-ui-10/results.json has eight passing
+workflows: unassisted offline bootstrap with native preload/icons, refused retry,
+HTTP 503 without a loop, real API attachment/edit/cancel, approved departure
+without a duplicate dialog, restored hosted UI with recovery IPC denied there,
+offline restart after an online visit with retained preferences, and explicit
+reset with a 1024 px recovery notice. Page errors and unexpected dialogs are empty;
+the immutable HDF5 input hash is unchanged. Screenshots offline-start.png,
+reconnect-edits.png, reconnected.png and offline-1024.png were visually inspected.
+This qualifies the notice and edit prompt, not every existing compact-screen
+layout. The driver is scripts/check_electron_recovery.py, using a private X display
+and isolated profile on the same documented Linux host.
+
+Native transfer regression: /tmp/hict-recovery-native-03/results.json passes all
+nine real GTK workflows, including 518,400,010 FASTA bytes, exact selection/AGP,
+cancellation/failure, session readback and last-window cleanup/exit 0. Independent
+FASTA SHA-256 is 6a6897c500a89f7b643ff6ae37af34616e89e2d10205d4350cf56d27794cfb1c.
+Sampled main RSS is 197,595,136 to 297,312,256 bytes; no coordinate requests occur
+in the renderer. This remains a synthetic sparse-map transfer measurement.
+
+Final browser evidence: /tmp/hict-recovery-final-{sequence_view,selection_modes,
+fasta_measurement,alignment_runs,sequence_tracks,feature_edge_cuts,
+file_destinations}-browser/results.json. All 90 scenarios pass against the final
+WebUI assets with their documented controlled picker fixtures.
+
+Immutable test JAR SHA-256:
+c9b83af70c95730e400787841978c926f2e311172be7cd01ac9f9df77c9595c0.
+WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+db2e2aac985331611186c92e958e7ce58c009e629be46e4ff8c7ec4080e71ba8.
+Compiled Electron tree SHA-256 (same method rooted at dist/electron):
+dbfbd053fb55cd22fad3bac1b584725839653a499ccfe873e04db4bfb6099357.
+Payload /tmp/hict recovery payload 05, Electron 41.10.7, manifest tree SHA-256:
+6ba3bd6711a757718073f65faed02efb27245f59c19e85bb3a6242c7cef8fb33.
+The JAR embeds the preceding WebUI; these tests serve the final matching WebUI
+separately or from the copied payload, not from the JAR. Final combined-SFX,
+other platforms, unresponsive-server timing, Wayland/portals, accessibility,
+origin-conflict preference migration and the full publication gates remain open.
+Plans, protected files and manuscript remain untouched.
+
+
+## Separated tracks/sources and live map weights (2026-11-16)
+
+View → Tracks and layers now has keyboard-accessible 1D tracks and Sources and
+layers tabs. Add offers a file or map weights from either source. Track cards
+retain visibility/axis/color/name/order/removal controls; signal settings,
+background appearance and preparation are disclosures. The layer action opens
+and focuses the existing sidebar. File versus square-root coverage weights and
+known unavailability have explicit hints; unknown legacy provenance stays usable.
+See [the user guide](tracks-and-sources.md).
+
+CommittedTrackInput preserves focused name/range/log-base drafts across server
+refreshes, then reconciles the accepted value. LinearTrackManager rejects stale
+list responses and responses arriving after disposal. A real delayed backend
+snapshot verifies both draft retention and that an older list cannot revert a
+newer edit. Preparation polls only while its disclosure is open and stops on
+close/unmount, including when the initial request finishes late.
+
+Resize completion refreshes map/rulers/tracks after Vue commits the grid. Track
+frames use an inset outline, removing the two-pixel CSS scaling caused by borders.
+Mouse, keyboard, lost-window-focus cleanup and workspace shrink preserve bounded
+panel sizes. Workspace clamping runs in a coalesced animation frame, outside
+resize-observer delivery; its accessible maximum follows the workspace. At three panel sizes, bitmap dimensions equal their CSS surface and
+map-axis dimensions; dark corner/background and edge pixels contain no white
+strip. A later visual review caught a ResizeObserver-loop toast missed by console/page
+error collection. A capture-phase window-error probe now rejects this warning.
+The original one-size baseline did not reproduce the advisor's stripe;
+the final checks establish these tested geometries, not every display/driver.
+
+Normalization acceptance uncovered a separate scientific defect: native weight
+tracks could reuse precomputed values from the preceding normalization mode.
+The focused TrackWeightsNormalizationTest failed before the fix with five file
+weights instead of the four supported coverage weights. Map weights now bypass
+precompute/cache loading and read the resident active vectors. Their preparation
+control explains this and is disabled when only weights are loaded. The regression
+uses independent row sums [4,10,7,0,11], symmetric total 32 and the full-map
+preserving scale, with different stored vectors for primary and secondary. It
+checks file → coverage → file, manual precompute, missing zero-coverage support,
+both sources and identical input bytes. Existing sequence-grid weight oracles
+continue to pass. Dense-map performance remains a release gate.
+
+Full ./gradlew test shadowJar -x copyWebUI --offline passes: 586 tests, zero
+failures/errors, seven optional skips (/tmp/hict-tracks-qualified-jvm.log).
+The focused before/after logs are /tmp/hict-tracks-weights-{before,after}.log.
+npm run build:web passes (/tmp/hict-tracks-final-observer-web.log), retaining the known
+large-chunk warning. Python acceptance drivers compile successfully.
+
+Final Chromium evidence: /tmp/hict-tracks-ui-12/results.json has 13 manager,
+source, keyboard, resize, delayed-response, normalization and capability cases.
+Its controls/results.json adds six numeric/import/background/preparation/error
+cases, including [2,3,4,5,6] file weights and an independently checked BED feature.
+Source HDF5 hashes are unchanged; normal page-error and capture-phase window-error lists are empty. Visual review
+covers file import, both tabs at 1440/1024/800 px, dark resized panels, a shrunk
+800 px workspace, and coverage-source labels/map. This is a desktop Chromium
+DPR-1 qualification on the same declared Linux host, using disposable fixtures.
+
+/tmp/hict-tracks-source-regressions-06/{secondary-primary,secondary-owner,
+failure-reporting,source-capabilities}/results.json adds 5+5+6+5 cases: exact
+edited replacement/cancellation under both assembly authorities, one useful
+message per injected failure, and stored-resolution/source capability checks.
+The failure fixture now uses the same controlled writable chooser as the other
+browser checks. Capability checks use the native source descriptor rather than
+the virtual 1 bp display descriptor. --legacy-file preserves the existing real-map
+default; this run supplies a small physical clone with provenance attributes
+removed. A modern file explicitly marked ABSENT is not an unknown legacy file.
+Intentional HTTP/console failures are expected only in the failure tests.
+
+All 90 established scenarios also pass on this exact JVM/WebUI pair:
+/tmp/hict-tracks-verified-{sequence_view,selection_modes,fasta_measurement,
+alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-browser/results.json.
+Together these are 130 passing browser cases; their documented picker/probe
+substitutions remain in force. Development runs with incomplete fixtures,
+incorrect pixel expectations or timing assumptions are not final evidence.
+
+Test JAR hict_server-2.0.28-5e7edd4-webui_a1839b7-fat.jar SHA-256:
+dff6d37370a077b375d071cc7779d25ed7728db127e3e83018e50b3bc444e090.
+WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+8ae741465780626ea725b34adfb2ee8987e5f579ec3b68a62411332aba18acb3.
+The JAR embeds the preceding WebUI; acceptance serves the matching new assets
+separately. Final combined-SFX, real large-file/format and platform matrices,
+retina/touch/accessibility, narrow main-workspace layout, navigation latency and
+mixed soak remain open. At 800 px after the sidebar was explicitly opened, its
+controls remain cropped;
+that main-workspace responsiveness issue is a follow-up. The manager itself fits
+that width. P4 and the publication release remain in progress. Protected
+files/plans are untouched.
+
+## Responsive navigation and sidebar — 2026-11-16
+
+Resolves the main-workspace clipping follow-up in the preceding tracks record.
+With two long map names and linked FASTA, the old navigation had a 1307 px
+scroll width at 800/900/1024 px. Fixed-width signal selectors stretched the
+sidebar's implicit grid column past its right edge. At 640 px the stacked
+sidebar shrank to 15 px high. Navigation now wraps metadata, preserves full
+filenames in titles, keeps Jobs available, and positions/scrolls dropdowns within
+the viewport. This includes the separately rendered Selection dropdown. Signal
+controls shrink or wrap; the narrow stacked sidebar receives its content height
+and a vertical collapse indicator. Explicit saved panel choices remain intact.
+Dev, the wizard, OSD and backend bind/CORS behavior are preserved.
+
+`npm run build:web` passes on the final sources:
+`/tmp/hict-responsive-web-03.log`. The existing large-chunk warning remains.
+There are no Java runtime changes; the unchanged backend's full 586-test result
+(zero failures/errors, seven optional skips) is recorded in the preceding section.
+The new Python acceptance driver was formatted with an identical AST and compiles.
+
+Final Chromium evidence, on disposable data at DPR 1 on the same Linux host:
+
+- `/tmp/hict-responsive-ui-06/results.json`: 15 scenarios. Six viewport sizes,
+  1440x1000, 1280x900, 1024x768, 900x700, 800x600 and 640x800, have no horizontal
+  root overflow or out-of-bounds sidebar controls. All seven menus fit and their
+  last enabled item can be reached; Escape closes each. Primary, secondary,
+  FASTA and annotation data are present. Actual range inputs/Apply change sampled
+  matrix pixels while the independent 25-cell raw-contact oracle stays identical.
+  Automatic alignment is disabled through its View control for this pixel test
+  so alignment lines cannot mask the matrix color. Explicit panel show/hide
+  survives viewport changes/reload; a fresh narrow context starts collapsed and
+  can open its empty panel. Source hashes are unchanged. Page and capture-phase
+  window errors are empty across reloads. Screenshots reviewed include the
+  800 px workspace, both 640 px Selection/Dev menus and the empty narrow view.
+- `/tmp/hict-responsive-tracks-02/results.json` and `controls/results.json`:
+  13 manager/source/resize/live-weight cases plus six track-control scenarios.
+- `/tmp/hict-responsive-source-regressions-02/{secondary-primary,secondary-owner,
+  failure-reporting,source-capabilities}/results.json`: 5+5+6+5 scenarios. The
+  capability run uses the disposable legacy-provenance clone described above.
+- `/tmp/hict-responsive-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-02/results.json`:
+  all 90 established sequence, selection, alignment, exact-cut and save scenarios.
+
+Together these are 145 passing scenarios. The established controlled-chooser and
+benchmark setup substitutions remain in force; intentional injected console/HTTP
+failures are expected only in their failure scenarios. Early runs with disabled
+menu-item hit tests, an alignment-covered sample, an implicit rather than explicit
+panel choice, and an interrupted wrapper are diagnostic runs, not acceptance.
+The final groups completed with successful process exits.
+
+Backend JAR `hict_server-2.0.28-5e7edd4-webui_a1839b7-fat.jar` SHA-256:
+`dff6d37370a077b375d071cc7779d25ed7728db127e3e83018e50b3bc444e090`.
+Final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+`0f55a55520de2d76643b96a2ebf8d8981b688dee7934c70bc19231cd40f77fef`.
+The JAR embeds the preceding WebUI; this acceptance serves the matching final
+assets separately. Final combined-SFX/native packages, other platforms, retina,
+touch, broader accessibility, real dense files, navigation latency and mixed soak
+remain pending. P4 and the full publication release remain in progress. Protected
+files/plans are untouched. Nothing was pushed, merged or tagged.
+
+## Coverage explanation and independent source totals — 2026-11-16
+
+Advisor item 20 now has a whole-map row/column-sum definition with the diagonal
+counted once, a sentence explaining when to use coverage normalization, and an
+optional keyboard-accessible formula disclosure. It explains the single
+source/resolution scale factor, both symmetric halves in the matrix total,
+inter-contig contacts, zero-coverage support and additional signal transforms.
+The short definition remains visible only with square-root coverage selected;
+the formula starts collapsed. docs/coverage-normalization.md adds a worked
+2x2 example and explains repeated source references after exact cuts.
+
+The existing track acceptance now replaces a weak inequality check with an
+independent numerical oracle. Enumerated raw rows yield [4,10,7,0,11], total 32
+and scale C=8.264455657238736. It verifies the four valid weight-track values to
+1e-12 relative tolerance and all 25 weighted matrix values for both PRIMARY and
+SECONDARY to 1e-6. Each normalized Float32 matrix sums to 32.00000047683716,
+within that tolerance of 32. Both raw matrices and source hashes are unchanged.
+The disclosure opens/closes using Enter and fits 1440/800 px screenshots.
+
+Final evidence: /tmp/hict-coverage-help-tracks-02/results.json records 13 manager,
+source, resize and coverage scenarios, its coverageOracle contains the numerical
+values, and controls/results.json adds six existing track scenarios.
+/tmp/hict-coverage-help-responsive-02/results.json adds 15 window/menu/range/panel
+scenarios at six sizes down to 640 px. All 34 pass with successful process exits;
+page and capture-phase window-error lists are empty. Final screenshots were
+reviewed, including coverage-explanation-800.png. Controlled-chooser and benchmark
+setup substitutions remain as described in the preceding records.
+
+npm run build:web passes (/tmp/hict-coverage-help-web-02.log), with the existing
+large-chunk warning. Prettier check and Python compile pass. A formatting-only
+rebuild changed the WebUI byte hash, so both browser suites were rerun on the final
+assets; the -01 runs are preliminary. There are no Java runtime changes. The
+unchanged backend's full 586-test result (zero failures/errors, seven optional
+skips) remains recorded in the tracks section; it was not rerun for help text.
+
+Test backend JAR hict_server-2.0.28-5e7edd4-webui_a1839b7-fat.jar SHA-256:
+dff6d37370a077b375d071cc7779d25ed7728db127e3e83018e50b3bc444e090.
+Final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+eaf7bf9ef352a27c089d7339eaed6c926f86cc5d3563e16433bfc17bf21b0c3b.
+The JAR embeds the preceding interface; browser acceptance serves the final
+matching assets separately. Combined packages, platforms and broader release
+qualification remain pending. Protected files/plans remain untouched.
+
+P6 audit also establishes the next work, rather than treating existing controls
+as completion. /tmp/hict-oe-range-repro-01/results.json reproduces a real UI
+round trip: set O/E range to [0.25,4], switch to Observed, switch back to O/E,
+and read [0.5,2] with no page errors. VisualizationManager.setSignalDisplayMode
+contains that reset. TileHandlersHolder bypasses the enabled graph for non-observed
+modes, and TileVisualizationProcessor uses a dedicated O/E color path; therefore
+ordinary sidebar color pickers alone do not satisfy advisor item 19. The current
+inline range refresh also waits 250 ms and only aggregates loaded tile limits;
+it does not satisfy the requested viewport histogram, levels/midpoint or 150 ms
+pan gate (item 22). Those items remain pending. P6 and the full goal stay active.
+Nothing was pushed, merged or tagged.
+
+## O/E palettes and live range controls — 2026-11-16
+
+Advisor item 19 now has functioning O/E endpoint pickers, alpha, separate
+Expected/O/E palette memory across mode changes and browser reloads, and active
+palette/session restoration. Default O/E colors are explicitly blue/red with
+neutral white at 1 and limits 0.5/2. The shared ObservedExpectedPalette mapper is
+also available to an Observed-view graph's colormap node as
+mode OBSERVED_OVER_EXPECTED. It colors an already-computed ratio signal, honors
+literal or connected limits, and preserves that mode/input across editor Apply
+and sidebar edits. API documentation describes this contract. The guide is
+[observed-expected-palettes.md](observed-expected-palettes.md).
+
+This is a partial P6 increment. The custom graph still controls Observed;
+Expected/O/E retain separate primary-map processing. Direct editing of the active
+Show O/E palette through a projected pipeline graph, named O/E palette presets
+and the inline viewport histogram/levels/midpoint remain pending. No change was
+made to expected-profile fitting: its existing positive-finite-signal policy,
+scaffold/contig domains, native-bin distances and shared-reference weights remain.
+Older sessions now honor their stored endpoint colors, which the previous O/E
+renderer ignored. The guide states this visible behavior change.
+
+Real acceptance exposed two slider bugs. With an upper threshold outside the
+automatic domain, dragging shrank the computed domain on each move: a 70% drag
+from a selected 0–11 range landed at 2.4016386594 rather than about 7.7. Both limits
+are now captured before pointer/keyboard adjustment. Changing source, target or
+display mode starts its own domain; loaded-range and Focus actions retain their
+explicit behavior. The legacy signal-controls test now chooses the native grid
+for its loaded-tile limits, since base-grid images deliberately omit native-cell
+statistics. This does not qualify base-grid viewport histogram support.
+
+The second bug suppressed automatic publication: store round trips set the
+hydration guard even when local values/colors already matched. Synchronization
+now runs only when values differ, so ordinary handle changes publish after the
+existing debounce and reload pixels without pressing Apply. O/E handles stay on
+opposite sides of neutral 1; invalid typed ranges receive a useful message. The
+rail marks neutral white at the corresponding slider position.
+
+Full ./gradlew test shadowJar -x copyWebUI --offline passes: 588 tests, zero
+failures/errors, seven optional skips (/tmp/hict-oe-full-jvm-02.log). New numerical
+regressions independently check asymmetric logarithmic bounds, half-strength
+colors, exact RGBA endpoints, neutral 1, measured zero, undefined/negative ratios,
+connected limits and pipeline serialization. Existing default palette expectations
+now explicitly select the blue/red endpoints; custom RGBA is tested separately.
+npm run build:web passes (/tmp/hict-oe-web-06.log), with the existing large-chunk
+warning. Storage tests cover fresh realms, malformed preferences and a failed write
+with an older disk value. AST-preserving formatting and Python compile pass.
+
+Final Chromium evidence, DPR 1 on the same Linux host, disposable data:
+
+- /tmp/hict-oe-palette-ui-10/results.json: six focused cases. Actual picker actions
+  change tile RGBA and preserve the Observed graph; Expected/O/E retain independent
+  ranges; reload and saved-session restore retain chosen colors, limits and pixels;
+  keyboard adjustment automatically changes both committed limits and pixels;
+  ratio nodes survive the real editor Apply/close and a sidebar edit. The active
+  fitting profile determines the positive ratio used by the color oracle; it is
+  not assumed that the highest cell reaches the chosen color limit. Undefined
+  masking and exact endpoint/interpolation values also have independent JVM tests.
+  Source hashes, page-error and capture-phase window-error checks pass across reloads.
+- Its display_mode_roundtrip/results.json adds 12 cases covering disabled graphs,
+  split/overlay identity sources, unchanged Observed graphs/secondary pixels,
+  sessions and rejected publication. Its signal_controls/results.json adds seven
+  signal/drag/domain/log/scaling/source/atomic-failure/color cases. Each baseline
+  suite owns an independent backend; the focused suite owns another. Apply is
+  acknowledged through the actual API commit rather than a toast hidden by a modal.
+- /tmp/hict-oe-tracks-02/results.json and controls/results.json add 13+6 cases,
+  including independent coverage totals, guarded drafts, resized canvas pixels,
+  both source weight modes and source capability hints.
+- /tmp/hict-oe-responsive-02/results.json adds 15 cases at six widths down to 640 px.
+- /tmp/hict-oe-regression-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-03/results.json
+  adds all 90 established scientific/selection/sequence/export/save scenarios.
+
+Together these are 149 passing browser scenarios with successful process exits.
+Intentional injected console/HTTP failures are expected only in their failure
+cases. Existing benchmark setup and controlled-chooser substitutions remain.
+Visual review includes the custom translucent O/E map/rail and ratio node editor.
+Diagnostic -01 through -09 runs include the reproduced drag/live bugs and corrected
+fixture, selector, ratio-endpoint and toast expectations; they are not final gates.
+
+Backend JAR hict_server-2.0.31-f08ec1b-webui_293038a-fat.jar SHA-256:
+85907de031ac5b4f38c3f1d43f2843f8adee22e1604d5dc14566a53616775b21.
+Final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+0c076eec9350723b76f7e4de7df15e5dc911a82d013ba7a9b55be89ddcc1c886.
+The JAR embeds the preceding WebUI; acceptance serves the matching final assets
+separately. Combined SFX/native packages, other platforms, dense-map latency,
+retina/touch/accessibility, custom O/E figure-output matrix and mixed soak remain
+pending. P6 and the full publication release stay in progress. Protected
+files/plans remain untouched. Nothing was pushed, merged or tagged.
+
+
+## Active primary O/E editor acceptance
+
+The active primary O/E editor is separate from the Observed graph and uses the
+same named presets as the sidebar. It preserves the exact Observed graph JSON,
+all non-colormap processing options, secondary selection and nontransparent
+secondary tile pixels. Updates serialize and coalesce superseded choices; injected
+failure supports retry without committing invalid values. Palette import/export
+uses a distinct PRIMARY_OE settings schema and the shared destination workflow.
+Preview return reloads sidebar changes and reconciles display-mode changes.
+
+Final npm run build:web passes (/tmp/hict-oe-editor-web-10.log), including TypeScript
+and all existing Node checks; only the existing large-chunk warning remains.
+Changed Vue/TS formatting, Python compilation and git diff --check pass. No JVM
+runtime changes were made; the preceding full 588-test JVM run (zero failures or
+errors, seven optional skips, /tmp/hict-oe-full-jvm-02.log) remains the backend
+baseline, rather than a claimed new run.
+
+Final Chromium evidence on the frozen build, DPR 1, disposable fixture copies:
+
+- /tmp/hict-oe-editor-ui-08/results.json: 11 focused cases. Its independent
+  display_mode_roundtrip and signal_controls baselines add 12 and seven cases.
+  /tmp/hict-oe-editor-ui-10/results.json repeats the 11 focused cases with explicit
+  equality of all non-colormap processing options. Capture-phase window errors
+  and page errors are empty, source hashes unchanged. Cases cover visible overlay
+  isolation, presets and actual RGBA endpoints, keyboard tabs, compact dimensions,
+  Preview/sidebar reconciliation, palette export/reset/import, delayed writes
+  (held 6 → queued 8 → latest 4 publishes only 6 and 4), injected 503/retry,
+  invalid-draft close and rejection outside O/E mode.
+- /tmp/hict-oe-observed-existing-02/browser/results.json: 12 existing Observed
+  editor cases, including import/export, inspector, layout, Preview, stale cache,
+  delayed thresholds, branch pixels, swaps, presets and reset. Source.json confirms
+  an unchanged physical 154,317,488-byte map copy, SHA-256
+  8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317.
+  The legacy driver now uses the same controlled writable destination as other
+  browser save checks and records capture-phase window errors across reloads.
+- /tmp/hict-oe-editor-tracks-03/results.json and controls/results.json: 13+8
+  track/source, guarded editing, resized canvas and signal-control cases.
+- /tmp/hict-oe-editor-responsive-03/results.json: 15 cases down to 640 px.
+- /tmp/hict-oe-editor-regression-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-02/results.json:
+  all 90 established sequence, selection, scientific cut and save scenarios.
+
+These are 168 passing scenarios with successful process exits, plus the focused
+11-case rerun, counted separately. Expected injected HTTP/console failures remain
+confined to their failure cases. Visual inspection covers active-oe-editor.png,
+active-oe-editor-800.png and active-oe-editor-640.png in the focused output.
+Diagnostic earlier runs include corrected fixture/route/accessible-name setup and
+the reproduced stale-Preview palette; they are not acceptance runs. Tracks -02,
+responsive -02 and focused -09 could not bind sockets inside the sandbox and were
+rerun successfully with local-server permission as -03, -03 and -10 respectively.
+
+Backend JAR hict_server-2.0.31-f08ec1b-webui_293038a-fat.jar SHA-256:
+85907de031ac5b4f38c3f1d43f2843f8adee22e1604d5dc14566a53616775b21.
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+c007a136a5438951a41d595419915e5f6fc4e0ba65bd68f828f827a9a6fdb3e6.
+Acceptance serves these assets separately from the JAR's embedded preceding UI.
+Combined SFX/native packages, other platforms, dense-map latency, retina/touch,
+full accessibility, figure-output matrix and mixed soak remain unqualified.
+Viewport histogram/levels and the remaining advisor/release/publication gates are
+still pending. Protected plans/files are unchanged. Nothing pushed, merged or tagged.
+
+
+## Inline viewport histogram, fitting and missing O/E diagnostics
+
+Implemented a 64-bin inline curve inside SignalRangeControl with aligned threshold
+marks, exact-sample percentile fitting, source/input selection, bounded querying,
+cancellation and failed-refresh Retry. Vertical square-root count scaling and
+bounded Catmull–Rom smoothing are drawing aids only. Out-of-axis samples are counted
+separately. A 2-D stratum grid replaces flattened sampling, which could select only
+one column on square matrices. Interactive previews retain at most 65,536 cells
+in 16 blocks of 64×64 with four concurrent queries. Existing detailed/1-D inspectors
+retain their previous default block sizes and sequential I/O.
+
+TRADITIONAL_NORMALIZED numeric queries use the renderer's missing-O/E mask. Supported
+zero and missing expected support are distinct (NaN in binary, null in JSON).
+OpenAPI documents nullable signals, BINS response units and matching expected-profile
+reuse. Legacy internal finite normalization remains available. A real-fixture JVM
+regression compares within-domain signals, zeros, missing cross-domain support and
+image alpha. O/E fitted limits use positive percentiles with 0.5/2 fallbacks where
+samples do not supply a side of neutral 1. An ordinary empty viewport fits 0–1,
+keeping zero at the lower color instead of inventing midrange contrast.
+
+A diagnostic cold pan took 558.6 ms (/tmp/hict-inline-hist-ui-10); the next pans were
+47.4 and 31.1 ms. Traced repeat -11 showed matrix request elapsed times dominated
+by browser-side stalls before transmission during tile loading (e.g. ~35 ms before
+send versus ~2 ms to first response); tile requests also queued before transmission.
+This indicates HTTP/1 connection pressure, though it does not prove the entire
+outlier's cause. OpenLayers now budgets three image loads for the main map and
+one for the minimap. It retains queue priority and existing PNG/binary cancellation
+semantics while reserving connection capacity for interactive requests. No new
+transport or server-priority bypass was introduced. Final independent cold runs
+below verify a peak of four actual tile transfers and the 150 ms fixture gates.
+
+npm run build:web passes (/tmp/hict-inline-hist-web-08.log), including all TypeScript
+and Node suites, with the existing large-chunk warning. Numerical checks cover exact
+quantiles, flat/zero signals, signed/zero/missing/outside bins, logarithmic axis
+binning, bounded spline controls, 2-D sample coverage and query/concurrency/memory
+bounds. Formatting, Python compile and diff checks pass. Full ./gradlew test shadowJar
+-x copyWebUI --offline passes: 589 tests, zero failures/errors, seven optional skips
+(/tmp/hict-inline-hist-jvm-full-03.log), including the corrected API resource schema.
+
+Final Chromium evidence, frozen UI/JAR, Linux DPR 1, disposable copies:
+
+- /tmp/hict-inline-hist-ui-14/results.json: 13 focused cases. Known 5×5 contacts
+  yield 25 finite cells/19 zeros. O/E yields 13 finite ratios/7 measured zeros and
+  excludes 12 unsupported cells; independent expected values include 1/6 and 0.6.
+  Numeric JSON distinguishes null from zero, and binary-driven curve counts agree.
+  Fit publishes limits and changes tile pixels while preserving contacts. Secondary
+  custom ×3 fitting reaches 33 with Primary graph/pixels unchanged. At 800×600 and
+  640×800 the chart/actions fit. Larger viewports explicitly sample 65,536 cells;
+  panning changes actual query windows. Empty fitting preserves zero-colored pixels.
+  Injected 503 clears stale data, disables Fit, preserves graph/options and recovers
+  through Retry. Sources and unexpected page/console-error checks pass.
+- The independent fresh-server repeat /tmp/hict-inline-hist-ui-15/results.json passes
+  the same 13 cases. -14 pan-latency.json: 8.4, 21.8, 17.1, 18.7 ms; its sampled
+  counterpart: 29.7, 28.9, 31.3 ms. -15: 10.8, 15.3, 15.6, 15.5 ms and 25.5, 28.0,
+  26.6 ms. Both assert the 150 ms bound and measure peakTileTransfers=4. Timing,
+  browser long-task and request traces are retained. These are isolated synthetic
+  fixture claims, not dense production-map or packaged-build qualification. The
+  tiny 17 bp source always fits at permitted zoom; varying cropped windows are
+  proved separately with the larger fixture.
+- /tmp/hict-inline-hist-oe-04/results.json and its display_mode_roundtrip and
+  signal_controls directories: 11+12+7 palette, processing, session, graph, Secondary,
+  Preview, delayed-write, drag and atomic-failure cases. Empty capture-phase window
+  errors across reloads are also checked by the O/E driver.
+- /tmp/hict-inline-hist-responsive-04/results.json: 15 responsive/navigation/control
+  cases. /tmp/hict-inline-hist-tracks-04/results.json and controls/results.json:
+  13+8 track/source/signal/resize cases.
+- /tmp/hict-inline-hist-regression-{sequence_view,selection_modes,fasta_measurement,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-04/results.json:
+  all 90 established sequence, selection, scientific cut and save cases.
+- /tmp/hict-inline-hist-observed-04/browser/results.json: 12 Observed-editor cases.
+  /tmp/hict-inline-hist-legacy-04/browser/results.json: four detailed histogram
+  row/column/scalar, log/rebin/no-extra-I/O, mobile and cancel/retry cases. The detailed
+  driver uses the established controlled writable chooser. Both physical 154,317,488
+  byte real-map copies stay unchanged, SHA-256
+  8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317.
+
+Together: 185 passing browser scenarios with successful process exits. The
+independent 13-case focused repeat is counted separately. Visual review covers the inline O/E chart at 640 px,
+desktop thresholds and sampled captions. Earlier diagnostics corrected a debounced
+write wait, tooltip integer formatting, tiny-map full-extent assumption and the
+O/E/empty-region fitting policies. Initial Vite builds could not spawn Git inside
+the sandbox; permitted builds passed. Injected 503 console failures are expected
+only in that failure case.
+
+A separate existing normalization race appeared in -13: a user-entered Upper=100
+could be replaced by 11 when the preceding normalization refit finished. The focused
+fixture now awaits the real policy/refit promise, acknowledges and verifies its
+initial 100 commit before testing Fit. It does not qualify rapid edits during a
+refit. Source-scoped serialization/coalescing and protection of newer user drafts
+from refit/hydration remain mandatory release work, recorded in the progress ledger.
+
+Final development JAR hict_server-2.0.33-1f68b42-webui_0a1e9fd-fat.jar SHA-256:
+64fd988b0bddf228f2197ecdf72f2b20c1af69ea0746fbc5d6353defc367a429.
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+1fc967cb6fae8b6f9845884ff1ef8ae15f10d2126f21ecdbd3be3e20490da318.
+Acceptance serves these assets separately from the JAR's preceding embedded UI.
+Earlier code-equivalent JAR 974b9400… precedes the nullable/BINS schema correction.
+Combined SFX/native packages, other platforms, dense-map latency/soak, retina/touch,
+full accessibility and figure-output qualification remain pending. Draggable color
+midpoint/gamma is not delivered; O/E neutral must remain 1. P6 and the overall goal
+remain active. Protected plans/files are unchanged. Nothing pushed, merged or tagged.
+
+## Visualization transaction and normalization draft regression
+
+WebUI commit `b994994`; matching version
+`2.0.35-7909e72-webui_b994994`.
+
+The committed preceding WebUI reproduced the rapid-edit defect in
+`/tmp/hict-viz-transactions-red-01`: choosing normalization then entering Log2 and
+Upper=100 ended at Linear/11. The final implementation records field revisions,
+captures source/target/mode, serializes mutations, coalesces obsolete queued
+applications and merges pending fields over fresh server state. Manual palette
+edits cancel automatic refitting; processing-only edits defer it until committed.
+Fresh reads are generation guarded. Presets, display-mode changes, session capture
+and opening the graph editor wait behind pending visualization changes. A failed
+graph read cannot be interpreted as a disabled pipeline. Failed writes retain the
+draft for retry without replacing the last committed graph/map.
+
+Final WebUI build: `/tmp/hict-viz-transactions-web-10.log`, including type checking,
+all existing numerical/DTO/streaming checks and new field-revision/projection
+checks. Explicit Prettier checks pass for all 11 changed/new WebUI files; the new
+Python browser driver passes Black checking. No JVM runtime source changed; the
+preceding 589 tests, zero failures/errors and seven optional skips remain the JVM
+baseline (`/tmp/hict-inline-hist-jvm-full-03.log`), not a new execution.
+
+Final Chromium runs, all successful process exits:
+
+- `/tmp/hict-viz-transactions-ui-07/results.json`: 16 new delayed-normalization,
+  transform/range, source switching, coalescing, stale-read, failed-read/write,
+  session, mode, source/global preset and editor-opening cases. Actual backend
+  options/graphs, numeric inputs, map pixels and saved session are asserted.
+- `/tmp/hict-viz-transactions-oe-03/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 existing palette/mode/signal cases.
+- `/tmp/hict-viz-transactions-responsive-01/results.json`: 15 responsive cases.
+  `/tmp/hict-viz-transactions-tracks-01/{results.json,controls/results.json}`:
+  13+8 tracks/source/control cases.
+- `/tmp/hict-viz-transactions-regression-{sequence_view,selection_modes,
+  alignment_runs,sequence_tracks,feature_edge_cuts,file_destinations}-01/results.json`
+  plus `/tmp/hict-viz-transactions-regression-fasta_measurement-02/results.json`:
+  90 existing sequence, selection, exact-cut and file-destination cases.
+- `/tmp/hict-viz-transactions-observed-02/browser/results.json`: 12 existing
+  Observed graph-editor cases. `/tmp/hict-viz-transactions-legacy-01/browser/results.json`:
+  four detailed histogram cases. Both 154,317,488 byte physical real-map copies
+  remain unchanged, SHA-256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- `/tmp/hict-viz-transactions-hist-01/results.json`: 13 inline histogram cases,
+  including unchanged contact hashes, O/E missing-versus-zero, actual fit pixels,
+  sampling limits and network-image peak four. Isolated fixture pan acknowledgements
+  are 16.4–21.1 ms; sampled pans 21.6–25.2 ms, below the 150 ms fixture gate.
+
+Together: 201 passing final-build browser scenarios. The first long scientific
+wrapper exited 143 during FASTA measurement; that incomplete run is excluded and
+its standalone -02 rerun passed all 12. Earlier iterations exposed and corrected
+an inherited Primary weight policy mislabeled on Secondary, Vue-proxy identity
+comparison in refit ownership, and a rejected mode request leaving an optimistic
+header while Secondary was selected. The existing inactive-O/E guard message is
+preserved. Intermediate builds/runs are diagnostic, not final acceptance. Expected
+503 console errors are allowed only in the explicitly injected failure cases;
+final capture-phase window errors are empty. Final screenshot review covers the
+16-case driver's desktop/range/failure captures and 640 px responsive Help menu.
+
+Frozen final WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding
+dist/electron): `da24080446d6c179614ab8842abd7caf182faec9b83ca0528fc993a7725ba375`.
+Development backend `hict_server-2.0.33-1f68b42-webui_0a1e9fd-fat.jar` SHA-256:
+`64fd988b0bddf228f2197ecdf72f2b20c1af69ea0746fbc5d6353defc367a429`.
+Browser acceptance serves the frozen new assets separately from the JAR's older
+embedded interface. This does not qualify a combined SFX/native package. Shared
+FILE/coverage vector selection remains global; arbitrary graph-editor publication
+and local preset track/background styling are not all moved into this queue.
+Draggable midpoint/gamma, derived-view exact-scan applicability, broader graph/NaN
+provenance, dense-map/soak/accessibility and release/publication gates remain open.
+All protected plans/owner files remain unchanged. Nothing pushed, merged or tagged.
+
+## Whole-resolution Expected/O/E statistics
+
+WebUI commit `9aea0ec`; matching version `2.0.36-5381e0b-webui_9aea0ec`.
+
+`Scan whole map` previously sent the Observed colormap expression in every display
+mode, and `/matrix/statistics` forced PIPELINE_SIGNAL. The endpoint now accepts
+TRADITIONAL_NORMALIZED for the primary display signal, without an expression.
+Its default remains PIPELINE_SIGNAL. In a derived view, an independent, immutable
+whole-resolution expected profile is fitted in 512 × 512 blocks and reused across
+all scan blocks. A single-entry profile cache is keyed by server revision and
+resolution and does not replace the viewport cache. Thread interruption and tile
+generation checks bound cancellation to a block during fitting. Matrix storage is
+block-bounded; the profile grows with distance bins. Finite counts include supported
+zeros and exclude missing O/E support. Counts remain display cells, including
+repeated source-bin references after cuts, not independent physical contacts.
+
+The sidebar captures display mode/expression in the scan key, waits for processing
+drafts, guards metadata and block responses, offers Cancel, and retains completed
+limits during pan at the same resolution. Changing signal context cancels an active
+scan. Derived limits are explicitly labeled whole-map; they are independent of the
+viewport profile and do not apply thresholds or graph changes. The irrelevant
+Observed loaded-tile action and identity percentage scale are not substituted for
+the active primary derived signal. API schema and user guidance document the scope.
+
+Evidence:
+
+- `/tmp/hict-exact-derived-red-01.log`: final UI against the preceding backend
+  reproduces Expected max 8 instead of 5. This is an intentional failing diagnostic.
+- `/tmp/hict-exact-derived-jvm-focused-02.log`: new HTTP regression passes on a
+  513-bin source with diagonal contacts 2 and 8 and one distance-512 contact 4.
+  Across four partial/full blocks, Expected max is 5 and finite count 263169;
+  O/E max is 1.6 and finite count 515. The deliberately different viewport fit
+  remains the same object, source bytes stay unchanged, the legacy constant graph
+  expression still yields 99, ambiguous requests are rejected and obsolete
+  revisions return 409. The first attempt lacked the test server's initial
+  visualization-options fixture; corrected setup passes without changing assertions.
+- `/tmp/hict-exact-derived-jvm-full-01.log`: all 590 tests, zero failures/errors,
+  seven optional skips. `/tmp/hict-exact-derived-web-02.log`: build/type checks
+  and existing numerical/DTO/streaming regressions pass. Explicit Prettier passes
+  for the two changed WebUI files; the new Python driver passes Black checking.
+- `/tmp/hict-exact-derived-ui-03/results.json`: ten new real-control cases for
+  Observed, Expected/O/E profiles, exact cache, cancellation/retry, stale mode,
+  immediate transform then Scan and 640 px controls. Options/graphs, native
+  display counts, readback of the independent viewport fit and source hashes are
+  asserted. `/tmp/hict-exact-derived-ui-04/results.json` independently repeats all
+  ten with additional byte-identical rendered PNG checks before/after derived scans.
+  An earlier driver attempt used the wrong JSON field (`matrix` instead of the
+  actual flattened `values`) and is excluded from acceptance.
+- `/tmp/hict-exact-derived-transactions-01/results.json`: 16 delayed-write/read,
+  source switching, presets, session and graph-editor barrier cases.
+- `/tmp/hict-exact-derived-oe-01/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 existing O/E/mode/signal cases.
+- `/tmp/hict-exact-derived-responsive-01/results.json`: 15 responsive cases.
+  `/tmp/hict-exact-derived-tracks-01/{results.json,controls/results.json}`:
+  13+8 tracks/source/control cases.
+- `/tmp/hict-exact-derived-observed-01/browser/results.json`: 12 Observed-editor
+  cases; `/tmp/hict-exact-derived-legacy-01/browser/results.json`: four detailed
+  histogram cases. Both 154,317,488 byte physical map copies stay unchanged, SHA-256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- `/tmp/hict-exact-derived-hist-01/results.json`: 13 inline histogram cases.
+  Isolated pan acknowledgements 14.4–16.5 ms; sampled pan 24.0–31.2 ms; network
+  image-transfer peak four. These meet the 150 ms fixture gate, not a production
+  dense-map latency or package qualification.
+
+Together: 121 passing final-build browser cases, plus an independent ten-case
+repeat. All processes exited successfully. Browser window-error captures are empty;
+injected 503s are allowed only in the existing explicit failure cases. Final visual
+review covers desktop whole-map Expected wording/limits and the 640 px exact scan
+controls and transformed result. Scientific sequence/cut/file suites were not
+rerun for this increment; their previous 90-case evidence is retained separately.
+
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+`c258c498ef032ff44770d453a17840af7369d5498d41c9ce41beeaec8cfa0eac`.
+Development JAR `hict_server-2.0.35-7909e72-webui_b994994-fat.jar` SHA-256:
+`e05ef39bab38444292bdd2ea1b4c53a14b9a1909d6d332925c4b3f9e8ed449a3`.
+Browser tests serve these new assets separately from the embedded older interface.
+Combined/native package, dense-map profile memory/first-pass duration, broader
+custom graphs, midpoint/gamma and the other release/publication gates remain open.
+Protected plans and owner files are unchanged. Nothing pushed, merged or tagged.
+
+## Ordinary color midpoint and gamma persistence
+
+WebUI commit `28ba7f9`; matching version `2.0.37-44f1f5b-webui_28ba7f9`.
+
+SimpleLinearGradient now carries optional gamma (0.05–100, default 1). Ordinary
+RGBA transfer uses pow(clamp((signal-min)/(max-min),0,1),gamma); the midpoint is the
+signal whose blend is one half. This does not modify numeric input, thresholds,
+normalization or samples. The diamond supports pointer, keyboard/fine/page/Home/End
+adjustment and reset, with distinct space when thresholds are close. The rail
+evaluates the curve on its linear/log adjustment axis. O/E neutral remains 1 and
+identity palettes keep their own mapping, without an ordinary midpoint handle.
+
+The native path transforms its copied flat color buffer before calling the existing
+linear kernel; original arrays and the native ABI are unchanged. Java and LINEAR
+pipeline colors use the same power transfer. Non-default gamma survives DTO,
+session, source/global preset, editor, derived palette memory and export metadata
+paths. Default gamma is omitted where legacy representations omitted it. Saving a
+user preset waits for pending visualization changes. A real browser case exposed
+the existing Secondary-selected/single-layout preset path resetting Primary; that
+path now uses the captured Secondary scope.
+This applies to numeric/colormap settings; preset background and track styles
+remain shared scene settings.
+
+Final evidence:
+
+- `/tmp/hict-midpoint-web-05.log`: build, type check, all existing numerical/DTO/
+  streaming checks and expanded field-draft tests pass. New midpoint inverse tests
+  prove the half-color relation and known square/square-root cases, and retain a
+  newer gamma draft over an older acknowledgement. Prettier passes for all 17
+  changed/new WebUI files; the new Python driver passes Black checking.
+- `/tmp/hict-midpoint-jvm-full-03.log`: 594 tests, zero failures/errors, seven optional
+  skips. Four new ColorGammaTest cases cover known RGBA interpolation/endpoints,
+  finite bounds, legacy/explicit DTO encoding, lossless session transfer, graph/
+  traditional color agreement with unchanged numeric graph values, and native/Java
+  agreement within one channel byte without modifying input. The native gamma
+  test executes successfully, not as another optional skip.
+- `/tmp/hict-midpoint-ui-05/results.json`: 13 real-control cases. They assert gamma
+  against actual PNG colors and unchanged numeric inputs/other-source graph,
+  pointer position, thresholds/log-axis/reset, close handles, independent source/
+  Expected curves and fixed O/E neutral, source preset scope, portable graph
+  presets, immediate Save then exported user preset, graph-editor close, byte-
+  identical tiles after session restore, and 640 px keyboard endpoints.
+  `/tmp/hict-midpoint-ui-06/results.json` independently repeats all 13 and captures
+  the actual crowded-handle state before Focus range resets the domain.
+- `/tmp/hict-midpoint-transactions-01/results.json`: 16 previous delayed read/write,
+  normalization/source/preset/session/editor cases. `/tmp/hict-midpoint-exact-01/
+  results.json`: ten whole-map signal-scan, profile, cache/cancel and stale-mode cases.
+- `/tmp/hict-midpoint-oe-02/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 O/E/mode/signal cases.
+- `/tmp/hict-midpoint-responsive-01/results.json`: 15 responsive cases.
+  `/tmp/hict-midpoint-tracks-01/{results.json,controls/results.json}`: 13+8 track/
+  source/control cases.
+- `/tmp/hict-midpoint-observed-01/browser/results.json`: 12 Observed graph-editor
+  cases. `/tmp/hict-midpoint-legacy-01/browser/results.json`: four detailed histogram
+  cases. Both 154,317,488 byte physical real-map copies remain unchanged, SHA-256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- `/tmp/hict-midpoint-hist-01/results.json`: 13 inline histogram cases. Isolated
+  pan acknowledgements 13.2–22.9 ms; sampled pans 29.3–30.5 ms; image-transfer peak
+  four. This default-gamma fixture meets the 150 ms gate; dense-map/non-default-gamma
+  performance and packaged builds remain unqualified.
+
+Together: 134 final-build passing browser scenarios, plus the independent 13-case
+repeat, all with successful process exits and empty window-error captures. Existing
+injected 503s remain limited to explicit failure cases. Final screenshots reviewed
+include desktop pointer/curve controls, the truly crowded-handle lane in -06, and
+640 px controls. Earlier diagnostics found the real source-preset bug and missing
+gamma in two serialization paths. Initial driver runs also needed the Save tooltip
+locator (the icon changes its accessible text) and exact Rendering pipeline… menu
+label. Those incomplete runs are not counted. An early TypeScript check caught an
+overbroad edit to a percentile argument; the corrected final build passes. The
+first new graph unit assertion assumed raw rather than the existing clamped
+numeric-root semantics; the corrected independent expected clamp is unchanged by
+gamma. Scientific sequence/cut/file suites were not rerun for this increment.
+
+Frozen WebUI tree SHA-256 (sorted relative paths/NUL/bytes, excluding dist/electron):
+`63ddfd5e36526536175b624ef58896ff1c2ad30bf4acc35af5f7ddae2dae87c8`.
+Development JAR `hict_server-2.0.36-5381e0b-webui_9aea0ec-fat.jar` SHA-256:
+`fde4daf84a2c4db269d6263b2eec0caa64fbe0f70b194dc17fec10385b7aecbc`.
+Browser acceptance serves these new assets separately from the JAR's older embedded
+interface. Combined SFX/native/platform, dense-map/soak/non-default-gamma performance,
+wider graph/NaN provenance and the remaining release/publication gates stay open.
+Protected plans/owner files are unchanged. Nothing pushed, merged or tagged.
+
+## Jobs-first example downloads and recovery (2026-11-17)
+
+This increment implements the download handoff portion of P7. The catalog, real
+downloader, HTTP job routes and actual Jobs controls are exercised together using
+a controlled local TLS provider. The provider serves a checksum-pinned valid HDF
+fixture, supports Range/ETag resume, can pause transfers, fail required/optional
+files and omit Content-Length. A test-only constructor policy permits its owned
+TLS port; production URL validation, bind/CORS and bundled catalogs are unchanged.
+The fixture class and main API server run from frozen JAR snapshots; browser tests
+serve the new WebUI assets separately. This qualifies a development pair, not a
+combined SFX, native wrapper or public example provider.
+
+Final evidence:
+
+- `/tmp/hict-example-jobs-web-08.log`: WebUI build, type checking and existing
+  numerical/DTO/streaming checks pass. All six changed/new UI files pass Prettier;
+  the three changed/new Python browser scripts pass Black checking.
+- `/tmp/hict-example-jobs-jvm-full-08.log`: 597 tests, zero failures/errors and
+  seven optional skips. Added tests cover retained attempt identities, scoped
+  cancellation, bounded history, warnings and truly unknown transfer totals.
+- `/tmp/hict-example-jobs-ui-06/results.json`: 11 browser cases, plus missing-ID
+  HTTP 400, unknown-ID HTTP 404 and stale-cancellation HTTP 404 assertions. Cases
+  cover catalog Retry, focused named byte progress, checksum-verified map opening
+  exactly once with known raw tensor cells, closure preserving transfer without
+  auto-opening, failed attempts/retry under new identities, actual Range resume,
+  indeterminate totals, workspace changes, late start replies, optional warnings
+  and 640 px scrolling/keyboard access. `/tmp/hict-example-jobs-ui-07/results.json`
+  independently repeats all 11 with successful exit.
+- `/tmp/hict-example-jobs-other-05/browser/results.json`: ten existing service and
+  FASTA-only cases. Its controlled file chooser replaces obsolete test selectors.
+  FASTA-only Create/Open from Jobs followed by the actual AGP export downloads a
+  complete 12,017 bp component row. Source hashes remain unchanged. The optional
+  public DNA Zoo download block is explicitly skipped; the dedicated TLS suite
+  covers example downloads without external-provider variability.
+- `/tmp/hict-example-jobs-responsive-02/results.json`: 15 cases;
+  `/tmp/hict-example-jobs-files-02/results.json`: 14 destination/cancellation cases.
+- `/tmp/hict-example-jobs-transactions-03/results.json`: 16 delayed normalization,
+  read/write, source/preset/session/editor cases. An earlier repeat timed out
+  because the opening preset had already selected None; choosing None again
+  correctly performed no operation. The driver now explicitly establishes and
+  asserts weighted initial state before intercepting the opposite change. The
+  original race and pixel assertions remain intact. The incomplete run is not
+  counted.
+- `/tmp/hict-example-jobs-midpoint-02/results.json`: 13 midpoint cases.
+  `/tmp/hict-example-jobs-oe-02/{results.json,display_mode_roundtrip/results.json,
+  signal_controls/results.json}`: 11+12+7 O/E/mode/signal cases.
+  `/tmp/hict-example-jobs-tracks-02/{results.json,controls/results.json}`: 13+8
+  track/source cases. `/tmp/hict-example-jobs-exact-02/results.json`: ten exact
+  whole-map signal scan/cancellation cases.
+- `/tmp/hict-example-jobs-observed-02/browser/results.json`: 12 graph-editor cases;
+  `/tmp/hict-example-jobs-legacy-02/browser/results.json`: four detailed histogram
+  cases. Both physical real-map copies remain unchanged at 154,317,488 bytes,
+  SHA-256 `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+
+Final screenshot review covers the named byte-progress card and 640 px scrolled
+history with the fixed Close header and retained optional-file warning. Browser
+window-error captures are empty; deliberately injected provider failures remain
+confined to their failure scenarios. Earlier fixture/driver diagnostics included
+Java source-launch classloader access, an attribute assertion and obsolete
+FASTA-only selectors; corrected final compiled-fixture runs pass. Scientific
+sequence/cut suites were not rerun for this increment.
+
+Frozen WebUI dist SHA-256 (sorted relative paths/NUL/bytes, excluding its electron subtree):
+`b59b81795e75504e9f59d2ff1a6daf1b9b4472e8175e107555449957959812ee`.
+Development JAR `hict_server-2.0.37-44f1f5b-webui_28ba7f9-fat.jar` SHA-256:
+`0d362f66754de88b9f0b3739170914c7c04f361780caa09a44b11407b4423098`.
+Subsequent conversion/wizard phases, cache/catalog integrity provenance, public
+provider availability, OSD resolution/diagonal checks, other platforms and final
+release/publication gates remain open. Protected plans and owner files are
+unchanged. Nothing pushed, merged or tagged.
+
+`/tmp/hict-example-jobs-hist-01/results.json` adds 13 final inline histogram cases
+with unchanged inputs, empty window errors and image-transfer peak four. Isolated
+pan acknowledgements are 15.7–17.4 ms; sampled pans are 24.0–26.1 ms against the
+150 ms fixture gate. This does not qualify dense maps or native packages. Together
+the final development pair passes 169 browser scenarios plus the independent
+11-case download repeat, all with successful process exits.
+
+## Cached example opening integrity (2026-11-17)
+
+Cached cards and historical results now create a cancellable verification job
+before opening. Catalog discovery compares a canonical declaration fingerprint
+and recorded file metadata without hashing large datasets. Opening rehashes actual
+bytes, including same-size/same-mtime corruption, repairs damaged files and refreshes
+manifest provenance. Unpinned files need matching source declarations and verified
+recorded hashes; unchanged sources survive recipe/attribution updates without a
+network transfer. Malformed records fall back to downloading. Late start/catalog
+replies cannot replace another workspace.
+
+Final `/tmp/hict-example-cache-web-04.log` build/type/numerical checks pass; all six
+changed UI files pass Prettier and the browser driver passes Black. Final JVM log
+`/tmp/hict-example-cache-jvm-full-04.log` and XML reports show 599 tests, zero
+failures/errors, seven optional skips. Two added tests cover declaration ordering,
+response-only fields, changed recipes/sources, tampering with restored timestamps,
+metadata discovery, reuse without provider requests and malformed manifest shapes.
+`/tmp/hict-example-cache-ui-03/results.json` passes 16 actual-control cases, including
+historical-result revalidation, cache reuse, blocked opening during repair, exact
+repaired SHA-256 and refreshed attribution. Existing retry/cancel/Range, stale
+intent, optional warnings and 640 px history still pass. Other job services and
+FASTA-only AGP pass ten cases in `/tmp/hict-example-cache-other-02/browser/results.json`;
+the physical input hashes remain unchanged. Both browser processes exit zero.
+No broad rendering/performance or scientific cut suite was rerun for this scoped
+increment. Initial diagnostic runs exposed a missing test import, an intermediate
+event type, mixed pre-fix compiled sources and a GET instead of POST in the new
+driver; only the consistent final artifacts above are counted.
+
+Frozen WebUI dist SHA-256 (sorted relative paths/NUL/bytes, excluding its electron
+subtree): `5d3817e4761624364e1a12d13e89a7040606153000962524ddb08f183b08bf86`.
+Development JAR `hict_server-2.0.38-013586d-webui_d670b94-fat.jar` SHA-256:
+`a29e3adf204cba80f8be23c738f82cc3ac021ad0adfc8b950679fd74f3d98174`.
+The browser serves current assets separately from older embedded assets; this is
+not SFX/native qualification. Final screenshot review covers repair progress and
+640 px history. It also exposes repeated startup sensitivity/progress notifications
+overlapping the dialog; this UX issue remains a release gate. Public providers,
+conversion/wizard phases, catalog/session provenance transfer, OSD/diagonal behavior
+and final platform/publication gates remain open. Protected files are unchanged;
+nothing pushed, merged or tagged.
+
+## Example conversion handoff, recovery and quiet opening (2026-11-17)
+
+Quick-start conversion now hands progress to Jobs and retains validated example
+context so results reopen through the recipe with their FASTA. Close/workspace/
+failure/late replies revoke automatic opening; unrelated sources and custom cached
+destinations are rejected before output preparation. Startup notices no longer
+accumulate; failures have a short summary, expandable diagnostic and focused retry.
+Final JVM `/tmp/hict-example-conversion-jvm-full-04.log` and XML: 600 tests, zero
+failures/errors, seven optional skips. Final WebUI `/tmp/hict-example-conversion-web-03.log`
+build/type/numerical checks pass, including omitted/present example-ID DTO checks;
+six UI/script files pass Prettier and both Python scripts pass Black. Final
+`/tmp/hict-example-conversion-ui-05/results.json` passes 23 actual-control cases
+with empty window errors; `/tmp/hict-example-conversion-other-03/browser/results.json`
+adds ten ordinary-conversion/other-service/FASTA-only AGP cases. Both exit zero.
+Real bundled hictk metadata/zoomify/balance/import run on a Cooler-generated seed;
+linked FASTA export matches all 17 bases. Independent fresh-server verification in
+ui-05/full-cell-parity.json matches all 25 known cells in the original and four
+converted matrices, and ui-05/input-integrity.json confirms all ten downloaded
+matrix/reference files still match their pinned hashes. Historical result opening
+reuses one completed conversion and preserves its reference. Actual Jobs completion
+and accepted submission replies are held for close/workspace/late-intent checks;
+no states or conversion outputs are fabricated. Bad source/destination requests
+return HTTP 400 without creating the misrouted output. Screenshot review covers
+handoff, compact/expanded failure, focused retry and empty notification history.
+Diagnostics caught a real omitted DTO field; fixture/driver corrections supplied a
+standards-compatible Cooler, explicit provider routing for delayed starts, completed
+FASTA linking before export, and an existing alternate map. Incomplete runs are
+excluded. Reproduce with Cooler/h5py/pandas via --hdf-python. Frozen dist SHA-256
+(sorted relative paths/NUL/bytes, excluding its electron subtree):
+`6381073040376055b7911f4399241a4ec95d8852ac7133d17497bf74e64da135`.
+Development JAR `hict_server-2.0.39-210bbe0-webui_d787595-fat.jar` SHA-256:
+`cb5e4abb1523e4109cf64df5d952380e3ca03a5149319ed8c667128966b53a7d`.
+Assets are served separately from older embedded assets, qualifying a development
+pair. Broad rendering/cut/sequence/performance/native suites were not rerun. Live
+conversion cancellation, large/public examples, wider wizard workflows, catalog/
+session provenance transfer, OSD/diagonal behavior and release/publication gates
+remain open. Protected plans/owner files are unchanged; nothing pushed/merged/tagged.
+
+
+### Info, map-switch notifications and disjoint-resolution diagnostics
+
+Info uses view/layer metadata rather than TileLayer.getData. The before-fix real
+yeast probe (`/tmp/hict-osd-baseline-01/results.json`) made 425 pixel reads for 25
+pointer moves with Info hidden and 425 with it visible; a stationary delayed zoom
+left Info blank. Final `/tmp/hict-osd-ui-08/results.json` passes 16 cases with empty
+window errors, zero reads in both probes and maximum measured update durations
+0.1 ms hidden/0.4 ms visible. Four real resolution transitions hold tile replies;
+current guidance remains populated. Loaded tiles, stationary pan/toggle/settings,
+literal markup names, released old watchers, outside-assembly coordinates, mixed
+pyramids and a genuinely late old-map masking callback are covered. These small
+probes are not broad latency or large-map performance qualification.
+
+The exact tiny NaN-weighted-map switch reproduced a renderer exit with
+vue-sonner 0.4.2: its delete watch effect fed height updates back into itself.
+Pinned 2.0.9 uses the maintained dismissal path and requires the explicit CSS
+import. Final `/tmp/hict-osd-notification-02/results.json` passes the one-case real
+notice/dismiss/map-replacement regression with empty errors and unchanged inputs.
+The real mixed-pyramid UI also uncovered a BINS PIPELINE_SIGNAL HTTP 500; the
+existing projection now respects BINS/PIXELS visibility on both grids and skips
+Secondary for Primary-only expressions. Two new HTTP tests assert all projected
+cells/mass for disjoint fine/coarse levels and hidden Primary/Secondary bins,
+including the legacy omitted-type source expression. Full final JVM
+`/tmp/hict-osd-jvm-full-02.log` and XML: 602 tests, zero failures/errors, seven
+optional skips. WebUI `/tmp/hict-osd-web-04.log` build/type/numerical checks pass;
+five WebUI files pass Prettier and three new Python scripts pass Black.
+
+Final independent `/tmp/hict-osd-ui-08/diagonal.json` matches all 669,584 raw cells
+in 17 windows on chrI/chrVI/chrM at 50/100/500 bp against Cooler balance=False.
+Scanning all source stored cis pixels confirms offsets 0–3 at 50 bp and 0–1 at
+100 bp are empty, while the 500 bp diagonal contains 3,418,162 contacts. Bin offsets
+are not exact read-pair distances. The source establishes that this band predates
+HiCT import; the upstream processing description does not establish its precise
+cause. `source-hashes.json` confirms immutable physical copies: source.mcool
+SHA-256 `11a8e588694cfd686958ab23576aa3030dcf69f0c868d760082b34fc5d918a4b`,
+yeast.hict.hdf5 `dff20b25ee9cdaa6d01802c59e3f251e0694d36c10f025cc69fa221c32e7f722`.
+Reproduce with check_osd_resolution_browser.py using --jar, --webui, --source-dir,
+--output and --hdf-python (Cooler/h5py/NumPy). It invokes the independent
+check_microc_diagonal.py after opening the copied map on a fresh server.
+
+Final browser evidence adds transactions-02 (16), examples-01 (23),
+other-jobs-01/browser (10), failures-02/browser (6), tracks-01 plus controls (13+8),
+responsive-01 (15) and histogram-01 (13), all under `/tmp/hict-osd-`, all exit zero.
+Together with the 16 Info and one dismissal case, these are 121 cases. Error arrays
+are empty where captured; failure-reporting deliberately injects errors. Histogram
+qualification runs in isolation and observes at most four tile transfers. Screenshot
+review covers delayed-tile guidance, literal names, absent old-map notice, current
+error-toast styling, dark track edges after resizing and responsive controls.
+Initial helper failures (Done/Close selector, ruler versus map pointer target,
+incomplete Secondary frontend setup and NumPy scalar serialization) are corrected
+and excluded. The old-library renderer crashes and actual BINS HTTP failure are
+recorded as fixed defects, not environmental flakiness; incomplete runs are not
+counted. No out-of-memory kill was observed.
+
+Frozen separately served dist SHA-256 (sorted relative paths/NUL/bytes, excluding
+electron): `613bc21dde832be5db24a4112517b94ef12baad19223229d7963efd0f4109065`.
+Development JAR `hict_server-2.0.40-c99eabd-webui_d5c1bc0-fat.jar` SHA-256:
+`ac1a8107093f9a8860bdfb95f395837c13999fc077a78d861fdd13619133f664`.
+This qualifies the development pair, not older embedded assets or a combined
+SFX/native release. Broader sequence/cut/native/performance suites were not rerun.
+Live conversion cancellation, larger/public examples, wider wizard workflows,
+catalog/session provenance transfer and release/publication gates remain open.
+Protected plans/owner files are unchanged; nothing pushed, merged or tagged.
+
+
+### Stage-weighted conversion progress and live cancellation
+
+Example conversion details carry a title/recipe rather than byte totals. Jobs now
+uses numeric conversion progress while unknown-length example downloads stay
+indeterminate. The backend previously normalized against only the stages up to the
+current one, causing repeated 100% values; it now includes all stage weights.
+The focused regression `/tmp/hict-conversion-cancel-focused-01.log` verifies
+20%, 20%, 35%, 50%, 50%, 100% across an independent 2/3/5 stage budget. The final
+`/tmp/hict-conversion-cancel-jvm-02.log` and XML pass 603 tests with zero
+failures/errors and seven optional skips. WebUI
+`/tmp/hict-conversion-cancel-web-01.log` build/type/numerical checks and explicit
+Prettier pass; the updated browser driver and new process helper pass Black.
+
+Final `/tmp/hict-conversion-cancel-ui-02/results.json`: 26 actual-control cases,
+empty errors, exit zero. The optional --live-cancellation Linux check pauses an
+actual owned hictk zoomify child using SIGSTOP, identified through /proc by parent,
+PID and kernel start time. It does not replace tools, job states, output or process
+responses. Pausing makes a normally brief stage observable; the bar correctly
+shows the server's numeric fraction below 100%. Clicking Cancel returns HTTP 200
+in 23.467 ms, stops the identified child and removes job staging without publishing
+an output. The current map remains tiny-fine. Both input hashes remain unchanged:
+example.fa `21844eb908519057b7ef6f3dd5774748b6156aa2062ff303522bfb22e968772d`,
+example.mcool `b60d964ac3e1d94777da8f9c9b2de8b0c64bf2723c11456262f200b55d9427e4`.
+The neutral cancelled row has no alert, error detail or Open result, and its retry
+focuses the matching card. A new job completes through the actual bundled tools,
+links and exports all 17 reference bases, and preserves the cancelled attempt.
+`native-temporary-cleanup.json` independently confirms removal of the exact native
+pipeline directory recorded in the stopped process command. The process guard
+resumes its owned child on diagnostic failure so normal server cleanup can run.
+This qualifies cancellation on this host, not unpaused throughput or other OSes.
+
+`/tmp/hict-conversion-cancel-other-01/browser/results.json` adds ten ordinary
+conversion/job-service/FASTA-only AGP cases; failures-01/browser adds six injected
+failure-reporting cases. All exit zero, giving 42 browser cases on the frozen pair.
+Screenshots were inspected for the partial numeric bar, neutral cancellation,
+focused retry and the resulting linked FASTA. Initial ui-01 exposed the actual
+backend progress defect and compared a first-rendered value before the next Jobs
+poll; it is excluded. The corrected driver waits for normal polling and hashes
+only downloaded payloads, since verification legitimately refreshes the manifest.
+
+Frozen dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`90c4afd8b2dafc76c9965963a79cb8236e30ae4e5ba3180c9d516fc55f0a0f1f`.
+Development JAR `hict_server-2.0.41-0ef23f9-webui_0b930de-fat.jar` SHA-256:
+`8cdad5c0febeaec42a0839e16456ef4a78ca80c593f3d7983b7cf52890361b3e`.
+Assets are served separately; this does not qualify combined SFX/native packages.
+Broader rendering, sequence, cut, performance and platform suites were not rerun.
+Wider wizard/public example qualification, catalog/session provenance transfer,
+P8/P9 and remaining release/publication gates remain open. Protected plans and
+owner files are unchanged; nothing pushed, merged or tagged.
+
+
+### Example recipe tracks and recorded source/session provenance
+
+The existing wizard previously omitted openingRecipe.tracks. It now preselects
+available declared tracks in order, keeps selections stable through asynchronous
+probes and omits unavailable optional files identified by downloadedFiles in the
+cached catalog response. A removed entry is not restored by its late real probe.
+Screenshot review also found AGP:none after successful wizard AGP loading; the
+wizard now updates that status after the successful load.
+
+Source wrappers own frozen, copied example records. Capture associates a declared
+ready HDF matrix or a current converted input/output cache. Snapshot/restore retain
+these records per source. Restore validates the recorded catalog through its
+existing schema, fingerprint, required/pinned file hashes/sizes and source binding;
+it does not read the live catalog or execute any recorded recipe/URL. Four new
+JUnit tests cover capture, catalog independence, converted cache validity,
+malformed/coerced metadata and unrelated maps. Final
+`/tmp/hict-provenance-jvm-full-02.log` and XML: 607 tests, zero failures/errors,
+seven optional skips. WebUI `/tmp/hict-provenance-web-02.log` build/type/numerical
+checks pass; four WebUI files pass Prettier and two Python drivers pass Black.
+
+Final `/tmp/hict-provenance-ui-03/results.json` passes 34 cases with empty errors,
+exit zero, including the existing example/cancellation journeys. New cases save
+converted-source provenance, download/configure a non-quick-start matrix/FASTA/
+AGP/BED recipe, omit a genuinely failed optional track, remove a selection while
+its actual probe replies are held, and complete the wizard. Assembly FASTA equals
+TACGTACGTACGTACGT, the 17-base reverse complement. Saved metadata remains identical
+after live catalog edits; an ordinary replacement has no example metadata. The
+saved session restores assembly/track/provenance after catalog removal. A mismatched
+record receives HTTP 400 before map replacement. `recipe-input-integrity.json`
+independently rehashes all four downloaded payloads and matches their recorded
+sizes/hashes after the complete journey. Screenshots were inspected for selected
+tracks, omitted optional files, removal, reversed sequence/feature placement,
+correct AGP chip and restored state.
+
+Final `/tmp/hict-provenance-tracks-02/{results.json,controls/results.json}` adds
+13+8 cases; transactions-02 adds 16; other-01/browser adds ten; failures-01/browser
+adds six, all under `/tmp/hict-provenance-`, all exit zero. Total: 87 browser cases.
+Expected injected failures remain confined to the failure-reporting suite. Fresh
+physical-copy `/tmp/hict-provenance-sources-01/results.json` adds five HTTP cases:
+independent Primary/Secondary datasets; restore without catalog; rejected Secondary
+binding without replacing either source; detach retaining Primary; ordinary
+replacement without inherited attribution. All copied HDF hashes remain unchanged.
+The new check_example_provenance_api.py reproduces those cases from the browser
+fixture data via --jar, --source-dir and --output.
+
+Incomplete ui-01 used the quick-start button label for a wizard-only example;
+the driver now exercises its actual Download/Open result and cached Open in HiCT
+flows. Ui-02 passed the earlier pair but screenshot review exposed the AGP header
+issue; only ui-03 qualifies the final pair. Transactions-01 lacked the explicit
+HDF Python and failed with ModuleNotFoundError:h5py before browser execution;
+transactions-02 uses the correct --hdf-python. Incomplete runs are excluded.
+
+Frozen dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`83c4fb7b1a002b1b45e7760a5df2ea87aa0dd2b9663c417116d9f77738cd28fd`.
+Development JAR `hict_server-2.0.42-9ea9009-webui_dbf4e75-fat.jar` SHA-256:
+`fa72657f5d70a73bbce1ba6c7c4766529d21381dd44d63b66e78468e436f9d62`.
+Separately served assets qualify a development pair, not embedded assets or a
+combined SFX/native release. The records preserve historical declarations/cache
+hashes, not session authenticity or fresh full-file verification on every open.
+Broader public-example/wizard/source/format and native/performance qualification,
+restored-layout status presentation, provenance viewing/figure metadata and
+remaining release/publication packages remain open. Protected plans and owner
+files are unchanged; nothing pushed, merged or tagged.
+
+
+### Opt-in remote BLAST with bounded external-coordinate results
+
+A new fixed-argument BLAST+ remote runner accepts explicit consent, database
+scope, at most ten/100,000-base queries, 1–30 minute provider waits and up to 500
+subject records per query. Its independent single-worker/two-queued-job pool keeps
+local analysis available. Queued cancellation releases capacity without executing
+an upload. The process-wide client gate separates starts by ten seconds. Failure,
+timeout, cancellation or malformed/oversized output publishes no result action.
+The existing local assembly history guard remains intact; remote requests omit
+map history headers and do not read linked FASTA. JSON retains external one-based
+inclusive coordinates and provider/query/client provenance; full bounded raw TSV
+is exported as a Blob through the file-save flow.
+
+Final JVM build/test: `/tmp/hict-remote-blast-jvm-full-08.log`, BUILD SUCCESSFUL;
+XML totals 616 tests, zero failures/errors, seven optional skips. Nine new JUnit
+cases cover strict consent/settings, argv/private descriptions, gapped external
+HSPs, malformed values, owned process results, timeout and cancellation. The WebUI
+build/type/numerical and DTO/remote report checks pass in `/tmp/hict-remote-blast-web-10.log`. Screenshot review after
+web-09 exposed faint map text through the search surface; web-10 makes that
+dialog opaque. The final ui-06 run repeats the remote workflow with a computed
+opaque-surface assertion. The broader existing suites ran before this CSS-only
+correction.
+
+`/tmp/hict-remote-blast-ui-06/results.json` passes 18 cases with empty errors.
+It drives actual menus, forms, Jobs and downloads against the actual JVM handlers,
+using an identified controlled external executable, not fabricated job responses.
+Coverage includes missing consent, no-map submission, fresh consent after database
+change, external coordinates/literal unsafe accessions, bounded paging/filtering,
+complete JSON/TSV saves, local default, reopen after map change, ignored late reply,
+zero hits, bounded queue and queued cancellation, real local SeqKit during remote
+waiting, running cancellation, provider errors, selected one-minute timeout,
+exact 16S command alias, malformed results and 20,001 raw rows with 20,000-row JSON.
+Cancellation acknowledgement was 47.6 ms on this host, not a cross-platform latency
+claim. Generated uploaded FASTA excludes descriptions; source input hashes remain
+unchanged. Screenshot review confirms accessible controls at 640×600 and a
+scrollable data table, separate query/subject labels, safe literal text, fixed
+footer and honest failure/timeout messages.
+
+`/tmp/hict-remote-blast-local-03/summary.json` passes 17 existing local sequence
+journeys using the actual bundled tools, including real gapped BLAST, exact IUPAC
+strands/BED positions, ModDotPlot, alignment, clipping and clipped-bin parity.
+Other-01/browser/results.json passes ten Jobs/FASTA-only AGP cases; failures-01/
+browser/results.json passes six failure-reporting cases. All three process exits
+are zero. Together these are 51 browser cases. Lifecycle-02/results.json adds two
+HTTP/process cases: 33 MiB raw output is rejected and removed; a slow provider
+client dies after SIGTERM is sent only to its owning JVM. Group signalling is
+explicitly excluded from that assertion. Shutdown took 113.7 ms here.
+
+Earlier incomplete attempts are excluded: the test fixture initially omitted
+bothStrands in lifecycle-01; browser setup used an incorrect local FASTA record
+name before ui-04. UI findings fixed a filter label association and raw TSV being
+parsed as JSON. The initial live 16S attempt exposed a genuine remote-name error,
+now fixed as rRNA_typestrains/16S_ribosomal_RNA. An intermediate DTO test loader
+needed the real request class to test the new history-header exclusion. Full-04's
+log reported success but its observing shell returned 143; final full-08 is the
+qualifying run. Local-01 selected a Python environment without Cooler; local-03
+uses the HDF environment with Playwright appended to its module path.
+
+Live probes use only the public NCBI NR_024570.1 positions 1–160, independently
+fetched and hashed under `/tmp/hict-remote-blast-public-reference-01`. No project
+FASTA/contact map is submitted. Live-01 records NCBI's rejected short 16S database
+name. Live-02 uses the corrected name and reaches the selected three-minute
+provider timeout, killing the owned client without a result or automatic retry.
+Live-03 independently probes nt and reaches its selected ten-minute provider
+timeout (600.277 seconds), with no result or automatic retry. Its terminal status
+is retained under `/tmp/hict-remote-blast-live-03/status.json`; its assertion exits
+one because provider success was not established. Live-04 investigates the
+corrected 16S connection with NCBI connection-parameter logging enabled only in
+the owned test process. Controlled success does not qualify provider success. P8 live-provider and platform checks remain open.
+
+Frozen development JAR `hict_server-2.0.43-2114efe-webui_6bd484b-fat.jar` SHA-256:
+`4fdd9f119ae47b77e81102747f7e9e69e5a950bfcb70e48e558f8a615fcf70a2`.
+Dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`c85bd1064796149394e19d37d88fffaa5aedcb7cdfbd3c8a9deb4ace5380d6f9`.
+The API server and separately served WebUI qualify a development pair, not embedded
+assets or a combined native/SFX release. P7/P9 and the remaining release,
+performance, scientific and publication gates stay open. Protected plans and owner
+files are unchanged; nothing pushed, merged or tagged.
+
+
+### Reopen exported PNG/SVG figures inside the WebUI
+
+File → Open exported figure opens an independent read-only image viewer. It
+uses a remembered browser figure handle when available and the standard local
+file input otherwise. Actual-size/fit/zoom controls and a scrollable preview keep
+controls available at 640×600. Invalid/empty/oversized files report a recoverable
+error without discarding the previous preview. File bytes are limited to 64 MiB;
+PNG dimensions are checked before decoding and all decoded images are limited to
+128 megapixels. Disposed/obsolete decode replies cannot publish an image, and
+published/pending object URLs are released. SVG is loaded only through an image
+URL, never inserted as document markup; see
+[Mozilla's SVG image-context restrictions](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image).
+
+`/tmp/hict-figure-viewer-web-02.log` passes build/type/DTO/numerical checks. File
+picker regressions cover the figure purpose, remembered handle, cancellation and
+read failures while retaining existing session behavior. Four changed WebUI
+files pass Prettier; the new Python driver passes Black. Final JVM
+`/tmp/hict-figure-viewer-jvm-full-01.log` reports BUILD SUCCESSFUL, with 616 tests,
+zero failures/errors and seven optional skips. This increment changes no JVM
+production logic.
+
+Final `/tmp/hict-figure-viewer-ui-03/results.json` passes 14 cases with no browser
+errors. The driver generates fresh physical inputs, exports actual PNG/SVG from
+the map's controls, opens them through the viewer's file chooser and verifies
+correct dimensions. SHA-256 of every decoded PNG RGBA pixel matches an independent
+Pillow decode. Other cases check fit/actual size/zoom, 640-pixel layout, cancelled
+choices, malformed PNG, excessive dimensions rejected before decoding, inert SVG
+scripts/external references, Escape with identical primary session state,
+controlled browser picker memory/cancellation and a late real decode after close
+with its object URL released. Picker boundary stubs return actual exported bytes;
+they do not qualify a native OS dialog. Source file hashes remain unchanged.
+Screenshots were reviewed for image content, controls, responsive fit and errors.
+Other-01/browser/results.json adds ten Jobs/FASTA-only AGP cases and failures-01/
+browser/results.json adds six failure cases, giving 30 browser cases in total.
+
+Ui-01 passed the original 11 cases; ui-02 passed 12 before the driver accidentally
+returned its injected cancellation function to Playwright, which invoked it.
+The injection now uses a block returning undefined. Only ui-03 qualifies all 14
+cases on the final pair; earlier incomplete runs are excluded.
+
+Development JAR `hict_server-2.0.44-ec1b976-webui_041569a-fat.jar` SHA-256:
+`111f03cab89d18c472dbc829f04b2a1a351d48aece04b121b2d61f0bf7a32376`.
+Dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`a2d692302592681d5cf99b0a2dd1a9b46d93468fac83c9be03a6ac64b4228fa6`.
+Separately served assets are not combined native/SFX qualification. P9 composition,
+immutable cut/scaffold comparisons, ModDotPlot panels, snapshot/session provenance
+and release/publication gates remain open. Protected plans and owner files remain
+unchanged; nothing pushed, merged or tagged.
+
+Remote-provider follow-up: `/tmp/hict-remote-blast-live-04/status.json` records
+the corrected 16S name reaching its ten-minute timeout (600.192 seconds). It
+publishes no output and the assertion exits one. Parameter-only diagnostics did
+not explain the delay. The kernel disallowed a read-only strace attach to that
+owned test child; no tracing or process control was thereby applied. Live-05 uses
+NCBI's documented CONN_DEBUG_PRINTOUT=ALL, DIAG_POST_LEVEL=Info and DIAG_TRACE=1
+only in the owned test environment, with a selected 30-minute limit. The query
+remains the same hashed public 160-base NCBI reference. The trace confirms NCBI
+returned a request ID over HTTPS and subsequent provider replies without logged
+connection errors. This establishes submission/connectivity, not successful
+result delivery. No additional query is submitted while that probe runs, and P8
+remains unqualified for live-provider success. Detailed tracing is not enabled in
+normal HiCT runs. See the
+[NCBI tracing documentation](https://ncbi.github.io/cxx-toolkit/pages/ch_debug).
+
+
+### Frozen figure export dialog and cross-format provenance
+
+The new dialog replaces the image-export dropdown, captures a preview once and
+saves all three formats from that immutable scene. Controls cover viewport,
+whole-map/selected rectangle, crop, rulers/FASTA and 1D tracks. Option changes
+require refresh. Source/assembly/rendering configuration and client presentation
+are compared around rendering; stale/closed captures cannot publish. Existing
+direct export methods remain available. SVG metadata stays at the root through
+cropping. PNG stores the same JSON in a CRC-checked UTF-8 iTXt chunk; PDF uses
+escaped XMP. File identification retains HICT-QUICK-1 rather than calling sampled
+fingerprints full-file hashes. Metadata distinguishes requested and rendered
+views, records map offset/size, base bounds and CSS-pixel crop geometry.
+
+`/tmp/hict-frozen-figure-web-08.log` passes the full WebUI build/type/numerical
+checks, including the new provenance/PNG regression. Its independent Node zlib
+CRC check verifies every chunk and that all original image chunks are byte
+identical. An independent Pillow/zlib decode of the Unicode golden fixture also
+passes. Current source fields preserve IDENTITY_PERCENT with scoreScale=10000.
+The canvas recorder's actual-browser scene check passes exclusion/live-widget,
+vector label, single root metadata and hook restoration assertions, including
+nonpositive/infinite text widths omitted exactly as canvas omits them.
+`/tmp/hict-frozen-figure-scene-01.log` records that check. Changed WebUI sources
+pass Prettier; new/touched focused Python drivers pass Black and all changed
+Python drivers compile. Legacy dense test files are not broadly reformatted.
+
+`/tmp/hict-frozen-figure-jvm-full-01.log` reports BUILD SUCCESSFUL in 52 seconds;
+XML totals 616 tests, zero failures/errors, seven optional skips. This increment
+changes no JVM production logic. The owned test server now explicitly passes
+--serve-webui=false: the CLI's default had overridden the harness environment
+setting and caused irrelevant port-8080 bind failures in earlier development
+runs. No application bind/CORS behavior or owner process is changed.
+
+Final browser evidence, all under `/tmp/hict-frozen-figure-`:
+
+- ui-08/results.json: ten cases, empty errors, terminal zero. A three-format
+  capture has identical metadata. Composition changes, 640×600 controls, fitted
+  whole map with exact live-view restoration, selected rectangle base/crop bounds,
+  byte-identical old PNG after an exact cut, new assembly/history identity,
+  rejection of a real concurrent visualization edit and ignored late provenance
+  after close all pass. Source input hashes remain unchanged.
+- sequence-07/summary.json: 18 cases, status ok, terminal zero. Seventeen existing
+  real-tool/local-sequence/coordinate cases remain green. The added case generates
+  an actual ModDotPlot, applies the Hi-C-above/identity-below preset with tracks,
+  exports PNG/SVG/PDF through the dialog and verifies matching metadata. The
+  legacy fixture primary honestly retains UNKNOWN units; its generated Secondary
+  records IDENTITY_PERCENT and scale 10000. Independently rasterized SVG/PDF match
+  2,279 flat interior map samples within the declared four-channel-unit limit.
+  These samples exclude antialiased text/track edges. The original native HDF
+  SHA-256 remains c1a636000d8cf196ca15020604ff387be194c3a6184fe516a87345305a79c555.
+- viewer-03/results.json: 14 cases, empty errors, terminal zero. Actual exported
+  PNG/SVG reopen with correct image content, full PNG pixel parity, fit/zoom,
+  responsive controls, inert SVG and picker/late-decode cleanup.
+- failures-02/browser/results.json: six cases, terminal zero. Export failure is
+  injected at the new captured-save boundary and appears exactly once inside the
+  dialog. Other failed actions retain their existing reporting.
+- other-02/browser/results.json: ten Jobs/FASTA-only AGP cases, terminal zero.
+- destinations-02/results.json: 14 cases, status ok, terminal zero. All three
+  format buttons use the figure save purpose and real controlled writes. Existing
+  session, delayed chooser, exact FASTA/AGP, cancellation/failure and folder-memory
+  checks remain green. Total: 72 Chromium cases.
+
+Screenshot review covers actual map/annotation content, small-window controls,
+options awaiting refresh, exact cut, stale capture, cancellation and a readable
+whole-map image. Before this change a small whole-map figure was 17×17 pixels;
+the fitted map-only fixture is now 533×560 while retaining its native signal.
+The live view is exactly restored; export resizing no longer reclamps its panels.
+
+Excluded intermediate attempts: web-01 lacked Array.from for the project's DOM
+iterator target; ui-01 exposed nested crop metadata; ui-02 exposed negative SVG
+textLength from hidden panels. Sequence-01 assumed the direct fixture converter
+had declared contact units; it is a legacy UNKNOWN source, and the test now checks
+that exact fact. Sequence-02 sampled antialiased annotation edges in the map-color
+oracle; the oracle now checks flat interior map pixels with a separate vector
+label test. Sequence-03 exposed a stale workspace write during an administrative
+fixture reset; the driver now navigates its old client away before replacing the
+server state and retains strict error checks. Ui-04 wrapped an API visualization
+body incorrectly; the real endpoint uses a flat DTO. Ui-07 exposed live panel
+clamping and restoration during export, fixed in the workspace observer and
+fitted capture path. Earlier passing subsets do not qualify the final pair.
+
+Final development JAR hict_server-2.0.45-c1c00fd-webui_6493d85-fat.jar SHA-256:
+`57ec318f8866e3604d54d846b33abedea472875fd6516a5da9d7ccbaa425f425`.
+Frozen dist SHA-256 (sorted relative paths/NUL/bytes, excluding electron):
+`85031445adad3cdbddee1ac78b275d08de63f9258d4ed463765805bc8c1c8050`.
+This is a development API/static-assets pair, not embedded/SFX/native release
+qualification. Protected plans and owner files remain unchanged; nothing pushed,
+merged or tagged.
+
+Expected/O/E follow-up is not counted among those 72 passing cases. The separate
+`/tmp/hict-expected-figure-audit-02/results.json` records requests for a native-4-bp input
+profile at rows 1152–1853/columns 1345–2071, followed during whole capture by an
+intermediate window, full 0–3005 window, then the original window on restoration.
+Those refreshes are asynchronous and not part of ordinary visualization-option
+comparison. The probe also contains initial default-connection failures because
+it omitted the standard route before opening; it is an audit trace, not a green
+browser acceptance run. Audit-01 used the tiny filename for the mixed fixture
+and failed before opening, so it is excluded. A pinned/recorded fitting context
+and runtime parity/rollback across scopes are a required next scientific capture
+gate. Stored cut/scaffold snapshots, comparison/session persistence, publication
+figures and remaining release gates also stay open.
+
+NCBI follow-up: live-05's real bundled client reaches its selected thirty-minute
+limit (1800.248 seconds), kills its owned client and publishes no output. Its
+assertion exits one. A read of the already accepted public RID FR9P7TGF016 after
+client exit records Status=WAITING / Searching after 31 minutes; a later read at
+06:34 local still records WAITING. Files public-rid-status*.txt/json under that
+probe directory preserve the NCBI response and requested URLs/times. Neither GET
+submits a new query. This isolates accepted submission/provider waiting from
+HiCT transport failure but does not prove result delivery; P8 live qualification
+remains open. Only the hashed public 160-base reference is used, never a project
+sequence. No automatic resubmission or provider-latency claim is made.
+
+## Pinned Expected/O/E figure rendering contexts
+
+Final qualification uses JVM JAR
+`build/libs/hict_server-2.0.46-1e4e101-webui_eb6caf7-fat.jar`, SHA-256
+`8323e9544c50e6172cb3b30f1db77339c6eca8651b5ca3d95ec4d46eb7eefe80`,
+and separately served WebUI dist SHA-256 (sorted relative paths/NUL/bytes,
+excluding electron)
+`7f074ed540b094ad9aa9d7195de651d78697b9936e57daef2061352a60c23fe3`.
+The packaged OpenAPI bytes equal the current API source. Browser harnesses
+snapshot the JAR; no dist was rebuilt under a live acceptance browser. This
+qualifies the development API/assets pair only, not an embedded/native/SFX
+release or a cross-platform package.
+
+- `/tmp/hict-render-capture-jvm-full-04.log`: `gradlew test shadowJar -x
+  copyWebUI --offline`, BUILD SUCCESSFUL in 52s; 623 tests, zero failures/errors,
+  seven optional skips. New registry tests cover expiry/release, permanent
+  identity/generation invalidation, budgets, independent metadata and actual
+  means/domain/grid fingerprints. HTTP tests compare pinned Expected/O/E tile
+  images byte-for-byte with a full-window reference while replacing the live
+  viewport profile, including native-BINS sequence expansion. Wrong-grid tiles
+  poison final validation; release, rendering changes, context count and native
+  source SHA preservation are checked. Fit-budget tests reject oversized square
+  and thin windows without integer overflow. Existing OpenAPI coverage passes.
+- `/tmp/hict-render-capture-web-05.log`: full `npm run build:web`, terminal zero,
+  including type/DTO/numerical and source lifecycle checks. The lifecycle fixture
+  now initializes its real WeakMap field and proves failed tiles affect only the
+  active capture. Explicit changed-file Prettier, focused Python Black/compile
+  and both repository diff whitespace checks pass.
+- `/tmp/hict-render-capture-expected-07/results.json`: seventeen cases, empty
+  unexpected errors, terminal zero. Real export-dialog controls cover viewport,
+  whole-map and rectangle in Expected/O/E; shared-reference sources with distinct
+  native grids; native-BINS fitting during sequence-level zoom; active prepared
+  SQRT_COVERAGE algorithm/weights; real rendering and weights edits invalidating
+  drawing; a controlled failed tile rejecting promptly; late-create cleanup.
+  Camera, context namespace, interactions, release and unchanged primary source
+  SHA-256 `59c272d9e10bdcab891102911c5c89e8be4d5dc27b94a960d4a82c08c1a9120a`
+  are checked. Only intentional validate-409 and the exact injected tile-503
+  responses are allowed; an unexpected tile-409 fails the driver. Temporary
+  whole-map layouts do not refit the shared viewport profile. Actual SVG figures,
+  screenshots and bounded render diagnostics are retained in that directory.
+- `/tmp/hict-render-capture-frozen-05/results.json`: ten cases, empty errors,
+  terminal zero. Shared PNG/SVG/PDF scientific metadata, fixed captured bytes,
+  composition, 640-pixel controls, exact cut, stale input and close are rechecked.
+- `/tmp/hict-render-capture-sequence-03/summary.json`: eighteen cases, status ok,
+  terminal zero. Real native sequence tools, actual generated ModDotPlot with
+  tracks, exact coordinates, selection exports and assembly reattachment pass.
+  `identity-figure-validation.json` retains three-format metadata and 2,279 flat
+  interior map colors independently rasterized from SVG/PDF, within four channel
+  units. Native SHA remains
+  `87c6b9c6de9ab5c8397eb3c06145d524a9aa21378b0f1ce586048605b9d97a20`.
+- `/tmp/hict-render-capture-viewer-01/results.json`: fourteen cases, empty errors,
+  terminal zero. Actual captured PNG/SVG reopening, full PNG pixel equality,
+  fit/zoom, responsive controls, inert SVG and chooser/late-decode cleanup pass.
+  Total: 59 final Chromium cases. Expected/O/E dialog cases exercise SVG capture;
+  the shared three-format encoders are rechecked with Observed and real identity
+  captures. Font/annotation-edge antialiasing is not claimed pixel-identical.
+
+Screenshots were inspected for whole-map and sequence/coverage content, complete
+previews, controlled failure messaging and existing responsive figure controls.
+The sparse mixed fixture contains mostly empty contacts; blank off-diagonal
+regions do not establish a rendering defect. Scientific Expected fitting retains
+its existing unique unordered source-pair support and display-bin distance.
+The context fingerprint hashes actual profile means/domains, not merely a
+requested rectangle. Effective normalization is recorded independently of
+ordinary visualization option equality.
+
+Retained limits: four contexts, 64 MiB profile/metadata budget, five-minute lease
+checked on registry access, one active fit, default 16,777,216 cells and at most
+65,536 native bins per axis. Larger fits ask for a coarser view without silently
+changing the grid. Contexts release on all normal completion/failure/close paths;
+lost replies rely on bounded expiry. This does not establish whole-genome latency
+budgets on every supported machine. Stored cut/scaffold comparisons, session
+persistence, publication artifacts and wider release gates remain open.
+
+Excluded intermediates: focused-02 omitted newly used JUnit static imports;
+web-02's prototype-only lifecycle fixture lacked the new WeakMap initializer.
+Expected-01 passed the early seven-case subset before later fixes. Expected-02/03
+exposed the shared overview sending coarser tile requests under the primary
+profile. Expected-04 reached its functional assertions but its synthetic 503
+response omitted the exposed cancellation header, causing a strict browser
+console failure; the controlled response now carries that header. Expected-05
+exposed a repeated mixed-grid projected-overlay render timeout; expected-06 was
+timing-dependent and is superseded by the explicit capture overlay promotion.
+Earlier frozen/sequence subsets and pre-budget builds do not qualify the final
+pair. Final evidence is only the runs named above.
+
+A read-only follow-up of public NCBI RID FR9P7TGF016 at
+2026-11-17 03:31:05 UTC (07:31 local) still records WAITING in
+`/tmp/hict-remote-blast-live-05/public-rid-status-after-figure-capture.{txt,json}`.
+It submits no new query and uploads no project sequence. P8 successful live
+result delivery remains unqualified. Protected plans and owner files are
+unchanged; nothing pushed, merged or tagged.
+
+## Portable figure snapshots and cut/scaffold comparisons
+
+Qualified development pair: JVM
+`build/libs/hict_server-2.0.47-33c7972-webui_a2540fa-fat.jar`, SHA-256
+`3f8a156018cc844f2c7c3b55c83af853722c43e6b0c83be27d64c6d268cfa278`,
+and WebUI dist SHA-256
+`44e9f6c9220d80d21c46e88a357a738a4581df5a0d922612d9ca3997cf895402`
+(sorted relative paths/NUL/bytes, excluding electron). The source includes this
+increment even though artifact version labels describe the preceding commits.
+Harnesses snapshot the JAR and no assets were rebuilt during acceptance. Native,
+embedded/SFX and cross-platform package qualification are separate outstanding
+release gates.
+
+- `/tmp/hict-snapshots-jvm-full-03.log`: `./gradlew test shadowJar -x copyWebUI
+  --offline`, BUILD SUCCESSFUL, 625 tests, zero failures/errors, seven optional
+  skips. Legacy AGP reverse/regroup restore retains fragment IDs, both 4/10-bp
+  matrices, intervals and snapshot equality; an identity collision rejects and
+  rolls back. These two new parameterized cases first failed with the old restore
+  path. Existing API coverage passes with the accurately named
+  `applyCoolerWeightsOption` provenance flag. The actual rendering graph determines
+  whether that option participates in a custom pipeline.
+- `/tmp/hict-snapshots-web-13.log`: full `npm run build:web`, terminal zero,
+  type/DTO/numerical checks pass. Session DTO tests cover v5, corruption, duplicate
+  IDs, budgets and compatible envelopes without figures. Changed-file Prettier,
+  focused Python Black/compile and both repository whitespace checks pass.
+- `/tmp/hict-snapshot-scenes-final-03.log`: real Chromium DOM boundary check,
+  terminal zero. PNG bytes round-trip, Unicode names/vector labels survive,
+  aggregate budgets fail atomically and late saves retain dirty state. Seventeen
+  rejected inputs cover active/remote SVG/CSS, XML/namespace hazards, corrupt PNG,
+  duplicate provenance, time mismatches, excessive JSON nesting and non-finite
+  numbers. No external resource request occurs. This focused test stubs fonts;
+  the full UI journeys exercise the actual bundled fonts and encoders.
+- `/tmp/hict-snapshots-ui-09/results.json`: fourteen cases, empty errors,
+  terminal zero. Real controls capture before/after exact cut and scaffold,
+  switch comparison layouts, export three formats, save/close/reopen session v5,
+  view the original stored PNG/SVG, store a comparison and undo removal. A
+  malformed scene with a recomputed CRC is rejected before `/session/restore`;
+  the current map remains intact. Delayed session writes preserve newer dirty
+  snapshots; closing during PNG preparation or comparison ignores late results
+  and releases URLs. `comparison-parity.json` records 1,436 flat interior samples
+  matching PNG against independently rasterized SVG/PDF within four channel
+  units, plus editable PDF captions/track labels. Native SHA-256 stays
+  `cc6a14ca907a66dd060f88c2d5aacb0d860170c6823ea1d1be4a7fd3d67c2f4c`.
+- `/tmp/hict-snapshots-sequence-06/summary.json`: nineteen cases, status ok,
+  terminal zero (`.driver.exit` also records zero). Command:
+  `check_sequence_lifecycle_browser.py --figure-export --snapshot-comparison`
+  with the normal JAR/webui/output arguments. Actual native ModDotPlot generation,
+  split contact/identity map and tracks are captured before and after Reverse.
+  All formats retain per-panel source units and distinct AGP provenance; both
+  PNG panels equal the original pixels. Undo restores the original assembly.
+  `identity-figure-validation.json` records 2,279 independent SVG/PDF interior
+  color matches; `identity-snapshot-validation.json` records panel parity and
+  native SHA-256 `04f851c210e6eaa0fa31842363f39ce94ef9266d48d07d5ee4612635cc4a50b0`.
+  The screenshot uses a separate `-ui.png` path and never overwrites the PNG
+  artifact under test.
+- `/tmp/hict-snapshots-expected-04/results.json`: seventeen cases, empty errors,
+  terminal zero. All pinned Expected/O/E scopes, coverage, concurrent changes,
+  tile failure and late-context cleanup pass. A forced sequence-to-projected
+  transition asserts exactly one visible secondary projection. This prevents
+  the redundant native secondary underlay from consuming the tile queue.
+- `/tmp/hict-snapshots-frozen-03/results.json`: ten cases, empty errors,
+  terminal zero. Frozen three-format metadata, composition, exact cuts, stale
+  captures, close and 640-pixel controls remain correct.
+- `/tmp/hict-snapshots-viewer-02/results.json`: fourteen cases, empty errors,
+  terminal zero. Actual exported PNG/SVG reopening, pixel equality, navigation,
+  inert SVG, chooser memory and late-decode cleanup pass.
+
+- `/tmp/hict-snapshots-destinations-05/results.json`: fourteen cases, empty
+  errors, terminal zero. Confirmed/cancelled/denied/failed/delayed writes, exact
+  selection FASTA and remembered paths remain correct. Fixture and output use
+  fresh sibling directories.
+- `/tmp/hict-snapshots-expected-06/results.json`: the full seventeen-case suite
+  repeats with empty errors and terminal zero after the visibility fix. Explicit
+  Python/shell exit records are zero; teardown tracing records SIGTERM directed
+  to the owned Java group, distinct from the driver group. Both
+  final runs cross native/sequence and projected grids and require the correct
+  single secondary layer. Total: 88 primary browser cases plus this 17-case
+  repeat, independent of the focused scene boundary check.
+
+Screenshots were inspected for the original saved
+snapshot, real ModDotPlot/track comparison and 640-pixel wrapping. Interior color
+samples do not establish pixel equality of font/annotation antialiasing. Portable
+sessions have a 32 MiB client file limit, 24 MiB figure budget, eight snapshots,
+64 megapixels per image and 128 megapixels combined. SVG/JSON/PNG parsing has
+independent work bounds; figures retain original PNG bytes and reconstructed
+vector labels with trusted bundled fonts. CRC32 is corruption detection, not a
+signature, and dataset quick fingerprints are not full-file verification.
+
+Excluded intermediates: JVM red-01 had a test-method compilation error; red-02
+reproduced the actual legacy identity defect. Boundary unit-01/02 had test quoting
+and an overbroad string assertion. UI-01 exposed Vue unwrapping the library's
+private refs; the per-manager library is now markRaw. UI-02 used an invalid
+synthetic grouping DTO; UI-04 assumed a feature label that the actual track does
+not display; both drivers now follow real behavior. UI-06 exposed the missing
+snapshot-name action, fixed and verified in UI-09. Earlier subsets/builds are
+superseded. Sequence-03 had a screenshot overwrite its PNG artifact; sequence-04
+passed assertions but terminated with 143 for an undetermined cleanup/environment
+reason, so neither qualifies the final pair. Expected-05 likewise completed
+all assertions but its tool exit was 143; it is excluded from terminal-success
+evidence. Sequence-06 retains separate PNG
+and screenshot and records a terminal zero. Destination-03 supplied overlapping
+fixture/output directories and failed its preflight; the final run uses fresh
+siblings. Expected-03 is a real product failure: diagnostics show 2,209 fine-grid
+secondary tiles queued underneath a 144-tile projected layer, reaching the strict
+60-second timeout. The visibility fix removes that redundant layer rather than
+raising the timeout or accepting unfinished drawing. Prior passing retries do
+not qualify that defect. P9 publication figures/presets and remaining release,
+platform, performance and P8 successful live-provider gates stay open. Protected
+plans and owner files are unchanged; nothing pushed, merged or tagged.
+
+## Physical figure output sizes
+
+Development pair: unchanged JVM JAR
+`build/libs/hict_server-2.0.47-33c7972-webui_a2540fa-fat.jar`, SHA-256
+`3f8a156018cc844f2c7c3b55c83af853722c43e6b0c83be27d64c6d268cfa278`,
+with WebUI dist SHA-256
+`800b1435ab5e12c554dad8f344ca94ec19c362e62160659782d638f4cb982812`
+(sorted relative paths/NUL/bytes, excluding electron). JAR snapshots isolate
+acceptance from build output; no assets were rebuilt during final browser checks.
+Runtime Java is unchanged; the preceding 625-test JVM result, with zero
+failures/errors and seven optional skips, remains the backend baseline. This
+increment does not qualify embedded/SFX/native or cross-platform packages.
+
+- `/tmp/hict-print-size-web-02.log`: full `npm run build:web`, terminal zero,
+  type/DTO/numerical checks pass. New `check-figure-print-size.mjs` is included in
+  the viewport checks. Independent PNG generation/CRC/zlib checks prove physical
+  metadata replacement preserves compressed and decoded image data, removes the
+  old physical/provenance chunks, and records a single current value. Invalid
+  sizes and both oversized captured and extremely tall print PDF pages reject
+  before the encoder can silently cap them. Existing intentional error fixtures
+  still log their handled failures; they do not indicate a failing build.
+- `/tmp/hict-print-size-ui-03/results.json`: five cases, empty errors, terminal
+  zero. Real export controls save 86/178 mm SVG/PDF/PNG; parsed SVG physical size,
+  pdfinfo page dimensions and PNG pHYs agree within format rounding. UTF-8 PNG
+  metadata, SVG root record and PDF XMP are equal. Original PNG image chunks and
+  every decoded pixel are identical. Each print width independently matches 729
+  flat interior matrix samples across PNG, rsvg-convert SVG and Poppler PDF,
+  within four channel units. PDF text extraction retains track labels. A vertical
+  comparison proves portrait page size and vector panel captions. Saving a
+  snapshot while a print preset is selected preserves its original pixel-sized
+  vector scene and unmodified capture provenance. At 640 pixels the controls wrap
+  within the viewport. Returning to captured size produces the original PNG
+  bytes. Native SHA-256 stays
+  `ebde927029745e8fc3dfceada018da3686de0440fb0884e7b5f91c0a7e9e0ac1`.
+- `/tmp/hict-print-size-snapshots-01/results.json`: fourteen cases, empty errors,
+  terminal zero. Actual cut/scaffold comparisons, session v5 restore, retained
+  PNG bytes, SVG/PDF parity, malformed import rejection, delayed save revisions
+  and cancellation cleanup remain correct.
+- `/tmp/hict-print-size-sequence-01/summary.json`: nineteen cases, status ok,
+  terminal zero and explicit driver exit zero. Actual native ModDotPlot with
+  tracks, three-format figure colors, named before/after Reverse comparisons,
+  exact-coordinate tools and selection exports pass.
+- `/tmp/hict-print-size-frozen-01/results.json`: ten cases, empty errors,
+  terminal zero. Existing captured-size encodings, scientific metadata, exact
+  cuts, stale/cancelled capture and responsive controls remain correct.
+- `/tmp/hict-print-size-viewer-01/results.json`: fourteen cases, empty errors,
+  terminal zero. Export reopening, PNG pixel equality, SVG inertness, fit/zoom,
+  chooser memory and late-decoding cleanup remain correct.
+
+Total: 62 final Chromium cases. Changed-file Prettier, focused Python Black/compile
+and both repository whitespace checks pass. Screenshots were inspected for the
+print-size status, 640-pixel layout and portrait comparison. The print-width
+references are the current
+[Bioinformatics author guidelines](https://academic.oup.com/bioinformatics/pages/author-guidelines),
+checked 2026-11-17. Presets preserve aspect ratio and captured pixels; integer PNG
+pixels-per-metre values introduce only encoding rounding. SVG/PDF labels remain
+vector, while embedded matrices retain their captured resolution. The UI reports
+effective raster DPI without silently upsampling or claiming journal acceptance.
+Final real-example print readability, publication artifacts and the broader
+release gates remain open.
+
+Earlier ui-01 passed the four-case draft before the PDF size guard; ui-02 passed
+that subset before portrait/snapshot-independence coverage. Both are superseded
+by ui-03 and web-02; only the final runs above qualify this increment. Protected
+plans and owner files are unchanged; nothing pushed, merged or tagged.
+
+## Exact portable artifact selection and integrated Linux candidate
+
+Package builders had a reproducible selection error in a populated build/libs:
+lexicographic sorting chooses 2.0.9 ahead of 2.0.49, while Windows modification-time
+selection can choose an unrelated recently touched JAR. Linux/macOS/Windows now
+require `hict_server-${VERSION}-fat.jar`. A missing current artifact fails without
+falling back. CI payload verification, native validation, launch smoke checks and
+upload paths use the same stamped version; missing package JARs do not fall back
+to a different build. Explicit `set_release_version.py --github-env` records
+HICT_BUILD_VERSION for action upload inputs. Local stamping has no implicit CI
+file write. Linux glibc/musl selectors use their actual package naming scheme.
+
+- `/tmp/hict-integrated-release-safeguards-05.log`: 25 Node cases pass, zero
+  failures/skips. Six new focused cases execute actual Bash/PowerShell selection
+  blocks with current and stale JARs, misleading timestamps, path spaces,
+  missing-current rejection and glibc/musl roots; the wiring check covers versioned
+  CI upload and smoke-check declarations. Existing checkout/publishing gates pass.
+- `/tmp/hict-portable-version-tests-02.log`: five Python cases pass. Explicit CI
+  assignment appends the exact written version while retaining prior entries;
+  ordinary stamping leaves an inherited CI file untouched; missing GITHUB_ENV
+  rejects before changing version.txt. Stable tags and run-derived versions keep
+  existing behavior.
+- `/tmp/hict-integrated-release-build-01.log`: full
+  `./gradlew test shadowJar -PrequireBundledWebUI=true --offline`, terminal zero,
+  BUILD SUCCESSFUL in 1m11s. This includes copyWebUI, the real WebUI build and
+  native processing verification. XML totals: 625 tests, zero failures/errors,
+  seven optional skips. WebUI source remains committed/clean at
+  `2041143e61d8551d610a61c77bb0f55cdc6f9c45`.
+- `/tmp/hict-integrated-portable-01.log`: real Linux package build, terminal zero,
+  using `HICT_SKIP_GRADLE=1 HICT_PORTABLE_DIST_DIR=/tmp/hict-integrated-portable-01
+  HICT_RUN_PAYLOAD_XZ_THREADS=2 scripts/portable/build_portable_linux.sh`. The
+  directory still contains the old 2.0.9 JAR. Packaged JAR equals the exact current
+  integrated JAR, SHA-256
+  `159e1ed08d9dc480717af1ff43f84f02d9902c5368368ae4ae68721f83035243`.
+  Embedded version is `2.0.49-48912d2-webui_2041143`. The .run extraction and
+  toolchain smoke checks complete. `sha256sum -c` from build/distributions verifies
+  both published-file candidates: .run
+  `1e5a3dad18cb24c3bd911846cda80a7530d620c80433472b92bab81653531d93`,
+  .tar.gz `de615ebba0b2f9af3295bda14681b59d16474333ed80bf2f62ca0fd586e09b86`.
+  Distribution basename:
+  `HiCT-2.0.49-48912d2-webui_2041143-linux-x86_64`.
+- `/tmp/hict-integrated-tools-01.log`: the extracted package's bin/hict
+  `check-toolchains --require-hictk --require-dotplot --require-sequence-tools`,
+  terminal zero. Actual bundled conversion/alignment, SeqKit, upstream ModDotPlot,
+  overlay adapter and BLAST executable smoke tests pass.
+- Actionlint validates both changed workflows. Bash syntax, full Windows script
+  PowerShell parse, changed Python Black/compile, focused JS Prettier and both
+  repository whitespace checks pass. The regression workflow includes the new
+  artifact-selection cases. No current-source remote CI is claimed or triggered.
+
+`scripts/check_packaged_release_browser.py` now owns a sequential extracted-package
+qualifier: its embedded runtime, actual served assets, disposable fixtures,
+metadata, menus, structural edits, offline workflows, strict performance gates
+and thirty-minute mixed soak. It compares the served index and 53 asset files
+against the package bytes before browser stages, keeps per-stage terminal status,
+checks native source/JAR hashes and stops only its owned process group. Separate
+fixture/browser Python environments are supported. See release-qualification.md.
+
+Current run `/tmp/hict-integrated-release-05` has passed metadata, both-size
+mouse/keyboard menu checks and seven structural edit round trips with exact
+Undo/Redo. Offline/performance/full-duration soak are pending; these running
+stages do not establish completion. The old structural driver waited for
+split_contig_at_bin even though scissors now uses split_contig_at_bp; the updated
+driver also checks all bases are retained and exact-cut replay lineage exists,
+while preserving original equality assertions. The runtime/package itself did
+not change for this driver correction.
+
+Excluded intermediate qualifier attempts: release-01 exposed separate Python
+environments missing Playwright in browser subprocesses; --browser-python now
+selects their interpreter explicitly. Release-02's fixture import pulled in an
+unneeded browser dependency; fixture preparation is now importable independently.
+Release-03 selected a deliberately sparse mixed fixture for a general diagonal
+color oracle; menu checking now uses the independent populated structural map.
+Release-04 passed metadata/menus and six edit round trips before the obsolete
+split-endpoint wait. Only release-05 and its terminal stages can qualify the
+corrected sequence. A checksum command initially used the repository root rather
+than the manifest directory; rerunning from build/distributions verified both
+files. No artifacts were rebuilt under the running qualifier.
+
+Read-only NCBI follow-up: existing public RID FR9P7TGF016 reports READY/has hits
+at 2026-11-17 06:03:23 UTC. A bounded GET at 06:04:16 returns ten hits with a
+160-base query and first accession NR_180316, retained as
+`/tmp/hict-remote-blast-live-05/public-rid-result-after-packaging.{xml,json}`.
+Status/URLs/times are preserved separately. This submits no sequence and uses
+no project DNA. The original HiCT client timed out before provider completion;
+P8 late-result recovery and live HiCT result delivery remain open. Provider GET
+semantics are documented by the
+[NCBI Common URL API](https://blast.ncbi.nlm.nih.gov/doc/blast-help/urlapi.html).
+Protected plans/owner files are unchanged; nothing pushed, merged or tagged.
+
+### Corrected incomplete-file validation and candidate 50
+
+The candidate-49 sequence passed offline recovery/export/API docs and the first
+two performance gates before stopping at `mat18_100k.hict.hdf5`. That file contains
+only treap_coo/block_rows, block_cols and block_length; it lacks contact offsets,
+values, stripes and contig metadata. It is not a usable HiCT map, so it cannot be
+a valid navigation fixture. The server's rejection was correct but its 500 status
+and technical message were not. `ChunkedFile` now raises a bad-input exception
+with a recreation action and filename. No incomplete file is accepted or modified.
+
+The strengthened API replacement regression first fails with expected 400/actual
+500 (`/tmp/hict-incomplete-map-red-01.log`). Green-01 exposed the test router's
+old classification of all non-HttpException errors as 500; its failure handler now
+matches MainVerticle's existing IllegalArgumentException -> 400 rule. Green-02
+passes, retaining exact primary/secondary identity, FASTA, tracks, workspace,
+statistics and every matrix cell through failure. The full integrated JVM test
+build `/tmp/hict-integrated-release-build-02.log` passes 625 tests with zero
+failures/errors and seven optional skips. After the ordinary patch-version stamp,
+`/tmp/hict-integrated-release-build-03.log` rebuilds the embedded-WebUI JAR,
+terminal zero. Version changes; runtime source is the same tested correction.
+
+`/tmp/hict-incomplete-ui-focused-01/browser/results.json` passes two actual picker
+attempts, terminal zero, no unexpected errors. HTTP 400 and the recovery message
+are visible; the same edited manager, snapshot and 25 native cells survive.
+Screenshots were inspected. Its immutable API snapshot and separately served
+previously extracted WebUI qualify this focused development pair; it does not
+replace the new integrated-package run.
+
+Candidate 50: `2.0.50-a614f88-webui_2041143`, JAR SHA-256
+`e52f06a50a67f01a1336c69c8546ab7db7a559cbfcb20d4daa45e98ad49f5c1d`.
+`/tmp/hict-integrated-portable-02.log` reaches both built-artifact records and
+checksum generation, though its tool wrapper reports terminal 143; the reason is
+undetermined and that exit is not counted as success. Independent artifact
+qualification is explicit instead: both `.run` and `.tar.gz` verify against their
+manifest (`/tmp/hict-integrated-package-checksums-02.log`, terminal zero), and the
+actual .run self-extracts successfully with subprocess exit zero
+(`/tmp/hict-integrated-run-verification-02.{log,json}`). The tested extraction is
+`/tmp/hict-integrated-run-extracted-02/HiCT-2.0.50-a614f88-webui_2041143-linux-x86_64`.
+Actual archive hashes:
+
+- .run: `896279c0d1f7a91a8c7ec6992c78c515325d3176f78510ab32d07552c8eb2f24`
+- .tar.gz: `89b54067cdc9ce51ed77c6e0b6d97262cda7655e6cdd2bb45466d745fd8df300`
+
+Fresh sequential qualifier `/tmp/hict-integrated-release-06` uses that .run's
+runtime and assets. Supplied inputs are complete physical copies: mat18_100k-1
+(96 contigs), combined_ind2_4DN (1,765), and AGWG.draft (7,790). Input hashes equal
+source hashes before the run; final native hashes must remain unchanged. Its
+mixed fixture also has a matching deterministic 12,017-base FASTA for sequence
+and mixed-grid soak checks. The new incomplete-file UI check is a declared stage.
+Only its terminal stages qualify this candidate. Performance and thirty-minute
+soak are still pending; no limits are relaxed. Previous candidate-49 .run/tar
+hashes refer to their retained archives and extracted JAR, not the subsequently
+rebuilt loose 49 JAR.
+
+Private-display Launcher follow-up initially could not start because the old
+/tmp Xvfb installation had been removed. Distro Xvfb/libxfont2/libunwind8 packages
+were downloaded and extracted only under /tmp, without changing the system.
+`/tmp/hict-integrated-launcher-reset-02.log` then passes with terminal zero:
+private-display Java Launcher reset/cancellation, minimum-window controls, reset
+acknowledgement, real server start/process-tree Stop and return to the simple view.
+This uses the current classes/JAR and a host JDK; it is separate from native
+browser-shell and cross-platform GUI qualification. Protected owner files and plans are unchanged.
+
+## Final frame after obsolete tile queue entries
+
+The candidate-50 qualifier `/tmp/hict-integrated-release-06` is terminal failed.
+Metadata, two-size menus, exact structural edits, incomplete-file recovery and
+offline workflows pass. Structural navigation passes, but the next, complete
+96-contig input times out waiting for rendering before timing starts. The failure
+is not a frame-budget result and is not the malformed mat18 file used earlier.
+
+`/tmp/hict-baseline-reproduce-01/run-2/results.json` reproduces the failure against
+the old bundle after two successful repetitions. At timeout: zero queued/loading
+requests, all 100 visible native tiles loaded (80 outside-extent tiles EMPTY),
+no pending layer renderer, no animation/interaction, no HTTP/page errors, but
+renderComplete_ false. A single diagnostic render after failure makes it true
+without changing tile states or camera. The preserved screenshot already shows
+the correct contact map. OpenLayers 9.1.0 computes frame readiness before its
+postrender queue reprioritization can discard the last obsolete entries; that
+path can leave no subsequent tile event to request another frame.
+
+`mapRenderCompletion.ts` observes public loadstart/loadend events and polls only
+during that loading lifecycle. At 100 ms it requests a frame only when the queue
+is empty, no transfers are loading and no layer renderer is pending. It never
+assigns completion state, changes tile data, clears queues or changes limits.
+Loadend/disposal clear the single timer and listeners. Private queue/readiness
+access is isolated and pinned to the installed OpenLayers version. Node checks
+cover pending transfers/renderers, the discarded-queue case, duplicate loadstart,
+completion and disposal. The existing viewport fixture now initializes its new
+cleanup callback and proves disposal calls it once.
+
+Development qualification uses unchanged backend
+`hict_server-2.0.50-a614f88-webui_2041143-fat.jar`, SHA-256
+`e52f06a50a67f01a1336c69c8546ab7db7a559cbfcb20d4daa45e98ad49f5c1d`,
+and WebUI dist SHA-256 `6844ad445d75abe1b5a326ec78577f14cf1dcf02c87a12a61116fc8815db306d`
+(sorted relative paths/NUL/bytes, excluding electron). No assets were rebuilt
+under the final acceptance browsers.
+
+- `/tmp/hict-render-completion-web-02.log`: full build:web, terminal zero;
+  type/DTO/numerical/lifecycle checks pass, including the new render-completion
+  regression in test:map-viewport. Focused changed-file Prettier, Python compile,
+  new-browser Black and both repository whitespace checks pass.
+- `/tmp/hict-render-completion-red-01.log`: the controlled browser case fails
+  against the old immutable WebUI. A real ImageTile is briefly wanted and then
+  invalidated between postrender and queue reprioritization. It must be discarded
+  without loading. Recovery is observed passively; the 1.5-second timeout is not
+  increased and the driver requests no repair frame during the assertion.
+- `/tmp/hict-render-completion-green-01/results.json`: seven cases, empty errors,
+  terminal zero. Six successive discarded-queue cases recover passively in
+  125–135 ms, retain exact camera/AGP, and never load the obsolete tile. Disposal
+  during that loading period removes the new timer. Native SHA-256 stays
+  `e1a1aba982bd4f8659f89182704572fceb2c83dd1190800a8b9b34266bea87c4`.
+- `/tmp/hict-baseline-reproduce-03/run-*/results.json`: six complete repetitions,
+  each fresh-browser and repeat-open, terminal zero. All twelve samples enforce
+  the original <=33 ms frame and <=100 ms acknowledgement limits. Maximum frame
+  p95 is 16.8 ms; maximum acknowledgement p95 is 30.85 ms. The baseline now records
+  passive queue/layer diagnostics and a screenshot on failure. Its optional
+  diagnostic frame is requested only after the gate has already failed and
+  cannot turn failure into a pass.
+- `/tmp/hict-render-completion-expected-01/results.json`: seventeen cases, empty
+  errors, terminal/explicit driver exit zero. Pinned Expected/O/E profiles, all
+  scopes, mixed native grids, sequence scale, coverage, invalidation, failed-tile
+  rejection and late-context release remain correct.
+- `/tmp/hict-render-completion-snapshots-01/results.json`: fourteen cases, empty
+  errors, terminal zero. Exact cut/scaffold comparisons, session persistence,
+  pixel/vector parity, unsafe import and delayed/cancelled capture cleanup pass.
+- `/tmp/hict-render-completion-sequence-01/summary.json`: nineteen cases, status
+  ok, terminal/explicit driver exit zero. Real native sequence tools, ModDotPlot
+  with tracks, frozen three-format scientific colors and named Reverse comparison
+  pass. Independent SVG/PDF color checks remain included.
+- `/tmp/hict-render-completion-frozen-01/results.json`: ten cases, empty errors,
+  terminal zero. Frozen formats, exact cuts, stale/failed input, cancellation and
+  responsive composition remain correct.
+
+Total: 67 focused functional browser cases plus twelve enforced navigation
+samples. The initial web-01 failed because a prototype-only viewport test fixture
+lacked the new constructor field. That fixture is corrected; no runtime fallback
+was added. Reproduce-02 accidentally ran before a successful build had emitted
+new assets, so its six old-bundle successes do not qualify the fix; they show the
+original race is timing-dependent. Reproduce-03 and the controlled old/new test
+are the final evidence. The standalone diagnostic probe and post-failure repair
+are not performance qualification.
+
+Integrated rebuild `/tmp/hict-render-completion-integrated-build-01.log` uses
+`./gradlew test shadowJar -PrequireBundledWebUI=true --offline`, includes copyWebUI,
+and passes 625 JVM tests with zero failures/errors and seven optional skips in
+1m9s. Committed WebUI is 1a37de6; candidate version is
+2.0.51-5cf6aaa-webui_1a37de6, JAR SHA-256
+`49170dd6284d691e1fbd88d20b09ab7b70fb009d3d5d41228b93395c49733092`.
+Packaging and integrated qualification are recorded below and are not inferred
+from development-pair checks. P8 late-result delivery, final
+publication figures and wider release gates remain open. Protected plans/owner
+files are unchanged; nothing pushed, merged or tagged.
+
+Candidate-51 package generation `/tmp/hict-render-completion-package-01.log`
+finishes with terminal zero and an explicit subprocess exitCode=0 receipt in
+`/tmp/hict-render-completion-package-01.exit.json`. This run isolates the producer
+process group and records its actual exit, rather than interpreting missing
+terminal records. The .run and .tar.gz verify against their checksum manifest;
+the actual .run self-extracts with exit zero and its JAR matches the integrated
+build (`/tmp/hict-render-completion-extraction-01.json`). Archive SHA-256:
+
+- .run: `2ff5bf621482bb4bd447563cf96b3cafaac778b05104a9249e991183097e51c5`
+- .tar.gz: `012bc0d62b291a9770e0c2fc70c320496dc85e93bebe02495eda5c8ab8b33fbb`
+
+The fresh `/tmp/hict-integrated-release-07` uses that extracted runtime/UI and
+complete 96-, 1,765- and 7,790-contig inputs. Metadata and served-asset identities
+pass. The driver is terminal failed (exit 1), with menus, structural edits,
+invalid-input recovery and offline workflows passing. Strict navigation passes
+on the structural, 96- and 1,765-contig maps. The 7,790-contig map fails the
+unchanged frame p95 limit: fresh/repeat 33.4 ms versus 33 ms; acknowledgement
+p95 is 32.6/32.775 ms, below 100 ms. Its final map completion is true, queue and
+loading counts are zero, and no page/HTTP errors occur. Fresh opening takes
+1496.6 ms and repeat 907.2 ms; fresh contains one 52 ms long task. The soak is
+not reached. This is a separate rendering-performance gate, not a recurrence of
+the obsolete-queue completion failure. The recovered-map screenshot
+was inspected; weighted source contrast is distinct from the benchmark's declared
+raw-count graph and still needs the wider readability/source qualification.
+
+
+### Dense-assembly ruler profiling and conservative label culling
+
+A CDP CPU profile of candidate 51 on the complete 7,790-contig AGWG map
+(`/tmp/hict-large-profile-01/browser`) attributes 2,285/2,364 ms of fresh/repeat
+self time to Canvas measureText; its parent is drawEntityBands. The ruler was
+measuring names even where the band was narrower than the six-pixel label
+padding. Skip text shaping in that case, after drawing the unchanged rectangle.
+This makes no assumptions about character width and preserves the exact fit
+boundary at six pixels. A regression checks narrow, boundary and fitting bands,
+including retained rectangles. Full build:web and formatting/diff checks pass.
+
+The corresponding profiled development pair
+(`/tmp/hict-large-profile-02/browser`) reduces measureText self time to 28/32 ms.
+Fresh and repeat horizontal ruler pixels are byte-identical before/after; both
+full screenshots were inspected. Differences in the full images are confined
+to the dynamic histogram/slider region. This diagnostic uses immutable packaged
+JVM 51 with newly built WebUI and does not qualify a new integrated release.
+
+A separate unprofiled strict run `/tmp/hict-large-gate-01/browser` finishes
+failed: fresh/repeat frame p95 33.3 ms exceeds the unchanged 33 ms gate; input
+acknowledgement p95 38.275/40.1 ms passes the 100 ms limit. No gate is relaxed.
+The optimized profile now points to visible boundary-feature rebuilding and
+associated vector-source events; further profiling/optimization and complete
+packaged qualification including the full soak remain required. No backend
+behavior changes; the previous integrated JVM suite remains 625 tests, zero
+failures/errors, seven skips. Protected plans and owner changes are untouched.
+
+
+### Reuse unchanged boundary features during navigation
+
+The optimized dense-map profile still showed roughly 1.8 seconds in vector
+viewport rebuilding and 0.6 seconds in source refresh. Contig/scaffold geometry
+does not change within one display resolution, but every label-layout bucket
+was creating new OpenLayers features and clearing their complete spatial index.
+
+Border tracks now retain at most 8,192 features for one prefix-array/scale/style/
+border-shape context. Descriptor identity, bounds and name are also checked.
+Assembly snapshot/grid/style changes invalidate reuse; exports always build
+independent features. The cache context and storage retain raw identities through
+Vue. Labels continue to use the current viewport and collision rules. Source
+refresh removes/adds only changed features, with fast clear retained for wholesale
+replacement. No borders are faded or omitted.
+
+Node regressions exercise reactive identity, descriptor/prefix/scale/bounds/name/
+style/shape invalidation, export isolation and bounded eviction. Real OpenLayers
+source tests verify retained border listeners/index membership, replacement of
+labels, scoped hiding and wholesale replacement. Full build:web, changed-file
+Prettier pass; eslint without --fix exits zero with nine existing warnings and
+configuration-schema warnings, with no new warning introduced. Initial test-fixture errors (an omitted
+currentViewState and destructuring the fixture wrapper) are corrected; failed
+web-02 is excluded. web-03 passes; web-04 includes the final raw context guard.
+
+Unprofiled `/tmp/hict-large-gate-02/browser` is terminal passed with strict
+limits enabled on the complete 7,790-contig AGWG map: fresh/repeat frame p95
+16.8/16.8 ms and input acknowledgement p95 39.525/38.7 ms. Fresh includes one
+53-ms long task; repeat none. No limit was relaxed. This is a development-pair
+measurement using packaged JVM 51 and current WebUI assets, not an integrated
+release qualification. The assets digest (sorted relative paths/NUL/bytes,
+excluding electron) is
+`2a66876b06487306a6b4ccced44a73a08031dd596273bb365529338599b50b75`.
+
+`/tmp/hict-border-reuse-browser-03` passes six cases with no page, console or HTTP
+errors: three repeated rebuilds retain identical geometry and map pixels with
+zero border add/remove events, then actual sidebar controls cycle all three
+border styles and replace stale contig features. Screenshots of full and
+partial border styles were inspected. AGP identity and native input SHA-256
+remain unchanged (`e1a1aba982bd4f8659f89182704572fceb2c83dd1190800a8b9b34266bea87c4`).
+Browser-01 used an obsolete displayed-name locator; browser-02 assumed the initial
+border shape was zero. These driver failures are excluded; browser-03 resolves
+the displayed control and derives the actual initial shape.
+
+Broader structural/figure/sequence qualification is recorded after completion
+below. functional-02 ended with exit 143 before final results; only its separately
+terminal successful borders stage is usable. Its owned leftover server was
+stopped and functional-03 runs with an isolated driver and explicit exit receipt.
+The completed candidate-51 packaging staging directory alone was removed to
+recover 2.08 GB; artifacts, extracted app and evidence remain retained.
+
+Final build:web run web-05 passes after removing two newly introduced non-null
+assertions (explicit oldest-key and missing-prefix checks). Final asset SHA-256:
+`95af3ff19d2dcc9cb46db0d3a7ddfe6f5718d8f2ee8bd3b12d603df6fa0c147e`. functional-03 passes all seven real structural-edit
+and exact Undo/Redo cases. Its Expected suite passes all seventeen scenario
+assertions but fails its terminal HTTP classifier on expired-lease responses
+from tiles already in flight when the deliberately failed capture releases.
+The classifier now permits only expired-context tile 409s matching that one
+injected-failure context and a confirmed successful release. Unrelated tile
+409s, other contexts and other errors still fail. This changes the adversarial
+test classification, not capture semantics or release limits.
+
+functional-04 runs against final assets. Six pixel/actual-border-control,
+seventeen Expected/O/E, fourteen snapshot/session and ten frozen-figure cases
+pass with no unexpected errors. Sequence completion is recorded below.
+
+functional-04 completes with explicit exitCode=0 in
+`/tmp/hict-border-reuse-functional-04.exit.json`. Its sequence/ModDotPlot/track
+suite passes all nineteen cases, including exact partial-bin coordinates and
+real before/after Reverse composition. Together with structural-03 and borders-04,
+73 functional cases pass. The strict large-map development gate is separate
+evidence; full integrated performance and the thirty-minute soak are still open.
+
+Candidate 53 integrates the committed WebUI and JVM: the full test/shadowJar
+build (`/tmp/hict-border-reuse-integrated-build-01.log`) finishes zero with
+625 JVM tests, zero failures/errors and seven optional skips. Version
+`2.0.53-8d54602-webui_daea115`, JAR SHA-256
+`e157d8c49d76c58d082e0b1a3b4d6fa4352ce7344af8515a550b292ddbef6e0f`. Linux package generation
+finishes with explicit exitCode=0 in
+`/tmp/hict-border-reuse-package-01.exit.json`. Archive hashes:
+
+- .run: `33a813637f25d274ccf809e6ef2f61d1617cc6bef8963c62f1bbb9b09a90a4bb`
+- .tar.gz: `346f51c9a0aaa077e4454897cacc1331c3ed29bbe5b3bdb5036b7ef28e92b2c1`
+
+The manifest verifies both archives; actual .run self-extraction exits zero and
+its JAR matches. Only the completed owned staging directory (2.08 GB) is removed.
+`/tmp/hict-integrated-release-08` uses this extracted package's own runtime, UI
+and toolchains with fresh physical copies of the three complete real maps.
+Metadata and index/53 served assets pass. Remaining sequential stages and the
+full-duration soak are running, with explicit driver receipts; they are not
+counted as passed. See docs/release-qualification.md for the current candidate.
+
+Run 08 finishes terminal failed with explicit exitCode=1. All pre-soak gates pass:
+metadata, 53 asset identities, menus, seven structural edits/Undo/Redo, two
+incomplete-input recoveries and offline workflows. Eight strict fresh/repeat
+samples across the structural, 96-, 1,765- and 7,790-contig maps pass: frame p95
+<=16.8 ms and acknowledgement p95 <=35.8 ms, with zero long tasks.
+
+The soak fails on its first edit, before any memory sample: the old driver sets
+the persistent region extent and expects Reverse to act on it. Under the verified
+two-selection contract, structural edits require entity selection. No edit
+request is issued, and waiting for its response times out after 60 seconds.
+The driver now performs a real Shift click at the navigated map position, releases
+Shift in finally, and waits for selected contig IDs before Reverse/Undo. It does
+not invoke a private selection shortcut or change the 33/100-ms or memory gates.
+Python compilation, Black and diff checks pass.
+
+Fresh run `/tmp/hict-integrated-release-09` reuses the byte-verified extracted
+candidate 53 and repeats the full sequence on fresh physical data copies. The
+prior run stays failed. Driver handle/receipts are recorded separately; no
+full-duration qualification is inferred from the earlier performance passes.
+
+Static follow-through on the soak exposed a second obsolete path before run 09
+reaches it: direct export bypassed the new destination/dialog contract and did
+not provide a writable browser picker. The harness now shares its existing
+download-backed writable-picker installation through a small helper; BrowserCheck
+keeps exactly the same picker behavior. The soak uses actual Export figure and
+PNG buttons and closes the dialog after saving, rather than calling the map
+manager's export method. Limits and collection windows remain unchanged. The
+platform manual checklist also explicitly distinguishes historical CI from the
+unqualified current-source Windows/macOS candidate. These are validation/document
+changes; candidate-53 application bytes remain unchanged.
+
+Run 09 passes every pre-soak stage and starts collecting real memory samples.
+Its performance samples retain frame p95 <=16.8 ms and acknowledgement p95
+<=38 ms on all four maps. Unlike run 08, its observer records several 51–114 ms
+long tasks, including on the tiny fixture; zero long tasks is not generalized
+from run 08. The original p95 limits still pass. The first mixed-source sequence
+cycle performs real entity selection, Reverse/Undo and dialog/picker PNG export.
+The resulting PNG was inspected: the expected primary red and secondary blue
+points and correctly positioned bp rulers are visible. No full-duration memory
+or release qualification is claimed while the soak remains running.
+
+
+### Notification cleanup and full-duration baseline
+
+Candidate-53 run 09 reaches 1,801.53 seconds and 223 mixed cycles, then finishes
+failed with explicit driver exitCode=1. Browser frame p95 is 16.7 ms and edit
+acknowledgement p95 47.18 ms. Browser post-warmup heap growth is 1.80 MB with
+0.0797 MiB/min slope; JVM heap slope is 0.0899 MiB/min and RSS slope is -1.65
+MiB/min. DOM nodes remain 632. The failed gate is listener growth: early maximum
+251, late maximum 282, exceeding the unchanged +20 allowance. There are no
+unexpected errors. All three real native inputs still match their original
+qualification SHA-256 values after the full run. This is a completed-duration
+workload with a failed qualification, not a passed soak.
+
+Static inspection identifies vue-sonner 2.0.9 useIsDocumentHidden: it registers
+on document, returns a cleanup Vue watchEffect ignores, and names window as the
+cleanup target. This matches the one-listener-per-success-notification trend and
+[upstream issue 168](https://github.com/xiaoluoboding/vue-sonner/issues/168).
+The installed version and upstream main still contain the defect. No dependency
+files are edited in place. A version/signature-guarded Vite pre-transform registers
+Vue onCleanup against document, scoped only to that dependency hook. A matching
+esbuild onLoad transform covers development prebundling. Both guards require a
+review on dependency upgrade; the dev plugin identity invalidates the old optimizer
+cache. Other hooks and notification behavior remain unchanged.
+
+Focused real-Vue effect-scope regression: 100 published-hook lifecycles retain
+100 listeners; 100 corrected lifecycles retain none, while hidden/visible updates
+still work. Unknown signatures, repeated patching and unrelated-module handling
+are checked. Full build:web, Prettier and focused eslint without --fix pass;
+eslint emits only the existing configuration-schema diagnostics.
+
+Real browser proof uses actual Export figure, PNG save and toast-close controls,
+a writable picker and CDP's document event listeners (debug handles released):
+
+- `/tmp/hict-notification-cleanup-red-01`: published package fails after one
+  export, two visibility listeners versus baseline one, no unrelated errors.
+- `/tmp/hict-notification-cleanup-green-01`: twelve production-bundle cycles
+  pass, always returning to baseline one, no unexpected errors.
+- `/tmp/hict-notification-cleanup-dev-03`: four live Vite-dev cycles pass with
+  the same baseline and no unexpected errors. Its isolated driver exits zero.
+
+The exported old/new PNG pixels are identical, and the final UI screenshot was
+inspected. Each independently generated native fixture remains byte-unchanged
+within its own test; their HDF5 creation metadata produces distinct input hashes.
+These tests use the immutable JVM-53 JAR with newly built/current WebUI and do
+not qualify a new integrated package.
+
+Development startup attempts 01/02 did not reach a browser: their urllib root
+probe omitted Accept: text/html, and Vite's SPA fallback returned 404. Attempt 01
+ended 143 without a final receipt; its exact owned leftover Vite process group
+was stopped. Attempt 02 reaches its explicit 30-second diagnostic deadline.
+Attempt 03 sends the proper HTML Accept header and completes with explicit
+exitCode=0. No failed startup attempt is counted as UI coverage.
+
+To preserve space, three redundant physical inputs from terminal failed run 07
+were removed only after verifying identical SHA-256 copies in both runs 08 and
+09. Originals and failed-run logs/receipts remain retained; the cleanup manifest
+is `/tmp/hict-redundant-run-07-input-cleanup.json`. No protected file changed.
+
+P8 research only: a bounded GET for existing public RID FR9P7TGF016 returns the
+documented JSON2_S format (16,804 bytes, ten hits/HSPs, original 160-base query).
+`/tmp/hict-remote-blast-live-05/public-rid-documented-json2-result{,-summary}.json`
+records the response and digest. This uses the
+[NCBI Common URL API](https://blast.ncbi.nlm.nih.gov/doc/blast-help/urlapi.html);
+no new search is submitted. It establishes a supported retrieval format, not
+implemented HiCT recovery or successful live delivery. Those P8 gates remain open.
+
+A new integrated candidate and complete qualification remain required after the
+notification fix. The source-controlled release/soak drivers now use real Shift
+selection and actual export/dialog/picker controls; no gate is relaxed.
+
+
+### Platform-native notification validation paths
+
+The notification regression now converts its module URL with fileURLToPath and
+realpathSync before passing it to the production/development adapters. URL
+pathname is not a native Windows path (drive prefix and percent encoding differ).
+This changes the test path, not application behavior. The real-Vue published/fixed
+100-lifecycle regression passes again; Windows/macOS CI remains unqualified here.
+The preceding integrated candidate-54 test/shadowJar build finishes zero with
+625 JVM tests, zero failures/errors and seven skips. The follow-up version also
+needs an integrated rebuild so its metadata identifies the final WebUI revision.
+
+Candidate 55 integrated build (`/tmp/hict-sonner-cleanup-integrated-build-02.log`)
+finishes with exit zero: 625 JVM tests, zero failures/errors, seven optional skips.
+Version `2.0.55-ecfd475-webui_95866d5`, JAR SHA-256
+`ed1e66599d945319525dfd7ca326a1b3ed27ce72b57e42b858a5259713930170`.
+Its isolated Linux package producer finishes zero under
+`/tmp/hict-sonner-cleanup-package-01.log` and `.exit.json`. Archive verification,
+actual `.run` extraction and the complete integrated qualification subsequently
+pass, as recorded below.
+
+Before packaging, obsolete 50/51 software caches and temporary extractions were
+checked for active process references, compared file-for-file and by SHA-256
+against their retained verified archives, then removed. The first cleanup stopped
+on an extra file and removed nothing; inspection identified the packager's own
+`.payload.sha256` marker. The second run verifies that marker against the cache
+identity and rejects any other extra/missing file. It completes zero, retaining
+archives, logs, receipts, current candidate 53 and all original input datasets.
+Receipt: `/tmp/hict-obsolete-package-cleanup-02.json`.
+
+### Candidate 55 integrated qualification and completed-RID recovery
+
+`/tmp/hict-integrated-release-10/qualification.json` is terminal passed with
+`qualifiesThirtyMinuteSoak=true`. Its own extracted Linux runtime, native tools,
+JAR and 53 served assets pass metadata/menu/structural/incomplete-open/offline
+and all strict performance stages. `soak/results.json` records 1,805.95765 seconds
+and 229 mixed cycles, frame p95 16.7 ms, acknowledgement p95 42.083424 ms,
+browser heap growth 1,825,816 bytes (0.08983148 MiB/min), JVM heap growth
+1,601,536 bytes (0.0948700 MiB/min), and RSS growth 18,243,584 bytes
+(0.8516401 MiB/min). DOM maxima remain 632; listeners 224 to 228. All unchanged
+limits pass. No unexpected errors occur and input/JAR hashes remain unchanged.
+`docs/release-qualification.md` records exact artifact hashes and receipt paths.
+
+The newer P8 increment implements completed-request retrieval using documented
+NCBI `CMD=Get`, `RID`, `FORMAT_TYPE=JSON2_S`. It never submits a new search or
+sends the pasted DNA to NCBI. Dedicated DTO/route/capability/consent handling
+prevents submission fallback, including against an older server. Shared bounded
+queue/rate limits, cancellable HTTP, a streaming size cap, bounded JSON parsing,
+scientific alignment checks and failure cleanup protect this independent path.
+Reports retain provider parameters and distinguish all-base, aligned-base-only
+and label/length-only verification, including zero-hit searches. Retrieved filters
+are explicitly local; original provider settings are not reconstructed.
+
+Evidence uses only the previously approved public 160-base NR_024570.1 query
+and its existing RID FR9P7TGF016. Offline fixtures retain the original downloaded
+JSON2_S bytes (SHA-256
+`f23cff0f973104d79293007203ab899605a02bdf2b5764676ac37134934618a8`).
+No new remote search was submitted. `/tmp/hict-remote-rid-browser-01/results.json`
+passes five actual-browser checks: invalid/old-server fallback prevention,
+completion after map close without BLAST+, Jobs/provenance and JSON/TSV export.
+Ten real alignments are recovered, first NR_180316.1, query 1–160, subject
+10–169, 100% identity, bit score 289.825 and e-value 3.01593e-78.
+The result screenshot was visually inspected: readable provenance, explicit
+external coordinates, literal titles, safe accession links and reachable exports.
+Run 02 stops on an ambiguous test selector matching both Close buttons; it does
+not count as narrow-layout coverage. After selecting the footer button explicitly,
+`/tmp/hict-remote-rid-browser-03/results.json` passes all six checks, including
+640-pixel provenance/export layout. Its screenshot was inspected: text wraps,
+the data table scrolls horizontally within the dialog and footer actions remain
+visible. These runs only retrieve the same existing RID, without new searches.
+
+`/tmp/hict-ncbi-recovery-native-browser-01/results.json` passes all eighteen
+controlled native-submission regressions, including 640-pixel layout, bounded
+results, queue/cancellation/timeouts and unchanged local-search default. Provider
+commands are controlled test executables, not additional live submissions.
+`/tmp/hict-ncbi-recovery-full-tests-01.log` finishes zero: 641 JVM tests, zero
+failures/errors, seven optional skips. New scientific regressions cover a
+nonpalindromic reverse query, strand filtering, gapped reverse subject, malformed
+late-hit cleanup, streaming limits, cancellation and pending/HTTP timeout failures.
+`/tmp/hict-ncbi-recovery-web-04.log` completes full `npm run build:web`;
+`/tmp/hict-ncbi-recovery-lint-01.log` exits zero, with eight existing warnings
+and the existing directive-schema diagnostics. No lint autofix was run.
+The OpenAPI YAML parses and all operation IDs remain unique.
+
+These recovery checks use a development API/static-WebUI pair and do not extend
+candidate-55 package qualification. Known-RID recovery does not recover an RID
+that native `blastn -remote` never exposed. P8 and the remaining publication,
+source-format and native/platform gates remain open. Protected plans, manuscript
+and owner changes are untouched; no push, merge or release was performed.
+
+### Measured figure text at column width
+
+Export reports the smallest captured vector text in physical points. The
+measurement rebuilds the existing allowlisted portable scene, strips raster
+images before temporary DOM insertion, observes transformed text font heights
+and removes that DOM in a finally block. It includes inherited/root fonts,
+tspans and nested SVG viewports. Images are not OCR'd; the UI explicitly asks
+for inspection of any text inside them. A sub-6-pt cue suggests a smaller capture
+or vertical comparison. No font or contact pixel is enlarged automatically.
+
+The retained 1,894-pixel comparison with 9-pixel labels corresponds to 2.3977 pt
+at 178 mm, demonstrating why physical dimensions alone were insufficient.
+`/tmp/hict-print-text-transform-03/results.json` passes six independent real-
+Chromium plain/inherited/scaled/rotated/nested/tspan/no-text cases and an extra
+root-font assertion; DOM node count returns to baseline after each measurement.
+The first test bundling attempt fails before browser launch because the isolated
+esbuild invocation lacks font loaders. Attempt 02 adds data-URL font loaders and
+passes; attempt 03 additionally verifies preservation of a declared root font.
+
+`/tmp/hict-print-readability-ui-01/results.json` passes all five existing physical-
+export gates, now also checking the point-size UI against the independent
+9-pixel fixture oracle. Both 86/178 mm sizes agree across PNG/SVG/PDF provenance;
+decoded PNG pixels and IDAT bytes are unchanged, 729 sampled flat interiors
+match independently rendered vector outputs, PDF labels remain extractable,
+640-pixel controls fit, returning to captured size preserves original PNG bytes,
+and portrait comparisons retain their source captures. No browser errors occur;
+the native source hash stays unchanged. Inspected screenshots show the measured
+5.0-pt readout at 178 mm and accessible export controls.
+
+Final full WebUI build `/tmp/hict-print-readability-web-02.log` exits zero.
+Focused eslint `/tmp/hict-print-readability-lint-01.log` exits zero with only
+the existing directive-schema diagnostics. Java application code is unchanged
+from the preceding 641-test pass. This uses a development API/static-WebUI pair,
+not a new integrated release qualification. Actual publication composition and
+all remaining native/platform/source-format gates remain open.
+
+### Compact whole-map export and real-data cut/scaffold captures
+
+`FigureCaptureOptions.fitSmallWholeMap` now exposes the already implemented
+native-grid whole-map path. The Export dialog shows the expansion checkbox only
+for whole-map scope, preserves its previous expanded default, marks changes
+outdated until explicit recapture, and records FIT_WINDOW/NATIVE_GRID in figure
+provenance. It changes capture geometry rather than resizing an existing frozen
+scene. Scientific grid, labels, failure isolation and live-view restoration keep
+their existing contracts.
+
+`/tmp/hict-compact-figure-regression-01/results.json` passes eleven real-browser
+checks, including the new native-grid case: rendered resolution equals the
+native pixel resolution, output is smaller, scientific provenance is identical
+to the expanded capture, and camera position/rotation/resolution return exactly.
+Other checks cover three formats, 640-pixel controls, track/ruler composition,
+selected rectangles, exact-cut immutability and delayed/failed capture isolation.
+Full WebUI build `/tmp/hict-compact-figure-web-01.log` exits zero; focused eslint
+`/tmp/hict-compact-figure-lint-01.log` exits zero with five existing warnings and
+the existing directive-schema diagnostics. No Java application changes are made.
+
+The preceding fresh integrated version-57 build, including bundled WebUI, is
+`/tmp/hict-publication-integrated-build-01.log`, terminal zero: 641 JVM tests,
+zero failures/errors, seven optional skips. It precedes this compact-export UI
+change and does not qualify that change as a packaged release.
+
+`prepare_borrelia_publication_browser.py` copies only explicitly supplied public
+inputs into a fresh nonsymlinked /tmp directory. It checks the approved prepared
+FASTA hash, verifies all 19 map names/lengths, derives 10 kb called-base GC
+fractions and converts them with an explicitly supplied UCSC bedGraphToBigWig.
+An explicitly illustrative GFF3 region provides the exact-cut context menu.
+Real bundled ModDotPlot generates 155 source-bin windows at 10 kb. The actual
+feature-menu action cuts at 450,123 bp, yielding children 450,123 and 460,601 bp;
+the real scaffold button groups them. Three immutable named PNG/SVG/PDF captures
+retain matching pipelines and the primary/secondary/track provenance. A 200-base
+sequence spanning the cut matches the original before/after grouping. Original
+and copied native matrix/FASTA hashes are unchanged.
+
+Run `/tmp/hict-borrelia-publication-05/results.json` is passed with no browser
+errors. Images were inspected: Hi-C above the diagonal, ModDotPlot identity below,
+GC and illustrative marker tracks, and distinct cut/scaffold boundaries. An
+independent pyBigWig read checks all 155 windows/19 replicons against the derived
+bedGraph, maximum absolute error 1.4878e-8, in `gc-independent-oracle.json`.
+The original expanded capture is 913×883; compact captures are 309×279 and
+310×280, with the same contact grid. Final composition and print qualification
+remain separate from this successful capture workflow.
+
+Earlier preparation attempts are retained and excluded from coverage: 01 stops
+on unsupported bedGraph input; 02 does not expand the collapsed Borders panel;
+03/04 seek feature actions on a BED track's default signal presentation. The
+final script uses supported BigWig, explicitly opens Borders and uses a GFF3
+feature track with a focused live view before its context action. No app bug or
+source mutation is inferred from these preparation errors. A final archive from
+committed code, figure legend/alt text and print inspection remain required.
+
+### Track text remains inside both axis panels
+
+The real-data figure diagnostic exposes canvas-state leakage: vertical signal
+scale drawing leaves textAlign=center. The following feature-track title starts
+at the lower inset but remains centered and is clipped. Titles now explicitly
+set left alignment and top baseline, and each track-canvas render starts with
+left alignment. `/tmp/hict-borrelia-publication-06-red` fails the exported-title
+anchor assertion on the unchanged implementation; run 07 passes all captures
+after this fix, including full vertical names in the inspected composition.
+
+The next independent text-bounds check catches a second defect. The horizontal
+GC maximum 0.478 occupies local x=142..167 in a 155-pixel panel; a vertical zero
+extends to y=-2. Fixed label insets also shift tick marks away from their true
+normalized positions and suppress the vertical maximum at a 30-pixel lane.
+`/tmp/hict-borrelia-publication-08-scale-red` is terminal failed on these bounds.
+
+Scale drawing now reserves the widest formatted value, right-aligns horizontal
+values with a margin, places rotated vertical values below the panel top and
+uses the actual normalized value coordinate for tick marks. Labels are clamped
+independently of their marks. Regions too small for the annotation omit it rather
+than drawing clipped numbers. `/tmp/hict-borrelia-publication-09-scale-green`
+passes all three real-data captures, scientific invariants and both-axis text
+bounds. The full 0.478 maximum appears in both axes (fill/outline); source native
+matrix/FASTA bytes and pipeline equality remain verified. Derived GC has actual
+maximum 0.47774372, making 0.478 the appropriate displayed rounding.
+
+`/tmp/hict-track-scale-frozen-01/results.json` passes eleven composition, native-
+grid/camera, three-format, immutable-snapshot and capture-race cases with no
+browser errors. `/tmp/hict-track-scale-workspace-01/results.json` passes thirteen
+track/source/weight, keyboard, three-size resize/pixel, lifecycle and legacy
+provenance cases. Full WebUI build `/tmp/hict-track-title-web-02.log` and focused
+eslint `/tmp/hict-track-scale-lint-01.log` exit zero; lint retains six existing
+non-null warnings and the existing directive-schema diagnostics.
+
+The earlier fresh integrated version-58 build is terminal zero under
+`/tmp/hict-publication-integrated-build-02.log`: 641 JVM tests, zero failures/
+errors and seven optional skips. It precedes these WebUI text changes and is not
+their package qualification. A diagnostic 178-mm composition has 7.05-pt scale
+text and preserved embedded image bytes, but it still needs a newly stamped
+capture/archive and the final print/legend/alt-text checks. Protected plans and
+owner files remain unchanged; no push, merge or tag is performed.
+
+### Retained Borrelia figure candidate and outer SVG transforms
+
+`/tmp/hict-publication-integrated-build-03.log` finishes zero for
+`2.0.59-0878f4d-webui_d27c8ac`, 641 JVM tests, zero failures/errors, seven optional
+skips. JAR SHA-256 is
+`21275d9ab1a5298665af230909d92d9d768298b000fb88a97df9e832aef51648`.
+`/tmp/hict-borrelia-publication-10-archive/results.json` passes all three actual
+UI captures against those committed sources. It retains complete track title/
+scale bounds, both maxima, job/settings fingerprints, unmodified native/FASTA
+hashes, exact cut-crossing sequence and matching pipelines. Duplicate map-name
+captions are hidden through the existing layer control; ruler bands and borders
+remain visible. The resulting figure candidate is archived under
+`docs/publication/borrelia-editing/`, with original panels, caption/alt text,
+source/derived-data checks, composition and checksums. No manuscript is edited.
+
+`/tmp/hict-borrelia-composition-07-archive` finishes zero. A 178×179.106-mm
+three-panel/rendering-key layout preserves panel geometry and embedded image
+attributes/bytes. The measured minimum vector text is 7.05127 pt. PDF fonts are
+embedded DejaVu faces from the actual bundled TTFs, not renderer fallbacks; page
+size and extracted text are checked. Matching XMP and attached JSON provenance
+are added with pypdf while preserving page drawing commands. SVG/PDF and final
+browser/standalone previews were visually inspected. Native image sampling is
+not falsely described as additional genomic detail; final journal artwork-
+resolution/TIFF checks remain open.
+
+An independent numerical check uses the pinned public Cooler cache after a
+fresh direct FTP-host HTTPS request times out without receiving any data. All
+24,025 raw 10-kb cells match exactly (155×155; upper-triangle sum 14,700,881).
+Native storage/query weights are identical to each other; the persisted source
+coefficients differ from the pinned Cooler by <=1.005e-14 absolute and
+<=2.995e-13 relative. An initial bitwise-equality assertion correctly fails and
+is not reported as an exact weight match. The archive explicitly records the
+declared 1e-12 coefficient comparison, exact eleven-bin exclusion mask and exact
+RGB equality for every cell at the actual plotted palette. No coefficients or
+source files are changed. Independent Bio.SeqIO/pyBigWig reads compare all 155
+derived GC windows against the original FASTA: maximum absolute error 1.610e-8.
+The archived oracles contain values, tolerances and source hashes.
+
+Composition diagnostics are retained: 01 exposes missing font aliases (Noto
+fallback), 02/03 use the bundled DejaVu aliases but predate final track-scale
+fixes. Attempt 04's getCTM-only physical-text check omits the outer physical-size
+conversion and fails. Attempt 05 uses screen transforms and passes that check,
+then fails Playwright's full-page screenshot of a standalone SVG document.
+Attempt 06 measures the same SVG in a normal HTML host and passes. Attempt 07
+also embeds and verifies standalone PDF provenance. No failed attempt is counted
+as final qualification.
+
+This investigation adds an independent nested-viewport/outer-group regression
+to the application text-size checker. Red run
+`/tmp/hict-print-text-outer-transform-red-01` shows 6 px instead of the correct
+12 px. The checker now normalizes full screen matrices to the root capture,
+including transforms outside the closest nested SVG. Green run
+`/tmp/hict-print-text-outer-transform-green-01` passes all seven cases plus the
+root-font assertion. `/tmp/hict-publication-print-regression-01/results.json`
+passes all five real-browser 86/178-mm, three-format, unchanged-pixel/provenance,
+narrow-control and portrait-snapshot checks. Full WebUI build
+`/tmp/hict-figure-outer-transform-web-01.log` and focused eslint
+`/tmp/hict-print-outer-transform-lint-01.log` exit zero; only the existing
+directive-schema diagnostics remain. No Java application change is made.
+
+The new readout fix is newer than the archived version-59 figure and does not
+change that figure's drawing. Its development checks do not extend candidate-55
+portable qualification. Overall release, wider formats, native GUI/platforms,
+remaining P8 recovery scope and final artwork-resolution checks stay open.
+The archived font license is copied byte-for-byte from the bundled source and
+retains its upstream trailing whitespace. Staged whitespace checks pass for
+project code/documentation with that verbatim license excluded; its checksum
+and source identity are verified separately.
+
+### Vector-cell publication artwork and TIFF delivery
+
+`prepare_publication_artwork.py` replaces each captured PNG colour field with
+same-colour native-cell rectangles, merging only identical adjacent runs. Before
+output, every decoded RGBA pixel must be covered exactly once and reconstruct
+byte-for-byte. Native geometry, clipping, alpha and text are retained. Input
+budgets limit native pixels, scene size and the TIFF allocation; resized images
+and non-embedded resources are rejected with an explicit recovery message.
+
+`/tmp/hict-publication-vector-artwork-03` is terminal passed. The three original
+images contain 259,811 RGBA pixels and become 24,466 visible rectangles. Full-
+scene rendering at 644×648 native units equals the original composition exactly.
+The PDF has zero raster page images; fonts remain embedded and extractable text
+includes complete track maxima. Its XMP/JSON record includes source hashes and
+the original PNGs are attached verbatim. The 900-dpi RGB TIFF is 6307×6346,
+uncompressed internally, with physical dimensions and matching description
+provenance. The gzip wrapper is small enough for the repository and decompresses
+to exactly the recorded uncompressed SHA-256. PDF page dimensions match the
+178×179.106-mm source within 0.01 mm. No upsampling is claimed as extra genomic
+detail. Standalone output was visually inspected after validation.
+
+`/tmp/hict-publication-vector-unit-01.log` passes seven independent small-field
+tests: uniform merging, changed run widths, checkerboard/transparent RGB,
+single-column tails, alpha/placement, invalid/resized input and budget rejection.
+Runs 01/02 also pass the real artwork; 02 adds explicit coverage/budget/gzip
+checks and 03 records runtime versions and page-size/native-render fingerprints.
+`/tmp/hict-vector-artwork-viewer-01/results.json` passes fifteen real-browser
+checks, including the extra retained vector SVG opened/zoomed through File,
+ordinary PNG/SVG exports, 640-pixel controls, cancellation, invalid/oversized
+files, inert SVG image-context behavior, delayed decoding cleanup and unchanged
+assembly state. Its input SVG hash matches the final archived derivative.
+
+`/tmp/hict-vector-artwork-integrated-build-01.log` finishes zero for version 60:
+641 JVM tests, zero failures/errors and seven optional skips. The changes here
+are authoring/qualification files; Java and WebUI application code are unchanged.
+Artwork outputs and source/provenance records are archived in
+`docs/publication/borrelia-editing/artwork/`, covered by the parent checksum file.
+This closes the real figure's encoding/resolution/readability gate, not package,
+broader-format or native/platform qualification. Protected plans/manuscript/owner
+files remain unchanged; no push, merge or tag was performed.
+
+
+## Copied Linux tool commands and enabled native integrations
+
+The full version-60 suite was rerun with the real bundled seqkit, BLAST+,
+HiCT ModDotPlot and compiled AVX2 processing library enabled.
+`/tmp/hict-native-enabled-suite-02.log` finishes zero: 641 tests, no failures or
+errors, two optional large-dataset skips. Real substitution/both-strand search,
+gapped BLAST scores, HTTP search provenance, accumulated ModDotPlot versions
+and Java/native tile parity now ran rather than skipping. These local tests
+submitted no remote search. The remaining large-map/four-source and DNAZoo
+assembly conversion cases require disposable physical inputs and remain open.
+
+Enabling them exposed a delivery defect: nested sequence commands extracted
+from the version-55 JAR were mode 0644. A warm embedded cache masked it. The
+Linux builder now restores execute bits for all commands declared by the
+extracted manifest, after validating safe paths and SHA-256, then verifies the
+complete copied payload. Licenses and other files retain their original modes.
+The source toolchain directory no longer controls this extracted-payload step.
+
+`/tmp/hict-copied-tool-permissions-probe-01/permission-results.json` records a
+737-MB physical copy failing verification before restoration and passing after
+it, with all eight commands executable and every manifest payload hash intact.
+A real Java resolver, with a fresh private java.io.tmpdir, resolves all four
+sequence commands into that copied prefix. Each command's help/version exits
+zero, with no fallback cache extracted; paths and hashes are retained in
+`cold-resolver-results.json`. This is copied-payload qualification, not a fresh
+portable artifact or renewed soak qualification. Earlier tool-content checks
+proved bundled bytes but did not strictly prove prefix origin.
+
+Seven POSIX permission regressions pass: nested execution/unchanged bytes,
+idempotence, corrupt or undeclared commands, traversal, symlink escape and
+unsupported platforms. The CI Java regression workflow runs them on POSIX
+runners. Linux shell syntax, both artifact/workflow Node suites and four
+portable-extraction tests pass. Application Java/WebUI code is unchanged, so
+no new visual behavior is claimed. A fresh packaged release and cold-prefix
+analysis remain necessary. Protected plans and owner documents are untouched.
+
+
+### Version-62 staged runtime and native browser checks
+
+`09c69626` implements the permission fix; the version-62 integrated JAR build
+finishes zero in `/tmp/hict-command-permissions-integrated-build-01.log`.
+The packaged source is `2.0.62-d50d6aa-webui_3bf3b68`.
+`/tmp/hict-command-permissions-browser-02/summary.json` passes all 19 sequence
+UI cases, including cross-join search, gapped BLAST, ModDotPlot accumulation,
+selection alignment, source-bin geometry, named snapshots and three-format
+figure exports. The server ran the staged package's Java runtime and copied
+JAR; fixture compilation used the host JDK. Assets and native tools came from
+the staged package. Overlay and comparison screenshots were visually inspected.
+
+`tool-origin-validation.json` verifies all 11 saved native jobs as finished,
+with commands under the staged toolchain prefix and matching executable hashes.
+The private Java temporary directory contains no fallback toolchain extraction.
+`staged-package-files.json` retains the exact staged file/link identities and
+modes used for these checks. This is staged-runtime qualification until the
+completed archive/extraction is independently verified.
+
+The first browser attempt stopped before startup because its Python lacked
+Cooler. The successful run combines the installed fixture and Playwright
+dependencies without changing application code. An initial origin observer
+incorrectly expected command fields in public Jobs status; those fields are
+intentionally in saved job provenance. The final origin check reads and hashes
+that provenance directly. These setup/observer failures are retained separately
+from the passing browser and native results.
+
+Package attempt 01 ended with signal 143 during extraction, without completing
+producer checks. Attempt 02's background shell ended without a completion
+receipt. Attempt 03 uses an independent process group and finishes zero, recorded in
+`/tmp/hict-command-permissions-package-03.exit.json`. Its producer extraction,
+launcher, HDF5/native smoke and archive SHA checks pass. No readiness claim is
+based on interrupted producer attempts.
+
+`/tmp/hict-command-permissions-archive-qualification.json` independently verifies
+archive SHA-256, the complete .run payload against its extraction marker and all
+3,086 extracted file/link identities and modes against the browser-tested stage.
+The actual .run-created application was moved intact to
+`/tmp/hict-command-permissions-extracted-01/HiCT-2.0.62-d50d6aa-webui_3bf3b68-linux-x86_64`.
+Redundant staging/payload files were removed only after verification. JAR SHA-256
+is `de07da6c2f6b56ea855069b0e5383bf4fe82666fb5e309294b97a023f86ade2a`;
+.run SHA is `131b64876ea7eccb2209f0a8d4af62fafd7f66a23182850dabfe4f820e3a9f94`;
+.tar.gz SHA is `28bdbb9bac9e1a783d4c4348fcf1b4211bfda4945220325c7c0d8f1996df23ff`.
+`/tmp/hict-integrated-release-11` starts the full packaged-browser, structural,
+menu, offline, performance and 30-minute soak gate on this artifact with three
+fresh physical performance-input copies. It finishes zero: all ten stages pass,
+including four performance checks and 225 mixed cycles over 1806.54 seconds.
+Frame p95 is 16.7 ms and acknowledgement p95 is 50.93 ms. Browser heap slope
+is 0.0971 MiB/min and JVM heap slope is 0.0722 MiB/min; JVM RSS slope is
+-0.7985 MiB/min. DOM maxima stay 632/632, listener maxima 224/228, with no
+recorded browser errors. All native inputs and JAR bytes remain unchanged.
+This qualifies the exact candidate for the exercised packaged Chromium and
+native-tool workflows. Tauri native dialogs and other platforms are not
+implicitly qualified. New working-tree Tauri streaming code is tested separately.
+
+
+## Tauri native request streaming and complete Linux wrapper — 2026-11-17
+
+Scope: immutable version-62 JVM with copied current WebUI assets and a newly
+compiled Tauri 0.1.2 executable. This is a development pair, not package-level
+qualification. Existing packaged Chromium/soak qualification retains version 62.
+The reproducible SDK and actual-UI runner are documented in
+[tauri-native-validation.md](tauri-native-validation.md).
+
+- SDK image: `sha256:20611bc911ea8371adf3b6f2492527e227d1bd8617f24f71a3ec4350b91922bf`.
+  Rust 1.88, Ubuntu 22.04, WebKit 4.1, tauri-driver 2.0.6. No host toolchain change.
+- Final development executable SHA-256:
+  `0a9570bc260fd78455b3e247ccc986f2fd5add8e054a89bb40d71000e21553b9`.
+  `/tmp/hict-tauri-sdk-01/compile-04.log` and `.exit.json`: full wrapper builds,
+  18 real Rust tests pass, zero failures/ignored. Previous builds 01–03 also
+  pass; early capability review fixed handler/manifest/ACL agreement before GUI
+  qualification. Existing dependency pins are retained; native HTTP adds TLS/
+  decompression dependencies and explicit Linux OpenSSL 3 runtime requirements.
+- WebUI full build: `/tmp/hict-tauri-native-http-web-build-01.log`, terminal zero.
+  File-save contracts cover bounded binary buffers, backpressure, chooser-before-
+  request metadata, cancelled/failed/confirmed commit outcomes and legacy paths.
+- Trial 01 is a red control: binary IPC alone still allowed WebKit response
+  buffering, about 1.49 GiB process-group RSS growth. This was not accepted.
+- Trial 02: `/tmp/hict-tauri-streaming-native-02/large-save-validation.json`,
+  `chooser-cancel-validation.json`, `overwrite-validation.json`,
+  `disk-full-validation.json`, `transfer-cancel-validation.json` and
+  `quit-during-transfer-validation.json` pass. 512 Mb save 2.85 s, 18.2 MiB
+  additional transfer RSS from the chooser baseline, frame p95 17 ms, input
+  acknowledgement p95 5.66 ms. Chooser RSS growth is separately recorded;
+  neither that measurement nor the renderer's fixed footprint is called zero.
+- Trial 03 final development binary: `large-save-validation.json` passes at
+  3.04 s, frame p95 17 ms and acknowledgement p95 7.22 ms; recorded transfer RSS
+  growth from the chooser baseline 0.684 MiB is specific to that warmed run.
+  Native WM_DELETE_WINDOW after 2.9 MiB cleans up in 0.228 s.
+  `native-figures-validation.json` records real GTK saves of SVG 887,503 bytes,
+  PNG 19,791 bytes and PDF 147,335 bytes, plus opening the actual saved SVG.
+  `native-export-dialog.png` and `native-exported-svg-viewer.png` are actual
+  X-root screenshots, not incomplete WebDriver compositor screenshots.
+- Reusable runner: `/tmp/hict-tauri-streaming-native-04/native-coordinate-qa-01/qualification.json`,
+  eight passed cases, source bytes unchanged. Full FASTA has 512,000,000 bases;
+  sequence SHA-256 `1e077476b6d3eaf57a98b4ac46ed60aed534a4374e8d631c61d346b871d38858`;
+  file SHA-256 `8768c249260c53c2f10c479415672f5459a3868ca5dc631d29431c02b2dc3129`.
+  Session saved through native Blob IPC restores the actual file. The bounded
+  full-volume failure preserves the original, emits no Saved outcome and removes
+  staged files. Cancel/quit/native close remove both destination and JVM spools.
+  Final Quit/native-close repeats observe 14,770,176/423,168 staged bytes and
+  finish cleanup in 0.186/0.416 s respectively.
+
+Failed attempts are retained. The first trial-02 large save encountered actual
+insufficient disk space while the JVM spooled a complete FASTA and the client
+wrote its destination; it did not falsely report success. The repeat succeeded
+after verified duplicate-output/cache cleanup. Trial-03's first reusable-runner
+attempt observed a late attach notice instead of the export result. Trial-04
+passed six cases, then its Quit click lost acknowledgement as the app exited;
+its `failure.json` is retained and the two remaining cases pass using `--resume`
+after narrowing the observer. The runner now checks the real truncated Linux
+process name and records its session for reproducible continuation.
+
+Both prototypes leave a partial file on WebDriver DELETE /window, including
+with the application ExitRequested guard. That automation operation is not
+qualified as graceful close. Separate native window-manager close and File Quit
+pass. No hard-crash cleanup, native navigation/renderer-loss behavior, HTML
+manual open chooser, other platforms or updated installer is implied. Protected
+plans, manuscript and pre-existing dirty documents remain untouched.
+
+
+The implementation is committed as WebUI `2eb9f29` with matching JVM patch 63.
+The final focused checks pass (zero lint errors; three pre-existing Electron
+non-null assertion warnings). The full finalized WebUI build under
+`/tmp/hict-tauri-native-final-web-build-01.log` exits zero. A fresh build stamped
+with the committed WebUI, rebuilt native payload and package-level qualification
+are the next gates; development-pair results above do not substitute for them.
+
+
+## Version-63 exact package and complete browser gate — 2026-11-17
+
+`/tmp/hict-tauri-archive-qualification.json` passes. The producer exits zero;
+all 3,100 staged/tar/extracted file/link entries match in bytes and modes.
+The actual .run-created application was moved intact to
+`/tmp/hict-tauri-extracted-01/HiCT-2.0.63-09c6962-webui_2eb9f29-linux-x86_64`.
+Redundant staging/private payload was removed only after identity verification
+and checking for active consumers. Archives and receipts are retained.
+
+- JAR SHA-256: `074e703cb02e0a7d7a319660a5a1a5ccd3e31b26c708966e8c87234b72b9ed1f`.
+- .run SHA-256: `3d6ef06431c52c879108ab8a9d2d90a286412fe7d6595ced7616a826cba5dd74`.
+- tar.gz SHA-256: `6e5fa86d77279fefdf18e62e09004ea470cd27a91e7819dff6e020b4a832f828`.
+- Payload SHA-256: `94e873acf20673b9290c0f4bddb14eeee8e9c84d3dd694179c916ca4e4f1b401`.
+- Native producer repeat 07 and payload identity checks pass; attempt 05's
+  unmounted output failure is retained, followed by successful preparation/repeat.
+- `/tmp/hict-integrated-release-12/qualification.json` and `.exit.json`: all ten
+  stages pass. Four map performance gates pass. The soak runs 225 cycles over
+  1800.561 s: frame p95 16.7 ms, acknowledgement p95 48.032 ms, JS heap slope
+  0.09271 MiB/min, JVM heap slope 0.07665 MiB/min, stable 632-node/224-listener
+  maxima and no recorded browser errors. Input/JAR/native identities remain intact.
+- `/tmp/hict-tauri-streaming-native-05/native-coordinate-qa-01/qualification.json`:
+  eight ordinary native cases pass in one fresh run using exact version-63
+  runtime/JAR and asset/executable snapshots. HTML open choosers remain suppressed
+  by automation; actual saved session files are supplied through file input.
+- `/tmp/hict-tauri-realmap-native-01/qualification.json`: 17 normal native
+  rendering/histogram/export/reset checks pass on staging subsequently verified
+  identical to the extracted archive. Independent SVG/PDF rasterizations match
+  the saved PNG within the established tolerance; original data hashes match.
+  The harness's private-display captures were inspected. An additional screenshot
+  that guessed DISPLAY :0 captured the host lockscreen instead and was excluded
+  and removed, with an exclusion receipt. It is not UI qualification evidence.
+
+This qualifies the exercised packaged Chromium and ordinary native workflows,
+not native page replacement/termination: later negative controls below supersede
+any broader interpretation. The protected manuscript and plans remain unchanged.
+
+## Native page replacement, signal shutdown and compatibility — 2026-11-17
+
+The final development executable is SHA-256
+`a73cfa59c532d89c29f8218caab52415b85ecb21827455cdd7b87b1cc2c7749c`.
+`/tmp/hict-tauri-sdk-01/compile-10.log` and `.exit.json` pass the full wrapper
+build and 23 Rust tests. The shared filesystem implementation's 16 isolated tests
+pass independently. Lock audit preserves all prior dependency versions/checksums;
+Tokio signal support uses the already locked signal-hook-registry dependency.
+`/tmp/hict-tauri-lifecycle-web-build-01.log` exits zero. Native commands/capability
+remain aligned and the existing localhost origins and bind/CORS policy stay intact.
+
+Four native lifecycle cases pass under
+`/tmp/hict-tauri-streaming-native-08/lifecycle-qa-01/qualification.json`:
+64-KiB partial Blob refresh, a real late chooser answer after refresh, actual
+FASTA transfer refresh and SIGTERM. The latter two clean up in 0.078/0.111 s,
+with no final file, destination temporary or JVM spool left. The termination
+check is inside the Unix launcher's two-second graceful-stop window.
+
+The same executable passes eight ordinary coordinate cases under trial 08,
+17 real-map/render/export/reset cases under `hict-tauri-realmap-native-03`, and
+nine legacy-IPC cases under `hict-tauri-legacy-native-01`. The eight-case run
+retains the 512-million-base sequence/file hashes, 17-ms frame p95 and 8.36-ms
+acknowledgement p95; its 1.339-s interval starts after the chooser closes and is
+not an end-to-end timing claim. Legacy figures retain exact input bytes through
+real native dialogs. Both integrated figure runs use a controlled command page;
+ordinary/lifecycle runners operate the actual copied WebUI.
+
+Negative controls remain: trial 05's Blob refresh and Unix SIGTERM leave partial
+files with native 0.1.2; trial 07 exposes a duplicate chooser/empty stage when
+Tauri retries interrupted custom-protocol IPC through postMessage. The final
+per-window chooser guard, page-generation checks and shared legacy writer pass
+those observed cases. Owned test leftovers were cleaned only after recording
+failure receipts or by verified native shutdown. Hard kills, renderer crashes
+and other platform/runtime variants remain unqualified. Updated final package
+qualification remains required.
+
+## Live GitHub Actions audit and cross-platform fixes — 2026-11-17
+
+The owner explicitly authorizes pushes and cancellation of superseded Actions
+runs, replacing the earlier no-push constraint. See
+[the CI validation record](ci-release-validation.md). Latest WebUI CI is green;
+Windows/macOS JVM regression failures block portable publication. Downloaded
+Windows XML confirms converted example provenance is missing, plus temporary
+folder cleanup failure in the BAM sequence-track test.
+
+A synthetic aliased-root provenance case reproduces the cache-key mismatch on
+Linux before the fix. Supplied/canonical cache lookup and real output identity
+checks now pass both cache spellings without invalidating existing metadata.
+Windows BAM tracks use nonmapped index I/O; actual Windows CI confirmation is
+pending. Full local validation passes 642 JVM tests with zero failures/errors,
+two optional skips, native-baseline parity and all 25 workflow contracts. No
+required regression was disabled and publication still requires passing gates.
+
+
+### macOS alias fixture follow-up after the authorized push
+
+- WebUI `3804e455`: four-platform CI successful, run 44138402420.
+- JVM `2f923de3`: Windows/Linux push and PR jobs successful; macOS ARM's
+  only failed test is the new alias fixture, line 122. The original provenance
+  regression passes. Full log retained in the connected audit and Actions
+  artifact 14353647264.
+- Correct the fixture's canonical-root branch with `root.toRealPath()` because
+  macOS TempDir can itself use `/var`. Both alias/canonical assertions remain.
+- `/tmp/hict-ci-macos-alias-fixture-01.log`: focused provenance/cache tests pass.
+- `/tmp/hict-release-64-integrated-build-01.exit.json`: integrated build exit 0,
+  JVM tests/native parity passed; JAR SHA256
+  `e423901b8005742fbe569cf5f1fb7b24f54c19f515ea4f405c3235d37c1ad711`.
+- `/tmp/hict-tauri-sdk-01/compile-11.exit.json`: producer exit 0, 23 Rust tests;
+  production payload executable SHA256
+  `a73cfa59c532d89c29f8218caab52415b85ecb21827455cdd7b87b1cc2c7749c`,
+  identical to the native GUI-qualified development executable.
+- Portable publication and the fixture's replacement macOS jobs remain pending.
+
+
+### Cancel preparation when a FASTA export client disconnects
+
+- `/tmp/hict-export-disconnect-red-01.log`: a real TCP disconnect before headers
+  fails the new assertion that the preparation worker stops.
+- Export requests now install the existing per-request cancellation handler,
+  including the already-closed response check needed after metadata capture.
+  Assembly mutations retain their ordered, independent behavior.
+- `/tmp/hict-export-disconnect-green-02.log`: running preparation/temp removal,
+  interrupted transfer/temp removal, queued export isolation and late submission
+  pass alongside existing scheduler/download tests.
+- `/tmp/hict-release-66-integrated-build-01.exit.json`: integrated development
+  build exit 0; 646 JVM tests, no failures/errors, two optional skips and passing
+  native parity. This intermediate build precedes the coordinated WebUI commit
+  and must not be substituted for the final committed package identity.
+- `/tmp/hict-tauri-windows-rename-fixture-01.log`: all 16 shared Rust tests pass
+  after moving the rename obstruction to the intended test phase.
+- `/tmp/hict-export-disconnect-web-build-01.log`: full local WebUI build passes.
+- Version-65 producer and archive identity pass (3,114 entries), but its run-13
+  workflow gate stops on ENOSPC and its qualification file is truncated. Its
+  coordinator/logs are retained; no full-gate pass is claimed.
+- Version-65 native trial 09 passes four lifecycle cases and seven coordinate
+  cases; final native close times out during the storage incident. The initial
+  coordinate attempt also records the stale driver-session setup failure.
+- Trial 10's extra pre-header probes are not passing evidence: the first misses
+  the transient Cancel control, and the second reaches an invalid driver session
+  with a native process still present. Diagnostics/screenshot remain under that
+  trial. Repeat the normal suites in a fresh private environment.
+- The release runner now checks physical-copy space plus 2 GiB headroom and
+  writes evidence by temporary-file replacement. An ad-hoc preflight probe saw
+  increased free space before invocation, then failed due to omitted Playwright
+  PYTHONPATH; its observer note explicitly disclaims refusal-branch coverage.
+- `/tmp/hict-release-65-redundant-test-output-cleanup.json`: owner-approved four
+  duplicate files checked against originals/retained copies or exact gzip, with
+  no active consumers, reclaiming 1,906,694,306 bytes. The absent old plan-audit
+  temporary map was replaced in verification by its exact original under /mnt.
+
+
+The fresh native development trial 11 now passes all eight ordinary coordinate
+export cases on the version-66 server code. The 512-Mb FASTA retains its file
+and sequence hashes; recorded frame p95 is 20 ms and acknowledgement p95 is
+11.95 ms. Native window close cleans staging in 243 ms. This uses an immutable
+intermediate server JAR and packaged version-65 runtime/WebUI/native snapshots,
+so final committed package qualification remains required. Receipt:
+`/tmp/hict-tauri-streaming-native-11/native-coordinate-qa-01/qualification.json`.
+
+
+Fresh native development trial 12 also passes all four lifecycle cases on the
+intermediate version-66 server: Blob refresh, late chooser answer, HTTP refresh
+and SIGTERM. Recorded HTTP refresh cleanup is 85 ms and SIGTERM cleanup 136 ms.
+Receipt: `/tmp/hict-tauri-streaming-native-12/lifecycle-qa-01/qualification.json`.
+The coordinated source increment pins WebUI `e15f17d2b8440544e61a4ba62b7547ca3671e592`
+and version `2.0.66-5544870-webui_e15f17d`; its post-commit WebUI build passes.
+Final package and replacement platform CI gates remain pending.
+
+
+### Electron 43.8.10 payload and reference performance conditions
+
+- Targeted npm install changes exactly one locked package version: Electron
+  41.10.7 to 43.8.10. Runtime identity includes Chromium 150.0.7871.250 and
+  Node 24.22.1. The full audit stops flagging Electron; 28 other development/
+  build advisories remain. Receipts are retained in the workspace evidence.
+- `/tmp/hict-electron-43-web-build-01.log`: full build passes.
+- `/tmp/hict-electron-43-native-02/qa/results.json`: nine development native
+  export cases, including 512-Mb streaming, exact-region FASTA, AGP, session
+  readback, cancellation, permission failure, refresh and native close.
+- `/tmp/hict-electron-43-payload-qa-01/coordinate/results.json`: same nine cases
+  pass with the built payload and its production security fuses. Whole-file
+  identity is retained; renderer coordinate request list is empty.
+- `/tmp/hict-electron-43-payload-qa-01/recovery/results.json`: eight cases pass,
+  with no page errors or unexpected dialogs.
+- `/tmp/hict-electron-43-figure-01/qa/results.json`: fourteen real-map checks
+  pass, including actual native SVG/PNG/PDF saves, independent rasterizations,
+  histogram, cancelled save preservation and browser storage restart/reset.
+- `/tmp/hict-electron-43-figure-01/source-identity.json`: original and physical
+  map copy unchanged, SHA256
+  `8cce355723881effce56ea8da89e25ca3087ebb30159ef13c7e85af20ca5f317`.
+- First SDK probe cannot start Electron because libnspr4 is absent; the figure
+  SDK supplies NSS, ldd has no missing libraries and subsequent suites pass.
+- The WebUI workflow now explicitly installs stable Rust and executes the real
+  shared save-writer tests on all four platforms; CI must confirm that new step.
+- `/tmp/hict-integrated-release-14/qualification.json` is a preserved failure:
+  metadata, menus, structural edits, incomplete-open, offline and the first
+  three performance maps pass; the large map's fresh frame p95 is 33.3 ms
+  against 33 ms, so no soak is reached. Its result survives atomic persistence.
+- `/tmp/hict-release-66-large-performance-investigate-01/baseline/results.json`:
+  targeted run with other agent GUI QA stopped passes unchanged thresholds,
+  frames 16.7/16.8 ms and acknowledgements 34.33/34.58 ms. This supports, but
+  does not prove, a contention explanation and does not replace the full gate.
+- Version-66 producer/archive checks pass 3,128 entries; JAR SHA256 is
+  `0024e6864c7ad0a028996c5926cac51c625d8ee1428488bde7d61ab4f91b6e6d`.
+- Workspace copies are under `build/release-evidence/2.0.66` and
+  `build/release-evidence/electron-43.8.10`. Final committed package/soak and
+  platform-native GUI gates remain open.
+
+
+The coordinated runtime increment pins WebUI
+`72a4d80991802e6cf40e8b93751dceaa37165e19` and version
+`2.0.67-bef9025-webui_72a4d80`. Its post-commit WebUI/production Electron
+payload build passes; the integrated JVM build passes 646 tests, two optional
+skips and native parity. The Tauri payload is being rebuilt against the same
+committed frontend assets. Final native/package tests and platform release
+conclusions remain required.
+
+
+### Synchronize generated frontend resources
+
+- `/tmp/hict-webui-stale-assets-red-01.json`: current frontend has 64 files;
+  version-67 JAR contains those exact bytes plus 56 obsolete generated JS chunks.
+- Gradle `copyWebUI` changes from Copy to Sync, guarded by the availability of
+  `dist/index.html` for the existing optional API-only fallback.
+- `/tmp/hict-webui-stale-assets-green-01.json`: the version-68 incremental JAR
+  has exactly the current 64 files, each byte-identical, no extras/missing files.
+  JAR SHA256 `9cd3899fa3e0fe787a7f24e4f699ecd3145fe6fc455d14dccc77e6c1ab0cce54`.
+- `/tmp/hict-webui-sync-optional-fallback-01.json` and `.log`: selecting an absent
+  alternate frontend with buildWebUI excluded skips copying, preserves all
+  existing frontend bytes and does not fetch a checkout.
+- `/tmp/hict-release-68-integrated-build-01.exit.json`: exit 0; 646 JVM tests,
+  zero failures/errors, two optional skips and passing native parity.
+- `/tmp/hict-tauri-sdk-01/compile-12.exit.json`: rebuilt production Tauri against
+  WebUI `72a4d809`, all 23 Rust tests pass; native executable SHA256
+  `351e5bf999981cbf4fd99da0bd9eed7be01e136a1849b05fe73c2b8e46af2683`.
+  Final native GUI qualification of these newly embedded assets remains pending.
+- The completed Cargo target cache is cleaned after preserving the payload;
+  no compiler or executing target consumer remains. Registry/payloads are kept.
+- WebUI CI run 44153475239 passes all four platforms, including actual shared
+  Rust writer tests (16 passed, zero ignored on Windows). Full wrapper/package
+  qualification remains a separate gate.
+
+## Final Linux payload evidence on version 68
+
+JVM `bf6ee7a3987487994ebd5046384458f209be8eed` / WebUI
+`72a4d80991802e6cf40e8b93751dceaa37165e19` passes the integrated 646-test build
+(two optional skips, no failures/errors, plus native parity). Its actual `.run`
+extraction and tar/staging comparison verify 3,102 entries. Final Linux payload
+acceptance passes Tauri coordinate/export 8, Tauri lifecycle 4, Electron
+coordinate/export 9, Electron recovery 8 and Electron figure/rendering/storage
+14 cases, using the packaged JRE and final payloads. Receipts are under
+`build/release-evidence/2.0.68/final-*` and exact artifact hashes in
+`release-qualification.md`.
+
+The serial complete package workflow and all four maps' strict fresh/repeat
+performance gates pass. Its complete 1,803.74-second soak also passes 227
+cycles, frame p95 16.7 ms, acknowledgement p95 44.34 ms, stable DOM/listener
+maxima and unchanged source/JAR hashes, without unexpected errors. Browser
+and JVM heap slopes are 0.0781 and 0.0606 MiB/min, with downward JVM RSS.
+No competing agent GUI QA or compiler ran during it. Prior failed candidates remain retained, including version 66's
+33.3-ms frame result against the unchanged 33-ms limit.
+
+Current control-contract review passes all 232 static contracts after four
+reviewed anchor/interaction updates. This establishes no additional runtime
+outcomes. Fifteen checkout/publication and ten workflow/artifact contracts also
+pass. All five original VCF interval regressions fail meaningfully before the
+reader fix. Six VCF and three existing sequence-track cases pass afterward,
+including fifteen malformed/overflow rejection cases. The full updated source suite passes 652 JVM tests (zero failures/errors, two
+optional skips), native parity and the complete WebUI build. The Windows HTTP cancellation fixture's live-handle observer
+change passes all 23 full native tests locally; Windows confirmation remains
+required. These source changes are newer than the qualified version-68 package.
+
+The coordinated follow-up is version `2.0.69-bf6ee7a-webui_ea5c2c7`,
+with WebUI `ea5c2c76d80db1906c1202f7ac531bcbe72765e2`. Its post-commit
+WebUI build passes. Replacement CI and packaged acceptance remain required;
+the version-68 qualification above retains its exact source/artifact scope.
+
+
+## BAM and BigWig base-weighted signal correctness
+
+Four BAM regressions and an independent BigWig oracle now cover native 1/4/10-bp
+grids, terminal and shared partial bins, exact cuts, reversal, cache migration and
+coarse means. Before the fixes, BAM CIGAR gaps received depth, a viewport could
+move the apparent read center, and native-4 BigWig covered mean was 5.3333 rather
+than the independently expected 6. The corrected aligned-base depth excludes
+CIGAR D/N; read centers are chosen once in source reference coordinates before
+clipping. Coarse BAM depth and BigWig means use actual represented/covered base
+support. The exclusive last-bin projection also respects clipped shared bins.
+
+Only BAM/BigWig precompute caches advance to version 3. An exact version-2
+sidecar fixture is ignored and rebuilt without modifying its bytes. Missing
+BigWig observations remain distinct from measured zero. Legacy session enums
+are unchanged; the displayed SUM mode accurately says “Mean (gaps as zero)”.
+The 635-byte BigWig fixture includes generation metadata and SHA256; tests use
+the IGV reader against a scalar oracle, with pyBigWig as a separate browser oracle.
+
+Final source validation: 657 JVM tests, zero failures/errors, two optional skips;
+native parity passes (unchanged baseline up-to-date in the final rerun). The
+complete WebUI build passes. Twenty actual browser checks pass across native
+and sequence grids, including file pickers, BAM modes, all BigWig modes, VCF cuts,
+reversal and session restore. All 17 base centers round-trip exactly. Every
+signal-mode option fits at 375/640/1600 pixels, with narrow/desktop screenshots
+reviewed. Existing sequence-track 13 and feature-edge 15 browser checks also pass.
+Receipts and red/green logs: `build/release-evidence/signal-base-weighting/`.
+These are source/prototype checks, not qualification of a new portable artifact.
+Signed/nonfinite BigWig policy remains open: the existing reader takes absolute
+values. Broader format, accessibility and final package gates remain required.
+
+The coordinated candidate is `2.0.70-e77dd80-webui_a331682`, with WebUI
+`a331682b0c9058acb4f5b73f430518a2582807bf`. Static reconciliation passes all
+232 reviewed control contracts (227 inspected, five historical ambiguities);
+it does not infer runtime outcomes. Source-matched packaged acceptance and
+replacement platform Actions remain required.
+
+
+## Signed BigWig and fast Examples responses
+
+Independent signed fixtures reproduce loss of sign: a -7 observation appears as
++7, and the visible -9 minimum becomes zero in the frontend. The corrected reader
+preserves finite signs; native and cached all-negative maxima initialize from
+observations, not zero. BigWig caches advance to version 4; BAM remains at 3 and
+other formats remain at 2. Signed/native means retain base support. Signed MAX
+uses the Java support-aware path because the existing native kernel clamps to
+zero. Tests include native 1/4/10-bp levels, partial/shared bins, cuts/reversal,
+measured zero versus missing data, and immediate disk-cache reuse without Jobs.
+
+Both axes draw bars from zero and automatically include signed visible extrema.
+The signed log scale uses symmetric log1p; nonnegative scaling remains unchanged.
+A production-code UI regression fails before the fix and passes afterward.
+NaN/infinity fixtures now produce explicit coordinate-bearing query and Jobs
+errors rather than invented zeros. The browser's signed variant passes 24
+checks across two grids: real controls, signed modes, edits/session restore and
+linear/log drawing on both axes. Actual draw rectangles are checked against the
+independent source signs; restored-view and detached-axis screenshots are retained.
+
+Version-70 push Java CI reveals a separate Examples response-handoff race on
+Windows and Apple Silicon: both fail with “Response already ended”. The exact
+JUnit XML is retained. Vert.x 4.5.36 bytecode shows that send() ends before it
+returns its response future, whereas send(handler) installs its callback before
+ending. The client now uses the latter, installing pause/body/end/error handlers
+before handing the body to its blocking consumer. Redirect bounds, cancellation,
+verification and network policies stay intact; existing tests remain unchanged.
+
+Final local validation passes 659 JVM tests, zero failures/errors, two optional
+skips, and a freshly executed native parity case. Targeted downloader/track
+suites and the complete WebUI build pass. Receipts are retained under
+`build/release-evidence/signed-bigwig/`. The prototype browser receipt predates
+the independent Examples client fix; that fix is covered by the final full JVM
+suite. Replacement Windows/macOS CI and final packaged acceptance remain required.
+
+The coordinated follow-up is `2.0.71-0241054-webui_d6f771b`, with WebUI
+`d6f771b3a5c6d70da1c52064946519df5db23ce4`. All 232 static control contracts reconcile;
+no runtime outcomes are inferred. Replacement CI and final portable gates
+remain required.
+
+
+## Delivered runtime dependency follow-up
+
+The resolved runtime audit identifies eight advisories in Commons IO/Compress/
+Lang, JSON-java and Snappy-java. Reviewed upstream fixes and published release
+metadata support updating all five and locking every affected configuration.
+The new graph adds Commons Codec transitively: 77 Maven artifacts / 79 files.
+The repeated OSV query completes with zero flagged Maven components; two local
+JARs and native/tool/browser payloads are outside its coverage. Reproducible
+commands and exact versions are in `runtime-dependency-audit.md`.
+
+The full updated source suite passes 661 JVM tests, zero failures/errors and two
+optional skips, plus native parity. Two compatibility cases exercise delivered
+native Snappy arrays/streams and byte-preserving BZip2. Candidate 71's committed
+browser checks pass 24 signed-signal and ten secondary replacement cases under
+both assembly authorities, with unchanged source hashes. Both candidate-71 Java
+matrices and WebUI CI are green; complete release workflows and the dependency
+follow-up's replacement platform/artifact checks remain required. Receipts:
+`build/release-evidence/runtime-dependency-update/` and `build/release-evidence/2.0.71/`.
+
+The dependency candidate is `2.0.72-ccdf1e2-webui_d6f771b`; WebUI remains pinned to
+`d6f771b3a5c6d70da1c52064946519df5db23ce4`. Replacement Java/platform
+and portable results must qualify these updated runtime bytes.
+
+
+## Native dependency soundness and real Firefox downloads
+
+The native audit finds fixable anyhow/Tokio/rustix/serde_with/XML issues. Their
+compatible updates build with the declared Rust 1.88 SDK. The Linux GTK stack's
+last compatible GLib 0.18.5 still contains the upstream iterator soundness bug.
+A new optimized regression crashes with SIGSEGV before its two-line upstream
+backport. With the pinned/verified source patch, all 24 native tests pass with
+zero ignored cases. Normal frontend builds verify the original archive, every
+one of its 121 files and the exact allowed two-line change; upstream licenses
+and checksums remain included. The complete frontend build passes.
+
+The repeated native OSV query checks 508 registry components and retains ten
+maintenance-only notices; local application/GLib are explicitly listed separately.
+The actual Linux feature graph excludes chrono. No blanket native-security
+clearance is claimed. Review details and reproducible commands are recorded in
+`native-dependency-audit.md`; cross-platform replacement builds remain required.
+
+Playwright 1.65.2 / Firefox 159.0 passes eleven real download-only cases without
+polyfilled writable/open-file APIs: reverse editing; session download/dirty state;
+unsaved guard and keyboard focus trapping; independently checked whole/selection
+FASTA and AGP; PNG/SVG/PDF; figure reopening; and ordinary HTML session input.
+Source bytes are unchanged. Receipts are in
+`build/release-evidence/native-dependency-update/firefox-download-01/`.
+The broader final native/package, AppImage, accessibility and performance gates
+remain open. Candidate 72's push/PR Java matrices are both green on four platforms;
+its complete release workflows remain running at this checkpoint.
+
+The coordinated candidate is `2.0.73-9b07395-webui_bce3207`, WebUI
+`bce320752ef4d903caccbbea21d757d4cbc9cac8`. Source-matched native payload and platform release
+qualification remain required; earlier package receipts retain their exact scope.
+
+## Portable CI cache validation — 2026-11-18
+
+Local workflow checks passed for stable native cache keys, Linux Conan reuse and
+parallel JVM regression checks. Hosted warm-cache timing and publication remain
+pending. See [CI validation](ci-release-validation.md#portable-ci-cache-stability-and-critical-path--2026-11-18).
+
+Autobuild retains Gradle build verification and checks every bundled command before caching the Linux payload.
+
+Gradle refreshed the packaged manifest after changing only its version. A local JAR built with the remote checkout manifest and HDF5 native archive returned WebUI version 2.0.0 from /version.
+
+## Linux HDF5 startup — 2026-11-18
+
+Five paired JVM starts used the published 2.0.364 Linux JAR. The candidate
+overlaid only the rebuilt HDF5 initializer classes. Median initialization took
+1.239 s, down from 4.247 s. Every process wrote and read back an integer HDF5
+dataset. The candidate also passed with the generic CPU variant forced.
+
+Five additional starts per configuration used the published Linux Java runtime
+and the same JAR. From process launch until both the version API and WebUI index
+answered on loopback, the baseline median was 4.747 s and the candidate median
+was 1.779 s. Paired runs alternated order. These timings cover service readiness
+on one host and exclude installer extraction, browser painting and opening a map.
+The baseline flight recording, measurement programs and per-run results are in
+`build/release-evidence/portable-publication-priority/startup-75/`.

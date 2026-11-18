@@ -37,11 +37,14 @@ public record ContigDescriptorDTO(
   String contigName,
   String contigOriginalName,
   String contigSourceName,
-  int contigOffsetInSource,
+  long contigOffsetInSource,
   int contigDirection,
   long contigLengthBp,
   Map<Long, Long> contigLengthBins,
-  Map<Long, Integer> contigPresenceAtResolution
+  Map<Long, Integer> contigPresenceAtResolution,
+  Map<Long, Long> contigBinOffsets,
+  @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+  boolean contigSharedBinSlice
 ) {
 
   public static @NotNull ContigDescriptorDTO fromEntity(final @NotNull ContigTree.ContigTuple ctg, final @NotNull ChunkedFile chunkedFile) {
@@ -55,7 +58,8 @@ public record ContigDescriptorDTO(
       ctg.direction().ordinal(),
       ctg.descriptor().getLengthBp(),
       IntStream.range(1, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getLengthBinsAtResolution()[resIdx])),
-      IntStream.range(1, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getPresenceAtResolution().get(resIdx).ordinal()))
+      IntStream.range(1, resolutions.length).boxed().collect(Collectors.toMap(resIdx -> resolutions[resIdx], resIdx -> ctg.descriptor().getPresenceAtResolution().get(resIdx).ordinal())),
+      chunkedFile.firstOwnedBinOffsets(ctg.descriptor()), ctg.descriptor().isSharedBinSlice()
     );
   }
 

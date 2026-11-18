@@ -7,6 +7,11 @@ on:
     branches: ["**"]
   workflow_dispatch:
     inputs:
+      publish_before_tests:
+        description: "Publish before JVM regression tests finish (tests still run; default requires success)"
+        type: boolean
+        required: false
+        default: false
       bundle_hictk:
         description: "Build and bundle hictk before packaging"
         required: true
@@ -138,6 +143,7 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  REQUESTED_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
   HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
   HICT_JHDF5_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_ref || 'jhdf5-with-plugins-configuration-snapshot' }}
   HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1-slim.jar"
@@ -147,7 +153,44 @@ env:
   HICT_JHDF5_NATIVES_ARCHIVE: "src/main/resources/libs/sis-jhdf5-19.04.1-natives.tar.gz"
 
 jobs:
+  resolve-webui:
+    name: Pin WebUI revision
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+      toolchain_sources: ${{ steps.tool-sources.outputs.sources }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Resolve the WebUI commit
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--repo https://github.com/ctlab/HiCT_WebUI.git --root "${RUNNER_TEMP}/webui")
+          if [[ "${REQUESTED_WEBUI_REF,,}" == "same-as-jvm" ]]; then
+            args+=(--ref "${GITHUB_REF_NAME}" --fallback master)
+          else
+            args+=(--ref "${REQUESTED_WEBUI_REF}")
+          fi
+          checkout="$(node scripts/portable/checkout_webui.mjs "${args[@]}")"
+          echo "commit=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+      - name: Pin the upstream toolchain commits for all platform jobs
+        id: tool-sources
+        env:
+          HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+          MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+          MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
+        run: python3 scripts/ci/toolchain_cache_sources.py
+
   # Each package waits only for its own platform payload and smoke tests.
+  # Keep compiled cache inputs scoped to the platform build. Include changed
+  # compiler options in the key when changing a build command in this workflow.
   sequence-tools-linux:
     uses: ./.github/workflows/sequence-tools.yml
     with:
@@ -169,7 +212,7 @@ jobs:
       platform: darwin_x86_64
 
   linux-portable:
-    needs: sequence-tools-linux
+    needs: [resolve-webui, sequence-tools-linux]
     name: Linux portable .run
     runs-on: ubuntu-22.04
     continue-on-error: ${{ matrix.abi_mode == 'musl-static' }}
@@ -189,7 +232,8 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICT_LINUX_ABI_MODE: ${{ matrix.abi_mode }}
       HICT_LINUX_JHDF5_NATIVE_POLICY: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_jhdf5_native_policy || 'warn-only' }}
       HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, matrix.abi_mode) }}
@@ -205,11 +249,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Assign run-specific release version
         run: |
           python scripts/ci/test_release_version.py
-          python scripts/ci/set_release_version.py
+          python scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -278,9 +331,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/linux_x86_64
-          key: tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_linux.sh') }}
+          key: tauri-linux-x86_64-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_linux.sh') }}
           restore-keys: |
-            tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-linux-x86_64-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-linux-x86_64-
 
       - name: Install Linux packaging and browser prerequisites
@@ -318,10 +371,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .cache/hictk-conan/linux_x86_64-${{ env.HICT_LINUX_ABI_MODE }}
-          key: hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git') }}
+          key: hictk-source-conan-v3-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-${{ steps.tool-sources.outputs.sources }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/ci/linux_container_build.sh') }}
           restore-keys: |
+            hictk-source-conan-v3-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-
             hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-${{ env.HICTK_REF }}-
-            hictk-conan-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
 
       - name: Restore Linux container JDK cache
         id: cache-linux-container-jdk
@@ -335,9 +388,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**', 'scripts/ci/linux_container_build.sh') }}
-          restore-keys: |
-            hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**', 'scripts/ci/linux_container_build.sh', 'scripts/ci/configure_centos_mirrors.py') }}-${{ steps.runner-image.outputs.identity }}
+
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
 
       - name: Build HiCT native libraries in manylinux2014
         if: ${{ steps.cache-native-processing.outputs.cache-hit != 'true' }}
@@ -346,6 +402,7 @@ jobs:
       - name: Upload Linux HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           path: build/native-processing/resources
           name: hict-native-linux-x86_64${{ matrix.artifact_suffix }}
           if-no-files-found: error
@@ -367,10 +424,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}
-          restore-keys: |
-            toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
-            toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-
+          key: toolchain-v5-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/toolchains/build_mimalloc_static.sh', 'scripts/ci/linux_container_build.sh', 'scripts/ci/configure_centos_mirrors.py') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
+
+      - name: Discard non-exact compiled cache
+        if: steps.cache-linux-toolchains.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/linux_x86_64', ignore_errors=True)"
 
       - name: Inspect Linux bundled toolchain cache
         id: inspect-linux-toolchain
@@ -411,6 +470,10 @@ jobs:
 
       - name: Build hictk in Docker
         if: ${{ (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.inspect-linux-toolchain.outputs.hictk_ready != 'true' }}
+        env:
+          # Only this exact source-built ABI cache can reuse compiled packages.
+          # Prefix/legacy restores still rebuild from source, avoiding foreign ABI binaries.
+          HICTK_CONAN_BUILD_POLICY: ${{ steps.cache-hictk-conan.outputs.cache-hit == 'true' && 'missing' || '*' }}
         run: scripts/ci/linux_container_build.sh hictk
 
       - name: Build minimap2 in Docker
@@ -425,6 +488,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-linux-x86_64${{ matrix.artifact_suffix }}
           path: |
             toolchains-dist/linux_x86_64/bin/hictk
@@ -437,6 +501,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-linux-x86_64${{ matrix.artifact_suffix }}
           path: |
             toolchains-dist/linux_x86_64/bin/minimap2
@@ -449,6 +514,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-linux-x86_64${{ matrix.artifact_suffix }}
           path: |
             toolchains-dist/linux_x86_64/bin/mm2plus*
@@ -477,6 +543,10 @@ jobs:
           path: .cache/hictk-conan/linux_x86_64-${{ env.HICT_LINUX_ABI_MODE }}
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save Linux bundled toolchain cache
         if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-linux-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -488,6 +558,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-linux_x86_64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -507,7 +579,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Validate fat JAR
@@ -542,7 +615,8 @@ jobs:
             echo "Keeping bundled JHDF5/HDF5 native libraries; GLIBC check policy is ${policy}."
             exit 0
           fi
-          fat_jar="$(find build/libs -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          fat_jar="build/libs/hict_server-${version}-fat.jar"
           [[ -n "${fat_jar}" && -f "${fat_jar}" ]] || { echo "::error::Fat JAR was not found under build/libs; cannot strip JHDF5/HDF5 natives."; exit 1; }
           echo "Stripping bundled Linux JHDF5/HDF5 native libraries from ${fat_jar}."
           zip -d "${fat_jar}" \
@@ -581,12 +655,11 @@ jobs:
           fi
           max_allowed="${HICT_GLIBC_MAX:-2.17}"
           jhdf5_policy="${HICT_LINUX_JHDF5_NATIVE_POLICY:-warn-only}"
-          root="$(find build/portable -mindepth 1 -maxdepth 1 -type d -name 'HiCT-*-linux-x86_64' | sort | tail -n 1)"
-          [[ -n "${root}" && -d "${root}" ]] || { echo "::error::Portable Linux root was not found under build/portable."; exit 1; }
-          jar_file="$(find "${root}" -path '*/lib/hict.jar' -type f | sort | tail -n 1)"
-          if [[ -z "${jar_file}" || ! -f "${jar_file}" ]]; then
-            jar_file="$(find build/libs -maxdepth 1 -type f \( -name '*-fat.jar' -o -name '*.jar' \) ! -name '*-sources.jar' ! -name '*-javadoc.jar' | sort | tail -n 1)"
-          fi
+          version="$(tr -d '[:space:]' < version.txt)"
+          root="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}-linux-x86_64"
+          [[ -d "${root}" ]] || { echo "::error::Current portable Linux root was not found: ${root}"; exit 1; }
+          jar_file="${root}/lib/hict.jar"
+          [[ -f "${jar_file}" ]] || { echo "::error::Current portable JAR was not found: ${jar_file}"; exit 1; }
           tmp="$(mktemp -d)"
           trap 'rm -rf "${tmp}"' EXIT
           if [[ -n "${jar_file}" && -f "${jar_file}" ]]; then
@@ -631,47 +704,46 @@ jobs:
           [[ "${bad}" == "0" ]]
 
       - name: Upload JVM fat JAR artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-jvm-fat-jar
-          path: build/libs/*-fat.jar
-          if-no-files-found: error
+          path: build/libs/hict_server-${{ env.HICT_BUILD_VERSION }}-fat.jar
 
       - name: Upload Linux package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-linux-portable${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.run
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.tar.gz
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.sha256
-          if-no-files-found: error
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.tar.gz
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.sha256
 
       - name: Upload Linux AppImage artifact
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_linux_appimage == 'true') }}
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-linux-appimage${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-x86_64.AppImage
-            build/distributions/HiCT-*-x86_64.AppImage.sha256
-          if-no-files-found: error
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-x86_64.AppImage
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-x86_64.AppImage.sha256
 
       - name: Upload Linux runfile artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-linux-runfile${{ matrix.artifact_suffix }}
           path: |
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.run
-            build/distributions/HiCT-*-linux-x86_64${{ matrix.artifact_suffix }}.sha256
-          if-no-files-found: error
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}${{ matrix.artifact_suffix }}-linux-x86_64.sha256
 
       - name: Validate Linux artifacts after upload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         run: |
           set -uo pipefail
-          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-linux_x86_64.run' -o -name 'HiCT-*-linux-x86_64.run' | sort | tail -n 1)"
-          portable_bin="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          abi_suffix=""
+          if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then abi_suffix="-musl"; fi
+          runfile="build/distributions/HiCT-${version}${abi_suffix}-linux-x86_64.run"
+          portable_bin="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}${abi_suffix}-linux-x86_64/bin/hict"
           failed=0
           check_binary() {
             local label="$1" path="$2" warning_only="${3:-false}"
@@ -696,7 +768,7 @@ jobs:
           if [[ -n "${portable_bin}" && -x "${portable_bin}" ]]; then
             "${portable_bin}" check-toolchains --require-hictk --require-dotplot || failed=1
           fi
-          appimage="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-x86_64.AppImage' | sort | tail -n 1)"
+          appimage="build/distributions/HiCT-${version}-x86_64.AppImage"
           if [[ -n "${appimage}" && -x "${appimage}" ]]; then
             export APPIMAGE_EXTRACT_AND_RUN=1
             check_binary "portable AppImage" "${appimage}" || failed=1
@@ -725,14 +797,15 @@ jobs:
             scripts/ci/validate_linux_component.sh portable
           fi
   windows-portable:
-    needs: sequence-tools-windows
+    needs: [resolve-webui, sequence-tools-windows]
     name: Windows portable ZIP and EXE
     runs-on: windows-2022
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
@@ -741,6 +814,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Test resilient SDK acquisition
         shell: pwsh
@@ -756,7 +838,7 @@ jobs:
         run: |
           python scripts/ci/test_release_version.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/ci/set_release_version.py
+          python scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         shell: pwsh
@@ -823,9 +905,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
-          restore-keys: |
-            hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-v2-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}
+
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
 
       - name: Set up Rust
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
@@ -842,9 +927,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/windows_x86_64
-          key: tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_windows.ps1') }}
+          key: tauri-windows-x86_64-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_windows.ps1') }}
           restore-keys: |
-            tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-windows-x86_64-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-windows-x86_64-
 
       - name: Restore bundled toolchain cache
@@ -853,23 +938,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/windows_x86_64
-          key: toolchain-v3-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1') }}
-          restore-keys: |
-            toolchain-v3-windows-x86_64-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-
+          key: toolchain-v5-windows-x86_64-mostly-static-mm2plus-${{ env.MM2PLUS_REF }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1', 'scripts/toolchains/build_mm2plus_windows.ps1') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
 
-      - name: Restore bundled mm2-plus cache
-        id: cache-mm2plus
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
-            toolchains-dist/windows_x86_64/share/licenses/mm2plus
-            toolchains-dist/windows_x86_64/share/doc/mm2plus
-          key: toolchain-mm2plus-v2-windows-x86_64-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_mm2plus_windows.ps1') }}
-          restore-keys: |
-            toolchain-mm2plus-v2-windows-x86_64-${{ env.MM2PLUS_REF }}-
+      - name: Discard non-exact compiled cache
+        if: steps.cache-hictk.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/windows_x86_64', ignore_errors=True)"
 
       - name: Inspect bundled toolchain cache
         id: inspect-toolchain
@@ -1000,6 +1074,7 @@ jobs:
       - name: Upload Windows HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hict-native-windows-x86_64
           path: build/native-processing/resources
           if-no-files-found: error
@@ -1040,6 +1115,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-windows-x86_64
           path: |
             toolchains-dist/windows_x86_64/bin/hictk.exe
@@ -1052,6 +1128,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-windows-x86_64
           path: |
             toolchains-dist/windows_x86_64/bin/minimap2.exe
@@ -1064,6 +1141,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-windows-x86_64
           path: |
             toolchains-dist/windows_x86_64/bin/mm2plus*.exe
@@ -1117,6 +1195,10 @@ jobs:
           path: .cache/hictk-conan/windows_x86_64
           key: ${{ steps.cache-hictk-conan.outputs.cache-primary-key }}
 
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save bundled toolchain cache
         if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-hictk.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
@@ -1124,18 +1206,6 @@ jobs:
         with:
           path: toolchains-dist/windows_x86_64
           key: ${{ steps.cache-hictk.outputs.cache-primary-key }}
-
-      - name: Save bundled mm2-plus cache
-        if: ${{ success() && (github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true') && steps.cache-mm2plus.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: |
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx2.exe
-            toolchains-dist/windows_x86_64/bin/mm2plus-avx512.exe
-            toolchains-dist/windows_x86_64/share/licenses/mm2plus
-            toolchains-dist/windows_x86_64/share/doc/mm2plus
-          key: ${{ steps.cache-mm2plus.outputs.cache-primary-key }}
 
       - name: Install 7-Zip for portable EXE
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
@@ -1160,6 +1230,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-windows_x86_64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -1186,7 +1258,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Stop Gradle daemons
@@ -1199,23 +1272,22 @@ jobs:
         continue-on-error: true
 
       - name: Upload Windows package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-windows-portable
           path: |
-            build/distributions/HiCT-*-windows-x86_64-portable.zip
-            build/distributions/HiCT-*-windows-x86_64.exe
-            build/distributions/HiCT-*-windows-x86_64.sha256
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64-portable.zip
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.exe
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.sha256
 
       - name: Upload Windows EXE artifact
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_windows_exe == 'true') }}
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-windows-exe
           path: |
-            build/distributions/HiCT-*-windows-x86_64.exe
-            build/distributions/HiCT-*-windows-x86_64.sha256
-          if-no-files-found: error
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.exe
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-windows-x86_64.sha256
 
       - name: Validate Windows artifacts after upload
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
@@ -1271,11 +1343,10 @@ jobs:
 
           $failed = $false
 
-          $exe = Get-ChildItem -Path "build\distributions" -Filter "HiCT-*-windows-x86_64.exe" |
-            Sort-Object LastWriteTime |
-            Select-Object -Last 1
+          $version = (Get-Content -LiteralPath "version.txt" -Raw).Trim()
+          $exePath = Join-Path "build\distributions" "HiCT-$version-windows-x86_64.exe"
 
-          if (-not (Test-BinarySmoke -Label "portable exe" -Path $(if ($exe) { $exe.FullName } else { "" }))) {
+          if (-not (Test-BinarySmoke -Label "portable exe" -Path $exePath)) {
             $failed = $true
           }
           if (-not (Test-BinarySmoke -Label "hictk" -Path "toolchains-dist\windows_x86_64\bin\hictk.exe")) {
@@ -1301,10 +1372,9 @@ jobs:
           exit 0
 
   macos-portable:
-    needs: sequence-tools-macos
+    needs: [resolve-webui, sequence-tools-macos]
     name: macOS Apple Silicon portable .run
     runs-on: macos-latest
-    continue-on-error: true
     env:
       HICT_DARWIN_ARCH: arm64
       MACOSX_DEPLOYMENT_TARGET: '12.3'
@@ -1313,7 +1383,8 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1321,12 +1392,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Assign run-specific release version
         run: |
           python3 scripts/ci/test_release_version.py
           python3 scripts/ci/test_macos_compatibility.py
-          python3 scripts/ci/set_release_version.py
+          python3 scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -1390,18 +1470,21 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_arm64
-          key: tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
-          restore-keys: |
-            hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-v2-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
+
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Apple Silicon Tauri browser payload
@@ -1414,10 +1497,15 @@ jobs:
         id: cache-darwin-toolchains
         uses: actions/cache/restore@v5
         with:
-          path: toolchains-dist/darwin_arm64
-          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
-          restore-keys: |
-            toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+          path: |
+            toolchains-dist/darwin_arm64/bin
+            toolchains-dist/darwin_arm64/share
+          key: toolchain-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git', 'scripts/portable/macos_target.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/darwin_arm64', ignore_errors=True)"
+
       - name: Restore Darwin Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
@@ -1430,6 +1518,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-darwin_arm64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -1444,6 +1534,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: macos-arm64-compatibility
           path: build/portable/**/share/doc/macos-compatibility.json
       - name: Verify every bundled tool in the packaged JAR
@@ -1451,18 +1542,21 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Upload macOS Apple Silicon HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hict-native-darwin-arm64
           path: build/native-processing/resources
           if-no-files-found: error
       - name: Upload macOS Apple Silicon hictk artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-darwin-arm64
           path: |
             toolchains-dist/darwin_arm64/bin/hictk
@@ -1473,6 +1567,7 @@ jobs:
       - name: Upload macOS Apple Silicon minimap2 artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-darwin-arm64
           path: |
             toolchains-dist/darwin_arm64/bin/minimap2
@@ -1483,6 +1578,7 @@ jobs:
       - name: Upload macOS Apple Silicon mm2-plus artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-darwin-arm64
           path: |
             toolchains-dist/darwin_arm64/bin/mm2plus*
@@ -1494,24 +1590,26 @@ jobs:
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: browser-tauri-darwin-arm64
           path: browsers-dist/darwin_arm64
           if-no-files-found: error
       - name: Upload macOS Apple Silicon package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-darwin-arm64-portable
           path: |
-            build/distributions/HiCT-*-darwin-arm64.run
-            build/distributions/HiCT-*-darwin-arm64.tar.gz
-            build/distributions/HiCT-*-darwin-arm64.sha256
-          if-no-files-found: error
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.tar.gz
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-arm64.sha256
       - name: Validate macOS Apple Silicon artifacts (post-upload)
         run: |
           set -euo pipefail
-          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-arm64.run' | sort | tail -n 1)"
-          launcher="$(find build/portable -path '*/bin/hict-darwin-arm64' -type f | sort | tail -n 1)"
-          shell_launcher="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          root="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}-darwin-arm64"
+          runfile="build/distributions/HiCT-${version}-darwin-arm64.run"
+          launcher="${root}/bin/hict-darwin-arm64"
+          shell_launcher="${root}/bin/hict"
           [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS arm64 native processing payload."; exit 1; }
           find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS arm64 native processing dylibs found."; exit 1; }
           [[ -x toolchains-dist/darwin_arm64/bin/hictk ]] || { echo "::error::Missing macOS arm64 hictk."; exit 1; }
@@ -1532,12 +1630,18 @@ jobs:
             [[ -f "$(dirname "${launcher}")/../browsers/darwin_arm64/tauri/manifest.json" ]] || { echo "::error::Packaged macOS arm64 app is missing Tauri browser payload."; exit 1; }
             codesign -dv --verbose=2 "$(dirname "${launcher}")/../browsers/darwin_arm64/tauri/bin/hict-tauri-browser" 2>&1 || { echo "::error::Packaged macOS arm64 Tauri browser is not ad-hoc signed."; exit 1; }
           fi
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save Darwin toolchain cache
         if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
-          path: toolchains-dist/darwin_arm64
+          path: |
+            toolchains-dist/darwin_arm64/bin
+            toolchains-dist/darwin_arm64/share
           key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
       - name: Save Darwin Conan cache
         if: ${{ success() && steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
@@ -1553,15 +1657,14 @@ jobs:
         with:
           path: build/native-processing/resources
           key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
-      - name: Report non-blocking macOS Apple Silicon failure
+      - name: Report macOS Apple Silicon failure
         if: ${{ failure() }}
-        run: echo "::warning::Non-blocking macOS Apple Silicon build failed; Windows/Linux release may still proceed without this artifact."
+        run: echo "::error::macOS Apple Silicon build failed; publication is blocked."
 
   macos-intel-portable:
-    needs: sequence-tools-macos-intel
+    needs: [resolve-webui, sequence-tools-macos-intel]
     name: macOS Intel portable .run
     runs-on: macos-15-intel
-    continue-on-error: true
     env:
       HICT_DARWIN_ARCH: x86_64
       MACOSX_DEPLOYMENT_TARGET: '12.3'
@@ -1570,7 +1673,8 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1578,12 +1682,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Identify runner image
+        id: runner-image
+        shell: bash
+        run: python scripts/ci/runner_cache_identity.py
+      - name: Fingerprint upstream tool sources
+        id: tool-sources
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py
 
       - name: Assign run-specific release version
         run: |
           python3 scripts/ci/test_release_version.py
           python3 scripts/ci/test_macos_compatibility.py
-          python3 scripts/ci/set_release_version.py
+          python3 scripts/ci/set_release_version.py --github-env
 
       - name: Download published JHDF5 jar
         if: ${{ env.HICT_JHDF5_SOURCE_MODE == 'artifact' || env.HICT_JHDF5_SOURCE_MODE == 'release' }}
@@ -1647,18 +1760,21 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_x86_64
-          key: tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}
-          restore-keys: |
-            hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-
+          key: hict-native-v2-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-native-processing.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('build/native-processing/resources', ignore_errors=True)"
+
       - name: Grant execute permissions
         run: chmod +x gradlew scripts/portable/build_portable_darwin_arm64.sh scripts/portable/build_portable_darwin_x86_64.sh scripts/portable/prepare_tauri_browser_payload_darwin.sh scripts/toolchains/build_darwin_toolchains.sh
       - name: Prepare macOS Intel Tauri browser payload
@@ -1671,10 +1787,15 @@ jobs:
         id: cache-darwin-toolchains
         uses: actions/cache/restore@v5
         with:
-          path: toolchains-dist/darwin_x86_64
-          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}
-          restore-keys: |
-            toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-
+          path: |
+            toolchains-dist/darwin_x86_64/bin
+            toolchains-dist/darwin_x86_64/share
+          key: toolchain-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git', 'scripts/portable/macos_target.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
+      - name: Discard non-exact compiled cache
+        if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('toolchains-dist/darwin_x86_64', ignore_errors=True)"
+
       - name: Restore Darwin Intel Conan cache
         id: cache-darwin-conan
         uses: actions/cache/restore@v5
@@ -1687,6 +1808,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-darwin_x86_64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -1701,6 +1824,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: macos-x86_64-compatibility
           path: build/portable/**/share/doc/macos-compatibility.json
       - name: Verify every bundled tool in the packaged JAR
@@ -1708,18 +1832,21 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/toolchains/prepare_bundled_tools.py --seal
-          jar_path=$(find build/libs -maxdepth 1 -name '*-fat.jar' -type f | sort | tail -n 1)
+          version="$(tr -d '[:space:]' < version.txt)"
+          jar_path="build/libs/hict_server-${version}-fat.jar"
           python scripts/toolchains/verify_packaged_tools.py --jar "$jar_path"
 
       - name: Upload macOS Intel HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hict-native-darwin-x86_64
           path: build/native-processing/resources
           if-no-files-found: error
       - name: Upload macOS Intel hictk artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-darwin-x86_64
           path: |
             toolchains-dist/darwin_x86_64/bin/hictk
@@ -1730,6 +1857,7 @@ jobs:
       - name: Upload macOS Intel minimap2 artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-darwin-x86_64
           path: |
             toolchains-dist/darwin_x86_64/bin/minimap2
@@ -1740,6 +1868,7 @@ jobs:
       - name: Upload macOS Intel mm2-plus artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-darwin-x86_64
           path: |
             toolchains-dist/darwin_x86_64/bin/mm2plus*
@@ -1751,24 +1880,26 @@ jobs:
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: browser-tauri-darwin-x86_64
           path: browsers-dist/darwin_x86_64
           if-no-files-found: error
       - name: Upload macOS Intel package artifact
-        uses: actions/upload-artifact@v6
+        uses: ./.github/actions/upload-release-artifact
         with:
           name: hict-darwin-x86_64-portable
           path: |
-            build/distributions/HiCT-*-darwin-x86_64.run
-            build/distributions/HiCT-*-darwin-x86_64.tar.gz
-            build/distributions/HiCT-*-darwin-x86_64.sha256
-          if-no-files-found: error
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.run
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.tar.gz
+            build/distributions/HiCT-${{ env.HICT_BUILD_VERSION }}-darwin-x86_64.sha256
       - name: Validate macOS Intel artifacts (post-upload)
         run: |
           set -euo pipefail
-          runfile="$(find build/distributions -maxdepth 1 -type f -name 'HiCT-*-darwin-x86_64.run' | sort | tail -n 1)"
-          launcher="$(find build/portable -path '*/bin/hict-darwin-x86_64' -type f | sort | tail -n 1)"
-          shell_launcher="$(find build/portable -path '*/bin/hict' -type f -not -path '*.AppDir/*' | sort | tail -n 1)"
+          version="$(tr -d '[:space:]' < version.txt)"
+          root="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}-darwin-x86_64"
+          runfile="build/distributions/HiCT-${version}-darwin-x86_64.run"
+          launcher="${root}/bin/hict-darwin-x86_64"
+          shell_launcher="${root}/bin/hict"
           [[ -d build/native-processing/resources/natives/macos_64 ]] || { echo "::error::Missing macOS Intel native processing payload."; exit 1; }
           find build/native-processing/resources/natives/macos_64 -path '*/native/*.dylib' -type f -print -quit | grep -q . || { echo "::error::No macOS Intel native processing dylibs found."; exit 1; }
           [[ -x toolchains-dist/darwin_x86_64/bin/hictk ]] || { echo "::error::Missing macOS Intel hictk."; exit 1; }
@@ -1789,12 +1920,18 @@ jobs:
             [[ -f "$(dirname "${launcher}")/../browsers/darwin_x86_64/tauri/manifest.json" ]] || { echo "::error::Packaged macOS Intel app is missing Tauri browser payload."; exit 1; }
             codesign -dv --verbose=2 "$(dirname "${launcher}")/../browsers/darwin_x86_64/tauri/bin/hict-tauri-browser" 2>&1 || { echo "::error::Packaged macOS Intel Tauri browser is not ad-hoc signed."; exit 1; }
           fi
+      - name: Verify upstream sources stayed fixed
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
+        shell: bash
+        run: python scripts/ci/toolchain_cache_sources.py --verify
       - name: Save Darwin Intel toolchain cache
         if: ${{ success() && steps.cache-darwin-toolchains.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
-          path: toolchains-dist/darwin_x86_64
+          path: |
+            toolchains-dist/darwin_x86_64/bin
+            toolchains-dist/darwin_x86_64/share
           key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
       - name: Save Darwin Intel Conan cache
         if: ${{ success() && steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
@@ -1810,24 +1947,39 @@ jobs:
         with:
           path: build/native-processing/resources
           key: ${{ steps.cache-native-processing.outputs.cache-primary-key }}
-      - name: Report non-blocking macOS Intel failure
+      - name: Report macOS Intel failure
         if: ${{ failure() }}
-        run: echo "::warning::Non-blocking macOS Intel build failed; Windows/Linux release may still proceed without this artifact."
+        run: echo "::error::macOS Intel build failed; publication is blocked."
+
+  # Source/JNI checks are independent of package artifacts; start them immediately.
+  # Publication below continues to require both their success and all four packages.
+  regression-gate:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish_before_tests) }}
+    uses: ./.github/workflows/java-regressions.yml
+
+  regression-after-early-publication:
+    needs: [linux-portable, windows-portable, macos-portable, macos-intel-portable]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_before_tests }}
+    uses: ./.github/workflows/java-regressions.yml
+
   # Fix branches validate and upload artifacts on push without mutating releases.
   publish-release-assets:
     name: Publish release assets
     needs:
+      - resolve-webui
+      - regression-gate
       - linux-portable
       - windows-portable
       - macos-portable
       - macos-intel-portable
-    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && (github.event_name == 'release' || (github.event_name == 'push' && !startsWith(github.ref_name, 'fix/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
+    if: ${{ always() && needs.linux-portable.result == 'success' && needs.windows-portable.result == 'success' && needs.macos-portable.result == 'success' && needs.macos-intel-portable.result == 'success' && (needs.regression-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.publish_before_tests)) && (github.event_name == 'release' || (github.event_name == 'push' && !startsWith(github.ref_name, 'fix/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_target != 'artifacts-only')) }}
     runs-on: ubuntu-22.04
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5
@@ -1837,12 +1989,15 @@ jobs:
       - name: Assign run-specific release version
         run: |
           python scripts/ci/test_release_version.py
-          python scripts/ci/set_release_version.py
+          python scripts/ci/set_release_version.py --github-env
 
       - name: Download packaged artifacts
         uses: actions/download-artifact@v6
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           path: downloaded-artifacts
+          pattern: '{hict-jvm-fat-jar,hict-linux-portable*,hict-linux-appimage*,hict-windows-portable,hict-darwin-*-portable}'
 
       - name: Collect assets and provenance
         id: collect-assets
@@ -1850,6 +2005,8 @@ jobs:
         env:
           PUBLISH_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target || '' }}
           SELECTED_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || '' }}
+          PUBLISH_LINUX_APPIMAGE: ${{ github.event_name != 'workflow_dispatch' || inputs.build_linux_appimage == 'true' }}
+          PUBLISH_WINDOWS_EXE: ${{ github.event_name != 'workflow_dispatch' || inputs.create_windows_exe == 'true' }}
         run: |
           set -euo pipefail
 
@@ -1889,7 +2046,7 @@ jobs:
           while IFS= read -r -d '' file; do
             cp -f "${file}" "release-dist/$(basename "${file}")"
           done < <(
-            find downloaded-artifacts -type f \( \
+            find downloaded-artifacts -type f \( -name "HiCT-${version}-*" -o -name "hict_server-${version}-fat.jar" \) \( \
               -name '*.jar' -o \
               -name '*.run' -o \
               -name '*.AppImage' -o \
@@ -1899,14 +2056,65 @@ jobs:
               -name '*.sha256' \
             \) -print0
           )
-          find release-dist -maxdepth 1 -type f \
-            ! -name 'HiCT-*' \
-            ! -name '*-fat.jar' \
-            -delete
+          required_assets=(
+            "hict_server-${version}-fat.jar"
+            "HiCT-${version}-linux-x86_64.run"
+            "HiCT-${version}-linux-x86_64.tar.gz"
+            "HiCT-${version}-linux-x86_64.sha256"
+            "HiCT-${version}-windows-x86_64-portable.zip"
+            "HiCT-${version}-windows-x86_64.sha256"
+            "HiCT-${version}-darwin-arm64.run"
+            "HiCT-${version}-darwin-arm64.tar.gz"
+            "HiCT-${version}-darwin-arm64.sha256"
+            "HiCT-${version}-darwin-x86_64.run"
+            "HiCT-${version}-darwin-x86_64.tar.gz"
+            "HiCT-${version}-darwin-x86_64.sha256"
+          )
+          if [[ "${PUBLISH_LINUX_APPIMAGE}" == "true" ]]; then
+            required_assets+=("HiCT-${version}-x86_64.AppImage" "HiCT-${version}-x86_64.AppImage.sha256")
+          fi
+          if [[ "${PUBLISH_WINDOWS_EXE}" == "true" ]]; then
+            required_assets+=("HiCT-${version}-windows-x86_64.exe")
+          fi
+          for asset in "${required_assets[@]}"; do
+            [[ -s "release-dist/${asset}" ]] || {
+              echo "::error::Missing required package ${asset}."
+              exit 1
+            }
+          done
 
-          compgen -G "release-dist/*-fat.jar" >/dev/null || { echo "No fat JAR was collected." >&2; exit 1; }
-          compgen -G "release-dist/HiCT-*-linux-x86_64.run" >/dev/null || { echo "No Linux .run artifact was collected." >&2; exit 1; }
-          compgen -G "release-dist/HiCT-*-windows-x86_64.exe" >/dev/null || { echo "No Windows .exe artifact was collected." >&2; exit 1; }
+          # Hash each package once for both provenance and the release manifest.
+          (
+            cd release-dist
+            find . -maxdepth 1 -type f -printf '%P\0' | sort -z | xargs -0 sha256sum
+          ) > release-asset-digests.txt
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def checksums(path):
+              entries = {}
+              for line in path.read_text(encoding="utf-8-sig").splitlines():
+                  digest, name = line.split(maxsplit=1)
+                  if name in entries:
+                      raise SystemExit(f"Duplicate asset {name} in {path}")
+                  entries[name] = digest
+              return entries
+
+          actual = checksums(Path("release-asset-digests.txt"))
+          for manifest in Path("release-dist").glob("*.sha256"):
+              base = manifest.stem
+              if base.endswith(".AppImage"):
+                  expected = {base}
+              elif base.endswith("-windows-x86_64"):
+                  expected = {f"{base}-portable.zip"}
+                  if f"{base}.exe" in actual:
+                      expected.add(f"{base}.exe")
+              else:
+                  expected = {f"{base}.run", f"{base}.tar.gz"}
+              reported = checksums(manifest)
+              if set(reported) != expected or any(actual.get(name) != reported[name] for name in reported):
+                  raise SystemExit(f"Package checksum mismatch in {manifest.name}")
+          PY
 
           provenance_file="release-dist/HiCT-${version}-build-origin.txt"
           {
@@ -1929,24 +2137,17 @@ jobs:
             echo "  minimap2: ${MINIMAP2_REF}"
             echo "  mm2_plus: ${MM2PLUS_REF}"
             echo "  hict_webui: ${HICT_WEBUI_REF}"
+            echo "  native_sources_sha256: ${HICT_EXPECTED_TOOLCHAIN_SOURCES}"
             echo
             echo "asset_sha256:"
-            (
-              cd release-dist
-              find . -maxdepth 1 -type f \
-                ! -name "HiCT-${version}-build-origin.txt" \
-                ! -name "HiCT-${version}-release-assets.sha256" \
-                -printf '%P\0' |
-                sort -z |
-                xargs -0 sha256sum
-            ) | sed 's/^/  /'
+            sed 's/^/  /' release-asset-digests.txt
           } > "${provenance_file}"
 
           checksum_file="HiCT-${version}-release-assets.sha256"
           (
             cd release-dist
-            rm -f "${checksum_file}"
-            sha256sum * | sort -k2 > "${checksum_file}"
+            { cat ../release-asset-digests.txt; sha256sum "$(basename "${provenance_file}")"; } |
+              sort -k2 > "${checksum_file}"
           )
 
           release_base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${release_tag}"

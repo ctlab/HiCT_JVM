@@ -76,7 +76,17 @@ public final class ExampleDownloader {
   /** What a client sees. */
   public record Status(@NotNull State state, @Nullable String exampleId, double progress, @NotNull String message,
                        @Nullable String error, long downloadedBytes, long totalBytes, @Nullable String currentFile,
-                       @NotNull List<String> files, @NotNull List<String> skippedOptional, boolean allRequiredPresent) {
+                       @NotNull List<String> files, @NotNull List<String> skippedOptional, boolean allRequiredPresent,
+                       @Nullable String jobId) {
+    public Status(State state, String exampleId, double progress, String message, String error,
+                  long downloadedBytes, long totalBytes, String currentFile, List<String> files,
+                  List<String> skippedOptional, boolean allRequiredPresent) {
+      this(state, exampleId, progress, message, error, downloadedBytes, totalBytes, currentFile, files, skippedOptional, allRequiredPresent, null);
+    }
+    Status withJobId(String id) {
+      return new Status(state, exampleId, progress, message, error, downloadedBytes, totalBytes, currentFile,
+        files, skippedOptional, allRequiredPresent, id);
+    }
   }
 
   /** Decides which addresses may be contacted. The test constructor can allow plain http and loopback. */
@@ -152,20 +162,28 @@ public final class ExampleDownloader {
   private String jobId;
   private long startedAtMs;
   private long finishedAtMs;
+  private String exampleTitle;
+  private final java.util.LinkedHashMap<String, BackgroundJob> history = new java.util.LinkedHashMap<>();
+
+  private BackgroundJob currentBackgroundJob() {
+    return new BackgroundJob(jobId, "example_download", status.state().name(),
+      status.state() == State.RUNNING && status.totalBytes() <= 0 ? null : status.progress(), startedAtMs,
+      startedAtMs, finishedAtMs, status.message(), status.error(), status.state() != State.READY ? List.of()
+      : List.of(new BackgroundJob.Output(status.exampleId(), "example", null)),
+      new BackgroundJob.Details(exampleTitle, status.downloadedBytes(), status.totalBytes(), status.currentFile(), status.skippedOptional(), status.exampleId()));
+  }
 
   public List<BackgroundJob> backgroundJobs() {
     synchronized (lock) {
-      if (jobId == null) return List.of();
-      return List.of(new BackgroundJob(
-        jobId, "example_download", status.state().name(), status.progress(), startedAtMs,
-        startedAtMs, finishedAtMs, status.message(), status.error(), status.state() != State.READY ? List.of()
-          : List.of(new BackgroundJob.Output(status.exampleId(), "example", null))));
+      final var result = new java.util.ArrayList<>(history.values());
+      if (jobId != null) result.add(currentBackgroundJob());
+      return List.copyOf(result);
     }
   }
 
   public boolean cancelBackgroundJob(String id) {
     synchronized (lock) {
-      if (!java.util.Objects.equals(jobId, id)) return false;
+      if (!java.util.Objects.equals(jobId, id) || status.state() != State.RUNNING) return false;
       cancel();
       return true;
     }
@@ -190,7 +208,7 @@ public final class ExampleDownloader {
 
   public @NotNull Status status() {
     synchronized (lock) {
-      return status;
+      return status.withJobId(jobId);
     }
   }
 
@@ -201,7 +219,7 @@ public final class ExampleDownloader {
         client.cancelActive();
         if (runningJob != null) runningJob.cancel(true);
       }
-      return status;
+      return status.withJobId(jobId);
     }
   }
 
@@ -210,18 +228,21 @@ public final class ExampleDownloader {
     synchronized (lock) {
       if (status.state() == State.RUNNING) {
         if (example.id().equals(status.exampleId())) {
-          return status;
+          return status.withJobId(jobId);
         }
         throw new IllegalStateException("Another example is being downloaded. Wait for it or cancel it first.");
       }
       final var flag = new AtomicBoolean(false);
       this.cancel = flag;
+      if (jobId != null) history.put(jobId, currentBackgroundJob());
+      while (history.size() >= 50) history.remove(history.keySet().iterator().next());
       jobId = java.util.UUID.randomUUID().toString();
+      exampleTitle = example.body().getString("title", example.id());
       startedAtMs = System.currentTimeMillis();
       finishedAtMs = 0;
       status = new Status(State.RUNNING, example.id(), 0.0d, "Starting", null, 0L, 0L, null, List.of(), List.of(), false);
       runningJob = executor.submit(() -> run(example, flag));
-      return status;
+      return status.withJobId(jobId);
     }
   }
 
@@ -232,18 +253,22 @@ public final class ExampleDownloader {
       final var files = example.body().getJsonArray("files");
       final var folder = destinationFolder(example.id());
       long total = 0L;
+      boolean allSizesKnown = true;
       for (int i = 0; i < files.size(); i++) {
-        total += files.getJsonObject(i).getLong("bytes", 0L);
+        long bytes = files.getJsonObject(i).getLong("bytes", 0L);
+        allSizesKnown &= bytes > 0;
+        total += bytes;
       }
-      final long expectedTotal = total;
+      final long expectedTotal = allSizesKnown ? total : 0L;
       final long[] finishedBytes = {0L};
       for (int i = 0; i < files.size(); i++) {
         final var file = files.getJsonObject(i);
         final boolean required = file.getBoolean("required", true);
         final var name = file.getString("filename");
+        final boolean lastFile = i == files.size() - 1;
         try {
           download(example, file, folder, flag, (soFar, size) -> publish(example.id(), finishedBytes[0] + soFar,
-            expectedTotal > 0 ? expectedTotal : Math.max(1L, finishedBytes[0] + size), name, done, skipped));
+            expectedTotal > 0 ? expectedTotal : lastFile && size > 0 ? finishedBytes[0] + size : 0L, name, done, skipped));
           done.add(name);
           finishedBytes[0] += Files.size(folder.resolve(name));
         } catch (final CancellationException cancelled) {
@@ -257,11 +282,22 @@ public final class ExampleDownloader {
         }
       }
       if (flag.get()) throw new CancellationException("Cancelled");
+      if (example.body().getJsonObject("openingRecipe").getJsonObject("fastaPreparation") != null) {
+        synchronized (lock) {
+          status = new Status(State.RUNNING, example.id(), 0.99d, "Preparing reference sequence", null,
+            finishedBytes[0], finishedBytes[0], null, List.copyOf(done), List.copyOf(skipped), false);
+        }
+      }
       final var preparedReference = ExampleFastaPreparation.prepare(folder, example.body(), flag);
       if (preparedReference != null) done.add(preparedReference);
       if (flag.get()) throw new CancellationException("Cancelled");
-      writeManifest(example, folder, done);
       synchronized (lock) {
+        status = new Status(State.RUNNING, example.id(), 0.99d, "Verifying example files", null,
+          finishedBytes[0], finishedBytes[0], null, List.copyOf(done), List.copyOf(skipped), false);
+      }
+      writeManifest(example, folder, done, flag);
+      synchronized (lock) {
+        if (flag.get()) throw new CancellationException("Cancelled");
         finishedAtMs = System.currentTimeMillis();
         status = new Status(State.READY, example.id(), 1.0d, "Ready to open", null, finishedBytes[0], finishedBytes[0], null,
           List.copyOf(done), List.copyOf(skipped), true);
@@ -295,7 +331,7 @@ public final class ExampleDownloader {
                        final List<String> done, final List<String> skipped) {
     synchronized (lock) {
       if (status.state() == State.RUNNING) {
-        status = new Status(State.RUNNING, exampleId, Math.min(0.99d, soFar / (double) Math.max(1L, total)), "Downloading " + file,
+        status = new Status(State.RUNNING, exampleId, total > 0 ? Math.min(0.99d, soFar / (double) total) : 0.0d, "Downloading " + file,
           null, soFar, total, file, List.copyOf(done), List.copyOf(skipped), false);
       }
     }
@@ -325,7 +361,15 @@ public final class ExampleDownloader {
     }
     final long expected = file.getLong("bytes", -1L);
     final var sha = file.getString("sha256");
-    if (Files.isRegularFile(target) && verified(target, expected, sha, false)) {
+    final var recorded = ExampleCache.reusableFile(folder, example.body(), file);
+    final var cachedSha = sha != null ? sha : recorded == null ? null : recorded.getString("sha256");
+    if (Files.isRegularFile(target) && cachedSha != null) {
+      synchronized (lock) {
+        status = new Status(State.RUNNING, example.id(), 0, "Verifying cached " + name, null,
+          0L, 0L, name, List.copyOf(status.files()), List.copyOf(status.skippedOptional()), false);
+      }
+    }
+    if (Files.isRegularFile(target) && cachedSha != null && verified(target, expected, cachedSha, false, flag)) {
       progress.update(Files.size(target), Files.size(target));
       return;
     }
@@ -449,19 +493,19 @@ public final class ExampleDownloader {
           out.write(buffer, 0, read);
           final long now = System.nanoTime();
           if (now - lastReport > 200_000_000L) {
-            progress.update(position, size > 0 ? size : position);
+            progress.update(position, size > 0 ? size : 0L);
             lastReport = now;
           }
         }
         if (size > 0 && position != size) {
           throw new IOException("The connection ended after " + position + " of " + size + " bytes. Run it again to resume.");
         }
-        progress.update(position, size > 0 ? size : position);
+        progress.update(position, size > 0 ? size : 0L);
       }
       break;
     }
     if (flag.get()) throw new CancellationException("Cancelled");
-    if (!verified(part, expected, sha, true)) {
+    if (!verified(part, expected, sha, true, flag)) {
       Files.deleteIfExists(part);
       Files.deleteIfExists(meta);
       throw new IOException(name + " failed verification (length or sha256 does not match the catalog) and was discarded");
@@ -510,7 +554,7 @@ public final class ExampleDownloader {
     throw new IOException("Too many redirects");
   }
 
-  private static boolean verified(final Path file, final long expectedBytes, final @Nullable String sha, final boolean complete) throws IOException {
+  private static boolean verified(final Path file, final long expectedBytes, final @Nullable String sha, final boolean complete, AtomicBoolean cancelled) throws IOException {
     if (expectedBytes > 0 && Files.size(file) != expectedBytes) {
       return false;
     }
@@ -520,6 +564,7 @@ public final class ExampleDownloader {
         final var buffer = new byte[1 << 16];
         int read;
         while ((read = in.read(buffer)) >= 0) {
+          if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new CancellationException("Verification cancelled");
           digest.update(buffer, 0, read);
         }
         return HexFormat.of().formatHex(digest.digest()).equals(sha);
@@ -531,16 +576,19 @@ public final class ExampleDownloader {
   }
 
   /** The record that stays with the files: where they came from, their hashes and the attribution to show. */
-  private void writeManifest(final ExamplesCatalog.Example example, final Path folder, final List<String> downloaded) throws IOException {
+  private void writeManifest(final ExamplesCatalog.Example example, final Path folder, final List<String> downloaded, AtomicBoolean flag) throws IOException {
     final var files = new JsonArray();
     for (final var name : downloaded) {
+      if (flag.get()) throw new CancellationException("Cancelled");
       final var path = folder.resolve(name);
-      final var entry = new JsonObject().put("filename", name).put("bytes", Files.size(path));
+      final var entry = new JsonObject().put("filename", name).put("bytes", Files.size(path))
+        .put("modifiedAt", Files.getLastModifiedTime(path).toString());
       try (InputStream in = Files.newInputStream(path)) {
         final var digest = MessageDigest.getInstance("SHA-256");
         final var buffer = new byte[1 << 16];
         int read;
         while ((read = in.read(buffer)) >= 0) {
+          if (flag.get()) throw new CancellationException("Cancelled");
           digest.update(buffer, 0, read);
         }
         entry.put("sha256", HexFormat.of().formatHex(digest.digest()));
@@ -550,12 +598,14 @@ public final class ExampleDownloader {
       files.add(entry);
     }
     final var body = example.body();
-    final var manifest = new JsonObject().put("exampleId", example.id()).put("title", body.getString("title"))
+    final var manifest = new JsonObject().put("exampleId", example.id()).put("catalogFingerprint", ExampleCache.fingerprint(body))
+      .put("catalogExample", body.copy()).put("title", body.getString("title"))
       .put("catalogSource", example.source()).put("completedAt", java.time.Instant.now().toString())
       .put("files", files).put("openingRecipe", body.getJsonObject("openingRecipe"))
       .put("attribution", body.getJsonObject("attribution")).put("publications", body.getJsonArray("publications"));
     final var temporary = folder.resolve("manifest.json.partial");
     Files.writeString(temporary, manifest.encodePrettily(), StandardCharsets.UTF_8);
+    if (flag.get()) { Files.deleteIfExists(temporary); throw new CancellationException("Cancelled"); }
     Files.move(temporary, folder.resolve("manifest.json"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
   }
 

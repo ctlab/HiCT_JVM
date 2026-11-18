@@ -631,10 +631,23 @@ public class HDF5LibraryInitializer {
       return Optional.empty();
     }
 
+    final var entriesByDirectory = new LinkedHashMap<String, List<String>>();
+    for (final var directory : bundledJhdf5NativeResourceDirectories()) {
+      entriesByDirectory.put(normalizeJhdf5ResourceDirectory(directory), new ArrayList<>());
+    }
+    // Discover candidate names in tar order with one traversal of the compressed archive.
+    forEachTarEntry(archive, header -> {
+      final int separator = header.name.lastIndexOf('/') + 1;
+      final var entries = entriesByDirectory.get(header.name.substring(0, separator));
+      if (entries != null && header.typeFlag != '5' && separator < header.name.length()) {
+        entries.add(header.name.substring(separator));
+      }
+    });
+
     Optional<Path> firstExtractedJhdf5 = Optional.empty();
-    for (final var resourceDirectory : bundledJhdf5NativeResourceDirectories()) {
-      final var archiveDirectory = normalizeJhdf5ResourceDirectory(resourceDirectory);
-      final var jhdf5ArchivePath = firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "jhdf5");
+    for (final var directory : entriesByDirectory.entrySet()) {
+      final var archiveDirectory = directory.getKey();
+      final var jhdf5ArchivePath = firstArchiveLibraryName(directory.getValue(), "jhdf5");
       if (jhdf5ArchivePath.isEmpty()) {
         continue;
       }
@@ -642,15 +655,13 @@ public class HDF5LibraryInitializer {
       if (extractionDirectory.isEmpty()) {
         continue;
       }
-      final var fileName = jhdf5ArchivePath.get().substring(jhdf5ArchivePath.get().lastIndexOf('/') + 1);
-      final var extractedJhdf5 = extractionDirectory.get().resolve(fileName);
+      final var extractedJhdf5 = extractionDirectory.get().resolve(jhdf5ArchivePath.get());
       if (!Files.isRegularFile(extractedJhdf5)) {
         continue;
       }
 
       setNativeLibraryPropertyIfUnset("jhdf5", extractedJhdf5);
-      firstJhdf5NativeArchiveEntry(archive, archiveDirectory, "hdf5")
-        .map(path -> path.substring(path.lastIndexOf('/') + 1))
+      firstArchiveLibraryName(directory.getValue(), "hdf5")
         .map(extractionDirectory.get()::resolve)
         .filter(Files::isRegularFile)
         .ifPresent(path -> setNativeLibraryPropertyIfUnset("hdf5", path));
@@ -856,29 +867,16 @@ public class HDF5LibraryInitializer {
     }
   }
 
-  private static @NotNull Optional<String> firstJhdf5NativeArchiveEntry(final @NotNull Path archive,
-                                                                        final @NotNull String archiveDirectory,
-                                                                        final @NotNull String libraryBaseName) throws IOException {
-    final var normalizedDirectory = normalizeJhdf5ResourceDirectory(archiveDirectory);
+  private static Optional<String> firstArchiveLibraryName(final List<String> entries, final String libraryBaseName) {
     final var mappedNames = mappedJhdf5LibraryNames(libraryBaseName);
-    final var result = new String[1];
-    forEachTarEntry(archive, header -> {
-      if (result[0] != null || header.typeFlag == '5' || !header.name.startsWith(normalizedDirectory)) {
-        return;
-      }
-      final var relativeName = header.name.substring(normalizedDirectory.length());
-      if (relativeName.isBlank() || relativeName.contains("/")) {
-        return;
-      }
-      final var fileName = header.name.substring(header.name.lastIndexOf('/') + 1);
+    for (final var entry : entries) {
       for (final var mappedName : mappedNames) {
-        if (matchesBundledLibraryFile(fileName, mappedName)) {
-          result[0] = header.name;
-          return;
+        if (matchesBundledLibraryFile(entry, mappedName)) {
+          return Optional.of(entry);
         }
       }
-    });
-    return Optional.ofNullable(result[0]);
+    }
+    return Optional.empty();
   }
 
   private static @NotNull Optional<Path> extractJhdf5NativeArchiveDirectory(final @NotNull Path archive,
@@ -895,7 +893,7 @@ public class HDF5LibraryInitializer {
     final var links = new ArrayList<NativeArchiveLink>();
     final var extractedAny = new boolean[] { false };
 
-    try (var input = new BufferedInputStream(new GZIPInputStream(Files.newInputStream(normalizedArchive)))) {
+    try (var input = new BufferedInputStream(new GZIPInputStream(Files.newInputStream(normalizedArchive), 64 * 1024))) {
       TarHeader pendingHeader;
       while ((pendingHeader = readTarHeader(input)) != null) {
         var header = pendingHeader;
@@ -1011,7 +1009,7 @@ public class HDF5LibraryInitializer {
   }
 
   private static void forEachTarEntry(final @NotNull Path archive, final @NotNull Consumer<TarHeader> consumer) throws IOException {
-    try (var input = new BufferedInputStream(new GZIPInputStream(Files.newInputStream(archive)))) {
+    try (var input = new BufferedInputStream(new GZIPInputStream(Files.newInputStream(archive), 64 * 1024))) {
       TarHeader pendingHeader;
       while ((pendingHeader = readTarHeader(input)) != null) {
         var header = pendingHeader;

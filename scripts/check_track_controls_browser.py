@@ -61,7 +61,8 @@ def main():
             check.settle()
 
         def browse(index, heading, filename):
-            dialog.get_by_role("button", name="Browse…", exact=True).nth(index).click()
+            dialog.get_by_role('tab',name='1D tracks' if index==0 else 'Sources and layers',exact=True).click()
+            dialog.get_by_role("button", name="Browse…", exact=True).click()
             picker = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name=heading, exact=True)
             )
@@ -176,51 +177,51 @@ def main():
                 )
             open_manager()
             expect(
-                dialog.get_by_text("Release annotations", exact=True).first
+                dialog.get_by_role('textbox',name='Track name for Release annotations',exact=True)
             ).to_be_visible()
             results.append({"track": tracks[0], "feature": feature})
 
+        def choose_weights(source):
+            dialog.get_by_role('tab',name='1D tracks',exact=True).click()
+            dialog.get_by_label('Add track',exact=True).select_option('weights')
+            dialog.get_by_label('Weights from',exact=True).select_option(source)
+            return dialog.get_by_role('button',name='Add weights',exact=True)
+
+        def remove_weights(source):
+            row=dialog.locator('.track-row').filter(has=page.get_by_role('textbox',name='Track name for Map weights - '+source.title(),exact=True))
+            row.get_by_role('button',name='Remove',exact=True).click()
+            row.wait_for(state='hidden')
+
         def add_weights_with_delayed_response(source):
-            held = []
-            control = dialog.locator("#cooler-weights-" + source.lower())
-
-            def hold(route):
-                held.append(route)
-
-            page.route("**/tracks/open_cooler_weights", hold)
+            held=[];control=choose_weights(source)
+            def hold(route):held.append(route)
+            page.route('**/tracks/open_cooler_weights',hold)
             try:
-                control.check()
-                page.wait_for_timeout(100)
-                assert len(held) == 1, held
-                expect(dialog.locator("#cooler-weights-primary")).to_be_disabled()
-                expect(dialog.locator("#cooler-weights-secondary")).to_be_disabled()
-                expect(
-                    dialog.get_by_text("Updating weight tracks…", exact=True)
-                ).to_be_visible()
+                control.click();page.wait_for_timeout(100);assert len(held)==1,held
+                expect(control).to_be_disabled()
+                expect(dialog.get_by_label('Add track',exact=True)).to_be_disabled()
+                expect(dialog.get_by_label('Weights from',exact=True)).to_be_disabled()
+                expect(dialog.get_by_text('Adding track…',exact=True)).to_be_visible()
                 held.pop().continue_()
-                expect(control).to_be_enabled()
-                expect(control).to_be_checked()
+                page.wait_for_function("""source=>window.__hictBenchmark.manager().linearTrackManager.getTracksSnapshot()
+                    .some(track=>track.sourceFile==='__internal__/cooler_weights/'+source)""",arg=source)
+                expect(dialog.get_by_label('Weights from',exact=True)).to_be_enabled()
+                expect(control).to_be_disabled()
+                expect(dialog.get_by_text('Already added.',exact=False)).to_be_visible()
             finally:
-                for route in held:
-                    route.abort()
-                page.unroute("**/tracks/open_cooler_weights", hold)
+                for route in held:route.abort()
+                page.unroute('**/tracks/open_cooler_weights',hold)
 
         def primary_weights():
-            expect(dialog.locator("#cooler-weights-secondary")).to_be_disabled()
-            add_weights_with_delayed_response("PRIMARY")
-            page.wait_for_function(
-                """()=>window.__hictBenchmark.manager().linearTrackManager
-                .getTracksSnapshot().some(track=>track.sourceFile==='__internal__/cooler_weights/PRIMARY')"""
-            )
-            results.append({"primaryWeights": weight_values("PRIMARY")})
-            dialog.locator("#cooler-weights-primary").uncheck()
-            page.wait_for_function(
-                """()=>!window.__hictBenchmark.manager().linearTrackManager
-                .getTracksSnapshot().some(track=>track.sourceFile==='__internal__/cooler_weights/PRIMARY')"""
-            )
-            assert len(api("/tracks/list")) == 1
+            dialog.get_by_label('Add track',exact=True).select_option('weights')
+            expect(dialog.locator('#track-weight-source option[value=SECONDARY]')).to_be_disabled()
+            add_weights_with_delayed_response('PRIMARY')
+            results.append({'primaryWeights':weight_values('PRIMARY')})
+            remove_weights('PRIMARY')
+            assert len(api('/tracks/list'))==1
 
         def backgrounds():
+            dialog.locator('summary').filter(has_text='Track appearance').click()
             dialog.locator("#track-bg-inherit").uncheck()
             panel = dialog.locator(".alert").filter(
                 has=page.get_by_text("Track panel background", exact=True)
@@ -238,6 +239,7 @@ def main():
             check.settle()
             assert_background([18, 52, 86, 255])
             open_manager()
+            dialog.locator('summary').filter(has_text='Track appearance').click()
             expect(color).to_have_value("#123456")
             dialog.locator("#track-bg-inherit").check()
             expect(color).to_be_disabled()
@@ -250,24 +252,22 @@ def main():
             assert response.value.ok and not response.value.json().get(
                 "requiresConfirmation"
             ), response.value.text()
-            expect(dialog.locator("#cooler-weights-secondary")).to_be_enabled()
             add_weights_with_delayed_response("SECONDARY")
             page.wait_for_function(
                 """()=>window.__hictBenchmark.manager().linearTrackManager
                 .getTracksSnapshot().some(track=>track.sourceFile==='__internal__/cooler_weights/SECONDARY')"""
             )
             results.append({"secondaryWeights": weight_values("SECONDARY")})
-            dialog.locator("#cooler-weights-secondary").uncheck()
-            page.wait_for_function(
-                """()=>!window.__hictBenchmark.manager().linearTrackManager
-                .getTracksSnapshot().some(track=>track.sourceFile==='__internal__/cooler_weights/SECONDARY')"""
-            )
-            dialog.get_by_role("button", name="Detach", exact=True).click()
-            expect(dialog.locator("#cooler-weights-secondary")).to_be_disabled()
+            remove_weights('SECONDARY')
+            dialog.get_by_role('tab',name='Sources and layers',exact=True).click()
+            dialog.get_by_role('button',name='Detach',exact=True).click()
+            choose_weights('PRIMARY')
+            expect(dialog.locator('#track-weight-source option[value=SECONDARY]')).to_be_disabled()
             assert not api("/secondary/status")["attached"]
             assert len(api("/tracks/list")) == 1
 
         def precompute():
+            dialog.locator('summary').filter(has_text='Preparation').click()
             with page.expect_response("**/tracks/precompute/start") as response:
                 dialog.get_by_role("button", name="Precompute all", exact=True).click()
             assert response.value.ok
@@ -306,14 +306,13 @@ def main():
 
             page.route("**/tracks/open_cooler_weights", reject)
             try:
-                control = dialog.locator("#cooler-weights-primary")
+                control = choose_weights('PRIMARY')
                 with page.expect_response("**/tracks/open_cooler_weights") as failed:
-                    control.check()
+                    control.click()
                 assert failed.value.status == 503
                 expect(control).to_be_enabled()
-                expect(control).not_to_be_checked()
                 expect(
-                    dialog.get_by_text("Updating weight tracks…", exact=True)
+                    dialog.get_by_text("Adding track…", exact=True)
                 ).not_to_be_visible()
                 assert len(requests) == 1, requests
                 assert api("/tracks/list") == before
@@ -338,7 +337,7 @@ def main():
             check.settle()
             before = api("/get_agp_for_assembly")
             check.step("named-track-browse-add-refresh-and-real-feature", add_track)
-            check.step("primary-weight-track-toggle-and-values", primary_weights)
+            check.step("primary-weight-track-add-remove-and-values", primary_weights)
             check.step(
                 "manual-inherited-track-backgrounds-and-export-pixels", backgrounds
             )
@@ -347,7 +346,7 @@ def main():
                 "precompute-survives-dialog-close-and-retains-values", precompute
             )
             check.step(
-                "failed-weight-toggle-restores-control-and-preserves-tracks",
+                "failed-weight-add-restores-control-and-preserves-tracks",
                 failed_weight_toggle,
             )
             assert api("/get_agp_for_assembly") == before

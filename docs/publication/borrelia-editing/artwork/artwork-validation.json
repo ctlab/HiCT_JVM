@@ -1,0 +1,92 @@
+{
+  "status": "passed",
+  "method": "NATIVE_RGBA_RECTANGLES_V1",
+  "sourceSvgSha256": "75e30c4138e97c1560d216abf3f37e3e99027bba5067787edcce3bf88c229777",
+  "scriptSha256": "1e3e3f7800d1b594459616660fd89acb9e311e5f53f8ab1f069e0ed7e6e8900c",
+  "runtime": {
+    "python": "3.12.0",
+    "pillow": "12.2.0",
+    "pypdf": "6.7.5",
+    "rsvg": "rsvg-convert version 2.58.0"
+  },
+  "fontFiles": {
+    "DejaVuSans.ttf": "ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280",
+    "DejaVuSans-Bold.ttf": "5c1247acef7f2b8522a31742c76d6adcb5569bacc0be7ceaa4dc39dd252ce895",
+    "DejaVuSansMono.ttf": "c805f9436dbc268644c1d9584f01a601a653e028e08fd74b9b949f6cf8304d88"
+  },
+  "images": [
+    {
+      "sourcePng": "source-contact-1.png",
+      "pngSha256": "84d8d46a7420334f735f9af0c68dccec576fb03db3e68e4487f67631c810d436",
+      "rgbaSha256": "b0a57a048f33357502c9548bd8cb06df687edd7c9cfb60397619498a5ec5f5a0",
+      "width": 309,
+      "height": 279,
+      "rgbaPixelsVerified": 86211,
+      "visibleRectangles": 8154,
+      "exactRgbaReconstruction": true,
+      "placement": {
+        "width": "309",
+        "height": "279",
+        "href": "retained separately",
+        "transform": "matrix(1 0 0 1 -154 -124)",
+        "{http://www.w3.org/1999/xlink}href": "retained separately"
+      }
+    },
+    {
+      "sourcePng": "source-contact-2.png",
+      "pngSha256": "cc4c7c943622c8f43b060f6d00711ec4440e11034cec5902f86216b1046cb4a9",
+      "rgbaSha256": "fd3251d9538119db7ec923ae74c4b9f7afe07704e6cc31d2e187186067534c13",
+      "width": 310,
+      "height": 280,
+      "rgbaPixelsVerified": 86800,
+      "visibleRectangles": 8156,
+      "exactRgbaReconstruction": true,
+      "placement": {
+        "width": "310",
+        "height": "280",
+        "href": "retained separately",
+        "transform": "matrix(1 0 0 1 -154 -124)",
+        "{http://www.w3.org/1999/xlink}href": "retained separately"
+      }
+    },
+    {
+      "sourcePng": "source-contact-3.png",
+      "pngSha256": "cc4c7c943622c8f43b060f6d00711ec4440e11034cec5902f86216b1046cb4a9",
+      "rgbaSha256": "fd3251d9538119db7ec923ae74c4b9f7afe07704e6cc31d2e187186067534c13",
+      "width": 310,
+      "height": 280,
+      "rgbaPixelsVerified": 86800,
+      "visibleRectangles": 8156,
+      "exactRgbaReconstruction": true,
+      "placement": {
+        "width": "310",
+        "height": "280",
+        "href": "retained separately",
+        "transform": "matrix(1 0 0 1 -154 -124)",
+        "{http://www.w3.org/1999/xlink}href": "retained separately"
+      }
+    }
+  ],
+  "nativeUnitFullScenePixelEquality": true,
+  "nativeUnitRenderedRgbaSha256": "36ebdf74b55d6db43f82509825de60a587eca562f13d27e1c9fab309585da8d9",
+  "pdfRasterImages": 0,
+  "pdfEmbeddedSourcePngs": 3,
+  "widthMm": 178.0,
+  "heightMm": 179.105590062,
+  "tiff": {
+    "dpi": 900,
+    "widthPixels": 6307,
+    "heightPixels": 6346,
+    "compression": "UNCOMPRESSED",
+    "storage": "GZIP_WRAPPED_TIFF",
+    "decodedPixelSha256": "9a0b815d83dd99877d4d7f147e80248d77fa35bdc6b943ce75942fdea0f27e82",
+    "uncompressedFileSha256": "c28fd81e5523ef36b28eccf8bdb543e1a132abe158179e8bd4b8d3f38365cab8",
+    "gzipRoundTripExact": true
+  },
+  "files": {
+    "borrelia-editing.svg": "af4f43d030384568032315123a7f5030e7deadf4ab9aab1a36450151592bf8c1",
+    "borrelia-editing.pdf": "41ad6059bcca30874e6837f0db56a877792bac928969e57ea26e0fa1668a363e",
+    "borrelia-editing-900dpi.tif.gz": "432a7b41d21cee6865ef651a303cc5cae822de59df817018d6ec676c69c0a19f",
+    "borrelia-editing-preview.png": "023309e8ad06a56621108bb7775917a8a6bfaf245e1646a003f7c42ffaae5622"
+  }
+}

@@ -36,6 +36,25 @@ def read_matrix(path, stripes=2):
     return matrix / SCALE
 
 
+def test_custom_resolution_preserves_stored_atus_and_builds_independent_stripes(tmp_path):
+    source = template(tmp_path / 'primary.hdf5')
+    with h5py.File(source, 'r+') as handle:
+        handle['contig_info/contig_length_bp'][:] = [257, 9]
+    output = tmp_path / 'overlay.hdf5'
+    with OverlayWriter(source, output, [1, 2, 50], {}) as writer:
+        writer.record_coverage(1, [[1, 0]], [[1, 1]], {'snapshot': 'test'})
+        writer.patch(1, [[1, 0]], [[1, 1]], [[92]])
+    with h5py.File(source) as original, h5py.File(output) as overlay:
+        assert set(overlay['resolutions']) == {'1', '2', '50'}
+        np.testing.assert_array_equal(overlay['resolutions/2/atl/basis_atu'], original['resolutions/2/atl/basis_atu'])
+        fine = overlay['resolutions/1']
+        np.testing.assert_array_equal(fine['stripes/stripe_length_bins'], [256, 10])
+        np.testing.assert_array_equal(fine['atl/basis_atu'], [[0, 0, 256, 1], [1, 0, 1, 1], [1, 1, 10, 1]])
+        np.testing.assert_array_equal(fine['contigs/atl'], [[0, 0], [0, 1], [1, 2]])
+        np.testing.assert_array_equal(overlay['resolutions/50/contigs/contig_length_bins'], [6, 1])
+        assert OverlayWriter._read_block(fine['treap_coo'], 3, 256)[0, 1] == 92 * SCALE
+
+
 def test_accumulated_rectangles_replace_even_zero_and_preserve_previous(tmp_path):
     source = template(tmp_path / 'primary.hdf5')
     first, second = tmp_path / 'one.hdf5', tmp_path / 'two.hdf5'

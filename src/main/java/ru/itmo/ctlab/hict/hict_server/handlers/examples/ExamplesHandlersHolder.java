@@ -74,25 +74,6 @@ public class ExamplesHandlersHolder extends HandlersHolder {
     return wrapper == null ? null : wrapper.getPath();
   }
 
-  private static boolean isDownloaded(final Path root, final io.vertx.core.json.JsonObject example) {
-    try {
-      final var folder = root.resolve("examples").resolve(example.getString("id"));
-      if (!java.nio.file.Files.isRegularFile(folder.resolve("manifest.json"))) {
-        return false;
-      }
-      for (final var entry : example.getJsonArray("files")) {
-        final var file = (io.vertx.core.json.JsonObject) entry;
-        if (file.getBoolean("required", true) && !java.nio.file.Files.isRegularFile(folder.resolve(file.getString("filename")))) {
-          return false;
-        }
-      }
-      final var preparation = example.getJsonObject("openingRecipe").getJsonObject("fastaPreparation");
-      return preparation == null || java.nio.file.Files.isRegularFile(folder.resolve(preparation.getString("filename")));
-    } catch (final RuntimeException e) {
-      return false;
-    }
-  }
-
   private synchronized ExampleDownloader downloader(final Path root) {
     if (downloader == null || !root.equals(downloaderRoot)) {
       if (downloader != null) {
@@ -108,13 +89,18 @@ public class ExamplesHandlersHolder extends HandlersHolder {
   public void addHandlersToRouter(final @NotNull Router router) {
     router.post("/examples/catalog").handler(ctx -> {
       final var root = dataDirectory();
-      final var json = ExamplesCatalog.load(root).toJson();
-      // An example counts as downloaded when its manifest exists and every required file is on disk.
-      for (final var entry : json.getJsonArray("examples")) {
-        final var example = (io.vertx.core.json.JsonObject) entry;
-        example.put("downloaded", root != null && isDownloaded(root, example));
-      }
-      ctx.response().putHeader("content-type", "application/json").end(json.encode());
+      vertx.executeBlocking(() -> {
+        final var json = ExamplesCatalog.load(root).toJson();
+        // Discovery only: opening rehashes cached data through Jobs.
+        for (final var entry : json.getJsonArray("examples")) {
+          final var example = (io.vertx.core.json.JsonObject) entry;
+          var files = ru.itmo.ctlab.hict.hict_server.examples.ExampleCache.readyFiles(root, example);
+          example.put("downloaded", files != null);
+          if (files != null) example.put("downloadedFiles", files);
+        }
+        return json;
+      }, false).onSuccess(json -> ctx.response().putHeader("content-type", "application/json").end(json.encode()))
+        .onFailure(ctx::fail);
     });
     router.post("/examples/download/start").handler(ctx -> {
       final var body = ctx.body().asJsonObject();
@@ -124,16 +110,17 @@ public class ExamplesHandlersHolder extends HandlersHolder {
         ctx.fail(new HttpException(400, "exampleId is required"));
         return;
       }
-      final var example = ExamplesCatalog.load(root).find(id);
-      if (example == null) {
-        ctx.fail(new HttpException(404, "Unknown example " + id));
-        return;
-      }
-      try {
-        ctx.response().putHeader("content-type", "application/json").end(Json.encode(downloader(root).start(example)));
-      } catch (final IllegalStateException busy) {
-        ctx.fail(new HttpException(409, busy.getMessage()));
-      }
+      vertx.executeBlocking(() -> ExamplesCatalog.load(root).find(id), false).map(example -> {
+        if (example == null) {
+          throw new HttpException(404, "Unknown example " + id);
+        }
+        try {
+          return Json.encode(downloader(root).start(example));
+        } catch (final IllegalStateException busy) {
+          throw new HttpException(409, busy.getMessage());
+        }
+      }).onSuccess(json -> ctx.response().putHeader("content-type", "application/json").end(json))
+        .onFailure(ctx::fail);
     });
     router.post("/examples/download/status").handler(ctx -> {
       final var root = dataDirectory();

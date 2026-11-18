@@ -7,6 +7,25 @@ info:
 
     This specification is intended for WebUI integration, Python `hict`/`hict_jvm_api`
     clients and programmatic data-processing pipelines.
+
+    Contig descriptors may include `contigBinOffsets`, a sparse object keyed by
+    bp resolution. Each signed int64 value is the source-forward origin of the
+    first retained contact bin relative to the contig fragment's sequence start.
+    Negative values identify a bin beginning before the fragment. Missing keys
+    in this object mean zero; an absent object denotes older implicit geometry.
+    The optional `contigBinOffsets` object on compact-v1 assembly snapshots maps
+    contig IDs to these same sparse objects, without changing the nine contig
+    row columns. An omitted compact map denotes zero origins for current servers.
+    Legacy contig descriptors may also include `contigSharedBinSlice: true`;
+    compact-v1 uses an optional `sharedBinContigs` array of unique contig IDs.
+    These fragments retain every intersecting original contact bin. Adjacent
+    fragments can reference the same bin; these references are not additional
+    contact observations. Session snapshot v2 preserves this policy when a
+    secondary source uses a different resolution pyramid.
+    Source sequence offsets (`contigOffsetInSource` in legacy descriptors and
+    column 4 in compact-v1 contig rows) are nonnegative int64 coordinates, as are
+    split-lineage `sourceOffsetBp` values. Portable sessions validate complete
+    source intervals against the maximum exact JavaScript integer (9007199254740991).
 servers:
   - url: /
 tags:
@@ -539,7 +558,7 @@ paths:
                 type: object
                 required: [snapshotVersion, assemblyVerified, filesFingerprinted, tracksVerified, primary, assemblySource, renderPipeline, tracks, workspace]
                 properties:
-                  snapshotVersion: { type: integer, enum: [1] }
+                  snapshotVersion: { type: integer, enum: [1, 2], description: New captures use v2 with explicit bin origins and exact-cut replay support. V1 snapshots remain readable with their original destructive split semantics. }
                   filesFingerprinted: { type: boolean }
                   tracksVerified: { type: boolean }
                   assemblyVerified: { type: boolean, description: Whether isolated candidate assembly reconstruction succeeded for all open sources. Does not verify source content fingerprints or complete session restoration. }
@@ -644,6 +663,17 @@ paths:
       tags: [Rendering]
       summary: Recompute the viewport-shared expected profile used by Expected and O/E display modes
       operationId: setViewportExpectedProfile
+      description: >-
+        Fits positive finite signal within scaffolds (or unscaffolded contigs),
+        using absolute display-bin separations. Repeated references after exact
+        cuts share one unit of support per unordered physical source-bin pair
+        across the complete fitting window, including both symmetric orientations.
+        Successful fits report sampleSemantics=UNIQUE_UNORDERED_SOURCE_PAIR_MASS,
+        distanceSemantics=DISPLAY_BIN_DISTANCE and sharedReferenceWeighting.
+        Histogram and matrix-statistics counts describe DISPLAY_CELLS instead.
+        unit defaults to PIXELS (visible native bins). BINS includes hidden
+        components and is used by sequence-grid display. Their cached profiles
+        are independent; responses report the fitted unit.
       requestBody:
         required: true
         content:
@@ -657,6 +687,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericMap'
+  /visualization/captures:
+    post:
+      tags: [Rendering]
+      summary: Pin immutable rendering inputs for figure tiles
+      operationId: createRenderCapture
+      description: >-
+        Creates a five-minute context independent of the live viewport profile.
+        Send its id as renderCapture on every figure tile, validate after drawing,
+        and release on success, failure or cancellation. Source, assembly,
+        normalization, rendering and track changes invalidate it. Expected/O/E
+        fit one primary profile with actual-means SHA-256 and grid provenance.
+        At most four contexts and 64 MiB are retained; one fit runs at a time.
+        Expected fitting windows are limited to 16777216 cells and 65536 bins per axis; use a coarser view
+        for larger figures. Observed contexts do not fit an Expected profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExpectedProfileViewportRequest' }
+      responses:
+        '200':
+          description: Context id, signal mode, normalization inputs and optional Expected profile provenance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409': { description: Map missing or inputs changed during fitting }
+        '413': { description: Expected fitting window exceeds the capture work budget }
+        '429': { description: Context count, memory or concurrent fitting budget exhausted }
+  /visualization/captures/{id}/validate:
+    post:
+      tags: [Rendering]
+      summary: Check that a figure still uses the captured scientific inputs
+      operationId: validateRenderCapture
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Valid capture provenance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '409': { description: Context expired, released or invalidated }
+  /visualization/captures/{id}/release:
+    post:
+      tags: [Rendering]
+      summary: Release a figure context and its fitted arrays
+      operationId: releaseRenderCapture
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Released or already absent }
   /render_pipeline/get:
     post:
       tags: [Rendering]
@@ -726,6 +807,11 @@ paths:
       summary: Fetch map tile or arbitrary pixel rectangle
       operationId: getTile
       parameters:
+        - name: renderCapture
+          in: query
+          required: false
+          description: Pinned figure context returned by POST /visualization/captures
+          schema: { type: string, format: uuid }
         - in: query
           name: row
           required: true
@@ -758,6 +844,17 @@ paths:
           schema: { type: string, enum: [PRIMARY, SECONDARY] }
           description: Request one source. An omitted source returns the composed tile.
         - in: query
+          name: sequenceScale
+          required: false
+          schema: { type: boolean, default: false }
+          description: >-
+            Draw source-bin colors on a uniform one-base display grid. Requires an
+            explicit source and cannot be combined with gridBpResolution or
+            gridSampleFactor. bpResolution still selects a stored contact level;
+            no counts or contact positions are interpolated. Tile coordinates
+            (or row/col with PNG_BY_PIXELS) now index assembly bases, including
+            sequence in components hidden at the stored matrix level.
+        - in: query
           name: gridBpResolution
           required: false
           schema: { type: integer, format: int64, minimum: 1 }
@@ -765,7 +862,7 @@ paths:
         - in: query
           name: gridSampleFactor
           required: false
-          schema: { type: integer, minimum: 1, maximum: 64, default: 1 }
+          schema: { type: integer, minimum: 1, maximum: 65536, default: 1 }
           description: Subdivide each projected primary grid cell by this factor along each axis.
         - in: query
           name: level
@@ -794,6 +891,12 @@ paths:
             x-hict-cancelled:
               description: True only when superseded work was cancelled.
               schema: { type: boolean }
+            x-hict-display-grid:
+              description: SEQUENCE_BP for an explicitly requested one-base display grid.
+              schema: { type: string }
+            x-hict-source-bp-resolution:
+              description: Original stored contact resolution for a sequence-scale tile.
+              schema: { type: integer, format: int64 }
           content:
             application/json:
               schema:
@@ -809,7 +912,7 @@ paths:
   /matrix/statistics:
     post:
       tags: [Tiles]
-      summary: Exact finite extrema of a bounded numeric-pipeline block
+      summary: Exact finite extrema of a bounded display-signal block
       description: |
         First request metadataOnly to obtain the current revision and full visible-pixel
         extent of the resolution. Then visit every 512 by 512 block using that revision.
@@ -817,6 +920,15 @@ paths:
         conversion. Partial edge blocks are clipped to the map. Non-finite values are
         excluded from count and extrema. Any rendering/assembly invalidation cancels
         the snapshot with HTTP 409. Statistics run on the export worker pool.
+        PIPELINE_SIGNAL (the default) evaluates the supplied numeric expression.
+        TRADITIONAL_NORMALIZED follows primary visualization processing. In Expected
+        or O/E mode it fits one whole-resolution, within-scaffold positive-finite
+        expected profile and reuses it across blocks. It does not read or replace the
+        viewport profile. The first block therefore needs an additional complete
+        bounded-memory pass. Undefined O/E support is excluded; supported zeros count.
+        Counts describe visible display cells, including repeated references after
+        exact cuts, rather than independent physical contacts. A scan changes no
+        colors, processing settings or viewport state.
       operationId: queryMatrixStatistics
       requestBody:
         required: true
@@ -831,6 +943,10 @@ paths:
                 revision: { type: string }
                 startRowPx: { type: integer, format: int64, minimum: 0 }
                 startColPx: { type: integer, format: int64, minimum: 0 }
+                signalMode:
+                  type: string
+                  enum: [PIPELINE_SIGNAL, TRADITIONAL_NORMALIZED]
+                  default: PIPELINE_SIGNAL
                 expression: { type: object, additionalProperties: true }
       responses:
         '200':
@@ -843,6 +959,8 @@ paths:
                 properties:
                   revision: { type: string }
                   size: { type: integer, format: int64 }
+                  signalMode: { type: string }
+                  expectedProfileScope: { type: string, enum: [WHOLE_MAP] }
                   rows: { type: integer }
                   cols: { type: integer }
                   count: { type: integer, format: int64 }
@@ -857,8 +975,20 @@ paths:
       summary: Fetch rectangular submatrix as numeric tensor-ready payload
       description: |
         `TRADITIONAL_NORMALIZED` follows the active visualization settings. When the UI is set to `Expected` or `O/E`,
-        the returned signal uses a distance-expected estimate computed from the fetched query window after the selected
-        raw-or-balanced normalization steps.
+        the returned signal uses the active distance-expected profile when it covers the query window,
+        otherwise a profile fitted to the query window after the selected raw-or-balanced normalization steps.
+        Undefined O/E support is missing (NaN in floating-point binary output and null in JSON),
+        matching transparent map cells. A supported measured zero remains zero.
+        Assembly axes reference original source bins. Exact cuts can display the same
+        bin more than once. These references must not be summed as independent
+        observations. `includeBinProvenance: true` with JSON returns compact physical
+        bin runs for each axis, allowing repeated references to be identified.
+        Pipeline values are display-grid expressions and may depend on tracks or
+        other sources; their axis provenance describes the selected source grid.
+        `PIPELINE_SIGNAL` projects a required secondary input onto the primary grid when stored resolution levels differ.
+        `BINS` queries include hidden assembly components on both sources; `PIXELS` queries use visible components.
+        A primary-only expression does not read an unused secondary matrix. Projected values are display-grid signals,
+        not new native contact observations.
       operationId: queryMatrix
       requestBody:
         required: true
@@ -903,6 +1033,8 @@ paths:
               schema: { type: string, enum: [float32, float64, int64] }
             x-hict-signal-mode:
               schema: { type: string }
+            x-hict-cell-semantics:
+              schema: { type: string, enum: [SOURCE_BIN_REFERENCES, DISPLAY_GRID_SIGNAL] }
           content:
             application/json:
               schema:
@@ -944,6 +1076,39 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
+  /split_contig_at_bp:
+    post:
+      tags: [Scaffolding]
+      summary: Cut an oriented contig at an exact base boundary without sequence loss
+      description: |
+        Requires the displayed X-HiCT-History-Session and X-HiCT-History-Revision
+        headers. expectedRevision must match both the displayed header and live
+        journal. offsetBp bases remain in the left child. Crossing source bins
+        are referenced by both children; no base or contact block is removed.
+        Secondary sources are reprojected through their own resolution pyramids.
+        The response describes the active source with its new tile version.
+      operationId: splitContigAtBp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contigId, offsetBp, expectedRevision]
+              properties:
+                contigId: { type: integer, format: int32, minimum: 0 }
+                offsetBp: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+                expectedRevision: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                assemblyFormat: { type: string, enum: [compact-v1] }
+      responses:
+        '200':
+          description: Complete updated assembly, new tile version and journal header
+        '400':
+          description: Invalid boundary, request or missing displayed-history headers
+        '404':
+          description: No map is open
+        '409':
+          description: Stale or inconsistent displayed assembly revision
   /split_contig_at_bin:
     post:
       tags: [Scaffolding]
@@ -1050,12 +1215,28 @@ paths:
       tags: [Files]
       summary: Export FASTA for current full assembly
       operationId: exportFastaAssembly
+      description: >-
+        Optional X-HiCT-History-Session and X-HiCT-History-Revision headers
+        reject a stale displayed assembly before export. Layout metadata is
+        captured on the assembly queue before background materialization.
+        Cancellation returns 409 rather than an empty successful download.
+      parameters:
+        - in: header
+          name: X-HiCT-History-Session
+          schema: { type: string }
+          description: Displayed history session identity, paired with revision.
+        - in: header
+          name: X-HiCT-History-Revision
+          schema: { type: integer, format: int64 }
+          description: Applied displayed revision, paired with session identity.
       requestBody:
         required: false
         content:
           application/json:
             schema: { $ref: '#/components/schemas/GetFastaForAssemblyRequest' }
       responses:
+        '409':
+          description: Displayed assembly is stale or export was cancelled; refresh and retry.
         '200':
           description: FASTA text
           content:
@@ -1067,12 +1248,28 @@ paths:
       tags: [Files]
       summary: Export FASTA for current selection
       operationId: exportFastaSelection
+      description: >-
+        Optional X-HiCT-History-Session and X-HiCT-History-Revision headers
+        reject a stale displayed assembly before export. Layout metadata is
+        captured on the assembly queue before background materialization.
+        Cancellation returns 409 rather than an empty successful download.
+      parameters:
+        - in: header
+          name: X-HiCT-History-Session
+          schema: { type: string }
+          description: Displayed history session identity, paired with revision.
+        - in: header
+          name: X-HiCT-History-Revision
+          schema: { type: integer, format: int64 }
+          description: Applied displayed revision, paired with session identity.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/FastaSelectionRequest' }
       responses:
+        '409':
+          description: Displayed assembly is stale or export was cancelled; refresh and retry.
         '200':
           description: FASTA text
           content:
@@ -1084,12 +1281,28 @@ paths:
       tags: [Files]
       summary: Export AGP for current assembly
       operationId: exportAgpAssembly
+      description: >-
+        Optional X-HiCT-History-Session and X-HiCT-History-Revision headers
+        reject a stale displayed assembly before export. Layout metadata is
+        captured on the assembly queue before background materialization.
+        Cancellation returns 409 rather than an empty successful download.
+      parameters:
+        - in: header
+          name: X-HiCT-History-Session
+          schema: { type: string }
+          description: Displayed history session identity, paired with revision.
+        - in: header
+          name: X-HiCT-History-Revision
+          schema: { type: integer, format: int64 }
+          description: Applied displayed revision, paired with session identity.
       requestBody:
         required: false
         content:
           application/json:
             schema: { $ref: '#/components/schemas/GetAgpRequest' }
       responses:
+        '409':
+          description: Displayed assembly is stale or export was cancelled; refresh and retry.
         '200':
           description: AGP text
           content:
@@ -1298,6 +1511,11 @@ paths:
     post:
       tags: [Files]
       summary: Status of the example download
+      description: >-
+        Includes the local jobId, whose /jobs identifier is download/{jobId}.
+        A zero totalBytes means that the transfer size is unknown; progress in
+        /jobs is null until a reliable total is available. Cancellation via
+        /jobs/cancel is scoped to this exact download attempt.
       operationId: exampleDownloadStatus
       responses:
         '200':
@@ -1593,6 +1811,15 @@ paths:
       tags: [Tracks]
       summary: Query visible 1D track segments in given unit/range
       operationId: queryTracks1D
+      description: >-
+        With sequenceScale=true and BP units, uses a uniform assembly-base display
+        including hidden and binless components. bpResolution remains a stored
+        source level. Response bpResolution is 1 and displayGrid is SEQUENCE_BP,
+        with sourceBpResolution explicit. Native-bin sidecars are not reused.
+        Cooler weights retain their source-bin values and report each track's
+        actual samplingBpResolution; an unavailable secondary level falls back to
+        that source's finest stored level. Width is limited to 8192 and span to
+        1048576 bases. No contact counts are interpolated by this track query.
       requestBody:
         required: true
         content:
@@ -1691,6 +1918,11 @@ paths:
     get:
       tags: [Jobs]
       summary: List background jobs in this server session
+      description: >-
+        Example download attempts retain at most 50 entries, including the current
+        job. Named download details include bytes received, a known total (zero
+        when unknown), current file and optional-file warnings. Terminal history
+        is read-only and cannot cancel a later download.
       operationId: listBackgroundJobs
       responses:
         '200':
@@ -1878,7 +2110,7 @@ paths:
       tags: [Sequence analysis]
       summary: Start or inspect exact alignment detail for two bounded sequence intervals
       operationId: sequenceAlignmentDetail
-      description: Runs the bundled aligner with extended CIGAR output. Coordinates are zero-based and half-open. A finished result reports an empty segment list when no alignment is found.
+      description: Runs the bundled minimap2-compatible aligner with extended CIGAR output and all reported chains. Tiny windows (both at most 64 bases) use short-window-v1 (k=2, w=1, m=2, n=1, s=2), larger windows use seeded-window-v1 (k=7, w=3, m=12, n=2, s=12). Both use one thread, -P, --dual=no, --no-long-join, -c and --eqx. Every canonical match/substitution is checked against the frozen source bases on its strand. Coordinates are zero-based and half-open. These seeded local alignments are not exhaustive homology calls. Empty results are explicit. Output limits fail rather than silently dropping records.
       requestBody:
         required: true
         content:
@@ -1912,6 +2144,42 @@ paths:
         '400': { description: Invalid sequence intervals }
         '404': { description: Alignment job was not found or has expired }
         '409': { description: Missing map or FASTA, or stale assembly revision }
+        '503': { description: Sequence analysis queue is full }
+  /sequence/repeat_period:
+    post:
+      tags: [Sequence analysis]
+      summary: Start or inspect a bounded ungapped repeat-period measurement
+      operationId: sequenceRepeatPeriod
+      description: Frozen gapless assembly interval of 1 to 4096 bases. Displayed history headers guard submission. The shortest supported lag up to half the interval is exploratory, not a repeat annotation or significance test. IUPAC ambiguity is excluded; indels are not modeled. Result and provenance remain in the bounded server job history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [jobId]
+                  properties:
+                    jobId: { type: string, pattern: '^[a-zA-Z0-9-]{1,64}$' }
+                - type: object
+                  required: [startBp, endBp]
+                  properties:
+                    startBp: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                    endBp: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
+      responses:
+        '200':
+          description: Terminal job status with result (length, nullable periodBp/copies/identity, pair counts, ambiguity, composition baseline, method, message, interval, coordinateSystem, snapshot, inputSha256, sourceFasta and sourceStamp). The input hash describes the frozen forward sequence, not the complete FASTA file.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '202':
+          description: Submitted/running status and jobId. Cancel with sequence/jobs/{jobId}/stop or jobs/cancel.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+        '400': { description: Invalid or out-of-assembly interval }
+        '404': { description: Measurement job is unavailable or expired }
+        '409': { description: Missing active FASTA or stale assembly }
         '503': { description: Sequence analysis queue is full }
   /sequence/region:
     post:
@@ -1964,10 +2232,42 @@ paths:
       operationId: cleanupSequenceOverlays
       responses:
         '200': {description: Number of removed matrices; original data and provenance retained}
+  /sequence/remote_blast/retrieve:
+    post:
+      tags: [Sequence analysis]
+      summary: Download a completed NCBI RID without submitting any sequence search
+      description: Only the RID is sent to NCBI using GET and documented JSON2_S output. Pasted queries remain on the HiCT server and validate returned labels, lengths and aligned bases. Verification scope is recorded for partial/no-hit queries. Identity, e-value, per-HSP coverage, strands and target limits filter retrieved alignments locally. A separate endpoint prevents older servers from treating recovery as a new submission. Global remote-client spacing, a one-minute per-RID interval, bounded output, timeout and Jobs cancellation apply. This does not require linked FASTA or a local BLAST executable.
+      operationId: retrieveRemoteBlast
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [queries, scope, mode, searchTarget, bothStrands, remoteConsent, remoteDatabase, remoteRequestId]
+              properties:
+                queries: {type: string, description: Original FASTA records or one DNA sequence per line, with matching query headers}
+                scope: {type: string, enum: [database]}
+                mode: {type: string, enum: [blast]}
+                searchTarget: {type: string, enum: [NCBI_REMOTE]}
+                remoteConsent: {type: boolean, enum: [true], description: Confirm downloading the RID and that it belongs to these queries}
+                remoteRequestId: {type: string, maxLength: 128, description: Existing NCBI RID, normalized to uppercase after trimming; 8–64 letters/digits are required}
+                remoteDatabase: {type: string, enum: [nt, refseq_rna, 16S_ribosomal_RNA]}
+                remoteTimeoutMinutes: {type: integer, minimum: 1, maximum: 30, default: 10}
+                bothStrands: {type: boolean}
+                evalue: {type: number, exclusiveMinimum: 0, default: 0.00001}
+                identity: {type: number, minimum: 0, maximum: 100, default: 70}
+                coverage: {type: number, minimum: 0, maximum: 100, default: 50}
+                maxTargets: {type: integer, minimum: 1, maximum: 500, default: 50}
+      responses:
+        '202': {description: Download-only remote_blast job queued}
+        '400': {description: Invalid RID, consent, query or retrieval settings}
+        '429': {description: Remote queue full}
   /sequence/search/jobs:
     post:
       tags: [Conversion]
-      summary: Search a frozen active-assembly sequence and create a source-anchored BED track
+      summary: Search a local frozen assembly or explicitly submit pasted queries to NCBI BLAST
+      description: Local search creates a source-anchored BED. NCBI_REMOTE requires BLAST mode, database scope and explicit remoteConsent. Only generated query IDs and pasted sequences are uploaded; no linked FASTA is read. Existing RIDs must use the separate download-only retrieval endpoint. Remote results retain external subject coordinates in JSON/TSV, with a separate bounded worker, one active remote client, a 1–30 minute provider timeout and Jobs cancellation. Cancelling stops the client; NCBI may continue a submitted request. No automatic resubmission occurs.
       operationId: startSequenceSearch
       requestBody:
         required: true
@@ -1978,7 +2278,11 @@ paths:
               required: [queries, scope, mode, bothStrands]
               properties:
                 queries: { type: string, description: 'FASTA records or one DNA sequence per line' }
-                scope: { type: string, enum: [assembly, selection] }
+                scope: { type: string, enum: [assembly, selection, database] }
+                searchTarget: { type: string, enum: [LOCAL_ASSEMBLY, NCBI_REMOTE], default: LOCAL_ASSEMBLY }
+                remoteConsent: { type: boolean, default: false, description: Must be explicitly true for NCBI remote submission. }
+                remoteDatabase: { type: string, enum: [nt, refseq_rna, 16S_ribosomal_RNA] }
+                remoteTimeoutMinutes: { type: integer, minimum: 1, maximum: 30, default: 10 }
                 mode: { type: string, enum: [exact, substitutions, blast] }
                 bothStrands: { type: boolean }
                 degenerate: { type: boolean, default: false }
@@ -1992,24 +2296,51 @@ paths:
                 evalue: {type: number, exclusiveMinimum: 0, default: 10}
                 identity: {type: number, minimum: 0, maximum: 100, default: 70}
                 coverage: {type: number, minimum: 0, maximum: 100, default: 50}
-                maxTargets: {type: integer, minimum: 1, maximum: 1000000, default: 500}
+                maxTargets: {type: integer, minimum: 1, maximum: 1000000, default: 500, description: 'Remote requests allow at most 500 targets per query and default to 50. Remote queries are limited to ten records and 100,000 total bases.'}
                 startBp: { type: integer, format: int64, minimum: 0, description: 'Selection start, zero-based and inclusive' }
                 endBp: { type: integer, format: int64, minimum: 1, description: 'Selection end, exclusive' }
       responses:
         '202':
-          description: Submitted job with captured sequence fingerprint
+          description: Submitted local search or remote_blast job
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GenericMap' }
         '400': { description: 'Invalid query, scope or matching settings' }
-        '409': { description: 'No open map or linked FASTA' }
+        '409': { description: 'Local prerequisites or required search executable unavailable' }
         '429': { description: 'Analysis queue full' }
+  /sequence/remote_blast/result:
+    post:
+      tags: [Sequence analysis]
+      summary: Read a completed external BLAST report or its raw TSV
+      operationId: getRemoteBlastResult
+      description: Reads only a known completed remote_blast job from managed storage. JSON retains provider/database, dates, query hash and descriptions, thresholds, and external one-based inclusive subject/query coordinates. At most 20,000 alignments are included in JSON, with a truncated flag and full count; bounded raw TSV retains all returned rows. URLs and subject accessions are data and are never mapped to the assembly or executed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobId]
+              properties:
+                jobId: { type: string }
+                format: { type: string, enum: [JSON, TSV], default: JSON }
+      responses:
+        '200':
+          description: External BLAST result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenericMap' }
+            text/tab-separated-values:
+              schema: { type: string }
+        '400': { description: Invalid job ID or result format }
+        '404': { description: Unknown remote BLAST job }
+        '409': { description: Results not ready }
   /sequence/moddotplot/jobs:
     post:
       tags: [Sequence analysis]
       summary: Generate or accumulate a source-anchored ModDotPlot overlay
       operationId: startModDotPlot
-      description: Captures the active assembly, evaluates identity at each selected map resolution, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      description: Captures the active assembly, evaluates identity at each requested source-bin resolution, and writes an immutable compatible HiCT sidecar version. The requested levels may be independent of the input contact pyramid. A window must be at least as long as the selected k-mer. Existing versions remain intact on failure or cancellation.
       requestBody:
         required: true
         content:
@@ -2049,7 +2380,7 @@ paths:
       tags: [Sequence analysis]
       summary: Generate or accumulate a selected alignment dotplot
       operationId: startAssemblyDotPlot
-      description: Captures the active assembly, aligns the selected sequence axes using the configured minimap2/mm2-plus and samples PAF alignments into source bins, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      description: Captures the active assembly, aligns the selected sequence axes using the configured minimap2/mm2-plus, and samples PAF alignments into the requested source-bin resolutions. These may be independent of the input contact pyramid. The job writes an immutable compatible HiCT sidecar version and preserves existing versions on failure or cancellation.
       requestBody:
         required: true
         content:
@@ -2202,6 +2533,16 @@ components:
         finishedAtMs: { type: integer, format: int64, nullable: true }
         message: { type: string, nullable: true }
         error: { type: string, nullable: true }
+        details:
+          type: object
+          nullable: true
+          properties:
+            title: { type: string, nullable: true }
+            completedBytes: { type: integer, format: int64, minimum: 0, nullable: true }
+            totalBytes: { type: integer, format: int64, minimum: 0, nullable: true, description: Zero means an unknown transfer size. }
+            currentFile: { type: string, nullable: true }
+            warnings: { type: array, items: { type: string } }
+            exampleId: { type: string, nullable: true, description: Catalog entry to focus when resuming an example. }
         outputs:
           type: array
           items:
@@ -2209,11 +2550,12 @@ components:
             required: [filename, action]
             properties:
               filename: { type: string }
-              action: { type: string, enum: [open_map, download, open_tracks, attach_identity, attach_dotplot, fasta_only, example] }
+              action: { type: string, enum: [open_map, download, open_tracks, open_blast_results, attach_identity, attach_dotplot, fasta_only, example] }
               fastaFilename: { type: string, nullable: true }
               agpFilename: { type: string, nullable: true }
               mapFilename: { type: string, nullable: true }
               displayMode: { type: string, nullable: true, enum: [overlay, below, above, none] }
+              displayName: { type: string, description: Human-readable result filename when filename is a download endpoint. }
 
     EmptyObject:
       type: object
@@ -2352,6 +2694,9 @@ components:
         tileSize: { type: integer }
         assemblyInfo: { type: object, additionalProperties: true }
         matrixSizesBins: { type: array, items: { type: integer } }
+        usableCoolerWeights:
+          type: boolean
+          description: Whether any stored matrix resolution has a finite, nonzero weight for a real bin.
         capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
         workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
       required: [status, resolutions, assemblyInfo]
@@ -2412,13 +2757,36 @@ components:
             properties:
               parentId: { type: integer, format: int32, minimum: 0 }
               sourceName: { type: string, minLength: 1 }
-              sourceOffsetBp: { type: integer, format: int32, minimum: 0 }
+              sourceOffsetBp: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
               parentLengthBp: { type: integer, format: int64, minimum: 2 }
               reversed: { type: boolean }
               splitOffsetBp: { type: integer, format: int64, minimum: 1 }
               leftId: { type: integer, format: int32, minimum: 1 }
               rightId: { type: integer, format: int32, minimum: 2 }
+              exact: { type: boolean, default: false, description: With snapshot v2, retain every base and reference crossing source bins in both children. Absent or false replays the historical bin-removing operation. }
         capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
+        exampleProvenance:
+          type: object
+          description: Optional frozen example declaration and recorded cache hashes, captured when opening a declared matrix or a current converted result. Restore preserves this historical metadata without consulting the live catalog, fetching URLs or executing its recipe. These records do not authenticate a session or replace the source file fingerprints.
+          required: [schemaVersion, capturedAt, catalogSource, catalogFingerprint, catalogExample, files, matrixInputFilename, matrixOpenedFilename, matrixAssociation]
+          properties:
+            schemaVersion: { type: integer, enum: [1] }
+            capturedAt: { type: string, format: date-time }
+            catalogSource: { type: string, maxLength: 8192 }
+            catalogFingerprint: { type: string, pattern: '^[0-9a-f]{64}$' }
+            catalogExample: { type: object, additionalProperties: true, description: Recorded example validated against the catalog schema. }
+            files:
+              type: array
+              items:
+                type: object
+                required: [filename, bytes, sha256]
+                properties:
+                  filename: { type: string }
+                  bytes: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
+                  sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+            matrixInputFilename: { type: string }
+            matrixOpenedFilename: { type: string }
+            matrixAssociation: { type: string, enum: [DECLARED_HICT, CURRENT_CONVERSION_CACHE] }
     SecondarySourceStatus:
       type: object
       properties:
@@ -2447,6 +2815,8 @@ components:
       required: [schemaVersion, units, scoreScale, contactDataState, resolutions, importedWeightResolutions, weightMetadataComplete, contactNormalization, importedWeights]
       properties:
         schemaVersion: { type: integer, enum: [1] }
+        sequenceScaleTiles: { type: boolean, description: Server can project stored source-bin colors onto an explicit one-base display grid. Omitted by older servers. This does not add a stored contact resolution. }
+        sequenceScaleTracks: { type: boolean, description: Server supports explicit assembly-BP track queries including hidden and binless sequence. Omitted by older servers. }
         units: { type: string, enum: [CONTACT_COUNT, ALIGNMENT_SAMPLE_COUNT, ALIGNMENT_PRESENCE, IDENTITY_PERCENT, SEQUENCE_ONLY, UNKNOWN] }
         scoreScale: { type: number, minimum: 0, exclusiveMinimum: true }
         contactDataState: { type: string, enum: [PRESENT, ABSENT, UNKNOWN] }
@@ -2455,6 +2825,16 @@ components:
         weightMetadataComplete: { type: boolean }
         contactNormalization: { $ref: '#/components/schemas/CapabilityAvailability' }
         importedWeights: { $ref: '#/components/schemas/CapabilityAvailability' }
+        approximation:
+          type: object
+          description: Explicit estimation provenance, preserved when an approximate Cooler is reopened or saved in a session. Absent means no declared approximation provenance; it does not prove original observations.
+          required: [schemaVersion, method, resolutionPolicy, description, upstreamApproximate]
+          properties:
+            schemaVersion: { type: integer, enum: [1] }
+            method: { type: string }
+            resolutionPolicy: { type: string }
+            description: { type: string }
+            upstreamApproximate: { type: boolean, description: The input to the most recent approximate export was already estimated. }
     CapabilityAvailability:
       type: object
       required: [state, reasonCode, reason]
@@ -2476,6 +2856,25 @@ components:
           properties:
             coordinateSystem: { type: string, enum: [ASSEMBLY_BP, PADDED_SEQUENCE] }
             alignmentCount: { type: integer, minimum: 0 }
+            method: { type: string, description: Additive alignment implementation version }
+            aligner: { type: string, description: Executed aligner filename }
+            alignerSha256: { type: string, description: SHA-256 of the executed aligner }
+            rowSha256: { type: string, description: SHA-256 of frozen row sequence UTF-8 bytes }
+            columnSha256: { type: string, description: SHA-256 of frozen column sequence UTF-8 bytes }
+            snapshot: { type: string, description: Captured assembly fingerprint }
+            rowStart: { type: integer, format: int64, minimum: 0 }
+            rowEnd: { type: integer, format: int64, minimum: 1 }
+            columnStart: { type: integer, format: int64, minimum: 0 }
+            columnEnd: { type: integer, format: int64, minimum: 1 }
+            profile:
+              type: object
+              properties:
+                name: { type: string, enum: [short-window-v1, seeded-window-v1] }
+                kmer: { type: integer }
+                window: { type: integer }
+                chainScore: { type: integer }
+                seeds: { type: integer }
+                alignmentScore: { type: integer }
             message: { type: string, nullable: true }
             segments:
               type: array
@@ -2514,6 +2913,13 @@ components:
 
     VisualizationOptionsRequest:
       type: object
+      description: >-
+        SimpleLinearGradient colormaps optionally accept gamma (finite, 0.05 through
+        100, default 1). Ordinary gradient colors interpolate with
+        pow(clamp((signal-minSignal)/(maxSignal-minSignal),0,1),gamma).
+        Gamma affects RGBA only, not numeric signals, histograms or thresholds.
+        O/E retains its neutral-at-1 ratio palette and identity palettes retain
+        their fixed mapping. Legacy payloads without gamma keep their appearance.
       additionalProperties: true
       properties:
         preserveRenderPipeline:
@@ -2529,12 +2935,25 @@ components:
       required: [bpResolution, startRowPx, endRowPx, startColPx, endColPx]
       properties:
         bpResolution: { type: integer, format: int64 }
+        unit: { type: string, enum: [PIXELS, BINS], default: PIXELS, description: Axis units for all four bounds. The legacy Px field names are retained for compatibility. }
         startRowPx: { type: integer, format: int64 }
         endRowPx: { type: integer, format: int64 }
         startColPx: { type: integer, format: int64 }
         endColPx: { type: integer, format: int64 }
     RenderPipelineConfig:
       type: object
+      description: >-
+        Observed-view expressions. Colormap mode OBSERVED_OVER_EXPECTED maps an
+        already-computed ratio signal around neutral white at 1, with depleted
+        startColor and enriched endColor (including alpha), logarithmic interpolation,
+        minSignal/maxSignal or connected min/max numeric expressions. Undefined or
+        negative ratios are transparent. This palette does not fit an expected
+        profile. Expected/O/E view selection retains its separate primary-map
+        processing and uses the same palette mapping for O/E.
+        LINEAR colormap nodes optionally accept gamma in [0.05,100], default 1,
+        applying the same color-only power curve as ordinary gradient options.
+        Gamma does not alter the node input or numeric diagnostics and has no
+        effect on O/E or identity palette mappings.
       additionalProperties: true
 
     TileWithRangesResponse:
@@ -2546,6 +2965,21 @@ components:
         image:
           type: string
           description: data:image/png;base64,...
+        displayGrid:
+          type: object
+          description: >-
+            Present only for sequenceScale=true. Native-cell statistics are omitted
+            for this image so their counts cannot be mistaken for base samples.
+          properties:
+            unit: { type: string, enum: [BASE_PAIRS] }
+            bpPerPixel: { type: integer, enum: [1] }
+            sourceBpResolution: { type: integer, format: int64 }
+            cellSemantics: { type: string, enum: [SOURCE_BIN_REFERENCE_COLORS] }
+            contactValuesInterpolated: { type: boolean, enum: [false] }
+            startRowBp: { type: integer, format: int64 }
+            endRowBp: { type: integer, format: int64 }
+            startColBp: { type: integer, format: int64 }
+            endColBp: { type: integer, format: int64 }
         ranges:
           type: object
           properties:
@@ -2636,6 +3070,7 @@ components:
           default: TRADITIONAL_NORMALIZED
           description: |
             `TRADITIONAL_NORMALIZED` applies the currently selected visualization normalization and display mode.
+            Undefined O/E ratios are NaN in floating-point binary output and null in JSON, distinct from measured zero.
         source:
           type: string
           enum: [PRIMARY, SECONDARY]
@@ -2648,6 +3083,10 @@ components:
         includeWeights:
           type: boolean
           default: false
+        includeBinProvenance:
+          type: boolean
+          default: false
+          description: Include physical source-bin axis runs. Requires format JSON.
       required: [bpResolution]
 
     MatrixQueryJsonResponse:
@@ -2660,7 +3099,18 @@ components:
         cols: { type: integer }
         dtype: { type: string, enum: [float64, int64] }
         signalMode: { type: string }
-        unit: { type: string, enum: [PIXELS] }
+        cellSemantics:
+          type: string
+          enum: [SOURCE_BIN_REFERENCES, DISPLAY_GRID_SIGNAL]
+        binProvenance:
+          type: object
+          properties:
+            identityScope: { type: string, enum: [SOURCE_AND_RESOLUTION] }
+            source: { type: string, enum: [PRIMARY, SECONDARY] }
+            bpResolution: { type: integer, format: int64 }
+            rowAxis: { $ref: '#/components/schemas/SourceBinAxis' }
+            colAxis: { $ref: '#/components/schemas/SourceBinAxis' }
+        unit: { type: string, enum: [PIXELS, BINS] }
         startRowPx: { type: integer, format: int64 }
         endRowPx: { type: integer, format: int64 }
         startColPx: { type: integer, format: int64 }
@@ -2668,15 +3118,39 @@ components:
         values:
           type: array
           items:
-            oneOf:
-              - type: number
-              - type: integer
+            type: number
+            nullable: true
+            description: Numeric signal or raw count, with null for nonfinite or missing signals.
         rowWeights:
           type: array
           items: { type: number }
         colWeights:
           type: array
           items: { type: number }
+
+    SourceBinAxis:
+      type: object
+      description: |
+        Runs are relative to the output array, including any leading zero padding.
+        Positions absent from runs have no source-bin identity. A physical identity
+        is (source file, resolution, stripeId, binInStripe). Its binInStripe at
+        position offset+i is firstBinInStripe+i*step. uniqueSourceBins counts the
+        union of referenced physical bins in this axis window only, not the whole
+        assembly. It does not deduplicate unordered matrix contacts or pipeline values.
+      properties:
+        axisLength: { type: integer, format: int64 }
+        referencedBins: { type: integer, format: int64 }
+        uniqueSourceBins: { type: integer, format: int64 }
+        runs:
+          type: array
+          items:
+            type: object
+            properties:
+              offset: { type: integer, format: int64 }
+              length: { type: integer }
+              stripeId: { type: integer }
+              firstBinInStripe: { type: integer }
+              step: { type: integer, enum: [-1, 1] }
 
     RangeRequest:
       type: object
@@ -2864,6 +3338,7 @@ components:
       properties:
         widthPx: { type: integer, default: 512 }
         bpResolution: { type: integer, format: int64 }
+        sequenceScale: { type: boolean, default: false, description: Requires BP units. Uses an explicit uniform base display axis while retaining stored source resolution metadata. }
         unit:
           type: string
           enum: [PIXELS, BINS, BP]
@@ -2892,6 +3367,7 @@ components:
       properties:
         widthPx: { type: integer, minimum: 1, default: 1024 }
         bpResolution: { type: integer, format: int64 }
+        sequenceScale: { type: boolean, default: false, description: Requires BP units. Context margins and sampling use the assembly-base display axis. }
         marginScreens: { type: number, format: double, default: 1.0 }
         unit:
           type: string
@@ -2913,6 +3389,9 @@ components:
       type: object
       properties:
         filename: { type: string }
+        exampleId:
+          type: string
+          description: Optional quick-start example ID. The server validates the cached recipe and source before submission; its completed Jobs result retains the example recipe and reference context.
         direction:
           type: string
           enum: [mcool-to-hict, hict-to-mcool, hic-to-mcool, hic-to-hict, hicpro-matrix-to-hict, coo-to-hict, bg2-to-hict, pairs-to-hict, validpairs-to-hict]
@@ -2937,6 +3416,20 @@ components:
           type: boolean
           default: false
           description: Export the currently opened HiCT assembly state when converting .hict.hdf5 to Cooler.
+        approximateRebin:
+          type: boolean
+          default: false
+          description: |
+            Explicitly opt in to approximate float64 Cooler rebinning by sequence
+            overlap. Requires hict-to-mcool and a current or selected AGP assembly.
+            The internal writer models independent uniform endpoints within each
+            original bin's actual sequence interval and conserves retained
+            unordered contacts. Omitted sequence is not renormalized. Native HiCT
+            contacts remain unchanged. Output metadata labels the estimate and
+            bins/hict_sequence_fraction records sequence coverage (including gaps).
+            Balancing is disabled by default for this mode; explicitly requesting
+            balanceExportedCoolers=true is rejected. exportMode is overridden by
+            the internal approximate writer.
         exportMode:
           type: string
           enum: [auto, internal, hictk]
@@ -2958,6 +3451,10 @@ components:
     StartBatchConversionRequest:
       type: object
       properties:
+        approximateRebin:
+          type: boolean
+          default: false
+          description: Same opt-in approximate policy as StartConversionJobRequest; requires an AGP for each HiCT input and unbalanced output.
         files:
           type: array
           items: { type: string }

@@ -1,14 +1,24 @@
 # Control coverage ledger
 
-## Current reviewed source
+## Current source reconciliation
 
-The current WebUI review is `95866b5d89a7946d44de2b5bee8ec09db70637b9`.
-Fresh static reconciliation passes for all 232 contracts, with 227 inspected
-bindings, five historical ambiguities and 162 literal source candidates.
-`/tmp/hict-u13-final-control-reconciliation.json` records fixture digests and the
-reviewed revision. The runtime ledger below retains scenario-specific evidence.
-The release report records current application and artifact qualification.
-Earlier capture sections retain their historical revisions and scope.
+All 232 contracts reconcile against the clean WebUI revision
+`02292b68d8b939c020d57ca36e9a1c86f0231a1d` pinned by Portable Packages run
+44255574234, with 227 inspected bindings,
+five historical ambiguities and 158 literal source candidates. The receipt
+records both the checkout checked by the tool and the contract authors' recorded
+review revision, `bce320752ef4d903caccbbea21d757d4cbc9cac8`. It reports
+whether Git sees changes in `src/app`. An exported source tree records null
+for the checkout revision and change status.
+
+The current receipt is under
+`build/release-evidence/portable-publication-priority/run-44255574234/control-reconciliation.json`.
+The new coordinate-cut form has a separate browser check because it postdates
+the historical capture. The check verifies a reversed-contig cut, unchanged
+sequence, and exact AGP restoration through Undo.
+The runtime ledger below retains scenario-specific historical evidence.
+The [release report](release-qualification.md) records current application
+and artifact qualification.
 
 The historical third-pass capture contains 232 distinct DOM signatures across
 18 menu destinations and sidebar states. The preserved fixture is
@@ -92,12 +102,10 @@ Local evidence is under `/tmp/hict-reinforce-w0-capabilities/`: the initial
 prerequisites and recovery. The capability suite also passed after commits
 `31c34bfd` (JVM) and `44ca0cd` (WebUI), with no page or HTTP errors.
 
-The surface inventory includes buttons lacking text, title and aria-label. These
-are accessibility investigation candidates, not a computed-accessible-name audit:
-SVG names or aria-labelledby can still supply a name. Existing review findings
-about modal focus containment and debug notifications remain unresolved. Passing
-these opening checks does not establish keyboard accessibility, comfortable
-layout, every nested control, all application states, or release readiness.
+The original surface inventory includes buttons lacking text, title and
+aria-label. SVG names and `aria-labelledby` can also contribute to accessible
+names. The focus and notification checks below cover the later fixes on the
+tested dialogs and states.
 
 ## Dialog and graph audit update
 
@@ -109,6 +117,17 @@ cases, real jobs and independent mixed layers. All fifteen sequence lifecycle
 cases and the exact baked UI metadata pass. Results are retained under
 `/tmp/hict-u13-dialog-regate-{core,open-session,quad,extra}.json` and
 `/tmp/hict-u13-dialog-sequence-lifecycle/summary.json`.
+
+On the Linux installer `2.0.388-ci1-f8f7cdc`, all 18 menu destinations opened
+successfully and 17 dialogs passed focus containment, dismissal, focus return
+and exact AGP preservation. The capture exposed eight unnamed dialog close
+icons alongside the unrelated OpenLayers zoom thumb. The WebUI update labels
+all sixteen previously unnamed close icons found in the source, including
+secondary track warnings and file pickers. Against the rebuilt WebUI, the
+browser rerun verified all 17 dialog header names through the accessibility
+tree and passed the 18 menu scenarios without browser or HTTP errors. The
+packaged menu gate now checks those names. The receipts are under
+`build/release-evidence/portable-publication-priority/run-44283392789/`.
 
 The pipeline pixel audit then found transparent source-independent expressions.
 JVM `91581c50` corrects that rendering path. Twelve pipeline scenarios, four
@@ -130,15 +149,15 @@ instances to be exercised. A row with remaining assertions stays open.
 | 0 | Workspace brand click preserves exact view and native AGP hash | Complete |
 | 1–6 | Navigation audit opens all six menus with ArrowDown, closes with Escape and verifies focus return and unchanged view | Complete |
 | 7–11 | Workspace searches known contig/scaffold, verifies exact centers, independently applies row/column scopes, copies scope and queries exact 2×2 values, rejects an unknown scope | Complete for the audited contig/scaffold searches, independent scopes and absent-suggestion viewport preservation. |
-| 12 | Opening gate checks reciprocal O/E palette and Observed restoration, numeric expression and histogram suites check signal queries | Full independent Expected/O/E boundary and zero-denominator runtime matrix |
+| 12 | Published Linux 2.0.371 checks all 25 raw, Expected and O/E values across a scaffold boundary. Three supported zeros render in the depletion color, and 18 undefined ratios are null in JSON and transparent in the rendered tile. The display-mode suite also verifies graph, secondary pixels and session restoration. | Complete for the independent scaffold-boundary fixture. |
 | 13 | Navigation reload preserves exact pipeline and viewport through completed rendering | Complete. Reload now compares the rendered layer canvases byte-for-byte. |
 | 14–15 | Workspace verifies overlay persistence, ruler unit regressions verify coordinates, browser/export suites exercise ruler layouts | All three actual ruler-mode button states now cycle with exact viewport preservation. Tick coordinates and relative resets are covered by the shared ruler-layout regression suite. |
 | 16–18 | Export suites use dropdown actions, workspace uses toolbar zoom, baseline repeatedly clicks OpenLayers zoom with rendered-frame assertions | Complete. Toolbar and native zoom controls preserve the exact center and resolution at both constrained endpoints. |
 | 19–21 | Workspace verifies all three diagonal navigation formulas | Complete |
 | 22–27, 30 | Structural suite verifies Reverse, Move, Split, Group, Ungroup, Unscaffold All and Debris with exact independent AGP and Undo/Redo/Undo | Move Escape now verifies inactive tool, hidden arrows and exact native snapshot preservation before the real move. Edited-sequence coverage beyond the existing edited-view suite remains. |
-| 28 | Edited-view suite compares downloaded selected edited FASTA with source sequence and reverse complement | Selected gap-containing FASTA fixture |
+| 28 | Edited-view suite compares selected FASTA with the source and reverse complement. The published Linux 2.0.371 selection suite also checks both axes after importing a reversed fragment and an explicit 37-bp AGP gap. The downloaded sequence preserves exactly 37 `N` bases and the expected flanking bases. | Complete for default scaffold gaps and the explicitly imported gap fixture. |
 | 29 | Workspace toolbar and sidebar bookmarks restore exact view, names survive export/import/remount and native-session reload, legacy unnamed files remain readable | Complete |
-| 31, 49, 231 | Workspace opens notifications and clears them while exact native AGP remains unchanged | Explicit badge and retained background-job checks |
+| 31, 49, 231 | Workspace clears notifications without changing the native AGP. On Linux 2.0.371, the badge matches the visible history and disappears after Clear. The finished search job keeps its output and opens the result track from Jobs. | Complete for the audited history and finished-job cases. |
 | 32 | Navigation collapses and restores sidebar with exact viewport preservation | Complete |
 | 33–34 | Opening gate exercises plain picker, options wizard and Attach, concurrency gate preserves attached state and rejects stale saves, capability gate verifies fresh-window Attach | Complete for these opening paths |
 | 35, 38, 125, 180, 193 | Workspace closes an actual bookmark toast and drags the actual OpenLayers thumb, menu capture records owning dialog/toast HTML, menu suite dismisses each destination with Escape | All eighteen menu destinations now pass actual dismissal, focus trapping, visible focus return and exact native AGP preservation. The zoom thumb and toast close also have separate workspace assertions. |

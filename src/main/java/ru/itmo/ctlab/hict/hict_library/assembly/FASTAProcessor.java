@@ -300,6 +300,12 @@ public class FASTAProcessor implements AutoCloseable {
     AssemblyExportSettings.requireGapLength(gap);
     var records = preserveGaps ? chunkedFile.getAgpProcessor().getAssemblyAGPRecords()
       : chunkedFile.getAgpProcessor().getAGPRecords(gap);
+    writeAssemblyRecords(path,output,records,preserveGaps);
+  }
+
+  /** The caller captures records under the assembly scheduler; I/O uses this immutable layout. */
+  public void writeAssemblyRecords(Path path, java.io.OutputStream output,
+                                   List<AGPProcessor.AGPFileRecord> records, boolean preserveGaps) throws IOException {
     if (records.isEmpty()) return;
     try (var source = new SourceSession(path)) {
       // Validate every interval before producing any output.
@@ -630,7 +636,7 @@ public class FASTAProcessor implements AutoCloseable {
 
   static @NotNull String extractContigSliceFromSource(final @NotNull String source,
                                                       final @NotNull String sourceName,
-                                                      final int sourceOffset,
+                                                      final long sourceOffset,
                                                       final long contigLengthBp,
                                                       final @NotNull ContigDirection direction,
                                                       final long startInsideContig,

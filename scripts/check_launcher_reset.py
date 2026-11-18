@@ -5,15 +5,18 @@ import argparse
 import os
 from pathlib import Path
 import select
+import shutil
 import signal
+import socket
 import subprocess
 import tempfile
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--xvfb", default="/tmp/hict-desktop-test/runtime/usr/bin/Xvfb")
+    parser.add_argument("--xvfb", default=shutil.which("Xvfb") or "/tmp/hict-desktop-test/runtime/usr/bin/Xvfb")
     parser.add_argument("--jar", required=True)
+    parser.add_argument("--java", default="java", help="Java runtime used to launch the acceptance test")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     out = Path(tempfile.mkdtemp(prefix="hict-launcher-reset-"))
@@ -26,6 +29,10 @@ def main():
         directory = out / key.lower()
         directory.mkdir(mode=0o700)
         env[key] = str(directory)
+    with socket.socket() as api, socket.socket() as webui:
+        api.bind(("127.0.0.1", 0))
+        webui.bind(("127.0.0.1", 0))
+        env.update(VXPORT=str(api.getsockname()[1]), WEBUI_PORT=str(webui.getsockname()[1]))
     env.update(
         HICT_APP_HOME=str(out),
         DATA_DIR=str(out / "data"),
@@ -33,12 +40,14 @@ def main():
         HICT_LAUNCHER_CONFIG=str(out / "launcher.properties"),
         HICT_LOG_LEVEL="WARN",
         TILE_SIZE="512",
-        VXPORT="5189",
-        WEBUI_PORT="8189",
         HICT_TEST_PRIVATE_DISPLAY="1",
-        HICT_JAR_PATH=str(Path(args.jar).resolve()),
-        LD_LIBRARY_PATH="/tmp/hict-desktop-test/runtime/usr/lib/x86_64-linux-gnu",
+        HICT_JAR_PATH=str(Path(args.jar).resolve(strict=True)),
     )
+    xvfb_env = env.copy()
+    libraries = Path(args.xvfb).resolve().parent.parent / "lib/x86_64-linux-gnu"
+    if libraries.is_dir():
+        xvfb_env["LD_LIBRARY_PATH"] = str(libraries)
+    subprocess.run(["javac", "-d", str(out), str(root / "scripts/LauncherResetAcceptance.java")], check=True)
     read_fd, write_fd = os.pipe()
     print(f"Launcher acceptance output: {out}", flush=True)
     with (out / "xvfb.log").open("w") as log:
@@ -53,7 +62,7 @@ def main():
                 "-nolisten",
                 "tcp",
             ],
-            env=env,
+            env=xvfb_env,
             pass_fds=(write_fd,),
             stdout=log,
             stderr=log,
@@ -68,14 +77,12 @@ def main():
             env["DISPLAY"] = ":" + display
             process = subprocess.Popen(
                 [
-                    "java",
+                    args.java,
                     "-Duser.home=" + env["HOME"],
                     "-Djava.io.tmpdir=" + str(out),
                     "--class-path",
-                    str(root / "build/classes/java/main")
-                    + os.pathsep
-                    + str(Path(args.jar).resolve()),
-                    str(root / "scripts/LauncherResetAcceptance.java"),
+                    os.pathsep.join((str(out), env["HICT_JAR_PATH"])),
+                    "LauncherResetAcceptance",
                     str(out),
                 ],
                 env=env,

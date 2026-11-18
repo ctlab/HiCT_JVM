@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "webuiRevision": "95866b5d89a7946d44de2b5bee8ec09db70637b9",
+  "webuiRevision": "bce320752ef4d903caccbbea21d757d4cbc9cac8",
   "contracts": [
     {
       "id": "control-d49b728bf7f3852b",
@@ -135,8 +135,8 @@
     {
       "id": "control-1cf02f19c458080e",
       "historicalIndex": 13,
-      "source": "src/app/ui/components/upper_ribbon/HeaderRibbon.vue",
-      "anchor": "reloadTiles",
+      "source": "src/app/ui/components/upper_ribbon/NavigationBar.vue",
+      "anchor": "reload-tiles-button",
       "prerequisites": "Open disposable contact map",
       "expectedEffect": "Tiles refresh without changing assembly, graph or viewport; visible pixels match pre-refresh data.",
       "coverage": "inspected",
@@ -761,7 +761,7 @@
       "id": "control-53b30e937ff4ff3b",
       "historicalIndex": 72,
       "source": "src/app/ui/components/sidebar/VisualziationSettingsEditor.vue",
-      "anchor": "Cooler weights warning",
+      "anchor": "cooler-weights-nan-policy",
       "prerequisites": "Open map with controlled graph and known pixel values",
       "expectedEffect": "Expand the warning and expose the actual non-finite weight count and policy.",
       "coverage": "inspected",
@@ -1335,9 +1335,9 @@
       "id": "control-41f06e259212be2e",
       "historicalIndex": 129,
       "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
-      "anchor": "cooler-weights-primary",
+      "anchor": "onAddWeights",
       "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
-      "expectedEffect": "Toggle the primary weight track; values match the imported source weights.",
+      "expectedEffect": "Choose Map weights and Primary map in Add track, then Add weights; values match the primary source and the resulting track has its own visibility toggle.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },
@@ -1345,9 +1345,9 @@
       "id": "control-99c5fc6893e2d0f5",
       "historicalIndex": 130,
       "source": "src/app/ui/components/upper_ribbon/TrackManager.vue",
-      "anchor": "cooler-weights-secondary",
+      "anchor": "track-weight-source",
       "prerequisites": "Tracks and layers dialog; primary and compatible secondary fixtures",
-      "expectedEffect": "Toggle the secondary weight track only when that source exists; values match its weights.",
+      "expectedEffect": "Choose Map weights and Secondary map in Add track, then Add weights; the source is unavailable until attached, values match its weights and the resulting track has its own visibility toggle.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },

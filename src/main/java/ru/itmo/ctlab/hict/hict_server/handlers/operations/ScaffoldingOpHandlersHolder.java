@@ -54,6 +54,24 @@ public class ScaffoldingOpHandlersHolder extends HandlersHolder {
 
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
+    router.post("/split_contig_at_bp").handler(ctx -> {
+      final var scheduler = getScheduler(ctx);
+      if (scheduler == null) return;
+      final var json = ctx.body().asJsonObject();
+      final SplitContigAtBpRequestDTO request;
+      try { request = SplitContigAtBpRequestDTO.fromJSONObject(json); }
+      catch (IllegalArgumentException invalid) { ctx.fail(new io.vertx.ext.web.handler.HttpException(400, invalid.getMessage())); return; }
+      scheduler.submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null, () -> {
+        final LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
+        final var active = extractAssemblyChunkedFiles(map).activeChunkedFile();
+        // The active source defines exact sequence intervals. Reproject the
+        // other source from immutable original bins, rather than reusing IDs
+        // or snapping the same position to its different resolution pyramid.
+        active.scaffoldingOperations().splitContigAtBp(request.contigId(), request.offsetBp());
+        final long version = incrementVersionAndResetTileStats(map, active, scheduler);
+        return CompactAssemblyInfoDTO.response(active, version, json.getValue("assemblyFormat"));
+      }, dto -> ctx.response().end(Json.encodeToBuffer(dto)));
+    });
     router.post("/reverse_selection_range").handler(ctx -> {
       final var scheduler = getScheduler(ctx);
       if (scheduler == null) {

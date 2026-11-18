@@ -16,6 +16,9 @@ PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${HICT_RUN_PAYLOAD_XZ_THREADS:-}" ]]; then
+  RUN_PAYLOAD_XZ_THREADS=3
+fi
 
 usage() {
   cat <<'EOF'
@@ -27,10 +30,10 @@ Outputs:
   build/distributions/HiCT-<version>[-musl]-linux-x86_64.sha256
 
 Environment overrides:
-  HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
+  HICT_SKIP_GRADLE=1                 Reuse the exact versioned fat JAR from build/libs.
   HICT_RUNTIME_MODULES=<modules>     Override jlink modules.
   HICT_PORTABLE_DIST_DIR=<dir>       Override staging directory.
-  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload, default 2.
+  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload (2 locally, 3 on Actions).
 
 The .run file is a transparent shell script with a tar.xz payload appended. It
 extracts to the user's cache and sets DATA_DIR to the directory containing the
@@ -59,6 +62,7 @@ require_cmd sha256sum
 require_cmd awk
 require_cmd grep
 require_cmd tail
+require_cmd python3
 
 JLINK="${JAVA_HOME:-}/bin/jlink"
 if [[ ! -x "${JLINK}" ]]; then
@@ -85,9 +89,9 @@ if [[ "${HICT_SKIP_GRADLE:-0}" != "1" ]]; then
   )
 fi
 
-FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
-if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
-  echo "Fat JAR was not found under ${PROJECT_DIR}/build/libs" >&2
+FAT_JAR="${PROJECT_DIR}/build/libs/hict_server-${VERSION}-fat.jar"
+if [[ ! -f "${FAT_JAR}" ]]; then
+  echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
   exit 1
 fi
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
@@ -118,33 +122,32 @@ fi
   cd "${APP_DIR}"
   "${JAR_TOOL}" xf "${APP_DIR}/lib/hict.jar" webui toolchains
 )
-if [[ -f "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json" ]]; then
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" 2>/dev/null || true
-  chmod 0755 "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" 2>/dev/null || true
-  if grep -q '"hictk"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+if [[ -f "${APP_DIR}/toolchains/linux_x86_64/manifest.json" ]]; then
+  python3 "${SCRIPT_DIR}/verify_copied_tools.py" \
+    --directory "${APP_DIR}/toolchains/linux_x86_64" --platform linux_x86_64 \
+    --restore-command-permissions
+  if grep -q '"hictk"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" ]]; then
       echo "Portable package is missing executable bundled hictk at toolchains/linux_x86_64/bin/hictk." >&2
       exit 1
     fi
     "${APP_DIR}/toolchains/linux_x86_64/bin/hictk" --version >/dev/null
   fi
-  if grep -q '"minimap2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+  if grep -q '"minimap2"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" ]]; then
       echo "Portable package is missing executable bundled minimap2 at toolchains/linux_x86_64/bin/minimap2." >&2
       exit 1
     fi
     "${APP_DIR}/toolchains/linux_x86_64/bin/minimap2" --version >/dev/null
   fi
-  if grep -q '"mm2plus_avx2"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+  if grep -q '"mm2plus_avx2"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" ]]; then
       echo "Portable package is missing executable bundled mm2-plus AVX2 at toolchains/linux_x86_64/bin/mm2plus-avx2." >&2
       exit 1
     fi
     "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --version >/dev/null || "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx2" --help >/dev/null || true
   fi
-  if grep -q '"mm2plus_avx512"' "${PROJECT_DIR}/toolchains-dist/linux_x86_64/manifest.json"; then
+  if grep -q '"mm2plus_avx512"' "${APP_DIR}/toolchains/linux_x86_64/manifest.json"; then
     if [[ ! -x "${APP_DIR}/toolchains/linux_x86_64/bin/mm2plus-avx512" ]]; then
       echo "Portable package is missing executable bundled mm2-plus AVX-512 at toolchains/linux_x86_64/bin/mm2plus-avx512." >&2
       exit 1
@@ -340,12 +343,13 @@ fi
 export TMP="${TMP:-${HICT_TEMP_DIR}}"
 export TEMP="${TEMP:-${HICT_TEMP_DIR}}"
 
-JAVA_OPTS=()
+JAVA_OPTS=(-Xms64m -XX:MinHeapFreeRatio=15 -XX:MaxHeapFreeRatio=30)
 if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
   # shellcheck disable=SC2206
   JAVA_OPTS=(${HICT_JAVA_OPTS})
 fi
 
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
 exec "${APP_HOME}/runtime/bin/java" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
 
 EOF
@@ -402,6 +406,7 @@ SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.sha256
 PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.payload.tar.xz"
 
 tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | gzip -9 > "${TAR_PATH}"
+echo "Compressing .run payload with ${RUN_PAYLOAD_XZ_THREADS} xz threads"
 tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(sha256sum "${PAYLOAD_PATH}" | awk '{print $1}')"
 BUNDLED_TAURI_BROWSER="0"
@@ -654,6 +659,10 @@ if [[ -x "${RUN_PATH}" ]]; then
     TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
     HICT_LAUNCHER_MODE=cli \
     "${RUN_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
+      python3 "${SCRIPT_DIR}/check_packaged_server.py" "${RUN_PATH}" "${VERSION}"
+  fi
   rm -rf "${RUN_SMOKE_TEST_DIR}"
   trap - EXIT
 fi

@@ -1,0 +1,18 @@
+Title:           HiCT Borrelia editing
+Creator:         HiCT vector-cell artwork
+Producer:        cairo 1.18.0 (https://cairographics.org)
+CreationDate:    Tue Nov 17 15:57:25 2026 +04
+Custom Metadata: no
+Metadata Stream: yes
+Tagged:          no
+UserProperties:  no
+Suspects:        no
+Form:            none
+JavaScript:      no
+Pages:           1
+Encrypted:       no
+Page size:       504.567 x 507.701 pts
+Page rot:        0
+File size:       465571 bytes
+Optimized:       no
+PDF version:     1.3

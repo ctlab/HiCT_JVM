@@ -31,6 +31,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor;
 import ru.itmo.ctlab.hict.hict_library.domain.*;
+import ru.itmo.ctlab.hict.hict_library.assembly.ExactContigSlice;
 import ru.itmo.ctlab.hict.hict_library.trees.ContigTree;
 import ru.itmo.ctlab.hict.hict_library.trees.ScaffoldTree;
 
@@ -328,6 +329,72 @@ public class ScaffoldingOperations {
     splitContigAtBin(splitPosition, resolutionDescriptor, units, null);
   }
 
+  /** Cut at a boundary in the current oriented contig, retaining all sequence.
+   * No contact blocks are written. The containing source bin is shared by ATUs. */
+  public void splitContigAtBp(int contigId, long offsetBp) {
+    splitContigAtBp(contigId, offsetBp, null);
+  }
+
+  private void splitContigAtBp(int contigId, long offsetBp, ChunkedFile.SplitEdit replay) {
+    final var tree = chunkedFile.getContigTree();
+    final var scaffolds = chunkedFile.getScaffoldTree();
+    tree.getRootLock().writeLock().lock();
+    scaffolds.getRootLock().writeLock().lock();
+    ChunkedFile.AssemblySnapshot before = null;
+    try {
+      before = chunkedFile.snapshotAssembly();
+      long startBp = 0;
+      ContigTree.ContigTuple target = null;
+      for (var tuple : tree.getOrderedContigList()) {
+        if (tuple.descriptor().getContigId() == contigId) { target = tuple; break; }
+        startBp = Math.addExact(startBp, tuple.descriptor().getLengthBp());
+      }
+      if (target == null) throw new IllegalArgumentException("Contig is not in the current assembly");
+      final var parent = target.descriptor();
+      if (offsetBp <= 0 || offsetBp >= parent.getLengthBp())
+        throw new IllegalArgumentException("Cut must leave at least one base on each side");
+      final long cutBp = Math.addExact(startBp, offsetBp);
+      final long parentEnd = Math.addExact(startBp, parent.getLengthBp());
+      final boolean reversed = target.direction() == ContigDirection.REVERSED;
+      final long sourceCut = reversed ? parent.getLengthBp() - offsetBp : offsetBp;
+      final int maxId = tree.getContigDescriptors().keySet().stream().max(Integer::compare).orElse(0);
+      final int leftId = replay == null ? Math.addExact(maxId, 1) : replay.leftId();
+      final int rightId = replay == null ? Math.addExact(maxId, 2) : replay.rightId();
+      final var left = ExactContigSlice.slice(chunkedFile, parent,
+        reversed ? sourceCut : 0, reversed ? parent.getLengthBp() : sourceCut, leftId);
+      final var right = ExactContigSlice.slice(chunkedFile, parent,
+        reversed ? 0 : sourceCut, reversed ? sourceCut : parent.getLengthBp(), rightId);
+      final var bp = ResolutionDescriptor.fromResolutionOrder(0);
+      final var exposed = tree.expose(bp, startBp, parentEnd, QueryLengthUnit.BASE_PAIRS);
+      final var parentScaffold = scaffolds.getScaffoldAtBp(startBp);
+      final var borders = scaffolds.extendBordersToScaffolds(startBp, parentEnd);
+      final String name = parentScaffold == null ? "" : chunkedFile.getScaffoldDisplayName(parentScaffold.scaffoldId());
+      final long spacer = parentScaffold == null
+        ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp() : parentScaffold.spacerLength();
+      final boolean singleton = borders.startBP() == startBp && borders.endBP() == parentEnd;
+      tree.getContigDescriptors().put(leftId, left);
+      tree.getContigDescriptors().put(rightId, right);
+      final var children = ContigTree.Node.mergeNodes(new ContigTree.Node.SplitResult(
+        ContigTree.Node.createNodeFromDescriptor(left, target.direction()),
+        ContigTree.Node.createNodeFromDescriptor(right, target.direction())));
+      tree.commitExposedSegment(new ContigTree.Node.ExposedSegment(exposed.less(), children, exposed.greater()));
+      // Divide the scaffold at the cut without deleting or inserting sequence.
+      scaffolds.unscaffold(borders.startBP(), borders.endBP());
+      scaffolds.rescaffold(borders.startBP(), cutBp, id -> new ScaffoldDescriptor(id,
+        singleton ? "scf_" + left.getContigName() : name + "_left_" + id, spacer));
+      scaffolds.rescaffold(cutBp, borders.endBP(), id -> new ScaffoldDescriptor(id,
+        singleton ? "scf_" + right.getContigName() : name + "_right_" + id, spacer));
+      chunkedFile.recordSplit(new ChunkedFile.SplitEdit(parent.getContigId(), parent.getContigNameInSourceFASTA(),
+        parent.getOffsetInSourceFASTA(), parent.getLengthBp(), reversed, offsetBp, leftId, rightId, true));
+    } catch (RuntimeException | Error failure) {
+      if (before != null) chunkedFile.restoreAssembly(before);
+      throw failure;
+    } finally {
+      scaffolds.getRootLock().writeLock().unlock();
+      tree.getRootLock().writeLock().unlock();
+    }
+  }
+
   /** Rebuild native bins from a parent before the saved AGP applies the final layout. */
   public void replaySplit(ChunkedFile.SplitEdit edit, ContigDescriptor parent) {
     final var tree = chunkedFile.getContigTree();
@@ -355,7 +422,8 @@ public class ScaffoldingOperations {
         tree.commitRoot(ContigTree.Node.createNodeFromDescriptor(parent,
           edit.reversed() ? ContigDirection.REVERSED : ContigDirection.FORWARD));
         scaffoldTree.replaceWith(new ScaffoldTree(parent.getLengthBp()));
-        splitContigAtBin(edit.splitOffsetBp(), ResolutionDescriptor.fromResolutionOrder(0),
+        if (edit.exact()) splitContigAtBp(parent.getContigId(), edit.splitOffsetBp(), edit);
+        else splitContigAtBin(edit.splitOffsetBp(), ResolutionDescriptor.fromResolutionOrder(0),
           QueryLengthUnit.BASE_PAIRS, edit);
         left = tree.getContigDescriptors().get(edit.leftId());
         right = tree.getContigDescriptors().get(edit.rightId());
@@ -441,9 +509,9 @@ public class ScaffoldingOperations {
 
       final var newContigNamesInSourceFasta = List.of(oldContigDescriptor.getContigNameInSourceFASTA(), oldContigDescriptor.getContigNameInSourceFASTA());
       final var newContigOffsetsInSourceFasta = switch (oldContigNode.getContigDirection()) {
-        case FORWARD -> List.of(oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getOffsetInSourceFASTA() + (int) rightContigStartInSource);
+        case FORWARD -> List.of(oldContigDescriptor.getOffsetInSourceFASTA(), Math.addExact(oldContigDescriptor.getOffsetInSourceFASTA(), rightContigStartInSource));
         case REVERSED -> List.of(
-          oldContigDescriptor.getOffsetInSourceFASTA() + (int) (oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart),
+          Math.addExact(oldContigDescriptor.getOffsetInSourceFASTA(), oldContigDescriptor.getLengthBp() - deltaBpsFromContigStart),
           oldContigDescriptor.getOffsetInSourceFASTA()
         );
       };
@@ -525,7 +593,7 @@ public class ScaffoldingOperations {
         newContigPresenceAtResolution.get(i),
         newContigAtus.get(i),
         newContigNamesInSourceFasta.get(i),
-        newContigOffsetsInSourceFasta.get(i)
+        newContigOffsetsInSourceFasta.get(i), oldContigDescriptor.isSharedBinSlice()
       )).toList();
 
       newCds.forEach(cd -> contigTree.getContigDescriptors().put(cd.getContigId(), cd));

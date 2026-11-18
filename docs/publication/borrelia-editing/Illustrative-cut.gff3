@@ -1,0 +1,2 @@
+##gff-version 3
+Ch1	HiCT_demo	region	450124	460123	.	+	.	ID=illustrative_cut;Name=Cut_marker

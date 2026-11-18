@@ -38,6 +38,10 @@ public final class AssemblyBinGrid {
   private final Map<String, List<Component>> bySource;
 
   public AssemblyBinGrid(ChunkedFile file, ResolutionDescriptor descriptor) {
+    this(file, descriptor, true);
+  }
+
+  public AssemblyBinGrid(ChunkedFile file, ResolutionDescriptor descriptor, boolean visibleOnly) {
     final int order = descriptor.getResolutionOrderInArray();
     resolution = file.getResolutions()[order];
     if (resolution <= 0) throw new IllegalArgumentException("A matrix resolution is required");
@@ -47,7 +51,7 @@ public final class AssemblyBinGrid {
     long pixel = 0;
     for (var tuple : file.getAssemblyInfo().contigs()) {
       final var contig = tuple.descriptor();
-      final long bins = contig.getLengthInUnits(QueryLengthUnit.PIXELS, descriptor);
+      final long bins = contig.getLengthInUnits(visibleOnly ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, descriptor);
       if (bins == 0) continue;
       final long start = contig.getOffsetInSourceFASTA();
       final var component = new Component(contig.getContigNameInSourceFASTA(), start,

@@ -1324,7 +1324,12 @@ public final class HictLauncherGui {
       command.add("-DAUTO_OPEN_BROWSER=false");
       command.add("-DSERVE_WEBUI=true");
       command.add("-Djava.io.tmpdir=" + tempDir);
-      command.addAll(splitCommandLine(getFieldValue("HICT_JAVA_OPTS")));
+      final var extraJvmOptions = splitCommandLine(getFieldValue("HICT_JAVA_OPTS"));
+      if (extraJvmOptions.isEmpty() && System.getProperty("os.name", "").startsWith("Linux")) {
+        command.addAll(List.of("-Xms64m", "-XX:MinHeapFreeRatio=15", "-XX:MaxHeapFreeRatio=30"));
+      } else {
+        command.addAll(extraJvmOptions);
+      }
       command.add("-DHICT_LOG_LEVEL=" + selectedLogLevel());
 
       if (this.jarPath != null && Files.isRegularFile(this.jarPath)) {
@@ -1718,6 +1723,18 @@ public final class HictLauncherGui {
           SwingUtilities.invokeLater(() -> {
             this.frame.dispose();
             this.closed.countDown();
+          });
+        } else {
+          SwingUtilities.invokeLater(() -> {
+            // Do not hide a failed shutdown behind the ready-to-start card.
+            if ((this.serverProcess == null || !this.serverProcess.isAlive())
+              && this.browserProcesses.stream().noneMatch(Process::isAlive)) {
+              showActivityCard();
+              ((CardLayout) this.logCardsPanel.getLayout()).show(this.logCardsPanel, "start");
+              this.logCardsPanel.revalidate();
+              this.logCardsPanel.repaint();
+              updateButtons();
+            }
           });
         }
       });

@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--url", required=True)
     parser.add_argument("--api", required=True)
     parser.add_argument("--filename", default="combined_ind2_4DN.hict.hdf5")
+    parser.add_argument("--track-file", help="Optional track in the same disposable data directory")
     parser.add_argument("--output", required=True)
     parser.add_argument(
         "--release-gate", action="store_true",
@@ -37,6 +38,8 @@ def main():
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     results = {"platform": platform.platform(), "viewport": [1440, 1000], "runs": []}
+    if args.track_file:
+        results["track"] = args.track_file
     results['timingDefinitions'] = {
         'dispatchDelayMs': 'DOM event timestamp to capture listener; browser-injected input, not hardware latency',
         'firstViewChangeMs': 'Capture listener to first changed center/resolution property',
@@ -79,6 +82,8 @@ def main():
                 }""")
                 settle(page)
                 open_ms = (time.monotonic() - opened) * 1000
+                if args.track_file:
+                    await_track_render(page, args.track_file)
                 page.evaluate("""() => {
                     window.__baseline={frames:[],longTasks:[],active:true};
                     const b=window.__baseline;let previous=performance.now();
@@ -181,10 +186,53 @@ def main():
             assert not errors, errors
             assert not http_errors, http_errors
         finally:
+            # Preserve the renderer state on a settling failure. Observation
+            # stays passive until the measurement has already failed.
+            try:
+                diagnostic = """() => {
+                  const m=window.__hictBenchmark?.manager();if(!m)return null;
+                  const map=m.getMap(),v=m.getView();
+                  return {center:v.getCenter(),resolution:v.getResolution(),
+                    animating:v.getAnimating(),interacting:v.getInteracting(),
+                    loading:map.tileQueue_.getTilesLoading(),queued:map.tileQueue_.getCount(),
+                    complete:map.renderComplete_??null,hasCompleteListener:map.hasListener('rendercomplete'),
+                    notReady:map.getLoadingOrNotReady(),frameAnimating:map.frameState_?.animate,
+                    layers:m.viewAndLayersManager.layersHolder.hicDataLayers.filter(l=>l.getVisible()).map(l=>{
+                      const source=l.getSource(),states={};
+                      source.tileCache.forEach(t=>states[t.getState()]=(states[t.getState()]||0)+1);
+                      return {source:l.get('sourceName'),bpResolution:l.get('bpResolution'),states,
+                        requests:source.activeTileRequests.size};})};
+                }"""
+                results['finalRenderState'] = page.evaluate(diagnostic)
+                if len(results['runs']) < 2:
+                    page.screenshot(path=str(output/'settle-failure.png'))
+                    page.evaluate('window.__hictBenchmark?.manager()?.getMap().renderSync()')
+                    page.wait_for_timeout(100)
+                    results['afterDiagnosticFrame'] = page.evaluate(diagnostic)
+            except Exception as diagnostic_error:
+                results['diagnosticError'] = str(diagnostic_error)
             results.update(pageErrors=errors, httpErrors=http_errors)
             (output / "results.json").write_text(json.dumps(results, indent=2) + "\n")
             browser.close()
     print(json.dumps({"runs": len(results["runs"]), "evidence": str(output)}, indent=2))
+
+
+def await_track_render(page, filename):
+    page.evaluate("""async filename => {
+        const tracks = window.__hictBenchmark.manager().linearTrackManager;
+        if (!tracks.getTracksSnapshot().some(track => track.name === filename)) {
+            await tracks.openTrack(filename, filename);
+        }
+        await tracks.render({allowFetch: true});
+    }""", filename)
+    page.wait_for_function("""filename => {
+        const tracks = window.__hictBenchmark.manager().linearTrackManager;
+        return ['horizontal', 'vertical'].every(axis => {
+            const canvas = document.querySelector(`#${axis}-igv-track-div canvas`);
+            return canvas?.width > 0 && canvas.height > 0 &&
+                tracks.getVisibleTracksForAxis(axis).some(track => track.name === filename);
+        });
+    }""", arg=filename)
 
 
 def arm_action(page, kind, before):

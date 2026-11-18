@@ -293,6 +293,19 @@ public class MatrixQueries {
     return flattenWeights(atus, this.chunkedFile.getNormalizationWeights().snapshot(), resolutionOrder);
   }
 
+  /** Source identities aligned to an output axis, including its leading/trailing zero padding. */
+  public SourceBinProvenance sourceBinProvenance(ResolutionDescriptor resolution, long start, long end,
+                                                boolean excludeHiddenContigs) {
+    final long length = Math.subtractExact(end, start);
+    if (length < 0) throw new IllegalArgumentException("Reversed provenance range");
+    final long total = chunkedFile.getContigTree().getLengthInUnits(
+      excludeHiddenContigs ? QueryLengthUnit.PIXELS : QueryLengthUnit.BINS, resolution);
+    final long clampedStart = CommonUtils.clamp(start, 0L, total);
+    final long clampedEnd = CommonUtils.clamp(end, 0L, total);
+    return SourceBinProvenance.fromATUs(getATUsForRange(resolution, clampedStart, clampedEnd, excludeHiddenContigs),
+      length, start >= 0 ? 0 : start <= -length ? length : -start);
+  }
+
   private final Map<Integer, long[]> stripeStartCache = new ConcurrentHashMap<>();
 
   /** First bin of every stripe along the source axis (cumulative stripe lengths). */
@@ -380,6 +393,8 @@ public class MatrixQueries {
         progress.accept(1.0d);
       }
     } catch (final ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException e) {
+      throw e;
+    } catch (java.util.concurrent.CancellationException | java.io.UncheckedIOException | IllegalArgumentException e) {
       throw e;
     } catch (final Exception ex) {
       throw new RuntimeException("Scanning contacts failed", ex);

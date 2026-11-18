@@ -2,28 +2,40 @@
 
 ## Unreleased
 
-### Navigation and visualization
+### Open, save and recover
 
-- Keep notification stacks away from visualization controls on smaller windows.
+- Open curated datasets from **File → Open Examples**. Follow downloads and conversion in Jobs, cancel or retry a stage, and reopen a ready example with its FASTA and recorded source attribution.
+- Save sessions, FASTA, AGP and figures to a chosen destination. HiCT remembers file choices by purpose and keeps edits available if a write fails. Open sessions from the startup screen or the File menu and export AGP from FASTA-only assemblies.
+- Find the active Hi-C map, FASTA and AGP next to Jobs. Stop HiCT returns the launcher to its simple Start view. The packaged Electron interface can reopen locally when its page is unavailable.
 
-- Keep opening-fitted contrast readable across pyramid levels, preserve explicit thresholds and separate O/E ranges, and show small-genome minimaps even when coarse levels are empty.
-- Start log transforms at Log2, show masked bins without a permanent alarm, and keep history controls in Journal.
-- Make developer tools opt-in, move tile reload into Dev, and provide quiet map Info and Help → Connection….
-- Reduce dense whole-map name clutter while retaining ruler names, entity navigation and export layout.
-- Use neutral assembly-file labels, consistent menus and a discoverable FASTA link action in its status chip.
+### Select, navigate and edit
 
-### Sequence analysis and sessions
+- Shift-click or drag to select contigs or scaffolds. Ctrl-drag (⌘-drag on macOS) creates a persistent analysis region. Set its bounds in assembly or contig coordinates, copy the coordinates or a PNG to the clipboard, and export the selected sequence.
+- Enter, convert and copy region boundaries in assembly, scaffold or contig coordinates. Choose 1-based inclusive or 0-based half-open coordinates in the region editor.
+- Zoom with the wheel from the contact map to FASTA letters while staying anchored at the pointer. Center on a track feature at the current scale or zoom to its span. Hide assembly boundaries in a scoped intersection while retaining selection highlights.
+- Search contigs, scaffolds and features from the map toolbar with a clearer search field and Go to control.
+- Cut exactly with the scissors at FASTA zoom, by a typed coordinate, or at a GTF/GFF feature edge. HiCT preserves sequence and source contact bins, projects edits to secondary maps, and restores exact cuts when reopening sessions.
 
-- Deliver completed overlays and search tracks through Jobs even after progress dialogs close, retain overlay/triangle choices, and default generation levels from finest through current.
-- Keep primary and secondary palettes and custom graphs intact through Observed/Expected/O/E changes, mask undefined O/E ratios, and prevent unusably narrow threshold intervals.
-- Pick overlapping track features by their displayed lanes and offer Zoom to feature at readable FASTA scale.
-- Restore valid multi-source sessions beyond 100,000 values while retaining validation limits.
+### Render maps and analyse sequences
 
-### Packaging and reliability
+- Manage 1D tracks separately from sources and layers. Add a track file or Cooler weights, resize the track panels, and examine signed BigWig values and aligned-base BAM depth.
+- Fit the visible signal with the histogram and range handles. Choose O/E colours in the sidebar or Rendering Pipeline. The square-root coverage help explains how a bin's total contacts are counted, and maps remain readable when their Cooler weights are unusable.
+- Select FASTA letters to copy an interval or measure a repeat period. Alignment previews show continuous runs, substitutions and indels at base zoom. Search local databases or opt in to NCBI BLAST with query-upload consent and Jobs cancellation.
+- Enter custom ModDotPlot and alignment dotplot resolutions. Display finer sequence bins as an overlay or in one triangle while the Hi-C map keeps its stored contact resolution.
+- Export Cooler files with source counts and weights preserved where available. Sequence-cut rebins are labelled estimates, with their provenance carried forward when reopened.
 
-- Keep rolling-release downloads available when publication fails, and update release metadata without reusing obsolete workflow targets.
-- Complete bounded redirect responses reliably, preserve connection-error causes, and exercise redirect limits on every platform.
-- Keep pinned tool builds available during GNU Savannah outages and resolve release JHDF5 assets strictly in Autobuild Release.
+### Capture and share figures
+
+- Preview and export the map, rulers, tracks and ModDotPlot as PNG, SVG or PDF. Compare named snapshots of cuts and scaffolds, set print width, and reopen PNG or SVG inside HiCT.
+- Reproduce the public-data Borrelia editing figure using the pinned inputs, caption, vector artwork and 900-dpi TIFF in the [figure guide](docs/publication/borrelia-editing/README.md).
+
+### Portable packages
+
+- Linux, Windows and macOS packages include the pinned WebUI and the native tools needed for the supported workflows. Release publication verifies the requested installers and their checksums while keeping the previous downloads available through an interrupted upload.
+- Linux launchers use fewer glibc allocation arenas by default, reducing resident memory during repeated map opening and editing.
+- Linux launchers start with a smaller Java heap and release idle heap more readily. The existing extra JVM options still take precedence.
+- The bundled ModDotPlot uses updated imaging dependencies. Linux retains glibc 2.17 compatibility, and package checks now render real PNG and SVG plots.
+- Portable package builds keep the verified BLAST cache when ModDotPlot requirements change.
 
 ## 2.0.0
 

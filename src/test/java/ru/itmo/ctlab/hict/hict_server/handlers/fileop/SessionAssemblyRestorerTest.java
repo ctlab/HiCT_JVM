@@ -16,6 +16,22 @@ import static org.junit.jupiter.api.Assertions.*;
 class SessionAssemblyRestorerTest {
   @TempDir Path directory;
 
+  @Test void restoresPreGeometrySnapshotsWithoutChangingLegacySplitSemantics() throws Exception {
+    var path = ReinforcementHdf5Fixture.create(directory, "legacy", List.of(4L, 10L));
+    var options = new ChunkedFile.ChunkedFileOptions(path, 1, 2);
+    try (var live = new ChunkedFile(options); var candidate = new ChunkedFile(options)) {
+      live.scaffoldingOperations().splitContigAtBin(8, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS);
+      var saved = SessionSnapshotDTO.source(live, "legacy", "");
+      for (var entry : saved.getJsonObject("assemblyInfo").getJsonArray("contigDescriptors"))
+        ((io.vertx.core.json.JsonObject) entry).remove("contigBinOffsets");
+      saved.getJsonArray("splitEdits").getJsonObject(0).remove("exact");
+      SessionAssemblyRestorer.restore(candidate, saved);
+      SessionAssemblyRestorer.verifyContactBinMapping(live, candidate);
+      assertEquals(13, candidate.getAssemblyInfo().contigs().stream().mapToLong(t -> t.descriptor().getLengthBp()).sum());
+      assertFalse(candidate.getSplitEdits().getFirst().exact());
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void restoresNativeSplitWithIdenticalContactBins(boolean reversed) throws Exception {
@@ -101,6 +117,42 @@ class SessionAssemblyRestorerTest {
         for (int row=0; row<bins; row++) for (int col=0; col<bins; col++)
           assertEquals(expected.getAsDouble(row,col), actual.getAsDouble(row,col));
       }
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void legacyAgpFragmentsKeepTheirIdsAfterReverseAndRegroup(boolean regroup) throws Exception {
+    var path = ReinforcementHdf5Fixture.create(directory, "reordered", List.of(4L, 10L));
+    var hash = java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(path));
+    var options = new ChunkedFile.ChunkedFileOptions(path, 1, 2);
+    try (var live = new ChunkedFile(options); var candidate = new ChunkedFile(options)) {
+      live.importAGP(new java.io.StringReader("left\t1\t6\t1\tW\ttiny\t1\t6\t+\n"
+        + "right\t1\t11\t1\tW\ttiny\t7\t17\t-\n"));
+      live.scaffoldingOperations().reverseSelectionRangeBp(0, 17);
+      if (regroup) live.scaffoldingOperations().scaffoldRegion(0, 17, ResolutionDescriptor.fromResolutionOrder(0), QueryLengthUnit.BASE_PAIRS, null);
+      var saved = SessionSnapshotDTO.source(live, "reordered.hict.hdf5", "");
+      assertFalse(saved.containsKey("splitEdits"));
+      SessionAssemblyRestorer.restore(candidate, saved);
+      SessionAssemblyRestorer.verifyContactBinMapping(live, candidate);
+      assertEquals(saved, SessionSnapshotDTO.source(candidate, "reordered.hict.hdf5", ""));
+      for (long bp : List.of(4L, 10L)) {
+        var resolution = ResolutionDescriptor.fromBpResolution(bp, live);
+        long size = live.getContigTree().getLengthInUnits(QueryLengthUnit.BINS, resolution);
+        var expected = live.matrixQueries().getSubmatrix(resolution, 0, 0, size, size, false).matrix();
+        var actual = candidate.matrixQueries().getSubmatrix(ResolutionDescriptor.fromBpResolution(bp, candidate), 0, 0, size, size, false).matrix();
+        for (int row = 0; row < size; row++) for (int col = 0; col < size; col++)
+          assertEquals(expected.getAsDouble(row, col), actual.getAsDouble(row, col));
+      }
+      try (var rejected = new ChunkedFile(options)) {
+        var untouched = SessionSnapshotDTO.source(rejected, "", "");
+        var collision = saved.copy();
+        collision.getJsonObject("assemblyInfo").getJsonArray("contigDescriptors")
+          .getJsonObject(0).put("contigId", 0);
+        assertThrows(IllegalArgumentException.class, () -> SessionAssemblyRestorer.restore(rejected, collision));
+        assertEquals(untouched, SessionSnapshotDTO.source(rejected, "", ""));
+      }
+      assertArrayEquals(hash, java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(path)));
     }
   }
 

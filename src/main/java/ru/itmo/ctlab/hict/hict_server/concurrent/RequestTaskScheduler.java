@@ -285,10 +285,13 @@ public final class RequestTaskScheduler implements AutoCloseable {
       // Registration can race with bumpGeneration's scan of older tasks.
       if (generationSnapshot != currentGeneration(domain)) futureTask.cancel(true);
     }
-    if (domain == CancellationDomain.TILE) {
+    if (domain == CancellationDomain.TILE || domain == CancellationDomain.EXPORT) {
       ctx.response().closeHandler(ignored -> {
         if (futureTask.cancel(true)) pool.remove(futureTask);
       });
+      // Frozen export preparation is submitted after assembly metadata capture.
+      // The client can already have disconnected before this handler is installed.
+      if (ctx.response().closed()) futureTask.cancel(true);
     }
 
     try {

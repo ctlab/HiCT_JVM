@@ -15,6 +15,9 @@ import numpy as np
 
 SCALE = 10_000
 SCHEMA = "hict-sequence-overlay-v1"
+# Keep in sync with AssemblyAnalysisPlan's custom source-bin layout.
+SEQUENCE_STRIPE_WIDTH = 256
+MAX_SYNTHETIC_BINS = 4_000_000
 
 
 def canonical_json(value):
@@ -24,7 +27,12 @@ def canonical_json(value):
 def _metadata_digest(handle, resolutions):
     digest = hashlib.sha256()
     roots = ["contig_info"]
-    roots += [f"resolutions/{r}/{name}" for r in resolutions for name in ("contigs", "atl", "stripes/stripe_length_bins")]
+    for resolution in resolutions:
+        root = f"resolutions/{resolution}"
+        if root in handle:
+            roots.extend(f"{root}/{name}" for name in ("contigs", "atl", "stripes/stripe_length_bins"))
+        else:
+            digest.update(f"sequence-grid-v1/{resolution}/{SEQUENCE_STRIPE_WIDTH}\n".encode())
     def visit(name, obj):
         digest.update(name.encode())
         if isinstance(obj, h5py.Dataset):
@@ -45,22 +53,60 @@ def _metadata_digest(handle, resolutions):
     return digest.hexdigest()
 
 
+def _sequence_grid(source, base, resolution):
+    """Lay out fixed source bins in contig ID order without reading matrix data."""
+    lengths = [int(value) for value in source['contig_info/contig_length_bp']]
+    counts = [(length + resolution - 1) // resolution for length in lengths]
+    size = sum(counts)
+    if not 0 < size <= MAX_SYNTHETIC_BINS:
+        raise ValueError('Custom resolution exceeds the source bin budget')
+    width = SEQUENCE_STRIPE_WIDTH
+    stripe_count = (size + width - 1) // width
+    stripe_lengths = np.full(stripe_count, width, dtype='<i8')
+    stripe_lengths[-1] = size - (stripe_count - 1) * width
+    stripes = base.create_group('stripes')
+    stripes.create_dataset('stripe_length_bins', data=stripe_lengths)
+    stripes.create_dataset('stripes_bin_weights', shape=(stripe_count, width), dtype='<f8',
+                           chunks=(min(stripe_count, 128), width), compression='gzip', fillvalue=1.0)
+    contigs = base.create_group('contigs')
+    contigs.create_dataset('contig_length_bins', data=np.asarray(counts, dtype='<i8'))
+    contigs.create_dataset('contig_hide_type', data=np.ones(len(counts), dtype='i1'))
+    basis, mapping = [], []
+    start = 0
+    for contig, count in enumerate(counts):
+        end = start + count
+        while start < end:
+            stripe, offset = divmod(start, width)
+            length = min(end - start, width - offset)
+            mapping.append((contig, len(basis)))
+            basis.append((stripe, offset, offset + length, 1))
+            start += length
+    contigs.create_dataset('atl', data=np.asarray(mapping, dtype='<i8'))
+    base.create_group('atl').create_dataset('basis_atu', data=np.asarray(basis, dtype='<i8'))
+    return dict(dense_submatrix_size=width, bins_count=size, stripes_count=stripe_count,
+                hdf5_max_chunk_size=268435456)
+
+
 def _create_empty(source, dest, resolutions):
     source.copy('contig_info', dest)
     for resolution in resolutions:
         name = f'resolutions/{resolution}'
-        base, src = dest.require_group(name), source[name]
-        for key in ('contigs', 'atl', 'stripes'):
-            src.copy(key, base)
-        # A sequence score has no balancing weights. Keep metadata dimensions.
-        weights = base['stripes/stripes_bin_weights']
-        for start in range(0, weights.shape[0], 1024):
-            weights[start:start + 1024] = 1.0
-        old = src['treap_coo']
+        base = dest.require_group(name)
+        if name in source:
+            src = source[name]
+            for key in ('contigs', 'atl', 'stripes'):
+                src.copy(key, base)
+            # A sequence score has no balancing weights. Keep metadata dimensions.
+            weights = base['stripes/stripes_bin_weights']
+            for start in range(0, weights.shape[0], 1024):
+                weights[start:start + 1024] = 1.0
+            attributes = src['treap_coo'].attrs
+        else:
+            attributes = _sequence_grid(source, base, resolution)
         treap = base.create_group('treap_coo')
-        for key, value in old.attrs.items():
+        for key, value in attributes.items():
             treap.attrs[key] = value
-        width = int(old.attrs['dense_submatrix_size'])
+        width = int(attributes['dense_submatrix_size'])
         stripes = len(base['stripes/stripe_length_bins'])
         total = stripes * stripes
         for key in ('block_offset', 'block_length'):

@@ -408,6 +408,7 @@ public class MainVerticle extends AbstractVerticle {
       .exposedHeader("X-HiCT-Cols")
       .exposedHeader("X-HiCT-Signal-Mode")
       .exposedHeader("X-HiCT-Source")
+      .exposedHeader("X-HiCT-Cell-Semantics")
       .exposedHeader("X-HiCT-Unit"));
     router.route().handler(ctx -> {
       requestStatistics.recordStarted(ctx.normalizedPath());

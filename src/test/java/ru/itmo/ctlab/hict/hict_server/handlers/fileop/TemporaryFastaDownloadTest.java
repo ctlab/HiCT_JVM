@@ -12,6 +12,99 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TemporaryFastaDownloadTest {
+  @Test void disconnectDuringTransferRemovesThePreparedTemporaryFile() throws Exception {
+    var vertx = Vertx.vertx();
+    var temporary = new AtomicReference<Path>();
+    try {
+      var router = Router.router(vertx);
+      router.get("/").handler(context -> {
+        var download = new TemporaryFastaDownload(context);
+        vertx.<Path>executeBlocking(() -> download.write(output -> {
+          try { temporary.set(path(download)); }
+          catch (Exception error) { throw new IOException(error); }
+          var block = new byte[65536];
+          java.util.Arrays.fill(block, (byte) 'A');
+          for (int i = 0; i < 128; i++) output.write(block);
+        })).onSuccess(download::send).onFailure(context::fail);
+      });
+      var server = vertx.createHttpServer().requestHandler(router).listen(0)
+        .toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS);
+      try (var socket = new java.net.Socket()) {
+        socket.setReceiveBufferSize(1024);
+        socket.connect(new java.net.InetSocketAddress("127.0.0.1", server.actualPort()));
+        socket.setSoTimeout(5000);
+        socket.getOutputStream().write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+          .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        socket.getOutputStream().flush();
+        var input = socket.getInputStream();
+        var header = new StringBuilder();
+        while (!header.toString().endsWith("\r\n\r\n")) {
+          int next = input.read();
+          assertTrue(next >= 0, "Download ended before headers");
+          assertTrue(header.length() < 8192, "Unexpected download headers");
+          header.append((char) next);
+        }
+        assertTrue(header.toString().startsWith("HTTP/1.1 200"));
+        assertEquals('A', input.read());
+        assertNotNull(temporary.get());
+        assertTrue(Files.exists(temporary.get()));
+      }
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (Files.exists(temporary.get()) && System.nanoTime() < deadline) Thread.sleep(5);
+      assertFalse(Files.exists(temporary.get()), "Interrupted transfer must remove its prepared FASTA");
+    } finally { vertx.close().toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS); }
+  }
+
+  @Test void disconnectDuringPreparationStopsTheWriterAndRemovesItsTemporaryFile() throws Exception {
+    var vertx = Vertx.vertx();
+    var scheduler = new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler(vertx,
+      new ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.SchedulerConfig(10, 8, 30, java.util.Map.of()));
+    var entered = new CountDownLatch(1);
+    var finished = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var temporary = new AtomicReference<Path>();
+    try {
+      var router = Router.router(vertx);
+      router.get("/").handler(context -> {
+        var download = new TemporaryFastaDownload(context);
+        scheduler.submit(context,
+          ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.RequestPriority.EXPORT,
+          ru.itmo.ctlab.hict.hict_server.concurrent.RequestTaskScheduler.CancellationDomain.EXPORT,
+          () -> {
+            try {
+              return download.write(output -> {
+                try { temporary.set(path(download)); }
+                catch (Exception error) { throw new IOException(error); }
+                output.write(new byte[65536]);
+                entered.countDown();
+                try { release.await(); }
+                catch (InterruptedException cancelled) {
+                  Thread.currentThread().interrupt();
+                  throw new java.io.InterruptedIOException("Export client disconnected");
+                }
+              });
+            } finally { finished.countDown(); }
+          }, download::send, download::close);
+      });
+      var server = vertx.createHttpServer().requestHandler(router).listen(0)
+        .toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS);
+      try (var socket = new java.net.Socket("127.0.0.1", server.actualPort())) {
+        socket.getOutputStream().write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        socket.getOutputStream().flush();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+      }
+      assertTrue(finished.await(3, TimeUnit.SECONDS), "A disconnected export must stop preparing its FASTA");
+      assertNotNull(temporary.get());
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (Files.exists(temporary.get()) && System.nanoTime() < deadline) Thread.sleep(5);
+      assertFalse(Files.exists(temporary.get()), "Disconnected preparation must remove its temporary FASTA");
+    } finally {
+      release.countDown();
+      scheduler.close();
+      vertx.close().toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS);
+    }
+  }
+
   private static Path path(TemporaryFastaDownload download) throws Exception {
     var field = TemporaryFastaDownload.class.getDeclaredField("path");
     field.setAccessible(true);

@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -102,6 +103,74 @@ class ExampleDownloaderTest {
     }
   }
 
+  @Test void jobsRetainNamedCompletedAttemptsAndExposeTheExactDownloadIdentity() throws Exception {
+    serve("/f", exchange -> send(exchange, 200, payload, payload.length));
+    var d = downloader();
+    var first = d.start(example(file("first.bin", "/f", payload.length, sha(payload), true)));
+    assertNotNull(first.jobId());
+    assertEquals(first.jobId(), await(d).jobId());
+    var entry = example(file("second.bin", "/f", payload.length, sha(payload), true));
+    var secondEntry = new ExamplesCatalog.Example("ex2", entry.sectionId(), entry.source(), entry.bundled(),
+      entry.body().copy().put("id", "ex2").put("title", "Second dataset"));
+    var second = d.start(secondEntry);
+    assertNotEquals(first.jobId(), second.jobId());
+    assertEquals(second.jobId(), await(d).jobId());
+    var jobs = d.backgroundJobs();
+    assertEquals(2, jobs.size());
+    assertEquals(first.jobId(), jobs.get(0).id());
+    assertEquals("finished", jobs.get(0).state());
+    assertEquals("T", jobs.get(0).details().title());
+    assertEquals(payload.length, jobs.get(0).details().completedBytes());
+    assertEquals("ex1", jobs.get(0).outputs().get(0).filename());
+    assertEquals("Second dataset", jobs.get(1).details().title());
+    assertEquals(jobs.get(1).details(), jobs.get(1).withId("examples/" + second.jobId()).details());
+    assertFalse(d.cancelBackgroundJob(first.jobId()));
+    assertFalse(d.cancelBackgroundJob(second.jobId()));
+  }
+
+  @Test void exampleJobHistoryHasABoundedSessionLifetime() throws Exception {
+    payload = new byte[]{1};
+    serve("/f", exchange -> send(exchange, 200, payload, payload.length));
+    var d = downloader();
+    String first = null, last = null;
+    for (int index = 0; index < 52; index++) {
+      var status = d.start(example(file("one.bin", "/f", 1, sha(payload), true)));
+      if (first == null) first = status.jobId();
+      last = status.jobId();
+      assertEquals(ExampleDownloader.State.READY, await(d).state());
+    }
+    var jobs = d.backgroundJobs();
+    assertEquals(50, jobs.size());
+    assertNotEquals(first, jobs.get(0).id());
+    assertEquals(last, jobs.get(jobs.size() - 1).id());
+    assertEquals("finished", jobs.get(jobs.size() - 1).state());
+  }
+
+  @Test void chunkedUnknownLengthDoesNotPresentBytesSoFarAsTheTotal() throws Exception {
+    var release = new java.util.concurrent.CountDownLatch(1);
+    serve("/chunked", exchange -> {
+      try {
+        exchange.sendResponseHeaders(200, 0);
+        exchange.getResponseBody().write(payload, 0, 131072);
+        exchange.getResponseBody().flush();
+        release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+        exchange.getResponseBody().write(payload, 131072, payload.length-131072);
+      } catch (Exception failure) { throw new RuntimeException(failure); }
+    });
+    var d = downloader();
+    try {
+      d.start(example(file("chunked.bin", "/chunked", 0, sha(payload), true)));
+      for (int count=0; count<100 && d.status().downloadedBytes()==0; count++) Thread.sleep(20);
+      assertTrue(d.status().downloadedBytes()>0);
+      assertEquals(ExampleDownloader.State.RUNNING, d.status().state());
+      assertEquals(0, d.status().totalBytes());
+      assertEquals(0, d.status().progress());
+      assertNull(d.backgroundJobs().get(0).progress());
+    } finally { release.countDown(); }
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertEquals(payload.length, d.status().totalBytes());
+  }
+
   @Test void publishesPreparedReferenceAndRecordsBothPinnedAndDerivedHashes() throws Exception {
     var bytes = new java.io.ByteArrayOutputStream();
     try (var gzip = new java.util.zip.GZIPOutputStream(bytes)) {
@@ -169,6 +238,101 @@ class ExampleDownloaderTest {
     assertEquals("P", manifest.getJsonObject("attribution").getString("provider"));
     assertEquals(sha(payload), manifest.getJsonArray("files").getJsonObject(0).getString("sha256"));
     assertTrue(s.allRequiredPresent());
+  }
+
+  @Test void cacheDiscoveryRequiresCurrentRecipeAndRecordedFileMetadata() throws Exception {
+    plainServer();
+    var spec = example(file("a.bin", "/f", payload.length, sha(payload), true));
+    var d = downloader();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertTrue(ExampleCache.available(data, spec.body()));
+    var reordered = new JsonObject();
+    var keys = new ArrayList<>(spec.body().fieldNames());
+    java.util.Collections.reverse(keys);
+    keys.forEach(key -> reordered.put(key, spec.body().getValue(key)));
+    reordered.put("downloaded", true).put("source", "test").put("bundled", true);
+    assertEquals(ExampleCache.fingerprint(spec.body()), ExampleCache.fingerprint(reordered));
+    var changed = spec.body().copy();
+    changed.getJsonObject("openingRecipe").put("displayMode", "oe");
+    assertFalse(ExampleCache.available(data, changed));
+    var target = data.resolve("examples/ex1/a.bin");
+    Files.write(target, new byte[]{0});
+    assertFalse(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertArrayEquals(payload, Files.readAllBytes(target));
+    assertTrue(ExampleCache.available(data, spec.body()));
+    Files.writeString(data.resolve("examples/ex1/manifest.json"), "{}");
+    assertFalse(ExampleCache.available(data, spec.body()));
+  }
+
+  @Test void unpinnedCachedFilesNeedMatchingProvenanceAndAreRehashed() throws Exception {
+    plainServer();
+    var spec = example(file("a.bin", "/f", payload.length, null, true));
+    var d = downloader();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    int fetched = requests.size();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertEquals(fetched, requests.size(), "Verified cached bytes need no provider request");
+    var target = data.resolve("examples/ex1/a.bin");
+    var time = Files.getLastModifiedTime(target);
+    var damaged = payload.clone();
+    damaged[0] ^= 1;
+    Files.write(target, damaged);
+    Files.setLastModifiedTime(target, time);
+    // Discovery is deliberately metadata-only. Actual opening must run the job.
+    assertTrue(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertTrue(requests.size() > fetched);
+    assertArrayEquals(payload, Files.readAllBytes(target));
+    fetched = requests.size();
+    spec.body().getJsonObject("attribution").put("provider", "Updated provider");
+    assertFalse(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertEquals(fetched, requests.size(), "An attribution change does not change the source file");
+    spec.body().getJsonArray("files").getJsonObject(0).put("url", base + "/f?revision=2");
+    assertFalse(ExampleCache.available(data, spec.body()));
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    assertTrue(requests.size() > fetched, "A changed source declaration must be fetched again");
+    var manifestPath = data.resolve("examples/ex1/manifest.json");
+    var manifest = new JsonObject(Files.readString(manifestPath));
+    for (var invalid : List.of("not an array", new JsonArray().add("not a file record"),
+      new JsonArray().add(new JsonObject().put("filename", "a.bin").put("sha256", 42)))) {
+      manifest.put("files", invalid);
+      Files.writeString(manifestPath, manifest.encode());
+      assertFalse(ExampleCache.available(data, spec.body()));
+      fetched = requests.size();
+      d.start(spec);
+      assertEquals(ExampleDownloader.State.READY, await(d).state());
+      assertTrue(requests.size() > fetched, "Malformed cache records must recover by downloading");
+    }
+  }
+
+  @Test void exampleConversionContextRequiresTheCurrentReadyRecipeAndExactSource() throws Exception {
+    plainServer();
+    var spec = example(file("a.mcool", "/f", payload.length, sha(payload), true));
+    spec.body().getJsonObject("openingRecipe").put("matrix", "a.mcool").put("quickStart", true);
+    var d = downloader();
+    d.start(spec);
+    assertEquals(ExampleDownloader.State.READY, await(d).state());
+    var source = data.resolve("examples/ex1/a.mcool");
+    var direction = ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection.MCOOL_TO_HICT;
+    assertEquals(new ExampleConversionContext("ex1", "T"), ExampleConversionContext.forExample(data, source, direction, spec));
+    assertNull(ExampleConversionContext.resolve(data, source, direction, null));
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.resolve(data, source, direction, "not-present"));
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, data.resolve("other.mcool"), direction, spec));
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, source,
+      ru.itmo.ctlab.hict.hict_server.handlers.conversion.ConversionDirection.HICT_TO_MCOOL, spec));
+    spec.body().put("title", "Changed catalog");
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, source, direction, spec));
+    spec.body().getJsonObject("openingRecipe").put("quickStart", false);
+    assertThrows(IllegalArgumentException.class, () -> ExampleConversionContext.forExample(data, source, direction, spec));
   }
 
   @Test void aWrongChecksumDiscardsTheFile() throws Exception {
@@ -381,6 +545,7 @@ class ExampleDownloaderTest {
     var s = await(d);
     assertEquals(ExampleDownloader.State.READY, s.state(), s.error());
     assertEquals(1, s.skippedOptional().size());
+    assertEquals(s.skippedOptional(), d.backgroundJobs().get(0).details().warnings());
     var d2 = downloader();
     d2.start(example(file("c.bin", "/missing", 0, null, true)));
     assertEquals(ExampleDownloader.State.FAILED, await(d2).state());

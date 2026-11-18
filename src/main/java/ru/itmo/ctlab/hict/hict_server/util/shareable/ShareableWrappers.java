@@ -39,9 +39,22 @@ import java.nio.file.Path;
 
 public class ShareableWrappers {
   @Getter
-  @RequiredArgsConstructor
   public static class ChunkedFileWrapper implements Shareable {
     private final @NotNull ChunkedFile chunkedFile;
+    private final io.vertx.core.json.JsonObject exampleProvenance;
+
+    public ChunkedFileWrapper(@NotNull ChunkedFile chunkedFile) {
+      this(chunkedFile, null);
+    }
+
+    public ChunkedFileWrapper(@NotNull ChunkedFile chunkedFile, io.vertx.core.json.JsonObject exampleProvenance) {
+      this.chunkedFile = chunkedFile;
+      this.exampleProvenance = exampleProvenance == null ? null : exampleProvenance.copy();
+    }
+
+    public io.vertx.core.json.JsonObject getExampleProvenance() {
+      return exampleProvenance == null ? null : exampleProvenance.copy();
+    }
   }
 
   @Getter

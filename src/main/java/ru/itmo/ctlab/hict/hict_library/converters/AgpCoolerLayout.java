@@ -223,7 +223,7 @@ public final class AgpCoolerLayout {
       throw new IllegalStateException(
         "AGP component splitting is not supported for Cooler export yet: " + record.getContigName() +
           " uses " + record.getIntraContigStartBpIncl() + "-" + record.getIntraContigEndBpIncl() +
-          " of source length " + contigLengthBp
+        " of source length " + contigLengthBp + ". Enable approximate rebinning for sequence-cut layouts, or export the saved matrix without applying this AGP."
       );
     }
   }

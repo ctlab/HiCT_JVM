@@ -63,6 +63,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -118,6 +122,71 @@ class ApiHttpIntegrationTest {
       closeFuture.get(10, TimeUnit.SECONDS);
       vertx = null;
     }
+  }
+
+  @Test
+  void pipelineBinQueriesProjectDisjointSecondaryLevelsIncludingHiddenPrimaryBins() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary-grid", java.util.List.of(4L, 10L, 100L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "fine-grid", java.util.List.of(1L));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"primary-grid.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"fine-grid.hict.hdf5\"}").statusCode());
+    var file = ((ShareableWrappers.ChunkedFileWrapper) vertx.sharedData().getLocalMap("hict_server").get("chunkedFile")).getChunkedFile();
+    assertEquals(0, file.getContigTree().getLengthInUnits(ru.itmo.ctlab.hict.hict_library.domain.QueryLengthUnit.PIXELS,
+      ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(100, file)));
+    for (long resolution : new long[]{4, 10, 100}) {
+      int bins = (int) Math.ceilDiv(17L, resolution);
+      double[] expected = resolution == 4 ? new double[]{1,3,0,0,0,3,0,7,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,11}
+        : resolution == 10 ? new double[]{21,0,0,11} : new double[]{32};
+      for (boolean explicitType : new boolean[]{true, false}) {
+        var expression = new JsonObject().put("source", "SECONDARY");
+        if (explicitType) expression.put("type", "source");
+        var query = new JsonObject().put("bpResolution", resolution).put("unit", "BINS")
+          .put("startRowBin", 0).put("startColBin", 0).put("endRowBin", bins).put("endColBin", bins)
+          .put("signalMode", "PIPELINE_SIGNAL").put("expression", expression).put("format", "JSON");
+        var response = post("/matrix/query", query.encode());
+        assertEquals(200, response.statusCode(), response.body());
+        var values = new JsonObject(response.body()).getJsonArray("values");
+        assertEquals(expected.length, values.size());
+        for (int i = 0; i < expected.length; i++) assertEquals(expected[i], values.getDouble(i), 1e-10);
+      }
+    }
+  }
+
+  @Test
+  void pipelineBinQueriesReadHiddenCoarserSecondaryAndSkipUnusedSource() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary-grid", java.util.List.of(4L, 10L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "coarse-grid", java.util.List.of(100L));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"primary-grid.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"coarse-grid.hict.hdf5\"}").statusCode());
+    var query = new JsonObject().put("bpResolution", 4L).put("unit", "BINS")
+      .put("startRowBin", 0).put("startColBin", 0).put("endRowBin", 5).put("endColBin", 5)
+      .put("signalMode", "PIPELINE_SIGNAL").put("expression", new JsonObject().put("type", "source").put("source", "SECONDARY"))
+      .put("format", "JSON");
+    var response = post("/matrix/query", query.encode());
+    assertEquals(200, response.statusCode(), response.body());
+    var values = new JsonObject(response.body()).getJsonArray("values");
+    assertEquals(25, values.size());
+    double total = 0;
+    for (int row=0;row<5;row++) for (int col=0;col<5;col++) {
+      double expected = 22d * (row==4 ? 1 : 4) * (col==4 ? 1 : 4) / (17d*17d);
+      assertEquals(expected, values.getDouble(row*5+col), 1e-10);
+      total += values.getDouble(row*5+col);
+    }
+    assertEquals(22d, total, 1e-10);
+    query.put("expression", new JsonObject().put("type", "source").put("source", "PRIMARY"));
+    response = post("/matrix/query", query.encode());
+    assertEquals(200, response.statusCode(), response.body());
+    assertEquals(11d, new JsonObject(response.body()).getJsonArray("values").getDouble(24));
   }
 
   @Test
@@ -291,6 +360,96 @@ class ApiHttpIntegrationTest {
     )) {
       final var response = get("/get_tile?" + query);
       assertEquals(400, response.statusCode(), query + ": " + response.body());
+    }
+  }
+
+  @Test
+  void repeatJobsFreezeInputsCancelQueuedWorkAndPublishBoundedSummaries() throws Exception {
+    final var fasta = tempDataDir.resolve("repeat.fa");
+    Files.writeString(fasta, ">sequence\nCTCTCTCTCTCTACGT\n");
+    final var nativeFile = tempDataDir.resolve("repeat.hict.hdf5");
+    ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly.write(
+      ru.itmo.ctlab.hict.hict_library.converters.FastaOnlyAssembly.scan(fasta,100,()->false,null), nativeFile, ()->false,null);
+    final var digest = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(nativeFile));
+    final var holders = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder[1];
+    startServerWithInfoAndFileHandlers(router -> {
+      new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx,scheduler).addHandlersToRouter(router);
+      holders[0] = new ru.itmo.ctlab.hict.hict_server.handlers.conversion.SequenceAnalysisHandlersHolder(vertx);
+      holders[0].addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJobsHandlersHolder(List.of(
+        new ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJobsHandlersHolder.Service("sequence",holders[0]::backgroundJobs,holders[0]::cancelBackgroundJob,()->{}))).addHandlersToRouter(router);
+    });
+    final var release = new CountDownLatch(1);
+    try {
+      assertEquals(409,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}").statusCode());
+      assertEquals(200,post("/open","{\"filename\":\"repeat.hict.hdf5\"}").statusCode());
+      assertEquals(200,post("/link_fasta","{\"fastaFilename\":\"repeat.fa\"}").statusCode());
+      // Occupy the real sequence worker so queued cancellation is deterministic,
+      // without requiring external native tools or timing-dependent long reads.
+      final var workersField = holders[0].getClass().getDeclaredField("workers");
+      workersField.setAccessible(true);
+      final var workers = (java.util.concurrent.ThreadPoolExecutor) workersField.get(holders[0]);
+      final var started = new CountDownLatch(1);
+      workers.execute(() -> { started.countDown(); try { release.await(10,TimeUnit.SECONDS); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } });
+      assertTrue(started.await(5,TimeUnit.SECONDS));
+      final var first = post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}");
+      assertEquals(202,first.statusCode(),first.body());
+      final var frozen = new JsonObject(first.body());
+      final String jobId = frozen.getString("jobId");
+      final var queued = new JsonObject(post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}").body());
+      assertEquals(200,post("/jobs/cancel",new JsonObject().put("id","sequence/"+queued.getString("jobId")).encode()).statusCode());
+      assertEquals("cancelled",new JsonObject(post("/sequence/repeat_period",new JsonObject().put("jobId",queued.getString("jobId")).encode()).body()).getString("status"));
+      final var extra = new java.util.ArrayList<String>();
+      for (int i=0;i<6;i++) {
+        final var response = post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}");
+        assertEquals(202,response.statusCode(),response.body());
+        extra.add(new JsonObject(response.body()).getString("jobId"));
+      }
+      assertEquals(503,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}").statusCode());
+      for (String id : extra) assertEquals(200,post("/sequence/jobs/"+id+"/stop","{}").statusCode());
+      final var file = ((ShareableWrappers.ChunkedFileWrapper) vertx.sharedData().getLocalMap("hict_server").get("chunkedFile")).getChunkedFile();
+      file.getScaffoldingOperations().splitContigAtBp(0,3);
+      file.getScaffoldingOperations().reverseSelectionRangeBp(0,16);
+      release.countDown();
+      JsonObject status = null;
+      for (int i=0;i<100;i++) {
+        status = new JsonObject(post("/sequence/repeat_period",new JsonObject().put("jobId",jobId).encode()).body());
+        if (Set.of("finished","failed","cancelled").contains(status.getString("status"))) break;
+        Thread.sleep(10);
+      }
+      assertEquals("finished",status.getString("status"),status.encode());
+      assertEquals(2,status.getJsonObject("result").getInteger("periodBp"));
+      assertEquals(12,status.getJsonObject("result").getInteger("length"));
+      assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+        .digest("CTCTCTCTCTCT".getBytes(StandardCharsets.UTF_8))),status.getJsonObject("result").getString("inputSha256"));
+      assertEquals(fasta.toRealPath().toString(),status.getJsonObject("result").getString("sourceFasta"));
+      assertTrue(status.getJsonObject("result").getString("sourceStamp").contains("size="));
+      assertEquals(frozen.getString("snapshot"),status.getJsonObject("result").getString("snapshot"));
+      assertEquals(409,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":12}",
+        Map.of("X-HiCT-History-Session","stale","X-HiCT-History-Revision","0")).statusCode());
+      assertEquals(400,post("/sequence/repeat_period","{\"startBp\":0,\"endBp\":17}").statusCode());
+      assertEquals(404,post("/sequence/repeat_period","{\"jobId\":\"missing\"}").statusCode());
+      final var jobs = new io.vertx.core.json.JsonArray(get("/jobs").body());
+      assertTrue(jobs.stream().map(JsonObject.class::cast).anyMatch(j->j.getString("message").contains("Period 2 bp")),jobs.encode());
+      assertTrue(new JsonObject(post("/sequence/settings","{}").body()).getBoolean("repeatPeriod"));
+      org.junit.jupiter.api.Assertions.assertArrayEquals(digest,java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(nativeFile)));
+    } finally { release.countDown(); holders[0].close(); }
+  }
+
+  @Test
+  void coordinateDownloadsRejectStaleDisplayedVersionsBeforeWriting() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir,"export",List.of(4L,10L));
+    Files.writeString(tempDataDir.resolve("reference.fa"),">tiny\nACGTRYMKSWBDHVNAC\n");
+    startServerWithInfoAndFileHandlers(router -> new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx,scheduler).addHandlersToRouter(router));
+    assertEquals(200,post("/open","{\"filename\":\"export.hict.hdf5\"}").statusCode());
+    assertEquals(200,post("/link_fasta","{\"fastaFilename\":\"reference.fa\"}").statusCode());
+    final var summary=new JsonObject(post("/assembly/history","{}").body()).getJsonObject("summary");
+    final var current=Map.of("X-HiCT-History-Session",summary.getString("session"),"X-HiCT-History-Revision",summary.getLong("revision").toString());
+    final var stale=Map.of("X-HiCT-History-Session",summary.getString("session"),"X-HiCT-History-Revision",Long.toString(summary.getLong("revision")+1));
+    for (String endpoint : List.of("/get_fasta_for_assembly","/get_fasta_for_selection","/get_agp_for_assembly")) {
+      final var body=endpoint.endsWith("selection")?"{\"fromBpX\":0,\"toBpX\":4,\"fromBpY\":0,\"toBpY\":4}":"{}";
+      assertEquals(409,post(endpoint,body,stale).statusCode(),endpoint);
+      assertEquals(200,post(endpoint,body,current).statusCode(),endpoint);
     }
   }
 
@@ -507,7 +666,7 @@ class ApiHttpIntegrationTest {
     assertEquals(new JsonObject(ru.itmo.ctlab.hict.hict_server.handlers.fileop.SessionVisualizationCodec
         .encode(visualization).encode()),
       snapshot.getJsonObject("visualizationOptions"));
-    assertEquals(1, snapshot.getInteger("snapshotVersion"));
+    assertEquals(2, snapshot.getInteger("snapshotVersion"));
     assertTrue(snapshot.getBoolean("assemblyVerified"));
     assertEquals(graph, snapshot.getJsonObject("renderPipeline"));
     var source = snapshot.getJsonObject("primary");
@@ -723,6 +882,10 @@ class ApiHttpIntegrationTest {
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "secondary", java.util.List.of(4L, 10L));
     Files.writeString(tempDataDir.resolve("tiny.fa"), ">tiny\nACGTRYMKSWBDHVNAC\n");
     Files.writeString(tempDataDir.resolve("broken.hict.hdf5"), "Not an HDF5 file");
+    try (var partial = ch.systemsx.cisd.hdf5.HDF5Factory.open(tempDataDir.resolve("incomplete.hict.hdf5").toFile())) {
+      partial.object().createGroup("/resolutions/100000/treap_coo");
+      partial.int64().writeArray("/resolutions/100000/treap_coo/block_length", new long[]{1});
+    }
     startServerWithInfoAndFileHandlers();
     assertEquals(200, post("/open", "{\"filename\":\"primary.hict.hdf5\"}").statusCode());
     assertEquals(200, post("/secondary/open", "{\"filename\":\"secondary.hict.hdf5\"}").statusCode());
@@ -740,9 +903,13 @@ class ApiHttpIntegrationTest {
     var resolution = ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(4, file);
     var pixels = file.getMatrixQueries().getSubmatrix(resolution, 0, 0, 5, 5, false).matrix();
     var attachedBefore = post("/attach", "{}").body();
-    for (String name : java.util.List.of("missing.hict.hdf5", "broken.hict.hdf5", "broken.hict.hdf5")) {
+    for (String name : java.util.List.of("missing.hict.hdf5", "broken.hict.hdf5", "incomplete.hict.hdf5", "broken.hict.hdf5")) {
       var failed = post("/open", new JsonObject().put("filename", name).encode());
       assertTrue(failed.statusCode() >= 400, failed.body());
+      if (name.equals("incomplete.hict.hdf5")) {
+        assertEquals(400, failed.statusCode(), failed.body());
+        assertTrue(failed.body().contains("Recreate"), failed.body());
+      }
       org.junit.jupiter.api.Assertions.assertSame(primary, map.get("chunkedFile"));
       org.junit.jupiter.api.Assertions.assertSame(secondary, map.get("chunkedFileSecondary"));
       org.junit.jupiter.api.Assertions.assertSame(tracks, map.get("Track1DManager"));
@@ -806,6 +973,37 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void openReportsWhetherAnyRealBinHasAUsableWeight() throws Exception {
+    var path = ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "weights", List.of(4L, 10L));
+    var partialPath = Files.copy(path, tempDataDir.resolve("partial-weights.hict.hdf5"));
+    for (var fixture : List.of(path, partialPath)) {
+      try (var writer = ch.systemsx.cisd.hdf5.HDF5Factory.open(fixture.toFile())) {
+        for (long resolution : List.of(4L, 10L)) {
+          var stripes = "/resolutions/" + resolution + "/stripes/";
+          var lengths = writer.int64().readArray(stripes + "stripe_length_bins");
+          var weights = writer.float64().readMatrix(stripes + "stripes_bin_weights");
+          for (int row = 0; row < lengths.length; row++) {
+            java.util.Arrays.fill(weights[row], 1.0d);
+            java.util.Arrays.fill(weights[row], 0, Math.toIntExact(lengths[row]),
+              resolution == 4L ? Double.NaN : 0.0d);
+          }
+          if (fixture.equals(partialPath) && resolution == 10L) weights[0][0] = 0.5d;
+          writer.float64().writeMatrix(stripes + "stripes_bin_weights", weights);
+        }
+      }
+    }
+    startServerWithInfoAndFileHandlers();
+    var excluded = post("/open", "{\"filename\":\"weights.hict.hdf5\"}");
+    assertEquals(200, excluded.statusCode(), excluded.body());
+    assertEquals(false, new JsonObject(excluded.body()).getBoolean("usableCoolerWeights"));
+    var partial = post("/open", "{\"filename\":\"partial-weights.hict.hdf5\"}");
+    assertEquals(200, partial.statusCode(), partial.body());
+    assertEquals(true, new JsonObject(partial.body()).getBoolean("usableCoolerWeights"));
+    var attach = new JsonObject(post("/attach", "{}").body()).getJsonObject("openFileResponse");
+    assertEquals(true, attach.getBoolean("usableCoolerWeights"));
+  }
+
+  @Test
   void fullPresetRejectsUnavailableInputsBeforeChangingOptionsOrGraph() throws Exception {
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", List.of(4L, 10L));
     startServerWithInfoAndFileHandlers();
@@ -840,6 +1038,224 @@ class ApiHttpIntegrationTest {
     assertEquals(2.0, after.getJsonObject("visualizationOptions").getDouble("postLogBase"));
   }
 
+  @Test
+  void figureTilesPinTheirOwnExpectedProfileWithoutMutatingTheViewportOrNativeCounts() throws Exception {
+    var source = ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "figure", List.of(4L), 2052,
+      new long[][]{{0, 0, 2}, {2048, 2048, 8}, {0, 2048, 4}});
+    var digest = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(source));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        -1, -1, false, false, false, new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    assertEquals(200, post("/open", "{\"filename\":\"figure.hict.hdf5\"}").statusCode());
+    var options = new JsonObject(post("/get_visualization_options", "{}").body())
+      .put("preLogBase", -1).put("postLogBase", -1).put("applyCoolerWeights", false)
+      .put("resolutionScaling", false).put("resolutionLinearScaling", false);
+    var full = new JsonObject().put("bpResolution", 4).put("startRowPx", 0).put("endRowPx", 513)
+      .put("startColPx", 0).put("endColPx", 513);
+    var tilePath = "/get_tile?source=PRIMARY&bpResolution=4&row=1&col=1&tile_size=512";
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    for (var mode : List.of("EXPECTED", "OBSERVED_OVER_EXPECTED")) {
+      assertEquals(200, post("/set_visualization_options", options.copy().put("signalDisplayMode", mode).encode()).statusCode());
+      assertEquals(200, post("/visualization/expected_profile", full.encode()).statusCode());
+      var reference = get(tilePath);
+      assertEquals(200, reference.statusCode(), reference.body());
+      var referenceImage = new JsonObject(reference.body()).getString("image");
+      assertEquals(200, post("/visualization/expected_profile", full.copy().put("endRowPx", 1).put("endColPx", 1).encode()).statusCode());
+      var live = map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY);
+      var created = post("/visualization/captures", full.encode());
+      assertEquals(200, created.statusCode(), created.body());
+      var metadata = new JsonObject(created.body());
+      var id = metadata.getString("id");
+      assertEquals(mode, metadata.getString("signalDisplayMode"));
+      assertEquals("FILE", metadata.getJsonObject("primaryNormalization").getString("mode"));
+      assertFalse(metadata.getJsonObject("primaryNormalization").getBoolean("applyCoolerWeightsOption"));
+      assertEquals(513L, metadata.getJsonObject("expectedProfile").getLong("endRowPx"));
+      assertTrue(metadata.getJsonObject("expectedProfile").getString("sha256").matches("[a-f0-9]{64}"));
+      assertSame(live, map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY));
+      var pinned = get(tilePath + "&renderCapture=" + id);
+      assertEquals(200, pinned.statusCode(), pinned.body());
+      assertEquals(referenceImage, new JsonObject(pinned.body()).getString("image"));
+      // Another client's navigation changes only the viewport profile, not this figure.
+      assertEquals(200, post("/visualization/expected_profile", full.copy().put("startRowPx", 512).put("startColPx", 512).encode()).statusCode());
+      pinned = get(tilePath + "&renderCapture=" + id);
+      assertEquals(200, pinned.statusCode(), pinned.body());
+      assertEquals(referenceImage, new JsonObject(pinned.body()).getString("image"));
+      var validated = post("/visualization/captures/" + id + "/validate", "{}");
+      assertEquals(200, validated.statusCode(), validated.body());
+      metadata.remove("id");
+      assertEquals(metadata, new JsonObject(validated.body()));
+      assertEquals(200, post("/visualization/captures/" + id + "/release", "{}").statusCode());
+      assertEquals(409, post("/visualization/captures/" + id + "/validate", "{}").statusCode());
+      assertEquals(409, get(tilePath + "&renderCapture=" + id).statusCode());
+    }
+    // Native-bin profile stays correct when colors are expanded into one-base sequence tiles.
+    var bins = full.copy().put("unit", "BINS");
+    assertEquals(200, post("/visualization/expected_profile", bins.encode()).statusCode());
+    var sequencePath = "/get_tile?source=PRIMARY&bpResolution=4&sequenceScale=true&row=512&col=512&tile_size=4";
+    var sequenceReference = new JsonObject(get(sequencePath).body()).getString("image");
+    var binCaptureResponse = post("/visualization/captures", bins.encode());
+    assertEquals(200, binCaptureResponse.statusCode(), binCaptureResponse.body());
+    var binCapture = new JsonObject(binCaptureResponse.body());
+    var binId = binCapture.getString("id");
+    assertEquals("BINS", binCapture.getJsonObject("expectedProfile").getString("unit"));
+    assertEquals(200, post("/visualization/expected_profile", bins.copy().put("endRowPx", 1).put("endColPx", 1).encode()).statusCode());
+    var sequencePinned = get(sequencePath + "&renderCapture=" + binId);
+    assertEquals(200, sequencePinned.statusCode(), sequencePinned.body());
+    assertEquals(sequenceReference, new JsonObject(sequencePinned.body()).getString("image"));
+    // A wrong grid must poison validation, rather than permit a figure with failed tiles.
+    assertEquals(409, get(tilePath + "&renderCapture=" + binId).statusCode());
+    assertEquals(409, post("/visualization/captures/" + binId + "/validate", "{}").statusCode());
+    assertEquals(200, post("/visualization/captures/" + binId + "/release", "{}").statusCode());
+    assertEquals(200, post("/set_visualization_options", options.put("signalDisplayMode", "OBSERVED").encode()).statusCode());
+    var observed = post("/visualization/captures", "{}");
+    assertEquals(200, observed.statusCode(), observed.body());
+    var id = new JsonObject(observed.body()).getString("id");
+    assertNull(new JsonObject(observed.body()).getJsonObject("expectedProfile"));
+    assertEquals(200, post("/set_visualization_options", options.copy().put("postLogBase", 2).encode()).statusCode());
+    assertEquals(409, post("/visualization/captures/" + id + "/validate", "{}").statusCode());
+    assertEquals(409, get(tilePath + "&renderCapture=" + id).statusCode());
+    assertEquals(200, post("/visualization/captures/" + id + "/release", "{}").statusCode());
+    var active = new java.util.ArrayList<String>();
+    for (int index = 0; index < 4; index++) {
+      var response = post("/visualization/captures", "{}");
+      assertEquals(200, response.statusCode(), response.body());
+      active.add(new JsonObject(response.body()).getString("id"));
+    }
+    assertEquals(429, post("/visualization/captures", "{}").statusCode());
+    for (var captureId : active)
+      assertEquals(200, post("/visualization/captures/" + captureId + "/release", "{}").statusCode());
+    assertArrayEquals(digest, java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(source)));
+  }
+
+  @Test
+  void wholeMapStatisticsUseOneExpectedProfileAcrossBlocksWithoutChangingTheViewport() throws Exception {
+    var path = ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "scan", List.of(4L), 2052,
+      new long[][]{{0, 0, 2}, {2048, 2048, 8}, {0, 2048, 4}});
+    var before = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path));
+    startServerWithInfoAndFileHandlers();
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        -1, -1, false, false, false, new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0.5, 2))));
+    assertEquals(200, post("/open", "{\"filename\":\"scan.hict.hdf5\"}").statusCode());
+    var options = new JsonObject(post("/get_visualization_options", "{}").body())
+      .put("preLogBase", -1).put("postLogBase", -1).put("applyCoolerWeights", false)
+      .put("resolutionScaling", false).put("resolutionLinearScaling", false);
+    for (var mode : List.of("EXPECTED", "OBSERVED_OVER_EXPECTED")) {
+      assertEquals(200, post("/set_visualization_options", options.copy().put("signalDisplayMode", mode).encode()).statusCode());
+      assertEquals(200, post("/visualization/expected_profile", new JsonObject().put("bpResolution", 4)
+        .put("startRowPx", 0).put("endRowPx", 1).put("startColPx", 0).put("endColPx", 1).encode()).statusCode());
+      var map = vertx.sharedData().getLocalMap("hict_server");
+      var viewport = map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY);
+      var base = new JsonObject().put("bpResolution", 4).put("signalMode", "TRADITIONAL_NORMALIZED");
+      var meta = new JsonObject(post("/matrix/statistics", base.copy().put("metadataOnly", true).encode()).body());
+      assertEquals(513, meta.getInteger("size"));
+      base.put("revision", meta.getString("revision"));
+      long count = 0;
+      double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+      for (int row : new int[]{0, 512}) for (int col : new int[]{0, 512}) {
+        var response = post("/matrix/statistics", base.copy().put("startRowPx", row).put("startColPx", col).encode());
+        assertEquals(200, response.statusCode(), response.body());
+        var block = new JsonObject(response.body());
+        assertEquals("WHOLE_MAP", block.getString("expectedProfileScope"));
+        assertEquals(Math.min(512, 513 - row), block.getInteger("rows"));
+        assertEquals(Math.min(512, 513 - col), block.getInteger("cols"));
+        count += block.getLong("count");
+        if (block.getLong("count") > 0) {
+          min = Math.min(min, block.getDouble("min")); max = Math.max(max, block.getDouble("max"));
+        }
+        if (row == 512 && col == 512) assertEquals(mode.equals("EXPECTED") ? 5 : 1.6, block.getDouble("max"), 1e-12);
+      }
+      // Positive-finite diagonal means: (2+8)/2 = 5 and the single distance-512 contact = 4.
+      assertEquals(mode.equals("EXPECTED") ? 513L * 513 : 515L, count);
+      assertEquals(0, min); assertEquals(mode.equals("EXPECTED") ? 5 : 1.6, max, 1e-12);
+      org.junit.jupiter.api.Assertions.assertSame(viewport, map.get(TileHandlersHolder.EXPECTED_PROFILE_LOCAL_MAP_KEY));
+      var legacy = post("/matrix/statistics", new JsonObject().put("bpResolution", 4)
+        .put("startRowPx", 512).put("startColPx", 512)
+        .put("expression", new JsonObject().put("type", "constant").put("value", 99)).encode());
+      assertEquals(200, legacy.statusCode(), legacy.body());
+      assertEquals(99, new JsonObject(legacy.body()).getDouble("max"));
+      assertEquals(400, post("/matrix/statistics", base.copy().put("expression", new JsonObject()).encode()).statusCode());
+      assertEquals(400, post("/matrix/statistics", base.copy().put("signalMode", "RAW_COUNTS").encode()).statusCode());
+      assertEquals(200, post("/set_visualization_options", options.copy().put("signalDisplayMode", "OBSERVED").encode()).statusCode());
+      assertEquals(409, post("/matrix/statistics", base.encode()).statusCode());
+    }
+    org.junit.jupiter.api.Assertions.assertArrayEquals(before, java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)));
+  }
+
+  @Test void exactCutRequiresDisplayedRevisionAndSynchronizesIndependentPyramidsWithUndoRedo() throws Exception {
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "exact-primary", List.of(4L, 10L));
+    ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "exact-secondary", List.of(3L, 7L));
+    startServerWithInfoAndFileHandlers(router -> {
+      new ru.itmo.ctlab.hict.hict_server.history.AssemblyHistoryHandlersHolder(vertx, scheduler).addHandlersToRouter(router);
+      new ru.itmo.ctlab.hict.hict_server.handlers.operations.ScaffoldingOpHandlersHolder(vertx).addHandlersToRouter(router);
+    });
+    vertx.sharedData().getLocalMap("hict_server").put("visualizationOptions",
+      new ShareableWrappers.SimpleVisualizationOptionsWrapper(new SimpleVisualizationOptions(
+        0, 0, false, false, false,
+        new SimpleLinearGradient(32, java.awt.Color.WHITE, java.awt.Color.RED, 0, 10))));
+    final var body = new JsonObject().put("contigId", 0).put("offsetBp", 5).put("expectedRevision", 0);
+    assertEquals(404, post("/split_contig_at_bp", body.encode()).statusCode());
+    assertEquals(200, post("/open", "{\"filename\":\"exact-primary.hict.hdf5\"}").statusCode());
+    assertEquals(200, post("/secondary/open", "{\"filename\":\"exact-secondary.hict.hdf5\",\"allowMismatch\":true}").statusCode());
+    var history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    final String session = history.getString("session");
+    final long revision = history.getLong("revision");
+    final var headers = Map.of("X-HiCT-History-Session", session, "X-HiCT-History-Revision", Long.toString(revision));
+    body.put("expectedRevision", revision);
+    assertEquals(400, post("/split_contig_at_bp", body.encode()).statusCode());
+    assertEquals(400, post("/split_contig_at_bp", body.copy().put("offsetBp", 1.5).encode(), headers).statusCode());
+    assertEquals(409, post("/split_contig_at_bp", body.copy().put("expectedRevision", revision + 1).encode(), headers).statusCode());
+    final var cut = post("/split_contig_at_bp", body.encode(), headers);
+    assertEquals(200, cut.statusCode(), cut.body());
+    assertEquals(409, post("/split_contig_at_bp", body.encode(), headers).statusCode());
+    final var query = new JsonObject().put("bpResolution", 4).put("rows", 6).put("cols", 6)
+      .put("signalMode", "RAW_COUNTS").put("format", "JSON").put("includeBinProvenance", true);
+    var numeric = post("/matrix/query", query.encode());
+    assertEquals(200, numeric.statusCode(), numeric.body());
+    var tensor = new JsonObject(numeric.body());
+    assertEquals("SOURCE_BIN_REFERENCES", tensor.getString("cellSemantics"));
+    assertEquals("SOURCE_BIN_REFERENCES", numeric.headers().firstValue("x-hict-cell-semantics").orElseThrow());
+    var provenance = tensor.getJsonObject("binProvenance");
+    assertEquals("PRIMARY", provenance.getString("source"));
+    assertEquals(4L, provenance.getLong("bpResolution"));
+    assertEquals(6L, provenance.getJsonObject("rowAxis").getLong("referencedBins"));
+    assertEquals(5L, provenance.getJsonObject("rowAxis").getLong("uniqueSourceBins"));
+    assertEquals(provenance.getJsonObject("rowAxis"), provenance.getJsonObject("colAxis"));
+    for (int col = 0; col < 6; col++)
+      assertEquals(tensor.getJsonArray("values").getValue(6 + col), tensor.getJsonArray("values").getValue(12 + col));
+    var plain = new JsonObject(post("/matrix/query", query.copy().put("includeBinProvenance", false).encode()).body());
+    assertTrue(!plain.containsKey("binProvenance"));
+    assertEquals(tensor.getJsonArray("values"), plain.getJsonArray("values"));
+    var binary = post("/matrix/query", query.copy().put("includeBinProvenance", false).put("format", "BINARY_FLOAT64").encode());
+    assertEquals(200, binary.statusCode());
+    assertEquals("SOURCE_BIN_REFERENCES", binary.headers().firstValue("x-hict-cell-semantics").orElseThrow());
+    assertEquals(400, post("/matrix/query", query.copy().put("format", "BINARY_FLOAT64").encode()).statusCode());
+    var secondaryQuery = query.copy().put("source", "SECONDARY").put("bpResolution", 3).put("rows", 7).put("cols", 7);
+    var secondaryProvenance = new JsonObject(post("/matrix/query", secondaryQuery.encode()).body()).getJsonObject("binProvenance");
+    assertEquals("SECONDARY", secondaryProvenance.getString("source"));
+    assertEquals(6L, secondaryProvenance.getJsonObject("rowAxis").getLong("uniqueSourceBins"));
+    var map = vertx.sharedData().getLocalMap("hict_server");
+    for (String key : List.of("chunkedFile", "chunkedFileSecondary")) {
+      var file = ((ShareableWrappers.ChunkedFileWrapper) map.get(key)).getChunkedFile();
+      assertEquals(List.of(5L, 12L), file.getAssemblyInfo().contigs().stream().map(t -> t.descriptor().getLengthBp()).toList());
+      assertTrue(file.getAssemblyInfo().contigs().stream().allMatch(t -> t.descriptor().isSharedBinSlice()));
+    }
+    var capture = post("/session/snapshot", "{\"verifyAssemblyRoundTrip\":true}");
+    assertEquals(200, capture.statusCode(), capture.body());
+    history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    assertTrue(history.getBoolean("canUndo"));
+    assertEquals(200, post("/assembly/history/restore", new JsonObject().put("session", session)
+      .put("revision", history.getLong("revision")).put("action", "undo").encode()).statusCode());
+    for (String key : List.of("chunkedFile", "chunkedFileSecondary"))
+      assertEquals(1, ((ShareableWrappers.ChunkedFileWrapper) map.get(key)).getChunkedFile().getAssemblyInfo().contigs().size());
+    history = new JsonObject(post("/assembly/history", "{}").body()).getJsonObject("summary");
+    assertEquals(200, post("/assembly/history/restore", new JsonObject().put("session", session)
+      .put("revision", history.getLong("revision")).put("action", "redo").encode()).statusCode());
+    assertEquals(new JsonObject(capture.body()).getJsonObject("primary").getJsonObject("assemblyInfo"),
+      new JsonObject(post("/session/snapshot", "{}").body()).getJsonObject("primary").getJsonObject("assemblyInfo"));
+  }
+
   private void startServerWithInfoAndFileHandlers() throws Exception {
     startServerWithInfoAndFileHandlers(router -> {});
   }
@@ -862,7 +1278,9 @@ class ApiHttpIntegrationTest {
       final var message = ctx.failure() != null && ctx.failure().getMessage() != null
         ? ctx.failure().getMessage()
         : "Request failed";
-      final int status = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getStatusCode() : 500;
+      // Match MainVerticle's input-validation classification.
+      final int status = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getStatusCode()
+        : ctx.failure() instanceof IllegalArgumentException ? 400 : 500;
       final var payload = ctx.failure() instanceof io.vertx.ext.web.handler.HttpException http ? http.getPayload() : null;
       ctx.response()
         .putHeader("content-type", "application/json")
@@ -917,12 +1335,16 @@ class ApiHttpIntegrationTest {
 
   private HttpResponse<String> post(final @NotNull String path,
                                     final @NotNull String body) throws IOException, InterruptedException {
-    final var request = HttpRequest.newBuilder()
+    return post(path, body, Map.of());
+  }
+
+  private HttpResponse<String> post(String path, String body, Map<String, String> headers) throws IOException, InterruptedException {
+    final var builder = HttpRequest.newBuilder()
       .uri(URI.create("http://127.0.0.1:" + port + path))
       .timeout(java.time.Duration.ofMinutes(2))
       .header("content-type", "application/json")
-      .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-      .build();
-    return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+      .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+    headers.forEach(builder::header);
+    return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
   }
 }

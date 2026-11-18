@@ -93,6 +93,22 @@ public class FileOpHandlersHolder extends HandlersHolder {
   private static final String SECONDARY_FASTA_FILENAME_KEY = "linkedFastaSecondaryFilename";
   private record JsonRouteResult(int statusCode, @NotNull io.vertx.core.json.JsonObject payload) {}
 
+  /** Capture metadata under the history guard, then perform large I/O on the export pool. */
+  private static <T> void submitFrozenExport(io.vertx.ext.web.RoutingContext ctx,RequestTaskScheduler scheduler,
+      RequestTaskScheduler.ThrowingSupplier<RequestTaskScheduler.ThrowingSupplier<T>> capture,
+      java.util.function.Consumer<T> success,Runnable cancelled) {
+    scheduler.submit(ctx,RequestTaskScheduler.RequestPriority.ASSEMBLY,null,capture,
+      work -> scheduler.submit(ctx,RequestTaskScheduler.RequestPriority.EXPORT,RequestTaskScheduler.CancellationDomain.EXPORT,work,success,cancelled),cancelled);
+  }
+  private record FrozenFastaPart(ru.itmo.ctlab.hict.hict_library.assembly.FASTAProcessor processor,java.nio.file.Path path,
+      ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout layout,long start,long end,String name) { }
+  private static FrozenFastaPart fastaPart(ChunkedFile file,java.nio.file.Path path,long start,long end,String name) {
+    var layout=ru.itmo.ctlab.hict.hict_library.assembly.AssemblySequenceLayout.capture(file,
+      ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
+    if(start<0 || end<=start || end>layout.sequence().length())throw new IllegalArgumentException("Invalid sequence interval");
+    return new FrozenFastaPart(file.getFastaProcessor(),path,layout,start,end,name);
+  }
+
   @Override
   public void addHandlersToRouter(final @NotNull Router router) {
     router.post("/open").handler(ctx -> {
@@ -167,6 +183,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final Track1DManager candidateTracks;
           final TileStatisticHolder candidateStatistics;
           final io.vertx.core.json.JsonObject response;
+          final io.vertx.core.json.JsonObject exampleProvenance;
           try {
             response = io.vertx.core.json.JsonObject.mapFrom(generateOpenFileResponse(chunkedFile))
               .put("workspaceVersion", workspace.version());
@@ -176,6 +193,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
               ? processedDirectoryWrapper.getPath()
               : dataDirectory.resolve("processed").normalize().toAbsolutePath();
             candidateTracks = new Track1DManager(dataDirectory, processedDirectory);
+            exampleProvenance = ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.capture(
+              dataDirectory, processedDirectory, requestedFilePath,
+              new ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService());
           } catch (Exception failure) {
             closeChunkedFileWrapper(new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
             map.put("openProgress", new io.vertx.core.json.JsonObject()
@@ -187,7 +207,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final var oldTracks = (ShareableWrappers.Track1DManagerWrapper) map.get("Track1DManager");
           synchronized (map) {
             cancelCoverage.run();
-            map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(chunkedFile));
+            map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(chunkedFile, exampleProvenance));
             map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(candidateTracks));
             map.put("openedFilename", requestedFilename);
             map.put("workspaceStateStore", workspace);
@@ -379,7 +399,11 @@ public class FileOpHandlersHolder extends HandlersHolder {
             throw failure;
           }
           final var oldSecondary = (ShareableWrappers.ChunkedFileWrapper) map.get(SECONDARY_CHUNKED_FILE_KEY);
-          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile));
+          final var processed = (ShareableWrappers.PathWrapper) map.get("processedDirectory");
+          final var exampleProvenance = ru.itmo.ctlab.hict.hict_server.examples.ExampleSourceProvenance.capture(
+            dataDirectory, processed == null ? dataDirectory.resolve("processed") : processed.getPath(), filePath,
+            new ru.itmo.ctlab.hict.hict_server.util.cache.FileFingerprintService());
+          map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(secondaryChunkedFile, exampleProvenance));
           map.put(OPENED_SECONDARY_FILENAME_KEY, filename);
           map.put(SECONDARY_COMPATIBILITY_KEY, synchronizedCompatibility.toJson());
           if (sequenceMetadata != null) map.put(SECONDARY_SEQUENCE_METADATA_KEY, sequenceMetadata);
@@ -528,13 +552,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final boolean verifyTracks = (Boolean) tracksValue;
         final var visualization = (ShareableWrappers.SimpleVisualizationOptionsWrapper) map.get("visualizationOptions");
         if (visualization == null) throw new IllegalStateException("Visualization options are unavailable");
-        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(1, verify, fingerprintFiles, verifyTracks,
+        final var snapshot = new ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO(2, verify, fingerprintFiles, verifyTracks,
           ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(primary.getChunkedFile(),
             String.valueOf(map.getOrDefault("openedFilename", "")),
-            String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, ""))),
+            String.valueOf(map.getOrDefault(PRIMARY_FASTA_FILENAME_KEY, "")), primary.getExampleProvenance()),
           secondary == null ? null : ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SessionSnapshotDTO.source(
             secondary.getChunkedFile(), String.valueOf(map.getOrDefault(OPENED_SECONDARY_FILENAME_KEY, "")),
-            String.valueOf(map.getOrDefault(SECONDARY_FASTA_FILENAME_KEY, ""))),
+            String.valueOf(map.getOrDefault(SECONDARY_FASTA_FILENAME_KEY, "")), secondary.getExampleProvenance()),
           String.valueOf(map.getOrDefault(ASSEMBLY_SOURCE_KEY, ASSEMBLY_SOURCE_PRIMARY)),
           pipeline == null ? RenderPipelineConfig.disabled().toJson() : pipeline.getRenderPipelineConfig().toJson(),
           new io.vertx.core.json.JsonArray(tracks == null ? java.util.List.of() : tracks.getTrack1DManager().listTracks()
@@ -640,7 +664,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         final String secondaryFasta = saved.secondary() == null ? "" : saved.secondary().getString("fastaFilename", "");
         synchronized (map) {
           cancelCoverage.run();
-          map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.primary()));
+          map.put(PRIMARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.primary(), saved.primary().getJsonObject("exampleProvenance")));
           map.put("Track1DManager", new ShareableWrappers.Track1DManagerWrapper(owned.tracks()));
           map.put("openedFilename", primaryName);
           map.put("workspaceStateStore", workspace);
@@ -648,7 +672,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
           map.put(RenderPipelineConfig.LOCAL_MAP_KEY, new ShareableWrappers.RenderPipelineConfigWrapper(owned.pipeline()));
           map.put("visualizationOptions", new ShareableWrappers.SimpleVisualizationOptionsWrapper(owned.visualization()));
           if (owned.secondary() != null) {
-            map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.secondary()));
+            map.put(SECONDARY_CHUNKED_FILE_KEY, new ShareableWrappers.ChunkedFileWrapper(owned.secondary(), saved.secondary().getJsonObject("exampleProvenance")));
             map.put(OPENED_SECONDARY_FILENAME_KEY, saved.secondary().getString("filename"));
             map.put(SECONDARY_COMPATIBILITY_KEY, compatibility.toJson());
           } else {
@@ -850,10 +874,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
         return;
       }
       final var download = new TemporaryFastaDownload(ctx);
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.EXPORT,
-        RequestTaskScheduler.CancellationDomain.EXPORT,
+      submitFrozenExport(
+        ctx, scheduler,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           final var source = String.valueOf(
@@ -871,11 +893,14 @@ public class FileOpHandlersHolder extends HandlersHolder {
           final long gapLength = request == null
             ? ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp()
             : request.getLong("defaultSpacerLength", ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
-          return download.write(output -> chunkedFileWrapper.getChunkedFile().getFastaProcessor().writeAssembly(
-            fastaPathWrapper.getPath(), output, request == null || request.getBoolean("preserveImportedGaps", true), gapLength));
+          final boolean preserveGaps=request == null || request.getBoolean("preserveImportedGaps",true);
+          final var file=chunkedFileWrapper.getChunkedFile();
+          final var records=java.util.List.copyOf(preserveGaps ? file.getAgpProcessor().getAssemblyAGPRecords() : file.getAgpProcessor().getAGPRecords(gapLength));
+          final var processor=file.getFastaProcessor();final var fastaPath=fastaPathWrapper.getPath();
+          return () -> download.write(output -> processor.writeAssemblyRecords(fastaPath,output,records,preserveGaps));
         },
         download::send,
-        () -> {download.close();ctx.response().putHeader("Content-Type", "text/plain").end();}
+        () -> {download.close();ctx.fail(new io.vertx.ext.web.handler.HttpException(409,"Assembly changed during export. Retry the export."));}
       );
     });
 
@@ -898,10 +923,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
         return;
       }
       final var download = new TemporaryFastaDownload(ctx);
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.EXPORT,
-        RequestTaskScheduler.CancellationDomain.EXPORT,
+      submitFrozenExport(
+        ctx, scheduler,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           final var horizontalSource = String.valueOf(requestJSON.getString("horizontalSource", ASSEMBLY_SOURCE_PRIMARY))
@@ -927,30 +950,27 @@ public class FileOpHandlersHolder extends HandlersHolder {
             fromBpY,
             toBpY
           );
-          return download.write(output -> {
-            if (!explicitAxisSources) {
-              long start=Math.max(0L,Math.min(Math.min(fromBpX,fromBpY),Math.min(toBpX,toBpY)));
-              long end=Math.max(Math.addExact(start,1),Math.max(Math.max(fromBpX,fromBpY),Math.max(toBpX,toBpY)));
-              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeSelection(
-                horizontalFastaPathWrapper.getPath(),output,start,end,String.format("selection_%d_%d",start,end));
-              return;
-            }
+          final var pieces=new java.util.ArrayList<FrozenFastaPart>();
+          if (!explicitAxisSources) {
+            long start=Math.max(0L,Math.min(Math.min(fromBpX,fromBpY),Math.min(toBpX,toBpY)));
+            long end=Math.max(Math.addExact(start,1),Math.max(Math.max(fromBpX,fromBpY),Math.max(toBpX,toBpY)));
+            pieces.add(fastaPart(horizontalChunkedFileWrapper.getChunkedFile(),horizontalFastaPathWrapper.getPath(),start,end,String.format("selection_%d_%d",start,end)));
+          } else {
             long xs=Math.min(fromBpX,toBpX),xe=Math.max(fromBpX,toBpX),ys=Math.min(fromBpY,toBpY),ye=Math.max(fromBpY,toBpY);
-            if(Objects.equals(horizontalSource,verticalSource)&&xs==ys&&xe==ye) {
-              horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeSelection(
-                horizontalFastaPathWrapper.getPath(),output,xs,xe,String.format("selection_%d_%d",xs,xe));return;
+            if (Objects.equals(horizontalSource,verticalSource)&&xs==ys&&xe==ye) {
+              pieces.add(fastaPart(horizontalChunkedFileWrapper.getChunkedFile(),horizontalFastaPathWrapper.getPath(),xs,xe,String.format("selection_%d_%d",xs,xe)));
+            } else {
+              final var verticalFile=resolveChunkedFileWrapperBySource(map,verticalSource);
+              final var verticalFasta=resolveFastaPathWrapperBySource(map,verticalSource);
+              if(verticalFasta==null)throw new IllegalStateException("Link a FASTA file for the vertical source before exporting FASTA");
+              pieces.add(fastaPart(horizontalChunkedFileWrapper.getChunkedFile(),horizontalFastaPathWrapper.getPath(),xs,xe,String.format("selection_horizontal_%d_%d_%s",xs,xe,horizontalSource.toLowerCase())));
+              pieces.add(fastaPart(verticalFile.getChunkedFile(),verticalFasta.getPath(),ys,ye,String.format("selection_vertical_%d_%d_%s",ys,ye,verticalSource.toLowerCase())));
             }
-            final var verticalFile=resolveChunkedFileWrapperBySource(map,verticalSource);
-            final var verticalFasta=resolveFastaPathWrapperBySource(map,verticalSource);
-            if(verticalFasta==null)throw new IllegalStateException("Link a FASTA file for the vertical source before exporting FASTA");
-            horizontalChunkedFileWrapper.getChunkedFile().getFastaProcessor().writeSelection(
-              horizontalFastaPathWrapper.getPath(),output,xs,xe,String.format("selection_horizontal_%d_%d_%s",xs,xe,horizontalSource.toLowerCase()));
-            verticalFile.getChunkedFile().getFastaProcessor().writeSelection(
-              verticalFasta.getPath(),output,ys,ye,String.format("selection_vertical_%d_%d_%s",ys,ye,verticalSource.toLowerCase()));
-          });
+          }
+          return () -> download.write(output -> { for (var piece:pieces) piece.processor().writeLayout(piece.path(),output,piece.layout(),piece.start(),piece.end(),piece.name()); });
         },
         download::send,
-        () -> {download.close();ctx.response().putHeader("Content-Type", "text/plain").end();}
+        () -> {download.close();ctx.fail(new io.vertx.ext.web.handler.HttpException(409,"Assembly changed during export. Retry the export."));}
       );
     });
 
@@ -963,10 +983,8 @@ public class FileOpHandlersHolder extends HandlersHolder {
       final @NotNull var requestJSON = requestBody.asJsonObject();
       final long defaultSpacerLength = requestJSON.getLong("defaultSpacerLength",
         ru.itmo.ctlab.hict.hict_library.assembly.AssemblyExportSettings.gapLengthBp());
-      scheduler.submit(
-        ctx,
-        RequestTaskScheduler.RequestPriority.EXPORT,
-        RequestTaskScheduler.CancellationDomain.EXPORT,
+      submitFrozenExport(
+        ctx, scheduler,
         () -> {
           final @NotNull @NonNull LocalMap<String, Object> map = vertx.sharedData().getLocalMap("hict_server");
           final var chunkedFileWrapper = ((ShareableWrappers.ChunkedFileWrapper) (map.get("chunkedFile")));
@@ -975,15 +993,13 @@ public class FileOpHandlersHolder extends HandlersHolder {
           }
           final var chunkedFile = chunkedFileWrapper.getChunkedFile();
 
-          final var buffer = Buffer.buffer();
-          final var records = requestJSON.getBoolean("preserveImportedGaps", false)
+          final var records = java.util.List.copyOf(requestJSON.getBoolean("preserveImportedGaps", false)
             ? chunkedFile.getAgpProcessor().getAssemblyAGPRecords()
-            : chunkedFile.getAgpProcessor().getAGPRecords(defaultSpacerLength);
-          records.forEach(record -> buffer.appendString(record + "\n"));
-          return buffer;
+            : chunkedFile.getAgpProcessor().getAGPRecords(defaultSpacerLength));
+          return () -> {final var buffer=Buffer.buffer();records.forEach(record -> buffer.appendString(record+"\n"));return buffer;};
         },
         buffer -> ctx.response().setChunked(true).putHeader("Content-Type", "text/plain").end(buffer),
-        () -> ctx.response().setChunked(true).putHeader("Content-Type", "text/plain").end(Buffer.buffer())
+        () -> ctx.fail(new io.vertx.ext.web.handler.HttpException(409,"Assembly changed during export. Retry the export."))
       );
     });
 
@@ -1309,7 +1325,9 @@ public class FileOpHandlersHolder extends HandlersHolder {
         return;
       }
       try (final var reader = new StringReader(targetAgp)) {
-        target.importAGP(reader);
+        if (source.getAssemblyInfo().contigs().stream().anyMatch(t -> t.descriptor().isSharedBinSlice()))
+          target.importAGPWithSharedBins(reader);
+        else target.importAGP(reader);
       }
       synchronizeTargetVisibilityFromSource(source, target);
       log.info("Synchronized {} assembly layout into {} source for overlay rendering",
@@ -1485,7 +1503,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
         java.util.Arrays.stream(targetDescriptor.getLengthBinsAtResolution()).skip(1).boxed().toList(),
         visibility.subList(1, visibility.size()),
         targetDescriptor.getAtus().subList(1, targetDescriptor.getAtus().size()),
-        targetDescriptor.getContigNameInSourceFASTA(), targetDescriptor.getOffsetInSourceFASTA());
+        targetDescriptor.getContigNameInSourceFASTA(), targetDescriptor.getOffsetInSourceFASTA(), targetDescriptor.isSharedBinSlice());
     });
   }
 
@@ -1510,7 +1528,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
     } else {
       lengthBins = Math.max(1L, (descriptor.getLengthBp() + resolution - 1L) / resolution);
     }
-    return lengthBins > 0L && descriptor.getLengthBp() >= resolution
+    return lengthBins > 0L && (descriptor.isSharedBinSlice() || descriptor.getLengthBp() >= resolution)
       ? ContigHideType.SHOWN
       : ContigHideType.HIDDEN;
   }
@@ -1715,6 +1733,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       chunkedFile.getDenseBlockSize(),
       AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
       Arrays.stream(matrixSizeBins).mapToInt(l -> (int) l).boxed().toList(),
+      chunkedFile.isUsableCoolerWeights(),
       ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(chunkedFile)
     );
   }

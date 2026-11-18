@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker
 
 p = argparse.ArgumentParser()
 for k in ("url", "api", "output"):
@@ -38,6 +39,7 @@ out.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as pw:
     browser = pw.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 900})
+    install_download_picker(page)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
@@ -71,7 +73,7 @@ with sync_playwright() as pw:
     )
     detail = page.evaluate("""()=>{
       const m=window.__hictBenchmark.manager(),l=m.alignmentDetail;
-      const colors=l.source.getFeatures().map(f=>decodeURIComponent(f.getStyle().getImage()?.getSrc() ?? ""));
+      const colors=l.source.getFeatures().map(f=>f.getStyle().at(-1).getStroke()?.getColor() ?? "");
       const holder=m.contigDimensionHolder,d=m.viewAndLayersManager.getActiveVectorResolutionDescriptor();
       return {colors,point:m.getMap().getPixelFromCoordinate([
         holder.getFractionalPxOfBp(1100.5,d.bpResolution)*d.pixelResolution,
@@ -157,7 +159,7 @@ with sync_playwright() as pw:
         page.wait_for_function(
             """()=> {
           const l=window.__hictBenchmark.manager().alignmentDetail;
-          return l.source.getFeatures().some(f=>decodeURIComponent(f.getStyle().getImage()?.getSrc() ?? '').includes('#c2410c'))
+          return l.source.getFeatures().some(f=>f.getStyle().at(-1).getStroke()?.getColor()==='#c2410c')
             && l.state.message.value==='';
         }""",
             timeout=30000,
@@ -202,16 +204,19 @@ with sync_playwright() as pw:
         "window.__hictBenchmark.manager().viewAndLayersManager.setEnabledBpResolutions([4])"
     )
     check_marker("fine-level-at-letter-zoom", 1100, 100)
-    with page.expect_response(
-        lambda r: r.url.endswith("/split_contig_at_bin") and r.ok
-    ):
+    with page.expect_response("**/split_contig_at_bp") as split:
         page.evaluate(
             "window.__hictBenchmark.manager().eventManager.onClickInScissorsMode([31,31],4)"
         )
+    assert split.value.ok, split.value.text()
     page.wait_for_function(
         "window.__hictBenchmark.manager().contigDimensionHolder.contig_count===2"
     )
-    check_marker("after-split", 1096, 100)
+    lengths = page.evaluate(
+        "window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors.map(d=>d.contigLengthBp)"
+    )
+    assert lengths == [124, 11893], lengths
+    check_marker("after-split", 1100, 100)
     page.evaluate(
         "window.__hictBenchmark.manager().networkManager.requestManager.restoreAssemblyHistory('undo')"
     )

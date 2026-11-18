@@ -110,7 +110,7 @@ class MacosCompatibilityTest(unittest.TestCase):
     def test_python_wheels_are_selected_for_target_not_host_os(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(build.sys, 'platform', 'darwin'), \
              patch.object(build.platform, 'machine', return_value='arm64'), patch.object(build, 'run') as run:
-            build.install_requirements('python', Path('/work'), Path('/docs'))
+            build.install_requirements('python', Path('/work'), Path('/docs'), Path('/notices'), manylinux=False)
             download, install = (call.args[0] for call in run.call_args_list)
             self.assertIn('macosx_12_3_arm64', download)
             self.assertIn('--only-binary=:all:', download)

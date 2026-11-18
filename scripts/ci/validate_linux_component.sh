@@ -121,7 +121,8 @@ case "${component}" in
     fi
     ;;
   fatjar)
-    fat_jar="$(find build/libs -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
+    version="$(tr -d '[:space:]' < version.txt)"
+    fat_jar="build/libs/hict_server-${version}-fat.jar"
     [[ -n "${fat_jar}" && -f "${fat_jar}" ]] || { echo "::error::Fat JAR was not found under build/libs."; exit 1; }
     jar tf "${fat_jar}" | grep -qx 'webui/index.html' || { echo "::error::Fat JAR does not contain webui/index.html."; exit 1; }
     if [[ -f toolchains-dist/linux_x86_64/manifest.json ]]; then
@@ -129,7 +130,10 @@ case "${component}" in
     fi
     ;;
   portable)
-    root="$(find build/portable -mindepth 1 -maxdepth 1 -type d -name 'HiCT-*-linux-x86_64' | sort | tail -n 1)"
+    version="$(tr -d '[:space:]' < version.txt)"
+    abi_suffix=""
+    if [[ "${HICT_LINUX_ABI_MODE:-glibc217}" == "musl-static" ]]; then abi_suffix="-musl"; fi
+    root="${HICT_PORTABLE_DIST_DIR:-build/portable}/HiCT-${version}${abi_suffix}-linux-x86_64"
     [[ -n "${root}" && -d "${root}" ]] || { echo "::error::Portable Linux root was not found under build/portable."; exit 1; }
     scan_glibc_floor "${root}"
     ;;

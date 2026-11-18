@@ -35,6 +35,10 @@ class SourceMetadataTest {
     assertEquals(SourceMetadata.Units.UNKNOWN, legacy.units());
     assertEquals(SourceCapabilitiesDTO.State.UNKNOWN, legacy.importedWeights().state());
     assertEquals(List.of(4L, 10L), legacy.resolutions());
+    // Rendering support belongs to the running server, even for legacy inputs.
+    assertTrue(legacy.sequenceScaleTiles());
+    assertTrue(converted.sequenceScaleTiles());
+    assertTrue(legacy.sequenceScaleTracks());
   }
 
   @Test void explicitContactsAndPerResolutionWeightsRemainDistinctFromUnitVectors() throws Exception {

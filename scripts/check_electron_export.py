@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--webui', default=str(Path(__file__).resolve().parents[2] / 'HiCT_WebUI'))
     parser.add_argument('--url', default='http://127.0.0.1:8187')
     parser.add_argument('--api', default='http://127.0.0.1:5107')
+    parser.add_argument('--payload', help='Use a built Electron payload instead of the development executable')
     parser.add_argument('--output', default='/tmp/hict-release-physical/electron')
     parser.add_argument('--xvfb', default='/tmp/hict-desktop-test/runtime/usr/bin/Xvfb')
     parser.add_argument('--xdotool', default='/tmp/hict-desktop-test/runtime/usr/bin/xdotool')
@@ -59,11 +60,18 @@ def main():
                 port_probe.bind(('127.0.0.1', 0))
                 port = port_probe.getsockname()[1]
             webui = Path(args.webui)
+            executable = webui / 'node_modules/electron/dist/electron'
+            entry = webui / 'dist/electron/main/main.js'
+            if args.payload:
+                payload = Path(args.payload).resolve()
+                manifest = json.loads((payload / 'manifest.json').read_text())
+                executable = payload / manifest['command']
+                entry = payload / 'app/main/main.js'
             command = [
-                str(webui / 'node_modules/electron/dist/electron'),
+                str(executable),
                 '--no-sandbox', '--disable-gpu', '--ozone-platform=x11',
                 '--remote-debugging-port=' + str(port), '--user-data-dir=' + str(out / 'profile'),
-                str(webui / 'dist/electron/main/main.js'), args.url,
+                str(entry), args.url,
             ]
             endpoint = f'http://127.0.0.1:{port}'
 

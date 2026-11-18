@@ -84,6 +84,22 @@ public class HictToMcoolConverter {
   );
 
   public void convert(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) throws IOException, NoSuchFieldException {
+    convert(options,logConsumer,()->Thread.currentThread().isInterrupted());
+  }
+
+  public void convert(ConversionOptions options, Consumer<String> logConsumer, java.util.function.BooleanSupplier cancelled) throws IOException, NoSuchFieldException {
+    checkCancelled(cancelled);
+    if (options.approximateRebin()) {
+      new ApproximateCoolerExporter().export(options, logConsumer, cancelled);
+      return;
+    }
+    try(var staged=new StagedConversionOutput(options)) {
+      convertUnstaged(staged.options(),logConsumer,cancelled);
+      checkCancelled(cancelled);staged.publish();
+    }
+  }
+
+  private void convertUnstaged(ConversionOptions options, Consumer<String> logConsumer, java.util.function.BooleanSupplier cancelled) throws IOException, NoSuchFieldException {
     HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
     final var availableResolutions = readAvailableResolutions(options.inputPath());
@@ -122,7 +138,7 @@ public class HictToMcoolConverter {
           chunkedFile, appliedAgpRecords, selectedResolutions, synchronizedLogConsumer);
         final var mappings = AgpCoolerLayout.buildAgpMappingSegmentsByResolution(
           chunkedFile, options.inputPath(), appliedAgpRecords, selectedResolutions);
-        convertWithExplicitLayout(options, layout, mappings, synchronizedLogConsumer);
+        convertExplicitUnstaged(options, layout, mappings, synchronizedLogConsumer,cancelled);
         try (final var dst = HDF5Factory.open(options.outputPath().toFile())) {
           writeHictAgpComponentMetadata(dst, appliedAgpRecords, resolveIntStorageFeatures(options, synchronizedLogConsumer));
         }
@@ -162,6 +178,7 @@ public class HictToMcoolConverter {
         dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
 
         for (final var resolution : selectedResolutions.stream().sorted().toList()) {
+          checkCancelled(cancelled);
           final Integer resolutionOrder = chunkedFile.getResolutionToIndex().get(resolution);
           if (resolutionOrder == null) {
             throw new IllegalStateException("Resolution " + resolution + " is not present in " + options.inputPath().getFileName());
@@ -171,6 +188,11 @@ public class HictToMcoolConverter {
             final var cooPath = resolutionTmpDir.resolve("pixels.coo.bin");
             final var mapper = buildMapper(chunkedFile, options.inputPath(), resolutionOrder);
             final var resolutionLayout = assemblyLayout.resolutionLayout(resolution);
+            if (floatingResolution(options.inputPath(), resolution)) {
+              writeFloatingResolution(chunkedFile, options, dst, resolutionLayout, mapper,
+                singleCoolerOutput ? "/" : "/resolutions/" + resolution, progressTracker, synchronizedLogConsumer,cancelled);
+              continue;
+            }
             final var summary = exportTransformedCoo(
               options.inputPath(),
               resolution,
@@ -214,6 +236,9 @@ public class HictToMcoolConverter {
             deleteRecursively(resolutionTmpDir, synchronizedLogConsumer);
           }
         }
+        try (final var source = HDF5Factory.openForReading(options.inputPath().toFile())) {
+          ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.writeExported(source, dst, selectedResolutions);
+        }
       }
       progressTracker.finish();
     } finally {
@@ -227,6 +252,15 @@ public class HictToMcoolConverter {
     final @NotNull java.util.Map<Long, List<MappingSegment>> mappingSegmentsByResolution,
     final @NotNull Consumer<String> logConsumer
   ) throws IOException {
+    try(var staged=new StagedConversionOutput(options)) {
+      convertExplicitUnstaged(staged.options(),assemblyLayout,mappingSegmentsByResolution,logConsumer,()->Thread.currentThread().isInterrupted());
+      checkCancelled(()->Thread.currentThread().isInterrupted());staged.publish();
+    }
+  }
+
+  private void convertExplicitUnstaged(ConversionOptions options, CoolerAssemblyLayout assemblyLayout,
+      java.util.Map<Long,List<MappingSegment>> mappingSegmentsByResolution, Consumer<String> logConsumer,
+      java.util.function.BooleanSupplier cancelled) throws IOException {
     HDF5LibraryInitializer.initializeHDF5Library();
     final var synchronizedLogConsumer = synchronizedLogger(logConsumer);
     final var selectedResolutions = normalizeSelectedResolutionsForOutput(
@@ -276,6 +310,7 @@ public class HictToMcoolConverter {
       dst.string().write("/selected_resolutions", new JsonArray(selectedResolutions).encode());
 
       for (final var resolution : selectedResolutions) {
+        checkCancelled(cancelled);
         final var segments = mappingSegmentsByResolution.get(resolution);
         if (segments == null || segments.isEmpty()) {
           throw new IllegalStateException("No explicit export mapper was provided for resolution " + resolution);
@@ -293,6 +328,13 @@ public class HictToMcoolConverter {
             ))
             .sorted(Comparator.comparingLong(SourceSegment::sourceStart))
             .toList());
+          if (floatingResolution(options.inputPath(), resolution)) {
+            try (var sourceFile = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(options.inputPath(), 1, 2, List.of(resolution)))) {
+              writeFloatingResolution(sourceFile, options, dst, normalizedAssemblyLayout.resolutionLayout(resolution), mapper,
+                singleCoolerOutput ? "/" : "/resolutions/" + resolution, progressTracker, synchronizedLogConsumer,cancelled);
+            }
+            continue;
+          }
           final var resolutionLayout = normalizedAssemblyLayout.resolutionLayout(resolution);
           final var summary = exportTransformedCoo(
             options.inputPath(),
@@ -336,6 +378,9 @@ public class HictToMcoolConverter {
         } finally {
           deleteRecursively(resolutionTmpDir, synchronizedLogConsumer);
         }
+      }
+      try (final var source = HDF5Factory.openForReading(options.inputPath().toFile())) {
+        ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceMetadata.writeExported(source, dst, selectedResolutions);
       }
     }
     progressTracker.finish();
@@ -602,10 +647,94 @@ public class HictToMcoolConverter {
     final long nonzeroPixelCount,
     final long totalCounts
   ) {
+    writeResolutionHeader(dst, root, resolution, binsCount, chromCount, nonzeroPixelCount);
+    dst.int64().setAttr(root, "cis", totalCounts);
+    dst.int64().setAttr(root, "sum", totalCounts);
+  }
+
+  /** Select the lossless float writer per level; integer levels keep their int64 path. */
+  public static boolean hasFloatingPointValues(ConversionOptions options) {
+    HDF5LibraryInitializer.initializeHDF5Library();
+    final var available = readAvailableResolutions(options.inputPath());
+    final var selected = normalizeSelectedResolutionsForOutput(options.outputPath(),
+      requireUsableSelectedResolutions(options.inputPath(), resolveSelectedResolutions(available, options.resolutions(), options.exportAllResolutions()),
+        available, options.resolutions(), options.exportAllResolutions()), ignored -> {});
+    try (var reader = HDF5Factory.openForReading(options.inputPath().toFile())) {
+      return selected.stream().anyMatch(r -> isFloatingPointDataset(reader, getBlockValuesDatasetPath(r)));
+    }
+  }
+
+  private static boolean floatingResolution(Path input, long resolution) {
+    try (var reader = HDF5Factory.openForReading(input.toFile())) {
+      return isFloatingPointDataset(reader, getBlockValuesDatasetPath(resolution));
+    }
+  }
+
+  /** Bin remapping only: no fractional redistribution, interpolation or new approximation. */
+  private static void writeFloatingResolution(ChunkedFile file, ConversionOptions options,
+      ch.systemsx.cisd.hdf5.IHDF5Writer dst, ResolutionLayout layout, SourceToAssemblyMapper mapper,
+      String root, ExportProgressTracker tracker, Consumer<String> logger, java.util.function.BooleanSupplier cancelled) throws IOException {
+    checkCancelled(cancelled);
+    final long bins = layout.binsCount();
+    final long budget = Math.min(resolveExportMemoryLimitBytes(logger), Runtime.getRuntime().maxMemory() / 2);
+    final long indexBytes = Math.multiplyExact(Math.addExact(bins, 1), Long.BYTES);
+    if (bins >= Integer.MAX_VALUE || indexBytes > budget / 2 || budget < 16384)
+      throw new IllegalArgumentException("Floating-point export index exceeds the memory budget; select a coarser level or increase the export memory/Java heap limit");
+    final var ints = resolveIntStorageFeatures(options, logger);
+    final var floats = resolveFloatStorageFeatures(options, logger);
+    final int chunk = Math.max(1, Math.min(65536, options.chunkSize()));
+    final int capacity = (int) Math.min(100000, Math.max(16, (budget-indexBytes)/256));
+    if (!root.equals("/")) dst.object().createGroup(root);
+    for (var group : List.of("chroms", "bins", "pixels", "indexes")) dst.object().createGroup(coolerChildPath(root,group));
+    writeChromsGroup(dst, coolerChildPath(root,"chroms"), layout.chroms(), ints);
+    writeBinsGroup(dst,coolerChildPath(root,"bins"),layout,ints,floats,tracker,logger,"Merge resolution "+layout.resolution()+" bins");
+    if (file.getSourceMetadata().weightMetadataComplete()
+      && !file.getSourceMetadata().importedWeightResolutions().contains(layout.resolution()))
+      dst.object().delete(coolerChildPath(root,"bins/weight"));
+    final long[] seen = {0}, delivered = {0};
+    final String detail = "Writing stored floating-point values at "+layout.resolution()+" bp";
+    logger.accept("HICT_STAGE stage=export_float progress=0 overall="
+      +(tracker.copiedItems.get()/(double)tracker.totalItems)+" detail="+detail);
+    try (var sorter = new FractionalContactSorter(options.outputPath().toAbsolutePath().getParent(),capacity,32,
+        () -> cancelled.getAsBoolean() || Thread.currentThread().isInterrupted())) {
+      file.matrixQueries().scanStoredContacts(
+        ru.itmo.ctlab.hict.hict_library.chunkedfile.resolution.ResolutionDescriptor.fromBpResolution(layout.resolution(),file),
+        (row,col,value)->{
+          if ((++seen[0]&8191)==0) tracker.add(8192,detail);
+          final long a=mapper.mapOrAbsent(row),b=mapper.mapOrAbsent(col);
+          if(a<0 || b<0 || value==0)return;
+          if(!Double.isFinite(value))throw new IllegalArgumentException("Export cannot write a non-finite matrix value at source bins "+row+", "+col);
+          try {sorter.add(Math.min(a,b),Math.max(a,b),value);}
+          catch(IOException error){throw new java.io.UncheckedIOException(error);}
+        },()->cancelled.getAsBoolean() || Thread.currentThread().isInterrupted(),null);
+      tracker.add(seen[0]&8191,detail);
+      final var pixels = new FloatingPointCoolerPixels(dst,root,bins,layout.chromOffsets(),chunk,ints,floats);
+      sorter.finish((row,col,value)->{
+        pixels.accept(row,col,value);
+        if((++delivered[0]&8191)==0)tracker.add(3*8192,detail);
+      });
+      pixels.finish(); tracker.add(3*(delivered[0]&8191),detail);
+      dst.int64().writeArray(coolerChildPath(root,"indexes/chrom_offset"),layout.chromOffsets(),ints);
+      writeResolutionHeader(dst,root,layout.resolution(),bins,layout.chroms().size(),pixels.count());
+      dst.float64().setAttr(root,"sum",pixels.total()); dst.float64().setAttr(root,"cis",pixels.cis());
+      dst.string().setAttrVL(root,"metadata",new io.vertx.core.json.JsonObject().put("export_method","source_bin_remapping").encode());
+      logger.accept("HICT_STAGE stage=export_float progress=1 overall="
+        +(tracker.copiedItems.get()/(double)tracker.totalItems)+" detail="+detail);
+    } catch (java.io.UncheckedIOException error) {throw error.getCause();}
+    catch (ru.itmo.ctlab.hict.hict_library.visualization.CoverageNormalizer.CancelledException ignored) {
+      throw new java.util.concurrent.CancellationException("Floating-point export was cancelled");
+    }
+  }
+
+  private static void checkCancelled(java.util.function.BooleanSupplier cancelled) {
+    if(cancelled.getAsBoolean() || Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException("Matrix export was cancelled");
+  }
+
+  private static void writeResolutionHeader(ch.systemsx.cisd.hdf5.IHDF5Writer dst, String root,
+      long resolution, long binsCount, long chromCount, long nonzeroPixelCount) {
     dst.string().setAttrVL(root, "assembly", DEFAULT_ASSEMBLY_NAME);
     dst.int64().setAttr(root, "bin-size", resolution);
     dst.string().setAttrVL(root, "bin-type", "fixed");
-    dst.int64().setAttr(root, "cis", totalCounts);
     dst.string().setAttrVL(root, "creation-date", OffsetDateTime.now(ZoneOffset.UTC).toString());
     dst.string().setAttrVL(root, "format", "HDF5::Cooler");
     dst.string().setAttrVL(root, "format-url", "https://github.com/open2c/cooler");
@@ -616,7 +745,6 @@ public class HictToMcoolConverter {
     dst.int64().setAttr(root, "nchroms", chromCount);
     dst.int64().setAttr(root, "nnz", nonzeroPixelCount);
     dst.string().setAttrVL(root, "storage-mode", "symmetric-upper");
-    dst.int64().setAttr(root, "sum", totalCounts);
   }
 
   private static void writeChromsGroup(
@@ -971,7 +1099,7 @@ public class HictToMcoolConverter {
       final int blockLen = (int) Math.min(chunkSize, length - offset);
       final var block = src.int64().readArrayBlockWithOffset(path, blockLen, offset);
       for (final long value : block) {
-        sum += value;
+        sum = Math.addExact(sum,value);
       }
       offset += blockLen;
     }
@@ -1194,7 +1322,7 @@ public class HictToMcoolConverter {
         chroms.get(chromIndex),
         cursor,
         cursor + binCount,
-        List.copyOf(currentContigs.get(chromIndex).descriptor().getAtus().get(resolutionOrder))
+        List.copyOf(orientedAtus(currentContigs.get(chromIndex).descriptor().getAtus().get(resolutionOrder),currentContigs.get(chromIndex).direction()))
       ));
       cursor += binCount;
     }
@@ -1508,10 +1636,11 @@ public class HictToMcoolConverter {
 
     writeChromsGroup(dst, coolerChildPath(root, "chroms"), layout.chroms(), compression);
     writeBinsGroup(dst, coolerChildPath(root, "bins"), layout, compression, floatCompression, progressTracker, logger, "Merge resolution " + resolution + " bins");
-    writePixelsFromSortedCoo(cooPath, dst, root, summary.nonzeroPixelCount(), chunkSize, compression, progressTracker, logger, resolution);
+    final long cis = writePixelsFromSortedCoo(cooPath, dst, root, summary.nonzeroPixelCount(), chunkSize, compression, progressTracker, logger, resolution, layout.chromOffsets());
     dst.int64().writeArray(coolerChildPath(root, "indexes/bin1_offset"), summary.bin1Offset(), compression);
     dst.int64().writeArray(coolerChildPath(root, "indexes/chrom_offset"), layout.chromOffsets(), compression);
     writeResolutionMetadata(dst, root, resolution, layout.binsCount(), layout.chroms().size(), summary.nonzeroPixelCount(), summary.totalCounts());
+    dst.int64().setAttr(root, "cis", cis);
   }
 
   private static @NotNull String coolerChildPath(final @NotNull String root, final @NotNull String relativePath) {
@@ -1567,7 +1696,7 @@ public class HictToMcoolConverter {
           lastCol = col;
         }
         nonzeroPixelCount++;
-        totalCounts += count;
+        totalCounts = Math.addExact(totalCounts, count);
       }
     }
     if (!seenAnyPixel) {
@@ -1579,7 +1708,7 @@ public class HictToMcoolConverter {
     return new SortedCooSummary(nonzeroPixelCount, totalCounts, bin1Offset);
   }
 
-  private static void writePixelsFromSortedCoo(
+  private static long writePixelsFromSortedCoo(
     final @NotNull Path cooPath,
     final @NotNull ch.systemsx.cisd.hdf5.IHDF5Writer dst,
     final @NotNull String root,
@@ -1588,7 +1717,8 @@ public class HictToMcoolConverter {
     final @NotNull HDF5IntStorageFeatures compression,
     final @NotNull ExportProgressTracker progressTracker,
     final @NotNull Consumer<String> logger,
-    final long resolution
+    final long resolution,
+    final long[] chromOffsets
   ) throws IOException {
     final int datasetChunk = safeChunkLen(nonzeroPixelCount, chunkSize);
     final var bin1IdPath = coolerChildPath(root, "pixels/bin1_id");
@@ -1596,15 +1726,16 @@ public class HictToMcoolConverter {
     final var countPath = coolerChildPath(root, "pixels/count");
     dst.int64().createArray(bin1IdPath, nonzeroPixelCount, datasetChunk, compression);
     dst.int64().createArray(bin2IdPath, nonzeroPixelCount, datasetChunk, compression);
-    dst.int32().createArray(countPath, nonzeroPixelCount, datasetChunk, compression);
+    dst.int64().createArray(countPath, nonzeroPixelCount, datasetChunk, compression);
 
     final long startedNanos = System.nanoTime();
     long offset = 0L;
+    long cis = 0L;
     long lastLoggedNanos = startedNanos;
     int lastLoggedPercent = -1;
     final var rows = new long[datasetChunk];
     final var cols = new long[datasetChunk];
-    final var counts = new int[datasetChunk];
+    final var counts = new long[datasetChunk];
     int buffered = 0;
     try (final var reader = new DataInputStream(new BufferedInputStream(Files.newInputStream(cooPath), 1024 * 1024));
          final var bin1DataSet = dst.object().openDataSet(bin1IdPath);
@@ -1623,12 +1754,13 @@ public class HictToMcoolConverter {
         }
         rows[buffered] = row;
         cols[buffered] = col;
-        counts[buffered] = Math.toIntExact(count);
+        counts[buffered] = count;
+        if (chromosomeAt(chromOffsets,row)==chromosomeAt(chromOffsets,col)) cis=Math.addExact(cis,count);
         buffered++;
         if (buffered >= datasetChunk) {
           dst.int64().writeArrayBlockWithOffset(bin1IdPath, rows, buffered, offset);
           dst.int64().writeArrayBlockWithOffset(bin2IdPath, cols, buffered, offset);
-          dst.int32().writeArrayBlockWithOffset(countPath, counts, buffered, offset);
+          dst.int64().writeArrayBlockWithOffset(countPath, counts, buffered, offset);
           offset += buffered;
           progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
           if (nonzeroPixelCount > 0L) {
@@ -1662,13 +1794,20 @@ public class HictToMcoolConverter {
       final var countsTail = java.util.Arrays.copyOf(counts, buffered);
       dst.int64().writeArrayBlockWithOffset(bin1IdPath, rowsTail, buffered, offset);
       dst.int64().writeArrayBlockWithOffset(bin2IdPath, colsTail, buffered, offset);
-      dst.int32().writeArrayBlockWithOffset(countPath, countsTail, buffered, offset);
+      dst.int64().writeArrayBlockWithOffset(countPath, countsTail, buffered, offset);
       offset += buffered;
       progressTracker.add((long) buffered * 3L, "Merge resolution " + resolution + " pixels");
     }
     }
     logger.accept("Resolution " + resolution + " pixels write: 100% (" + offset + "/" + nonzeroPixelCount + "), elapsed=" +
       formatDuration((System.nanoTime() - startedNanos) / 1_000_000L) + ", eta=00:00");
+    return cis;
+  }
+
+  private static int chromosomeAt(long[] offsets, long bin) {
+    int lo=0,hi=offsets.length-1;
+    while(lo<hi){int mid=(lo+hi)>>>1;if(offsets[mid]<=bin)lo=mid+1;else hi=mid;}
+    return lo-1;
   }
 
   private static boolean isSingleCoolerOutput(final @NotNull Path outputPath) {
@@ -1916,8 +2055,13 @@ public class HictToMcoolConverter {
     if (rows.length <= 1) {
       return rows.length;
     }
-    final int nativeCompactedLength = NativeProcessingService.getInstance()
-      .trySortAndCompactCoolerRecordsRowMajor(rows, cols, counts);
+    // The native accumulator uses int64 addition. Only use it when any
+    // duplicate run is guaranteed to fit; the Java path checks larger sums.
+    final long safeMagnitude = Long.MAX_VALUE / counts.length;
+    boolean nativeSafe = true;
+    for (long count : counts) if (count > safeMagnitude || count < -safeMagnitude) { nativeSafe = false; break; }
+    final int nativeCompactedLength = nativeSafe ? NativeProcessingService.getInstance()
+      .trySortAndCompactCoolerRecordsRowMajor(rows, cols, counts) : -1;
     if (nativeCompactedLength >= 0) {
       return nativeCompactedLength;
     }
@@ -1952,7 +2096,7 @@ public class HictToMcoolConverter {
       final long col = cols[read];
       final long count = counts[read];
       if (row == pendingRow && col == pendingCol) {
-        pendingCount += count;
+        pendingCount = Math.addExact(pendingCount,count);
       } else {
         rows[write] = pendingRow;
         cols[write] = pendingCol;
@@ -2183,7 +2327,7 @@ public class HictToMcoolConverter {
           pendingCount = record.count;
           hasPending = true;
         } else if (pendingRow == record.row && pendingCol == record.col) {
-          pendingCount += record.count;
+          pendingCount = Math.addExact(pendingCount,record.count);
         } else {
           sink.write(pendingRow, pendingCol, pendingCount);
           written++;
@@ -2479,7 +2623,7 @@ public class HictToMcoolConverter {
     }
   }
 
-  private static @NotNull HDF5IntStorageFeatures resolveIntStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+  static @NotNull HDF5IntStorageFeatures resolveIntStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
     if (options.compressionLevel() <= 0) {
       return HDF5IntStorageFeatures.INT_CHUNKED;
     }
@@ -2495,7 +2639,7 @@ public class HictToMcoolConverter {
     };
   }
 
-  private static @NotNull HDF5FloatStorageFeatures resolveFloatStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
+  static @NotNull HDF5FloatStorageFeatures resolveFloatStorageFeatures(final @NotNull ConversionOptions options, final @NotNull Consumer<String> logConsumer) {
     if (options.compressionLevel() <= 0) {
       return HDF5FloatStorageFeatures.FLOAT_CHUNKED;
     }
@@ -2663,7 +2807,7 @@ public class HictToMcoolConverter {
     return path;
   }
 
-  private static long resolveExportMemoryLimitBytes(final @NotNull Consumer<String> logger) {
+  static long resolveExportMemoryLimitBytes(final @NotNull Consumer<String> logger) {
     final var configured = firstNonBlank(
       System.getProperty("hict.export.maxMemoryBytes"),
       System.getenv("HICT_EXPORT_MAX_MEMORY_BYTES"),
@@ -2825,7 +2969,7 @@ public class HictToMcoolConverter {
         lastCol = col;
       }
       nonzeroPixelCount++;
-      totalCounts += count;
+      totalCounts = Math.addExact(totalCounts, count);
     }
 
     private @NotNull SortedCooSummary finish() {
@@ -2968,6 +3112,9 @@ public class HictToMcoolConverter {
       long expectedSourceStart = 0L;
       for (int i = 0; i < segments.size(); i++) {
         final var segment = segments.get(i);
+        if (segment.sourceStart()<expectedSourceStart || segment.targetStart()<0 || segment.sourceEnd()<=segment.sourceStart()
+          || segment.targetEnd()-segment.targetStart()!=segment.sourceEnd()-segment.sourceStart())
+          throw new IllegalArgumentException("Export mapping repeats or changes source bin widths; use explicit approximate rebinning for sequence-cut layouts");
         if (segment.sourceStart() > expectedSourceStart) {
           sourceGaps = true;
         }
@@ -2992,6 +3139,11 @@ public class HictToMcoolConverter {
         throw new IllegalStateException("Source bin " + sourceBin + " is not covered by current assembly mapping");
       }
       return mapAt(segment, sourceBin);
+    }
+
+    private long mapOrAbsent(long sourceBin) {
+      int segment=findSegment(sourceBin);
+      return segment<0?-1:mapAt(segment,sourceBin);
     }
 
     private int findSegment(final long sourceBin) {

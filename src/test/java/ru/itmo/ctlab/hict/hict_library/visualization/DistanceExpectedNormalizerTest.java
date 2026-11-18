@@ -25,6 +25,7 @@
 package ru.itmo.ctlab.hict.hict_library.visualization;
 
 import org.junit.jupiter.api.Test;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.SourceBinProvenance;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -32,6 +33,71 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DistanceExpectedNormalizerTest {
+  @Test
+  void sharedBinPairsCarryOneSampleAcrossAllChunksAndDistances() {
+    // Original A/A=10, A/B=6, B/B=30. A is referenced twice after an exact cut.
+    final double[][] signal = {{10,10,6}, {10,10,6}, {6,6,30}};
+    final var axis = new SourceBinProvenance(3,3,2,
+      java.util.List.of(new SourceBinProvenance.Run(0,1,0,0,1),
+        new SourceBinProvenance.Run(1,2,0,0,1)));
+    final var weights = new DistanceExpectedNormalizer.SampleWeights(10,10,axis,axis);
+    final var domains = new DistanceExpectedNormalizer.PixelDomain[]{new DistanceExpectedNormalizer.PixelDomain(10,13)};
+    final var whole = DistanceExpectedNormalizer.newSegmentedAccumulator(1,10,13,10,13,domains);
+    whole.addSignal(signal,10,10,weights);
+    final var profile = whole.toProfile();
+    assertArrayEquals(new double[]{70.0/3,8,6}, profile.means(),1e-12);
+    final var chunks = DistanceExpectedNormalizer.newSegmentedAccumulator(1,10,13,10,13,domains);
+    for (int row = 0; row < 3; row++) for (int col = 0; col < 3; col++)
+      chunks.addSignal(new double[][]{{signal[row][col]}},10+row,10+col,weights);
+    assertArrayEquals(profile.means(),chunks.toProfile().means(),0,
+      "Weights belong to the fitting window, not independently to every chunk");
+    double mass = 0, sum = 0;
+    for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) {
+      mass += weights.at(10+r,10+c);
+      sum += signal[r][c] * weights.at(10+r,10+c);
+    }
+    assertEquals(3,mass,0);
+    assertEquals(46,sum,0);
+    assertEquals(0,weights.at(9,10),0);
+    assertEquals(0,weights.at(10,13),0);
+    assertEquals(10,signal[0][1],0,"Fitting must not modify original repeated contact values");
+  }
+
+  @Test
+  void rectangularWindowsKeepPairsWhoseReverseOrientationIsAbsent() {
+    final var rows = new SourceBinProvenance(3,3,2,
+      java.util.List.of(new SourceBinProvenance.Run(0,1,0,0,1),
+        new SourceBinProvenance.Run(1,2,0,0,1)));
+    final var cols = new SourceBinProvenance(2,2,2,
+      java.util.List.of(new SourceBinProvenance.Run(0,2,0,1,1)));
+    final var weights = new DistanceExpectedNormalizer.SampleWeights(4,9,rows,cols);
+    final double[][] values = {{6,4},{6,4},{30,5}};
+    double support = 0, total = 0;
+    for (int r = 0; r < 3; r++) for (int c = 0; c < 2; c++) {
+      support += weights.at(4+r,9+c);
+      total += values[r][c] * weights.at(4+r,9+c);
+    }
+    assertEquals(4,support,0);
+    assertEquals(45,total,0);
+  }
+
+  @Test
+  void unequalReverseMultiplicitiesShareAnUnorderedPairEqually() {
+    final var rows = new SourceBinProvenance(3,3,2,
+      java.util.List.of(new SourceBinProvenance.Run(0,1,0,0,1),
+        new SourceBinProvenance.Run(1,2,0,0,1)));
+    final var cols = new SourceBinProvenance(3,3,2,
+      java.util.List.of(new SourceBinProvenance.Run(0,2,0,0,1),
+        new SourceBinProvenance.Run(2,1,0,1,1)));
+    final var weights = new DistanceExpectedNormalizer.SampleWeights(0,0,rows,cols);
+    assertEquals(.2,weights.at(0,1),0);
+    assertEquals(.2,weights.at(2,0),0,
+      "Four A/B aliases and one B/A alias each receive one fifth of the source pair");
+    double support = 0;
+    for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) support += weights.at(r,c);
+    assertEquals(3,support,1e-12);
+  }
+
   @Test
   void renderingMasksEmptyDiagonalsWithAnUnsegmentedProfile() {
     final var profile = DistanceExpectedNormalizer.buildProfile(new double[][]{{2, 0}, {0, 2}}, 0, 0, 1);

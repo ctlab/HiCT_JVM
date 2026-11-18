@@ -15,7 +15,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 MOD = '1616ae94f5b7e22190a8eb50b6df2e3798a18d0b'
@@ -44,10 +46,62 @@ def macos_target():
     return target
 
 
-def install_requirements(py, work, docs):
+def build_manylinux_pillow(py, work, docs, notices, requirements):
+    # Upstream Pillow 13 wheels require glibc 2.27 on Linux. Build the pinned
+    # source against glibc 2.17 with its JPEG implementation linked statically.
+    sources = {
+        'pillow-13.0.0.tar.gz': {
+            'url': 'https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz',
+            'sha256': 'cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510',
+        },
+        'libjpeg-turbo-3.2.1.tar.gz': {
+            'url': 'https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz',
+            'sha256': 'c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f',
+        },
+    }
+    for name, source in sources.items():
+        target = work / name
+        with urlopen(source['url'], timeout=120) as stream, target.open('wb') as out:
+            shutil.copyfileobj(stream, out)
+        if digest(target) != source['sha256']:
+            raise RuntimeError('Source checksum mismatch: ' + name)
+
+    jpeg_source = work / 'libjpeg-turbo-3.2.1'
+    with tarfile.open(str(jpeg_source) + '.tar.gz') as archive:
+        archive.extractall(work, filter='data')
+    jpeg_build, jpeg_install = work / 'jpeg-build', work / 'jpeg-install'
+    run(['cmake', '-S', jpeg_source, '-B', jpeg_build, '-DCMAKE_BUILD_TYPE=Release',
+         f'-DCMAKE_INSTALL_PREFIX={jpeg_install}', '-DCMAKE_INSTALL_LIBDIR=lib',
+         '-DCMAKE_POSITION_INDEPENDENT_CODE=ON', '-DENABLE_SHARED=OFF',
+         '-DWITH_SIMD=OFF', '-DWITH_TOOLS=OFF', '-DWITH_TESTS=OFF', '-DWITH_TURBOJPEG=OFF'])
+    jobs = str(min(os.cpu_count() or 1, 4))
+    run(['cmake', '--build', jpeg_build, '--parallel', jobs, '--target', 'install'])
+    jpeg_notices = notices / 'libjpeg-turbo'
+    jpeg_notices.mkdir()
+    for name in ('LICENSE.md', 'README.ijg'):
+        shutil.copy2(jpeg_source / name, jpeg_notices / name)
+
+    run([py, '-m', 'pip', 'install', '--report', docs / 'pillow-build-install.json',
+         '-c', requirements, 'setuptools', 'pybind11'])
+    wheelhouse = work / 'manylinux-wheels'
+    # The standalone CPython was built with LLVM. Use the container archiver
+    # for Pillow's internal static library, as for the C and C++ compiler.
+    env = dict(os.environ, AR='ar', JPEG_ROOT=str(jpeg_install), MAX_CONCURRENCY=jobs)
+    run([py, '-m', 'pip', 'wheel', '--no-build-isolation', '--no-deps',
+         '--wheel-dir', wheelhouse, work / 'pillow-13.0.0.tar.gz'], env=env)
+    (docs / 'pillow-native-sources.json').write_text(json.dumps(sources, indent=2) + '\n', encoding='utf-8')
+    wheels = list(wheelhouse.glob('pillow-*.whl'))
+    if len(wheels) != 1:
+        raise RuntimeError('Expected one locally built Pillow wheel')
+    return wheels[0]
+
+
+def install_requirements(py, work, docs, notices, manylinux):
     requirements = ROOT / 'scripts/sequence_analysis/requirements-build.txt'
     options = []
-    if sys.platform == 'darwin':
+    if manylinux:
+        options = [build_manylinux_pillow(py, work, docs, notices, requirements)]
+    elif sys.platform == 'darwin':
         target = macos_target()
         os.environ['MACOSX_DEPLOYMENT_TARGET'] = target
         # pip expands this macOS platform into compatible older/universal tags.
@@ -106,8 +160,41 @@ def copy_go_notices(source, dest, env):
     return records
 
 
+def audit_payload(payload, docs, manylinux, suffix=''):
+    if sys.platform == 'darwin':
+        run([sys.executable, ROOT / 'scripts/ci/check_macos_compatibility.py', payload,
+             '--target', macos_target(), '--arch', platform.machine(),
+             '--report', docs / ('macos-compatibility' + suffix + '.json')])
+    if manylinux:
+        abi = {}
+        for file in payload.rglob('*'):
+            if not file.is_file():
+                continue
+            with file.open('rb') as stream:
+                if stream.read(4) != b'\x7fELF':
+                    continue
+            info = run(['readelf', '--version-info', file], capture_output=True, text=True).stdout
+            versions = {tuple(map(int, v.split('.'))) for v in re.findall(r'GLIBC_(\d+(?:\.\d+)+)', info)}
+            maximum = max(versions, default=(0,))
+            if maximum > (2, 17):
+                raise RuntimeError(f'{file} requires GLIBC {maximum}, newer than manylinux2014')
+            abi[str(file.relative_to(payload))] = '.'.join(map(str, maximum))
+        (docs / ('glibc-abi' + suffix + '.json')).write_text(json.dumps(abi, indent=2))
+
+
+def publish_payload(payload, output, manifest):
+    # copytree materializes framework directory symlinks on macOS. Inventory
+    # the delivered tree, including those expanded files, rather than its source.
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(payload, output)
+    files = sorted(p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file())
+    manifest.update(files=files, sha256={name: digest(output / name) for name in files})
+    (output / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--component', choices=('all', 'sequence', 'blast'), default='all')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--work', type=Path)
     parser.add_argument('--seqkit-source')
@@ -136,6 +223,17 @@ def main():
     docs.mkdir(parents=True)
     notices = payload / 'share/licenses/sequence-analysis'
     notices.mkdir(parents=True)
+    if args.component == 'blast':
+        from add_blast import add_blast
+        command = add_blast(payload, work, args.manylinux2014)
+        if not command:
+            raise RuntimeError('BLAST is required for this platform')
+        audit_payload(payload, docs, args.manylinux2014, '-blast')
+        manifest = dict(platform=sys.platform, commands={'blastn': command},
+                        notices=['NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only.'],
+                        citations=['Camacho C et al. BMC Bioinformatics 2009;10:421. doi:10.1186/1471-2105-10-421.'])
+        publish_payload(payload, args.output, manifest)
+        return
     seq, mod = work / 'seqkit', work / 'moddotplot'
     checkout('https://github.com/shenwei356/seqkit.git', SEQ, seq, args.seqkit_source)
     checkout('https://github.com/marbl/ModDotPlot.git', MOD, mod, args.moddotplot_source)
@@ -158,7 +256,7 @@ def main():
     run([sys.executable, '-m', 'venv', work / 'venv'])
     py = work / ('venv/Scripts/python.exe' if os.name == 'nt' else 'venv/bin/python')
     # pip records archive hashes and exact origins for every resolved wheel.
-    install_requirements(py, work, docs)
+    install_requirements(py, work, docs, notices, args.manylinux2014)
     run([py, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation',
          '--report', docs / 'moddotplot-install.json', mod])
     # Capture installed distribution notices, including bundled native libraries.
@@ -190,9 +288,9 @@ for dist in im.distributions():
     if cpython_license:
         shutil.copy2(cpython_license, notices / 'CPython-LICENSE.txt')
     else:
-        import urllib.request
         url = f'https://raw.githubusercontent.com/python/cpython/v{platform.python_version()}/LICENSE'
-        (notices / 'CPython-LICENSE.txt').write_bytes(urllib.request.urlopen(url, timeout=60).read())
+        with urlopen(url, timeout=60) as stream:
+            (notices / 'CPython-LICENSE.txt').write_bytes(stream.read())
     run([py, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--name', 'hict-moddotplot',
          '--distpath', payload / 'bin', '--workpath', work / 'pyinstaller', '--specpath', work,
          '--hidden-import', 'moddotplot._nthash', '--collect-data', 'moddotplot',
@@ -208,36 +306,16 @@ for dist in im.distributions():
          '--moddotplot', payload / upstream_cli, '--adapter', payload / adapter,
          '--output', docs / 'smoke-test.json'])
     from add_blast import add_blast
-    blast_command = add_blast(payload, work, args.manylinux2014)
-    if sys.platform == 'darwin':
-        run([sys.executable, ROOT / 'scripts/ci/check_macos_compatibility.py', payload,
-             '--target', macos_target(), '--arch', platform.machine(),
-             '--report', docs / 'macos-compatibility.json'])
-    if args.manylinux2014:
-        abi = {}
-        for file in payload.rglob('*'):
-            if not file.is_file():
-                continue
-            with file.open('rb') as stream:
-                if stream.read(4) != b'\x7fELF':
-                    continue
-            info = run(['readelf', '--version-info', file], capture_output=True, text=True).stdout
-            versions = {tuple(map(int, v.split('.'))) for v in re.findall(r'GLIBC_(\d+(?:\.\d+)+)', info)}
-            maximum = max(versions, default=(0,))
-            if maximum > (2, 17):
-                raise RuntimeError(f'{file} requires GLIBC {maximum}, newer than manylinux2014')
-            abi[str(file.relative_to(payload))] = '.'.join(map(str, maximum))
-        (docs / 'glibc-abi.json').write_text(json.dumps(abi, indent=2))
+    blast_command = add_blast(payload, work, args.manylinux2014) if args.component == 'all' else None
+    audit_payload(payload, docs, args.manylinux2014)
     info = dict(schema='hict-sequence-tools-v1', seqkitCommit=SEQ, moddotplotCommit=MOD,
                 python=platform.python_version(), go=go_version, platform=platform.platform(),
                 linuxAbi='manylinux2014' if args.manylinux2014 else 'host-development' if sys.platform == 'linux' else None,
                 cpuPolicy='baseline; CGO_DISABLED Go runtime and upstream ntHash kernel; no artificial AVX variants',
                 goModules=modules)
     (docs / 'build-info.json').write_text(json.dumps(info, indent=2))
-    files = sorted(str(p.relative_to(payload)).replace('\\', '/') for p in payload.rglob('*') if p.is_file())
     manifest = dict(platform=sys.platform, commands={'seqkit': 'bin/seqkit' + suffix,
-                    'moddotplot': upstream_cli, 'hict-moddotplot': adapter}, files=files,
-                    sha256={p: digest(payload / p) for p in files},
+                    'moddotplot': upstream_cli, 'hict-moddotplot': adapter},
                     notices=['SeqKit (MIT) and ModDotPlot/ntHash (MIT), with third-party notices under share/licenses/sequence-analysis.',
                              'Includes the upstream ModDotPlot plotting CLI and HiCT computational adapter as distinct commands.'],
                     citations=['Sweeten AP et al. Bioinformatics 2024;40(8):btae493. doi:10.1093/bioinformatics/btae493.',
@@ -246,9 +324,7 @@ for dist in im.distributions():
         manifest['commands']['blastn'] = blast_command
         manifest['notices'].append('NCBI BLAST+ 2.16.0: public-domain NCBI code with bundled third-party notices; local searches only. Native payload for this platform.')
         manifest['citations'].append('Camacho C et al. BMC Bioinformatics 2009;10:421. doi:10.1186/1471-2105-10-421.')
-    (payload / 'manifest.json').write_text(json.dumps(manifest, indent=2))
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(payload, args.output)
+    publish_payload(payload, args.output, manifest)
     print('Verified sequence payload:', args.output, flush=True)
 
 

@@ -36,6 +36,11 @@ def main():
                 url=args.api + route.request.url.removeprefix("http://localhost:5000")
             ),
         )
+        response = context.request.get(args.api.rstrip("/") + "/version")
+        assert response.ok, response.status
+        api_versions = response.json()
+        assert api_versions.get("webuiVersion") == args.webui_version, api_versions
+
         page.goto(args.url)
         assembly_before = None
         if args.file:
@@ -101,6 +106,7 @@ def main():
             json.dumps(
                 {
                     "versions": versions,
+                    "apiVersions": api_versions,
                     "citation": citation,
                     "guide": guide_href,
                     "mailTargets": mail_targets,

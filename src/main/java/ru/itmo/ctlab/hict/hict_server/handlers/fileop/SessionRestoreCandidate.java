@@ -58,7 +58,8 @@ public final class SessionRestoreCandidate implements AutoCloseable {
   static SessionRestoreCandidate prepare(Path dataDirectory, Path processedDirectory,
       SessionSnapshotDTO saved, List<Track1DManager.TrackSummary> definitions,
       int minDatasetPool, int maxDatasetPool) throws Exception {
-    if (saved.snapshotVersion() != 1) throw new IllegalArgumentException("Unsupported internal snapshot version");
+    if (saved.snapshotVersion() != 1 && saved.snapshotVersion() != 2)
+      throw new IllegalArgumentException("Unsupported internal snapshot version");
     if (!Set.of("PRIMARY", "SECONDARY").contains(saved.assemblySource())
         || ("SECONDARY".equals(saved.assemblySource()) && saved.secondary() == null))
       throw new IllegalArgumentException("assemblySource references an unavailable source");

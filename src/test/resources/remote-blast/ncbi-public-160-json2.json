@@ -1,0 +1,371 @@
+{
+"BlastOutput2": [
+{
+    "report": {
+      "program": "blastn",
+      "version": "BLASTN 2.17.0+",
+      "reference": "Stephen F. Altschul, Thomas L. Madden, Alejandro A. Sch&auml;ffer, Jinghui Zhang, Zheng Zhang, Webb Miller, and David J. Lipman (1997), \"Gapped BLAST and PSI-BLAST: a new generation of protein database search programs\", Nucleic Acids Res. 25:3389-3402.",
+      "search_target": {
+        "db": "rRNA_typestrains/16S_ribosomal_RNA"
+      },
+      "params": {
+        "expect": 1e-05,
+        "sc_match": 2,
+        "sc_mismatch": -3,
+        "gap_open": 5,
+        "gap_extend": 2,
+        "filter": "L;m;"
+      },
+      "results": {
+        "search": {
+          "query_id": "Query_1",
+          "query_title": "query_1",
+          "query_len": 160,
+          "hits": [
+            {
+              "num": 1,
+              "description": [
+                {
+                  "id": "gi|2363084134|ref|NR_180316.1|",
+                  "accession": "NR_180316",
+                  "title": "Pseudocitrobacter vendiensis strain CPO20170097 16S ribosomal RNA, complete sequence",
+                  "taxid": 2488306,
+                  "sciname": "Pseudocitrobacter vendiensis"
+                }
+              ],
+              "len": 1542,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 289.825,
+                  "score": 320,
+                  "evalue": 3.01593e-78,
+                  "identity": 160,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 10,
+                  "hit_to": 169,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 2,
+              "description": [
+                {
+                  "id": "gi|444439587|ref|NR_074902.1|",
+                  "accession": "NR_074902",
+                  "title": "Escherichia fergusonii ATCC 35469 16S ribosomal RNA, complete sequence",
+                  "taxid": 585054,
+                  "sciname": "Escherichia fergusonii ATCC 35469"
+                }
+              ],
+              "len": 1542,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 289.825,
+                  "score": 320,
+                  "evalue": 3.01593e-78,
+                  "identity": 160,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 10,
+                  "hit_to": 169,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 3,
+              "description": [
+                {
+                  "id": "gi|219722938|ref|NR_024570.1|",
+                  "accession": "NR_024570",
+                  "title": "Escherichia coli strain U 5/41 16S ribosomal RNA, partial sequence",
+                  "taxid": 562,
+                  "sciname": "Escherichia coli"
+                }
+              ],
+              "len": 1450,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 289.825,
+                  "score": 320,
+                  "evalue": 3.01593e-78,
+                  "identity": 160,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 1,
+                  "hit_to": 160,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 4,
+              "description": [
+                {
+                  "id": "gi|2363084407|ref|NR_180451.1|",
+                  "accession": "NR_180451",
+                  "title": "Enterobacter quasihormaechei strain WCHEs120003 16S ribosomal RNA, partial sequence",
+                  "taxid": 2529382,
+                  "sciname": "Enterobacter quasihormaechei"
+                }
+              ],
+              "len": 1538,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 285.317,
+                  "score": 315,
+                  "evalue": 1.28241e-76,
+                  "identity": 159,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 7,
+                  "hit_to": 166,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTCGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 5,
+              "description": [
+                {
+                  "id": "gi|645320167|ref|NR_117437.1|",
+                  "accession": "NR_117437",
+                  "title": "Cronobacter muytjensii strain 05CHPL67 16S ribosomal RNA, partial sequence",
+                  "taxid": 413501,
+                  "sciname": "Cronobacter muytjensii"
+                }
+              ],
+              "len": 1507,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 281.71,
+                  "score": 311,
+                  "evalue": 1.56229e-75,
+                  "identity": 158,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 4,
+                  "hit_to": 163,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCANGGCTCAGATTGAACGCTGGCGGGAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "|||||||||| |||||||||||||||||||||| ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 6,
+              "description": [
+                {
+                  "id": "gi|2363085284|ref|NR_180890.1|",
+                  "accession": "NR_180890",
+                  "title": "Citrobacter telavivensis strain 6105 16S ribosomal RNA, complete sequence",
+                  "taxid": 2653932,
+                  "sciname": "Citrobacter telavivensis"
+                }
+              ],
+              "len": 1542,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 280.808,
+                  "score": 310,
+                  "evalue": 1.56229e-75,
+                  "identity": 158,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 10,
+                  "hit_to": 169,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTCGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCCGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 7,
+              "description": [
+                {
+                  "id": "gi|2363081576|ref|NR_179034.1|",
+                  "accession": "NR_179034",
+                  "title": "Phytobacter palmae strain S29 16S ribosomal RNA, partial sequence",
+                  "taxid": 1855371,
+                  "sciname": "Phytobacter palmae"
+                }
+              ],
+              "len": 1487,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 280.808,
+                  "score": 310,
+                  "evalue": 1.56229e-75,
+                  "identity": 158,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 1,
+                  "hit_to": 160,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCCTGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCCGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||| ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 8,
+              "description": [
+                {
+                  "id": "gi|444439595|ref|NR_074910.1|",
+                  "accession": "NR_074910",
+                  "title": "Salmonella enterica subsp. enterica serovar Typhimurium strain LT2 16S ribosomal RNA, partial sequence",
+                  "taxid": 90371,
+                  "sciname": "Salmonella enterica subsp. enterica serovar Typhimurium"
+                }
+              ],
+              "len": 1544,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 279.005,
+                  "score": 308,
+                  "evalue": 5.45293e-75,
+                  "identity": 157,
+                  "query_from": 2,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 1,
+                  "hit_to": 159,
+                  "hit_strand": "Plus",
+                  "align_len": 159,
+                  "gaps": 0,
+                  "qseq": "GTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "GTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTCGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTGGC",
+                  "midline": "|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||| ||"
+                }
+              ]
+            },
+            {
+              "num": 9,
+              "description": [
+                {
+                  "id": "gi|974142287|ref|NR_134807.1|",
+                  "accession": "NR_134807",
+                  "title": "Siccibacter colletis strain 1383 16S ribosomal RNA, partial sequence",
+                  "taxid": 1505757,
+                  "sciname": "Siccibacter colletis"
+                }
+              ],
+              "len": 1451,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 276.3,
+                  "score": 305,
+                  "evalue": 6.64303e-74,
+                  "identity": 157,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 10,
+                  "hit_to": 169,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTCGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGGATCTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||||||| | ||||||||||||||||||||||||||||||||||||||"
+                }
+              ]
+            },
+            {
+              "num": 10,
+              "description": [
+                {
+                  "id": "gi|507147995|ref|NR_102802.1|",
+                  "accession": "NR_102802",
+                  "title": "Cronobacter turicensis z3032 16S ribosomal RNA, complete sequence",
+                  "taxid": 693216,
+                  "sciname": "Cronobacter turicensis z3032"
+                }
+              ],
+              "len": 1543,
+              "hsps": [
+                {
+                  "num": 1,
+                  "bit_score": 276.3,
+                  "score": 305,
+                  "evalue": 6.64303e-74,
+                  "identity": 157,
+                  "query_from": 1,
+                  "query_to": 160,
+                  "query_strand": "Plus",
+                  "hit_from": 10,
+                  "hit_to": 169,
+                  "hit_strand": "Plus",
+                  "align_len": 160,
+                  "gaps": 0,
+                  "qseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGGAAGCAGCTTGCTGCTTTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "hseq": "AGTTTGATCATGGCTCAGATTGAACGCTGGCGGCAGGCCTAACACATGCAAGTCGAACGGTAACAGAGAGCAGCTTGCTGCTCTGCTGACGAGTGGCGGACGGGTGAGTAATGTCTGGGAAACTGCCTGATGGAGGGGGATAACTACTGGAAACGGTAGC",
+                  "midline": "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||  |||||||||||||| |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+                }
+              ]
+            }
+          ],
+          "stat": {
+            "db_num": 27657,
+            "db_len": 40064577,
+            "hsp_len": 25,
+            "eff_space": 5315375520,
+            "kappa": 0.41,
+            "lambda": 0.625,
+            "entropy": 0.78
+          }
+        }
+      }
+    }
+  }
+]
+}
+

@@ -331,11 +331,34 @@ public class AGPProcessor {
   private AGPImportPlan.ImportReport importRecords(List<AGPFileRecord> records,
       AGPImportPlan.MissingComponentsPolicy policy,
       java.util.function.Function<ContigAGPRecord, ContigDescriptor> resolveComponent) {
+    return importRecords(records, policy, resolveComponent, false);
+  }
+
+  public AGPImportPlan.ImportReport importRecordsWithSharedBins(List<AGPFileRecord> records,
+      AGPImportPlan.MissingComponentsPolicy policy) {
+    return importRecords(records, policy, component -> {
+      final var named = chunkedFile.resolveContigDescriptorByName(component.getContigName());
+      final long start = component.getIntraContigStartBpIncl() - 1, end = component.getIntraContigEndBpIncl();
+      // Current aliases can resolve an older, start-owned slice. Use immutable
+      // original ATUs so late attachment does not inherit that slice's omissions.
+      return chunkedFile.getOriginalDescriptors().values().stream().filter(d ->
+        d.getContigNameInSourceFASTA().equals(named.getContigNameInSourceFASTA())
+          && start >= d.getOffsetInSourceFASTA() && end <= d.getOffsetInSourceFASTA() + d.getLengthBp())
+        .findFirst().orElseThrow(() -> new IllegalArgumentException("No original bins cover the synchronized component"));
+    }, true);
+  }
+
+  private AGPImportPlan.ImportReport importRecords(List<AGPFileRecord> records,
+      AGPImportPlan.MissingComponentsPolicy policy,
+      java.util.function.Function<ContigAGPRecord, ContigDescriptor> resolveComponent, boolean sharedBins) {
     // ChunkedFile holds both write locks. No live changes until both trees are ready.
     final var tree = chunkedFile.getContigTree();
     int nextId = tree.getContigDescriptors().keySet().stream().mapToInt(Integer::intValue).max().orElse(-1) + 1;
-    final var plan = AGPImportPlan.prepareComponents(records, chunkedFile.getOriginalDescriptors().values(),
-      resolveComponent, chunkedFile.getResolutions(), nextId, policy);
+    final var plan = sharedBins
+      ? AGPImportPlan.prepareComponents(records, chunkedFile.getOriginalDescriptors().values(),
+          resolveComponent, nextId, policy, (parent, from, to, id) -> ExactContigSlice.slice(chunkedFile, parent, from, to, id), true)
+      : AGPImportPlan.prepareComponents(records, chunkedFile.getOriginalDescriptors().values(),
+          resolveComponent, chunkedFile.getResolutions(), nextId, policy);
     if (plan.report().requiresChoice()) return plan.report();
     // Validate the entire AGP above, including excluded rows. Only the chosen
     // active records contribute contigs, scaffold coordinates or annotations.
@@ -369,13 +392,17 @@ public class AGPProcessor {
   }
 
   public ContigDescriptor resolveSessionComponent(int id, String sourceName, long start, long length) {
+    return resolveSessionComponent(id, sourceName, start, length, false);
+  }
+
+  private ContigDescriptor resolveSessionComponent(int id, String sourceName, long start, long length, boolean sharedBins) {
     final var known = chunkedFile.getContigTree().getContigDescriptors().get(id);
     if (known != null) {
       if (!known.getContigNameInSourceFASTA().equals(sourceName)
         || known.getOffsetInSourceFASTA() != start || known.getLengthBp() != length) {
         throw new IllegalArgumentException("Session component ID refers to a different source interval");
       }
-      return known;
+      if (!sharedBins || known.isSharedBinSlice()) return known;
     }
     final long end = Math.addExact(start, length);
     final var original = chunkedFile.getOriginalDescriptors().values().stream()
@@ -384,7 +411,8 @@ public class AGPProcessor {
         && end <= contig.getOffsetInSourceFASTA() + contig.getLengthBp())
       .findFirst().orElseThrow(() -> new IllegalArgumentException("Session component is outside the original source interval"));
     final long origin = original.getOffsetInSourceFASTA();
-    final var slice = AGPImportPlan.slice(original, start - origin, end - origin, id, chunkedFile.getResolutions());
+    final var slice = sharedBins ? ExactContigSlice.slice(chunkedFile, original, start - origin, end - origin, id)
+      : AGPImportPlan.slice(original, start - origin, end - origin, id, chunkedFile.getResolutions());
     if (slice.getContigId() != id) {
       throw new IllegalArgumentException("Session component does not preserve the original component ID");
     }
@@ -392,6 +420,10 @@ public class AGPProcessor {
   }
 
   public void importSessionRecords(Reader input, List<Integer> componentIds) throws IOException, NoSuchFieldException {
+    importSessionRecords(input, componentIds, Set.of());
+  }
+
+  public void importSessionRecords(Reader input, List<Integer> componentIds, Set<Integer> sharedBinIds) throws IOException, NoSuchFieldException {
     final var records = parseRecords(input);
     final var components = records.stream().filter(ContigAGPRecord.class::isInstance)
       .map(ContigAGPRecord.class::cast).toList();
@@ -408,7 +440,7 @@ public class AGPProcessor {
       importRecords(records, AGPImportPlan.MissingComponentsPolicy.EXCLUDE, component -> {
         final long start = component.getIntraContigStartBpIncl() - 1;
         return resolveSessionComponent(ids.get(component), component.getContigName(), start,
-          component.getIntraContigEndBpIncl() - start);
+          component.getIntraContigEndBpIncl() - start, sharedBinIds.contains(ids.get(component)));
       });
     } finally {
       scaffoldLock.unlock();

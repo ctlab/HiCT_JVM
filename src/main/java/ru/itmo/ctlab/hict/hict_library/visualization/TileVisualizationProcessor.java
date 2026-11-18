@@ -174,6 +174,13 @@ public class TileVisualizationProcessor {
     return processTile(rawTile, visualizationOptions, expectedProfile, false);
   }
 
+  /** Numeric display signal, preserving undefined O/E as NaN rather than measured zero. */
+  public TileWithWeights processDisplaySignal(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
+                                              final @NotNull SimpleVisualizationOptions options,
+                                              final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile) {
+    return processTile(rawTile, options, expectedProfile, true);
+  }
+
   private TileWithWeights processTile(final @NotNull MatrixQueries.MatrixWithWeights rawTile,
                                      final @NotNull SimpleVisualizationOptions visualizationOptions,
                                      final @Nullable DistanceExpectedNormalizer.DiagonalProfile expectedProfile,
@@ -296,7 +303,7 @@ public class TileVisualizationProcessor {
     final var input = rawTile.matrix();
     final var rowCount = input.rows();
     final var columnCount = input.cols();
-    final var normalized = processTile(rawTile, options, expectedProfile, true);
+    final var normalized = processDisplaySignal(rawTile, options, expectedProfile);
     if (signalObserver != null) signalObserver.accept(normalized.values());
     final var colormap = options.getColormap();
     if (colormap instanceof SimpleLinearGradient gradient) {
@@ -317,33 +324,18 @@ public class TileVisualizationProcessor {
   static byte[] mapObservedOverExpectedRgba(double[][] ratios, SimpleLinearGradient gradient) {
     final int columns = ratios.length == 0 ? 0 : ratios[0].length;
     final byte[] rgba = new byte[Math.multiplyExact(Math.multiplyExact(ratios.length, columns), 4)];
-    final double upper = gradient.getMaxSignal() > 1.0 ? gradient.getMaxSignal() : 2.0;
-    final double lower = gradient.getMinSignal() > 0.0 && gradient.getMinSignal() < 1.0
-      ? gradient.getMinSignal() : 1.0 / upper;
-    final double lowLog = Math.log(lower);
-    final double highLog = Math.log(upper);
     int offset = 0;
     for (final double[] row : ratios) {
       for (final double ratio : row) {
-        if (!Double.isFinite(ratio) || ratio < 0.0d) {
-          offset += 4; // Undefined O/E remains transparent, never false depletion.
-          continue;
-        }
-        final double strength = ratio <= lower || ratio >= upper ? 1.0
-          : Math.abs(Math.log(ratio) / (ratio < 1.0 ? lowLog : highLog));
-        final double blend = Double.isFinite(strength) ? strength : 0.0;
-        final int endpoint = ratio < 1.0 ? 0x2166ac : 0xb2182b;
-        rgba[offset++] = blendFromWhite(endpoint >> 16, blend);
-        rgba[offset++] = blendFromWhite((endpoint >> 8) & 0xff, blend);
-        rgba[offset++] = blendFromWhite(endpoint & 0xff, blend);
-        rgba[offset++] = (byte) 255;
+        final int argb = ru.itmo.ctlab.hict.hict_library.visualization.colormap.gradient.ObservedExpectedPalette.argb(
+          ratio, gradient.getMinSignal(), gradient.getMaxSignal(), gradient.getStartColor(), gradient.getEndColor());
+        rgba[offset++] = (byte) (argb >> 16);
+        rgba[offset++] = (byte) (argb >> 8);
+        rgba[offset++] = (byte) argb;
+        rgba[offset++] = (byte) (argb >>> 24);
       }
     }
     return rgba;
-  }
-
-  private static byte blendFromWhite(int channel, double blend) {
-    return (byte) Math.round(255 - (255 - channel) * blend);
   }
 
   /** Preserve the colormap's exact channel/alpha semantics without per-pixel streams or boxed bytes. */

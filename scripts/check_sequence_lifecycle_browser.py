@@ -13,6 +13,9 @@ def main():
     parser.add_argument('--jar', required=True)
     parser.add_argument('--webui', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--geometry-only', action='store_true', help='Run only the independent clipped-bin browser oracle')
+    parser.add_argument('--snapshot-comparison', action='store_true', help='Also store and compare real ModDotPlot/track captures before and after Reverse')
+    parser.add_argument('--figure-export', action='store_true', help='Also qualify PNG/SVG/PDF capture of the real generated ModDotPlot and tracks')
     args = parser.parse_args()
     suite = Path(args.suite).resolve() if args.suite else Path(__file__).resolve().parents[1]
     out = Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=False)
@@ -239,6 +242,127 @@ class OverlayFixture { public static void main(String[] a) {
             assert versions[0] != versions[1] and versions[0].exists(), versions
             assert versions[1].is_file()
             (out / 'moddotplot-jobs.json').write_text(json.dumps(jobs, indent=2))
+        def frozen_identity_figure():
+            import hashlib
+            import xml.etree.ElementTree as ET
+            from PIL import Image
+            native_hash = hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()
+            page.get_by_role('combobox',name='Visualization preset',exact=True).select_option(label='ModDotPlot: Hi-C above, identity below')
+            page.evaluate('window.__hictBenchmark.manager().viewAndLayersManager.fitViewToActiveExtent()')
+            check.settle()
+            page.locator('#export-dropdown-toggle').click()
+            dialog=page.get_by_role('dialog',name='Export figure',exact=True)
+            dialog.locator('#export-png-button').wait_for(state='visible')
+            from playwright.sync_api import expect
+            expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+            assert not dialog.locator('input[type="range"]').count()
+            for extension in ('png','svg','pdf'):
+                with page.expect_download(timeout=90000) as download:
+                    dialog.locator('#export-'+extension+'-button').click()
+                download.value.save_as(out/('identity-figure.'+extension))
+            dialog.get_by_role('button',name='Close',exact=True).last.click()
+            svg=ET.parse(out/'identity-figure.svg').getroot()
+            metadata=json.loads(svg.find('{http://www.w3.org/2000/svg}metadata').text)
+            # The direct library fixture converter leaves this legacy primary untyped.
+            # Figure metadata must retain UNKNOWN rather than invent declared contact units.
+            assert metadata['provenance']['primary']['capabilities']['units']=='UNKNOWN'
+            assert metadata['provenance']['secondary']['capabilities']['units']=='IDENTITY_PERCENT'
+            assert metadata['provenance']['secondary']['capabilities']['scoreScale']==10000
+            assert metadata['provenance']['renderPipeline']['lowerExpression']['mode']=='MODDOTPLOT_IDENTITY'
+            assert metadata['provenance']['tracks'] and metadata['composition']['tracks']
+            with Image.open(out/'identity-figure.png') as image:
+                assert json.loads(image.text['HiCT provenance'])==metadata
+            xmp=ET.fromstring(subprocess.check_output(['pdfinfo','-meta',str(out/'identity-figure.pdf')]))
+            assert json.loads(xmp.find('.//{urn:hict:figure#}metadata').text)==metadata
+            subprocess.run(['rsvg-convert',str(out/'identity-figure.svg'),'-o',str(out/'identity-figure-svg.png')],check=True,timeout=120)
+            subprocess.run(['pdftoppm','-png','-r','96','-singlefile',str(out/'identity-figure.pdf'),str(out/'identity-figure-pdf')],check=True,timeout=120,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+            original=Image.open(out/'identity-figure.png').convert('RGB')
+            alternatives=[Image.open(out/('identity-figure-'+kind+'.png')).convert('RGB') for kind in ('svg','pdf')]
+            import math
+            offset=[math.ceil(value) for value in metadata['renderedView']['mapOffset']]
+            samples=[]
+            for y in range(offset[1]+10,original.height-10,7):
+                for x in range(offset[0]+10,original.width-10,7):
+                    color=original.getpixel((x,y))
+                    if max(color)-min(color)<30:continue
+                    if any(original.getpixel((x+dx,y+dy))!=color for dx,dy in ((-3,0),(3,0),(0,-3),(0,3))):continue
+                    for other in alternatives:
+                        point=(round(x*other.width/original.width),round(y*other.height/original.height))
+                        actual=other.getpixel(point)
+                        assert max(abs(a-b) for a,b in zip(actual,color))<=4,(point,color,actual)
+                    samples.append([x,y,list(color)])
+            assert len(samples)>=20,len(samples)
+            assert hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()==native_hash
+            (out/'identity-figure-validation.json').write_text(json.dumps({'metadata':metadata,'matchingColorSamples':samples,'nativeSha256':native_hash},indent=2))
+
+        def snapshot_identity_comparison():
+            import hashlib
+            import xml.etree.ElementTree as ET
+            from PIL import Image
+            from playwright.sync_api import expect
+            native_hash=hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()
+            def open_figure():
+                page.locator('#export-dropdown-toggle').click()
+                dialog=page.get_by_role('dialog',name='Export figure',exact=True)
+                expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+                return dialog
+            def save(dialog,name,extension):
+                with page.expect_download(timeout=90000) as download:
+                    dialog.locator('#export-'+extension+'-button').click()
+                path=out/(name+'.'+extension);download.value.save_as(path);return path
+            def store(dialog,name):
+                dialog.get_by_label('Snapshot name',exact=True).fill(name)
+                dialog.get_by_role('button',name='Save snapshot',exact=True).click()
+                expect(dialog).to_contain_text('Snapshot “'+name+'” added.')
+            dialog=open_figure()
+            before=save(dialog,'identity-before-reverse','png')
+            store(dialog,'Before reverse')
+            original=page.evaluate('window.__hictBenchmark.manager().figureSnapshots.documents()[0]')
+            dialog.get_by_role('button',name='Close',exact=True).last.click()
+            page.evaluate("""()=>{const m=window.__hictBenchmark.manager(),h=m.contigDimensionHolder;
+                m.viewAndLayersManager.selectEntityRangeByBp(0,h.prefix_sum_bp.at(-1));}""")
+            with page.expect_response(lambda response: response.url.endswith('/reverse_selection_range')) as reversed_response:
+                page.evaluate('window.__hictBenchmark.manager().eventManager.onReverseSelectionClicked()')
+            assert reversed_response.value.ok,reversed_response.value.text()
+            check.settle()
+            dialog=open_figure()
+            after=save(dialog,'identity-after-reverse','png')
+            store(dialog,'After reverse')
+            dialog.get_by_role('button',name='Snapshots (2)',exact=True).click()
+            dialog.locator('li').filter(has=page.get_by_text('Before reverse',exact=True)).get_by_role('button',name='Compare to snapshot',exact=True).click()
+            expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+            dialog.get_by_label('Current panel label',exact=True).fill('After reverse')
+            dialog.get_by_role('button',name='Update comparison',exact=True).click()
+            expect(dialog.locator('#export-png-button')).to_be_enabled(timeout=90000)
+            paths={extension:save(dialog,'identity-snapshot-comparison',extension) for extension in ('png','svg','pdf')}
+            metadata=json.loads(ET.parse(paths['svg']).getroot().find('{http://www.w3.org/2000/svg}metadata').text)
+            with Image.open(paths['png']) as image:assert json.loads(image.text['HiCT provenance'])==metadata
+            xmp=ET.fromstring(subprocess.check_output(['pdfinfo','-meta',str(paths['pdf'])]))
+            assert json.loads(xmp.find('.//{urn:hict:figure#}metadata').text)==metadata
+            panels=metadata['comparison']['panels']
+            assert panels[0]['provenance']['provenance']['primary']['agpSha256']!=panels[1]['provenance']['provenance']['primary']['agpSha256']
+            for panel in panels:
+                state=panel['provenance']['provenance']
+                assert state['secondary']['capabilities']['units']=='IDENTITY_PERCENT'
+                assert state['secondary']['capabilities']['scoreScale']==10000
+                assert state['tracks'] and state['renderPipeline']['lowerExpression']['mode']=='MODDOTPLOT_IDENTITY'
+            with Image.open(paths['png']).convert('RGBA') as image:
+                for panel,path in zip(panels,(before,after)):
+                    x,y=panel['offset']['x'],panel['offset']['y']
+                    with Image.open(path).convert('RGBA') as source:
+                        assert image.crop((x,y,x+panel['width'],y+panel['height'])).tobytes()==source.tobytes()
+            assert page.evaluate('window.__hictBenchmark.manager().figureSnapshots.documents()[0]')==original
+            page.screenshot(path=str(out/'identity-snapshot-comparison-ui.png'))
+            dialog.get_by_role('button',name='Close',exact=True).last.click()
+            page.evaluate("async()=>await window.__hictBenchmark.manager().networkManager.requestManager.restoreAssemblyHistory('undo')")
+            check.settle()
+            restored=page.evaluate('async()=>await window.__hictBenchmark.manager().networkManager.requestManager.getSessionSnapshot(true,true,true)')
+            assert restored['primary']['agpSha256']==panels[0]['provenance']['provenance']['primary']['agpSha256']
+            assert hashlib.sha256((data/'known.hict.hdf5').read_bytes()).hexdigest()==native_hash
+            (out/'identity-snapshot-validation.json').write_text(json.dumps({'metadata':metadata,'nativeSha256':native_hash,'panelPixelsUnchanged':True,'undoRestoresAssembly':True},indent=2))
+            # The surrounding legacy journey owns its original fixture and close prompts.
+            page.evaluate('window.__hictBenchmark.manager().figureSnapshots.restore([])')
+
         def identity_presets():
             page.get_by_role('combobox', name='Visualization preset', exact=True).select_option(label='ModDotPlot: Hi-C above, identity below')
             check.settle()
@@ -612,8 +736,69 @@ class OverlayFixture { public static void main(String[] a) {
             }""",filename)
             assert result['primary']['contigDescriptors'] == result['secondary']['contigDescriptors'], result
             (out/'original-order-reattachment.json').write_text(json.dumps(result,indent=2))
+        def fragment_geometry():
+            # Start from the independent 4 kb source fixture. A legacy cut at
+            # source bp 200 removes [200,300), leaving a coarse 200 bp bin
+            # clipped to [300,400) in the right child.
+            # Administrative fixture resets must not leave a stale interactive client
+            # posting its debounced workspace into the replacement history session.
+            page.goto('about:blank')
+            app.http('/close', {})
+            app.http('/open', {'filename': 'known.hict.hdf5'})
+            app.http('/split_contig_at_bin', {'splitPx': 2, 'bpResolution': 100})
+            checks = []
+            for reversed_layout in (False, True):
+                if reversed_layout:
+                    page.goto('about:blank')
+                    app.http('/reverse_selection_range', {'startBP': 0, 'endBP': 3900})
+                page.goto(f'http://127.0.0.1:{static.server_port}/')
+                check.menu('File', 'Attach')
+                check.settle()
+                result = page.evaluate("""() => {
+                    const h=window.__hictBenchmark.manager().contigDimensionHolder;
+                    const failures=[];
+                    for(const resolution of [100,200]) {
+                        let globalBp=0, globalPixel=0;
+                        for(const d of h.contigDescriptors) {
+                            const intervals=[];
+                            const a=d.contigOffsetInSource,b=a+d.contigLengthBp;
+                            for(let start=Math.floor(a/resolution)*resolution;start<b;start+=resolution)
+                                intervals.push([Math.max(start,a),Math.min(start+resolution,b)]);
+                            const reverse=d.direction===0;
+                            if(reverse)intervals.reverse();
+                            if(intervals.length!==d.contigLengthBins.get(resolution))
+                                failures.push('source bin count '+resolution);
+                            intervals.forEach(([start,end],bin)=>{
+                                const first=reverse?b-end:start-a;
+                                const last=reverse?b-start:end-a;
+                                for(let local=first;local<last;local++) {
+                                    const bp=globalBp+local,px=globalPixel+bin;
+                                    if(h.getPxContainingBp(bp,resolution)!==px ||
+                                       h.getBinContainingBp(bp,resolution)!==px ||
+                                       h.getStartBpOfPx(px,resolution)!==globalBp+first)
+                                        failures.push('integer '+resolution+':'+bp);
+                                    const fractional=h.getFractionalPxOfBp(bp+0.5,resolution);
+                                    if(Math.abs(h.getFractionalBpOfPx(fractional,resolution)-bp-0.5)>1e-7)
+                                        failures.push('fractional '+resolution+':'+bp);
+                                }
+                            });
+                            globalBp+=d.contigLengthBp; globalPixel+=intervals.length;
+                        }
+                    }
+                    return {failures:failures.slice(0,20),origins:h.contigDescriptors.map(d=>
+                        ({sourceStart:d.contigOffsetInSource,offsets:[...(d.contigBinOffsets??[])]}))};
+                }""")
+                assert not result['failures'], result
+                assert any([200,-100] in d['offsets'] for d in result['origins']), result
+                checks.append({'reversed':reversed_layout,**result})
+                page.screenshot(path=str(out / ('fragment-reversed.png' if reversed_layout else 'fragment-forward.png')))
+            (out / 'fragment-geometry.json').write_text(json.dumps(checks,indent=2))
         try:
             page.goto(f'http://127.0.0.1:{static.server_port}/')
+            if args.geometry_only:
+                check.step('partial-source-bin-coordinate-parity', fragment_geometry)
+                success = True
+                return
             check.step('open', lambda: load_file('File', 'Open…', 'known.hict.hdf5', '/open'))
             check.step('missing-fasta-guidance', missing_fasta)
             check.step('link-fasta', lambda: load_file('Assembly', 'Link FASTA', 'known.fasta', '/link_fasta'))
@@ -625,6 +810,8 @@ class OverlayFixture { public static void main(String[] a) {
             check.step('search-warning-after-edit', search_warning)
             check.step('minimap-clipping', minimap_clipping)
             check.step('generate-display-and-accumulate-moddotplot', moddotplot)
+            if args.figure_export:check.step('frozen-contact-identity-and-track-figure-parity',frozen_identity_figure)
+            if args.snapshot_comparison:check.step('named-identity-track-snapshots-before-and-after-reverse',snapshot_identity_comparison)
             check.step('identity-presets-and-pipeline-roundtrip', identity_presets)
             check.step('selection-menu-exports-and-moddotplot', selection_actions)
             check.step('selection-alignment-dotplot',alignment_dotplot)
@@ -634,6 +821,7 @@ class OverlayFixture { public static void main(String[] a) {
             (out / 'notifications.json').write_text(json.dumps(notifications, indent=2))
             assert not [e for e in notifications if e['level'] == 'error'], notifications
             assert any('Sequence search completed: 1 matches' in e['message'] for e in notifications)
+            check.step('partial-source-bin-coordinate-parity', fragment_geometry)
             success = True
         finally:
             (out / 'summary.json').write_text(json.dumps(dict(status='ok' if success else 'error', cases=check.rows, browser=browser.version), indent=2))

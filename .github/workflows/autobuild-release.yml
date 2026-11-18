@@ -49,8 +49,65 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/ci/resolve_jhdf5_jar.sh
 
+      - name: Clean previous Gradle outputs
+        run: ./gradlew clean
+
+      - name: Identify native build inputs
+        id: native-inputs
+        env:
+          NATIVE_SCRIPTS_HASH: ${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/linux_container_build.sh', 'scripts/ci/configure_centos_mirrors.py', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          LEGACY_NATIVE_SCRIPTS_HASH: ${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+        run: |
+          python scripts/ci/runner_cache_identity.py
+          python scripts/ci/toolchain_cache_sources.py
+          printf 'scripts=%s\n' "${NATIVE_SCRIPTS_HASH}" >> "${GITHUB_OUTPUT}"
+          printf 'legacy_scripts=%s\n' "${LEGACY_NATIVE_SCRIPTS_HASH}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore complete Linux toolchain
+        id: bundled-tools
+        uses: actions/cache/restore@v5
+        with:
+          path: toolchains-dist/linux_x86_64
+          # Docker supplies the pinned compiler and ABI. Runner image updates
+          # should not invalidate these binaries.
+          key: autobuild-linux-tools-v3-${{ runner.arch }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.scripts }}
+          restore-keys: |
+            autobuild-linux-tools-v2-${{ runner.arch }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.legacy_scripts }}
+            autobuild-linux-tools-v1-${{ steps.native-inputs.outputs.identity }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.legacy_scripts }}
+
+      - name: Prepare and verify Linux toolchain on a cache miss
+        if: steps.bundled-tools.outputs.cache-hit != 'true'
+        run: |
+          ./gradlew prepareBundledTools
+          python scripts/ci/toolchain_cache_sources.py --verify
+          python scripts/toolchains/prepare_bundled_tools.py --verify
+
+      # A pull-request cache is scoped to its merge ref. It can serve later
+      # checks of that pull request without becoming a branch release cache.
+      - name: Cache verified Linux toolchain for the current ref
+        if: steps.bundled-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: toolchains-dist/linux_x86_64
+          key: ${{ steps.bundled-tools.outputs.cache-primary-key }}
+
       - name: Build
-        run: ./gradlew -PrequireBundledWebUI=true clean build
+        id: build
+        run: ./gradlew -PrequireBundledWebUI=true build
+
+      - name: Verify source revisions and bundled commands
+        run: |
+          python scripts/ci/toolchain_cache_sources.py --verify
+          python scripts/toolchains/prepare_bundled_tools.py --verify
+
+      - name: Upload failed build test results
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: autobuild-test-results
+          path: build/test-results/test/*.xml
+          if-no-files-found: ignore
 
       - name: Upload fat JAR artifact
         uses: actions/upload-artifact@v6

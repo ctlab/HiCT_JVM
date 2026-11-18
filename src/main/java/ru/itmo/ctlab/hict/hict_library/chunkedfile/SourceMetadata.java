@@ -48,7 +48,7 @@ public record SourceMetadata(Units units, double scoreScale, ContactDataState co
       if (reader.object().hasAttribute("/", SCALE)) scale = reader.float64().getAttr("/", SCALE);
       weightsKnown = true;
       for (long resolution : resolutions) {
-        String state = attribute(reader, "/resolutions/" + resolution, WEIGHTS);
+        String state = attribute(reader, resolutionRoot(reader, resolution), WEIGHTS);
         if ("PRESENT".equals(state)) weighted.add(resolution);
         else if (!"ABSENT".equals(state)) weightsKnown = false;
       }
@@ -90,12 +90,43 @@ public record SourceMetadata(Units units, double scoreScale, ContactDataState co
     target.float64().setAttr("/", SCALE, metadata.scoreScale());
     for (long resolution : resolutions) {
       String root = "/resolutions/" + resolution;
-      target.string().setAttr(root, WEIGHTS, source.object().isDataSet(root + "/bins/weight") ? "PRESENT" : "ABSENT");
+      String sourceRoot = resolutionRoot(source, resolution);
+      String declared = attribute(source, sourceRoot, WEIGHTS);
+      boolean present = source.object().isDataSet(child(sourceRoot, "bins/weight"));
+      target.string().setAttr(root, WEIGHTS, !present ? "ABSENT"
+        : "ABSENT".equals(declared) || "UNKNOWN".equals(declared) ? declared : "PRESENT");
     }
+    ApproximationProvenance.copy(source, target, resolutions);
   }
 
+  /** Export preserves declared units and distinguishes genuine weights from legacy filler vectors. */
+  public static void writeExported(IHDF5Reader source, IHDF5Writer target, List<Long> resolutions) {
+    var metadata = read(source, resolutions);
+    target.int32().setAttr("/", VERSION, 1);
+    target.string().setAttr("/", UNITS, metadata.units().name());
+    target.string().setAttr("/", CONTACT_STATE, metadata.contactDataState().name());
+    target.float64().setAttr("/", SCALE, metadata.scoreScale());
+    for (long resolution : resolutions) {
+      String root = resolutionRoot(target, resolution);
+      boolean present = target.object().isDataSet(child(root, "bins/weight"));
+      if (present && metadata.weightMetadataComplete() && !metadata.importedWeightResolutions().contains(resolution)) {
+        target.object().delete(child(root, "bins/weight"));
+        present = false;
+      }
+      target.string().setAttr(root, WEIGHTS, !present ? "ABSENT" : !metadata.weightMetadataComplete()
+        ? "UNKNOWN" : metadata.importedWeightResolutions().contains(resolution) ? "PRESENT" : "ABSENT");
+    }
+    ApproximationProvenance.copy(source, target, resolutions);
+  }
+
+  private static String resolutionRoot(IHDF5Reader reader, long resolution) {
+    String level = "/resolutions/" + resolution;
+    return reader.object().isGroup(level) ? level : reader.object().isDataSet("/pixels/count") ? "/" : level;
+  }
+  private static String child(String root, String name) { return root.equals("/") ? "/" + name : root + "/" + name; }
+
   private static String attribute(IHDF5Reader reader, String object, String name) {
-    return reader.object().hasAttribute(object, name) ? reader.string().getAttr(object, name) : "";
+    return reader.object().exists(object) && reader.object().hasAttribute(object, name) ? reader.string().getAttr(object, name) : "";
   }
 
   private static <E extends Enum<E>> E parse(Class<E> type, String text, E fallback) {

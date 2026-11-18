@@ -71,6 +71,16 @@ public final class ReinforcementHdf5Fixture {
   }
 
   public static void main(String[] args) throws Exception {
+    if (args.length == 2 && args[0].equals("statistics")) {
+      create(Path.of(args[1]), "scan", List.of(4L), 2052,
+        new long[][]{{0, 0, 2}, {2048, 2048, 8}, {0, 2048, 4}});
+      return;
+    }
+    if (args.length == 2 && args[0].equals("long-offset")) {
+      create(Path.of(args[1]), "long-source", List.of(1_000_000_000L, 2_000_000_000L), 3_000_000_017L,
+        new long[][]{{0, 0, 1}, {2_500_000_001L, 3_000_000_016L, 7}, {3_000_000_016L, 3_000_000_016L, 11}});
+      return;
+    }
     if (args.length == 2 && args[0].equals("mixed-pyramids")) {
       final var directory = Path.of(args[1]);
       final long[][] landmarks = {{101, 211, 500}, {420, 537, 700}, {960, 1001, 900}, {12016, 12016, 1100}};
@@ -89,5 +99,9 @@ public final class ReinforcementHdf5Fixture {
     create(directory, "tiny-fine", List.of(1L));
     create(directory, "tiny-coarse", List.of(25L));
     Files.writeString(directory.resolve("tiny.fa"), ">tiny synthetic 17 bp fixture\nACGTRYMKSWBDHVNAC\n");
+    Files.writeString(directory.resolve("tiny-two-scaffolds.agp"), """
+      first\t1\t8\t1\tW\ttiny\t1\t8\t+
+      second\t1\t9\t1\tW\ttiny\t9\t17\t+
+      """);
   }
 }

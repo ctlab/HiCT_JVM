@@ -329,12 +329,11 @@ if (-not $SkipGradle) {
   }
 }
 
-$fatJar = Get-ChildItem -Path (Join-Path $projectDir "build\libs") -Filter "*-fat.jar" |
-  Sort-Object LastWriteTime |
-  Select-Object -Last 1
-if (-not $fatJar) {
-  throw "Fat JAR was not found under $projectDir\build\libs"
+$fatJarPath = Join-Path $projectDir "build\libs\hict_server-$version-fat.jar"
+if (-not (Test-Path -LiteralPath $fatJarPath -PathType Leaf)) {
+  throw "The current version fat JAR was not found: $fatJarPath. Build shadowJar before packaging."
 }
+$fatJar = Get-Item -LiteralPath $fatJarPath
 $jarEntries = & $jarTool tf $fatJar.FullName
 if ($LASTEXITCODE -ne 0) {
   throw "Failed to inspect $($fatJar.FullName)"
@@ -716,6 +715,11 @@ Invoke-PortableSmoke `
   -Label "portable ZIP run.cmd" `
   -FilePath (Join-Path $appDir "run.cmd") `
   -Arguments @("check-toolchains", "--require-hdf5-native", "--check-available-natives", "--quiet")
+if ($env:GITHUB_ACTIONS -eq "true") {
+  Invoke-Native -FilePath "python" -Arguments @(
+    (Join-Path $PSScriptRoot "check_packaged_server.py"), (Join-Path $appDir "run.cmd"), $version
+  )
+}
 
 $shaPath = Join-Path $artifactDir "$appName-$version-$platform.sha256"
 $hashLines = @()
@@ -826,6 +830,11 @@ if ($CreateSelfExtractingExe -and (Test-Path $exePath)) {
       -Label "portable EXE" `
       -FilePath $exePath `
       -Arguments @("check-toolchains", "--require-hdf5-native", "--check-available-natives", "--quiet")
+    if ($env:GITHUB_ACTIONS -eq "true") {
+      Invoke-Native -FilePath "python" -Arguments @(
+        (Join-Path $PSScriptRoot "check_packaged_server.py"), $exePath, $version
+      )
+    }
   } else {
     Invoke-Native -FilePath $exePath -Arguments @("--help")
   }

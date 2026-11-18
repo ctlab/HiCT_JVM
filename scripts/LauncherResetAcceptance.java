@@ -81,7 +81,7 @@ class LauncherResetAcceptance {
     var bundle = constructor.newInstance("reset-fixture", "electron", 0, output, Path.of("/bin/sh"), List.of("-c", script));
     var method = launcher.getClass().getDeclaredMethod("tryOpenBundledBrowser", type, String.class);
     method.setAccessible(true);
-    return (boolean) method.invoke(launcher, bundle, "http://127.0.0.1:8189/");
+    return (boolean) method.invoke(launcher, bundle, "http://127.0.0.1:" + System.getenv("WEBUI_PORT") + "/");
   }
 
   static void confirm(String action, String title, boolean accept, String screenshot) throws Exception {
@@ -248,7 +248,7 @@ class LauncherResetAcceptance {
         return null;
       });
       var client = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(1)).build();
-      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:5189/version"))
+      var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + System.getenv("VXPORT") + "/version"))
         .timeout(java.time.Duration.ofSeconds(2)).build();
       boolean ready = false;
       deadline = System.nanoTime() + 30_000_000_000L;
@@ -259,6 +259,8 @@ class LauncherResetAcceptance {
       require(ready, "Launcher did not start a reachable real server");
       var owned = (Process) field("serverProcess");
       require(owned != null && owned.isAlive(), "Launcher lost ownership of its real server");
+      var serverChildren = owned.descendants().toList();
+      edt(() -> { invoke("toggleConfiguration"); return null; });
       SwingUtilities.invokeLater(() -> {
         try { ((JButton) field("stopButton")).doClick(); }
         catch (Exception ex) { throw new RuntimeException(ex); }
@@ -278,8 +280,20 @@ class LauncherResetAcceptance {
       final var confirmedStop = stopDialog;
       edt(() -> { button(confirmedStop, "Yes").doClick(); return null; });
       require(owned.waitFor(15, java.util.concurrent.TimeUnit.SECONDS), "Launcher Stop left the server alive");
-      require(owned.descendants().noneMatch(ProcessHandle::isAlive), "Launcher Stop left server descendants alive");
+      require(serverChildren.stream().noneMatch(ProcessHandle::isAlive), "Launcher Stop left server descendants alive");
       results.add("Launcher starts the real packaged server, serves its version, and Stop terminates the owned process tree");
+      deadline = System.nanoTime() + 10_000_000_000L;
+      while (!edt(() -> ((javax.swing.JPanel) field("logCardsPanel")).getComponent(0).isShowing()) && System.nanoTime() < deadline) Thread.sleep(20);
+      require(edt(() -> !((javax.swing.JPanel) field("configurationPanel")).isVisible()), "Stop left configuration open");
+      require(edt(() -> ((javax.swing.JPanel) field("logCardsPanel")).getComponent(0).isShowing()), "Stop did not restore the simple start card");
+      require(edt(() -> !((javax.swing.JTextArea) field("logArea")).isShowing()), "Stop left the log card visible");
+      require(edt(() -> ((JButton) field("configureButton")).getText().equals("Show Configuration")), "Stop left the configuration toggle stale");
+      require(edt(() -> {
+        var start = (JButton) field("startButton");
+        return start.isShowing() && start.isEnabled();
+      }), "Stop did not restore the Start action");
+      ImageIO.write(new Robot().createScreenCapture(edt(() -> frame.getBounds())), "png", output.resolve("after-stop.png").toFile());
+      results.add("Stop returns to the simple launcher with configuration and logs hidden");
       Files.write(output.resolve("results.txt"), results);
       results.forEach(System.out::println);
     } finally {

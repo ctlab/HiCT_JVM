@@ -187,8 +187,16 @@ public final class NativeProcessingService {
     }
     final var output = new byte[elementCount * 4];
     try {
+      final var colorValues = flattenDoubleMatrix(values, rows, columns);
+      if (gradient.getGamma() != 1.0d) {
+        final double lower = gradient.getMinSignal(), range = gradient.getMaxSignal() - lower;
+        for (int index = 0; index < colorValues.length; index++) {
+          final double position = Math.max(0.0d, Math.min(1.0d, (colorValues[index] - lower) / range));
+          colorValues[index] = lower + range * Math.pow(position, gradient.getGamma());
+        }
+      }
       final var computed = this.nativeTileProcessor.mapLinearGradientRgba(
-        flattenDoubleMatrix(values, rows, columns),
+        colorValues,
         rows,
         columns,
         colorComponents(gradient.getStartColor()),

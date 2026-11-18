@@ -19,6 +19,9 @@ APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${HICT_RUN_PAYLOAD_XZ_THREADS:-}" ]]; then
+  RUN_PAYLOAD_XZ_THREADS=3
+fi
 LAUNCHER_SOURCE="${SCRIPT_DIR}/macos_launcher/HiCTDarwinLauncher.cpp"
 LAUNCHER_BASENAME="hict-darwin-${DARWIN_ARCH}"
 LAUNCHER_BINARY="${APP_DIR}/bin/${LAUNCHER_BASENAME}"
@@ -33,10 +36,10 @@ Outputs:
   build/distributions/HiCT-<version>-${PLATFORM}.sha256
 
 Environment overrides:
-  HICT_SKIP_GRADLE=1                 Reuse an existing build/libs/*-fat.jar.
+  HICT_SKIP_GRADLE=1                 Reuse the exact versioned fat JAR from build/libs.
   HICT_RUNTIME_MODULES=<modules>     Override jlink modules.
   HICT_PORTABLE_DIST_DIR=<dir>       Override staging directory.
-  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload, default 2.
+  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload (2 locally, 3 on Actions).
 
 The macOS .run wrapper accepts --help and --hict-extract-only <directory>.
 If Gatekeeper quarantines the file after download, clear it with:
@@ -228,9 +231,9 @@ fi
 
 
 
-FAT_JAR="$(find "${PROJECT_DIR}/build/libs" -maxdepth 1 -type f -name '*-fat.jar' | sort | tail -n 1)"
-if [[ -z "${FAT_JAR}" || ! -f "${FAT_JAR}" ]]; then
-  echo "Fat JAR was not found under ${PROJECT_DIR}/build/libs" >&2
+FAT_JAR="${PROJECT_DIR}/build/libs/hict_server-${VERSION}-fat.jar"
+if [[ ! -f "${FAT_JAR}" ]]; then
+  echo "The current version fat JAR was not found: ${FAT_JAR}. Build shadowJar before packaging." >&2
   exit 1
 fi
 if ! "${JAR_TOOL}" tf "${FAT_JAR}" | grep -qx 'webui/index.html'; then
@@ -495,7 +498,7 @@ adhoc_sign_macho_tree() {
   [[ -d "${root}" ]] || return 0
   while IFS= read -r -d '' f; do
     if file "${f}" | grep -q 'Mach-O'; then
-      codesign -s - --force --timestamp=none "${f}" >/dev/null 2>&1 || {
+      codesign -s - --force --timestamp=none "${f}" || {
         echo "Failed to ad-hoc sign ${f}" >&2
         return 1
       }
@@ -504,7 +507,11 @@ adhoc_sign_macho_tree() {
 }
 
 adhoc_sign_macho_tree "${APP_DIR}/runtime"
-adhoc_sign_macho_tree "${APP_DIR}/toolchains"
+# Tool builders/PyInstaller already prepare executable code. Re-signing their
+# copied framework layout can fail, and mutating any binary invalidates the
+# manifest shared with the JAR. Verify the delivered bytes instead.
+python3 "${SCRIPT_DIR}/verify_copied_tools.py" \
+  --directory "${APP_DIR}/toolchains/${TOOLCHAIN_PLATFORM}" --platform "${TOOLCHAIN_PLATFORM}"
 adhoc_sign_macho_tree "${APP_DIR}/browsers"
 
 cat > "${APP_DIR}/bin/hict" <<'EOF'
@@ -583,6 +590,7 @@ python3 "${PROJECT_DIR}/scripts/ci/check_macos_compatibility.py" "${APP_DIR}" \
   --report "${APP_DIR}/share/doc/macos-compatibility.json"
 
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
+echo "Compressing .run payload with ${RUN_PAYLOAD_XZ_THREADS} xz threads"
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(shasum -a 256 "${PAYLOAD_PATH}" | awk '{print $1}')"
 
@@ -804,7 +812,11 @@ perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 600 env \
   XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" \
   TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
   HICT_LAUNCHER_MODE=cli \
-  "${RUN_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+  "${RUN_PATH}" check-toolchains --require-hictk --require-dotplot --require-sequence-tools --require-hdf5-native --check-available-natives --quiet
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
+    python3 "${SCRIPT_DIR}/check_packaged_server.py" "${LAUNCHER_BINARY}" "${VERSION}"
+fi
 rm -rf "${RUN_SMOKE_TEST_DIR}"
 trap - EXIT
 

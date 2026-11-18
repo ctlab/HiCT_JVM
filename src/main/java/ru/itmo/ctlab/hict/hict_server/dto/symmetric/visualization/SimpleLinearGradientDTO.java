@@ -44,9 +44,17 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
   private final double minSignal;
   private final double maxSignal;
   private final String endColorRGBAString;
+  @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+  private final Double gamma;
 
   public SimpleLinearGradientDTO(String startColorHEX, String endColorHEX, double minSignal, double maxSignal) {
+    this(startColorHEX, endColorHEX, minSignal, maxSignal, 1.0d);
+  }
+
+  public SimpleLinearGradientDTO(String startColorHEX, String endColorHEX, double minSignal, double maxSignal, double gamma) {
     super("SimpleLinearGradient");
+    SimpleLinearGradient.validateGamma(gamma);
+    this.gamma = gamma == 1.0d ? null : gamma;
     this.startColorRGBAString = startColorHEX;
     this.endColorRGBAString = endColorHEX;
     this.minSignal = minSignal;
@@ -61,7 +69,7 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
       String.format(Locale.US, "rgba(%d,%d,%d,%f)", cmap.getStartColor().getRed(), cmap.getStartColor().getGreen(), cmap.getStartColor().getBlue(), ((double) cmap.getStartColor().getAlpha() / 255.0d)),
       String.format(Locale.US, "rgba(%d,%d,%d,%f)", cmap.getEndColor().getRed(), cmap.getEndColor().getGreen(), cmap.getEndColor().getBlue(), ((double) cmap.getEndColor().getAlpha() / 255.0d)),
       cmap.getMinSignal(),
-      cmap.getMaxSignal()
+      cmap.getMaxSignal(), cmap.getGamma()
     );
   }
 
@@ -70,7 +78,7 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
       json.getString("startColorRGBAString"),
       json.getString("endColorRGBAString"),
       json.getDouble("minSignal"),
-      json.getDouble("maxSignal")
+      json.getDouble("maxSignal"), json.getDouble("gamma", 1.0d)
     );
   }
 
@@ -96,7 +104,7 @@ public class SimpleLinearGradientDTO extends ColormapDTO {
         alphaChannel(endColorMatcher.group("alpha"))
       ),
       this.minSignal,
-      this.maxSignal
+      this.maxSignal, this.gamma == null ? 1.0d : this.gamma
     );
   }
 

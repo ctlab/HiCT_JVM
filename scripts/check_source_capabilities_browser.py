@@ -13,6 +13,7 @@ def main():
     parser.add_argument("--url", required=True)
     parser.add_argument("--api", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--legacy-file", default="combined_ind2_4DN.hict.hdf5")
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -43,7 +44,8 @@ def main():
             # A 17 bp map fits entirely at the finest level. Select a single
             # available level to test its capability without bypassing view bounds.
             page.evaluate("bp=>{const m=window.__hictBenchmark.manager();m.viewAndLayersManager.setEnabledBpResolutions([bp]);m.getView().setResolution(m.viewAndLayersManager.getPixelResolutionForBpResolution(bp));}", bp)
-            page.wait_for_function("bp=>window.__hictBenchmark.manager().viewAndLayersManager.currentViewState.resolutionDesciptor.bpResolution===bp", arg=bp)
+            # Base-scale guidance uses a 1 bp display descriptor. Capabilities describe the stored source level.
+            page.wait_for_function("bp=>window.__hictBenchmark.manager().viewAndLayersManager.getNativeResolutionDescriptor('PRIMARY').bpResolution===bp", arg=bp)
 
         def assert_disabled(selector, expected):
             page.wait_for_function("args=>document.querySelector(args.selector)?.disabled===args.expected", arg={"selector": selector, "expected": expected})
@@ -119,7 +121,7 @@ def main():
             assert_disabled("#scaling-across-zoom", True)
             assert_weights_disabled(True)
             results.append({"test": "identity remains non-contact when opened as primary"})
-            open_file("combined_ind2_4DN.hict.hdf5")
+            open_file(args.legacy_file)
             modal = page.get_by_role("button", name="Do not use Cooler weights", exact=True)
             if modal.is_visible():
                 modal.click()

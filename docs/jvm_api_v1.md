@@ -91,6 +91,15 @@ Use a trusted host and restrict network access as described in the README.
 | `POST` | `/get_agp_for_assembly` | Export AGP |
 | `POST` | `/load_agp` | Import AGP and update assembly state |
 
+FASTA and AGP download requests accept the optional displayed-assembly headers
+`X-HiCT-History-Session` and `X-HiCT-History-Revision`. The WebUI sends its captured
+applied revision, including when a destination chooser delays submission. A
+stale version returns HTTP 409 before writing. Legacy clients may omit the guard.
+The assembly queue validates the revision and captures immutable AGP records or
+selection layout; the export worker then materializes that captured layout.
+Cancellation returns HTTP 409 with retry guidance, rather than a successful empty
+file. This does not make external mutation of a linked FASTA safe during export.
+
 ### Conversion jobs
 
 | Method | Path | Purpose |
@@ -177,13 +186,38 @@ Oversized windows are rejected before matrix allocation.
 |---|---|---|
 | `POST` | `/session/snapshot` | Save assembly lineage, inputs, tracks and visualization |
 | `POST` | `/session/restore` | Validate inputs and atomically restore a saved session |
+
+New captures use internal snapshot v2, saved by the WebUI in portable session v4.
+The server continues to read snapshot v1, and the WebUI reads session v1–v3 with
+their existing limitations. Split lineage records may declare `exact: true` in
+snapshot v2: the cut retains all bases, and both children reference a crossing
+source bin. Absent/false `exact` preserves historical bin removal; restoring an
+older session never silently adds back its removed sequence. Bin origins are
+validated against reconstructed descriptors when the saved snapshot supplies
+them. Historical snapshots lacking those fields retain bin-count, source-interval,
+and assembly reconstruction checks.
 | `GET` | `/jobs` | Snapshot existing background services with result actions |
 | `POST` | `/jobs/cancel` | Cancel a service-prefixed job ID |
 | `POST` | `/examples/catalog` | Read the bundled and local example catalog |
 | `POST` | `/examples/download/start` | Download and verify an example |
 | `POST` | `/examples/download/status` | Read current download progress |
 | `POST` | `/examples/download/cancel` | Cancel the current download |
-| `POST` | `/sequence/alignment_detail` | Read or prepare bounded CIGAR alignment detail |
+| `POST` | `/sequence/alignment_detail` | Read or prepare bounded CIGAR alignment detail with applied profile and input/tool provenance |
+| `POST` | `/sequence/repeat_period` | Start/inspect bounded gapless repeat measurement, 1–4096 BP |
+
+Repeat measurements accept `{startBp,endBp}` (zero-based half-open) or `{jobId}`
+to read status. Displayed history headers guard the captured interval. They use
+the shared sequence worker queue and cancellation endpoints; completed summaries
+appear in `/jobs` as `repeat_period`. `/sequence/settings` advertises
+`repeatPeriod=true`. Results describe the frozen interval and assembly fingerprint,
+with `inputSha256` for the captured forward sequence's UTF-8 bytes, its source
+FASTA path and stat stamp (a change guard, not a whole-file checksum).
+The shortest supported ungapped lag has at least two copies (a partial final
+copy is allowed). Exact periodicity is reported directly. Imperfect candidates
+require at least eight informative A/C/G/T pairs, at least 80% informative overlap,
+80% pair identity and 20 percentage points above the interval's base-composition
+identity baseline. Ambiguous bases never match. This is an exploratory estimate,
+not statistical significance or a repeat annotation; indels are not modeled.
 
 Check the OpenAPI request schemas before calling these endpoints. Session
 restore validates referenced files and preserves native split lineage. Job

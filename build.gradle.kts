@@ -68,7 +68,6 @@ val doOnChange = "${projectDir}/gradlew classes"
 
 val versionFile = file("${project.projectDir}/version.txt")
 val changelogFile = file("${project.projectDir}/CHANGELOG.md")
-val webUiPackageJson = file("${project.projectDir}/../HiCT_WebUI/package.json")
 
 val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
 val explicitWebUIRef = !webUIRefOverride.isNullOrBlank() && !webUIRefOverride.trim().equals("same-as-jvm", ignoreCase = true)
@@ -571,7 +570,16 @@ dependencies {
   testRuntimeOnly("org.junit.platform:junit-platform-launcher:$junitPlatformVersion")
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
-  implementation("org.apache.commons:commons-lang3:3.12.0")
+  implementation("org.apache.commons:commons-lang3:3.22.0")
+
+  // Keep transitive runtime parsers/codecs on reviewed patched releases.
+  // See docs/runtime-dependency-audit.md for advisories and validation scope.
+  constraints {
+    implementation("commons-io:commons-io:2.22.0")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.json:json:20260814")
+    implementation("org.xerial.snappy:snappy-java:1.1.10.12")
+  }
 
   // https://mvnrepository.com/artifact/org.apache.commons/commons-pool2
   implementation("org.apache.commons:commons-pool2:2.11.1")
@@ -1181,8 +1189,11 @@ tasks.register("buildWebUI") {
   }
 }
 
-tasks.register<Copy>("copyWebUI") {
+tasks.register<Sync>("copyWebUI") {
   dependsOn("buildWebUI")
+  // Keep the optional API-only fallback when no frontend build is available.
+  // A real frontend build replaces its generated tree, including obsolete chunks.
+  onlyIf { webUIRepositoryDirectory.file("dist/index.html").asFile.isFile }
   doLast {
     Files.createDirectories(webUITargetDirectory.asFile.toPath())
   }
@@ -1195,6 +1206,9 @@ tasks.named("clean") {
 }
 
 tasks.named<ProcessResources>("processResources") {
+  from(webUIRepositoryDirectory.file("package.json")) {
+    rename { "webui-package.json" }
+  }
   inputs.file(versionFile)
   mustRunAfter("incrementPatchVersion")
   if (completeNativeBuildRequested) dependsOn(prepareBundledTools)
@@ -1335,13 +1349,6 @@ tasks.named<ProcessResources>("processResources") {
       Files.copy(
         changelogFile.toPath(),
         layout.buildDirectory.file("resources/main/CHANGELOG.md").get().asFile.toPath(),
-        StandardCopyOption.REPLACE_EXISTING
-      )
-    }
-    if (webUiPackageJson.exists()) {
-      Files.copy(
-        webUiPackageJson.toPath(),
-        layout.buildDirectory.file("resources/main/webui-package.json").get().asFile.toPath(),
         StandardCopyOption.REPLACE_EXISTING
       )
     }

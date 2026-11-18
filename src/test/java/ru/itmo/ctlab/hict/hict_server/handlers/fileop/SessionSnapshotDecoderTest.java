@@ -57,7 +57,7 @@ class SessionSnapshotDecoderTest {
   }
 
   @Test void rejectsCoercionsBadVersionsAndInvalidReferences() {
-    rejects("snapshotVersion", x -> x.put("snapshotVersion", 2));
+    rejects("snapshotVersion", x -> x.put("snapshotVersion", 3));
     rejects("snapshotVersion", x -> x.put("snapshotVersion", 1.1));
     rejects("assemblyVerified", x -> x.put("assemblyVerified", "true"));
     rejects("contigDirection", x -> contig(x).put("contigDirection", 0.5));
@@ -92,12 +92,40 @@ class SessionSnapshotDecoderTest {
     var json = valid();
     json.getJsonObject("primary").put("splitEdits", new JsonArray().add(split));
     assertEquals(json, JsonObject.mapFrom(SessionSnapshotDecoder.decode(json).snapshot()));
+    var exact = json.copy().put("snapshotVersion", 2);
+    exact.getJsonObject("primary").getJsonArray("splitEdits").getJsonObject(0).put("exact", true);
+    contig(exact).put("contigBinOffsets", new JsonObject().put("4", -1));
+    assertEquals(exact, JsonObject.mapFrom(SessionSnapshotDecoder.decode(exact).snapshot()));
+    rejects("splitEdits[0].exact", x -> x.getJsonObject("primary")
+      .put("splitEdits", new JsonArray().add(split.copy().put("exact", true))));
+    rejects("splitEdits[0].exact", x -> x.getJsonObject("primary")
+      .put("splitEdits", new JsonArray().add(split.copy().put("exact", "true"))));
+    rejects("contigBinOffsets", x -> contig(x).put("contigBinOffsets", new JsonObject().put("4", 0.5)));
+    rejects("contigBinOffsets", x -> contig(x).put("contigBinOffsets", new JsonObject().put("99", 0)));
     rejects("splitEdits[0].splitOffsetBp", x -> x.getJsonObject("primary")
       .put("splitEdits", new JsonArray().add(split.copy().put("splitOffsetBp", 17))));
     rejects("splitEdits[0].rightId", x -> x.getJsonObject("primary")
       .put("splitEdits", new JsonArray().add(split.copy().put("rightId", 1))));
     rejects("splitEdits[1].leftId", x -> x.getJsonObject("primary")
       .put("splitEdits", new JsonArray().add(split).add(split.copy())));
+  }
+
+  @Test void acceptsLongSourceOffsetsButRejectsImpreciseAndOverflowingIntervals() {
+    var json = valid().put("snapshotVersion", 2);
+    contig(json).put("contigOffsetInSource", 2_500_000_001L);
+    var split = new JsonObject().put("parentId", 0).put("sourceName", "tiny")
+      .put("sourceOffsetBp", 2_500_000_001L).put("parentLengthBp", 17).put("reversed", false)
+      .put("splitOffsetBp", 8).put("leftId", 1).put("rightId", 2).put("exact", true);
+    json.getJsonObject("primary").put("splitEdits", new JsonArray().add(split));
+    var decoded = SessionSnapshotDecoder.decode(json).snapshot().primary();
+    assertEquals(2_500_000_001L, decoded.getJsonObject("assemblyInfo").getJsonArray("contigDescriptors")
+      .getJsonObject(0).getLong("contigOffsetInSource"));
+    assertEquals(2_500_000_001L, decoded.getJsonArray("splitEdits").getJsonObject(0).getLong("sourceOffsetBp"));
+    rejects("contigOffsetInSource", x -> contig(x).put("contigOffsetInSource", 9_007_199_254_740_992L));
+    rejects("contigOffsetInSource", x -> contig(x).put("contigOffsetInSource", -1));
+    rejects("contigLengthBp", x -> contig(x).put("contigOffsetInSource", 9_007_199_254_740_990L));
+    rejects("splitEdits[0].parentLengthBp", x -> x.getJsonObject("primary").put("splitEdits",
+      new JsonArray().add(split.copy().put("sourceOffsetBp", 9_007_199_254_740_990L).put("exact", false))));
   }
 
   @Test void validatesViewAndIndependentScopeReferencesAgainstActiveAssembly() {

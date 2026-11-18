@@ -177,18 +177,6 @@ public class Initializers {
     return result;
   }
 
-  private static long countNonFiniteWeights(final @NotNull List<@NotNull StripeDescriptor> stripes) {
-    long count = 0L;
-    for (final var stripe : stripes) {
-      for (final var weight : stripe.bin_weights()) {
-        if (!Double.isFinite(weight)) {
-          count++;
-        }
-      }
-    }
-    return count;
-  }
-
   public static @NotNull List<ContigTree.@NotNull ContigTuple> buildContigDescriptors(final ChunkedFile chunkedFile) {
     final var resolutions = chunkedFile.getResolutions();
     final List<List<StripeDescriptor>> resolutionOrderToStripes = new ArrayList<>(resolutions.length);
@@ -219,9 +207,19 @@ public class Initializers {
       for (int i = 1; i < resolutions.length; ++i) {
         final var stripes = readStripeDescriptors(resolutions[i], reader);
         resolutionOrderToStripes.set(i, stripes);
-        final var nonFiniteWeights = countNonFiniteWeights(stripes);
+        long nonFiniteWeights = 0L;
+        boolean usableWeights = false;
+        for (final var stripe : stripes) {
+          for (final var weight : stripe.bin_weights()) {
+            if (!Double.isFinite(weight)) {
+              nonFiniteWeights++;
+            } else if (weight != 0.0d) {
+              usableWeights = true;
+            }
+          }
+        }
+        chunkedFile.recordCoolerWeights(nonFiniteWeights, usableWeights);
         if (nonFiniteWeights > 0L) {
-          chunkedFile.addCoolerWeightsNaNCount(nonFiniteWeights);
           log.debug(
             "Detected {} non-finite Cooler weights while opening {} at resolution {}",
             nonFiniteWeights,

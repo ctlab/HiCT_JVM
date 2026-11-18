@@ -2,12 +2,14 @@
 """Execute bundled native code and verify known answers (not only --help)."""
 import argparse
 import json
+import os
 from pathlib import Path
+import random
 import subprocess
 import tempfile
+from xml.etree import ElementTree
 import h5py
 import numpy as np
-from moddotplot_kernel import Settings, WindowSketch, calculate_blocks
 
 
 def main():
@@ -16,6 +18,7 @@ def main():
     parser.add_argument('--adapter', type=Path, required=True)
     parser.add_argument('--moddotplot', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--packaged-only', action='store_true', help='Test frozen executables without importing a build checkout')
     args = parser.parse_args()
     work = Path(tempfile.mkdtemp(prefix='hict-sequence-smoke-'))
     fasta = work / 'search.fa'
@@ -28,16 +31,33 @@ def main():
     upstream = subprocess.run([str(args.moddotplot.resolve()), '--help'], check=True,
                               capture_output=True, text=True, timeout=30)
     assert 'moddotplot' in (upstream.stdout + upstream.stderr).lower()
-    sketches = [
-        WindowSketch(np.array([1, 2], dtype=np.uint64), np.array([1, 2], dtype=np.uint64), (0, 1)),
-        WindowSketch(np.array([2, 3], dtype=np.uint64), np.array([2, 3], dtype=np.uint64), (1, 2)),
-    ]
+    plot_fasta = work / 'plot.fa'
+    bases = ''.join(random.Random(153).choices('ACGT', k=800))
+    plot_fasta.write_text('>plot_fixture\n' + bases + '\n')
+    plot_dir = work / 'plots'
+    plot_dir.mkdir()
+    subprocess.run([str(args.moddotplot.resolve()), 'static', '--fasta', str(plot_fasta),
+                    '--window', '100', '--processes', '1', '--no-hist', '--width', '3',
+                    '--dpi', '72', '--vector', 'svg', '--output-dir', str(plot_dir)],
+                   env=dict(os.environ, MPLBACKEND='Agg'), check=True, timeout=90)
+    for suffix in ('_FULL', '_TRI'):
+        png = list(plot_dir.rglob(f'*{suffix}.png'))
+        svg = list(plot_dir.rglob(f'*{suffix}.svg'))
+        assert len(png) == len(svg) == 1, list(plot_dir.rglob('*'))
+        assert png[0].read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+        assert ElementTree.parse(svg[0]).getroot().tag == '{http://www.w3.org/2000/svg}svg'
     parallel_blocks = []
-    calculate_blocks(sketches, sketches, Settings(k=1, identity=0, sketch_size=2, delta=0),
-                     lambda row, column, values: parallel_blocks.append((row, column, values.shape)),
-                     block_size=1, workers=2)
-    assert parallel_blocks == [(0, 0, (1, 1)), (0, 1, (1, 1)),
-                               (1, 0, (1, 1)), (1, 1, (1, 1))], parallel_blocks
+    if not args.packaged_only:
+        from moddotplot_kernel import Settings, WindowSketch, calculate_blocks
+        sketches = [
+            WindowSketch(np.array([1, 2], dtype=np.uint64), np.array([1, 2], dtype=np.uint64), (0, 1)),
+            WindowSketch(np.array([2, 3], dtype=np.uint64), np.array([2, 3], dtype=np.uint64), (1, 2)),
+        ]
+        calculate_blocks(sketches, sketches, Settings(k=1, identity=0, sketch_size=2, delta=0),
+                         lambda row, column, values: parallel_blocks.append((row, column, values.shape)),
+                         block_size=1, workers=2)
+        assert parallel_blocks == [(0, 0, (1, 1)), (0, 1, (1, 1)),
+                                   (1, 0, (1, 1)), (1, 1, (1, 1))], parallel_blocks
     template = work / 'template.hdf5'
     with h5py.File(template, 'w') as f:
         info = f.create_group('contig_info')
@@ -72,7 +92,8 @@ def main():
         assert cells == {(0, 0): 1_000_000, (1, 1): 1_000_000}, cells
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(passed=True, searchIntervals=intervals,
-        identityCells=2, parallelBlocks=len(parallel_blocks), upstreamCli=True, work=str(work), adapter=json.loads(subprocess.check_output(
+        identityCells=2, parallelBlocks=len(parallel_blocks), upstreamCli=True,
+        upstreamPlotFormats=['png', 'svg'], work=str(work), adapter=json.loads(subprocess.check_output(
             [str(args.adapter.resolve()), '--version'], text=True))), indent=2))
 
 

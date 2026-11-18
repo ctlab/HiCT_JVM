@@ -15,14 +15,16 @@ public final class SessionVisualizationCodec {
   public static JsonObject encode(SimpleVisualizationOptions options) {
     if (!(options.getColormap() instanceof SimpleLinearGradient gradient))
       throw new IllegalArgumentException("visualizationOptions.colormap: unsupported colormap");
+    var palette = new JsonObject().put("type", "SimpleLinearGradient").put("bitDepth", gradient.getBitDepth())
+      .put("startColor", color(gradient.getStartColor())).put("endColor", color(gradient.getEndColor()))
+      .put("minSignal", gradient.getMinSignal()).put("maxSignal", gradient.getMaxSignal());
+    if (gradient.getGamma() != 1.0d) palette.put("gamma", gradient.getGamma());
     return new JsonObject().put("preLogBase", options.getPreLogBase()).put("postLogBase", options.getPostLogBase())
       .put("applyCoolerWeights", options.isApplyCoolerWeights()).put("resolutionScaling", options.isResolutionScaling())
       .put("resolutionLinearScaling", options.isResolutionLinearScaling()).put("autoThresholdEnabled", options.isAutoThresholdEnabled())
       .put("autoThresholdQuantile", options.getAutoThresholdQuantile()).put("signalDisplayMode", options.getSignalDisplayMode().name())
       .put("coolerWeightsNaNPolicy", options.getCoolerWeightsNaNPolicy().name())
-      .put("colormap", new JsonObject().put("type", "SimpleLinearGradient").put("bitDepth", gradient.getBitDepth())
-        .put("startColor", color(gradient.getStartColor())).put("endColor", color(gradient.getEndColor()))
-        .put("minSignal", gradient.getMinSignal()).put("maxSignal", gradient.getMaxSignal()));
+      .put("colormap", palette);
   }
 
   public static SimpleVisualizationOptions decode(JsonObject json) {
@@ -42,7 +44,8 @@ public final class SessionVisualizationCodec {
     if (max <= min || !Double.isFinite(max - min)) throw invalid("colormap.maxSignal", "must define a finite positive signal range");
     return new SimpleVisualizationOptions(pre, post, bool(json, "applyCoolerWeights"), bool(json, "resolutionScaling"),
       bool(json, "resolutionLinearScaling"), bool(json, "autoThresholdEnabled"), quantile, mode, policy,
-      new SimpleLinearGradient((int)bits, color(gradient, "startColor"), color(gradient, "endColor"), min, max));
+      new SimpleLinearGradient((int)bits, color(gradient, "startColor"), color(gradient, "endColor"), min, max,
+        gradient.containsKey("gamma") ? number(gradient, "gamma", "colormap.") : 1.0d));
   }
 
   private static JsonArray color(Color color) {

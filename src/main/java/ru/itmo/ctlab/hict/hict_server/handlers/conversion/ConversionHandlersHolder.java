@@ -5,6 +5,7 @@ import ru.itmo.ctlab.hict.hict_server.util.ProcessTree;
 import ru.itmo.ctlab.hict.hict_server.jobs.JobArtifacts;
 
 import ru.itmo.ctlab.hict.hict_server.jobs.BackgroundJob;
+import ru.itmo.ctlab.hict.hict_server.examples.ExampleConversionContext;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
@@ -76,14 +77,16 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         return jobs.values().stream().map(job -> {
             final boolean opensMap = job.dataDirectory != null && job.outputPath.startsWith(job.dataDirectory)
               && job.outputPath.getFileName().toString().endsWith(".hict.hdf5");
+            final var example = job.example;
             final var outputs = "finished".equals(job.status)
               ? List.of(new BackgroundJob.Output(
-                  opensMap ? toClientFilename(job.outputPath, job.dataDirectory) : "/convert/download/" + job.jobId,
-                  opensMap ? "open_map" : "download", null))
+                  example != null ? example.id() : opensMap ? toClientFilename(job.outputPath, job.dataDirectory) : "/convert/download/" + job.jobId,
+                  example != null ? "example" : opensMap ? "open_map" : "download", null, null, null, null, job.outputPath.getFileName().toString()))
               : List.<BackgroundJob.Output>of();
             return new BackgroundJob(job.jobId, "conversion", job.status,
               job.overallProgress, job.createdAtMs, job.startedAtMs, job.finishedAtMs,
-              job.currentStageLabel, job.error, outputs);
+              job.currentStageLabel, job.error, outputs, example == null ? null
+                : new BackgroundJob.Details(example.title(), null, null, null, List.of(), example.id()));
         }).toList();
     }
 
@@ -182,7 +185,9 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                         final var exportAllResolutions = Boolean.parseBoolean(req.getParam("exportAllResolutions"));
                         final var buildResolutionPyramid = parseBoolean(req.getParam("buildResolutionPyramid"), ConversionOptions.defaultBuildResolutionPyramid());
                         final var balanceInputCoolers = parseBoolean(req.getParam("balanceInputCoolers"), ConversionOptions.defaultBalanceInputCoolers());
-                        final var balanceExportedCoolers = parseBoolean(req.getParam("balanceExportedCoolers"), ConversionOptions.defaultBalanceExportedCoolers());
+                        final var approximateRebin = Boolean.parseBoolean(req.getParam("approximateRebin"));
+                        final var balanceExportedCoolers = parseBoolean(req.getParam("balanceExportedCoolers"), !approximateRebin && ConversionOptions.defaultBalanceExportedCoolers());
+                        if (approximateRebin && balanceExportedCoolers) throw new IllegalArgumentException("Approximate rebinning exports unbalanced fractional counts; disable export balancing");
                         final var exportMode = ConversionOptions.ExportMode.parse(
                           req.getParam("exportMode") == null ? "auto" : req.getParam("exportMode")
                         );
@@ -218,7 +223,8 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                             buildResolutionPyramid,
                             balanceInputCoolers,
                             balanceExportedCoolers,
-                            exportMode
+                            exportMode,
+                            approximateRebin
                         );
 
                         job = createJob(sourcePath, outputPath, null, direction, parallelism, true, true, HictkLoadOptions.EMPTY);
@@ -323,7 +329,9 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     final var exportAllResolutions = requestJson.getBoolean("exportAllResolutions", false);
                     final var buildResolutionPyramid = requestJson.getBoolean("buildResolutionPyramid", ConversionOptions.defaultBuildResolutionPyramid());
                     final var balanceInputCoolers = requestJson.getBoolean("balanceInputCoolers", ConversionOptions.defaultBalanceInputCoolers());
-                    final var balanceExportedCoolers = requestJson.getBoolean("balanceExportedCoolers", ConversionOptions.defaultBalanceExportedCoolers());
+                    final var approximateRebin = requestJson.getBoolean("approximateRebin", false);
+                    final var balanceExportedCoolers = requestJson.getBoolean("balanceExportedCoolers", !approximateRebin && ConversionOptions.defaultBalanceExportedCoolers());
+                    if (approximateRebin && balanceExportedCoolers) throw new IllegalArgumentException("Approximate rebinning exports unbalanced fractional counts; disable export balancing");
                     final var exportMode = ConversionOptions.ExportMode.parse(requestJson.getString("exportMode", "auto"));
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
@@ -340,7 +348,12 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     }
 
                     final var direction = ConversionDirection.fromRequestOrSource(requestJson.getString("direction"), sourcePath);
+                    final var example = ExampleConversionContext.resolve(dataDirectory, sourcePath, direction, requestJson.getString("exampleId"));
                     final var outputPath = resolveOutputPath(dataDirectory, sourcePath, direction, requestJson.getString("outputFilename", ""));
+                    if (example != null && !outputPath.toAbsolutePath().normalize()
+                      .equals(direction.deriveOutputPath(sourcePath).toAbsolutePath().normalize())) {
+                        throw new IllegalArgumentException("Example opening requires its standard cached conversion destination");
+                    }
                     prepareOutputPath(outputPath, overwrite);
                     final var requestedAssemblyPath = resolveOptionalAssemblyPath(dataDirectory, assemblyFilename);
                     final var currentAssemblyPath = useCurrentAssembly && direction == ConversionDirection.HICT_TO_MCOOL
@@ -367,12 +380,14 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                         buildResolutionPyramid,
                         balanceInputCoolers,
                         balanceExportedCoolers,
-                        exportMode
+                        exportMode,
+                        approximateRebin
                     );
                     final ConversionJob job;
                     try {
                         job = createJob(sourcePath, outputPath, dataDirectory, direction, parallelism, false, false, loadOptions);
                         job.overwrite = overwrite;
+                        job.example = example;
                     } catch (IOException e) {
                         throw new RuntimeException("Failed to create conversion job", e);
                     }
@@ -412,7 +427,9 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     final var exportAllResolutions = requestJson.getBoolean("exportAllResolutions", false);
                     final var buildResolutionPyramid = requestJson.getBoolean("buildResolutionPyramid", ConversionOptions.defaultBuildResolutionPyramid());
                     final var balanceInputCoolers = requestJson.getBoolean("balanceInputCoolers", ConversionOptions.defaultBalanceInputCoolers());
-                    final var balanceExportedCoolers = requestJson.getBoolean("balanceExportedCoolers", ConversionOptions.defaultBalanceExportedCoolers());
+                    final var approximateRebin = requestJson.getBoolean("approximateRebin", false);
+                    final var balanceExportedCoolers = requestJson.getBoolean("balanceExportedCoolers", !approximateRebin && ConversionOptions.defaultBalanceExportedCoolers());
+                    if (approximateRebin && balanceExportedCoolers) throw new IllegalArgumentException("Approximate rebinning exports unbalanced fractional counts; disable export balancing");
                     final var exportMode = ConversionOptions.ExportMode.parse(requestJson.getString("exportMode", "auto"));
 
                     final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) vertx.sharedData().getLocalMap("hict_server").get("dataDirectory");
@@ -460,7 +477,8 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                             buildResolutionPyramid,
                             balanceInputCoolers,
                             balanceExportedCoolers,
-                            exportMode
+                            exportMode,
+                            approximateRebin
                         );
                         final ConversionJob job;
                         try {
@@ -813,7 +831,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
               requestedOptions.resolutions(), requestedOptions.chunkSize(), requestedOptions.compressionLevel(),
               requestedOptions.compressionAlgorithm(), requestedOptions.agpPath(), requestedOptions.applyAgpBeforeExport(),
               requestedOptions.parallelism(), requestedOptions.exportAllResolutions(), requestedOptions.buildResolutionPyramid(),
-              requestedOptions.balanceInputCoolers(), requestedOptions.balanceExportedCoolers(), requestedOptions.exportMode());
+              requestedOptions.balanceInputCoolers(), requestedOptions.balanceExportedCoolers(), requestedOptions.exportMode(), requestedOptions.approximateRebin());
             job.workingOutputPath = options.outputPath();
             if (job.direction == ConversionDirection.HICT_TO_MCOOL) {
                 this.hictToMcoolExportPipeline.convert(
@@ -910,6 +928,8 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
 
     private void recordSuccessfulConversionIfPossible(final @NotNull ConversionJob job,
                                                       final @NotNull ConversionOptions options) {
+        // Estimated, assembly-dependent exports are not ordinary source conversions.
+        if (options.approximateRebin()) return;
         final var map = this.vertx.sharedData().getLocalMap("hict_server");
         final var dataDirectoryWrapper = (ShareableWrappers.PathWrapper) map.get("dataDirectory");
         if (dataDirectoryWrapper == null) {
@@ -990,6 +1010,11 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
             case "zoomify" -> "Zoomify";
             case "balance" -> "Balancing";
             case "import_hict" -> "HiCT import";
+            case "approximate_grid" -> "Preparing export grid";
+            case "approximate_scan" -> "Estimating contacts";
+            case "approximate_merge" -> "Writing approximate Cooler";
+            case "approximate_export" -> "Approximate Cooler export";
+            case "export_float" -> "Writing matrix values";
             default -> stageName.replace('_', ' ');
         };
     }
@@ -1103,6 +1128,7 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
         private final boolean deleteSourceOnCleanup;
         private final boolean deleteOutputOnCleanup;
         private final HictkLoadOptions loadOptions;
+        private volatile ExampleConversionContext example;
         private volatile String status = "queued";
         private volatile String error = "";
         private final Deque<String> logs = new ArrayDeque<>();

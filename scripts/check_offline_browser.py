@@ -73,8 +73,11 @@ def main():
                 "heading", name="No contact map open", exact=True
             ).wait_for()
             page.reload()
-            with page.expect_file_chooser() as chooser:
+            with page.expect_file_chooser() as cancelled:
                 check.menu("File", "Open session")
+            cancelled.value.set_files([])
+            with page.expect_file_chooser() as chooser:
+                page.get_by_role("button", name="Load saved session…", exact=True).click()
             chooser.value.set_files(session)
             page.get_by_text(
                 "Session restored. Undo history starts from the restored assembly.",
@@ -85,7 +88,7 @@ def main():
             assert restored["agpSha256"] == changed["agpSha256"]
             assert restored["assemblyInfo"] == changed["assemblyInfo"]
             evidence["checks"].append(
-                "Unsaved Close Cancel preserves edits, Save closes, browser restart and session restore retain exact assembly"
+                "Unsaved Close Cancel preserves edits, Save closes, and loading from startup retains the exact assembly"
             )
             for extension in ("Png", "Svg", "Pdf"):
                 with page.expect_download() as download:

@@ -80,6 +80,7 @@ public class ChunkedFile implements AutoCloseable {
 
   private final @NotNull Path hdfFilePath;
   private final @NotNull SourceMetadata sourceMetadata;
+  private final @org.jetbrains.annotations.Nullable ApproximationProvenance.Summary approximationProvenance;
   //  private final long[] blockCount;
   private final int denseBlockSize;
   private final long @NotNull [] resolutions;
@@ -104,6 +105,7 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull NormalizationWeights normalizationWeights = new NormalizationWeights();
   private final @NotNull FASTAProcessor fastaProcessor;
   private final @NotNull AtomicLong coolerWeightsNaNCount = new AtomicLong(0L);
+  private boolean usableCoolerWeights;
   @Getter
   private final AtomicInteger parallelThreadCount = new AtomicInteger(4);
 
@@ -139,7 +141,9 @@ public class ChunkedFile implements AutoCloseable {
         .toList();
       Initializers.reportProgress("Validating resolution metadata", 1.0);
       if (effectiveResolutions.isEmpty() && requestedResolutions.isEmpty()) {
-        throw new IllegalStateException("No complete resolutions found in " + this.hdfFilePath);
+        throw new IllegalArgumentException(
+          "This file contains no complete HiCT resolution and may be incomplete or unsupported. " +
+            "Recreate it from the original matrix: " + this.hdfFilePath.getFileName());
       }
       if (effectiveResolutions.isEmpty()) {
         throw new IllegalArgumentException(
@@ -159,6 +163,7 @@ public class ChunkedFile implements AutoCloseable {
 
       this.resolutions = LongStream.concat(LongStream.of(0L), effectiveResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
       this.sourceMetadata = SourceMetadata.read(reader, effectiveResolutions);
+      this.approximationProvenance = ApproximationProvenance.read(reader, effectiveResolutions);
 
       this.denseBlockSize = (int) effectiveResolutions.stream()
         .mapToLong(res -> reader.int64().getAttr(String.format("/resolutions/%d/treap_coo", res), "dense_submatrix_size"))
@@ -228,8 +233,15 @@ public class ChunkedFile implements AutoCloseable {
   }
 
   /** Native split coordinates are relative to the parent in its orientation at the time of the edit. */
-  public record SplitEdit(int parentId, String sourceName, int sourceOffsetBp, long parentLengthBp,
-                          boolean reversed, long splitOffsetBp, int leftId, int rightId) {}
+  public record SplitEdit(int parentId, String sourceName, long sourceOffsetBp, long parentLengthBp,
+                          boolean reversed, long splitOffsetBp, int leftId, int rightId,
+                          @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+                          boolean exact) {
+    public SplitEdit(int parentId, String sourceName, long sourceOffsetBp, long parentLengthBp,
+                     boolean reversed, long splitOffsetBp, int leftId, int rightId) {
+      this(parentId, sourceName, sourceOffsetBp, parentLengthBp, reversed, splitOffsetBp, leftId, rightId, false);
+    }
+  }
 
   void recordSplit(SplitEdit split) {
     splitEdits.put(split.leftId(), split);
@@ -285,10 +297,11 @@ public class ChunkedFile implements AutoCloseable {
     // Name overrides are session-only and should not be loaded from the HDF5 file.
   }
 
-  public void addCoolerWeightsNaNCount(final long count) {
+  void recordCoolerWeights(final long count, final boolean usable) {
     if (count > 0L) {
       this.coolerWeightsNaNCount.addAndGet(count);
     }
+    this.usableCoolerWeights |= usable;
   }
 
   private static <K> void readOverrideMap(final @NotNull String encoded, final @NotNull Map<K, String> target, final @NotNull java.util.function.Function<String, K> keyParser) {
@@ -547,6 +560,16 @@ public class ChunkedFile implements AutoCloseable {
     throw new IllegalArgumentException("Missing original contact-bin ownership for " + descriptor.getContigName());
   }
 
+  /** Sparse source-forward origins, keyed by bp resolution. Missing keys mean zero. */
+  public java.util.Map<Long, Long> firstOwnedBinOffsets(final ContigDescriptor descriptor) {
+    final var offsets = new java.util.LinkedHashMap<Long, Long>();
+    for (int order = 1; order < resolutions.length; order++) {
+      final long offset = firstOwnedBinOffset(descriptor, order);
+      if (offset != 0) offsets.put(resolutions[order], offset);
+    }
+    return java.util.Map.copyOf(offsets);
+  }
+
   /** Exclusive visible-bin endpoint of a nonempty half-open bp interval.
    * A hidden component contributes no pixel, including at the interval end. */
   public long bpRangeEndToPixels(long endBp, ResolutionDescriptor resolution) {
@@ -586,12 +609,21 @@ public class ChunkedFile implements AutoCloseable {
 
   public ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGP(final @NotNull Reader tsvReader,
       final ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy policy) throws IOException, NoSuchFieldException {
+    return importAGP(tsvReader, policy, false);
+  }
+
+  public ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGPWithSharedBins(Reader reader) throws IOException, NoSuchFieldException {
+    return importAGP(reader, ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy.EXCLUDE, true);
+  }
+
+  private ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.ImportReport importAGP(Reader tsvReader,
+      ru.itmo.ctlab.hict.hict_library.assembly.AGPImportPlan.MissingComponentsPolicy policy, boolean sharedBins) throws IOException, NoSuchFieldException {
     final var records = this.agpProcessor.parseRecords(tsvReader);
     final var contigLock = this.contigTree.getRootLock().writeLock();
     final var scaffoldLock = this.scaffoldTree.getRootLock().writeLock();
     contigLock.lock();
     scaffoldLock.lock();
-    try { return this.agpProcessor.importRecords(records, policy); }
+    try { return sharedBins ? this.agpProcessor.importRecordsWithSharedBins(records, policy) : this.agpProcessor.importRecords(records, policy); }
     finally { scaffoldLock.unlock(); contigLock.unlock(); }
   }
 

@@ -59,6 +59,16 @@ class AssemblyBinGridTest {
       // Native Split removes the selected 4 bp bin from the assembly.
       assertEquals(overlaps(secondaryGrid, initial.binAt(3)), overlaps(secondaryGrid, split.binAt(2)));
       assertNull(split.binAt(4));
+      final var right = primary.getAssemblyInfo().contigs().getLast().descriptor();
+      // Legacy split retains both coarse ATU bins, including the one starting
+      // at source bp zero. Report that ownership verbatim, not a guessed -2.
+      assertEquals(java.util.Map.of(10L, -12L), primary.firstOwnedBinOffsets(right));
+      final var legacy = ru.itmo.ctlab.hict.hict_server.dto.response.assembly.AssemblyInfoDTO.generateFromChunkedFile(primary);
+      assertEquals(java.util.Map.of(10L, -12L), legacy.contigDescriptors().getLast().contigBinOffsets());
+      final var compact = new io.vertx.core.json.JsonObject(io.vertx.core.json.Json.encode(
+        ru.itmo.ctlab.hict.hict_server.dto.response.assembly.CompactAssemblyInfoDTO.response(primary, 1, "compact-v1")));
+      assertEquals(-12L, compact.getJsonObject("assemblyInfo").getJsonObject("contigBinOffsets")
+        .getJsonObject(Integer.toString(right.getContigId())).getLong("10"));
 
       primary.getScaffoldingOperations().reverseSelectionRangeBp(0, ReinforcementHdf5Fixture.LENGTH - 4);
       final var reversed = new AssemblyBinGrid(primary, primaryLevel);

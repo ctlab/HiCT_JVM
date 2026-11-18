@@ -51,7 +51,9 @@ public class ContigDescriptor {
   private final @NotNull List<@NotNull List<@NotNull ATUDescriptor>> atus;
   private final @NotNull List<long @NotNull []> atuPrefixSumLengthBins;
   private final @NotNull String contigNameInSourceFASTA;
-  private final int offsetInSourceFASTA;
+  private final long offsetInSourceFASTA;
+  /** This fragment references every source bin intersecting its sequence interval. */
+  private final boolean sharedBinSlice;
 
   public ContigDescriptor(
     final int contigId,
@@ -61,11 +63,20 @@ public class ContigDescriptor {
     final @NotNull List<@NotNull ContigHideType> presenceAtResolution,
     final @NotNull List<@NotNull List<@NotNull ATUDescriptor>> atus,
     final @Nullable String contigNameInSourceFASTA,
-    final int offsetInSourceFASTA
+    final long offsetInSourceFASTA
   ) {
+    this(contigId, contigName, lengthBp, lengthBinsAtResolution, presenceAtResolution,
+      atus, contigNameInSourceFASTA, offsetInSourceFASTA, false);
+  }
+
+  public ContigDescriptor(int contigId, @NotNull String contigName, long lengthBp,
+      @NotNull List<Long> lengthBinsAtResolution, @NotNull List<ContigHideType> presenceAtResolution,
+      @NotNull List<List<ATUDescriptor>> atus, @Nullable String contigNameInSourceFASTA,
+      long offsetInSourceFASTA, boolean sharedBinSlice) {
     this.contigId = contigId;
     this.contigName = contigName;
     this.lengthBp = lengthBp;
+    this.sharedBinSlice = sharedBinSlice;
 
     // A one-base AGP component can legitimately own one contact bin.
     if (lengthBp <= 0 || lengthBinsAtResolution.size() != atus.size()
