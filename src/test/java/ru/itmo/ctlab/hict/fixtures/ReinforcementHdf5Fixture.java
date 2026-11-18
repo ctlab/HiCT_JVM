@@ -99,5 +99,9 @@ public final class ReinforcementHdf5Fixture {
     create(directory, "tiny-fine", List.of(1L));
     create(directory, "tiny-coarse", List.of(25L));
     Files.writeString(directory.resolve("tiny.fa"), ">tiny synthetic 17 bp fixture\nACGTRYMKSWBDHVNAC\n");
+    Files.writeString(directory.resolve("tiny-two-scaffolds.agp"), """
+      first\t1\t8\t1\tW\ttiny\t1\t8\t+
+      second\t1\t9\t1\tW\ttiny\t9\t17\t+
+      """);
   }
 }

@@ -68,6 +68,12 @@ source, compact layouts and failed-request recovery. Across seven measured
 pans, the histogram updated in 4.9–27.8 ms against a 150 ms target. The
 fixture matrices retained their original hashes.
 
+All 13 display-mode checks passed on the same Linux package. An independent
+5 × 5 contact fixture verifies the fitted Expected values and O/E ratios across
+a scaffold boundary. The rendered tile gives three measured zeros the depletion
+color and leaves 18 undefined ratios transparent. The matrix JSON represents
+those undefined values as `null`. Evidence is in `expected-boundary/` below.
+
 The Windows, Linux and both macOS package jobs passed. The hosted macOS 12.3
 compatibility reports found zero errors in 1,109 arm64 and 1,113 Intel
 binary entries. Interactive Windows and macOS validation remains deferred

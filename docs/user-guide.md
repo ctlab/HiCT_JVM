@@ -88,11 +88,11 @@ for supported save behavior and remaining platform qualification.
 FASTA and AGP exports stream directly to writable browser destinations. The
 Exporting notice offers Cancel while preparing or transferring the file, then
 shows the result. A cancelled or failed transfer does not confirm a saved file.
-The current Electron desktop window also streams FASTA/AGP to the native
-destination you choose. Cancelling its chooser starts no transfer. Navigation
-cancels an active transfer, and closing the last window waits for partial-file
-cleanup. Older desktop engines, Tauri and download-only browsers still use a
-buffered path; their large-file memory qualification remains pending.
+The bundled Electron and Tauri desktop windows stream FASTA and AGP to the
+native destination you choose. Cancelling the chooser leaves the destination
+untouched. Closing or replacing the WebUI cancels unfinished native saves and
+clears their temporary files. A download-only browser uses its download
+settings to choose the destination.
 
 ## Signal and layers
 
@@ -100,7 +100,12 @@ Use the Visualization sidebar to change the color range, signal transform and
 normalization, then Apply. Slider scale changes the slider's response. Signal
 transform changes the displayed values. Square-root coverage uses a single
 whole-map domain at each resolution. Bins without contacts remain empty.
-Show O/E uses a diverging log-ratio range centered at one.
+Show O/E uses a diverging log-ratio range centered at one. It compares each
+contact with the fitted mean of positive finite signals at the same distance
+within its scaffold or unscaffolded contig. A measured zero with a positive
+expected value uses the depletion color. Cells with no expected support,
+including pairs across scaffolds, are transparent.
+[Expected and O/E palettes](observed-expected-palettes.md)
 
 Manage opens preset management. Save captures the applied visualization options,
 both rendering branches, enable and swap flags, background and border styles.

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check Expected/O/E round trips preserve identity graphs, pixels and sessions.
 
-Requires disposable tiny-primary.hict.hdf5 and tiny-identity.hict.hdf5 fixtures.
+Requires disposable tiny-primary.hict.hdf5, tiny-identity.hict.hdf5 and
+tiny-two-scaffolds.agp fixtures.
 Never point this acceptance check at a user's live server.
 """
 
@@ -82,6 +83,59 @@ def main():
             event.value.save_as(path)
             return path, json.loads(path.read_text())
 
+        def scaffold_boundary_signals():
+            check.menu("Assembly", "Load AGP")
+            check.choose_file("tiny-two-scaffolds.agp")
+            with page.expect_response("**/load_agp") as loaded:
+                page.get_by_role("button", name="Load", exact=True).click()
+            assert loaded.value.ok, loaded.value.text()
+            page.get_by_placeholder("Filter current folder by file name or path").wait_for(state="hidden")
+            page.locator("#normalization-mode").select_option("none")
+            check.settle()
+
+            def values(signal_mode):
+                response = post("/matrix/query", {
+                    "source": "PRIMARY", "signalMode": signal_mode, "format": "JSON",
+                    "bpResolution": 4, "startRowPx": 0, "endRowPx": 5,
+                    "startColPx": 0, "endColPx": 5,
+                })
+                return np.array(response["values"], dtype=float).reshape(5, 5)
+
+            # The fixture's four contacts. The cut is at bp 8, exactly between bins.
+            observed = np.zeros((5, 5))
+            observed[0, 0], observed[4, 4] = 1, 11
+            observed[0, 1] = observed[1, 0] = 3
+            observed[1, 2] = observed[2, 1] = 7
+            np.testing.assert_array_equal(values("RAW_COUNTS"), observed)
+
+            # Expected fits positive finite observations per scaffold and distance.
+            # Observed zeros still have defined ratios when that fitted mean is positive.
+            expected = np.zeros((5, 5))
+            expected[:2, :2] = [[1, 3], [3, 1]]
+            for index in range(2, 5):
+                expected[index, index] = 11
+            select_mode("EXPECTED")
+            np.testing.assert_allclose(values("TRADITIONAL_NORMALIZED"), expected)
+
+            select_mode("OBSERVED_OVER_EXPECTED")
+            supported = expected > 0
+            ratios = np.divide(observed, expected, out=np.full_like(expected, np.nan), where=supported)
+            np.testing.assert_allclose(values("TRADITIONAL_NORMALIZED"), ratios, equal_nan=True)
+            rgba = tile("PRIMARY")
+            np.testing.assert_array_equal(rgba[:, :, 3] > 0, supported)
+            measured_zeros = supported & (observed == 0)
+            np.testing.assert_array_equal(rgba[measured_zeros], [[33, 102, 172, 255]] * 3)
+            Image.fromarray(rgba).save(output / "scaffold-boundary-oe.png")
+            select_mode("OBSERVED")
+            np.testing.assert_array_equal(values("TRADITIONAL_NORMALIZED"), observed)
+            reported_ratios = ratios.astype(object)
+            reported_ratios[~supported] = None
+            results.append({
+                "boundaryBp": 8, "expected": expected.tolist(), "ratios": reported_ratios.tolist(),
+                "measuredZeros": int(np.count_nonzero(measured_zeros)),
+                "transparentUndefinedRatios": int(np.count_nonzero(~supported)),
+            })
+
         try:
             page.goto(args.url)
             page.wait_for_function("window.__hictBenchmark")
@@ -108,6 +162,7 @@ def main():
             )
             assert threshold > 1e-100, threshold
             results.append({"zeroHandleAvoidsSubnormalThreshold": threshold})
+            scaffold_boundary_signals()
 
             for presentation in ("split", "overlay"):
                 page.evaluate(
