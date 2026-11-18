@@ -130,17 +130,20 @@ with sync_playwright() as pw:
                 }""")
             page.wait_for_function("window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0].direction !== 1")
             landmark("reversed", 11015, 11056, center=True)
-            with page.expect_response(lambda r: r.url.endswith("/split_contig_at_bin") and r.ok):
+            with page.expect_response(lambda r: r.url.endswith("/split_contig_at_bp") and r.ok):
                 page.evaluate("window.__hictBenchmark.manager().eventManager.onClickInScissorsMode([1500,1500],4)")
             page.wait_for_function("window.__hictBenchmark.manager().contigDimensionHolder.contig_count === 2")
-            landmark("split", 11011, 11052, center=True)
+            retained = page.evaluate("""() => window.__hictBenchmark.manager()
+                .contigDimensionHolder.contigDescriptors.reduce((total, contig) => total + contig.contigLengthBp, 0)""")
+            assert retained == 12017, retained
+            landmark("split", 11015, 11056, center=True)
             page.evaluate("""() => {
               const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
               const d=m.contigDimensionHolder.contigDescriptors.at(-1);
               const scope={kind:"contig",id:d.contigId,label:d.contigName};
               l.setAxisScopes(scope,scope);
             }""")
-            landmark("scoped-split", 11011, 11052, center=True)
+            landmark("scoped-split", 11015, 11056, center=True)
             results.append({"fixture": label, "verified": ["reversed", "split", "scoped-split"]})
         assert peak_pending[0] <= 16, peak_pending
         assert not errors, errors
