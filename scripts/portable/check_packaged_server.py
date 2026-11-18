@@ -33,10 +33,12 @@ def stop(process):
     if process.poll() is not None:
         return
     if os.name == "nt":
-        subprocess.run(
+        result = subprocess.run(
             ["taskkill", "/pid", str(process.pid), "/t", "/f"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15,
+            capture_output=True, text=True, errors="replace", timeout=15,
         )
+        if result.returncode and process.poll() is None:
+            print(f"Windows launcher shutdown reported: {result.stderr.strip()}", flush=True)
     else:
         try:
             os.killpg(process.pid, signal.SIGTERM)
@@ -50,6 +52,19 @@ def stop(process):
         else:
             os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=15)
+
+
+def clean_up(directory, retry_seconds):
+    deadline = time.monotonic() + retry_seconds
+    while True:
+        try:
+            directory.cleanup()
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            # Terminated Windows children can retain native DLL handles briefly.
+            time.sleep(0.2)
 
 
 def check(launcher, expected_version, work):
@@ -125,15 +140,17 @@ def main():
     parser.add_argument("launcher", type=Path)
     parser.add_argument("version")
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="hict-packaged-server-") as directory:
-        work = Path(directory)
-        try:
-            check(args.launcher.resolve(strict=True), args.version, work)
-        except Exception:
-            log = work / "server.log"
-            if log.exists():
-                print(log.read_text(encoding="utf-8", errors="replace")[-16000:], flush=True)
-            raise
+    directory = tempfile.TemporaryDirectory(prefix="hict-packaged-server-")
+    work = Path(directory.name)
+    try:
+        check(args.launcher.resolve(strict=True), args.version, work)
+    except Exception:
+        log = work / "server.log"
+        if log.exists():
+            print(log.read_text(encoding="utf-8", errors="replace")[-16000:], flush=True)
+        raise
+    finally:
+        clean_up(directory, retry_seconds=15 if os.name == "nt" else 0)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+from unittest.mock import Mock
+
+from check_packaged_server import clean_up
 
 
 REVISION = "a" * 40
@@ -42,6 +45,19 @@ def main():
     if sys.argv[1:] == ["start-server", "--serve-webui=true"]:
         serve()
         return
+    directory = Mock()
+    directory.cleanup.side_effect = [PermissionError("held DLL"), None]
+    clean_up(directory, retry_seconds=1)
+    assert directory.cleanup.call_count == 2
+
+    directory.cleanup.side_effect = PermissionError("persistent lock")
+    try:
+        clean_up(directory, retry_seconds=0)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("A persistent cleanup failure must fail the verifier")
+
     if os.name != "nt":
         return
 
