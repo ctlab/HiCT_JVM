@@ -382,6 +382,22 @@ attempt suffix, rebuild all platform packages together. A local collection
 fixture produced 17 release assets from a consistent set and refused a mixed
 attempt before producing provenance.
 
+## Portable native cache inputs
+
+The upload-only change invalidated eight compiled caches because those keys
+hashed the whole portable workflow. The native source, platform build scripts
+and build flags were identical across the change. The recovery run rebuilt
+Linux and Windows toolchain binaries after those cache misses.
+[Recovery run](https://github.com/ctlab/HiCT_JVM/actions/runs/44263655268)
+
+The next cache schema keys each payload on its platform build inputs. Native
+processing includes the Gradle build, wrapper and JNI sources. Toolchains
+include the platform build scripts and resolved upstream revisions. Keys retain
+runner image identity and their ABI, deployment target or compiler options as
+applicable. The first run under the new schema populates its exact caches.
+The local key check changed each platform build input independently and verified
+that an upload-only edit leaves all eight compiled keys unchanged.
+
 ## Linux Autobuild cache across runner updates
 
 The warm hosted Autobuild for `60bf63d9` finished in 3m 09s from workflow

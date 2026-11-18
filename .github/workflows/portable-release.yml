@@ -181,6 +181,8 @@ jobs:
           echo "commit=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
   # Each package waits only for its own platform payload and smoke tests.
+  # Keep compiled cache inputs scoped to the platform build. Include changed
+  # compiler options in the key when changing a build command in this workflow.
   sequence-tools-linux:
     uses: ./.github/workflows/sequence-tools.yml
     with:
@@ -377,7 +379,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-linux-x86_64-glibc217-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          key: hict-native-v2-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**', 'scripts/ci/linux_container_build.sh', 'scripts/ci/configure_centos_mirrors.py') }}-${{ steps.runner-image.outputs.identity }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
@@ -412,7 +414,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: toolchain-v4-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/ci/linux_container_build.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v5-linux-x86_64-${{ env.HICT_LINUX_ABI_MODE }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_linux.sh', 'scripts/toolchains/conan-git/git', 'scripts/toolchains/build_minimap2_linux.sh', 'scripts/toolchains/build_mm2plus_linux.sh', 'scripts/toolchains/build_mimalloc_static.sh', 'scripts/ci/linux_container_build.sh', 'scripts/ci/configure_centos_mirrors.py') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-linux-toolchains.outputs.cache-hit != 'true'
@@ -887,7 +889,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          key: hict-native-v2-windows-x86_64-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
@@ -920,7 +922,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/windows_x86_64
-          key: toolchain-v4-windows-x86_64-mm2plus-${{ env.MM2PLUS_REF }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1', 'scripts/toolchains/build_mm2plus_windows.ps1') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v5-windows-x86_64-mostly-static-mm2plus-${{ env.MM2PLUS_REF }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-${{ hashFiles('scripts/toolchains/build_hictk_windows.ps1', 'scripts/toolchains/build_minimap2_windows.ps1', 'scripts/toolchains/build_mm2plus_windows.ps1') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
 
       - name: Discard non-exact compiled cache
         if: steps.cache-hictk.outputs.cache-hit != 'true'
@@ -1454,7 +1456,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          key: hict-native-v2-macos-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
         shell: bash
@@ -1473,7 +1475,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_arm64
-          key: toolchain-v2-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git', 'scripts/portable/macos_target.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
       - name: Discard non-exact compiled cache
         if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
         shell: bash
@@ -1731,7 +1733,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: build/native-processing/resources
-          key: hict-native-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          key: hict-native-v2-macos-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-openmp-${{ env.HICT_NATIVE_OPENMP || '0' }}-${{ hashFiles('build.gradle.kts', 'settings.gradle.kts', 'gradlew', 'gradlew.bat', 'gradle/wrapper/**', 'src/main/native/**') }}-${{ steps.runner-image.outputs.identity }}
       - name: Discard non-exact compiled cache
         if: steps.cache-native-processing.outputs.cache-hit != 'true'
         shell: bash
@@ -1750,7 +1752,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/darwin_x86_64
-          key: toolchain-v2-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git') }}-${{ steps.runner-image.outputs.identity }}-${{ hashFiles('.github/workflows/portable-release.yml', 'scripts/toolchains/**', 'scripts/ci/**', 'scripts/portable/macos_target.sh', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}-${{ steps.tool-sources.outputs.sources }}
+          key: toolchain-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git', 'scripts/portable/macos_target.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
       - name: Discard non-exact compiled cache
         if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
         shell: bash
