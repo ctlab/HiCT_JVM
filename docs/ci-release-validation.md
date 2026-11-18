@@ -353,3 +353,17 @@ successfully in 4m 25s. [Migration run](https://github.com/ctlab/HiCT_JVM/action
 An official Actions glob fixture verified that nine build and verification
 inputs change the key while six unrelated inputs, including the portable
 workflow unit test and generated Python bytecode, leave it unchanged.
+
+The pull-request Autobuild for `0d8391a1` missed its cache and was interrupted
+while pip streamed a dependency into the native Linux toolchain build. The
+branch Autobuild on the same revision restored its toolchain in five seconds
+and passed. The failed pull-request job was retried independently.
+[Pull-request run](https://github.com/ctlab/HiCT_JVM/actions/runs/44234868302)
+[Branch run](https://github.com/ctlab/HiCT_JVM/actions/runs/44234860380)
+
+Pull-request cache misses now use the same prepare, source-check and payload
+verification steps as branch cache misses. GitHub scopes the saved pull-request
+cache to its merge ref for reuse by later checks of that pull request. The
+cache key still includes the architecture, upstream source fingerprints and
+build script hash. Hosted validation of this cache change is pending.
+[GitHub Actions cache scope](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)
