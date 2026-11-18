@@ -33,7 +33,7 @@ describe earlier releases; they must not override the decisions below.
 | P7 Jobs/examples, FASTA-only, OSD and diagonal provenance | 12, 14, 16 | In progress: Jobs-first downloads/conversions, guarded opening, cache integrity, live cancellation/retry, Info and yeast diagonal provenance verified; full recipe prefilling and per-source session provenance implemented and verified; broader wizard/public examples and release qualification pending |
 | P8 Opt-in remote BLAST with external-subject results | 18 | In progress: consent, independent Jobs, external-coordinate viewer and bounded exports implemented; controlled submission/lifecycle checks and live known-RID recovery pass, including ten public-reference hits, map-independent delivery and exports; automatic recovery without a known RID and platform/package qualification pending |
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Implementation and primary publication artifact verified: PNG/SVG viewer, three-format captures, fitting contexts, portable snapshots, column sizes and compact grids; the real public-data figure has source checks, caption/alt text, 7.05-pt text, a zero-raster vector PDF/SVG and a verified 900-dpi TIFF; overall release/platform qualification remains open |
-| P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
+| P10 Launcher Stop returns to simple start view | 1 | Implemented and verified on the published Linux JAR with its bundled runtime; interactive Windows and macOS checks are deferred. |
 
 ## Advisor item acceptance references
 
@@ -45,7 +45,7 @@ records the deferred Windows and macOS desktop work.
 
 | Item | Delivered behavior | Acceptance evidence |
 |---:|---|---|
-| 1 | Stop returns the Launcher to its simple Start view. | Linux private-display Launcher checks and [native lifecycle qualification](#version-63-package-qualification-and-native-lifecycle-follow-up). |
+| 1 | Stop returns the Launcher to its simple Start view. | [Published Linux Launcher checks](release-qualification.md#published-clipboard-release-20371) and [native lifecycle qualification](#version-63-package-qualification-and-native-lifecycle-follow-up). |
 | 2 | Shift selects entities with persistent border highlights. Ctrl or Cmd creates a persistent region for sequence tools. | [Selection browser checks](#independent-selections-and-exact-coordinate-entry) and the [published clipboard release](release-qualification.md#published-clipboard-release-20371). |
 | 3 | Map, ModDotPlot and tracks can be captured before and after exact cutting and scaffolding. | [Publication figure, source provenance and print assets](publication/borrelia-editing/README.md) and [candidate reproduction](#reproduction-of-publication-artwork-with-the-candidate-webui). |
 | 4 | Save session asks for a destination, and File offers Open Session. | [Destination and session checks](#p3-destinations-and-confirmed-session-saves), [Firefox download fallback](#native-dependency-soundness-and-real-firefox-downloads) and the published Linux restore journey. |

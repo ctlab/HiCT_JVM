@@ -23,6 +23,15 @@ that an independent GTK process read and saved. WebKit's own editable test field
 received an empty image paste event on this Linux stack. Both native checks ran
 in private Linux displays with loopback networking only.
 
+The released JAR and its bundled Java runtime also passed all 12 Linux
+Launcher checks on a private display. The test started a real server, confirmed
+its version endpoint, then used Stop to terminate the owned server and restore
+the simple Launcher card. The post-Stop screenshot shows the enabled Start
+action with the configuration and live log hidden. The Launcher test uses
+isolated settings and data directories. Its browser lifecycle fixtures use
+inert child processes. Screenshots and hashes are in `launcher-reset/` within
+the release evidence directory below.
+
 The exact Linux runfile completed all ten qualification stages, including
 230 cycles in a 1,805.36-second mixed soak. Frame p95 was 16.8 ms and
 input acknowledgement p95 was 53.90 ms. Browser heap grew by 0.93 MiB,
