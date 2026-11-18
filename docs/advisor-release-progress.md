@@ -68,6 +68,44 @@ records the deferred Windows and macOS desktop work.
 | 21 | FASTA-level and feature-edge cuts retain source bins and exact sequence intervals. | [Exact native and session tests](#p1-exact-library-cuts-and-sessions), [base-grid track qualification](#base-grid-track-qualification) and the exact packaged alignment check. |
 | 22 | The viewport histogram drives visible-area levels, with a spline and draggable range and midpoint. | [Viewport and sample-based levels](#inline-viewport-histogram-and-sample-based-levels) and [midpoint persistence](#color-midpoint-across-rendering-and-persistence). |
 
+## Application Note archive handoff
+
+Oxford Bioinformatics requires the submitted software version and its test data
+to be available from a dedicated archive. The abstract's Availability and
+Implementation section must give the archive URL. The journal also requires
+instructions for reproducing results and figures. The Application Note rules
+require software availability for two years after publication.
+[Bioinformatics author guidelines](https://academic.oup.com/bioinformatics/pages/author-guidelines)
+
+As of 2026-11-18, the qualified rolling build is `2.0.371-ci1-b84ed77`, built
+from [HiCT JVM `b84ed77`](https://github.com/ctlab/HiCT_JVM/tree/b84ed77fad3eb23cb8a19b0a0dcfbbccfd951a59)
+and [HiCT WebUI `ed184e8`](https://github.com/ctlab/HiCT_WebUI/tree/ed184e8b229e8132718e7facb09903726151ad4a).
+The [publication run](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944)
+recorded all 17 asset digests. The automated release replaces older downloads.
+For the submission archive, retain both exact source trees, the installers,
+`build-origin.txt`, platform checksum manifests, and the installation guide for
+the version the authors select. Recheck its release qualification and digests
+if that version changes.
+
+Both `2.0.371-ci1-b84ed77` source archives are staged locally alongside their
+SHA-256 manifest in `build/release-evidence/portable-publication-priority/`
+`run-44215590944/submission-source/`. The archive headers record the exact
+JVM and WebUI commits.
+
+Use the [example catalog](examples-catalog.md#selected-borrelia-and-yeast-quick-start-recipes)
+to identify test inputs, accessions, source checksums and provider terms. Include
+the selected test data with its attribution and the
+[figure reproduction guide](publication/borrelia-editing/README.md). That guide
+records the original figure build separately and links its panel provenance,
+artwork and checksums. All 31 figure entries matched the retained manifest on
+2026-11-18.
+
+The author team's final submission checks are to select the build and test data,
+publish and verify the dedicated archive, add its public URL to the abstract,
+and review the manuscript's software and AI-use disclosures under the journal's
+policy. The archive URL and the author team's approval of the figure for
+submission are pending.
+
 ## Audit baseline
 
 JVM `cd4f6540`, WebUI `f9d48ce`: 519 JVM tests with no failures/errors and
