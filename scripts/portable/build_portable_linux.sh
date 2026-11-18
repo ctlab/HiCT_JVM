@@ -349,6 +349,7 @@ if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
   JAVA_OPTS=(${HICT_JAVA_OPTS})
 fi
 
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
 exec "${APP_HOME}/runtime/bin/java" -XX:MaxRAMPercentage=50.0 "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "${JAVA_OPTS[@]}" -jar "${APP_HOME}/lib/hict.jar" "$@"
 
 EOF

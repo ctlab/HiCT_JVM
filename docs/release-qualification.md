@@ -20,12 +20,13 @@ therefore failed on this build. The Linux runfile SHA-256 is
 and the extracted JAR SHA-256 is
 `05ee6490ccc96caa269ed5c5ccb4905fe8fe1622d79301e70ee7881bf964fd13`.
 
-A diagnostic replay uses the identical runfile, JAR, fixtures, container and
-duration with glibc `MALLOC_ARENA_MAX=4`. This setting applies to the replay.
-The acceptance limits remain 33 ms frame p95, 100 ms input acknowledgement
-p95 and 1.0 MiB/min server RSS growth. The default and diagnostic receipts are
-stored under `build/release-evidence/portable-publication-priority/`
-`run-44263655268/`.
+A diagnostic replay used the identical runfile, JAR, fixtures, container and
+duration with glibc `MALLOC_ARENA_MAX=4`. All stages passed. Its 30-minute
+soak ran 234 cycles, with server RSS growth of 0.333 MiB/min, frame p95 of
+16.7 ms and input acknowledgement p95 of 55.04 ms. There were zero browser
+errors. The next Linux launchers apply the tested value as a default and honor
+an explicit environment override. The default and diagnostic receipts are
+under `build/release-evidence/portable-publication-priority/run-44263655268/`.
 
 ## Unpublished portable candidate 2.0.383
 

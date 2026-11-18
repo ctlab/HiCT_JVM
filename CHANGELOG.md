@@ -29,6 +29,7 @@
 ### Portable packages
 
 - Linux, Windows and macOS packages include the pinned WebUI and the native tools needed for the supported workflows. Release publication verifies the requested installers and their checksums while keeping the previous downloads available through an interrupted upload.
+- Linux launchers use fewer glibc allocation arenas by default, reducing resident memory during repeated map opening and editing.
 
 ## 2.0.0
 

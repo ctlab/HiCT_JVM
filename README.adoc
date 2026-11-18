@@ -125,6 +125,8 @@ parallel tools and browsers require more memory and disk.
 Portable launchers set Java's `MaxRAMPercentage` to 50. On an 8 GiB host this
 provides a 4 GiB Java heap. Set `HICT_JAVA_OPTS=-Xmx6g` to choose an explicit limit
 for a suitable host. Native tools and the browser use additional memory.
+Linux portable launchers default to four glibc allocation arenas per process.
+Set `MALLOC_ARENA_MAX` before launch to override that value.
 
 Keep free disk for source downloads, the generated matrix, native conversion
 scratch and the uncompressed FASTA index. The recorded cheetah trial used about
