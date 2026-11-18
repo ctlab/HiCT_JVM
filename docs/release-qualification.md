@@ -3,6 +3,30 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Unpublished portable candidate 2.0.383
+
+The exact Actions Linux runfile for `2.0.383-ci1-c29eaf5` passed ten browser
+selection checks, including real clipboard reads and typed cuts in a reversed
+contig. The coordinate dialog also stayed within a 1280 × 720 viewport and
+could be scrolled and submitted by keyboard. The exact AGP was restored by
+Undo. Metadata, menu, structural, incomplete-file, offline and four standalone
+navigation stages passed.
+
+The 30-minute loopback-only container soak completed 234 cycles with no reported
+browser errors. Frame p95 was 16.7 ms and input acknowledgement p95 was 54.85 ms.
+Browser, DOM and JVM heap measurements were within their limits. The fitted
+server RSS slope was 1.039 MiB/min against the 1.0 MiB/min limit, so the soak
+failed. The increase was in anonymous RSS. The `2.0.382` release had passed
+on the Linux host, a different execution environment. All 18,130 JVM class
+entries matched byte-for-byte between the two JARs. The only other runtime
+archive difference was directory timestamps in the embedded JHDF5 payload.
+The cause of the RSS trend remains under investigation.
+
+All four platform packagers reached startup. Intel macOS artifact upload
+failed on a hosted DNS lookup, so GitHub skipped publication. Receipts and
+the RSS comparison are in `build/release-evidence/portable-publication-priority/`
+`run-44255574234/`. [Portable Packages run](https://github.com/ctlab/HiCT_JVM/actions/runs/44255574234)
+
 ## Published portable release 2.0.382
 
 Portable Packages run 44241313376 pins JVM

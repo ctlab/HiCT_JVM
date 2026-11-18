@@ -2,8 +2,9 @@
 
 ## Current source reconciliation
 
-All 232 contracts reconcile against the clean WebUI release revision
-`332c67b4d227f9a58148338b74eea596a6e52230`, with 227 inspected bindings,
+All 232 contracts reconcile against the clean WebUI revision
+`02292b68d8b939c020d57ca36e9a1c86f0231a1d` pinned by Portable Packages run
+44255574234, with 227 inspected bindings,
 five historical ambiguities and 158 literal source candidates. The receipt
 records both the checkout checked by the tool and the contract authors' recorded
 review revision, `bce320752ef4d903caccbbea21d757d4cbc9cac8`. It reports
@@ -11,7 +12,10 @@ whether Git sees changes in `src/app`. An exported source tree records null
 for the checkout revision and change status.
 
 The current receipt is under
-`build/release-evidence/portable-publication-priority/run-44241313376/control-reconciliation.json`.
+`build/release-evidence/portable-publication-priority/run-44255574234/control-reconciliation.json`.
+The new coordinate-cut form has a separate browser check because it postdates
+the historical capture. The check verifies a reversed-contig cut, unchanged
+sequence, and exact AGP restoration through Undo.
 The runtime ledger below retains scenario-specific historical evidence.
 The [release report](release-qualification.md) records current application
 and artifact qualification.

@@ -254,6 +254,7 @@ def main():
                             id: descriptor.contigId, direction: descriptor.direction};
                 }''')
                 assert first['length'] == 1000 and first['direction'] != 1, first
+                page.set_viewport_size({'width': 1280, 'height': 720})
                 dialog = coordinates()
                 position = dialog.get_by_label('Cut after position', exact=True)
                 assert not position.is_visible()
@@ -264,6 +265,13 @@ def main():
                 assert app.http('/get_agp_for_assembly', {}) == before_agp
                 position.fill(f"{first['name']}:350")
                 assert dialog.get_by_role('alert').count() == 0
+                bounds = dialog.evaluate('''element => {
+                    const {top, bottom, left, right} = element.getBoundingClientRect();
+                    return {top, bottom, left, right, scrollable: element.scrollHeight > element.clientHeight};
+                }''')
+                assert 0 <= bounds['top'] < bounds['bottom'] <= 720, bounds
+                assert 0 <= bounds['left'] < bounds['right'] <= 1280, bounds
+                assert bounds['scrollable'], bounds
                 page.screenshot(path=str(out / 'coordinate-cut-dialog.png'))
                 with page.expect_response('**/split_contig_at_bp') as response:
                     position.press('Enter')
