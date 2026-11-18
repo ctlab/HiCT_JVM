@@ -18,6 +18,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HictkConversionPipelineTest {
   @Test
+  void automaticZoomifyReportsCompletedLevelsFromTheToolPlan() {
+    var state = new HictkConversionPipeline.ZoomifyProgressState(0);
+    assertTrue(state.onLogLine("[info]: coarsening cooler at /input map.mcool::/resolutions/50 3 times (50 -> 50 -> 100 -> 250)").isEmpty());
+    assertEquals("Copying resolution 50", state.onLogLine("[info]: copying 50 resolution from /input.mcool").orElseThrow());
+    assertEquals(0.0, state.progress());
+    assertEquals("Generating resolution 100", state.onLogLine("[info]: generating 100 resolution from 50 (2x)").orElseThrow());
+    assertEquals(1.0 / 3.0, state.progress());
+    state.onLogLine("[info]: generating 100 resolution from 50 (2x)");
+    assertEquals(1.0 / 3.0, state.progress());
+    state.onLogLine("[info]: generating 250 resolution from 50 (5x)");
+    assertEquals(2.0 / 3.0, state.progress());
+  }
+
+  @Test
+  void zoomifyProgressDoesNotClaimCompletionOnAStartMarker() {
+    var unknown = new HictkConversionPipeline.ZoomifyProgressState(0);
+    var declared = new HictkConversionPipeline.ZoomifyProgressState(2);
+    for (var state : List.of(unknown, declared)) {
+      state.onLogLine("[info]: generating 100 resolution from 50");
+      assertEquals(0.0, state.progress());
+      state.onLogLine("[info]: generating 250 resolution from 50");
+      state.onLogLine("[info]: generating 500 resolution from 50");
+    }
+    assertEquals(0.0, unknown.progress());
+    assertEquals(0.5, declared.progress());
+  }
+
+  @Test
   void overallProgressIncludesTheBudgetForStagesThatHaveNotStarted() {
     var plan = List.of(
       new HictkConversionPipeline.StageDefinition("metadata", "Metadata", 2),

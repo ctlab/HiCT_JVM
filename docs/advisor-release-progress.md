@@ -1840,3 +1840,23 @@ contains zero raster page images, and the minimum vector text size was
 opened and zoomed the regenerated SVG and PNG. All 16 viewer checks passed.
 Receipts are under
 `build/release-evidence/portable-publication-priority/hosted-linux-qualification/publication/`.
+
+## Fresh yeast download, Info and conversion progress
+
+A three-click browser run downloaded both catalog inputs to a fresh directory.
+The Cooler and FASTA matched their catalog SHA-256 hashes. Download and
+conversion completed in Jobs, then the 17-chromosome map with 17 generated
+resolutions and its linked FASTA opened. The cold end-to-end time on this host
+was 162.9 s, including download and balancing.
+
+The new map passed all 16 Info cases without browser errors. Tests covered
+stationary-pointer updates during delayed tile loads, current-source guidance,
+map replacement and old-control disposal. The independent source check matched
+all 669,584 raw cells in 17 windows. Source offsets 0–3 at 50 bp and 0–1 at
+100 bp were empty. The 500 bp source diagonal contained 3,418,162 contacts.
+
+The native tool's pyramid plan now provides the stage denominator. Replaying
+the recorded 17-level hictk transcript advanced from 0 through 16 completed
+levels, with the successful exit marking completion. The full JVM suite ran
+663 tests with 656 passed, no failures, and seven skipped. Evidence is under
+`build/release-evidence/portable-publication-priority/hosted-linux-qualification/yeast/`.

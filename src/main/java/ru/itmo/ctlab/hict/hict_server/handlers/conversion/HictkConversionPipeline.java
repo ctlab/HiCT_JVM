@@ -31,7 +31,10 @@ import java.util.zip.GZIPInputStream;
 
 public final class HictkConversionPipeline {
   private static final @NotNull Pattern INTERNAL_OVERALL_PROGRESS_PATTERN = Pattern.compile("Overall progress:\\s*(\\d+)%");
-  private static final @NotNull Pattern ZOOMIFY_RESOLUTION_PATTERN = Pattern.compile("generating\\s+(\\d+)\\s+resolution", Pattern.CASE_INSENSITIVE);
+  private static final @NotNull Pattern ZOOMIFY_PLAN_PATTERN = Pattern.compile(
+    "\\bcoarsening\\s+cooler\\s+at\\s+.*?\\s+(\\d{1,8})\\s+times?\\s*\\(", Pattern.CASE_INSENSITIVE);
+  private static final @NotNull Pattern ZOOMIFY_RESOLUTION_PATTERN = Pattern.compile(
+    "\\b(copying|generating)\\s+(\\d+)\\s+resolution\\b", Pattern.CASE_INSENSITIVE);
 
   private final @NotNull ExternalToolchainManager toolchainManager;
 
@@ -147,7 +150,7 @@ public final class HictkConversionPipeline {
 
       final var zoomifyStage = stagePlan.get(2);
       emitStage(logger, stagePlan, zoomifyStage.id(), 0.0d, "Zoomifying .cool to .mcool");
-      final var zoomifyState = new ZoomifyProgressState(targetResolutions);
+      final var zoomifyState = new ZoomifyProgressState(automaticZoomifyPyramid ? 0 : targetResolutions.size());
       final var zoomifyCommand = new ArrayList<String>();
       zoomifyCommand.add(toolchain.hictkCommand().toString());
       zoomifyCommand.add("zoomify");
@@ -320,7 +323,8 @@ public final class HictkConversionPipeline {
       emitStage(logger, stagePlan, "metadata", 1.0d, "Loaded base resolution " + baseResolution);
 
       emitStage(logger, stagePlan, "zoomify", 0.0d, "Zoomifying .cool to .mcool");
-      final var zoomifyState = new ZoomifyProgressState(targetResolutions);
+      final var zoomifyState = new ZoomifyProgressState(
+        options.resolutions() == null || options.resolutions().isEmpty() ? 0 : targetResolutions.size());
       final var zoomifyCommand = new ArrayList<String>();
       zoomifyCommand.add(Objects.requireNonNull(toolchain.hictkCommand()).toString());
       zoomifyCommand.add("zoomify");
@@ -472,7 +476,8 @@ public final class HictkConversionPipeline {
 
       final var generatedMcoolPath = tmpDirectory.resolve(stripSuffix(options.inputPath().getFileName().toString()) + ".pyramid.mcool");
       emitStage(logger, stagePlan, "zoomify", 0.0d, "Zoomifying base .cool to .mcool");
-      final var zoomifyState = new ZoomifyProgressState(requestedPyramidResolutions);
+      final var automaticPyramid = options.resolutions() == null || options.resolutions().isEmpty();
+      final var zoomifyState = new ZoomifyProgressState(automaticPyramid ? 0 : requestedPyramidResolutions.size());
       final var zoomifyCommand = new ArrayList<String>();
       zoomifyCommand.add(Objects.requireNonNull(toolchain.hictkCommand()).toString());
       zoomifyCommand.add("zoomify");
@@ -483,7 +488,7 @@ public final class HictkConversionPipeline {
       zoomifyCommand.add(Integer.toString(normalizeParallelism(options.parallelism())));
       zoomifyCommand.add("--compression-lvl");
       zoomifyCommand.add(Integer.toString(normalizeHictkCompressionLevel(options.compressionLevel())));
-      if (options.resolutions() == null || options.resolutions().isEmpty()) {
+      if (automaticPyramid) {
         zoomifyCommand.add("--nice-steps");
         zoomifyCommand.add("--copy-base-resolution");
       } else {
@@ -1276,33 +1281,37 @@ public final class HictkConversionPipeline {
   record BedLoadGeometry(@NotNull Path chromSizesPath, long binSize) {
   }
 
-  private static final class ZoomifyProgressState {
-    private final @NotNull List<Long> targetResolutions;
+  static final class ZoomifyProgressState {
+    private int plannedResolutions;
     private final LinkedHashSet<Long> startedResolutions = new LinkedHashSet<>();
 
-    private ZoomifyProgressState(final @NotNull List<Long> targetResolutions) {
-      this.targetResolutions = targetResolutions;
+    ZoomifyProgressState(final int plannedResolutions) {
+      this.plannedResolutions = plannedResolutions;
     }
 
-    private @NotNull java.util.Optional<String> onLogLine(final @NotNull String line) {
+    @NotNull java.util.Optional<String> onLogLine(final @NotNull String line) {
+      final var plan = ZOOMIFY_PLAN_PATTERN.matcher(line);
+      if (plan.find() && startedResolutions.isEmpty()) {
+        plannedResolutions = Integer.parseInt(plan.group(1));
+      }
       final var matcher = ZOOMIFY_RESOLUTION_PATTERN.matcher(line);
       if (!matcher.find()) {
-        if (line.toLowerCase(Locale.ROOT).contains("copying") && !this.targetResolutions.isEmpty()) {
-          this.startedResolutions.add(this.targetResolutions.get(0));
-          return java.util.Optional.of("Copied base resolution " + this.targetResolutions.get(0));
-        }
         return java.util.Optional.empty();
       }
-      final var resolution = Long.parseLong(matcher.group(1));
+      final var resolution = Long.parseLong(matcher.group(2));
       this.startedResolutions.add(resolution);
-      return java.util.Optional.of("Generating resolution " + resolution);
+      final var action = matcher.group(1).equalsIgnoreCase("copying") ? "Copying" : "Generating";
+      return java.util.Optional.of(action + " resolution " + resolution);
     }
 
-    private double progress() {
-      if (this.targetResolutions.isEmpty()) {
+    double progress() {
+      if (plannedResolutions <= 0) {
         return 0.0d;
       }
-      return Math.min(1.0d, this.startedResolutions.size() / (double) this.targetResolutions.size());
+      // A start marker completes the previous level. Only a successful exit
+      // completes the final level, even when the tool logs unexpected levels.
+      final int completed = Math.max(0, Math.min(plannedResolutions - 1, startedResolutions.size() - 1));
+      return completed / (double) plannedResolutions;
     }
   }
 }

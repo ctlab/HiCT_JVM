@@ -235,7 +235,7 @@ try:
                 expect(overlay).to_contain_text("<em>literal&name</em>")
                 expect(overlay.locator("em")).to_have_count(0)
                 record("contig-names-render-as-literal-text")
-                page.evaluate("window.__oldOsd=window.__osd")
+                page.evaluate("() => { window.__oldOsd = window.__osd; }")
                 print("Opening the replacement map", flush=True)
                 page.evaluate(
                     "api=>window.__hictBenchmark.open('tiny-primary.hict.hdf5',api)",
