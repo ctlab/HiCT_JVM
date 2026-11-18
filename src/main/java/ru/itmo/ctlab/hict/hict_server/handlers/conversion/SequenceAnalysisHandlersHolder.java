@@ -645,8 +645,11 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
           throw new IllegalArgumentException("Invalid ModDotPlot parameters");
       }
       var values = request.getJsonArray("resolutions");
-      if (values == null || values.isEmpty()) throw new IllegalArgumentException("Choose map resolutions for identity windows");
+      if (values == null || values.isEmpty()) throw new IllegalArgumentException("Choose at least one dotplot resolution");
       resolutions = values.stream().map(v -> exactLong(v, "resolution")).distinct().sorted().toList();
+      if (resolutions.getFirst() <= 0) throw new IllegalArgumentException("Dotplot resolutions must be positive");
+      if (!alignment && resolutions.getFirst() < settings.getInteger("k"))
+        throw new IllegalArgumentException("Each ModDotPlot window must be at least as long as its k-mer size");
     } catch (IllegalArgumentException | ClassCastException e) { throw new HttpException(400, e.getMessage()); }
     var shared = vertx.sharedData().getLocalMap("hict_server");
     boolean secondary = "SECONDARY".equals(shared.get("assemblyInfoSource"));

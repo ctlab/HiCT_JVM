@@ -819,7 +819,7 @@ public class TileHandlersHolder extends HandlersHolder {
       final var gridDescriptor = ResolutionDescriptor.fromResolutionOrder(gridOrder);
       final int sampleFactor = gridParam != null
         ? Integer.parseInt(ctx.request().getParam("gridSampleFactor", "1")) : 1;
-      if (sampleFactor < 1 || sampleFactor > 64 || sampleFactor > gridFile.getResolutions()[gridOrder]) {
+      if (sampleFactor < 1 || sampleFactor > 65_536 || sampleFactor > gridFile.getResolutions()[gridOrder]) {
         throw new io.vertx.ext.web.handler.HttpException(400, "gridSampleFactor is outside the supported range");
       }
       final var selectedMatrixWithWeights = gridParam != null

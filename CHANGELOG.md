@@ -5,13 +5,14 @@
 ### Open, save and recover
 
 - Open curated datasets from **File → Open Examples**. Follow downloads and conversion in Jobs, cancel or retry a stage, and reopen a ready example with its FASTA and recorded source attribution.
-- Save sessions, FASTA, AGP and figures to a chosen destination. HiCT remembers file choices by purpose and keeps edits available if a write fails. Open sessions from the File menu and export AGP from FASTA-only assemblies.
+- Save sessions, FASTA, AGP and figures to a chosen destination. HiCT remembers file choices by purpose and keeps edits available if a write fails. Open sessions from the startup screen or the File menu and export AGP from FASTA-only assemblies.
 - Find the active Hi-C map, FASTA and AGP next to Jobs. Stop HiCT returns the launcher to its simple Start view. The packaged Electron interface can reopen locally when its page is unavailable.
 
 ### Select, navigate and edit
 
 - Shift-click or drag to select contigs or scaffolds. Ctrl-drag (⌘-drag on macOS) creates a persistent analysis region. Set its bounds in assembly or contig coordinates, copy the coordinates or a PNG to the clipboard, and export the selected sequence.
 - Zoom with the wheel from the contact map to FASTA letters while staying anchored at the pointer. Center on a track feature at the current scale or zoom to its span. Hide assembly boundaries in a scoped intersection while retaining selection highlights.
+- Search contigs, scaffolds and features from the map toolbar with a clearer search field and Go to control.
 - Cut exactly with the scissors at FASTA zoom, by a typed coordinate, or at a GTF/GFF feature edge. HiCT preserves sequence and source contact bins, projects edits to secondary maps, and restores exact cuts when reopening sessions.
 
 ### Render maps and analyse sequences
@@ -19,6 +20,7 @@
 - Manage 1D tracks separately from sources and layers. Add a track file or Cooler weights, resize the track panels, and examine signed BigWig values and aligned-base BAM depth.
 - Fit the visible signal with the histogram and range handles. Choose O/E colours in the sidebar or Rendering Pipeline. The square-root coverage help explains how a bin's total contacts are counted, and maps remain readable when their Cooler weights are unusable.
 - Select FASTA letters to copy an interval or measure a repeat period. Alignment previews show continuous runs, substitutions and indels at base zoom. Search local databases or opt in to NCBI BLAST with query-upload consent and Jobs cancellation.
+- Enter custom ModDotPlot and alignment dotplot resolutions. Display finer sequence bins as an overlay or in one triangle while the Hi-C map keeps its stored contact resolution.
 - Export Cooler files with source counts and weights preserved where available. Sequence-cut rebins are labelled estimates, with their provenance carried forward when reopened.
 
 ### Capture and share figures

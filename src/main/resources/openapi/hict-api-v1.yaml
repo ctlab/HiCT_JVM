@@ -862,7 +862,7 @@ paths:
         - in: query
           name: gridSampleFactor
           required: false
-          schema: { type: integer, minimum: 1, maximum: 64, default: 1 }
+          schema: { type: integer, minimum: 1, maximum: 65536, default: 1 }
           description: Subdivide each projected primary grid cell by this factor along each axis.
         - in: query
           name: level
@@ -2340,7 +2340,7 @@ paths:
       tags: [Sequence analysis]
       summary: Generate or accumulate a source-anchored ModDotPlot overlay
       operationId: startModDotPlot
-      description: Captures the active assembly, evaluates identity at each selected map resolution, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      description: Captures the active assembly, evaluates identity at each requested source-bin resolution, and writes an immutable compatible HiCT sidecar version. The requested levels may be independent of the input contact pyramid. A window must be at least as long as the selected k-mer. Existing versions remain intact on failure or cancellation.
       requestBody:
         required: true
         content:
@@ -2380,7 +2380,7 @@ paths:
       tags: [Sequence analysis]
       summary: Generate or accumulate a selected alignment dotplot
       operationId: startAssemblyDotPlot
-      description: Captures the active assembly, aligns the selected sequence axes using the configured minimap2/mm2-plus and samples PAF alignments into source bins, and writes an immutable compatible HiCT sidecar version. Existing versions remain intact on failure or cancellation.
+      description: Captures the active assembly, aligns the selected sequence axes using the configured minimap2/mm2-plus, and samples PAF alignments into the requested source-bin resolutions. These may be independent of the input contact pyramid. The job writes an immutable compatible HiCT sidecar version and preserves existing versions on failure or cancellation.
       requestBody:
         required: true
         content:

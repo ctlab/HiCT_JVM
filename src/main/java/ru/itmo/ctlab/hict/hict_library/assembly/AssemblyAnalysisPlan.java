@@ -7,6 +7,10 @@ import java.util.*;
 
 /** Frozen sequence windows attached to actual source matrix bins, even after AGP splits. */
 public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level> levels) {
+  // Keep this layout in sync with overlay_store.py. Stored map levels use their own ATUs.
+  private static final int SEQUENCE_STRIPE_WIDTH = 256;
+  private static final long MAX_SYNTHETIC_BINS = 4_000_000L;
+
   public record Region(long start, long end) {
     public Region { if (start < 0 || end <= start) throw new IllegalArgumentException("Choose a nonempty sequence interval"); }
   }
@@ -31,14 +35,30 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
     long windows = 0;
     long cells = 0;
     long outputBytes = 0;
+    long syntheticBins = 0;
     for (long bp : resolutions) {
       final var order = map.getResolutionToIndex().get(bp);
-      if (bp <= 0 || order == null) throw new IllegalArgumentException("Resolution is absent from the map: " + bp);
+      if (bp <= 0) throw new IllegalArgumentException("Resolution must be positive: " + bp);
+      final long stripes;
+      if (order == null) {
+        final long bins = map.getOriginalDescriptors().values().stream()
+          .mapToLong(d -> Math.ceilDiv(d.getLengthBp(), bp)).reduce(0, Math::addExact);
+        syntheticBins = Math.addExact(syntheticBins, bins);
+        if (syntheticBins > MAX_SYNTHETIC_BINS) {
+          throw new IllegalArgumentException("Custom resolutions need more than " + MAX_SYNTHETIC_BINS
+            + " source bins. Choose a coarser resolution or open a smaller assembly.");
+        }
+        stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
+        // All installed stripe weights are materialized by the reader.
+        outputBytes = Math.addExact(outputBytes, Math.multiplyExact(stripes, 4096L));
+      } else {
+        stripes = map.getStripeCount()[order];
+      }
       final long rowBins = estimateAxis(tuples, rows, order, bp);
       final long colBins = rows.equals(columns) ? rowBins : estimateAxis(tuples, columns, order, bp);
       final long levelCells = Math.multiplyExact(rowBins, colBins);
-      final long rowStripes = Math.min(rowBins, map.getStripeCount()[order]);
-      final long colStripes = Math.min(colBins, map.getStripeCount()[order]);
+      final long rowStripes = Math.min(rowBins, stripes);
+      final long colStripes = Math.min(colBins, stripes);
       final long maxBlocks = Math.multiplyExact(rowStripes, colStripes);
       final long bytes = Math.addExact(Math.multiplyExact(levelCells, 4L * 3 * Long.BYTES),
         Math.multiplyExact(maxBlocks, (64L * 3 + 2) * Long.BYTES));
@@ -49,7 +69,7 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
     return new ResourceEstimate(windows, cells, outputBytes);
   }
 
-  private static long estimateAxis(List<ContigTree.ContigTuple> tuples, Region region, int order, long bp) {
+  private static long estimateAxis(List<ContigTree.ContigTuple> tuples, Region region, Integer order, long bp) {
     long result = 0;
     long start = 0;
     for (var tuple : tuples) {
@@ -58,7 +78,7 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
       final long span = Math.min(end, region.end) - Math.max(start, region.start);
       if (span > 0) {
         final long bound = Math.addExact((span - 1) / bp, 2);
-        result = Math.addExact(result, Math.min(bound, descriptor.getLengthBinsAtResolution()[order]));
+        result = Math.addExact(result, order == null ? bound : Math.min(bound, descriptor.getLengthBinsAtResolution()[order]));
       }
       if (end >= region.end) break;
       start = end;
@@ -82,15 +102,89 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
       var levels = new ArrayList<Level>();
       for (long resolution : new TreeSet<>(resolutions)) {
         Integer order = map.getResolutionToIndex().get(resolution);
-        if (resolution <= 0 || order == null) throw new IllegalArgumentException("Resolution is absent from the map: " + resolution);
-        var owners = owners(map.getOriginalDescriptors().values(), order, resolution);
-        var r = axis(tuples, owners, order, resolution, sequence.length(), rows);
-        var c = rows.equals(columns) ? r : axis(tuples, owners, order, resolution, sequence.length(), columns);
+        if (resolution <= 0) throw new IllegalArgumentException("Resolution must be positive: " + resolution);
+        final List<Window> r, c;
+        if (order == null) {
+          var sourceBins = sequenceBins(map.getOriginalDescriptors().values(), resolution);
+          r = sequenceAxis(tuples, sourceBins, resolution, sequence.length(), rows);
+          c = rows.equals(columns) ? r : sequenceAxis(tuples, sourceBins, resolution, sequence.length(), columns);
+        } else {
+          var owners = owners(map.getOriginalDescriptors().values(), order, resolution);
+          r = axis(tuples, owners, order, resolution, sequence.length(), rows);
+          c = rows.equals(columns) ? r : axis(tuples, owners, order, resolution, sequence.length(), columns);
+        }
         if (r.isEmpty() || c.isEmpty()) throw new IllegalArgumentException("Selection contains no owned contact bins at " + resolution + " bp; choose a larger region or finer resolution");
         levels.add(new Level(resolution, r, c));
       }
       return new AssemblyAnalysisPlan(sequence, levels);
     } finally { lock.unlock(); }
+  }
+
+  private record SourceBins(ContigDescriptor contig, long firstBin) { }
+
+  private static Map<String, List<SourceBins>> sequenceBins(Collection<ContigDescriptor> originals, long resolution) {
+    var bySourceName = new HashMap<String, List<SourceBins>>();
+    long firstBin = 0;
+    for (var contig : originals.stream().sorted(Comparator.comparingInt(ContigDescriptor::getContigId)).toList()) {
+      bySourceName.computeIfAbsent(contig.getContigNameInSourceFASTA(), ignored -> new ArrayList<>())
+        .add(new SourceBins(contig, firstBin));
+      firstBin = Math.addExact(firstBin, Math.ceilDiv(contig.getLengthBp(), resolution));
+    }
+    return bySourceName;
+  }
+
+  private static SourceBins findSourceBins(Map<String, List<SourceBins>> sources, ContigDescriptor active) {
+    List<SourceBins> candidates = sources.getOrDefault(active.getContigNameInSourceFASTA(), List.of());
+    SourceBins owner = null;
+    final long start = active.getOffsetInSourceFASTA();
+    final long end = Math.addExact(start, active.getLengthBp());
+    for (var candidate : candidates) {
+      var contig = candidate.contig();
+      long sourceStart = contig.getOffsetInSourceFASTA();
+      if (start < sourceStart || end - sourceStart > contig.getLengthBp()) continue;
+      if (contig.getContigId() == active.getContigId()) return candidate;
+      if (owner != null) throw new IllegalArgumentException("Ambiguous original contig for " + active.getContigNameInSourceFASTA());
+      owner = candidate;
+    }
+    if (owner == null) throw new IllegalArgumentException("Missing original contig for " + active.getContigNameInSourceFASTA());
+    return owner;
+  }
+
+  private static List<Window> sequenceAxis(List<ContigTree.ContigTuple> tuples, Map<String, List<SourceBins>> sources,
+                                           long resolution, long sequenceLength, Region region) {
+    var windows = new LinkedHashMap<Long, Window>();
+    long position = 0;
+    for (var tuple : tuples) {
+      if (position >= region.end()) break;
+      var active = tuple.descriptor();
+      long next = Math.addExact(position, active.getLengthBp());
+      if (next > region.start()) {
+        var source = findSourceBins(sources, active);
+        long offset = active.getOffsetInSourceFASTA() - source.contig().getOffsetInSourceFASTA();
+        long left = Math.max(0, region.start() - position);
+        long right = Math.min(active.getLengthBp(), region.end() - position);
+        boolean reversed = tuple.direction() == ContigDirection.REVERSED;
+        long first = (offset + (reversed ? active.getLengthBp() - right : left)) / resolution;
+        long last = (offset + (reversed ? active.getLengthBp() - left : right) - 1) / resolution;
+        for (long index = first; index <= last; index++) {
+          long ordinal = reversed ? last - (index - first) : index;
+          long nominalStart = ordinal * resolution;
+          long startInSource = Math.max(offset, nominalStart);
+          long endInSource = nominalStart + Math.min(resolution, offset + active.getLengthBp() - nominalStart);
+          long start = position + (reversed ? offset + active.getLengthBp() - endInSource : startInSource - offset);
+          long sourceBin = source.firstBin() + ordinal;
+          var window = new Window(Math.toIntExact(sourceBin / SEQUENCE_STRIPE_WIDTH), (int) (sourceBin % SEQUENCE_STRIPE_WIDTH),
+            start, start + Math.min(resolution, sequenceLength - start), start + endInSource - startInSource);
+          // An unaligned cut can expose the same physical bin twice. Keep the
+          // longest surviving piece once, breaking equal lengths by assembly order.
+          windows.merge(sourceBin, window, (firstWindow, secondWindow) ->
+            firstWindow.ownedEnd() - firstWindow.start() >= secondWindow.ownedEnd() - secondWindow.start()
+              ? firstWindow : secondWindow);
+        }
+      }
+      position = next;
+    }
+    return windows.values().stream().sorted(Comparator.comparingLong(Window::start)).toList();
   }
 
   private record Owner(int first, int end, ContigDescriptor source, long ordinal, boolean reversed) {
