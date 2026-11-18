@@ -96,6 +96,30 @@ with sync_playwright() as pw:
         dialog.wait_for(state="hidden")
         search = await_kind("search")
         assert search["outputs"][0]["action"] == "open_tracks", search
+
+        page.get_by_role("combobox", name="Visualization preset", exact=True).select_option(
+            label="ModDotPlot: multicolor overlay"
+        )
+        notifications = page.get_by_role("button", name="Open notifications", exact=True)
+        badge = notifications.locator(".notification-badge")
+        badge.wait_for(state="visible")
+        notifications.click()
+        history = page.get_by_role("dialog").filter(
+            has=page.get_by_role("heading", name="Notifications", exact=True)
+        )
+        history.get_by_text("Attach a generated overlay", exact=False).wait_for()
+        badge_text = badge.inner_text().strip()
+        notice_count = history.locator(".notification-entry").count()
+        assert badge_text == ("99+" if notice_count > 99 else str(notice_count)), badge_text
+        history.get_by_role("button", name="Clear", exact=True).click()
+        history.locator(".notification-entry").wait_for(state="detached")
+        history.locator(".btn-close").click()
+        badge.wait_for(state="detached")
+        retained = next(job for job in jobs() if job["id"] == search["id"])
+        assert retained["state"] == "finished" and retained["outputs"] == search["outputs"], retained
+        results.append({"test": "clearing notification badge and history retains the finished job",
+                        "clearedNotifications": notice_count, "retainedJobId": search["id"]})
+
         dialog = panel()
         row = dialog.locator('[data-job-id="' + search["id"] + '"]')
         row.get_by_role("button", name="Open result", exact=True).click()

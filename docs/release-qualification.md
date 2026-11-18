@@ -65,6 +65,14 @@ Undo, session restore and matching AGP export took 145.61 s. Chromium reported
 zero page and console errors. The source hashes, screenshots and exports are
 under `file-menu-quickstart/` in the release evidence directory below.
 
+Eleven packaged Jobs checks also passed with synthetic inputs. Clearing the
+notification badge and history preserved a completed search and its result.
+Search and ModDotPlot results opened after their dialogs closed. Conversion,
+both dotplot routes, coverage, track precompute and alignment completed. A
+FASTA-only assembly reopened from Jobs and exported all 12,017 bases to AGP.
+Chromium reported zero unexpected errors and the three inputs retained their
+hashes. Evidence is in `jobs-and-notifications/` below.
+
 The published JVM and WebUI also passed all 13 focused histogram checks.
 The tests cover measured zeros, unsupported O/E bins, fit controls on each
 source, compact layouts and failed-request recovery. Across seven measured
