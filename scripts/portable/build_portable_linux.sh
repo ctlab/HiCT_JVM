@@ -658,6 +658,10 @@ if [[ -x "${RUN_PATH}" ]]; then
     TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
     HICT_LAUNCHER_MODE=cli \
     "${RUN_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    XDG_CACHE_HOME="${RUN_SMOKE_TEST_DIR}/cache" TMPDIR="${RUN_SMOKE_TEST_DIR}/tmp" \
+      python3 "${SCRIPT_DIR}/check_packaged_server.py" "${RUN_PATH}" "${VERSION}"
+  fi
   rm -rf "${RUN_SMOKE_TEST_DIR}"
   trap - EXIT
 fi

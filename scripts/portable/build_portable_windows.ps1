@@ -715,6 +715,11 @@ Invoke-PortableSmoke `
   -Label "portable ZIP run.cmd" `
   -FilePath (Join-Path $appDir "run.cmd") `
   -Arguments @("check-toolchains", "--require-hdf5-native", "--check-available-natives", "--quiet")
+if ($env:GITHUB_ACTIONS -eq "true") {
+  Invoke-Native -FilePath "python" -Arguments @(
+    (Join-Path $PSScriptRoot "check_packaged_server.py"), (Join-Path $appDir "run.cmd"), $version
+  )
+}
 
 $shaPath = Join-Path $artifactDir "$appName-$version-$platform.sha256"
 $hashLines = @()
@@ -825,6 +830,11 @@ if ($CreateSelfExtractingExe -and (Test-Path $exePath)) {
       -Label "portable EXE" `
       -FilePath $exePath `
       -Arguments @("check-toolchains", "--require-hdf5-native", "--check-available-natives", "--quiet")
+    if ($env:GITHUB_ACTIONS -eq "true") {
+      Invoke-Native -FilePath "python" -Arguments @(
+        (Join-Path $PSScriptRoot "check_packaged_server.py"), $exePath, $version
+      )
+    }
   } else {
     Invoke-Native -FilePath $exePath -Arguments @("--help")
   }

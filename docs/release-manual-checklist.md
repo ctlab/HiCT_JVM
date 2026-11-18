@@ -51,8 +51,28 @@ fresh writable data folder and retain the screenshots and logs.
 | macOS arm64 | Deferred by owner on 2026-11-11 | Complete the interactive checklist and attach tester, revision, checksum and evidence records |
 | macOS x86-64 | Deferred by owner on 2026-11-11 | Complete the interactive checklist and attach tester, revision, checksum and evidence records |
 
+## Hosted startup coverage
+
+The `2.0.371` Windows job launched the portable executable and checked
+hictk, minimap2 and the AVX2 aligner. The optional AVX-512 check produced an
+illegal-instruction warning on its runner. The Apple Silicon job executed the
+packaged launcher, discovered its bundled tools and inspected its signature
+and the Tauri browser signature.
+[Windows job](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944/job/134510476168)
+· [Apple Silicon job](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944/job/134520940633)
+
+The package scripts now start each hosted launcher with disposable data and
+loopback-only listeners. The startup check waits for both the API and WebUI,
+verifies the backend version and the selected WebUI revision from the served
+JavaScript, and stops the test process. It covers the Windows ZIP entrypoint,
+custom Windows EXE, both signed macOS launchers, Linux runfile and AppImage.
+Both exact `2.0.371` Linux artifacts passed locally, with the AppImage
+starting in extract-and-run mode in a network-isolated container. A wrong
+expected WebUI revision failed the check. The next hosted packages must
+confirm the Windows and macOS checks. The interactive checklist above remains
+deferred.
+
 The current candidate and local Linux evidence are recorded in
-[release-qualification.md](release-qualification.md). Current-source Windows/macOS
-CI and all unfilled records above remain pending. GUI deferral does not count as
-a pass. Future checks must identify their exact revisions and artifacts and add
-platform-specific desktop interaction, installation and native-dialog evidence.
+[release-qualification.md](release-qualification.md). Future checks must identify
+their exact revisions and artifacts and record platform-specific desktop
+interaction, installation and native-dialog evidence.

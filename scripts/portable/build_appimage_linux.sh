@@ -538,6 +538,10 @@ perl -e 'alarm shift @ARGV; exec @ARGV or die $!' 600 env \
   TMPDIR="${APPIMAGE_SMOKE_TEST_DIR}/tmp" \
   HICT_LAUNCHER_MODE=cli \
   "${APPIMAGE_PATH}" check-toolchains --require-hdf5-native --check-available-natives --quiet
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  APPIMAGE_EXTRACT_AND_RUN=1 XDG_CACHE_HOME="${APPIMAGE_SMOKE_TEST_DIR}/cache" TMPDIR="${APPIMAGE_SMOKE_TEST_DIR}/tmp" \
+    python3 "${SCRIPT_DIR}/check_packaged_server.py" "${APPIMAGE_PATH}" "${VERSION}"
+fi
 rm -rf "${APPIMAGE_SMOKE_TEST_DIR}"
 trap - EXIT
 
