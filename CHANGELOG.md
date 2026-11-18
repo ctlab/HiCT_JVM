@@ -30,6 +30,7 @@
 
 - Linux, Windows and macOS packages include the pinned WebUI and the native tools needed for the supported workflows. Release publication verifies the requested installers and their checksums while keeping the previous downloads available through an interrupted upload.
 - Linux launchers use fewer glibc allocation arenas by default, reducing resident memory during repeated map opening and editing.
+- Linux launchers start with a smaller Java heap and release idle heap more readily. The existing extra JVM options still take precedence.
 - The bundled ModDotPlot uses updated imaging dependencies. Linux retains glibc 2.17 compatibility, and package checks now render real PNG and SVG plots.
 - Portable package builds keep the verified BLAST cache when ModDotPlot requirements change.
 

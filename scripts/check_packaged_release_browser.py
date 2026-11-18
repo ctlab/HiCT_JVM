@@ -139,7 +139,8 @@ def main():
         "AUTO_OPEN_BROWSER": "false",
         "WEBUI_ROOT": str(app / "webui"),
         "HICT_TOOLCHAIN_DIR": str(app / "toolchains/linux_x86_64"),
-        "HICT_JAVA_OPTS": "-Xmx2g -XX:NativeMemoryTracking=summary",
+        "JDK_JAVA_OPTIONS": "-Xmx2g -XX:NativeMemoryTracking=summary",
+        "HICT_JAVA_OPTS": "",
     }
     env.pop("HICT_JHDF5_NATIVES_ARCHIVE", None)
     server = None

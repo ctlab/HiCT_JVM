@@ -322,7 +322,7 @@ if [ -n "${HICT_JAVA_OPTS:-}" ]; then
   # shellcheck disable=SC2086
   set -- ${HICT_JAVA_OPTS} -jar "${APP_HOME}/lib/hict.jar" "$@"
 else
-  set -- -jar "${APP_HOME}/lib/hict.jar" "$@"
+  set -- -Xms64m -XX:MinHeapFreeRatio=15 -XX:MaxHeapFreeRatio=30 -jar "${APP_HOME}/lib/hict.jar" "$@"
 fi
 
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"

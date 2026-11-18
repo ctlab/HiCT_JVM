@@ -343,7 +343,7 @@ fi
 export TMP="${TMP:-${HICT_TEMP_DIR}}"
 export TEMP="${TEMP:-${HICT_TEMP_DIR}}"
 
-JAVA_OPTS=()
+JAVA_OPTS=(-Xms64m -XX:MinHeapFreeRatio=15 -XX:MaxHeapFreeRatio=30)
 if [[ -n "${HICT_JAVA_OPTS:-}" ]]; then
   # shellcheck disable=SC2206
   JAVA_OPTS=(${HICT_JAVA_OPTS})

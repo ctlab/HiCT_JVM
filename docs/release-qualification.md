@@ -3,6 +3,44 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Published portable release 2.0.390
+
+Run 44313825161 uses JVM `2ee3744bb33fa226b4fadb0de6d4c8fc5d460b26` and
+WebUI `534f3c467eaafc49cb61c18991e2abd14d4e4f9c`. GitHub published 17 verified
+assets in 1h 38m. Windows ZIP and EXE, Linux runfile and AppImage, and both
+macOS architectures passed hosted startup. The public manifest matches the
+Linux runfile and JAR used in local tests. The companion Intel native PR
+retry is in progress.
+
+The local runfile from Actions artifact 14436265218 passed all ten selection
+scenarios and nine pre-soak stages. Those stages covered the packaged metadata,
+18 menu destinations, structural editing, incomplete-file recovery, offline
+operation and four navigation fixtures. Across fresh and repeat opens, the
+worst measured p95 was 16.8 ms per frame and 32.28 ms for input acknowledgement.
+The harness confirmed `MALLOC_ARENA_MAX=2` in the package's Java process
+without an override. The 30-minute soak ran 232 cycles at 16.7 ms frame p95
+and 55.99 ms input p95, with no browser errors. The server RSS trend was
+1.540 MiB/min against the 1.0 MiB/min limit. Used JVM heap grew at
+0.102 MiB/min. Native Memory Tracking's committed Java heap trended up by
+1.327 MiB/min. The unchanged package passed a second 30-minute soak with a
+64 MiB initial heap and 15–30% free-heap targets. Across 232 cycles it measured
+0.358 MiB/min RSS growth, 16.7 ms frame p95 and 55.60 ms input p95. Median RSS
+after warm-up fell from 637.89 to 314.50 MiB. The comparison kept the two-arena
+setting and the same four fixtures. The next package uses the tested JVM
+profile by default on Linux. Custom extra JVM options retain precedence.
+Evidence is under
+`build/release-evidence/portable-publication-priority/run-44313825161/`.
+
+The exact runfile passed independent desktop clipboard checks. Electron pasted
+the exact coordinates and a 722 × 566 PNG. Tauri pasted a 1,068 × 844 PNG into a
+separate Electron window. The active files stayed beside Jobs at all four tested
+widths. Launcher Stop returned to the simple view. The published runtime
+reproduced all 259,811 contact pixels, 155 GC windows, exact cut lengths and
+three snapshots in the Borrelia figure.
+[Portable Packages run](https://github.com/ctlab/HiCT_JVM/actions/runs/44313825161)
+· [Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
+· [JDK 21 heap sizing](https://docs.oracle.com/en/java/javase/21/gctuning/garbage-first-g1-garbage-collector1.html)
+
 ## Published portable release 2.0.389
 
 Run 44293359089 uses JVM `ba27ce05b7076018be305b2fe290da32a5da2c36` and
@@ -45,6 +83,81 @@ input acknowledgement p95 was 55.14 ms. All input hashes matched and the
 browser reported no errors. The next Linux package uses two arenas by
 default, with the environment override available. That package requires
 its own default-setting soak.
+
+The exact public runfile also passed independent desktop clipboard checks.
+Electron pasted the tab-separated coordinates and a 722 × 566 PNG. Tauri
+pasted a 1,068 × 844 PNG into a separate Electron window. The active files
+stayed beside Jobs at 640, 800, 1280 and 1440 px. The bundled Launcher
+started the real server and returned to its simple view after Stop. The
+Borrelia figure replay matched all 259,811 contact pixels and 155 GC windows,
+and reproduced the 450,123 and 460,601 bp cut, three snapshots and PNG, SVG
+and PDF exports. The exact public AppImage passed offline Cooler conversion,
+session restore, figure exports and bundled API documentation.
+
+On the exact published JAR and WebUI, the offline yeast Micro-C suite passed
+16 browser checks. Info followed a stationary pointer across four resolution
+transitions with delayed tile responses and read no GPU tile pixels. Checks
+covered map replacement, mixed primary and secondary resolution guidance,
+and resetting the displayed coordinates outside the assembly. The independent
+Cooler comparison matched all 669,584 raw counts in 17 windows over 50, 100 and
+500 bp resolutions. The 50 bp source had zero cis contacts on offsets 0–3 and
+1,365,532 at offset 4. Evidence is under
+`build/release-evidence/portable-publication-priority/run-44313825161/published-389-yeast-info/`.
+
+The published package also passed 13 track workspace checks, including keyboard
+access to both tabs, feature centering and zoom, attaching weights to either map,
+and pixel checks at three panel sizes. The signed-format suite passed 24 checks
+across plain and gzip VCF, indexed BAM and BigWig. It compared BigWig samples
+with an independent reader, excluded BAM alignment gaps from depth, and checked
+the mapped features through cuts, reversals and session restore. Input hashes
+matched. Track receipts are under
+`build/release-evidence/portable-publication-priority/run-44313825161/published-389-tracks/`.
+
+Thirteen viewport histogram checks and eleven O/E palette checks passed on the
+same package. The histogram matched native bin counts at FASTA zoom, distinguished
+measured zero from unsupported expected values and preserved source counts when
+fitting levels. Refresh took at most 12.5 ms in the exact fixture and 25.5 ms in
+the sampled fixture, against the 150 ms gate. Four simultaneous tile transfers
+left capacity for interactive queries. The palette suite checked rendered RGBA,
+keyboard range changes, separate range memory, session and graph round trips,
+and recovery from a failed write. No browser errors were reported. Receipts are
+under `build/release-evidence/portable-publication-priority/run-44313825161/published-389-rendering/`.
+
+The exact published package passed 39 sequence and edit checks. GTF/GFF cuts
+preserved all bases and source bytes, including on reversed contigs, through
+Undo, Redo and session restore. Twelve FASTA measurement checks covered strand
+copy, keyboard selection, imperfect repeats and a late job response after
+cancellation. Twelve alignment checks verified all ten short-repeat diagonals,
+substitution and indel CIGARs, letter-boundary alignment and PNG, SVG and PDF
+output. None reported browser errors. Receipts are under
+`build/release-evidence/portable-publication-priority/run-44313825161/published-389-sequence/`.
+
+The published package passed 14 file-destination checks and 16 figure-viewer
+checks. The destination suite exercised confirmed writes, cancellation, late
+changes, remembered folders, save-notification reopening and download fallback.
+It checked exact FASTA selection endpoints and session restoration. The viewer
+reopened newly exported images and both retained publication previews, fitted
+the controls at 640 px, and kept the current preview after cancellation or
+invalid input. The browser reported no unexpected errors. Receipts and screenshots
+are under `build/release-evidence/portable-publication-priority/run-44313825161/published-389-file-figures/`.
+
+The published package passed 11 background job checks, including eight kinds
+of work before the FASTA-only job. FASTA-only opened from Jobs after its setup
+dialog closed. Its AGP export represented all 12,017 bases in a single forward
+component. A separate controlled TLS Examples replay passed 34 checks, including
+numeric stages, cancelling and retrying a running hictk conversion, applying a
+FASTA/AGP/track recipe, and restoring frozen provenance without the catalog.
+The replay needed a test-only wait for the catalog action to appear before opening
+a cached recipe. Both suites completed without browser errors. Receipts are under
+`build/release-evidence/portable-publication-priority/run-44313825161/` in
+`published-389-background/` and `published-389-example-jobs-recheck/`.
+
+The exact package passed 18 remote-search checks against a controlled provider
+with networking restricted to loopback. These covered consent, cancellation,
+timeouts, queue bounds, concurrent local search, accepted database names,
+report reopening after a map change, and complete TSV export when the JSON
+preview is capped. No browser errors were reported. Receipts are under
+`build/release-evidence/portable-publication-priority/run-44313825161/published-389-remote-jobs/`.
 [Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
 
 ## Published portable release 2.0.388
