@@ -1860,3 +1860,15 @@ the recorded 17-level hictk transcript advanced from 0 through 16 completed
 levels, with the successful exit marking completion. The full JVM suite ran
 663 tests with 656 passed, no failures, and seven skipped. Evidence is under
 `build/release-evidence/portable-publication-priority/hosted-linux-qualification/yeast/`.
+
+The full yeast workflow was then repeated with the candidate conversion classes
+overlaid on a private copy of the published JAR, using checksum-verified cached
+downloads. The browser opened the map in 149.2 s with both Jobs finished and no
+browser or console errors. The live stage trace increased through 94.12% and
+reported 100% once, when all 17 pyramid levels had completed.
+
+The same candidate WebUI passed 18 remote-search workflow checks with a
+controlled local provider. The cases cover consent, timeouts, cancellation,
+bounded results, exports, and delivery independent of map editing. This run
+used no real external search submission. The receipt is
+`hosted-linux-qualification/remote-search-fixture.json` in the release evidence.
