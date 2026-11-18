@@ -50,15 +50,34 @@ class ReleaseVersionTest(unittest.TestCase):
 
     def test_shared_and_incrementing(self):
         self.assertEqual(
-            release_version("1.0.211", "20", "1", "abcdef012345"), "1.0.231-ci1-abcdef0"
+            release_version("1.0.211", "20", "abcdef012345"), "1.0.231-ci1-abcdef0"
         )
         self.assertEqual(
-            release_version("1.0.211-old-webui_123", "21", "1", "abcdef012345"),
+            release_version("1.0.211-old-webui_123", "21", "abcdef012345"),
             "1.0.232-ci1-abcdef0",
         )
-        self.assertEqual(
-            release_version("1.0.211", "20", "2", "abcdef012345"), "1.0.231-ci2-abcdef0"
-        )
+
+    def test_retry_uses_the_same_version_as_successful_jobs(self):
+        script = Path(__file__).with_name("set_release_version.py").resolve()
+        with tempfile.TemporaryDirectory() as folder:
+            version = Path(folder) / "version.txt"
+            environment = {
+                **os.environ,
+                "GITHUB_EVENT_NAME": "push",
+                "GITHUB_REF_NAME": "jvm-sfx-native",
+                "GITHUB_RUN_NUMBER": "20",
+                "GITHUB_SHA": "abcdef012345",
+            }
+            for attempt in ("1", "2", "3"):
+                version.write_text("1.0.211\n")
+                subprocess.run(
+                    [sys.executable, str(script)],
+                    cwd=folder,
+                    env={**environment, "GITHUB_RUN_ATTEMPT": attempt},
+                    check=True,
+                    capture_output=True,
+                )
+                self.assertEqual(version.read_text(), "1.0.231-ci1-abcdef0\n")
 
     def test_explicit_release_cli(self):
         script = Path(__file__).with_name("set_release_version.py").resolve()
@@ -95,14 +114,13 @@ class ReleaseVersionTest(unittest.TestCase):
             self.assertEqual(path.read_text(), "2.0.0\n")
 
     def test_reject_invalid(self):
-        for base, run, attempt, sha in [
-            ("bad", "1", "1", "abcdef0"),
-            ("1.0.211", "0", "1", "abcdef0"),
-            ("1.0.211", "1", "0", "abcdef0"),
-            ("1.0.211", "1", "1", "bad"),
+        for base, run, sha in [
+            ("bad", "1", "abcdef0"),
+            ("1.0.211", "0", "abcdef0"),
+            ("1.0.211", "1", "bad"),
         ]:
             with self.assertRaises(ValueError):
-                release_version(base, run, attempt, sha)
+                release_version(base, run, sha)
 
 
 if __name__ == "__main__":

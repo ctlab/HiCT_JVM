@@ -36,6 +36,10 @@ def main():
     with ThreadPoolExecutor(max_workers=3) as pool:
         sources = dict(pool.map(resolve, TOOLS.items()))
     data = json.dumps(sources, sort_keys=True)
+    fingerprint = hashlib.sha256(data.encode()).hexdigest()
+    expected = os.environ.get('HICT_EXPECTED_TOOLCHAIN_SOURCES')
+    if expected and fingerprint != expected:
+        raise RuntimeError('The release-pinned upstream tool sources changed; start a fresh portable run')
     snapshot = Path('build/ci/toolchain-cache-sources.json')
     if args.verify:
         if snapshot.read_text() != data:
@@ -44,7 +48,7 @@ def main():
         snapshot.parent.mkdir(parents=True, exist_ok=True)
         snapshot.write_text(data)
         with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
-            output.write('sources=' + hashlib.sha256(data.encode()).hexdigest() + '\n')
+            output.write('sources=' + fingerprint + '\n')
 
 
 if __name__ == '__main__':

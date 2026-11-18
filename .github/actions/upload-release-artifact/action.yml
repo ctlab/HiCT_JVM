@@ -19,6 +19,7 @@ runs:
         path: ${{ inputs.path }}
         if-no-files-found: error
         compression-level: 0
+        overwrite: ${{ github.run_attempt != '1' }}
 
     - name: Retry package upload
       if: ${{ steps.upload.outcome == 'failure' }}

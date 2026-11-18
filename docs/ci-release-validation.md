@@ -377,10 +377,9 @@ The publisher downloads the six package archives needed for a standard
 release. Compared with the 55 archives in run 44241313376, that would avoid
 2,929,412,475 bytes of transfers at that run's recorded sizes. The publisher
 collects filenames for its exact version and requires a nonempty fat JAR and
-installer for each supported platform. For reruns that change the version's
-attempt suffix, rebuild all platform packages together. A local collection
-fixture produced 17 release assets from a consistent set and refused a mixed
-attempt before producing provenance.
+installer for each supported platform. The original `2.0.383` workflow used a
+different package version for each attempt, so it required all four packages
+to be rebuilt together.
 
 The next publisher revision checks the complete requested package set and
 compares each platform checksum file with the downloaded bytes before upload.
@@ -388,6 +387,16 @@ It hashes the packages once and reuses those hashes for provenance and the
 release checksum manifest. The fixture covers a standard release, ZIP-only
 Windows with AppImage disabled, missing archives, corrupted download bytes and
 incomplete platform checksum lists.
+
+The `2.0.385` Windows runner lost its workspace drive during Tauri compilation.
+Rust, the linker and the runner's own cleanup all reported that the drive no
+longer existed. A release run now keeps one version across attempts. Package
+jobs use the initially resolved WebUI commit and upstream toolchain fingerprint.
+**Re-run failed jobs** can reuse successful artifacts from the same run. The
+publisher still checks each required installer and checksum. Build provenance
+records the actual publishing attempt. To rebuild every package from scratch,
+start a new workflow run so the new package bytes get their own version.
+[Windows runner log](https://github.com/ctlab/HiCT_JVM/actions/runs/44263655268/job/134664565155)
 
 ## Portable native cache inputs
 

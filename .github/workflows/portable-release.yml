@@ -160,6 +160,7 @@ jobs:
       contents: read
     outputs:
       commit: ${{ steps.pin.outputs.commit }}
+      toolchain_sources: ${{ steps.tool-sources.outputs.sources }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -179,6 +180,13 @@ jobs:
           fi
           checkout="$(node scripts/portable/checkout_webui.mjs "${args[@]}")"
           echo "commit=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+      - name: Pin the upstream toolchain commits for all platform jobs
+        id: tool-sources
+        env:
+          HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
+          MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
+          MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
+        run: python3 scripts/ci/toolchain_cache_sources.py
 
   # Each package waits only for its own platform payload and smoke tests.
   # Keep compiled cache inputs scoped to the platform build. Include changed
@@ -225,6 +233,7 @@ jobs:
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICT_LINUX_ABI_MODE: ${{ matrix.abi_mode }}
       HICT_LINUX_JHDF5_NATIVE_POLICY: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_jhdf5_native_policy || 'warn-only' }}
       HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, matrix.abi_mode) }}
@@ -393,6 +402,7 @@ jobs:
       - name: Upload Linux HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           path: build/native-processing/resources
           name: hict-native-linux-x86_64${{ matrix.artifact_suffix }}
           if-no-files-found: error
@@ -478,6 +488,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-linux-x86_64${{ matrix.artifact_suffix }}
           path: |
             toolchains-dist/linux_x86_64/bin/hictk
@@ -490,6 +501,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-linux-x86_64${{ matrix.artifact_suffix }}
           path: |
             toolchains-dist/linux_x86_64/bin/minimap2
@@ -502,6 +514,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-linux-x86_64${{ matrix.artifact_suffix }}
           path: |
             toolchains-dist/linux_x86_64/bin/mm2plus*
@@ -545,6 +558,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-linux_x86_64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -790,6 +805,7 @@ jobs:
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
@@ -1058,6 +1074,7 @@ jobs:
       - name: Upload Windows HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hict-native-windows-x86_64
           path: build/native-processing/resources
           if-no-files-found: error
@@ -1098,6 +1115,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-windows-x86_64
           path: |
             toolchains-dist/windows_x86_64/bin/hictk.exe
@@ -1110,6 +1128,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-windows-x86_64
           path: |
             toolchains-dist/windows_x86_64/bin/minimap2.exe
@@ -1122,6 +1141,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.bundle_hictk == 'true' }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-windows-x86_64
           path: |
             toolchains-dist/windows_x86_64/bin/mm2plus*.exe
@@ -1210,6 +1230,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-windows_x86_64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -1362,6 +1384,7 @@ jobs:
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1495,6 +1518,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-darwin_arm64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -1509,6 +1534,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: macos-arm64-compatibility
           path: build/portable/**/share/doc/macos-compatibility.json
       - name: Verify every bundled tool in the packaged JAR
@@ -1523,12 +1549,14 @@ jobs:
       - name: Upload macOS Apple Silicon HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hict-native-darwin-arm64
           path: build/native-processing/resources
           if-no-files-found: error
       - name: Upload macOS Apple Silicon hictk artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-darwin-arm64
           path: |
             toolchains-dist/darwin_arm64/bin/hictk
@@ -1539,6 +1567,7 @@ jobs:
       - name: Upload macOS Apple Silicon minimap2 artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-darwin-arm64
           path: |
             toolchains-dist/darwin_arm64/bin/minimap2
@@ -1549,6 +1578,7 @@ jobs:
       - name: Upload macOS Apple Silicon mm2-plus artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-darwin-arm64
           path: |
             toolchains-dist/darwin_arm64/bin/mm2plus*
@@ -1560,6 +1590,7 @@ jobs:
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: browser-tauri-darwin-arm64
           path: browsers-dist/darwin_arm64
           if-no-files-found: error
@@ -1643,6 +1674,7 @@ jobs:
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1776,6 +1808,8 @@ jobs:
       - name: Download verified sequence tools
         uses: actions/download-artifact@v5
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           name: sequence-tools-darwin_x86_64
           path: sequence-tools-archive
       - name: Extract sequence tools
@@ -1790,6 +1824,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: macos-x86_64-compatibility
           path: build/portable/**/share/doc/macos-compatibility.json
       - name: Verify every bundled tool in the packaged JAR
@@ -1804,12 +1839,14 @@ jobs:
       - name: Upload macOS Intel HiCT native processing artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hict-native-darwin-x86_64
           path: build/native-processing/resources
           if-no-files-found: error
       - name: Upload macOS Intel hictk artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: hictk-darwin-x86_64
           path: |
             toolchains-dist/darwin_x86_64/bin/hictk
@@ -1820,6 +1857,7 @@ jobs:
       - name: Upload macOS Intel minimap2 artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: minimap2-darwin-x86_64
           path: |
             toolchains-dist/darwin_x86_64/bin/minimap2
@@ -1830,6 +1868,7 @@ jobs:
       - name: Upload macOS Intel mm2-plus artifact
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: mm2-plus-darwin-x86_64
           path: |
             toolchains-dist/darwin_x86_64/bin/mm2plus*
@@ -1841,6 +1880,7 @@ jobs:
         if: ${{ github.event_name == 'release' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.bundle_tauri_browser == 'true') }}
         uses: actions/upload-artifact@v6
         with:
+          overwrite: ${{ github.run_attempt != '1' }}
           name: browser-tauri-darwin-x86_64
           path: browsers-dist/darwin_x86_64
           if-no-files-found: error
@@ -1939,6 +1979,7 @@ jobs:
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
       HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
+      HICT_EXPECTED_TOOLCHAIN_SOURCES: ${{ needs.resolve-webui.outputs.toolchain_sources }}
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5
@@ -1953,6 +1994,8 @@ jobs:
       - name: Download packaged artifacts
         uses: actions/download-artifact@v6
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
           path: downloaded-artifacts
           pattern: '{hict-jvm-fat-jar,hict-linux-portable*,hict-linux-appimage*,hict-windows-portable,hict-darwin-*-portable}'
 
@@ -2035,7 +2078,7 @@ jobs:
           fi
           for asset in "${required_assets[@]}"; do
             [[ -s "release-dist/${asset}" ]] || {
-              echo "::error::Missing ${asset}. Use Re-run all jobs to rebuild a consistent release after a failed attempt."
+              echo "::error::Missing required package ${asset}."
               exit 1
             }
           done
@@ -2094,6 +2137,7 @@ jobs:
             echo "  minimap2: ${MINIMAP2_REF}"
             echo "  mm2_plus: ${MM2PLUS_REF}"
             echo "  hict_webui: ${HICT_WEBUI_REF}"
+            echo "  native_sources_sha256: ${HICT_EXPECTED_TOOLCHAIN_SOURCES}"
             echo
             echo "asset_sha256:"
             sed 's/^/  /' release-asset-digests.txt
