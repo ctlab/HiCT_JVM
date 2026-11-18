@@ -402,3 +402,16 @@ application in 2m 46s. A subsequent pull-request run is needed to measure a
 restore of that merge-ref cache.
 [Completed pull-request run](https://github.com/ctlab/HiCT_JVM/actions/runs/44241319650)
 [GitHub Actions cache scope](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)
+
+The next pull-request run, for `c29eaf5b`, restored the exact toolchain cache
+and skipped cold setup. It finished successfully in 4m 13s from creation,
+including a 3m 22s application build.
+[Warm pull-request run](https://github.com/ctlab/HiCT_JVM/actions/runs/44255582313)
+
+On the same revision, the branch Autobuild's first attempt failed one of 20
+child-termination checks after 31 ms, well within its five-second deadline.
+The test repeated the process-state probe after the wait had already observed
+termination. The branch retry passed. The corrected test asserts the observed
+termination once and passed all 20 repetitions locally. All four portable JVM
+regression jobs passed on that revision.
+[Branch Autobuild retry](https://github.com/ctlab/HiCT_JVM/actions/runs/44255574016/attempts/2)

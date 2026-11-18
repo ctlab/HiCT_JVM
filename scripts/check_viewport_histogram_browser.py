@@ -92,19 +92,24 @@ def main():
             check = BrowserCheck(page, out)
             publications = []
             request_timings = []
-            tiles = {"active": set(), "peak": 0}
+            tiles = {}
+            cdp = page.context.new_cdp_session(page)
+            cdp.send("Network.enable")
 
-            def started(request):
-                if "/get_tile?" in request.url:
-                    tiles["active"].add(request)
-                    tiles["peak"] = max(tiles["peak"], len(tiles["active"]))
+            def started(event):
+                url = event["request"]["url"]
+                if "/get_tile?" in url:
+                    tiles[event["requestId"]] = {"url": url, "start": event["timestamp"]}
 
-            def ended(request):
-                tiles["active"].discard(request)
+            def ended(event):
+                transfer = tiles.get(event["requestId"])
+                if transfer is not None:
+                    transfer["end"] = event["timestamp"]
+                    transfer["error"] = event.get("errorText")
 
-            page.on("request", started)
-            page.on("requestfinished", ended)
-            page.on("requestfailed", ended)
+            cdp.on("Network.requestWillBeSent", started)
+            cdp.on("Network.loadingFinished", ended)
+            cdp.on("Network.loadingFailed", ended)
             page.on(
                 "requestfinished",
                 lambda r: (
@@ -495,7 +500,25 @@ def main():
                 record(
                     "failed-histogram-clears-stale-curve-disables-fit-and-retries-without-mutation"
                 )
-                assert tiles["peak"] <= 4, tiles["peak"]
+                # Playwright callback delivery can lag behind a replacement
+                # request after completion or abort. Use Chromium timestamps.
+                events = []
+                for transfer in tiles.values():
+                    start, end = transfer["start"], transfer.get("end")
+                    if end is not None:
+                        assert end >= start, transfer
+                        if end == start:
+                            continue
+                        events.append((end, -1))
+                    events.append((start, 1))
+                active = peak_tiles = 0
+                for _, change in sorted(events):
+                    active += change
+                    peak_tiles = max(peak_tiles, active)
+                (out / "tile-transfer-timings.json").write_text(
+                    json.dumps(list(tiles.values()), indent=2)
+                )
+                assert 0 < peak_tiles <= 4, peak_tiles
                 record("tile-network-budget-leaves-room-for-interactive-requests")
                 assert hashes == {
                     p.name: hashlib.sha256(p.read_bytes()).hexdigest()
@@ -515,7 +538,7 @@ def main():
                             "checks": rows,
                             "sourceHashes": hashes,
                             "errors": check.errors,
-                            "peakTileTransfers": tiles["peak"],
+                            "peakTileTransfers": peak_tiles,
                         },
                         indent=2,
                     )

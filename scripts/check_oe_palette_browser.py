@@ -140,20 +140,30 @@ def main():
                     assert options()["signalDisplayMode"] == value
 
                 def tile(source="PRIMARY"):
-                    response = page.request.get(
-                        api.url + "/get_tile",
-                        params={
-                            "source": source,
-                            "bpResolution": 4,
-                            "format": "PNG_BY_PIXELS",
-                            "row": 0,
-                            "col": 0,
-                            "rows": 5,
-                            "cols": 5,
-                        },
-                    )
-                    assert response.ok, response.text()
-                    return Image.open(io.BytesIO(response.body())).convert("RGBA")
+                    deadline = time.monotonic() + 2
+                    while time.monotonic() < deadline:
+                        response = page.request.get(
+                            api.url + "/get_tile",
+                            params={
+                                "source": source,
+                                "bpResolution": 4,
+                                "format": "PNG_BY_PIXELS",
+                                "row": 0,
+                                "col": 0,
+                                "rows": 5,
+                                "cols": 5,
+                            },
+                        )
+                        assert response.ok, response.text()
+                        # Applying a graph may cancel a tile from the preceding
+                        # rendering generation before sending its replacement.
+                        if response.headers.get("x-hict-cancelled") == "true":
+                            page.wait_for_timeout(30)
+                            continue
+                        picture = Image.open(io.BytesIO(response.body())).convert("RGBA")
+                        assert picture.size == (5, 5), picture.size
+                        return picture
+                    raise AssertionError("The requested tile kept being cancelled")
 
                 def apply():
                     page.locator("#gradient-apply-button").click()

@@ -48,6 +48,15 @@ workflows covered repeat detection, reverse strands, ambiguous bases, keyboard
 selection, Jobs delivery, and invalidation after an exact cut. Receipts are in
 `published-track-workflows/`.
 
+The published assets passed 13 viewport-histogram and 11 O/E palette checks.
+The slowest histogram refresh after a pan was 27.6 ms on the tested fixtures
+against the 150 ms gate. Chromium transfer timestamps confirmed a peak of four
+overlapping tile requests. The palette tests checked graph and sidebar edits,
+secondary isolation, session restoration and exact RGBA values. During a
+rendering change the pixel check retries only tiles explicitly marked as
+cancelled and requires every successful image to match its requested dimensions.
+Receipts are in `published-signal-final/` and `published-palette-retry/`.
+
 In a loopback-only container, the three-click yeast Micro-C example reached
 a readable map in 139.12 seconds from cached source files and a fresh
 conversion. Reopening through the same File menu in a fresh browser profile

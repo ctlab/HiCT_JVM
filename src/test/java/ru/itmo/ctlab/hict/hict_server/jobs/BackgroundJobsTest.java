@@ -84,8 +84,13 @@ class BackgroundJobsTest {
         // destroyForcibly requests termination; waiting for the parent does not
         // imply every descendant has already exited on another CPU.
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-        while (!hasExited(child) && System.nanoTime() < deadline) Thread.sleep(10);
-        assertTrue(hasExited(child), "Child still running after cancellation: " + child.pid());
+        boolean exited = hasExited(child);
+        while (!exited && System.nanoTime() < deadline) {
+          Thread.sleep(10);
+          exited = hasExited(child);
+        }
+        // A terminated process can be reaped between two readings of /proc.
+        assertTrue(exited, "Child still running after cancellation: " + child.pid());
       }
     } finally {
       // Retain handles because an exited parent no longer reports its children.
