@@ -47,7 +47,7 @@ records the deferred Windows and macOS desktop work.
 |---:|---|---|
 | 1 | Stop returns the Launcher to its simple Start view. | [Published Linux Launcher checks](release-qualification.md#published-clipboard-release-20371) and [native lifecycle qualification](#version-63-package-qualification-and-native-lifecycle-follow-up). |
 | 2 | Shift selects entities with persistent border highlights. Ctrl or Cmd creates a persistent region for sequence tools. | [Selection browser checks](#independent-selections-and-exact-coordinate-entry) and the [published clipboard release](release-qualification.md#published-clipboard-release-20371). |
-| 3 | Map, ModDotPlot and tracks can be captured before and after exact cutting and scaffolding. | [Publication figure, source provenance and print assets](publication/borrelia-editing/README.md) and [candidate reproduction](#reproduction-of-publication-artwork-with-the-candidate-webui). |
+| 3 | Map, ModDotPlot and tracks can be captured before and after exact cutting and scaffolding. | [Publication figure, source provenance and print assets](publication/borrelia-editing/README.md) and [reproduction on the published package](release-qualification.md#publication-figure-reproduction). |
 | 4 | Save session asks for a destination, and File offers Open Session. | [Destination and session checks](#p3-destinations-and-confirmed-session-saves), [Firefox download fallback](#native-dependency-soundness-and-real-firefox-downloads) and the published Linux restore journey. |
 | 5 | The main-map wheel reaches FASTA letters while keeping the viewport anchored. | [Exact cut/bin-clipping checks](#p1-exact-library-cuts-and-sessions) and [continuous alignment preview](#continuous-alignment-preview). |
 | 6 | File flows remember the prior destination or selection by purpose, including selection FASTA export. | [File-destination tests](#p3-destinations-and-confirmed-session-saves) and [native streaming and cancellation](#bounded-tauri-coordinate-downloads-and-native-save-qualification). |
@@ -62,11 +62,24 @@ records the deferred Windows and macOS desktop work.
 | 15 | File offers Open Examples. | [Jobs-first example opening](#example-downloads-in-jobs-and-recovery) and the [three-click File menu journey on the published Linux release](release-qualification.md#published-clipboard-release-20371). |
 | 16 | Info refreshes after zoom and delayed tiles. The fine-scale empty yeast band is present in the source. | [Independent raw Cooler comparison and Info cases](#fresh-yeast-download-info-and-conversion-progress). |
 | 17 | Selecting from the FASTA track exposes interval length and repeat-period Jobs. | [Selection, reverse strand, exact and imperfect repeats](#fasta-interval-and-repeat-measurement). |
-| 18 | Opt-in remote search supports external nucleotide databases with Jobs delivery and bounded result export. | [Consent, controlled provider and known-request recovery](#opt-in-remote-blast-and-independent-external-reports). |
+| 18 | Opt-in remote search supports external nucleotide databases with Jobs delivery and bounded result export. | [Published package with controlled provider](release-qualification.md#remote-blast-with-a-controlled-provider) and [live known-request recovery](#opt-in-remote-blast-and-independent-external-reports). |
 | 19 | O/E colors, opacity and ratio bounds are editable through the rendering pipeline and sidebar. | [Active O/E editor and persistence](#active-primary-oe-editor-and-shared-presets) and [draft handling](#visualization-draft-ownership-through-normalization). |
 | 20 | Coverage help defines a bin's total contacts as its row sum with the diagonal counted once. | [Coverage explanation and fixtures](#coverage-explanation-and-p6-audit). |
-| 21 | FASTA-level and feature-edge cuts retain source bins and exact sequence intervals. | [Exact native and session tests](#p1-exact-library-cuts-and-sessions), [base-grid track qualification](#base-grid-track-qualification) and the exact packaged alignment check. |
+| 21 | FASTA-level, feature-edge and typed coordinate cuts retain source bins and exact sequence intervals. | [Exact native and session tests](#p1-exact-library-cuts-and-sessions), [base-grid track qualification](#base-grid-track-qualification) and [typed coordinate cuts](#typed-coordinate-cuts). |
 | 22 | The viewport histogram drives visible-area levels, with a spline and draggable range and midpoint. | [Viewport and sample-based levels](#inline-viewport-histogram-and-sample-based-levels) and [midpoint persistence](#color-midpoint-across-rendering-and-persistence). |
+
+## Typed coordinate cuts
+
+The coordinate dialog's **Cut at a coordinate** section accepts the last
+1-based position in the first fragment. It uses the same exact split request
+and assembly revision check as the scissors and feature-edge actions.
+In the candidate WebUI, Chromium rejected a contig end and a stale dialog,
+then split a reversed 1,000-bp contig into 350 and 650 bp. The full displayed
+sequence, all 4,000 assembly bases and exact AGP restoration through Journal
+Undo passed. All ten selection cases passed using the published `2.0.382`
+JVM. The browser receipt and capture are under `coordinate-cut-final/`.
+The [WebUI CI run](https://github.com/ctlab/HiCT_WebUI/actions/runs/44254996143)
+checks candidate commit `02292b68`.
 
 ## Application Note archive handoff
 
@@ -77,7 +90,8 @@ instructions for reproducing results and figures. The Application Note rules
 require software availability for two years after publication.
 [Bioinformatics author guidelines](https://academic.oup.com/bioinformatics/pages/author-guidelines)
 
-As of 2026-11-18, the qualified rolling build is `2.0.371-ci1-b84ed77`, built
+As of 2026-11-18, the previous fully qualified Linux build is
+`2.0.371-ci1-b84ed77`, built
 from [HiCT JVM `b84ed77`](https://github.com/ctlab/HiCT_JVM/tree/b84ed77fad3eb23cb8a19b0a0dcfbbccfd951a59)
 and [HiCT WebUI `ed184e8`](https://github.com/ctlab/HiCT_WebUI/tree/ed184e8b229e8132718e7facb09903726151ad4a).
 The [publication run](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944)
@@ -87,10 +101,34 @@ For the submission archive, retain both exact source trees, the installers,
 the version the authors select. Recheck its release qualification and digests
 if that version changes.
 
+The rolling release is now `2.0.382-ci1-0c483e2` with all 17 published asset
+digests verified. Its source archives are staged under
+`run-44241313376/submission-source/` with their own SHA-256 manifest. The
+Linux runfile passed all ten qualification stages including the 30-minute
+soak. The AppImage passed its offline conversion and browser checks. Both
+packaged Linux clipboard paths passed.
+[Release qualification](release-qualification.md#published-portable-release-20382)
+
 Both `2.0.371-ci1-b84ed77` source archives are staged locally alongside their
 SHA-256 manifest in `build/release-evidence/portable-publication-priority/`
 `run-44215590944/submission-source/`. The archive headers record the exact
 JVM and WebUI commits.
+
+A candidate quick-start test-data archive is staged under the same run in
+`submission-test-data/HiCT-yeast-microc-quickstart-test-data.tar`. It contains
+the original yeast Micro-C matrix and sacCer3 reference, verified against the
+release's catalog digests, together with source attribution, instructions and
+the packaged browser journey receipt. All six archive members were checked
+after writing the archive. The archive's SHA-256 is
+`d11629fa232eaedf62a6352fe6fcda1f9ede0cbbc505c93b4dba574064439398`.
+The published Linux installer converted the extracted inputs through
+**File → Open with options…**. Chromium detected contact-map signal after
+138.76 seconds. All 17 AGP chromosome lengths matched independent FASTA
+lengths, and a second conversion returned the exact first 1,000 bases on
+chromosome I. The input checksums were unchanged after conversion.
+The wizard dismisses itself after rendering. The follow-up's transient
+completion-label assertion timed out, and its final screenshot records the
+visible map with linked FASTA and the wizard dismissed.
 
 Use the [example catalog](examples-catalog.md#selected-borrelia-and-yeast-quick-start-recipes)
 to identify test inputs, accessions, source checksums and provider terms. Include
@@ -1891,6 +1929,15 @@ other theme states require separate verification.
 
 The audit, sampled contrast and screenshots are under
 `build/release-evidence/portable-publication-priority/hosted-linux-qualification/accessibility/`.
+
+The checksum-verified JAR from [Autobuild run 44241313095](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313095)
+served WebUI `332c67b4d227f9a58148338b74eea596a6e52230` from the JAR in a repeat
+of all six views. Axe 4.13.0 again found zero confirmed WCAG-tagged violations.
+The keyboard checks passed, including focus return from the file picker and
+Jobs and Enter on the map zoom control. The lowest sampled active-text contrast
+was 4.76 on the range summary in the default theme. The input checksum was
+unchanged. The receipts and screenshots are under
+`build/release-evidence/portable-publication-priority/run-44241313376/current-autobuild/accessibility/`.
 
 ## Reproduction of publication artwork with the candidate WebUI
 

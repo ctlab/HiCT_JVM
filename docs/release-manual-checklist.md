@@ -68,9 +68,12 @@ JavaScript, and stops the test process. It covers the Windows ZIP entrypoint,
 custom Windows EXE, both signed macOS launchers, Linux runfile and AppImage.
 Both exact `2.0.371` Linux artifacts passed locally, with the AppImage
 starting in extract-and-run mode in a network-isolated container. A wrong
-expected WebUI revision failed the check. The next hosted packages must
-confirm the Windows and macOS checks. The interactive checklist above remains
-deferred.
+expected WebUI revision failed the check. The hosted `2.0.382-ci1-0c483e2`
+jobs confirmed successful API and WebUI startup for both Windows launchers
+and both macOS architectures. The interactive checklist remains deferred.
+[Windows job](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376/job/134595372604)
+· [Apple Silicon job](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376/job/134595105195)
+· [Intel macOS job](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376/job/134595651054)
 
 The current candidate and local Linux evidence are recorded in
 [release-qualification.md](release-qualification.md). Future checks must identify

@@ -1,19 +1,20 @@
 # Control coverage ledger
 
-## Current reviewed source
+## Current source reconciliation
 
-The current static WebUI review is `ea5c2c76d80db1906c1202f7ac531bcbe72765e2`.
-Fresh reconciliation passes for all 232 contracts, with 227 inspected bindings,
-five historical ambiguities and 158 literal source candidates. Four stale
-anchors were reviewed: Reload now belongs to NavigationBar, the weights
-explanation uses its current NaN-policy control, and the two historical weight
-toggles now map to Add track / Map weights plus the added track's visibility.
-The expected effects describe those current interactions.
-`build/release-evidence/2.0.69/current-control-reconciliation.json` records the
-fixture digests and reviewed revision. It certifies zero runtime outcomes.
+All 232 contracts reconcile against the clean WebUI release revision
+`332c67b4d227f9a58148338b74eea596a6e52230`, with 227 inspected bindings,
+five historical ambiguities and 158 literal source candidates. The receipt
+records both the checkout checked by the tool and the contract authors' recorded
+review revision, `bce320752ef4d903caccbbea21d757d4cbc9cac8`. It reports
+whether Git sees changes in `src/app`. An exported source tree records null
+for the checkout revision and change status.
+
+The current receipt is under
+`build/release-evidence/portable-publication-priority/run-44241313376/control-reconciliation.json`.
 The runtime ledger below retains scenario-specific historical evidence.
-The release report records current application and artifact qualification.
-Earlier capture sections retain their historical revisions and scope.
+The [release report](release-qualification.md) records current application
+and artifact qualification.
 
 The historical third-pass capture contains 232 distinct DOM signatures across
 18 menu destinations and sidebar states. The preserved fixture is

@@ -289,6 +289,31 @@ build and push-to-publication timings are still pending.
 [Compiled jobs](https://github.com/ctlab/HiCT_JVM/actions/runs/44202813810) ·
 [Restored jobs](https://github.com/ctlab/HiCT_JVM/actions/runs/44212288935)
 
+The Apple Silicon BLAST job in Portable Packages run 44234860874 took about
+29 minutes on a cold cache and saved the verified payload before that run was
+canceled. Its replacement, run 44241313376, restored the identical cache key
+and passed its relocated binary smoke check in 44 seconds, including setup.
+GitHub recorded the source compilation step as skipped. These durations are
+for the dependency job.
+[Cold build](https://github.com/ctlab/HiCT_JVM/actions/runs/44234860874) ·
+[Warm build](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376)
+
+The replacement restored all eight platform and component payloads. Each
+restored payload passed its binary smoke check. Job durations ranged from
+44 seconds for Apple Silicon BLAST to 2m 56s for the Linux sequence tools.
+Time from run creation to successful publication was 1h 10m 21s for this
+release and 2h 17m 10s for the previous successful 2.0.371 release. Both
+measurements include queue time and the public packaging jobs.
+[Previous publication run](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944) ·
+[Current publication run](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376)
+
+The Windows package job for `2.0.382-ci1-0c483e2` finished in 19m 32s.
+Both the ZIP's `run.cmd` and the self-extracting EXE started their bundled API
+and WebUI, and the startup verifier closed both test processes and cleaned
+up their temporary directories successfully. The packaged tool check and
+the post-upload EXE check also passed.
+[Windows package job](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376/job/134595372604)
+
 ## WebUI revision shared by every portable package
 
 A release now resolves the WebUI ref once, alongside native compilation. All
@@ -328,7 +353,13 @@ byte-for-byte identical and retained the published payload SHA-256.
 The three-thread run peaked at about 3.0 GiB of resident memory. Linux and
 both macOS packagers use three threads on GitHub Actions by default and
 honor `HICT_RUN_PAYLOAD_XZ_THREADS`. The default for local builds is two.
-Measure the end-to-end saving on the first hosted release with this change.
+
+The Apple Silicon package job for `2.0.382-ci1-0c483e2` used the warm toolchain
+cache and finished in 25m 07s. The package step took 18m 02s. The interval from
+starting three-thread compression to the first extraction check was 8m 21s,
+including archive assembly. The packaged native launcher then started the
+API and WebUI successfully. This is a hosted timing for one runner image.
+[Apple Silicon package job](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376/job/134595105195)
 
 ## Linux Autobuild cache across runner updates
 
@@ -365,5 +396,9 @@ Pull-request cache misses now use the same prepare, source-check and payload
 verification steps as branch cache misses. GitHub scopes the saved pull-request
 cache to its merge ref for reuse by later checks of that pull request. The
 cache key still includes the architecture, upstream source fingerprints and
-build script hash. Hosted validation of this cache change is pending.
+build script hash. The pull-request run for `0c483e29` passed the cold prepare
+step in 40m 59s, saved its verified cache in four seconds and then built the
+application in 2m 46s. A subsequent pull-request run is needed to measure a
+restore of that merge-ref cache.
+[Completed pull-request run](https://github.com/ctlab/HiCT_JVM/actions/runs/44241319650)
 [GitHub Actions cache scope](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)

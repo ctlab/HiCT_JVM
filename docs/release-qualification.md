@@ -3,6 +3,74 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Published portable release 2.0.382
+
+Portable Packages run 44241313376 pins JVM
+`0c483e29a90067b086636cca2137d12a95a3c3d0` and WebUI
+`332c67b4d227f9a58148338b74eea596a6e52230`. The Linux runfile from Actions
+verified against SHA-256
+`1585d4a63a9c997fa91096956a69336bd1301c44c31ec6acd8165c77945ace5a`.
+The extracted JAR has SHA-256
+`4fe67b0a7d1f6ad6178b8a2fcfecda951d76383639628bc21bcfe776c4079f5f`.
+The package starts its bundled server and serves 53 verified WebUI files.
+[Portable Packages run](https://github.com/ctlab/HiCT_JVM/actions/runs/44241313376)
+
+On that Linux build, Chromium passed metadata and menu checks, exact undo
+and redo for seven structural edits, incomplete-file recovery, and offline
+session restore, PNG/SVG/PDF export and bundled API documentation. Across
+four navigation fixtures, the maximum frame p95 was 16.8 ms and the maximum
+input acknowledgement p95 was 32.5 ms. The release gates are 33 ms and
+100 ms respectively.
+
+The Linux runfile passed all ten qualification stages. The mixed soak ran
+231 cycles in 1,804.75 seconds, with 16.7 ms frame p95 and 54.02 ms input
+acknowledgement p95. Browser heap grew by 1.08 MiB, with a fitted rate of
+0.049 MiB/min. Memory and DOM trend gates passed. The browser reported no
+errors, all ten fixture files retained their checksums, and the runfile and
+JAR hashes matched after the soak.
+
+The exact published AppImage passed on an Ubuntu test container with only
+loopback networking. Its bundled hictk converted the test Cooler. Chromium
+preserved the edited assembly through session save and restore, exported PNG,
+SVG and PDF, and opened bundled Swagger. Both the Cooler input and AppImage
+retained their checksums. This test used extract-and-run mode.
+
+The same Linux release passed native clipboard tests. Electron pasted the
+exact rectangular coordinates and a 722 × 566 PNG. The Hi-C, FASTA and AGP
+controls stayed beside Jobs at 640, 800, 1280 and 1440 px. Tauri pasted a
+1068 × 844 PNG into a separate Electron window. The receiver decoded the
+image and saved the clipboard bytes for verification.
+
+Chromium passed 13 Tracks and Layers workflows on the published assets,
+including keyboard tabs, file and Cooler-weight attachment, late-response
+handling, and panel resizing with edge-pixel checks. Twelve FASTA measurement
+workflows covered repeat detection, reverse strands, ambiguous bases, keyboard
+selection, Jobs delivery, and invalidation after an exact cut. Receipts are in
+`published-track-workflows/`.
+
+In a loopback-only container, the three-click yeast Micro-C example reached
+a readable map in 139.12 seconds from cached source files and a fresh
+conversion. Reopening through the same File menu in a fresh browser profile
+took 4.37 seconds with the converted map cached. Both runs verified 17
+chromosomes against the source, compared the linked sequence with the FASTA,
+and passed navigation, Reverse, exact Split, Undo, session restore and AGP
+export. The input and converted-map hashes matched across the reopen. The
+receipt is in `published-yeast/qualification.json`.
+
+Windows passed startup from both `run.cmd` and the custom EXE. The Apple Silicon
+and Intel macOS launchers also passed startup. The macOS 12.3 deployment target
+audits checked 2,145 and 2,149 binaries respectively with zero errors.
+These hosted checks serve the expected API version, WebUI and JavaScript
+revision. All four platform package jobs passed. GitHub published all 17 assets
+in 1h 10m 21s from run creation. The published provenance and checksum manifest
+match the tested Linux runfile and its extracted JAR. The owner-deferred desktop
+checks are documented in the
+[platform checklist](release-manual-checklist.md).
+[Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
+
+Receipts are in
+`build/release-evidence/portable-publication-priority/run-44241313376/`.
+
 ## Published clipboard release 2.0.371
 
 The Linux installer produced by [Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944)
@@ -112,7 +180,44 @@ until after the opening preset committed. The hosted WebUI then drew only
 option reads and sends the opening options explicitly. With the same hosted
 JVM and injected delay it drew all 240 sampled points in both opening routes,
 displayed the fallback notice and passed all 17 assertions. The new WebUI
-requires qualification in a portable package.
+also passed all 17 assertions through the published Linux `2.0.382` package.
+Both Manual Open and the wizard rendered all 240 sampled diagonal points,
+with no page or console errors. The published JAR and fixture checksums
+were unchanged.
+
+The same package passed 16 browser measurements across finer, coarser,
+disjoint and interleaved secondary resolution pyramids. The disjoint fixture
+preserved its 12,017-bp assembly and the projected contact landmark through
+Reverse, exact Split and contig scoping. All five input maps retained their
+checksums. Receipts are in `published-opening-retry/` and
+`published-mixed-pyramids-retry/` under the release evidence directory.
+
+## Publication figure reproduction
+
+The published `2.0.382` JAR and WebUI regenerated the three Borrelia panels
+with the bundled ModDotPlot tool. The exact cut produced 450,123-bp and
+460,601-bp children. The 259,811 contact-layer pixels and the complete native
+scene matched the retained artwork. The locally regenerated track uses
+pyBigWig 0.3.25. Its 155 genomic intervals and values match the retained
+UCSC-generated track exactly. Source checksums were unchanged.
+
+The 178-mm vector PDF contains zero raster page images and has a minimum
+measured text size of 7.05 pt. The decoded 900-dpi TIFF pixels match the
+retained artwork and the new TIFF passed its gzip round trip. The review
+copies, retained caption, evidence and checksum manifest are under
+`published-figure/review-artwork/` in the release evidence directory.
+
+## Remote BLAST with a controlled provider
+
+The published `2.0.382` JAR and packaged WebUI passed 18 Chromium checks
+with the controlled provider executable in a loopback-only container. They
+covered consent, searches without a map, cancellation and timeout, result
+reopening, and export of all 20,001 fixture rows. Local sequence analysis
+stayed available while the provider job was waiting. Browser errors were
+empty, and all 13 fixture inputs retained their original checksums. The
+receipt is in `published-remote-blast/browser/results.json`. The separate
+live provider retrieval evidence is in the
+[advisor ledger](advisor-release-progress.md#opt-in-remote-blast-and-independent-external-reports).
 
 ## Earlier rolling package 2.0.364
 
