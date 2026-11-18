@@ -54,16 +54,23 @@ jobs:
 
       - name: Identify native build inputs
         id: native-inputs
+        env:
+          NATIVE_SCRIPTS_HASH: ${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
         run: |
           python scripts/ci/runner_cache_identity.py
           python scripts/ci/toolchain_cache_sources.py
+          printf 'scripts=%s\n' "${NATIVE_SCRIPTS_HASH}" >> "${GITHUB_OUTPUT}"
 
       - name: Restore complete Linux toolchain
         id: bundled-tools
         uses: actions/cache/restore@v5
         with:
           path: toolchains-dist/linux_x86_64
-          key: autobuild-linux-tools-v1-${{ steps.native-inputs.outputs.identity }}-${{ steps.native-inputs.outputs.sources }}-${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
+          # Docker supplies the pinned compiler and ABI. Runner image updates
+          # should not invalidate these binaries.
+          key: autobuild-linux-tools-v2-${{ runner.arch }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.scripts }}
+          restore-keys: |
+            autobuild-linux-tools-v1-${{ steps.native-inputs.outputs.identity }}-${{ steps.native-inputs.outputs.sources }}-${{ steps.native-inputs.outputs.scripts }}
 
       - name: Prepare and verify Linux toolchain on a branch cache miss
         if: github.event_name != 'pull_request' && steps.bundled-tools.outputs.cache-hit != 'true'

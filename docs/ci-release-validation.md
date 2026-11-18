@@ -330,6 +330,24 @@ both macOS packagers use three threads on GitHub Actions by default and
 honor `HICT_RUN_PAYLOAD_XZ_THREADS`. The default for local builds is two.
 Measure the end-to-end saving on the first hosted release with this change.
 
+## Linux Autobuild cache across runner updates
+
+The warm hosted Autobuild for `60bf63d9` finished in 3m 09s from workflow
+creation to completion. Its exact Linux toolchain restore took 2s. Gradle
+reported reuse of the source-matched, verified payload and built in 2m 36s.
+[Warm hosted run](https://github.com/ctlab/HiCT_JVM/actions/runs/44229833106)
+
+Hosted Autobuild used two Ubuntu image versions on this branch. Native tools
+are compiled inside a digest-pinned Linux container. The cache now keys them
+by architecture, upstream commit fingerprints and build and verification
+inputs. The previous cache from the same runner image can seed the new key
+when all of its fingerprints match. Gradle checks the payload seal, required
+commands and file digests before reuse.
+
+This change applies to the standalone JVM Autobuild workflow. Portable package
+jobs still track their platform and compiler requirements. The first hosted
+run with the new key will show whether it was seeded by a matching old cache.
+
 An official Actions glob fixture verified that nine build and verification
 inputs change the key while six unrelated inputs, including the portable
 workflow unit test and generated Python bytecode, leave it unchanged.
