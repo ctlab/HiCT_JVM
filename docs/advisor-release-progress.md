@@ -1744,3 +1744,19 @@ the assembly menu's Move to debris and hide action. Chromium against the
 candidate WebUI put the menu first in pointer hit-testing at the same
 coordinates, and the actual edit completed with HTTP 200. Candidate WebUI
 commit `f2292f4` places open assembly and axis menus above the notifications.
+
+## Selection clipboard and file displays beside Jobs — 2026-11-18
+
+Following owner review of the published Linux installer, WebUI commit
+`52526c1` adds clipboard actions to the Selection menu and the active
+rectangle's context menu. Coordinate copies use ungrouped 1-based inclusive
+assembly positions. Rectangles include separate row and column bounds.
+The PNG action reuses the selection exporter and writes directly to the
+image clipboard.
+
+Chromium verification on the published Linux backend read back the exact
+asymmetric rectangle coordinates, decoded a 766 × 601 PNG, and received it
+through a keyboard paste event. Hi-C, FASTA and AGP remain grouped beside Jobs
+at widths of 640, 800, 1280 and 1440 px. The native desktop clipboard and
+hosted package require their own qualification. Browser receipts are under
+`build/release-evidence/portable-publication-priority/hosted-linux-qualification/`.
