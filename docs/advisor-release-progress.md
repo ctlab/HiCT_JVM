@@ -1720,3 +1720,11 @@ pending. See [CI validation](ci-release-validation.md#portable-ci-cache-stabilit
 Autobuild JAR caching is prepared locally. Hosted cache-hit timing remains pending.
 
 The next JAR build includes the selected WebUI checkout’s package version in the version endpoint.
+
+## Linux startup qualification — 2026-11-18
+
+Candidate 75 reduced median JVM launch to working version API and WebUI index
+from 4.747 s to 1.779 s on the release-test host. The trial used the published
+Linux runtime and JAR with the candidate loader overlaid. A final packaged
+candidate and other operating systems still require verification.
+[Measurement and scope](reinforcement-validation.md#linux-hdf5-startup--2026-11-18)

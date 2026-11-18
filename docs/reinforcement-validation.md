@@ -6571,3 +6571,18 @@ pending. See [CI validation](ci-release-validation.md#portable-ci-cache-stabilit
 Autobuild retains Gradle build verification and checks every bundled command before caching the Linux payload.
 
 Gradle refreshed the packaged manifest after changing only its version. A local JAR built with the remote checkout manifest and HDF5 native archive returned WebUI version 2.0.0 from /version.
+
+## Linux HDF5 startup — 2026-11-18
+
+Five paired JVM starts used the published 2.0.364 Linux JAR. The candidate
+overlaid only the rebuilt HDF5 initializer classes. Median initialization took
+1.239 s, down from 4.247 s. Every process wrote and read back an integer HDF5
+dataset. The candidate also passed with the generic CPU variant forced.
+
+Five additional starts per configuration used the published Linux Java runtime
+and the same JAR. From process launch until both the version API and WebUI index
+answered on loopback, the baseline median was 4.747 s and the candidate median
+was 1.779 s. Paired runs alternated order. These timings cover service readiness
+on one host and exclude installer extraction, browser painting and opening a map.
+The baseline flight recording, measurement programs and per-run results are in
+`build/release-evidence/portable-publication-priority/startup-75/`.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Discover bundled HDF5 libraries in one archive scan, reducing the wait before the map server and WebUI open.
+
 - Report the selected WebUI package version from JARs built with a remote checkout.
 
 - Cache the verified Linux toolchain for Autobuild JARs so warm builds can reuse BLAST and the other bundled commands.
