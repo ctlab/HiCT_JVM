@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--url", required=True)
     parser.add_argument("--api", required=True)
     parser.add_argument("--filename", default="combined_ind2_4DN.hict.hdf5")
+    parser.add_argument("--track-file", help="Optional track in the same disposable data directory")
     parser.add_argument("--output", required=True)
     parser.add_argument(
         "--release-gate", action="store_true",
@@ -37,6 +38,8 @@ def main():
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     results = {"platform": platform.platform(), "viewport": [1440, 1000], "runs": []}
+    if args.track_file:
+        results["track"] = args.track_file
     results['timingDefinitions'] = {
         'dispatchDelayMs': 'DOM event timestamp to capture listener; browser-injected input, not hardware latency',
         'firstViewChangeMs': 'Capture listener to first changed center/resolution property',
@@ -79,6 +82,8 @@ def main():
                 }""")
                 settle(page)
                 open_ms = (time.monotonic() - opened) * 1000
+                if args.track_file:
+                    await_track_render(page, args.track_file)
                 page.evaluate("""() => {
                     window.__baseline={frames:[],longTasks:[],active:true};
                     const b=window.__baseline;let previous=performance.now();
@@ -210,6 +215,24 @@ def main():
             (output / "results.json").write_text(json.dumps(results, indent=2) + "\n")
             browser.close()
     print(json.dumps({"runs": len(results["runs"]), "evidence": str(output)}, indent=2))
+
+
+def await_track_render(page, filename):
+    page.evaluate("""async filename => {
+        const tracks = window.__hictBenchmark.manager().linearTrackManager;
+        if (!tracks.getTracksSnapshot().some(track => track.name === filename)) {
+            await tracks.openTrack(filename, filename);
+        }
+        await tracks.render({allowFetch: true});
+    }""", filename)
+    page.wait_for_function("""filename => {
+        const tracks = window.__hictBenchmark.manager().linearTrackManager;
+        return ['horizontal', 'vertical'].every(axis => {
+            const canvas = document.querySelector(`#${axis}-igv-track-div canvas`);
+            return canvas?.width > 0 && canvas.height > 0 &&
+                tracks.getVisibleTracksForAxis(axis).some(track => track.name === filename);
+        });
+    }""", arg=filename)
 
 
 def arm_action(page, kind, before):

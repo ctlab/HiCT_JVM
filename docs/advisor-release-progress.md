@@ -1782,3 +1782,22 @@ and RSS trends passed, and post-warmup peak DOM and listener counts were
 unchanged. The harness verified that all ten HDF5 files and the packaged JAR
 retained their initial checksums. The exact receipt and performance samples are
 in `build/release-evidence/portable-publication-priority/hosted-linux-qualification/`.
+
+## Track workspace and dense navigation qualification — 2026-11-18
+
+The published 2.0.364 backend and candidate WebUI passed 13 track workspace
+checks plus the separate numeric controls suite. The checks cover keyboard tab
+switching, adding Cooler weights from either map, retained drafts, stale
+requests, track resizing, and unknown-vs-unavailable weight provenance.
+The signed format suite passed for plain and gzip VCF, indexed BAM and
+BigWig. It verified both track axes, signed linear and log values, source
+coordinates, exact cuts, reversals and session restoration.
+
+The navigation benchmark accepted 240,000 deterministic BED annotations on
+the 7,790-contig AGWG assembly, visible on both axes. Each of two runs
+performed 20 zoom actions and six pans. Frame p95 was 16.8 ms in each run.
+Input acknowledgement p95 was 31.7 ms in the fresh browser and 26.9 ms on
+repeat. Chromium reported no long tasks, HTTP errors or page errors during
+the measurements. The source HDF5 checksum was verified before and after.
+Inputs, measurement receipts and screenshots are under
+`build/release-evidence/portable-publication-priority/hosted-linux-qualification/`.
