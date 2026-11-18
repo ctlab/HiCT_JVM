@@ -57,9 +57,11 @@ group, ungroup, rename or send sequence to debris. Move displays insertion targe
 Split stays armed until a double-click chooses the cut position or Escape cancels
 it. On current servers, a split retains every base and all original contact bins;
 children share a source bin if the cut crosses it. GTF/GFF feature menus also
-offer exact cuts at their displayed start/end boundaries. Existing joins are
-disabled. Older servers explicitly warn when using their historical bin-removing
-split operation.
+offer exact cuts at their displayed start/end boundaries. To type a cut, open
+**Selection → Select region by coordinates…** and expand **Cut at a coordinate**.
+Enter the 1-based assembly or current-contig position of the last base in the
+first fragment, then choose **Cut contig**. Existing joins are disabled. Older
+servers explicitly warn when using their historical bin-removing split operation.
 The Journal records edits and provides Undo and Redo. A new edit after Undo
 starts a new history branch. Text-field Undo operates on the text being edited.
 

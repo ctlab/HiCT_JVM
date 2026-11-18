@@ -207,9 +207,14 @@ def main():
             check.step('selection-clipboard-text-and-png', clipboard_selection)
             def stale_dialog():
                 dialog=coordinates()
+                dialog.get_by_text('Cut at a coordinate', exact=True).click()
+                dialog.get_by_label('Cut after position', exact=True).fill('350')
                 page.evaluate('''async()=>{const m=window.__hictBenchmark.manager();m.eventManager.applyAssemblyInfo(await m.networkManager.requestManager.splitContigAtBp(m.contigDimensionHolder.contigDescriptors[0].contigId,10));m.reloadVisuals();}''')
-                dialog.get_by_role('button',name='Select region',exact=True).click()
+                dialog.get_by_role('button', name='Cut contig', exact=True).click()
                 assert 'changed' in dialog.get_by_role('alert').inner_text()
+                dialog.get_by_role('button',name='Select region',exact=True).click()
+                alerts = dialog.get_by_role('alert').all_inner_texts()
+                assert len(alerts) == 2 and all('changed' in message for message in alerts), alerts
                 assert state()['region'] is None and not state()['ids']
                 page.keyboard.press('Escape');check.settle()
             check.step('stale-coordinates-rejected',stale_dialog)
@@ -239,6 +244,46 @@ def main():
                 }, records
 
             check.step('selected-fasta-spans-reversed-fragment-and-explicit-agp-gap', selected_fasta_with_explicit_gap)
+
+            def cut_at_typed_coordinate():
+                before_agp = app.http('/get_agp_for_assembly', {})
+                before_sequence = json.loads(app.http('/sequence/region', {'startBp': 0, 'endBp': 1000}))['sequence']
+                first = page.evaluate('''() => {
+                    const descriptor = window.__hictBenchmark.manager().contigDimensionHolder.contigDescriptors[0];
+                    return {name: descriptor.contigName, length: descriptor.contigLengthBp,
+                            id: descriptor.contigId, direction: descriptor.direction};
+                }''')
+                assert first['length'] == 1000 and first['direction'] != 1, first
+                dialog = coordinates()
+                position = dialog.get_by_label('Cut after position', exact=True)
+                assert not position.is_visible()
+                dialog.get_by_text('Cut at a coordinate', exact=True).click()
+                position.fill(f"{first['name']}:1000")
+                dialog.get_by_role('button', name='Cut contig', exact=True).click()
+                assert 'inside an editable contig' in dialog.get_by_role('alert').inner_text()
+                assert app.http('/get_agp_for_assembly', {}) == before_agp
+                position.fill(f"{first['name']}:350")
+                assert dialog.get_by_role('alert').count() == 0
+                page.screenshot(path=str(out / 'coordinate-cut-dialog.png'))
+                with page.expect_response('**/split_contig_at_bp') as response:
+                    position.press('Enter')
+                assert response.value.ok, response.value.text()
+                request = response.value.request.post_data_json
+                assert request['contigId'] == first['id'] and request['offsetBp'] == 350, request
+                dialog.wait_for(state='hidden')
+                check.settle()
+                lengths = page.evaluate('''() => window.__hictBenchmark.manager().contigDimensionHolder
+                    .contigDescriptors.map(contig => contig.contigLengthBp)''')
+                assert lengths[:2] == [350, 650] and sum(lengths) == 4000, lengths
+                after_sequence = json.loads(app.http('/sequence/region', {'startBp': 0, 'endBp': 1000}))['sequence']
+                assert after_sequence == before_sequence
+                page.get_by_role('button', name='Journal', exact=True).click()
+                with page.expect_response('**/assembly/history/restore') as undo:
+                    page.get_by_role('button', name='Undo assembly edit', exact=True).click()
+                assert undo.value.ok, undo.value.text()
+                assert app.http('/get_agp_for_assembly', {}) == before_agp
+
+            check.step('typed-exact-cut-preserves-oriented-sequence-and-undo', cut_at_typed_coordinate)
             assert hashlib.sha256(native.read_bytes()).hexdigest()==digest
             assert not check.errors,check.errors
             (out/'results.json').write_text(json.dumps({'status':'ok','checks':check.rows,'state':state(),'sourceSha256':digest,'pageErrors':check.errors},indent=2))
