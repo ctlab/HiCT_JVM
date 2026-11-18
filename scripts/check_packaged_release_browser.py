@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from urllib.request import urlopen
+from zipfile import ZipFile
 
 
 def sha256(path):
@@ -54,6 +55,12 @@ def main():
     )
     jar = app / "lib/hict.jar"
     assert jar.is_file() and (app / "webui/index.html").is_file()
+    with ZipFile(jar) as archive:
+        packaged_version = archive.read("version.txt").decode("utf-8").splitlines()[0].strip()
+        packaged_changelog = archive.read("CHANGELOG.md").decode("utf-8").strip()
+    assert packaged_version and packaged_changelog
+    (data / "version.txt").write_text("unrelated-data-directory-version\n")
+    (data / "CHANGELOG.md").write_text("# Unrelated data directory changelog\n")
     evidence = {
         "status": "preparing",
         "jarSha256": sha256(jar),
@@ -161,6 +168,9 @@ def main():
                     if time.monotonic() > deadline:
                         raise TimeoutError("Packaged API/WebUI startup timed out")
                     time.sleep(0.1)
+            assert version["version"] == packaged_version, version
+            with urlopen(api + "/changelog", timeout=2) as response:
+                assert json.load(response)["text"] == packaged_changelog
             assert index == (app / "webui/index.html").read_bytes()
             assets = []
             for asset in sorted((app / "webui/assets").rglob("*")):
@@ -173,7 +183,10 @@ def main():
                 assets.append(
                     {"path": relative, "sha256": sha256(asset), "bytes": len(actual)}
                 )
-            evidence.update(status="running", version=version, assetCount=len(assets))
+            evidence.update(
+                status="running", version=version, assetCount=len(assets),
+                packagedMetadataVerified=True,
+            )
             (out / "served-assets.json").write_text(json.dumps(assets, indent=2))
             save()
             common = ["--url", web, "--api", api]

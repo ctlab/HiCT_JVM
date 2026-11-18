@@ -3,7 +3,40 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
-## Current candidate: 2.0.68
+## Published rolling package 2.0.364
+
+The [published 2.0.364 build](https://github.com/ctlab/HiCT_JVM/actions/runs/44187130439)
+contains JVM `9b07395e079ee3073ff779f73e12465ce0a6a454` and WebUI
+`d6f771b3a5c6d70da1c52064946519df5db23ce4`. The release asset digest for
+`HiCT-2.0.364-ci1-9b07395-x86_64.AppImage` is
+`c44a06510a2fd4871e98d11b7f41005c4b167f33bf4ec8da2e4b9839b0b70299`.
+
+The exact AppImage passed extract-and-run in an Ubuntu 22.04 desktop test
+container with loopback as its only network interface. Its bundled hictk built
+the resolution pyramid and balanced a synthetic four-contig Cooler. The
+packaged server opened the resulting HiCT file in Chromium. A reverse edit
+survived cancelling Close, saving, reloading and restoring the session. PNG,
+SVG, PDF and bundled API documentation opened or exported without external
+requests or page errors. The input and AppImage checksums were unchanged.
+A separate run forced use of the bundled glibc loader and passed HDF5, native
+processing and bundled command checks. This host lacks `/dev/fuse`. The
+container checks cover extract-and-run.
+
+The published JAR returned `unknown` for `webuiVersion` from `/version`.
+Commit `c4595d06` moves the WebUI package metadata into Gradle's resource copy.
+The packaged browser gate now checks the API field alongside the WebUI's About
+dialog. A local test with Gradle's generated resource confirmed that the API
+reports the WebUI version. The package gate also places conflicting
+`version.txt` and `CHANGELOG.md` files in the disposable data directory.
+The server now prefers the metadata embedded in the JAR for both endpoints.
+The newer hosted package still requires these checks against its exact bytes.
+
+Receipts and exports are under
+`build/release-evidence/portable-publication-priority/hosted-linux-appimage/offline-qualification/`.
+The previous Linux `.run` soak and the clipboard, accessibility, editing and
+publication checks are recorded in [advisor release progress](advisor-release-progress.md).
+
+## Earlier candidate 2.0.68
 
 The qualified candidate contains JVM
 `bf6ee7a3987487994ebd5046384458f209be8eed`, WebUI
@@ -60,7 +93,7 @@ and packaged acceptance remain required. This is not an overall release sign-off
 
 ## Historical packaged candidates
 
-The latest fully packaged Linux candidate contains backend version
+An earlier fully packaged Linux candidate contains backend version
 `2.0.53-8d54602-webui_daea115` and WebUI commit
 `daea115944446d62f6b77ee72999d1d0eddb15df`. Its integrated build uses
 `./gradlew test shadowJar -PrequireBundledWebUI=true --offline`, without excluding

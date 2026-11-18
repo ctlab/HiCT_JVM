@@ -117,14 +117,6 @@ public class InfoHandlersHolder extends HandlersHolder {
     if (systemProp != null && !systemProp.isBlank()) {
       return systemProp.trim();
     }
-    try {
-      final var versionPath = Path.of("version.txt");
-      if (Files.exists(versionPath)) {
-        return Files.readString(versionPath).trim();
-      }
-    } catch (final Exception ignored) {
-      // ignore
-    }
     try (final InputStream stream = getClass().getResourceAsStream("/version.txt")) {
       if (stream != null) {
         try (final BufferedReader reader =
@@ -138,15 +130,25 @@ public class InfoHandlersHolder extends HandlersHolder {
     } catch (final Exception ignored) {
       // ignore
     }
+    try {
+      final var versionPath = Path.of("version.txt");
+      if (Files.exists(versionPath)) {
+        final var version = Files.readString(versionPath).trim();
+        if (!version.isBlank()) {
+          return version;
+        }
+      }
+    } catch (final Exception ignored) {
+      // ignore
+    }
     return "unknown";
   }
 
   private @NotNull String readChangelog() {
     final var fallback = "Changelog for this build was not detected";
-    try {
-      final var changelogPath = Path.of("CHANGELOG.md");
-      if (Files.exists(changelogPath)) {
-        final var text = Files.readString(changelogPath, StandardCharsets.UTF_8).trim();
+    try (final InputStream stream = getClass().getResourceAsStream("/CHANGELOG.md")) {
+      if (stream != null) {
+        final var text = new String(stream.readAllBytes(), StandardCharsets.UTF_8).trim();
         if (!text.isBlank()) {
           return text;
         }
@@ -154,9 +156,10 @@ public class InfoHandlersHolder extends HandlersHolder {
     } catch (final Exception ignored) {
       // ignore
     }
-    try (final InputStream stream = getClass().getResourceAsStream("/CHANGELOG.md")) {
-      if (stream != null) {
-        final var text = new String(stream.readAllBytes(), StandardCharsets.UTF_8).trim();
+    try {
+      final var changelogPath = Path.of("CHANGELOG.md");
+      if (Files.exists(changelogPath)) {
+        final var text = Files.readString(changelogPath, StandardCharsets.UTF_8).trim();
         if (!text.isBlank()) {
           return text;
         }
