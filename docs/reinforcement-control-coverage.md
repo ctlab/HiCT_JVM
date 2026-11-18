@@ -102,12 +102,10 @@ Local evidence is under `/tmp/hict-reinforce-w0-capabilities/`: the initial
 prerequisites and recovery. The capability suite also passed after commits
 `31c34bfd` (JVM) and `44ca0cd` (WebUI), with no page or HTTP errors.
 
-The surface inventory includes buttons lacking text, title and aria-label. These
-are accessibility investigation candidates, not a computed-accessible-name audit:
-SVG names or aria-labelledby can still supply a name. Existing review findings
-about modal focus containment and debug notifications remain unresolved. Passing
-these opening checks does not establish keyboard accessibility, comfortable
-layout, every nested control, all application states, or release readiness.
+The original surface inventory includes buttons lacking text, title and
+aria-label. SVG names and `aria-labelledby` can also contribute to accessible
+names. The focus and notification checks below cover the later fixes on the
+tested dialogs and states.
 
 ## Dialog and graph audit update
 
@@ -119,6 +117,17 @@ cases, real jobs and independent mixed layers. All fifteen sequence lifecycle
 cases and the exact baked UI metadata pass. Results are retained under
 `/tmp/hict-u13-dialog-regate-{core,open-session,quad,extra}.json` and
 `/tmp/hict-u13-dialog-sequence-lifecycle/summary.json`.
+
+On the Linux installer `2.0.388-ci1-f8f7cdc`, all 18 menu destinations opened
+successfully and 17 dialogs passed focus containment, dismissal, focus return
+and exact AGP preservation. The capture exposed eight unnamed dialog close
+icons alongside the unrelated OpenLayers zoom thumb. The WebUI update labels
+all sixteen previously unnamed close icons found in the source, including
+secondary track warnings and file pickers. Against the rebuilt WebUI, the
+browser rerun verified all 17 dialog header names through the accessibility
+tree and passed the 18 menu scenarios without browser or HTTP errors. The
+packaged menu gate now checks those names. The receipts are under
+`build/release-evidence/portable-publication-priority/run-44283392789/`.
 
 The pipeline pixel audit then found transparent source-independent expressions.
 JVM `91581c50` corrects that rendering path. Twelve pipeline scenarios, four

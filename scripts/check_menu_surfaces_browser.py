@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 
 from playwright.sync_api import sync_playwright
 
@@ -203,6 +204,14 @@ def main():
                     target.get_by_role('heading', name=case['heading'], exact=True).wait_for()
 
                 if case['heading'] is not None:
+                    header_buttons = dialog.locator('button.btn-close:visible')
+                    named_header_buttons = header_buttons.and_(
+                        dialog.get_by_role('button', name=re.compile(r'\S'))
+                    )
+                    assert named_header_buttons.count() == header_buttons.count(), (
+                        case['id'], 'A dialog close button has no accessible name'
+                    )
+                    result['namedHeaderDismissals'] = named_header_buttons.count()
                     close_button = dialog.locator('.btn-close').first
                     for label in ('Close', 'Dismiss', 'Done'):
                         candidate = dialog.get_by_role('button', name=label, exact=True)
