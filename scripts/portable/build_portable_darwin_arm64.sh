@@ -19,6 +19,9 @@ APP_DIR="${DIST_ROOT}/${APP_NAME}-${VERSION}-${PLATFORM}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${HICT_RUN_PAYLOAD_XZ_THREADS:-}" ]]; then
+  RUN_PAYLOAD_XZ_THREADS=3
+fi
 LAUNCHER_SOURCE="${SCRIPT_DIR}/macos_launcher/HiCTDarwinLauncher.cpp"
 LAUNCHER_BASENAME="hict-darwin-${DARWIN_ARCH}"
 LAUNCHER_BINARY="${APP_DIR}/bin/${LAUNCHER_BASENAME}"
@@ -36,7 +39,7 @@ Environment overrides:
   HICT_SKIP_GRADLE=1                 Reuse the exact versioned fat JAR from build/libs.
   HICT_RUNTIME_MODULES=<modules>     Override jlink modules.
   HICT_PORTABLE_DIST_DIR=<dir>       Override staging directory.
-  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload, default 2.
+  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload (2 locally, 3 on Actions).
 
 The macOS .run wrapper accepts --help and --hict-extract-only <directory>.
 If Gatekeeper quarantines the file after download, clear it with:
@@ -587,6 +590,7 @@ python3 "${PROJECT_DIR}/scripts/ci/check_macos_compatibility.py" "${APP_DIR}" \
   --report "${APP_DIR}/share/doc/macos-compatibility.json"
 
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | gzip -9 > "${TAR_PATH}"
+echo "Compressing .run payload with ${RUN_PAYLOAD_XZ_THREADS} xz threads"
 tar -C "${DIST_ROOT}" -cf - "${APP_NAME}-${VERSION}-${PLATFORM}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(shasum -a 256 "${PAYLOAD_PATH}" | awk '{print $1}')"
 

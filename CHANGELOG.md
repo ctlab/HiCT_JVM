@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Copy a selected map region as PNG or copy its assembly coordinates. The current Hi-C, FASTA and AGP file controls sit next to Jobs.
+
+- Open with unweighted contacts when all stored Cooler weights are unusable, and explain the fallback in the workspace.
+
 - Show completed resolution levels in conversion Jobs and mark the pyramid stage complete only after hictk finishes.
 
 - Discover bundled HDF5 libraries in one archive scan, reducing the wait before the map server and WebUI open.

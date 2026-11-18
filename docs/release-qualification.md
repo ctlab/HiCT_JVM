@@ -3,6 +3,29 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Clipboard candidate 2.0.371
+
+The Linux installer produced by [Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944)
+contains JVM `b84ed77fad3eb23cb8a19b0a0dcfbbccfd951a59` and WebUI
+`ed184e8b229e8132718e7facb09903726151ad4a`. The exact runfile
+`HiCT-2.0.371-ci1-b84ed77-linux-x86_64.run` verified against SHA-256
+`44b4ba8b9dc88e7f2be26067af899401969e9c1a9a87fa8e8d41dbc04d4adec3`.
+The extracted JAR matched the independent workflow download. Its 64 embedded
+WebUI files matched the exposed package files byte for byte. Bundled native
+tool checks passed, and the About dialog and version endpoint reported the
+package's expected versions and WebUI commit.
+
+All eight Chromium selection stages passed, including the real coordinate
+and image clipboard checks. The packaged Electron shell pasted a 722 × 566 PNG
+and the exact rectangular coordinate text. The file controls stayed beside Jobs
+at 640, 800, 1280 and 1440 px. The packaged Tauri shell wrote a 1068 × 844 PNG
+that an independent GTK process read and saved. WebKit's own editable test field
+received an empty image paste event on this Linux stack. Both native checks ran
+in private Linux displays with loopback networking only.
+
+The receipt and screenshots are under
+`build/release-evidence/portable-publication-priority/run-44215590944/`.
+
 ## Published rolling package 2.0.364
 
 The [published 2.0.364 build](https://github.com/ctlab/HiCT_JVM/actions/runs/44187130439)

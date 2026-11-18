@@ -16,6 +16,9 @@ PACKAGE_NAME="${PACKAGE_NAME:-${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}}"
 ARTIFACT_DIR="${PROJECT_DIR}/build/distributions"
 RUNTIME_MODULES="${HICT_RUNTIME_MODULES:-java.se,jdk.charsets,jdk.crypto.ec,jdk.localedata,jdk.management,jdk.unsupported,jdk.zipfs}"
 RUN_PAYLOAD_XZ_THREADS="${HICT_RUN_PAYLOAD_XZ_THREADS:-2}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" && -z "${HICT_RUN_PAYLOAD_XZ_THREADS:-}" ]]; then
+  RUN_PAYLOAD_XZ_THREADS=3
+fi
 
 usage() {
   cat <<'EOF'
@@ -30,7 +33,7 @@ Environment overrides:
   HICT_SKIP_GRADLE=1                 Reuse the exact versioned fat JAR from build/libs.
   HICT_RUNTIME_MODULES=<modules>     Override jlink modules.
   HICT_PORTABLE_DIST_DIR=<dir>       Override staging directory.
-  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload, default 2.
+  HICT_RUN_PAYLOAD_XZ_THREADS=<n>    xz threads for the .run payload (2 locally, 3 on Actions).
 
 The .run file is a transparent shell script with a tar.xz payload appended. It
 extracts to the user's cache and sets DATA_DIR to the directory containing the
@@ -402,6 +405,7 @@ SHA_PATH="${ARTIFACT_DIR}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.sha256
 PAYLOAD_PATH="${DIST_ROOT}/${APP_NAME}-${VERSION}${ABI_SUFFIX}-${PLATFORM}.payload.tar.xz"
 
 tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | gzip -9 > "${TAR_PATH}"
+echo "Compressing .run payload with ${RUN_PAYLOAD_XZ_THREADS} xz threads"
 tar -C "${DIST_ROOT}" -cf - "${PACKAGE_NAME}" | xz -9e -T"${RUN_PAYLOAD_XZ_THREADS}" > "${PAYLOAD_PATH}"
 PAYLOAD_SHA="$(sha256sum "${PAYLOAD_PATH}" | awk '{print $1}')"
 BUNDLED_TAURI_BROWSER="0"

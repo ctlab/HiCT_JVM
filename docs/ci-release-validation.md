@@ -314,6 +314,22 @@ license inventories no longer invalidate these payloads. The validation
 suite still runs on every sequence job. The new namespace needs one cold
 build per platform and component before it can serve exact hits.
 
+## Portable runfile compression
+
+The Linux job for `2.0.371` took 23m 14s to compile hictk after its final
+toolchain cache miss and 10m 01s to build the Linux portable package.
+The Apple Silicon portable package step took 9m 55s. These package timings
+include both archive formats and staging. [Hosted step timings](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944)
+
+With the identical tar stream from the published Linux `2.0.364` installer,
+preserving the `xz -9e` preset and using three compression threads reduced
+wall time from 253.36 s to 187.17 s on the test host. The payloads were
+byte-for-byte identical and retained the published payload SHA-256.
+The three-thread run peaked at about 3.0 GiB of resident memory. Linux and
+both macOS packagers use three threads on GitHub Actions by default and
+honor `HICT_RUN_PAYLOAD_XZ_THREADS`. The default for local builds is two.
+Measure the end-to-end saving on the first hosted release with this change.
+
 An official Actions glob fixture verified that nine build and verification
 inputs change the key while six unrelated inputs, including the portable
 workflow unit test and generated Python bytecode, leave it unchanged.
