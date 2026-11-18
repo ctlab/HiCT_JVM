@@ -143,6 +143,7 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  REQUESTED_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
   HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
   HICT_JHDF5_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_ref || 'jhdf5-with-plugins-configuration-snapshot' }}
   HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1-slim.jar"
@@ -152,6 +153,33 @@ env:
   HICT_JHDF5_NATIVES_ARCHIVE: "src/main/resources/libs/sis-jhdf5-19.04.1-natives.tar.gz"
 
 jobs:
+  resolve-webui:
+    name: Pin WebUI revision
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Resolve the WebUI commit
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--repo https://github.com/ctlab/HiCT_WebUI.git --root "${RUNNER_TEMP}/webui")
+          if [[ "${REQUESTED_WEBUI_REF,,}" == "same-as-jvm" ]]; then
+            args+=(--ref "${GITHUB_REF_NAME}" --fallback master)
+          else
+            args+=(--ref "${REQUESTED_WEBUI_REF}")
+          fi
+          checkout="$(node scripts/portable/checkout_webui.mjs "${args[@]}")"
+          echo "commit=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
   # Each package waits only for its own platform payload and smoke tests.
   sequence-tools-linux:
     uses: ./.github/workflows/sequence-tools.yml
@@ -174,7 +202,7 @@ jobs:
       platform: darwin_x86_64
 
   linux-portable:
-    needs: sequence-tools-linux
+    needs: [resolve-webui, sequence-tools-linux]
     name: Linux portable .run
     runs-on: ubuntu-22.04
     continue-on-error: ${{ matrix.abi_mode == 'musl-static' }}
@@ -194,7 +222,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
       HICT_LINUX_ABI_MODE: ${{ matrix.abi_mode }}
       HICT_LINUX_JHDF5_NATIVE_POLICY: ${{ github.event_name == 'workflow_dispatch' && inputs.linux_jhdf5_native_policy || 'warn-only' }}
       HICTK_CONAN_HOME: ${{ format('{0}/.cache/hictk-conan/linux_x86_64-{1}', github.workspace, matrix.abi_mode) }}
@@ -292,9 +320,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/linux_x86_64
-          key: tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_linux.sh') }}
+          key: tauri-linux-x86_64-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_linux.sh') }}
           restore-keys: |
-            tauri-linux-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-linux-x86_64-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-linux-x86_64-
 
       - name: Install Linux packaging and browser prerequisites
@@ -756,14 +784,14 @@ jobs:
             scripts/ci/validate_linux_component.sh portable
           fi
   windows-portable:
-    needs: sequence-tools-windows
+    needs: [resolve-webui, sequence-tools-windows]
     name: Windows portable ZIP and EXE
     runs-on: windows-2022
     env:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
       HICTK_CONAN_HOME: ${{ github.workspace }}\.cache\hictk-conan\windows_x86_64
       HICT_WINDOWS_EXE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_exe_mode || 'custom' }}
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
@@ -885,9 +913,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/windows_x86_64
-          key: tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_windows.ps1') }}
+          key: tauri-windows-x86_64-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_windows.ps1') }}
           restore-keys: |
-            tauri-windows-x86_64-${{ env.HICT_WEBUI_REF }}-
+            tauri-windows-x86_64-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-windows-x86_64-
 
       - name: Restore bundled toolchain cache
@@ -1325,7 +1353,7 @@ jobs:
           exit 0
 
   macos-portable:
-    needs: sequence-tools-macos
+    needs: [resolve-webui, sequence-tools-macos]
     name: macOS Apple Silicon portable .run
     runs-on: macos-latest
     env:
@@ -1336,7 +1364,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_arm64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1422,9 +1450,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_arm64
-          key: tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
@@ -1603,7 +1631,7 @@ jobs:
         run: echo "::error::macOS Apple Silicon build failed; publication is blocked."
 
   macos-intel-portable:
-    needs: sequence-tools-macos-intel
+    needs: [resolve-webui, sequence-tools-macos-intel]
     name: macOS Intel portable .run
     runs-on: macos-15-intel
     env:
@@ -1614,7 +1642,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
       HICTK_CONAN_HOME: ${{ github.workspace }}/.cache/hictk-conan/darwin_x86_64
       HICT_REQUIRE_NATIVE_PROCESSING_VARIANTS: "1"
       HICT_JHDF5_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_release_tag || 'release-artifacts' }}
@@ -1700,9 +1728,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/tauri-target/darwin_x86_64
-          key: tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
+          key: tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-${{ hashFiles('scripts/portable/prepare_tauri_browser_payload_darwin.sh', 'scripts/portable/build_tauri_browser_payload.mjs') }}
           restore-keys: |
-            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.HICT_WEBUI_REF }}-
+            tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ env.REQUESTED_WEBUI_REF }}-
             tauri-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
       - name: Restore HiCT native processing libraries
         id: cache-native-processing
@@ -1895,6 +1923,7 @@ jobs:
   publish-release-assets:
     name: Publish release assets
     needs:
+      - resolve-webui
       - regression-gate
       - linux-portable
       - windows-portable
@@ -1906,7 +1935,7 @@ jobs:
       HICTK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.hictk_ref || 'v2.2.0' }}
       MINIMAP2_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.minimap2_ref || 'v2.31' }}
       MM2PLUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.mm2plus_ref || 'v1.2' }}
-      HICT_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
+      HICT_WEBUI_REF: ${{ needs.resolve-webui.outputs.commit }}
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5

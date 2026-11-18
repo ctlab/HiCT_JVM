@@ -288,3 +288,18 @@ These durations use each job's start and completion timestamps. The package
 build and push-to-publication timings are still pending.
 [Compiled jobs](https://github.com/ctlab/HiCT_JVM/actions/runs/44202813810) ·
 [Restored jobs](https://github.com/ctlab/HiCT_JVM/actions/runs/44212288935)
+
+## WebUI revision shared by every portable package
+
+A release now resolves the WebUI ref once, alongside native compilation. All
+four packages build from that commit SHA, and the release provenance records
+it. An explicit branch, tag or SHA must resolve successfully. Automatic
+selection retains the existing fallback to the WebUI default release branch.
+Cargo caches retain their requested-ref namespace so WebUI commits can reuse
+compiled dependencies. This workflow edit changes the existing portable native
+cache fingerprints once.
+
+The checkout tests, workflow contracts and actionlint passed locally. The
+resolver's exact shell step also passed against a disposable Git repository
+for a matching branch, automatic fallback, annotated tag and rejection of an
+invalid explicit ref. Hosted validation remains pending.

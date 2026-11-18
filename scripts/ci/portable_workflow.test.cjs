@@ -93,3 +93,18 @@ test('source regression gate starts alongside packaging and publication still wa
   const regression = fs.readFileSync('.github/workflows/java-regressions.yml', 'utf8');
   assert.doesNotMatch(regression, /actions\/download-artifact/, 'Parallel source checks must not consume unfinished package artifacts');
 });
+
+test('all portable packages and release provenance share one immutable WebUI revision', () => {
+  const resolver = job('resolve-webui');
+  assert.match(resolver, /commit: \$\{\{ steps\.pin\.outputs\.commit \}\}/);
+  assert.match(resolver, /scripts\/portable\/checkout_webui\.mjs/);
+  assert.match(resolver, /git -C "\$\{checkout\}" rev-parse HEAD/);
+  for (const platform of platforms) {
+    const packaging = job(platform);
+    assert.match(packaging, /needs: \[resolve-webui, sequence-tools-[\w-]+\]/);
+    assert.match(packaging, /HICT_WEBUI_REF: \$\{\{ needs\.resolve-webui\.outputs\.commit \}\}/);
+  }
+  const publish = job('publish-release-assets');
+  assert.match(publish, /^      - resolve-webui$/m);
+  assert.match(publish, /HICT_WEBUI_REF: \$\{\{ needs\.resolve-webui\.outputs\.commit \}\}/);
+});
