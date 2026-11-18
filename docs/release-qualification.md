@@ -3,6 +3,37 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Published portable release 2.0.391
+
+Run 44338895434 published 17 verified assets in 59m 20s from JVM
+`befa3ae287e50500a419a4bfa4c414fb74038ec3` and WebUI
+`534f3c467eaafc49cb61c18991e2abd14d4e4f9c`. All six JVM workflows and the
+pinned WebUI matrix passed. Windows ZIP and EXE, Linux runfile and AppImage,
+and both macOS architecture packages passed hosted startup.
+[Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44338895434)
+
+The published Linux runfile passed ten selection checks and nine pre-soak
+stages for metadata, menus, structural editing, incomplete-file recovery,
+offline use, and navigation across four fixtures. The highest p95 among the
+four navigation fixtures was 16.8 ms per frame and 32.23 ms for input
+acknowledgement. The harness verified the two allocator arenas, 64 MiB
+initial heap and 15–30% free-heap settings on the running Java process.
+The 30-minute soak completed 228 cycles at 16.8 ms frame p95 and 61.02 ms
+input p95. Server RSS trended −7.867 MiB/min. The measured JVM and browser
+heap slopes were 0.082 and 0.063 MiB/min. The soak reported no browser errors.
+The receipts are in
+`build/release-evidence/portable-publication-priority/run-44338895434/`.
+
+The exact runfile pasted the selection PNG into a separate Linux desktop app
+from Tauri and Electron. Electron also pasted the exact coordinate text.
+The Hi-C, FASTA and AGP controls stayed beside Jobs at all four tested widths.
+Launcher Stop returned to the simple view, and the owned server received
+both the expected default profile and the override in separate launches.
+The Borrelia replay reproduced the contact matrix, GC track and exact cuts.
+The public AppImage converted and reopened a Cooler, restored a session and
+exported three figure formats with its network limited to loopback. Both the
+normal and bundled-glibc launch paths used the verified Linux heap settings.
+
 ## Published portable release 2.0.390
 
 Run 44313825161 uses JVM `2ee3744bb33fa226b4fadb0de6d4c8fc5d460b26` and
@@ -10,7 +41,7 @@ WebUI `534f3c467eaafc49cb61c18991e2abd14d4e4f9c`. GitHub published 17 verified
 assets in 1h 38m. Windows ZIP and EXE, Linux runfile and AppImage, and both
 macOS architectures passed hosted startup. The public manifest matches the
 Linux runfile and JAR used in local tests. The companion Intel native PR
-retry is in progress.
+retry passed, completing the six JVM workflows for that commit.
 
 The local runfile from Actions artifact 14436265218 passed all ten selection
 scenarios and nine pre-soak stages. Those stages covered the packaged metadata,

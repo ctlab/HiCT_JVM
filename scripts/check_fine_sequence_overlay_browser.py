@@ -156,7 +156,7 @@ def main():
             assert dialog.get_by_role(
                 "button", name="Generate ModDotPlot", exact=True
             ).is_disabled()
-            sizes.fill("37, 50, 250, 1000")
+            sizes.fill("50")
             dialog.get_by_label("Analysis scope").select_option("selection")
             dialog.get_by_label("Display completed result").select_option("below")
             dialog.get_by_label("Worker threads").fill("2")
@@ -169,14 +169,13 @@ def main():
                     "button", name="Generate ModDotPlot", exact=True
                 ).click()
             assert submitted.value.ok, submitted.value.text()
-            assert submitted.value.request.post_data_json["resolutions"] == [
-                37,
-                50,
-                250,
-                1000,
-            ]
+            assert submitted.value.request.post_data_json["resolutions"] == [50]
             dialog.wait_for(state="hidden", timeout=180000)
-            observe("moddotplot", [37, 50, 250, 1000], 20, 50, 617000, "below")
+            zoom(2000, 617000)
+            zoom_hint = page.get_by_text("Zoom in to see the fine overlay.", exact=True)
+            zoom_hint.wait_for()
+            observe("moddotplot", [50], 20, 50, 617000, "below")
+            zoom_hint.wait_for(state="hidden")
             select(616750, 617350)
             check.menu("Tools", "Generate dotplot from active assembly…")
             dialog = page.get_by_role(

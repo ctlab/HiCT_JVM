@@ -11,6 +11,7 @@
 ### Select, navigate and edit
 
 - Shift-click or drag to select contigs or scaffolds. Ctrl-drag (⌘-drag on macOS) creates a persistent analysis region. Set its bounds in assembly or contig coordinates, copy the coordinates or a PNG to the clipboard, and export the selected sequence.
+- Enter, convert and copy region boundaries in assembly, scaffold or contig coordinates. Choose 1-based inclusive or 0-based half-open coordinates in the region editor.
 - Zoom with the wheel from the contact map to FASTA letters while staying anchored at the pointer. Center on a track feature at the current scale or zoom to its span. Hide assembly boundaries in a scoped intersection while retaining selection highlights.
 - Search contigs, scaffolds and features from the map toolbar with a clearer search field and Go to control.
 - Cut exactly with the scissors at FASTA zoom, by a typed coordinate, or at a GTF/GFF feature edge. HiCT preserves sequence and source contact bins, projects edits to secondary maps, and restores exact cuts when reopening sessions.

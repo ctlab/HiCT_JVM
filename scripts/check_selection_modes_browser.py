@@ -149,6 +149,19 @@ def main():
                 dialog=coordinates();dialog.locator('#region-convention').select_option('zero-based')
                 assert dialog.locator('#region-row-start').input_value()=='1'
                 assert dialog.locator('#region-column-start').input_value()=='1003'
+                dialog.get_by_label('Coordinate frame').select_option('scaffold')
+                scaffold_name = scaffold['scaffoldName']
+                assert dialog.locator('#region-row-start').input_value() == f'scf:{scaffold_name}:1'
+                dialog.get_by_role('button', name='Copy coordinates', exact=True).click()
+                dialog.get_by_role('status').get_by_text('Coordinates copied.', exact=True).wait_for()
+                assert page.evaluate('navigator.clipboard.readText()') == (
+                    f'Scaffold coordinates (bp, 0-based, end excluded)\n'
+                    f'Rows\tscf:{scaffold_name}:1\tscf:{scaffold_name}:1010\n'
+                    f'Columns\tscf:{scaffold_name}:1003\tscf:{scaffold_name}:1080'
+                )
+                dialog.get_by_label('Coordinate frame').select_option('contig')
+                assert dialog.locator('#region-column-start').input_value() == f'ctg:{names[1]}:3'
+                fill(dialog, {'row-start': f'scf:{scaffold_name}:1', 'row-end': f'ctg:{names[1]}:10'})
                 dialog.get_by_role('button',name='Select region',exact=True).click();check.settle();assert state()['region']==expected,state()
                 page.keyboard.press('Escape');check.settle();assert state()['region'] is None
             check.step('typed-scoped-coordinates-export-and-escape',typed_region)
@@ -187,6 +200,21 @@ def main():
                 assert page.evaluate('navigator.clipboard.readText()') == (
                     'Assembly coordinates (bp, 1-based inclusive)\n'
                     'Rows\t101\t900\nColumns\t201\t1200'
+                )
+                choose('Copy contig coordinates')
+                page.wait_for_function("async () => (await navigator.clipboard.readText()).startsWith('Contig coordinates')")
+                assert page.evaluate('navigator.clipboard.readText()') == (
+                    f'Contig coordinates (bp, 1-based inclusive)\nRows\tctg:{names[0]}:101\tctg:{names[0]}:900\n'
+                    f'Columns\tctg:{names[0]}:201\tctg:{names[1]}:200'
+                )
+                page.mouse.click(*point(500, 500), button='right')
+                menu = page.get_by_role('menu', name='Assembly actions')
+                menu.get_by_role('menuitem', name='Copy scaffold coordinates').click()
+                page.wait_for_function("async () => (await navigator.clipboard.readText()).startsWith('Scaffold coordinates')")
+                scaffold_name = scaffold['scaffoldName']
+                assert page.evaluate('navigator.clipboard.readText()') == (
+                    f'Scaffold coordinates (bp, 1-based inclusive)\nRows\tscf:{scaffold_name}:101\tscf:{scaffold_name}:900\n'
+                    f'Columns\tscf:{scaffold_name}:201\tscf:{scaffold_name}:1200'
                 )
 
                 page.mouse.click(*point(500, 500), button='right')
@@ -263,7 +291,8 @@ def main():
                 dialog.get_by_role('button', name='Cut contig', exact=True).click()
                 assert 'inside an editable contig' in dialog.get_by_role('alert').inner_text()
                 assert app.http('/get_agp_for_assembly', {}) == before_agp
-                position.fill(f"{first['name']}:350")
+                scaffold_name = page.evaluate('window.__hictBenchmark.manager().scaffoldHolder.getScaffoldLocusByBp(0).scaffoldName')
+                position.fill(f"scf:{scaffold_name}:350")
                 assert dialog.get_by_role('alert').count() == 0
                 bounds = dialog.evaluate('''element => {
                     const {top, bottom, left, right} = element.getBoundingClientRect();
