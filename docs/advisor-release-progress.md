@@ -1823,3 +1823,20 @@ other theme states require separate verification.
 
 The audit, sampled contrast and screenshots are under
 `build/release-evidence/portable-publication-priority/hosted-linux-qualification/accessibility/`.
+
+## Reproduction of publication artwork with the candidate WebUI
+
+The published Linux 2.0.364 backend and candidate WebUI regenerated the
+19-replicon Borrelia figure with real ModDotPlot, GC and cut-marker tracks.
+The exact left-edge cut yielded 450,123 and 460,601 bp, and the 200 bases
+around it matched the source before and after scaffolding. The source inputs
+retained their hashes. The regenerated BigWig is byte-identical to the
+retained figure's track.
+
+The regenerated three panels match all 259,811 retained RGBA pixels and
+the whole composition's native-size pixel hash matches. The 178-mm PDF
+contains zero raster page images, and the minimum vector text size was
+7.051 pt. The 900-dpi TIFF passed the gzip round trip. The candidate viewer
+opened and zoomed the regenerated SVG and PNG. All 16 viewer checks passed.
+Receipts are under
+`build/release-evidence/portable-publication-priority/hosted-linux-qualification/publication/`.
