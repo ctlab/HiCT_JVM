@@ -35,8 +35,38 @@ describe earlier releases; they must not override the decisions below.
 | P9 Export viewer, immutable cut/scaffold figure snapshots | 3, 11 | Implementation and primary publication artifact verified: PNG/SVG viewer, three-format captures, fitting contexts, portable snapshots, column sizes and compact grids; the real public-data figure has source checks, caption/alt text, 7.05-pt text, a zero-raster vector PDF/SVG and a verified 900-dpi TIFF; overall release/platform qualification remains open |
 | P10 Launcher Stop returns to simple start view | 1 | Implemented; Linux private-display acceptance passed; wrapper/platform matrix pending |
 
-P10 is independent and is being completed before the coordinated P1 changes.
-No remaining package or platform is implicitly qualified by this ordering.
+## Advisor item acceptance references
+
+The table links each request to its implementation and strongest recorded
+checks. The referenced sections identify the tested builds and environments.
+The [release qualification](release-qualification.md) records checks on the
+published installer. The [platform checklist](release-manual-checklist.md)
+records the deferred Windows and macOS desktop work.
+
+| Item | Delivered behavior | Acceptance evidence |
+|---:|---|---|
+| 1 | Stop returns the Launcher to its simple Start view. | Linux private-display Launcher checks and [native lifecycle qualification](#version-63-package-qualification-and-native-lifecycle-follow-up). |
+| 2 | Shift selects entities with persistent border highlights. Ctrl or Cmd creates a persistent region for sequence tools. | [Selection browser checks](#independent-selections-and-exact-coordinate-entry) and the [published clipboard release](release-qualification.md#published-clipboard-release-20371). |
+| 3 | Map, ModDotPlot and tracks can be captured before and after exact cutting and scaffolding. | [Publication figure, source provenance and print assets](publication/borrelia-editing/README.md) and [candidate reproduction](#reproduction-of-publication-artwork-with-the-candidate-webui). |
+| 4 | Save session asks for a destination, and File offers Open Session. | [Destination and session checks](#p3-destinations-and-confirmed-session-saves), [Firefox download fallback](#native-dependency-soundness-and-real-firefox-downloads) and the published Linux restore journey. |
+| 5 | The main-map wheel reaches FASTA letters while keeping the viewport anchored. | [Exact cut/bin-clipping checks](#p1-exact-library-cuts-and-sessions) and [continuous alignment preview](#continuous-alignment-preview). |
+| 6 | File flows remember the prior destination or selection by purpose, including selection FASTA export. | [File-destination tests](#p3-destinations-and-confirmed-session-saves) and [native streaming and cancellation](#bounded-tauri-coordinate-downloads-and-native-save-qualification). |
+| 7 | Contig and scaffold boundaries can be hidden when both axes are scoped. Selection highlights remain visible. | [Scope intersection browser test](#independent-selections-and-exact-coordinate-entry). |
+| 8 | Alignment detail draws continuous segments or full cells at letter zoom. | [Repeat and substitution fixtures](#continuous-alignment-preview), plus exact-package alignment and export checks in the [release qualification](release-qualification.md#published-clipboard-release-20371). |
+| 9 | Center preserves scale, Zoom fits the feature span, and copied coordinates are plain integers. | [Track workspace and navigation checks](#track-workspace-and-dense-navigation-qualification--2026-11-18). |
+| 10 | 1D tracks and Sources and layers have separate tabs. Add accepts files or Cooler weights. | [Tracks workspace and signed-format checks](#track-workspace-and-dense-navigation-qualification--2026-11-18). |
+| 11 | Export uses a preview without its old zoom slider. Exported files reopen inside HiCT, and track resizing refreshes the map layout. | [Figure viewer](#read-only-exported-figure-viewer), [preview checks](#frozen-figure-previews-and-scientific-configuration-provenance) and [track resize validation](#track-workspace-and-dense-navigation-qualification--2026-11-18). |
+| 12 | FASTA-only assemblies support AGP export. | [Create and Open from Jobs followed by AGP export](#example-downloads-in-jobs-and-recovery). |
+| 13 | Regions accept independent row and column bounds in assembly or contig coordinates. | [Typed-coordinate and stale-selection checks](#independent-selections-and-exact-coordinate-entry). |
+| 14 | Example downloads and conversion stages report progress in Jobs. | [Live yeast download and conversion](#fresh-yeast-download-info-and-conversion-progress) and [cancellation and retry](#overall-conversion-progress-and-live-cancellation). |
+| 15 | File offers Open Examples. | [Jobs-first example opening](#example-downloads-in-jobs-and-recovery) and the three-click live yeast journey. |
+| 16 | Info refreshes after zoom and delayed tiles. The fine-scale empty yeast band is present in the source. | [Independent raw Cooler comparison and Info cases](#fresh-yeast-download-info-and-conversion-progress). |
+| 17 | Selecting from the FASTA track exposes interval length and repeat-period Jobs. | [Selection, reverse strand, exact and imperfect repeats](#fasta-interval-and-repeat-measurement). |
+| 18 | Opt-in remote search supports external nucleotide databases with Jobs delivery and bounded result export. | [Consent, controlled provider and known-request recovery](#opt-in-remote-blast-and-independent-external-reports). |
+| 19 | O/E colors, opacity and ratio bounds are editable through the rendering pipeline and sidebar. | [Active O/E editor and persistence](#active-primary-oe-editor-and-shared-presets) and [draft handling](#visualization-draft-ownership-through-normalization). |
+| 20 | Coverage help defines a bin's total contacts as its row sum with the diagonal counted once. | [Coverage explanation and fixtures](#coverage-explanation-and-p6-audit). |
+| 21 | FASTA-level and feature-edge cuts retain source bins and exact sequence intervals. | [Exact native and session tests](#p1-exact-library-cuts-and-sessions), [base-grid track qualification](#base-grid-track-qualification) and the exact packaged alignment check. |
+| 22 | The viewport histogram drives visible-area levels, with a spline and draggable range and midpoint. | [Viewport and sample-based levels](#inline-viewport-histogram-and-sample-based-levels) and [midpoint persistence](#color-midpoint-across-rendering-and-persistence). |
 
 ## Audit baseline
 

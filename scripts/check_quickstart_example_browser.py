@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
+from sequence_browser_harness import install_download_picker
 
 
 def rendered_signal_pixels(page):
@@ -65,6 +66,7 @@ out.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as pw:
     browser = pw.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 1000})
+    install_download_picker(page)
     errors, console_errors = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on(
@@ -266,7 +268,7 @@ with sync_playwright() as pw:
                 }""",
                 arg=cut,
             )
-            with page.expect_response("**/split_contig_at_bin") as split_response:
+            with page.expect_response("**/split_contig_at_bp") as split_response:
                 page.mouse.dblclick(cut["x"], cut["y"])
             assert split_response.value.ok, split_response.value.text()
             page.wait_for_function(
@@ -275,6 +277,12 @@ with sync_playwright() as pw:
             )
             split_state = snapshot()["primary"]
             assert len(split_state["splitEdits"]) == 1
+            assert split_state["splitEdits"][0]["exact"]
+            before_lengths = reversed_state["assemblyInfo"]["contigDescriptors"]
+            after_lengths = split_state["assemblyInfo"]["contigDescriptors"]
+            assert sum(value["contigLengthBp"] for value in before_lengths) == sum(
+                value["contigLengthBp"] for value in after_lengths
+            )
             page.get_by_role("button", name="Journal", exact=True).click()
             with page.expect_response("**/assembly/history/restore") as undo_response:
                 page.get_by_role(
@@ -288,7 +296,7 @@ with sync_playwright() as pw:
             expected = snapshot()["primary"]
             assert expected["agpSha256"] == reversed_state["agpSha256"]
             journey.append(
-                "Split adds a native component and Undo restores the reversed layout"
+                "Exact Split preserves the assembly length and Undo restores the reversed layout"
             )
             with page.expect_download() as session_download:
                 file_action("Save session")

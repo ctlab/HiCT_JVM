@@ -37,6 +37,20 @@ the shared writable-picker fixture. Native aligner cases and stale-response
 rejection also passed. The AppImage used its bundled hictk offline through
 conversion, edit/session restore, PNG/SVG/PDF export and bundled Swagger.
 
+The published build converted the cached public yeast sources into a fresh
+HiCT file. A repeat in a fresh Chromium profile opened the verified example
+in three clicks, reaching the 17-contig map and linked FASTA in 6.09 s with
+the converted cache. Navigation, Reverse, exact Split, Undo, session
+restore and AGP export completed in 12.62 s with no console or page errors.
+Exact Split preserved the assembly length and the AGP hash matched the
+saved assembly. Both external source files retained their input hashes.
+
+The published JVM and WebUI also passed all 13 focused histogram checks.
+The tests cover measured zeros, unsupported O/E bins, fit controls on each
+source, compact layouts and failed-request recovery. Across seven measured
+pans, the histogram updated in 4.9–27.8 ms against a 150 ms target. The
+fixture matrices retained their original hashes.
+
 The Windows, Linux and both macOS package jobs passed. The hosted macOS 12.3
 compatibility reports found zero errors in 1,109 arm64 and 1,113 Intel
 binary entries. Interactive Windows and macOS validation remains deferred
