@@ -3,7 +3,7 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
-## Clipboard candidate 2.0.371
+## Published clipboard release 2.0.371
 
 The Linux installer produced by [Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44215590944)
 contains JVM `b84ed77fad3eb23cb8a19b0a0dcfbbccfd951a59` and WebUI
@@ -23,10 +23,34 @@ that an independent GTK process read and saved. WebKit's own editable test field
 received an empty image paste event on this Linux stack. Both native checks ran
 in private Linux displays with loopback networking only.
 
+The exact Linux runfile completed all ten qualification stages, including
+230 cycles in a 1,805.36-second mixed soak. Frame p95 was 16.8 ms and
+input acknowledgement p95 was 53.90 ms. Browser heap grew by 0.93 MiB,
+with a fitted rate of 0.051 MiB/min. The memory and DOM trend gates passed.
+There were no browser errors, and all ten HDF5 files and the package JAR
+retained their checksums.
+
+The same installer rendered the synthetic substitution at the expected base
+centre through resolution changes, exact Split, Reverse and Undo. The split
+produced 124 and 11,893 bp fragments. All three export formats passed with
+the shared writable-picker fixture. Native aligner cases and stale-response
+rejection also passed. The AppImage used its bundled hictk offline through
+conversion, edit/session restore, PNG/SVG/PDF export and bundled Swagger.
+
+The Windows, Linux and both macOS package jobs passed. The hosted macOS 12.3
+compatibility reports found zero errors in 1,109 arm64 and 1,113 Intel
+binary entries. Interactive Windows and macOS validation remains deferred
+as recorded in the [platform checklist](release-manual-checklist.md).
+
+The rolling release published after 2h 17m 11s. The public build origin matches
+the JVM and WebUI revisions above. All 17 public digests were verified using
+the manifest and GitHub asset metadata. The Linux runfile and JAR digests
+match the exact tested local files. [Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
+
 The receipt and screenshots are under
 `build/release-evidence/portable-publication-priority/run-44215590944/`.
 
-## Published rolling package 2.0.364
+## Earlier rolling package 2.0.364
 
 The [published 2.0.364 build](https://github.com/ctlab/HiCT_JVM/actions/runs/44187130439)
 contains JVM `9b07395e079ee3073ff779f73e12465ce0a6a454` and WebUI

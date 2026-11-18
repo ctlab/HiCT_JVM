@@ -346,7 +346,9 @@ commands and file digests before reuse.
 
 This change applies to the standalone JVM Autobuild workflow. Portable package
 jobs still track their platform and compiler requirements. The first hosted
-run with the new key will show whether it was seeded by a matching old cache.
+run with the new key restored the matching old cache, verified and reused the
+payload in seven seconds, saved the new key in five seconds, and completed
+successfully in 4m 25s. [Migration run](https://github.com/ctlab/HiCT_JVM/actions/runs/44230616495)
 
 An official Actions glob fixture verified that nine build and verification
 inputs change the key while six unrelated inputs, including the portable
