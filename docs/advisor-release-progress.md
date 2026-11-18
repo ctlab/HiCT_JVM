@@ -1769,3 +1769,16 @@ then pasted a 722 × 566 PNG. The bundled Tauri shell exported valid
 A paste into WebKit's own test field gave an empty image event on that stack.
 The PNG and receipts are in the same evidence directory. GitHub's portable
 run 44215590944 pinned `ed184e8` for all platforms.
+
+### Terminal qualification for the published Linux 2.0.364 package
+
+The published JAR with SHA-256
+`39d107f6da823f7a689d999ed169b47a06b0c296f9487f3a3cec46e93d4ec3e9`
+passed all ten stages. Chromium completed 226 cycles across the representative
+maps and mixed-grid fixture in 1,802.87 seconds. Frame p95 was 16.7 ms and
+input acknowledgement p95 was 55.6 ms. There were no browser errors. Browser
+heap fell by 1.34 MiB, with a fitted growth rate of 0.054 MiB/min. The JVM heap
+and RSS trends passed, and post-warmup peak DOM and listener counts were
+unchanged. The harness verified that all ten HDF5 files and the packaged JAR
+retained their initial checksums. The exact receipt and performance samples are
+in `build/release-evidence/portable-publication-priority/hosted-linux-qualification/`.
