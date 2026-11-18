@@ -21,11 +21,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('url', 'api', 'output'):
         parser.add_argument('--' + name, required=True)
-    parser.add_argument('--files', nargs='+', default=['mat18_100k.hict.hdf5', 'combined_ind2_4DN.hict.hdf5', 'arabiensis.0.hict.hdf5'],
+    parser.add_argument('--files', nargs='*', default=['mat18_100k.hict.hdf5', 'combined_ind2_4DN.hict.hdf5', 'arabiensis.0.hict.hdf5'],
                         help='Fixtures under the server data folder')
     parser.add_argument('--nan-files', nargs='*', default=['combined_ind2_4DN.hict.hdf5', 'arabiensis.0.hict.hdf5'],
                         help='Fixtures whose weights have NaNs: the note about masked bins must appear for them')
     parser.add_argument('--floor', type=float, default=0.5, help='Minimum share of diagonal samples that must be drawn')
+    parser.add_argument('--unusable-weights-file', help='A fixture with signal and no usable Cooler weights')
     args = parser.parse_args()
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -191,6 +192,20 @@ def main():
             assert_agreement(tag)
 
         try:
+            if args.unusable_weights_file:
+                for way, opener in (('manual', open_manual), ('wizard', open_wizard)):
+                    fresh()
+                    opener(args.unusable_weights_file)
+                    tag = f'unusable-weights-{way}'
+                    measure(tag)
+                    state = server_state()
+                    check(f'{tag}: source reports unusable weights', page.evaluate(
+                        '() => window.__hictBenchmark.manager().getOptions().response.usableCoolerWeights'
+                    ) is False)
+                    check(f'{tag}: file weights are off in both options and pipeline',
+                          state['options']['applyCoolerWeights'] is False and not uses_weights(state['pipeline']))
+                    check(f'{tag}: no blocking prompt',
+                          page.get_by_role('button', name='Do not use Cooler weights').count() == 0)
             for fixture in args.files:
                 stem = fixture.split('.')[0]
                 for way, opener in (('manual', open_manual), ('wizard', open_wizard), ('attach', open_attach)):

@@ -1733,6 +1733,7 @@ public class FileOpHandlersHolder extends HandlersHolder {
       chunkedFile.getDenseBlockSize(),
       AssemblyInfoDTO.generateFromChunkedFile(chunkedFile),
       Arrays.stream(matrixSizeBins).mapToInt(l -> (int) l).boxed().toList(),
+      chunkedFile.isUsableCoolerWeights(),
       ru.itmo.ctlab.hict.hict_server.dto.response.fileop.SourceCapabilitiesDTO.fromFile(chunkedFile)
     );
   }

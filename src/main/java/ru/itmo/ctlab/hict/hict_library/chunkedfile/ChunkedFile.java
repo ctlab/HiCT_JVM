@@ -105,6 +105,7 @@ public class ChunkedFile implements AutoCloseable {
   private final @NotNull NormalizationWeights normalizationWeights = new NormalizationWeights();
   private final @NotNull FASTAProcessor fastaProcessor;
   private final @NotNull AtomicLong coolerWeightsNaNCount = new AtomicLong(0L);
+  private boolean usableCoolerWeights;
   @Getter
   private final AtomicInteger parallelThreadCount = new AtomicInteger(4);
 
@@ -296,10 +297,11 @@ public class ChunkedFile implements AutoCloseable {
     // Name overrides are session-only and should not be loaded from the HDF5 file.
   }
 
-  public void addCoolerWeightsNaNCount(final long count) {
+  void recordCoolerWeights(final long count, final boolean usable) {
     if (count > 0L) {
       this.coolerWeightsNaNCount.addAndGet(count);
     }
+    this.usableCoolerWeights |= usable;
   }
 
   private static <K> void readOverrideMap(final @NotNull String encoded, final @NotNull Map<K, String> target, final @NotNull java.util.function.Function<String, K> keyParser) {

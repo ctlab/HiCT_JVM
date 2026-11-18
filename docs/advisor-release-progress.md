@@ -1872,3 +1872,27 @@ controlled local provider. The cases cover consent, timeouts, cancellation,
 bounded results, exports, and delivery independent of map editing. This run
 used no real external search submission. The receipt is
 `hosted-linux-qualification/remote-search-fixture.json` in the release evidence.
+
+## Opening a map with no usable Cooler weights
+
+The offline AppImage conversion produced a four-contig test map with genuine
+diagonal contacts and no finite weights in any of its 30,236 real bins.
+Direct HDF5 verification used the stored stripe lengths to exclude padding.
+With the published 2.0.364 defaults, the map appeared blank in the manual
+picker and Open Wizard. Only 11% and 7% of the respective diagonal samples
+had a non-background pixel, mainly at assembly borders.
+
+The JVM now reports on Open and Attach whether any real bin has a finite,
+nonzero weight. WebUI commit `4405f9c` uses that information when applying
+opening presets. A map with unusable weights opens with unweighted signal and
+a short explanation. Restoring a session or an explicitly enabled custom
+pipeline keeps the user's rendering configuration.
+
+Both opening routes drew the diagonal in all 240 sampled neighborhoods with
+the candidate JVM and WebUI. The sidebar, server options and Wizard pipeline
+agreed. All 14 browser checks passed, including the no-dialog check. The
+positive JVM regression also verified that a usable weight at a different
+resolution is recognized and that padding never counts as a weight.
+The full JVM suite finished with 657 passed, seven skipped and no failures.
+Receipts are in `hosted-linux-qualification/unusable-weights/` under the
+release evidence directory.

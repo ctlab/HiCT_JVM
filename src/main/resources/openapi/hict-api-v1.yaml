@@ -2694,6 +2694,9 @@ components:
         tileSize: { type: integer }
         assemblyInfo: { type: object, additionalProperties: true }
         matrixSizesBins: { type: array, items: { type: integer } }
+        usableCoolerWeights:
+          type: boolean
+          description: Whether any stored matrix resolution has a finite, nonzero weight for a real bin.
         capabilities: { $ref: '#/components/schemas/SourceCapabilities' }
         workspaceVersion: { $ref: '#/components/schemas/WorkspaceVersion' }
       required: [status, resolutions, assemblyInfo]

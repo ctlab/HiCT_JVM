@@ -973,6 +973,37 @@ class ApiHttpIntegrationTest {
   }
 
   @Test
+  void openReportsWhetherAnyRealBinHasAUsableWeight() throws Exception {
+    var path = ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "weights", List.of(4L, 10L));
+    var partialPath = Files.copy(path, tempDataDir.resolve("partial-weights.hict.hdf5"));
+    for (var fixture : List.of(path, partialPath)) {
+      try (var writer = ch.systemsx.cisd.hdf5.HDF5Factory.open(fixture.toFile())) {
+        for (long resolution : List.of(4L, 10L)) {
+          var stripes = "/resolutions/" + resolution + "/stripes/";
+          var lengths = writer.int64().readArray(stripes + "stripe_length_bins");
+          var weights = writer.float64().readMatrix(stripes + "stripes_bin_weights");
+          for (int row = 0; row < lengths.length; row++) {
+            java.util.Arrays.fill(weights[row], 1.0d);
+            java.util.Arrays.fill(weights[row], 0, Math.toIntExact(lengths[row]),
+              resolution == 4L ? Double.NaN : 0.0d);
+          }
+          if (fixture.equals(partialPath) && resolution == 10L) weights[0][0] = 0.5d;
+          writer.float64().writeMatrix(stripes + "stripes_bin_weights", weights);
+        }
+      }
+    }
+    startServerWithInfoAndFileHandlers();
+    var excluded = post("/open", "{\"filename\":\"weights.hict.hdf5\"}");
+    assertEquals(200, excluded.statusCode(), excluded.body());
+    assertEquals(false, new JsonObject(excluded.body()).getBoolean("usableCoolerWeights"));
+    var partial = post("/open", "{\"filename\":\"partial-weights.hict.hdf5\"}");
+    assertEquals(200, partial.statusCode(), partial.body());
+    assertEquals(true, new JsonObject(partial.body()).getBoolean("usableCoolerWeights"));
+    var attach = new JsonObject(post("/attach", "{}").body()).getJsonObject("openFileResponse");
+    assertEquals(true, attach.getBoolean("usableCoolerWeights"));
+  }
+
+  @Test
   void fullPresetRejectsUnavailableInputsBeforeChangingOptionsOrGraph() throws Exception {
     ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture.create(tempDataDir, "primary", List.of(4L, 10L));
     startServerWithInfoAndFileHandlers();
