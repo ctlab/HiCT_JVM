@@ -68,3 +68,29 @@ optimized test, passing 24-case suite and Linux dependency graph are retained in
 `build/release-evidence/2.0.72/` and
 `build/release-evidence/native-dependency-update/`. Replacement Windows/macOS
 builds and final native/package GUI qualification remain necessary.
+
+## Bundled ModDotPlot dependencies
+
+The portable plotting build pins Pillow 13.0.0, FontTools 4.60.2,
+setuptools 84.2.1 and wheel 0.46.3 to address the advisories on the previous
+versions. PyInstaller 6.17.0 and altgraph 0.17.5 support the setuptools release
+after removal of `pkg_resources`. The OSV query covered 25 exact Python
+package versions, including Windows/macOS-specific build requirements, and
+returned zero findings. This query covers the Python package inventory.
+[Pillow release](https://github.com/python-pillow/Pillow/releases/tag/13.0.0)
+· [altgraph release notes](https://altgraph.readthedocs.io/en/latest/changelog.html#id1)
+· [PyInstaller release notes](https://pyinstaller.org/en/stable/CHANGES.html)
+
+The pinned Linux release image builds Pillow from its verified source archive
+and links checksum-pinned libjpeg-turbo 3.2.1 statically. The build ships JPEG's
+license files and records both source digests and the resolved local wheel.
+This preserves the glibc 2.17 target. Windows and macOS use their compatible
+Pillow wheels. The two frozen Linux ModDotPlot executables and their 376 ELF
+files passed the glibc 2.17 audit. The upstream CLI rendered the full and
+triangular PNG and SVG figures from a synthetic sequence. The HiCT adapter
+returned the two expected identity cells and passed the parallel block check.
+The same dependency set rendered PNG, JPEG, SVG, PDF, PostScript and TIFF in a
+Matplotlib format check. CI runs the frozen plot test along with the existing
+SeqKit and HiCT ModDotPlot identity checks.
+[Pillow wheel files](https://pypi.org/project/pillow/13.0.0/#files)
+· [libjpeg-turbo source release](https://github.com/libjpeg-turbo/libjpeg-turbo/releases/tag/3.2.1)

@@ -15,7 +15,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 MOD = '1616ae94f5b7e22190a8eb50b6df2e3798a18d0b'
@@ -44,10 +46,62 @@ def macos_target():
     return target
 
 
-def install_requirements(py, work, docs):
+def build_manylinux_pillow(py, work, docs, notices, requirements):
+    # Upstream Pillow 13 wheels require glibc 2.27 on Linux. Build the pinned
+    # source against glibc 2.17 with its JPEG implementation linked statically.
+    sources = {
+        'pillow-13.0.0.tar.gz': {
+            'url': 'https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz',
+            'sha256': 'cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510',
+        },
+        'libjpeg-turbo-3.2.1.tar.gz': {
+            'url': 'https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz',
+            'sha256': 'c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f',
+        },
+    }
+    for name, source in sources.items():
+        target = work / name
+        with urlopen(source['url'], timeout=120) as stream, target.open('wb') as out:
+            shutil.copyfileobj(stream, out)
+        if digest(target) != source['sha256']:
+            raise RuntimeError('Source checksum mismatch: ' + name)
+
+    jpeg_source = work / 'libjpeg-turbo-3.2.1'
+    with tarfile.open(str(jpeg_source) + '.tar.gz') as archive:
+        archive.extractall(work, filter='data')
+    jpeg_build, jpeg_install = work / 'jpeg-build', work / 'jpeg-install'
+    run(['cmake', '-S', jpeg_source, '-B', jpeg_build, '-DCMAKE_BUILD_TYPE=Release',
+         f'-DCMAKE_INSTALL_PREFIX={jpeg_install}', '-DCMAKE_INSTALL_LIBDIR=lib',
+         '-DCMAKE_POSITION_INDEPENDENT_CODE=ON', '-DENABLE_SHARED=OFF',
+         '-DWITH_SIMD=OFF', '-DWITH_TOOLS=OFF', '-DWITH_TESTS=OFF', '-DWITH_TURBOJPEG=OFF'])
+    jobs = str(min(os.cpu_count() or 1, 4))
+    run(['cmake', '--build', jpeg_build, '--parallel', jobs, '--target', 'install'])
+    jpeg_notices = notices / 'libjpeg-turbo'
+    jpeg_notices.mkdir()
+    for name in ('LICENSE.md', 'README.ijg'):
+        shutil.copy2(jpeg_source / name, jpeg_notices / name)
+
+    run([py, '-m', 'pip', 'install', '--report', docs / 'pillow-build-install.json',
+         '-c', requirements, 'setuptools', 'pybind11'])
+    wheelhouse = work / 'manylinux-wheels'
+    # The standalone CPython was built with LLVM. Use the container archiver
+    # for Pillow's internal static library, as for the C and C++ compiler.
+    env = dict(os.environ, AR='ar', JPEG_ROOT=str(jpeg_install), MAX_CONCURRENCY=jobs)
+    run([py, '-m', 'pip', 'wheel', '--no-build-isolation', '--no-deps',
+         '--wheel-dir', wheelhouse, work / 'pillow-13.0.0.tar.gz'], env=env)
+    (docs / 'pillow-native-sources.json').write_text(json.dumps(sources, indent=2) + '\n', encoding='utf-8')
+    wheels = list(wheelhouse.glob('pillow-*.whl'))
+    if len(wheels) != 1:
+        raise RuntimeError('Expected one locally built Pillow wheel')
+    return wheels[0]
+
+
+def install_requirements(py, work, docs, notices, manylinux):
     requirements = ROOT / 'scripts/sequence_analysis/requirements-build.txt'
     options = []
-    if sys.platform == 'darwin':
+    if manylinux:
+        options = [build_manylinux_pillow(py, work, docs, notices, requirements)]
+    elif sys.platform == 'darwin':
         target = macos_target()
         os.environ['MACOSX_DEPLOYMENT_TARGET'] = target
         # pip expands this macOS platform into compatible older/universal tags.
@@ -202,7 +256,7 @@ def main():
     run([sys.executable, '-m', 'venv', work / 'venv'])
     py = work / ('venv/Scripts/python.exe' if os.name == 'nt' else 'venv/bin/python')
     # pip records archive hashes and exact origins for every resolved wheel.
-    install_requirements(py, work, docs)
+    install_requirements(py, work, docs, notices, args.manylinux2014)
     run([py, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation',
          '--report', docs / 'moddotplot-install.json', mod])
     # Capture installed distribution notices, including bundled native libraries.
@@ -234,9 +288,9 @@ for dist in im.distributions():
     if cpython_license:
         shutil.copy2(cpython_license, notices / 'CPython-LICENSE.txt')
     else:
-        import urllib.request
         url = f'https://raw.githubusercontent.com/python/cpython/v{platform.python_version()}/LICENSE'
-        (notices / 'CPython-LICENSE.txt').write_bytes(urllib.request.urlopen(url, timeout=60).read())
+        with urlopen(url, timeout=60) as stream:
+            (notices / 'CPython-LICENSE.txt').write_bytes(stream.read())
     run([py, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--name', 'hict-moddotplot',
          '--distpath', payload / 'bin', '--workpath', work / 'pyinstaller', '--specpath', work,
          '--hidden-import', 'moddotplot._nthash', '--collect-data', 'moddotplot',
