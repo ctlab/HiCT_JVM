@@ -59,7 +59,7 @@ records the deferred Windows and macOS desktop work.
 | 12 | FASTA-only assemblies support AGP export. | [Create and Open from Jobs followed by AGP export](#example-downloads-in-jobs-and-recovery). |
 | 13 | Regions accept independent row and column bounds in assembly or contig coordinates. | [Typed-coordinate and stale-selection checks](#independent-selections-and-exact-coordinate-entry). |
 | 14 | Example downloads and conversion stages report progress in Jobs. | [Live yeast download and conversion](#fresh-yeast-download-info-and-conversion-progress) and [cancellation and retry](#overall-conversion-progress-and-live-cancellation). |
-| 15 | File offers Open Examples. | [Jobs-first example opening](#example-downloads-in-jobs-and-recovery) and the three-click live yeast journey. |
+| 15 | File offers Open Examples. | [Jobs-first example opening](#example-downloads-in-jobs-and-recovery) and the [three-click File menu journey on the published Linux release](release-qualification.md#published-clipboard-release-20371). |
 | 16 | Info refreshes after zoom and delayed tiles. The fine-scale empty yeast band is present in the source. | [Independent raw Cooler comparison and Info cases](#fresh-yeast-download-info-and-conversion-progress). |
 | 17 | Selecting from the FASTA track exposes interval length and repeat-period Jobs. | [Selection, reverse strand, exact and imperfect repeats](#fasta-interval-and-repeat-measurement). |
 | 18 | Opt-in remote search supports external nucleotide databases with Jobs delivery and bounded result export. | [Consent, controlled provider and known-request recovery](#opt-in-remote-blast-and-independent-external-reports). |

@@ -54,6 +54,14 @@ restore and AGP export completed in 12.62 s with no console or page errors.
 Exact Split preserved the assembly length and the AGP hash matched the
 saved assembly. Both external source files retained their input hashes.
 
+A separate fresh profile used **File → Open Examples… → Open example** with
+checksum-verified local copies of the yeast sources. HiCT built a new native
+matrix and reached the readable 17-chromosome map and linked FASTA in 139.09 s.
+Both Jobs reached 100%. The full journey through zoom, Reverse, exact Split,
+Undo, session restore and matching AGP export took 145.61 s. Chromium reported
+zero page and console errors. The source hashes, screenshots and exports are
+under `file-menu-quickstart/` in the release evidence directory below.
+
 The published JVM and WebUI also passed all 13 focused histogram checks.
 The tests cover measured zeros, unsupported O/E bins, fit controls on each
 source, compact layouts and failed-request recovery. Across seven measured

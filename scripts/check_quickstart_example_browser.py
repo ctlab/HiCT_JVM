@@ -97,8 +97,8 @@ with sync_playwright() as pw:
         page.goto(args.url)
         page.wait_for_function("window.__hictBenchmark")
         started = time.monotonic()
-        page.get_by_role("link", name="Help", exact=True).click()
-        page.get_by_role("link", name="Examples…", exact=True).click()
+        page.get_by_role("link", name="File", exact=True).click()
+        page.get_by_role("link", name="Open Examples…", exact=True).click()
         dialog = page.get_by_role("dialog", name="Examples", exact=True)
         card = dialog.locator(f'[data-example="{args.example}"]')
         card.get_by_role("button", name="Open example", exact=True).click()
@@ -112,7 +112,7 @@ with sync_playwright() as pw:
         )
         page.wait_for_timeout(1500)
         clicks = page.evaluate("window.quickStartClicks")
-        assert len(clicks) == 3, clicks
+        assert clicks == ["File", "Open Examples…", "Open example"], clicks
         assert (
             page.get_by_role("dialog", name="Open File Wizard", exact=True).count() == 0
         )
