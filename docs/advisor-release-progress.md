@@ -1801,3 +1801,25 @@ repeat. Chromium reported no long tasks, HTTP errors or page errors during
 the measurements. The source HDF5 checksum was verified before and after.
 Inputs, measurement receipts and screenshots are under
 `build/release-evidence/portable-publication-priority/hosted-linux-qualification/`.
+
+## Candidate accessibility checks — 2026-11-18
+
+WebUI commit `58e05d6` names the file-picker close control, gives repeated
+layer style controls unique label bindings, adds a main workspace landmark,
+and provides 24-pixel targets for zoom and sidebar controls. The map's
+pointer-operated slider no longer takes a keyboard tab stop. The keyboard
+zoom buttons still move the map.
+
+Axe 4.13.0 reported no confirmed WCAG-tagged violations across six Chromium
+views of the candidate. Forward and reverse keyboard traversal remained
+inside the picker, track manager and Jobs dialogs. Escape closed the dialogs.
+The file picker and Jobs returned focus to their launch controls.
+Rendered-background sampling covered the text that axe could not assess over
+gradients and images. The inactive Sources and layers tab improved from
+4.39 to 15.62 in the sampled modal after WebUI commit `d1e3eec`. The lowest
+sampled value for active text was 4.76 on the map's range summary. The probes
+cover the default theme and tested fixture. Native assistive technology and
+other theme states require separate verification.
+
+The audit, sampled contrast and screenshots are under
+`build/release-evidence/portable-publication-priority/hosted-linux-qualification/accessibility/`.
