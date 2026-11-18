@@ -65,11 +65,10 @@ jobs:
           path: toolchains-dist/linux_x86_64
           key: autobuild-linux-tools-v1-${{ steps.native-inputs.outputs.identity }}-${{ steps.native-inputs.outputs.sources }}-${{ hashFiles('scripts/toolchains/**', 'scripts/sequence_analysis/**', 'scripts/ci/**', 'third_party/**', '!**/__pycache__/**', '!**/*.pyc', '!**/*.pyo') }}
 
-      - name: Build
-        run: ./gradlew -PrequireBundledWebUI=true build
-
-      - name: Verify source revisions and bundled commands
+      - name: Prepare and verify Linux toolchain on a branch cache miss
+        if: github.event_name != 'pull_request' && steps.bundled-tools.outputs.cache-hit != 'true'
         run: |
+          ./gradlew prepareBundledTools
           python scripts/ci/toolchain_cache_sources.py --verify
           python scripts/toolchains/prepare_bundled_tools.py --verify
 
@@ -80,6 +79,23 @@ jobs:
         with:
           path: toolchains-dist/linux_x86_64
           key: ${{ steps.bundled-tools.outputs.cache-primary-key }}
+
+      - name: Build
+        id: build
+        run: ./gradlew -PrequireBundledWebUI=true build
+
+      - name: Verify source revisions and bundled commands
+        run: |
+          python scripts/ci/toolchain_cache_sources.py --verify
+          python scripts/toolchains/prepare_bundled_tools.py --verify
+
+      - name: Upload failed build test results
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: autobuild-test-results
+          path: build/test-results/test/*.xml
+          if-no-files-found: ignore
 
       - name: Upload fat JAR artifact
         uses: actions/upload-artifact@v6
