@@ -39,7 +39,9 @@ def main():
             page.wait_for_function(
                 "window.__hictBenchmark.manager().networkManager.requestManager.hasUnsavedAssemblyEdits()"
             )
-            page.evaluate("window.__retainedManager=window.__hictBenchmark.manager()")
+            page.evaluate(
+                "() => { window.__retainedManager = window.__hictBenchmark.manager(); }"
+            )
 
             def state():
                 return page.evaluate("""async()=>{

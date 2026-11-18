@@ -269,3 +269,22 @@ were deleted, and PR checks continue to use the same build/verification path.
 Inventory receipt: `cache-inventory.json` in the main evidence directory.
 
 Autobuild logs show a separate BLAST compilation during the full Gradle build. The workflow now restores the complete Linux toolchain by exact runner, upstream revision and source fingerprint. Gradle verifies the restored seal and file checksums. The workflow checks upstream revisions again after building and saves verified payloads on branch runs.
+
+## Hosted native cache measurements — 2026-11-18
+
+The same PR workflow compiled its payloads in run 44202813810. Run 44212288935
+then restored seven of eight payloads, verified their checksums and exercised
+the restored binaries. Apple Silicon BLAST took the source-build path.
+
+| Job | Compiled | Restored and verified |
+|---|---:|---:|
+| Linux BLAST | 34m 57s | 2m 20s |
+| Windows BLAST | 7m 37s | 50s |
+| Intel macOS BLAST | 52m 36s | 1m 50s |
+| Intel macOS sequence tools | 9m 45s | 2m 41s |
+| Apple Silicon sequence tools | 4m 55s | 1m 31s |
+
+These durations use each job's start and completion timestamps. The package
+build and push-to-publication timings are still pending.
+[Compiled jobs](https://github.com/ctlab/HiCT_JVM/actions/runs/44202813810) ·
+[Restored jobs](https://github.com/ctlab/HiCT_JVM/actions/runs/44212288935)

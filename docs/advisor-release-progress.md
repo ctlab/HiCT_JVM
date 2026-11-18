@@ -1728,3 +1728,19 @@ from 4.747 s to 1.779 s on the release-test host. The trial used the published
 Linux runtime and JAR with the candidate loader overlaid. A final packaged
 candidate and other operating systems still require verification.
 [Measurement and scope](reinforcement-validation.md#linux-hdf5-startup--2026-11-18)
+
+## Published Linux package browser qualification — 2026-11-18
+
+The 2.0.364 package passed citation metadata, menu destinations, structural
+edits with exact undo/redo, offline use and two attempts to replace an edited
+map with an incomplete file. Both attempts returned HTTP 400 and preserved
+the existing map manager, assembly and pixel data. The browser test was
+corrected to keep its map-manager reference in the page, avoiding serialization
+of the entire object through Playwright. The package qualification continues
+with the performance and 30-minute soak gates.
+
+At 1280×720 the same package's file-open notification intercepted a click on
+the assembly menu's Move to debris and hide action. Chromium against the
+candidate WebUI put the menu first in pointer hit-testing at the same
+coordinates, and the actual edit completed with HTTP 200. Candidate WebUI
+commit `f2292f4` places open assembly and axis menus above the notifications.
