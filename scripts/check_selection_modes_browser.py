@@ -21,6 +21,13 @@ def main():
     with (out/'fixture.log').open('w') as log:
         subprocess.run(['java','--class-path',str(Path(args.jar).resolve()),str(Path(__file__).with_name('SequenceViewBrowserFixture.java')),str(data)],check=True,stdout=log,stderr=subprocess.STDOUT)
     native=data/'sequence.hict.hdf5';digest=hashlib.sha256(native.read_bytes()).hexdigest()
+    original = ''.join((data / 'sequence.fa').read_text().splitlines()[1:])
+    (data / 'selection-gap.agp').write_text(
+        'joined\t1\t1000\t1\tW\ttiny\t1\t1000\t-\n'
+        'joined\t1001\t1037\t2\tN\t37\tscaffold\tyes\tproximity_ligation\n'
+        'joined\t1038\t2037\t3\tW\ttiny\t1001\t2000\t+\n'
+        'tail\t1\t2000\t1\tW\ttiny\t2001\t4000\t+\n'
+    )
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self,*_):pass
     static=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Quiet,directory=str(Path(args.webui).resolve())))
@@ -60,6 +67,22 @@ def main():
                 dialog=page.get_by_role('dialog',name='Select region by coordinates',exact=True);dialog.wait_for();return dialog
             def fill(dialog,values):
                 for key,value in values.items():dialog.locator('#region-'+key).fill(str(value))
+            def export_fasta(filename, coords):
+                with page.expect_response('**/get_fasta_for_selection') as response, page.expect_download() as download:
+                    page.get_by_role('button', name='Export FASTA for selection', exact=True).click()
+                assert response.value.ok, response.value.text()
+                request = response.value.request.post_data_json
+                assert [request[key] for key in ['fromBpX', 'fromBpY', 'toBpX', 'toBpY']] == coords, request
+                path = out / filename
+                download.value.save_as(path)
+                records = {}
+                for line in path.read_text().splitlines():
+                    if line.startswith('>'):
+                        name = line[1:]
+                        records[name] = ''
+                    else:
+                        records[name] += line
+                return records
             def scope(axis,label):
                 field=page.get_by_role('textbox',name='Rows scope' if axis=='row' else 'Columns scope',exact=True)
                 field.fill(label);page.locator('.scope-result:visible').filter(has_text=label).first.click();check.settle()
@@ -116,16 +139,7 @@ def main():
                 dialog.get_by_role('alert').wait_for();assert state()['region']==expected
                 page.keyboard.press('Escape');assert state()['region']==expected
                 # The sequence export must use exact BP endpoints, never inverse native-bin rounding.
-                with page.expect_response('**/get_fasta_for_selection') as response,page.expect_download() as download:
-                    page.get_by_role('button',name='Export FASTA for selection',exact=True).click()
-                assert response.value.ok,response.value.text();request=response.value.request.post_data_json
-                assert [request[k] for k in ['fromBpX','fromBpY','toBpX','toBpY']]==[1003,1,1080,1010],request
-                download.value.save_as(out/'selected.fasta')
-                records={}
-                for line in (out/'selected.fasta').read_text().splitlines():
-                    if line.startswith('>'):name=line[1:];records[name]=''
-                    else:records[name]+=line
-                original=''.join(line for line in (data/'sequence.fa').read_text().splitlines() if not line.startswith('>'))
+                records = export_fasta('selected.fasta', [1003, 1, 1080, 1010])
                 assert records=={'selection_horizontal_1003_1080_primary':original[1003:1080],
                                  # Selection coordinates are gapless assembly BP; FASTA preserves
                                  # the scaffold separator (the fixture uses the default 1000 bp).
@@ -199,6 +213,32 @@ def main():
                 assert state()['region'] is None and not state()['ids']
                 page.keyboard.press('Escape');check.settle()
             check.step('stale-coordinates-rejected',stale_dialog)
+
+            def selected_fasta_with_explicit_gap():
+                check.menu('Assembly', 'Load AGP')
+                check.choose_file('selection-gap.agp')
+                with page.expect_response('**/load_agp') as loaded:
+                    page.get_by_role('button', name='Load', exact=True).click()
+                assert loaded.value.ok, loaded.value.text()
+                page.get_by_placeholder('Filter current folder by file name or path').wait_for(state='hidden')
+                check.settle()
+
+                dialog = coordinates()
+                dialog.locator('#region-convention').select_option('one-based')
+                fill(dialog, {'row-start': 991, 'row-end': 1010, 'column-start': 1004, 'column-end': 1080})
+                dialog.get_by_role('button', name='Select region', exact=True).click()
+                dialog.wait_for(state='hidden')
+                check.settle()
+
+                records = export_fasta('selected-explicit-gap.fasta', [1003, 990, 1080, 1010])
+                complement = str.maketrans('ACGTRYMKSWBDHVN', 'TGCAYRKMSWVHDBN')
+                reversed_tail = original[:10].translate(complement)[::-1]
+                assert records == {
+                    'selection_horizontal_1003_1080_primary': original[1003:1080],
+                    'selection_vertical_990_1010_primary': reversed_tail + 'N' * 37 + original[1000:1010],
+                }, records
+
+            check.step('selected-fasta-spans-reversed-fragment-and-explicit-agp-gap', selected_fasta_with_explicit_gap)
             assert hashlib.sha256(native.read_bytes()).hexdigest()==digest
             assert not check.errors,check.errors
             (out/'results.json').write_text(json.dumps({'status':'ok','checks':check.rows,'state':state(),'sourceSha256':digest,'pageErrors':check.errors},indent=2))

@@ -141,7 +141,7 @@ instances to be exercised. A row with remaining assertions stays open.
 | 16–18 | Export suites use dropdown actions, workspace uses toolbar zoom, baseline repeatedly clicks OpenLayers zoom with rendered-frame assertions | Complete. Toolbar and native zoom controls preserve the exact center and resolution at both constrained endpoints. |
 | 19–21 | Workspace verifies all three diagonal navigation formulas | Complete |
 | 22–27, 30 | Structural suite verifies Reverse, Move, Split, Group, Ungroup, Unscaffold All and Debris with exact independent AGP and Undo/Redo/Undo | Move Escape now verifies inactive tool, hidden arrows and exact native snapshot preservation before the real move. Edited-sequence coverage beyond the existing edited-view suite remains. |
-| 28 | Edited-view suite compares downloaded selected edited FASTA with source sequence and reverse complement | Selected gap-containing FASTA fixture |
+| 28 | Edited-view suite compares selected FASTA with the source and reverse complement. The published Linux 2.0.371 selection suite also checks both axes after importing a reversed fragment and an explicit 37-bp AGP gap. The downloaded sequence preserves exactly 37 `N` bases and the expected flanking bases. | Complete for default scaffold gaps and the explicitly imported gap fixture. |
 | 29 | Workspace toolbar and sidebar bookmarks restore exact view, names survive export/import/remount and native-session reload, legacy unnamed files remain readable | Complete |
 | 31, 49, 231 | Workspace opens notifications and clears them while exact native AGP remains unchanged | Explicit badge and retained background-job checks |
 | 32 | Navigation collapses and restores sidebar with exact viewport preservation | Complete |
