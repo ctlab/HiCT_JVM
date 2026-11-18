@@ -1135,15 +1135,14 @@ def main():
                             control(paused=False)
                             dialog = open_catalog()
                             dataset = card(dialog, "wizard")
-                            open_ready = dataset.get_by_role(
-                                "button", name="Open in HiCT", exact=True
+                            # The dialog can be visible while the catalog is still loading.
+                            action = dataset.get_by_role(
+                                "button", name=re.compile(r"^(Open in HiCT|Download)$")
                             )
-                            if open_ready.count():
-                                open_ready.click()
-                            else:
-                                dataset.get_by_role(
-                                    "button", name="Download", exact=True
-                                ).click()
+                            expect(action).to_have_count(1)
+                            needs_download = action.inner_text().strip() == "Download"
+                            action.click()
+                            if needs_download:
                                 progress = panel(True)
                                 ready = await_state("READY")
                                 progress.locator(
