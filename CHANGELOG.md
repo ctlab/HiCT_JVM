@@ -2,217 +2,33 @@
 
 ## Unreleased
 
-- Copy a selected map region as PNG or copy its assembly coordinates. The current Hi-C, FASTA and AGP file controls sit next to Jobs.
+### Open, save and recover
 
-- Open with unweighted contacts when all stored Cooler weights are unusable, and explain the fallback in the workspace.
+- Open curated datasets from **File → Open Examples**. Follow downloads and conversion in Jobs, cancel or retry a stage, and reopen a ready example with its FASTA and recorded source attribution.
+- Save sessions, FASTA, AGP and figures to a chosen destination. HiCT remembers file choices by purpose and keeps edits available if a write fails. Open sessions from the File menu and export AGP from FASTA-only assemblies.
+- Find the active Hi-C map, FASTA and AGP next to Jobs. Stop HiCT returns the launcher to its simple Start view. The packaged Electron interface can reopen locally when its page is unavailable.
 
-- Show completed resolution levels in conversion Jobs and mark the pyramid stage complete only after hictk finishes.
+### Select, navigate and edit
 
-- Discover bundled HDF5 libraries in one archive scan, reducing the wait before the map server and WebUI open.
+- Shift-click or drag to select contigs or scaffolds. Ctrl-drag (⌘-drag on macOS) creates a persistent analysis region. Set its bounds in assembly or contig coordinates, copy the coordinates or a PNG to the clipboard, and export the selected sequence.
+- Zoom with the wheel from the contact map to FASTA letters while staying anchored at the pointer. Center on a track feature at the current scale or zoom to its span. Hide assembly boundaries in a scoped intersection while retaining selection highlights.
+- Cut exactly with the scissors at FASTA zoom, by a typed coordinate, or at a GTF/GFF feature edge. HiCT preserves sequence and source contact bins, projects edits to secondary maps, and restores exact cuts when reopening sessions.
 
-- Report the selected WebUI package version from JARs built with a remote checkout.
+### Render maps and analyse sequences
 
-- Cache the verified Linux toolchain for Autobuild JARs so warm builds can reuse BLAST and the other bundled commands.
+- Manage 1D tracks separately from sources and layers. Add a track file or Cooler weights, resize the track panels, and examine signed BigWig values and aligned-base BAM depth.
+- Fit the visible signal with the histogram and range handles. Choose O/E colours in the sidebar or Rendering Pipeline. The square-root coverage help explains how a bin's total contacts are counted, and maps remain readable when their Cooler weights are unusable.
+- Select FASTA letters to copy an interval or measure a repeat period. Alignment previews show continuous runs, substitutions and indels at base zoom. Search local databases or opt in to NCBI BLAST with query-upload consent and Jobs cancellation.
+- Export Cooler files with source counts and weights preserved where available. Sequence-cut rebins are labelled estimates, with their provenance carried forward when reopened.
 
-- Keep native CI cache keys stable across generated Python bytecode and reuse exact source-built Linux Conan dependencies.
+### Capture and share figures
 
-- Run source regression checks alongside portable packaging while retaining every publication gate.
+- Preview and export the map, rulers, tracks and ModDotPlot as PNG, SVG or PDF. Compare named snapshots of cuts and scaffolds, set print width, and reopen PNG or SVG inside HiCT.
+- Reproduce the public-data Borrelia editing figure using the pinned inputs, caption, vector artwork and 900-dpi TIFF in the [figure guide](docs/publication/borrelia-editing/README.md).
 
-- Update native WebView dependencies and prevent an optimized Linux string-iterator crash with a verified upstream backport.
+### Portable packages
 
-- Verify real Firefox download-only exports, session restoration and unsaved-edit protection without a writable-picker shim.
-
-- Update five delivered JVM dependencies to patched releases, lock their resolved versions, and provide a reproducible runtime advisory audit.
-
-- Preserve signed BigWig signals through aggregation, caches, both track axes and log scaling; report non-finite source values explicitly.
-
-- Attach example-download response handlers before sending, preventing fast-response races observed in Windows and macOS CI.
-
-- Correct BAM aligned-base depth and source read centers, weight coarse BAM/BigWig means by represented bases, and rebuild their older caches.
-
-- Explain BigWig averaging and BAM modes with readable controls, backed by independent signal fixtures and browser edit/session checks.
-
-- Preserve VCF structural-variant and reference-block spans through exact cuts, reversal and long coordinates, rejecting malformed interval lengths before adding a track.
-
-- Observe live staged-file sizes in Windows HTTP export tests, retain strict cancellation checks, and reconcile the current control and release evidence.
-
-- Replace obsolete frontend chunks during incremental JVM builds so the bundled WebUI exactly matches the current build, while retaining the optional API-only fallback.
-
-- Update the delivered Electron runtime to patched 43.8.10 and run native save ownership/cleanup checks in every WebUI CI platform job.
-
-- Stop disconnected FASTA export preparation, remove queued requests, and exercise native rename-failure cleanup consistently on Windows.
-
-- Exercise true canonical paths in the macOS example-provenance regression, including when the temporary directory itself uses an alias.
-
-- Preserve example conversion provenance across canonical/aliased data-root paths and release Windows BAM indexes when tracks close.
-
-- Cancel native exports on page replacement and Unix launcher Stop, prevent duplicate save dialogs, and apply the same guarded writer to legacy clients.
-
-- Stream FASTA/AGP directly from the JVM to Tauri save destinations without buffering sequence bytes in WebKit, and stage other exports through bounded binary transfers with cancellation and graceful-exit cleanup.
-
-- Restore executable permissions for every checksummed Linux portable command, including nested sequence tools, so first use runs the delivered tools directly.
-
-- Supply verified vector-cell PDF/SVG and a lossless 900-dpi TIFF for the public-data editing figure, preserving native cell colours and scientific provenance.
-
-- Provide a reproducible public-data map/ModDotPlot/track editing figure with source checks, caption, alt text and retained provenance, and measure printed text correctly through nested SVG transforms.
-
-- Keep 1D-track names and scale values inside both axis panels and exported figures, with tick marks at their actual signal positions.
-
-- Keep small whole-map figures compact at their native contact grid, making readable multi-panel cut/scaffold comparisons possible while retaining the existing expanded default.
-
-- Show the smallest vector text size at the selected figure print width, helping choose a readable capture or comparison layout without changing captured pixels.
-
-- Recover completed NCBI BLAST requests by RID without resubmitting sequences, with verified query provenance, Jobs delivery and JSON/TSV exports even without local BLAST+.
-
-### Navigation and visualization
-
-- Release notification listeners when messages close, preventing listener accumulation during long editing and export sessions, with portable release checks.
-
-- Reuse unchanged contig and scaffold borders during navigation, retaining exact geometry and independently fitted labels while avoiding repeated spatial-index rebuilds.
-
-- Avoid measuring ruler names in bands narrower than their required padding, preserving visible labels while reducing work on dense assemblies.
-
-- Finish map loading reliably after obsolete tiles leave the queue, keeping histogram and export completion current without repainting during active transfers.
-
-- Package the exact requested JVM build on Linux, macOS and Windows, and keep release uploads and smoke checks on that version instead of selecting stale artifacts.
-- Explain incomplete HiCT files as input errors with a recovery action, preserving the edited workspace when opening them fails.
-
-- Export frozen figures at 86 mm or 178 mm column width with matching SVG/PDF/PNG physical sizes, preserved matrix pixels and recorded effective raster resolution.
-- Reject oversized PDF pages with a clear recovery message instead of silently clipping the drawing.
-
-- Store and view named figure snapshots, compare cut/scaffold/reversed states, and retain original pixels, vector labels and per-panel provenance in portable sessions.
-- Validate stored figures before replacing a session, protect snapshot changes during delayed saves, preserve legacy AGP fragment IDs after reordered assembly edits, and avoid redundant fine-grid loading in projected comparisons.
-
-- Pin Expected/O/E figure fitting profiles across viewport, whole-map, rectangle and sequence-level captures, recording actual profile fingerprints and active normalization inputs.
-- Reject incomplete figure tiles and changed scientific inputs, restore the shared overview and live camera, and bound capture work, retained profiles and abandoned-context leases.
-
-- Preview figure exports in a dedicated dialog, choose area and annotation panels, and save PNG, SVG and PDF from one frozen capture.
-- Retain scientific source, assembly and rendering provenance in all three formats, reject concurrent changes during capture, and preserve crop metadata without invalid narrow-panel SVG text.
-
-- Reopen exported PNG and SVG figures inside HiCT with fit, actual-size and zoom controls, remembered browser file choices, and clear invalid-image errors.
-
-- Search NCBI nucleotide databases with explicit query-upload consent, independent Jobs cancellation and bounded provider waiting while local analysis remains available.
-- Inspect external BLAST coordinates in a paginated, filterable report and save JSON provenance or complete raw TSV through the file-save flow.
-
-- Preselect example recipe tracks in the opening wizard, omit unavailable optional tracks, keep removed tracks from reappearing after a late probe, and show the loaded AGP in the header.
-- Retain each example source's recorded citations, attribution, recipe and file hashes through session save and restore, independently of later catalog changes.
-
-- Show numeric overall progress for example conversions, accounting for later stages rather than reaching 100% after each stage.
-- Treat cancelled example conversions as an expected outcome, keep downloaded inputs, and provide a direct retry without a failure alert.
-
-- Keep Info current while zoom tiles load without reading tile pixels, and explain the yeast Micro-C example's source-supported short-range empty band.
-- Dismiss map-specific masking notices safely when changing maps, and support numeric pipeline queries across different resolution pyramids, including hidden bins.
-
-- Follow quick-start example conversions in Jobs, retain their FASTA when reopening results, offer clear errors and a direct retry, and revoke automatic opening when closing progress or changing workspace.
-- Keep map startup quiet by removing internal sensitivity notices and redundant example preparation notifications.
-
-- Verify cached examples through Jobs before opening, repair damaged files, and refresh ready status and provenance when the catalog changes.
-
-- Follow example downloads in Jobs with dataset names, honest byte progress, retained results, optional-file warnings and focused recovery, while keeping automatic opening tied to the user's current intent.
-- Keep Jobs controls reachable while scrolling, move catalog disk checks off the HTTP event loop, and make final example verification cancellable.
-
-- Adjust ordinary gradient colors with a draggable and keyboard-accessible midpoint, retaining independent source curves through sessions, presets and Rendering Pipeline.
-- Wait for preview changes when saving a user preset and keep Secondary presets scoped to that source in the single-map layout.
-
-- Scan the selected Expected/O/E signal with one independent whole-map profile across all blocks, preserving the viewport fit and distinguishing unsupported ratios from measured zeros.
-- Cancel exact-limit scans, reject obsolete responses, and keep completed slider limits steady while panning.
-
-- Preserve newer thresholds, transforms and source-specific edits through delayed normalization, reads and preset writes, with clear pending and retry status.
-- Apply pending visualization changes before session snapshots and opening Rendering Pipeline, and preserve committed graph state when a request fails.
-
-- Show a viewport signal histogram below the color slider with sampled-data labels, threshold marks and Fit levels, and reserve transfer capacity for interactive requests.
-- Preserve missing O/E support as missing in numeric diagnostics, while keeping measured zeros distinct and using meaningful positive ratios for fitted O/E limits.
-
-- Edit the active primary O/E palette in Rendering Pipeline with shared presets, live preview, safe delayed updates and palette import/export, while preserving the Observed graph and secondary layer.
-- Reload sidebar changes when returning from palette Preview and keep palette controls usable in compact windows.
-
-- Honor O/E endpoint colors and alpha, remember separate Expected/O/E palettes, and add a neutral-at-1 ratio palette to pipeline colormap nodes.
-- Keep slider limits steady during adjustment and apply live threshold changes, with O/E handles staying on the correct side of neutral.
-
-- Explain square-root coverage with the row-sum definition, diagonal convention and whole-map scale factor, with an optional formula and worked guide.
-
-- Keep menus, Jobs and file badges within narrow windows, and make the stacked sidebar scrollable with usable signal controls.
-
-- Separate 1D tracks from map sources, add source weights through Add, and preserve typed settings and panel alignment across refreshes and resizing.
-- Identify file versus coverage weights and keep weight tracks current when normalization changes, including after precompute.
-
-- Open the bundled Electron interface when the hosted page is unavailable, with a Reconnect action that protects unsaved assembly edits.
-- Preserve bundled-interface preferences across restarts and include packaged icons without weakening browser or backend access controls.
-
-- Stream Electron FASTA/AGP exports in the main process with native destination selection, revision guards and no file-sized renderer IPC.
-- Cancel owned transfers on navigation and wait for staged-file cleanup on graceful quit; show clear filesystem failures and preserve native session save/readback.
-
-- Stream FASTA/AGP directly to writable browser destinations with backpressure, a cancellable progress notice, and abort-on-failure cleanup.
-
-- Choose destinations for sessions, FASTA/AGP, figures and settings exports, remember file choices by purpose, and expose File → Open Examples.
-- Mark sessions saved only after a confirmed write, preserve newer edits and failed-save guards, and freeze FASTA/AGP export layouts under the displayed-revision check.
-
-- Draw continuous alignment runs through letter boundaries, with distinct substitutions, reverse matches and indels in the map and vector exports.
-- Recover short tandem-repeat alignments with a bounded short-window profile, verify CIGAR labels against source bases, and cancel obsolete preview jobs without losing their IDs.
-
-- Select and measure FASTA letters on either axis/strand, copy exact sequence and coordinates, and estimate a bounded repeat period through cancellable Jobs.
-- Keep FASTA measurements stable during navigation, invalidate them after edits, and exclude transient measurement overlays from saved sessions and image exports.
-
-- Separate Shift entity selection from persistent Ctrl/Command analysis regions, with stable border highlights and optional border hiding in scoped views.
-- Select exact regions by assembly or contig coordinates, preserve their endpoints across scales and FASTA export, and exclude selection overlays from image exports.
-
-- Project base-scale 1D features and signals across hidden and binless sequence, with bounded queries and native-bin weight provenance.
-- Keep normalization availability tied to stored source resolution and label base-scale track coordinates explicitly.
-
-- Cut exactly at GTF/GFF feature edges with stale-menu guards, preserve the BP view after cuts, and make Center/Zoom actions distinct across native/base scales.
-- Copy genome coordinates without thousands separators; fit BP navigation ranges through the active coordinate model.
-
-- Add a uniform base-scale map with explicit native-bin labels, aligned FASTA/features, pointer-anchored zoom and portable saved view coordinates.
-- Use sequence-preserving exact scissors on capable servers, refresh raster extents after cuts, and separate native-bin expected profiles from visible-bin profiles.
-
-- Keep native-resolution rulers and sequence coordinates aligned with partial source bins after contig edits, including reversed fragments.
-
-- Keep notification stacks away from visualization controls on smaller windows.
-
-- Show contig and scaffold names on the map whenever the contigs in view are wide enough to read. Small contigs elsewhere in the assembly no longer hide the names of large ones on screen.
-
-- Keep opening-fitted contrast readable across pyramid levels, preserve explicit thresholds and separate O/E ranges, and show small-genome minimaps even when coarse levels are empty.
-- Start log transforms at Log2, show masked bins without a permanent alarm, and keep history controls in Journal.
-- Make developer tools opt-in, move tile reload into Dev, and provide quiet map Info and Help → Connection….
-- Reduce dense whole-map name clutter while retaining ruler names, entity navigation and export layout.
-- Use neutral assembly-file labels, consistent menus and a discoverable FASTA link action in its status chip.
-
-### Sequence analysis and sessions
-
-- Add an explicit sequence-scale tile projection that clips native contact colors to exact fragment widths, keeps base-level upper/lower source choices and declares the stored contact resolution.
-- Keep shared references colored throughout the pipeline and preserve hidden-bin weights and feature samples in numeric BINS queries.
-
-- Weight repeated exact-cut references once per unordered source-bin pair in expected fitting, keep fitting consistent across tile chunks, and label histogram counts as displayed samples.
-
-- Preserve stored fractional values and genuine weights in ordinary Cooler re-export, retain int64 counts in mixed pyramids, and report cis totals separately from interchromosomal contacts.
-- Preserve existing export destinations on failure or cancellation, with explicit overflow and invalid-value errors.
-
-- Preserve estimation provenance and fractional values when reopening approximate Cooler files, label estimated primary/secondary sources, and retain their declaration in sessions.
-- Clamp export chunks to small map dimensions so default settings work with short assemblies.
-
-- Export sequence-cut assemblies to Cooler with explicit approximate rebinning, labeled fractional values and conserved retained contacts, while preserving native HiCT data.
-- Retrieve completed exports from Jobs with readable result filenames after dismissing the export dialog.
-
-- Preserve source sequence coordinates beyond 2.1 Gb in cuts, AGP components and saved sessions.
-
-- Expose optional physical source-bin identities in numeric matrix queries, so repeated references after exact cuts can be identified without changing contact values.
-
-- Preserve exact-cut source bins across secondary maps with different resolutions and saved sessions, and reject exact-cut API requests from an outdated assembly view.
-
-- Save sessions in format v4 with explicit support for exact sequence-cut lineage, while retaining older session readers and historical cut behavior.
-
-- Deliver completed overlays and search tracks through Jobs even after progress dialogs close, retain overlay/triangle choices, and default generation levels from finest through current.
-- Keep primary and secondary palettes and custom graphs intact through Observed/Expected/O/E changes, mask undefined O/E ratios, and prevent unusably narrow threshold intervals.
-- Pick overlapping track features by their displayed lanes and offer Zoom to feature at readable FASTA scale.
-- Restore valid multi-source sessions beyond 100,000 values while retaining validation limits.
-
-### Packaging and reliability
-
-- Return to the launcher's simple start view after Stop HiCT, with configuration and logs hidden and settings retained.
-
-- Keep rolling-release downloads available when publication fails, and update release metadata without reusing obsolete workflow targets.
-- Complete bounded redirect responses reliably, preserve connection-error causes, and exercise redirect limits on every platform.
-- Keep pinned tool builds available during GNU Savannah outages and resolve release JHDF5 assets strictly in Autobuild Release.
+- Linux, Windows and macOS packages include the pinned WebUI and the native tools needed for the supported workflows. Release publication verifies the requested installers and their checksums while keeping the previous downloads available through an interrupted upload.
 
 ## 2.0.0
 
