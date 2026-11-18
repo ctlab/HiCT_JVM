@@ -3,6 +3,30 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Unpublished portable candidate 2.0.385
+
+Linux and Apple Silicon portable jobs passed packaged startup.
+The Windows runner lost its workspace drive while building Tauri. The hosted
+workflow was superseded, and the independent Linux qualification continued.
+[Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44263655268)
+
+The exact Linux runfile passed all ten selection checks and all nine pre-soak
+qualification stages. The 30-minute Ubuntu container soak completed 233 cycles
+with 16.7 ms frame p95, 54.86 ms input acknowledgement p95 and zero browser
+errors. Browser heap, JVM heap and DOM counts met their limits. Server RSS
+grew at 1.649 MiB/min against the 1.0 MiB/min limit. The full qualification
+therefore failed on this build. The Linux runfile SHA-256 is
+`9bb78c65af322db1a6d6afbcc2662f97f90044844074ae0ba9625fdafd0564d1`,
+and the extracted JAR SHA-256 is
+`05ee6490ccc96caa269ed5c5ccb4905fe8fe1622d79301e70ee7881bf964fd13`.
+
+A diagnostic replay uses the identical runfile, JAR, fixtures, container and
+duration with glibc `MALLOC_ARENA_MAX=4`. This setting applies to the replay.
+The acceptance limits remain 33 ms frame p95, 100 ms input acknowledgement
+p95 and 1.0 MiB/min server RSS growth. The default and diagnostic receipts are
+stored under `build/release-evidence/portable-publication-priority/`
+`run-44263655268/`.
+
 ## Unpublished portable candidate 2.0.383
 
 The exact Actions Linux runfile for `2.0.383-ci1-c29eaf5` passed ten browser
