@@ -19,9 +19,12 @@ All eight Chromium selection stages passed, including the real coordinate
 and image clipboard checks. The packaged Electron shell pasted a 722 × 566 PNG
 and the exact rectangular coordinate text. The file controls stayed beside Jobs
 at 640, 800, 1280 and 1440 px. The packaged Tauri shell wrote a 1068 × 844 PNG
-that an independent GTK process read and saved. WebKit's own editable test field
-received an empty image paste event on this Linux stack. Both native checks ran
-in private Linux displays with loopback networking only.
+that an independent GTK process read and saved. A separate Ctrl+V test pasted
+the Tauri selection into an independent Electron editing field. The receiver
+decoded and displayed the complete 1068 × 844 PNG. WebKit's own editable test
+field received an empty image paste event on this Linux stack. These checks ran
+in private Linux displays with loopback networking only. The cross-app receipt
+and screenshot are in `native-tauri/cross-app/` below.
 
 The released JAR and its bundled Java runtime also passed all 12 Linux
 Launcher checks on a private display. The test started a real server, confirmed
