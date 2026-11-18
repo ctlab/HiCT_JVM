@@ -325,7 +325,7 @@ else
   set -- -jar "${APP_HOME}/lib/hict.jar" "$@"
 fi
 
-export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-4}"
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
 exec "${LOADER}" --library-path "${LOADER_LIBRARY_PATH}" "${JAVA_BIN}" "-Djava.io.tmpdir=${HICT_TEMP_DIR}" "$@"
 EOF
   chmod 0755 "${launcher}"

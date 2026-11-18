@@ -3,6 +3,86 @@
 Historical 2.0.0 release validation is retained separately. It does not qualify
 the current advisor-release candidate or current-source platform CI.
 
+## Published portable release 2.0.389
+
+Run 44293359089 uses JVM `ba27ce05b7076018be305b2fe290da32a5da2c36` and
+WebUI `534f3c467eaafc49cb61c18991e2abd14d4e4f9c`. GitHub published 17 verified
+assets in 1h 38m 45s. All six JVM workflows and the WebUI matrix passed.
+The cold Intel BLAST build took 60 minutes in the portable workflow.
+The official smoke script
+passed on isolated checkouts of both revisions. Its JVM suite reported 664
+tests, zero failures and nine environment-dependent skips. WebUI type-check,
+production build and ESLint without fixes passed, with 187 lint warnings.
+All seven publication artwork tests passed.
+
+A separate run of the exact source used checksum-verified local tools and the
+freshly compiled baseline JNI library. Seven of the skipped cases passed,
+covering JNI parity, native HTTP sequence search and ModDotPlot, a BLAST gapped
+alignment with raw scores, Cooler group import, minimap/Hictk conversion and
+SeqKit results against an independent oracle. The other two source-smoke skips
+require the optional large-map and external HIC assembly fixtures. Receipts are
+in `build/release-evidence/portable-publication-priority/run-44293359089/`.
+[Portable Packages run](https://github.com/ctlab/HiCT_JVM/actions/runs/44293359089)
+
+The Windows ZIP and EXE, Linux runfile and AppImage, and both macOS
+architectures passed hosted startup. The public release manifest matches the
+runfile and JAR used for local tests. The Linux runfile passed all ten
+selection checks and all 18 menu scenarios, including accessible names on all
+17 tested dialog close controls. No page or HTTP errors were reported. The
+four navigation fixtures passed on fresh browsers and repeat opens, with a
+maximum frame p95 of 16.8 ms and input acknowledgement p95 of 31.93 ms. Java
+received `MALLOC_ARENA_MAX=4` from the launcher. The 30-minute soak completed
+232 cycles at 16.7 ms frame p95 and 55.42 ms input acknowledgement p95, with
+no browser errors. Server RSS grew at 1.126 MiB/min against the 1.0 MiB/min
+limit, almost entirely in anonymous memory. Used JVM heap grew at
+0.073 MiB/min and the browser heap at 0.064 MiB/min. The exact Linux package
+therefore has an open memory gate under its installed default. The same
+runfile, JAR, inputs, JVM options and 30-minute test passed with the allocator
+limit explicitly set to two, as verified in the Java process environment.
+Across 232 cycles, server RSS trended −1.123 MiB/min, used JVM heap
+0.085 MiB/min and browser heap 0.066 MiB/min. Frame p95 was 16.73 ms and
+input acknowledgement p95 was 55.14 ms. All input hashes matched and the
+browser reported no errors. The next Linux package uses two arenas by
+default, with the environment override available. That package requires
+its own default-setting soak.
+[Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
+
+## Published portable release 2.0.388
+
+GitHub published 17 assets in 1h 02m 53s. The JVM revision is
+`f8f7cdc4ede8d0f8a8217964a44a0ed212bd00e0`, with WebUI
+`02292b68d8b939c020d57ca36e9a1c86f0231a1d`. All six JVM workflows passed.
+Hosted startup passed for both Windows launchers, the Linux runfile and
+AppImage, and both macOS architectures.
+[Portable Packages run](https://github.com/ctlab/HiCT_JVM/actions/runs/44283392789)
+
+The public manifest matches the Linux runfile and JAR used in the browser tests.
+All ten selection checks and all nine pre-soak stages passed, including four
+navigation fixtures, structural editing and offline session/export workflows.
+The packaged server's Java process received `MALLOC_ARENA_MAX=4` from the launcher.
+The 30-minute soak passed after 231 cycles in 1,805.94 seconds. Frame p95 was
+16.7 ms and input acknowledgement p95 was 55.69 ms. The fitted server RSS trend
+was −4.214 MiB/min, JVM heap 0.102 MiB/min and browser heap 0.048 MiB/min.
+DOM node counts stayed at 663 and all ten input files kept their checksums.
+There were no browser errors.
+
+The public Linux runfile also passed native clipboard checks. Electron pasted
+the exact tab-separated region coordinates and a 722 × 566 PNG. The Hi-C,
+FASTA, and AGP controls stayed beside Jobs at 640, 800, 1280, and 1440 px.
+Tauri pasted a 1,068 × 844 PNG into an independent Electron window, which
+decoded and displayed the image. The runner verified the runfile and JAR
+checksums before and after the tests.
+
+The exact public AppImage passed in extract-and-run mode with only loopback
+networking. Bundled hictk converted a Cooler and the browser restored the edited
+session, exported PNG, SVG and PDF, and displayed the bundled API documentation.
+The AppImage and input retained their checksums, Java received the same allocator
+default, and the browser reported no errors or external requests.
+
+Receipts are under
+`build/release-evidence/portable-publication-priority/run-44283392789/`.
+[Public release](https://github.com/ctlab/HiCT_JVM/releases/tag/latest-jvm-sfx-native)
+
 ## Published portable release 2.0.387
 
 All six JVM workflows succeeded for `145eafad6992b32800c473d933cd377c60f62263`,
