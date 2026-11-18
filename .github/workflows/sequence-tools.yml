@@ -74,33 +74,40 @@ jobs:
         id: runner-image
         shell: bash
         run: python scripts/ci/runner_cache_identity.py
-      # Hash the inputs to this payload and its verification. Other CI scripts
-      # and unit-test fixtures still run without invalidating native binaries.
+      # Keep component-specific inputs out of the other payload's cache key.
+      # The shared builder and executable verification still affect both.
       - name: Restore verified sequence payload
         id: sequence-cache
         uses: actions/cache/restore@v5
         with:
           path: sequence-tools-dist/${{ matrix.target.platform }}-${{ matrix.component }}
           key: >-
-            sequence-payload-v3-${{ matrix.component }}-${{ matrix.target.os }}-${{ matrix.target.platform }}-${{ steps.runner-image.outputs.identity }}-python-${{ steps.python.outputs.python-version }}-go-1.25.5-${{
+            sequence-payload-v4-${{ matrix.component }}-${{ matrix.target.os }}-${{ matrix.target.platform }}-${{ steps.runner-image.outputs.identity }}-python-${{ steps.python.outputs.python-version }}-${{
               hashFiles(
                 '.github/workflows/sequence-tools.yml',
-                'scripts/toolchains/*blast*',
-                'scripts/toolchains/build_sequence_*',
-                'scripts/toolchains/merge_sequence_payload.py',
-                'scripts/sequence_analysis/**',
+                'scripts/toolchains/build_sequence_tools.py',
                 'scripts/ci/runner_cache_identity.py',
                 'scripts/ci/check_macos_compatibility.py',
-                'scripts/ci/check_windows_sequence_relocation.py',
                 'scripts/ci/smoke_sequence_cache.py',
                 'scripts/ci/verify_sequence_cache.py',
-                'scripts/portable/macos_target.sh',
+                'scripts/portable/macos_target.sh')
+            }}-${{
+              matrix.component == 'blast' && hashFiles(
+                'scripts/toolchains/*blast*',
                 'third_party/blast/**',
+                '!**/__pycache__/**',
+                '!**/*.pyc',
+                '!**/*.pyo') ||
+              format('go-1.25.5-{0}', hashFiles(
+                'scripts/toolchains/build_sequence_python_linux.sh',
+                'scripts/sequence_analysis/**',
+                'scripts/ci/check_windows_sequence_relocation.py',
+                'scripts/toolchains/merge_sequence_payload.py',
                 'third_party/moddotplot/**',
                 'third_party/seqkit/**',
                 '!**/__pycache__/**',
                 '!**/*.pyc',
-                '!**/*.pyo')
+                '!**/*.pyo'))
             }}
       - name: Discard any non-exact cache restoration
         if: steps.sequence-cache.outputs.cache-hit != 'true'

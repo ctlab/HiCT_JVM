@@ -71,6 +71,28 @@ test('native cache source hashes exclude generated Python bytecode', () => {
   }
 });
 
+test('BLAST and SeqKit/ModDotPlot caches track their own source inputs', () => {
+  const sequence = fs.readFileSync('.github/workflows/sequence-tools.yml', 'utf8');
+  const selector = sequence.match(/\$\{\{\s*(matrix\.component == 'blast' && hashFiles\([\s\S]*?\))\s*\}\}/);
+  assert.ok(selector, 'Missing component-specific cache key');
+  const componentKey = component => vm.runInNewContext(selector[1], {
+    matrix: { component },
+    hashFiles: (...paths) => paths.join('\n'),
+    format: (template, value) => template.replace('{0}', value),
+  });
+  const blast = componentKey('blast');
+  const seqkitAndModDotPlot = componentKey('sequence');
+  assert.match(blast, /scripts\/toolchains\/\*blast\*/);
+  assert.match(blast, /third_party\/blast\/\*\*/);
+  assert.doesNotMatch(blast, /sequence_analysis|moddotplot|seqkit|go-1\.25\.5/);
+  assert.match(seqkitAndModDotPlot, /scripts\/sequence_analysis\/\*\*/);
+  assert.match(seqkitAndModDotPlot, /build_sequence_python_linux\.sh/);
+  assert.match(seqkitAndModDotPlot, /third_party\/seqkit\/\*\*/);
+  assert.match(seqkitAndModDotPlot, /third_party\/moddotplot\/\*\*/);
+  assert.match(seqkitAndModDotPlot, /^go-1\.25\.5-/);
+  assert.doesNotMatch(seqkitAndModDotPlot, /blast/);
+});
+
 test('compiled caches track platform build inputs independently of package transfer', () => {
   for (const platform of platforms) {
     const packaging = job(platform);

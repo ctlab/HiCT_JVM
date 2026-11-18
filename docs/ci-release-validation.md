@@ -486,3 +486,32 @@ termination. The branch retry passed. The corrected test asserts the observed
 termination once and passed all 20 repetitions locally. All four portable JVM
 regression jobs passed on that revision.
 [Branch Autobuild retry](https://github.com/ctlab/HiCT_JVM/actions/runs/44255574016/attempts/2)
+
+For `2.0.388-ci1-f8f7cdc`, the branch and pull-request Autobuilds both
+restored the verified Linux toolchain and completed in 4m 14s and 4m 12s
+respectively. Portable Packages published its 17 assets in 1h 02m 53s. The
+Windows packaging job restored its bundled toolchain, skipped hictk compilation
+and finished in 13m 33s. On Apple Silicon, the hosted image's BLAST cache key
+missed and the native job took 29m 25s. The subsequent Apple Silicon packaging
+job took 26m 15s. These are observed GitHub timings for this release.
+[Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44283392789)
+· [Branch Autobuild](https://github.com/ctlab/HiCT_JVM/actions/runs/44283392260)
+· [Pull-request Autobuild](https://github.com/ctlab/HiCT_JVM/actions/runs/44283403678)
+
+## Separate sequence tool cache inputs
+
+Portable Packages published `2.0.389-ci1-ba27ce0` in 1h 38m 45s. All 17
+asset digests matched. The Intel macOS BLAST compile took 59m 38s and the
+subsequent installer build step took 20m 53s. The prior `.388` Intel BLAST
+job restored its cache and finished in 1m 30s. The `.389` dependency update
+changed files that the previous key included for both native components.
+[Portable Packages](https://github.com/ctlab/HiCT_JVM/actions/runs/44293359089)
+
+The revised workflow hashes BLAST inputs separately from the SeqKit and
+ModDotPlot inputs. Both keys still include the shared builder, compatibility
+and executable verification code, and runner image. A local fixture using
+the Actions glob implementation confirmed eight invalidation cases. ModDotPlot
+requirements and smoke edits affect SeqKit and ModDotPlot, BLAST source and
+notice edits affect BLAST, and shared verification changes affect both.
+Workflow lint and the portable workflow contracts passed. The new cache
+schema first needs to populate its exact entries on GitHub.
