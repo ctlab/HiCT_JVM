@@ -398,6 +398,16 @@ applicable. The first run under the new schema populates its exact caches.
 The local key check changed each platform build input independently and verified
 that an upload-only edit leaves all eight compiled keys unchanged.
 
+The previous macOS ARM package also carried an inactive sequence payload in the
+staged tools and in the fat JAR. Its audit listed 2,145 Mach-O entries. The
+`2.0.385-ci1-2df8d3a` package audit lists the same 1,109 active entries, with zero
+macOS 12.3 compatibility errors. All 1,036 extra entries in the earlier archive
+belonged to one inactive sequence revision. The transport archive fell from
+1.58 GB to 0.90 GB. The macOS toolchain cache now saves only its compiled
+`bin/` files and `share/` metadata. The package job obtains the verified
+sequence payload separately and regenerates the combined manifest.
+[Apple Silicon package](https://github.com/ctlab/HiCT_JVM/actions/runs/44263655268/job/134665597266)
+
 ## Linux Autobuild cache across runner updates
 
 The warm hosted Autobuild for `60bf63d9` finished in 3m 09s from workflow

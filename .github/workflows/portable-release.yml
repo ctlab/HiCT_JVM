@@ -1474,7 +1474,9 @@ jobs:
         id: cache-darwin-toolchains
         uses: actions/cache/restore@v5
         with:
-          path: toolchains-dist/darwin_arm64
+          path: |
+            toolchains-dist/darwin_arm64/bin
+            toolchains-dist/darwin_arm64/share
           key: toolchain-v3-darwin-arm64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git', 'scripts/portable/macos_target.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
       - name: Discard non-exact compiled cache
         if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
@@ -1606,7 +1608,9 @@ jobs:
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
-          path: toolchains-dist/darwin_arm64
+          path: |
+            toolchains-dist/darwin_arm64/bin
+            toolchains-dist/darwin_arm64/share
           key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
       - name: Save Darwin Conan cache
         if: ${{ success() && steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
@@ -1751,7 +1755,9 @@ jobs:
         id: cache-darwin-toolchains
         uses: actions/cache/restore@v5
         with:
-          path: toolchains-dist/darwin_x86_64
+          path: |
+            toolchains-dist/darwin_x86_64/bin
+            toolchains-dist/darwin_x86_64/share
           key: toolchain-v3-darwin-x86_64-min-${{ env.MACOSX_DEPLOYMENT_TARGET }}-hictk-${{ env.HICTK_REF }}-minimap2-${{ env.MINIMAP2_REF }}-mm2plus-${{ env.MM2PLUS_REF }}-${{ hashFiles('scripts/toolchains/build_darwin_toolchains.sh', 'scripts/toolchains/conan-git/git', 'scripts/portable/macos_target.sh') }}-${{ steps.runner-image.outputs.identity }}-${{ steps.tool-sources.outputs.sources }}
       - name: Discard non-exact compiled cache
         if: steps.cache-darwin-toolchains.outputs.cache-hit != 'true'
@@ -1883,7 +1889,9 @@ jobs:
         uses: actions/cache/save@v5
         continue-on-error: true
         with:
-          path: toolchains-dist/darwin_x86_64
+          path: |
+            toolchains-dist/darwin_x86_64/bin
+            toolchains-dist/darwin_x86_64/share
           key: ${{ steps.cache-darwin-toolchains.outputs.cache-primary-key }}
       - name: Save Darwin Intel Conan cache
         if: ${{ success() && steps.cache-darwin-conan.outputs.cache-hit != 'true' }}
