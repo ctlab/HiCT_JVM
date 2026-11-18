@@ -73,8 +73,10 @@ def check(launcher, expected_version, work):
     command = [str(launcher), "start-server", "--serve-webui=true"]
     if os.name == "nt" and launcher.suffix.lower() == ".cmd":
         env["HICT_SMOKE_LAUNCHER"] = str(launcher)
-        command = [os.environ.get("ComSpec", "cmd.exe"), "/d", "/c",
-                   'call "%HICT_SMOKE_LAUNCHER%" start-server --serve-webui=true']
+        cmd = os.environ.get("ComSpec", "cmd.exe")
+        # cmd.exe strips the outer quotes after /s /c. Popen's argument-list
+        # conversion would escape the inner quotes for the C runtime instead.
+        command = f'"{cmd}" /d /s /v:off /c ""%HICT_SMOKE_LAUNCHER%" start-server --serve-webui=true"'
     http = build_opener(ProxyHandler({}))
     log_path = work / "server.log"
     with log_path.open("w+b") as log:

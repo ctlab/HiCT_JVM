@@ -39,6 +39,9 @@ jobs:
       - name: Check copied POSIX tool command permissions
         if: runner.os != 'Windows'
         run: python3 scripts/portable/test_copied_tool_permissions.py
+      - name: Check packaged Windows launcher invocation
+        if: runner.os == 'Windows'
+        run: python scripts/portable/test_packaged_server.py
       - name: Compile full JVM, build fat JAR, and check edit/render contracts
         shell: bash
         run: >-
