@@ -56,7 +56,26 @@ def main():
                 assert submit.is_enabled(), (key,value)
             results.append({"field":key,"rejected":invalid,"accepted":valid})
         assert post("/convert/jobs/list", {}) == before_jobs
-        page.keyboard.press("Escape")
+        dialog.get_by_role("button", name="Dismiss", exact=True).click()
+        dialog.wait_for(state="hidden")
+        check.menu("Selection", "Select region by coordinates…")
+        edit = page.get_by_role("dialog", name="Select region by coordinates")
+        edit.get_by_text("Paste region", exact=True).click()
+        pasted = "Assembly coordinates (bp, 0-based, end excluded)\nRows\t1\t7\nColumns\t4\t16"
+        region = "window.__hictBenchmark.manager().viewAndLayersManager.getRegionBounds()"
+        original = page.evaluate(region)
+        edit.locator("#paste-region").fill("invalid heading")
+        apply = edit.get_by_role("button", name="Select region", exact=True)
+        assert apply.is_disabled() and page.evaluate(region)==original
+        edit.locator("#paste-region").fill(pasted)
+        assert edit.locator("#region-frame").input_value()=="assembly"
+        assert edit.locator("#region-convention").input_value()=="zero-based"
+        assert [edit.locator("#region-"+i).input_value() for i in ("row-start","row-end","column-start","column-end")] == ["1","7","4","16"]
+        assert page.evaluate(region)==original
+        apply.click()
+        actual = page.evaluate(region)
+        assert actual=={"rowStart":1,"rowEnd":7,"columnStart":4,"columnEnd":16}, actual
+        results.append({"paste":pasted,"previewPreserved":True,"selection":actual})
         post("/secondary/open", {"filename":"tiny-extrema.hict.hdf5"})
         for side, maximum in (("PRIMARY",11),("SECONDARY",83)):
             stats = post("/matrix/statistics", {"bpResolution":4, "startRowPx":0, "startColPx":0,

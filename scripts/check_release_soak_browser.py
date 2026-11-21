@@ -97,7 +97,7 @@ def main():
                     page.evaluate("""async () => {
                         const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
                         const color={type:'colormap',mode:'LINEAR',input:{type:'source',source:'PRIMARY'},
-                            minSignal:0,maxSignal:source==='SECONDARY'?1:1100,startColor:'#ffffffff',endColor:'#ff0000ff'};
+                            minSignal:0,maxSignal:1100,startColor:'#ffffffff',endColor:'#ff0000ff'};
                         await m.networkManager.requestManager.setRenderPipelineConfig({enabled:true,
                             swapUpperLower:false,upperExpression:color,lowerExpression:color});
                         await m.reloadTilesFromBackend();
@@ -161,11 +161,30 @@ def main():
                         const color=(source,shade)=>({type:'colormap',mode:'LINEAR',input:{type:'source',source},
                             minSignal:0,maxSignal:source==='SECONDARY'?1:1100,startColor:'#ffffff00',endColor:shade});
                         await requests.setRenderPipelineConfig({enabled:true,swapUpperLower:false,
-                            upperExpression:color('PRIMARY','#ff0000ff'),lowerExpression:color('SECONDARY','#0000ffff')});
+                            upperExpression:color('SECONDARY','#0000ffff'),lowerExpression:color('PRIMARY','#ff0000ff')});
                         await m.reloadTilesFromBackend();
                     }""", overlay_file)
                     warm_opens.append(time.monotonic()-warm_start)
                     result["warmAttachP95Seconds"] = percentile(warm_opens, 0.95)
+                    page.evaluate("""() => {
+                        const m=window.__hictBenchmark.manager(), l=m.viewAndLayersManager;
+                        l.restoreViewPosition({centerBp:[1000.5,1000.5], resolution:l.getPixelResolutionForBpResolution(1)});
+                        m.getMap().renderSync();
+                    }""")
+                    page.wait_for_function("""() => {
+                        const m=window.__hictBenchmark.manager(),l=m.viewAndLayersManager;
+                        const map=m.getMap(), center=map.getPixelFromCoordinate(m.getView().getCenter());
+                        return l.getNativeResolutionDescriptor('SECONDARY').bpResolution===1 &&
+                            l.layersHolder.secondaryHiCDataLayers.some(layer=> {
+                                if(!layer.getVisible()) return false;
+                                for (let y=-3; y<=3; y++) for(let x=-3; x<=3; x++) {
+                                    const rgba=layer.getData([center[0]+x,center[1]+y]);
+                                    if(rgba?.[3]>0 && rgba[2]>rgba[0]+20) return true;
+                                }
+                                return false;
+                            });
+                    }""")
+                    result["warmFinePaintSeconds"] = time.monotonic()-warm_start
                 page.get_by_role("link", name="View", exact=True).click()
                 page.get_by_role(
                     "link", name="Restrict Resolutions…", exact=True

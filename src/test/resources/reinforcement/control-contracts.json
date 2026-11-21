@@ -2012,9 +2012,10 @@
       "id": "control-38df190e125ba4b7",
       "historicalIndex": 196,
       "source": "src/app/ui/components/upper_ribbon/ModDotPlotModal.vue",
-      "anchor": "v-model=\"resolutions\"",
+      "anchor": "@change=\"toggleResolution(resolution, $event)\"",
+      "reviewedWebuiRevision": "b406308d71977686283a409023bbd46ef76fd04d",
       "prerequisites": "Analysis dialog, matching FASTA, supported local tool and disposable selected rectangle",
-      "expectedEffect": "Compute exactly the checked levels; an empty set is rejected.",
+      "expectedEffect": "The checkbox edits its own resolution and preserves custom entries. The job computes the requested analysis levels directly and records automatic overview levels separately. An empty analysis list disables generation.",
       "coverage": "inspected",
       "functionalCoverage": "pending"
     },

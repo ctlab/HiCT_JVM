@@ -20,6 +20,7 @@ def main():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        context.grant_permissions(["clipboard-read", "clipboard-write"], origin=args.url.rstrip("/"))
         errors = []
         page = context.new_page()
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
@@ -71,6 +72,12 @@ def main():
         citation = dialog.locator(".how-to-cite").inner_text()
         assert api_versions["version"] in citation and api_versions["backendRevision"] in citation and args.webui_commit in citation
         assert "Serdiukov" in citation and "Zamyatin" in citation
+        dialog.get_by_role("button", name="Copy citation", exact=True).click()
+        copied = page.evaluate("() => navigator.clipboard.readText()")
+        for part in (api_versions["version"], api_versions["backendRevision"], args.webui_commit):
+            assert part in copied, copied
+        machine = context.request.get(args.url.rstrip("/") + "/docs/CITATION.cff")
+        assert machine.ok and f"version: '{api_versions['version']}'" in machine.text()
         assert (
             dialog.get_by_role("link", name="Machine-readable software citation")
             .get_attribute("href")
@@ -109,7 +116,7 @@ def main():
                 {
                     "versions": versions,
                     "apiVersions": api_versions,
-                    "citation": citation,
+                    "citation": copied,
                     "guide": guide_href,
                     "mailTargets": mail_targets,
                     "tabs": ["About", "Attribution", "Changelog"],

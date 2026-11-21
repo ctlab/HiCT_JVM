@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from PIL import Image
+from PIL import Image, ImageChops
 from playwright.sync_api import sync_playwright
 from sequence_browser_harness import BrowserCheck, install_download_picker
 
@@ -192,7 +192,14 @@ def main():
                 "button", name="Generate ModDotPlot", exact=True
             ).is_disabled()
             sizes.fill("37, 50")
-            dialog.get_by_label("Analysis scope").select_option("selection")
+            dialog.get_by_label("Analysis scope").select_option("assembly")
+            recovery = dialog.get_by_role("button", name="Use current rectangle", exact=True)
+            recovery.wait_for()
+            assert dialog.get_by_text("Budget exceeded at", exact=False).is_visible()
+            recovery.click()
+            assert sizes.input_value() == "37, 50"
+            dialog.get_by_text("Estimated storage", exact=False).wait_for()
+            assert dialog.get_by_label("Analysis scope").input_value() == "selection"
             dialog.get_by_label("Display completed result").select_option("below")
             if not dialog.get_by_label("Worker threads", exact=True).is_visible():
                 dialog.get_by_text("Advanced", exact=True).click()
@@ -306,6 +313,25 @@ def main():
             reverse = seq.translate(str.maketrans("ACGT", "TGCA"))[::-1]
             assert request("/sequence/region", {"startBp":length-435840,"endBp":length-435830})["sequence"] == reverse
             observe("dotplot", levels, 1000, 1, (length-1-439080,length-1-435835), "reversed", letters=True)
+            # Export the same fixed viewport with the known lower-triangle
+            # alignment visible and then assigned to the opposite triangle.
+            exported = []
+            for triangle in ("below", "above"):
+                page.get_by_label("Sequence overlay view").select_option(triangle)
+                check.settle()
+                with page.expect_download(timeout=90000) as delivery:
+                    page.evaluate("""()=>window.__hictBenchmark.manager().exportCurrentMapPng(
+                        undefined,{scope:'viewport',cropToMap:true})""")
+                filename = out / f"reversed-{triangle}-export.png"
+                delivery.value.save_as(filename)
+                with Image.open(filename) as figure:
+                    exported.append(figure.convert("RGB"))
+            assert exported[0].size == exported[1].size
+            width,height = exported[0].size
+            interior = (width//4,height//4,3*width//4,3*height//4)
+            changed = ImageChops.difference(*exported).crop(interior).getbbox()
+            assert changed, "The lower-triangle landmark disappeared from the figure export"
+            checks.append({"exportPixels":list(exported[0].size),"interiorDifferenceBounds":list(changed)})
             fetched_native = {(v.get("source"),v.get("bpResolution"),v.get("sequenceScale")) for v in fetched}
             assert {("PRIMARY","1000","true"),("SECONDARY","1","true")} <= fetched_native
             assert any(s=="SECONDARY" and int(bp or 0)>=1000 for s,bp,_ in fetched_native)
