@@ -246,6 +246,10 @@ def main():
                 ["--file", "structural.hict.hdf5"],
             )
             stage("fine-overlay", "check_fine_sequence_overlay_browser.py", [])
+            stage("legacy-overview", "check_legacy_overview_browser.py", [
+                "--data-dir", str(data),
+                "--session", str(out / "fine-overlay/fine-overlay-session.json"),
+            ])
             stage("boundaries", "check_release_boundaries.py", ["--data-dir", str(data)])
             stage("structural", "check_structural_edits_browser.py", [])
             stage("incomplete-open", "check_incomplete_map_browser.py", [])
