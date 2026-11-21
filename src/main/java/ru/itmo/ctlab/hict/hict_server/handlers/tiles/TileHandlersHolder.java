@@ -2573,7 +2573,8 @@ public class TileHandlersHolder extends HandlersHolder {
     final long lastRow = Math.min(visible, rowEnd);
     final long lastCol = Math.min(visible, colEnd);
     if (lastRow <= firstRow || lastCol <= firstCol || isSequenceOnly(source)) return null;
-    final var reducer = switch (source.getSourceMetadata().units()) {
+    final var reducer = source.getAlignmentPresenceLevels().contains(source.getResolutions()[nativeLevel.getResolutionOrderInArray()])
+      ? ProjectedMatrix.Reducer.PRESENCE : switch (source.getSourceMetadata().units()) {
       case IDENTITY_PERCENT -> ProjectedMatrix.Reducer.IDENTITY;
       case ALIGNMENT_PRESENCE -> ProjectedMatrix.Reducer.PRESENCE;
       default -> ProjectedMatrix.Reducer.COUNTS;

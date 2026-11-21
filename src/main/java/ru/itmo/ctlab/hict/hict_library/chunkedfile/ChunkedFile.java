@@ -80,6 +80,7 @@ public class ChunkedFile implements AutoCloseable {
 
   private final @NotNull Path hdfFilePath;
   private final @NotNull SourceMetadata sourceMetadata;
+  private final java.util.Set<Long> alignmentPresenceLevels;
   private final @org.jetbrains.annotations.Nullable ApproximationProvenance.Summary approximationProvenance;
   //  private final long[] blockCount;
   private final int denseBlockSize;
@@ -162,6 +163,10 @@ public class ChunkedFile implements AutoCloseable {
       }
 
       this.resolutions = LongStream.concat(LongStream.of(0L), effectiveResolutions.stream().mapToLong(Long::longValue)).sorted().toArray();
+      this.alignmentPresenceLevels = effectiveResolutions.stream().filter(bp -> {
+        var root = "/resolutions/" + bp;
+        return reader.object().hasAttribute(root, "method") && "any_alignment".equals(reader.string().getAttr(root, "method"));
+      }).collect(java.util.stream.Collectors.toUnmodifiableSet());
       this.sourceMetadata = SourceMetadata.read(reader, effectiveResolutions);
       this.approximationProvenance = ApproximationProvenance.read(reader, effectiveResolutions);
 

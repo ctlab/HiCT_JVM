@@ -54,7 +54,9 @@ def main():
         page.get_by_role("link", name="Help", exact=True).click()
         guide = page.get_by_role("link", name="User guide and shortcuts", exact=True)
         guide_href = guide.get_attribute("href")
-        assert guide_href.endswith("/docs/user-guide.md")
+        assert guide_href == "./docs/user-guide.md"
+        guide_text = context.request.get(args.url.rstrip("/") + "/docs/user-guide.md").text()
+        assert "## Keyboard and pointer actions" in guide_text
         page.get_by_role("link", name="About", exact=True).click()
         dialog = page.get_by_role("dialog", name="About HiCT")
         dialog.get_by_role("heading", name="How to cite", exact=True).wait_for()
@@ -67,7 +69,7 @@ def main():
         assert f"Commit: {args.webui_commit}" in versions.splitlines(), versions
         assert "unknown" not in versions and "loading" not in versions, versions
         citation = dialog.locator(".how-to-cite").inner_text()
-        assert args.webui_version in citation and args.webui_commit in citation
+        assert api_versions["version"] in citation and api_versions["backendRevision"] in citation and args.webui_commit in citation
         assert "Serdiukov" in citation and "Zamyatin" in citation
         assert (
             dialog.get_by_role("link", name="Machine-readable software citation")

@@ -33,6 +33,7 @@ def main():
         default=[],
         help="Physically copy a map into disposable DATA",
     )
+    parser.add_argument("--borrelia-dir", required=True, type=Path, help="Prepared Borrelia example directory")
     parser.add_argument("--webui-commit", required=True)
     parser.add_argument(
         "--browser-python",
@@ -99,6 +100,8 @@ def main():
 
     with h5py.File(data / "incomplete.hict.hdf5", "w") as partial:
         partial.create_dataset("resolutions/100000/treap_coo/block_length", data=[1])
+    for filename in ("borrelia.hict.hdf5", "borrelia-matching.fa"):
+        shutil.copyfile(args.borrelia_dir / filename, data / filename)
     names = ["mixed-primary.hict.hdf5"]
     inputs = []
     for source in map(Path, args.source_map):
@@ -239,6 +242,7 @@ def main():
                 "check_menu_surfaces_browser.py",
                 ["--file", "structural.hict.hdf5"],
             )
+            stage("fine-overlay", "check_fine_sequence_overlay_browser.py", [])
             stage("structural", "check_structural_edits_browser.py", [])
             stage("incomplete-open", "check_incomplete_map_browser.py", [])
             stage("offline", "check_offline_browser.py", [])

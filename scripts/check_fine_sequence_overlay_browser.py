@@ -4,12 +4,13 @@
 import argparse
 import io
 import json
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from PIL import Image
 from playwright.sync_api import sync_playwright
-from sequence_browser_harness import BrowserCheck
+from sequence_browser_harness import BrowserCheck, install_download_picker
 
 
 def main():
@@ -27,6 +28,7 @@ def main():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900})
+        install_download_picker(page)
         page.set_default_timeout(30000)
         page.add_init_script("window.__HICT_BENCHMARK_ENABLED__=true")
         page.route(
@@ -79,6 +81,7 @@ def main():
             state = request("/secondary/status", {})
             actual = sorted(state["compatibility"]["secondaryResolutions"])
             assert state["attached"] and actual == numeric_levels, state
+            started = time.monotonic()
             descriptors = zoom(expected, position)
             assert descriptors["primary"]["bpResolution"] == 1000, descriptors
             assert descriptors["secondary"]["bpResolution"] == expected, descriptors
@@ -110,6 +113,7 @@ def main():
             checks.append(
                 {
                     "tool": kind,
+                    "warmNavigationSeconds": time.monotonic()-started,
                     "stored": actual,
                     "primary": 1000,
                     "visible": expected,
@@ -159,7 +163,10 @@ def main():
             sizes.fill("50")
             dialog.get_by_label("Analysis scope").select_option("selection")
             dialog.get_by_label("Display completed result").select_option("below")
+            if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                dialog.get_by_text("Advanced", exact=True).click()
             dialog.get_by_label("Worker threads").fill("2")
+            cold_start = time.monotonic()
             with page.expect_response(
                 lambda r: (
                     "/sequence/moddotplot/jobs" in r.url and r.request.method == "POST"
@@ -171,11 +178,19 @@ def main():
             assert submitted.value.ok, submitted.value.text()
             assert submitted.value.request.post_data_json["resolutions"] == [50]
             dialog.wait_for(state="hidden", timeout=180000)
-            zoom(2000, 617000)
-            zoom_hint = page.get_by_text("Zoom in to see the fine overlay.", exact=True)
-            zoom_hint.wait_for()
-            observe("moddotplot", [50], 20, 50, 617000, "below")
-            zoom_hint.wait_for(state="hidden")
+            checks.append({"job": submitted.value.json()["jobId"], "generationAndAttachmentSeconds": time.monotonic()-cold_start})
+            native = request("/secondary/status", {})["compatibility"]["primaryResolutions"]
+            def pyramid(requested):
+                anchors = sorted(set(requested) | {r for r in native if r > min(requested)})
+                levels = [anchors[0]]
+                for anchor in anchors[1:]:
+                    while anchor > 4*levels[-1]:
+                        levels.append(4*levels[-1])
+                    levels.append(anchor)
+                return levels
+            overview = pyramid([50])
+            observe("moddotplot", overview, 1, 1000, 617000, "below")
+            observe("moddotplot", overview, 20, 50, 617000, "below")
             select(616750, 617350)
             check.menu("Tools", "Generate dotplot from active assembly…")
             dialog = page.get_by_role(
@@ -189,6 +204,7 @@ def main():
             dialog.get_by_label("Display completed result").select_option("above")
             dialog.get_by_text("Advanced", exact=True).click()
             dialog.get_by_label("Sample every (bp)", exact=True).fill("1")
+            cold_start = time.monotonic()
             with page.expect_response(
                 lambda r: (
                     "/sequence/dotplot/jobs" in r.url and r.request.method == "POST"
@@ -204,11 +220,23 @@ def main():
                 1000,
             ]
             dialog.wait_for(state="hidden", timeout=180000)
-            observe("dotplot", [1, 50, 1000], 1000, 1, 617000, "above")
-            page.get_by_label("Sequence overlay view").select_option("overlay")
-            page.get_by_label("Sequence overlay view").wait_for()
-            check.settle()
-            observe("dotplot", [1, 50, 1000], 1000, 1, 617000, "overlay")
+            checks.append({"job": submitted.value.json()["jobId"], "generationAndAttachmentSeconds": time.monotonic()-cold_start})
+            levels = pyramid([1, 50, 1000])
+            for mode in ("above", "overlay", "below"):
+                page.get_by_label("Sequence overlay view").select_option(mode)
+                for expected, sample in ((1000, 1), (1, 1000), (1000, 1)):
+                    observe("dotplot", levels, sample, expected, 617000, mode)
+            with page.expect_download() as download:
+                check.menu("File", "Save session")
+            saved = out/"fine-overlay-session.json"
+            download.value.save_as(saved)
+            check.menu("File", "Close")
+            page.get_by_role("heading", name="No contact map open").wait_for()
+            with page.expect_file_chooser() as chosen:
+                check.menu("File", "Open session")
+            chosen.value.set_files(saved)
+            page.get_by_text("Session restored. Undo history starts from the restored assembly.").wait_for()
+            observe("dotplot", levels, 1, 1000, 617000, "restored")
             assert not errors and not tile_failures, (errors, tile_failures)
         finally:
             (out / "results.json").write_text(

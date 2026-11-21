@@ -23,12 +23,35 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
   public record ResourceEstimate(long windows, long cells, long outputBytes) { }
   public AssemblyAnalysisPlan { levels = List.copyOf(levels); }
 
+  public static List<Long> pyramidLevels(List<Long> requested, long[] primaryLevels) {
+    var anchors = new TreeSet<>(requested);
+    long finest = anchors.first();
+    if (finest <= 0) throw new IllegalArgumentException("Resolution must be positive");
+    for (long bp : primaryLevels) if (bp > finest) anchors.add(bp);
+    var levels = new ArrayList<Long>();
+    long current = finest;
+    for (long anchor : anchors) {
+      while (current <= (anchor - 1) / 4) {
+        current *= 4;
+        levels.add(current);
+      }
+      levels.add(anchor);
+      current = anchor;
+    }
+    return List.copyOf(levels);
+  }
+
   /**
    * Upper bound before materializing windows. Each nonzero stores three int64s.
    * Power-of-two capacities can retain less than four times the final entries
    * across successive rewrites, with a 64-entry minimum per physical block.
    */
   public static ResourceEstimate estimate(ChunkedFile map, List<Long> resolutions, Region rows, Region columns) {
+    return estimate(map, resolutions, rows, columns, (bp, estimate) -> {});
+  }
+
+  public static ResourceEstimate estimate(ChunkedFile map, List<Long> resolutions, Region rows, Region columns,
+      java.util.function.BiConsumer<Long, ResourceEstimate> levelEstimate) {
     final var tuples = map.getAssemblyInfo().contigs();
     final long length = tuples.stream().mapToLong(t -> t.descriptor().getLengthBp()).reduce(0, Math::addExact);
     if (rows.end > length || columns.end > length) throw new IllegalArgumentException("Selection outside active assembly");
@@ -45,7 +68,7 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
           .mapToLong(d -> Math.ceilDiv(d.getLengthBp(), bp)).reduce(0, Math::addExact);
         syntheticBins = Math.addExact(syntheticBins, bins);
         if (syntheticBins > MAX_SYNTHETIC_BINS) {
-          throw new IllegalArgumentException("Custom resolutions need more than " + MAX_SYNTHETIC_BINS
+          throw new IllegalArgumentException("At " + bp + " bp, custom resolutions need more than " + MAX_SYNTHETIC_BINS
             + " source bins. Choose a coarser resolution or open a smaller assembly.");
         }
         stripes = Math.ceilDiv(bins, SEQUENCE_STRIPE_WIDTH);
@@ -65,6 +88,7 @@ public record AssemblyAnalysisPlan(AssemblySequenceSnapshot sequence, List<Level
       windows = Math.addExact(windows, Math.addExact(rowBins, colBins));
       cells = Math.addExact(cells, levelCells);
       outputBytes = Math.addExact(outputBytes, bytes);
+      levelEstimate.accept(bp, new ResourceEstimate(windows, cells, outputBytes));
     }
     return new ResourceEstimate(windows, cells, outputBytes);
   }

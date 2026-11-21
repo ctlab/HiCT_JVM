@@ -52,11 +52,6 @@ on:
         required: true
         default: "v1.2"
         type: string
-      webui_ref:
-        description: "HiCT_WebUI branch/tag/ref to bundle; use same-as-jvm to match the selected HiCT_JVM branch"
-        required: true
-        default: "same-as-jvm"
-        type: string
       create_windows_exe:
         description: "Create portable single-file Windows EXE in addition to portable ZIP"
         required: true
@@ -143,7 +138,6 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
-  REQUESTED_WEBUI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.webui_ref || (startsWith(github.ref_name, 'fix/') && 'jvm-sfx-native') || 'same-as-jvm' }}
   HICT_JHDF5_REPO: "AxisAlexNT/jhdf5-with-plugins-configuration-snapshot"
   HICT_JHDF5_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.jhdf5_ref || 'jhdf5-with-plugins-configuration-snapshot' }}
   HICT_JHDF5_JAR_NAME: "sis-jhdf5-19.04.1-slim.jar"
@@ -173,11 +167,9 @@ jobs:
         run: |
           set -euo pipefail
           args=(--repo https://github.com/ctlab/HiCT_WebUI.git --root "${RUNNER_TEMP}/webui")
-          if [[ "${REQUESTED_WEBUI_REF,,}" == "same-as-jvm" ]]; then
-            args+=(--ref "${GITHUB_REF_NAME}" --fallback master)
-          else
-            args+=(--ref "${REQUESTED_WEBUI_REF}")
-          fi
+          pin="$(cat webui-revision.txt)"
+          [[ "$pin" =~ ^[0-9a-f]{40}$ ]]
+          args+=(--ref "$pin")
           checkout="$(node scripts/portable/checkout_webui.mjs "${args[@]}")"
           echo "commit=$(git -C "${checkout}" rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
       - name: Pin the upstream toolchain commits for all platform jobs
@@ -1985,6 +1977,9 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Verify tested WebUI against the release source
+        run: test "${HICT_WEBUI_REF}" = "$(cat webui-revision.txt)"
 
       - name: Assign run-specific release version
         run: |

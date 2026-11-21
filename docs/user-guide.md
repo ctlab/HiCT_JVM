@@ -40,6 +40,9 @@ removes ordinary border clutter; selected entity borders remain highlighted.
 Use **Selection → Copy selection coordinates** for assembly positions you can
 paste into notes or a spreadsheet. Positions are one-based and inclusive.
 For a rectangle, the copied text gives the row and column bounds separately.
+In the coordinate editor, expand **Paste region** and paste the whole text,
+including its heading. Review the frame, convention and both axes before
+choosing **Select region**. A copied entity interval sets both axes.
 Use **Selection → Copy selection as PNG** to paste the selected rectangle into
 another application. Both actions are also available by right-clicking inside
 the rectangle. If your browser blocks image clipboard writes, choose
@@ -159,6 +162,14 @@ FASTA changes clear it, and transient measurements are not saved in sessions.
 See [the method and limitations](repeat-measurement.md).
 
 Tools offers sequence search, alignment dotplots and ModDotPlot identity maps.
+The generation dialog lists each requested analysis level, the automatic overview
+levels, the selected spans and estimated storage. Each requested level runs the
+chosen analysis. Overviews summarize finer positive identity scores by overlap area
+or record alignment presence. Both the original scores and their coverage remain
+in the saved matrix. Use **Advanced** for worker and scaffold separator settings.
+For an attached fine-only layer that exceeds the tile read budget, open its overview
+job and use the completed cache as the secondary source.
+
 Exact and substitution searches use SeqKit. BLAST uses the bundled BLAST+ tools.
 **Tools → Search NCBI databases…** offers an explicit remote search without a
 linked FASTA or contact map. It requires consent to upload the pasted queries and

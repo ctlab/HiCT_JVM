@@ -37,6 +37,14 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
 
   public List<BackgroundJob> backgroundJobs() {
     return jobs.values().stream().map(job -> {
+      if (job.kind.equals("overview-cache")) {
+        var status = job.statusJson();
+        var logs = status.getJsonArray("logs");
+        return new BackgroundJob(job.id, job.kind, job.state, job.state.equals("finished") ? 1.0 : null,
+          job.created, null, job.finished, logs.isEmpty() ? job.state : logs.getString(logs.size()-1), job.error,
+          job.output == null ? List.of() : List.of(new BackgroundJob.Output(job.output, "attach_overview", null, null, job.mapFilename)),
+          new BackgroundJob.Details("Overlay overview cache", null, null, job.request.getString("sourceFilename")));
+      }
       if (job.kind.equals("remote_blast")) return new BackgroundJob(job.id, job.kind, job.state,
         job.state.equals("finished") ? 1.0 : null, job.created, null, job.finished,
         job.state.equals("running") ? "Waiting for NCBI results. Cancel stops HiCT waiting; a submitted search may continue at NCBI." : job.state,
@@ -67,6 +75,14 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
   }
 
   @Override public void addHandlersToRouter(Router router) {
+    router.post("/sequence/overview/jobs").handler(ctx -> {
+      var shared = vertx.sharedData().getLocalMap("hict_server");
+      var scheduler = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
+      if (scheduler == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
+      scheduler.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
+        () -> submitOverview(ctx.body().asJsonObject()), result -> ctx.response()
+          .putHeader("content-type", "application/json").end(result.encode()));
+    });
     router.post("/sequence/repeat_period").handler(ctx -> {
       final var shared = vertx.sharedData().getLocalMap("hict_server");
       final var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) shared.get(RequestTaskScheduler.LOCAL_MAP_KEY);
@@ -157,13 +173,14 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         } catch (IllegalArgumentException invalid) { throw new HttpException(400, invalid.getMessage()); }
       }, result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(202).end(result.encode()));
     });
-    for (String kind : List.of("moddotplot", "dotplot")) router.post("/sequence/" + kind + "/jobs").handler(ctx -> {
+    for (String kind : List.of("moddotplot", "dotplot")) for (String action : List.of("jobs", "estimate"))
+      router.post("/sequence/" + kind + "/" + action).handler(ctx -> {
       var wrapper = (ShareableWrappers.RequestTaskSchedulerWrapper) vertx.sharedData().getLocalMap("hict_server")
         .get(RequestTaskScheduler.LOCAL_MAP_KEY);
       if (wrapper == null) { ctx.fail(new IllegalStateException("Request scheduler is not initialized")); return; }
       wrapper.getRequestTaskScheduler().submit(ctx, RequestTaskScheduler.RequestPriority.ASSEMBLY, null,
-        () -> submitOverlay(ctx.body().asJsonObject(), kind.equals("dotplot")),
-        result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(202).end(result.encode()));
+        () -> submitOverlay(ctx.body().asJsonObject(), kind.equals("dotplot"), action.equals("estimate")),
+        result -> ctx.response().putHeader("content-type", "application/json").setStatusCode(action.equals("estimate") ? 200 : 202).end(result.encode()));
     });
     router.post("/sequence/jobs/list").handler(ctx -> ctx.response().putHeader("content-type", "application/json")
       .end(new JsonArray(jobs.values().stream().sorted(Comparator.comparingLong(j -> j.created))
@@ -622,7 +639,92 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
     }
   }
 
-  private JsonObject submitOverlay(JsonObject request, boolean alignment) throws Exception {
+  private JsonObject submitOverview(JsonObject request) throws Exception {
+    var shared = vertx.sharedData().getLocalMap("hict_server");
+    var left = (ShareableWrappers.ChunkedFileWrapper) shared.get("chunkedFile");
+    var right = (ShareableWrappers.ChunkedFileWrapper) shared.get("chunkedFileSecondary");
+    if (left == null || right == null || request == null ||
+        !Objects.equals(request.getString("sourceFilename"), shared.get("openedSecondaryFilename")))
+      throw new HttpException(409, "The attached overlay changed.");
+    var secondary = right.getChunkedFile();
+    var direct = Arrays.stream(secondary.getResolutions()).filter(bp -> bp > 0).boxed().toList();
+    var extra = AssemblyAnalysisPlan.pyramidLevels(direct, left.getChunkedFile().getResolutions()).stream()
+      .filter(bp -> !direct.contains(bp)).toList();
+    if (extra.isEmpty()) throw new HttpException(409, "The attached overlay already has overview levels.");
+    var data = ((ShareableWrappers.PathWrapper) shared.get("dataDirectory")).getPath().toRealPath();
+    var source = secondary.getHdfFilePath().toRealPath();
+    var template = left.getChunkedFile().getHdfFilePath().toRealPath();
+    var tool = SequenceToolAvailability.require("hict-moddotplot");
+    var sourceStamp = Stamp.read(source);
+    var templateStamp = Stamp.read(template);
+    var unit = switch (secondary.getSourceMetadata().units()) {
+      case IDENTITY_PERCENT -> "identity_percent";
+      case ALIGNMENT_PRESENCE, ALIGNMENT_SAMPLE_COUNT -> "alignment_presence";
+      default -> "counts";
+    };
+    var key = sequenceSha256(source + "|" + sourceStamp + "|" + template + "|" + templateStamp + "|" + extra + "|" + Stamp.read(tool));
+    var root = data.resolve("processed/sequence-analysis");
+    Files.createDirectories(root);
+    if (!root.toRealPath().startsWith(data)) throw new HttpException(400, "Cache must remain inside DATA_DIR");
+    var cache = root.resolve("overview-" + key + ".hict.hdf5");
+    for (var job : jobs.values())
+      if (key.equals(job.request.getString("cacheKey")) && (job.finished == 0 ||
+          ("finished".equals(job.state) && Files.isRegularFile(cache)))) return job.statusJson();
+    var id = UUID.randomUUID().toString();
+    var dir = Files.createDirectory(root.resolve(id));
+    var job = new Job(id, dir, data, new AssemblySequenceSnapshot(List.of()), request.copy().put("cacheKey", key),
+      String.valueOf(shared.get("openedFilename")), "overview-cache");
+    jobs.put(id, job);
+    if (Files.isRegularFile(cache)) {
+      job.output = data.relativize(cache).toString().replace('\\', '/');
+      job.state = "finished"; job.finished = System.currentTimeMillis(); job.save();
+      trimCompletedJobs();
+      return job.statusJson();
+    }
+    var plan = new JsonObject().put("kind", job.kind).put("source", source.toString()).put("template", template.toString())
+      .put("unit", unit).put("directLevels", new JsonArray(direct)).put("overviewLevels", new JsonArray(extra));
+    try { workers.execute(() -> {
+      var pending = dir.resolve("overview.pending");
+      job.thread = Thread.currentThread();
+      try (var log = Files.newBufferedWriter(dir.resolve("job.log"))) {
+        job.checkCancelled(); job.logWriter = log; job.state = "running"; job.save();
+        if (Files.size(source) > Files.getFileStore(root).getUsableSpace()/2)
+          throw new IOException("Insufficient space for the overview cache");
+        sourceStamp.check(source); templateStamp.check(template);
+        var file = dir.resolve("analysis-plan.json");
+        Files.writeString(file, plan.put("output", pending.toString()).encode());
+        runAdapter(job, tool, file);
+        sourceStamp.check(source); templateStamp.check(template);
+        verifyLevels(pending, extra);
+        synchronized (job) {
+          job.checkCancelled();
+          Files.move(pending, cache, StandardCopyOption.ATOMIC_MOVE);
+          job.output = data.relativize(cache).toString().replace('\\', '/');
+          job.state = "finished"; job.finished = System.currentTimeMillis();
+        }
+      } catch (Exception failure) {
+        job.state = job.cancelled.get() ? "cancelled" : "failed";
+        if (!job.cancelled.get()) job.error = failure.getMessage();
+      } finally {
+        job.finished = System.currentTimeMillis(); job.thread = null; job.logWriter = null;
+        try { Files.deleteIfExists(pending); job.save(); } catch (IOException e) { job.log(e.getMessage()); }
+        trimCompletedJobs(); Thread.interrupted();
+      }
+    }); } catch (RejectedExecutionException full) { jobs.remove(id); throw new HttpException(429, "Sequence analysis queue is full"); }
+    return job.statusJson();
+  }
+
+  private static void verifyLevels(Path output, List<Long> overviews) throws IOException {
+    if (!Files.isRegularFile(output)) throw new IOException("The adapter did not create its output");
+    if (overviews.isEmpty()) return;
+    try (var reader = ch.systemsx.cisd.hdf5.HDF5Factory.openForReading(output.toFile())) {
+      for (long bp : overviews)
+        if (!reader.object().hasAttribute("/resolutions/" + bp, "source_resolution"))
+          throw new IOException("The adapter did not generate the " + bp + " bp overview. Check the installed sequence tool version.");
+    }
+  }
+
+  private JsonObject submitOverlay(JsonObject request, boolean alignment, boolean preview) throws Exception {
     if (request == null || !(request.getValue("scope") instanceof String) || !(request.getValue("mergeCompatible") instanceof Boolean))
       throw new HttpException(400, "Choose analysis scope and whether to accumulate compatible regions");
     JsonObject settings;
@@ -680,13 +782,24 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         rows = new AssemblyAnalysisPlan.Region(bounds.getLong("rowStart"), bounds.getLong("rowEnd"));
         columns = new AssemblyAnalysisPlan.Region(bounds.getLong("columnStart"), bounds.getLong("columnEnd"));
       } else throw new IllegalArgumentException("Unknown analysis scope");
-      estimate = AssemblyAnalysisPlan.estimate(map, resolutions, rows, columns);
-      // Window objects and their serialized form coexist during planning. The
-      // identity worker also retains one 64-bit sketch per active window.
+      var primary = (ShareableWrappers.ChunkedFileWrapper) shared.get("chunkedFile");
+      var pyramid = AssemblyAnalysisPlan.pyramidLevels(resolutions, primary.getChunkedFile().getResolutions());
+      var overview = pyramid.stream().filter(bp -> !resolutions.contains(bp)).toList();
+      var cost = new JsonObject().put("requestedLevels", new JsonArray(resolutions))
+        .put("overviewLevels", new JsonArray(overview)).put("rowBp", rows.end()-rows.start())
+        .put("columnBp", columns.end()-columns.start());
       final long bytesPerWindow = 256L + (alignment ? 0L : Long.BYTES * settings.getInteger("sketch_size"));
-      if (estimate.windows() > memoryBudget / bytesPerWindow || estimate.outputBytes() > diskBudget) {
-        throw new HttpException(413, "This analysis exceeds the memory or disk budget. Select a smaller region or fewer resolutions.");
-      }
+      estimate = AssemblyAnalysisPlan.estimate(map, pyramid, rows, columns, (bp, cumulative) -> {
+        if (!cost.containsKey("limitingLevel") &&
+            (cumulative.windows() > memoryBudget / bytesPerWindow || cumulative.outputBytes() > diskBudget))
+          cost.put("limitingLevel", bp);
+      });
+      cost.put("estimatedBytes", estimate.outputBytes());
+      if (preview) return cost;
+      if (cost.containsKey("limitingLevel"))
+        throw new HttpException(413, "The analysis exceeds the memory or disk budget at " +
+          cost.getLong("limitingLevel") + " bp. Select a smaller region or fewer resolutions.");
+      request.put("overviewLevels", new JsonArray(overview));
       analysis = AssemblyAnalysisPlan.capture(map, resolutions, rows, columns);
     } catch (ArithmeticException overflow) {
       throw new HttpException(413, "This analysis is too large. Select a smaller region or fewer resolutions.");
@@ -756,7 +869,7 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       }
 
       var keyText = template + "|" + templateStamp + "|" + sourceIdentity + "|" + settings.encode()
-        + "|" + gapPolicy + "|" + analysis.levels().stream().map(AssemblyAnalysisPlan.Level::resolution).toList() + "|" + job.kind + "|" + job.toolSha256 + "|" + (aligner == null ? "1616ae94" : sha256(aligner));
+        + "|" + gapPolicy + "|" + job.request.getJsonArray("overviewLevels").encode() + "|" + analysis.levels().stream().map(AssemblyAnalysisPlan.Level::resolution).toList() + "|" + job.kind + "|" + job.toolSha256 + "|" + (aligner == null ? "1616ae94" : sha256(aligner));
       String key = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(keyText.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
       var registry = job.directory.getParent().resolve("overlay-" + key + ".json");
       Path previous = null;
@@ -780,23 +893,16 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
         .put("input", input.toString()).put("inputOffset", layout.padded(start, true)).put("inputLength", layout.padded(end, false) - layout.padded(start, true))
         .put("sequenceLength", layout.length()).put("sourceFastaIdentity", sourceIdentity)
         .put("inputSha256", job.inputSha256).put("snapshot", analysis.sequence().fingerprint())
-        .put("sourceFragments", fragmentsJson(analysis.sequence())).put("levels", levels);
+        .put("sourceFragments", fragmentsJson(analysis.sequence())).put("levels", levels)
+        .put("overviewLevels", job.request.getJsonArray("overviewLevels"));
       if (previous != null) plan.put("previous", previous.toString());
       var planFile = job.directory.resolve("analysis-plan.json"); Files.writeString(planFile, plan.encodePrettily(), StandardOpenOption.CREATE_NEW);
       job.log("Dotplots use source-bin anchored windows in the captured active assembly. Existing scores move with edits; changed joins are not silently recomputed.");
       job.log(previous == null ? "Creating a separate overlay version" : "Accumulating compatible regions; reclaiming the superseded matrix after successful publication and detach");
       job.state = "running"; job.save();
       long timer = System.nanoTime();
-      var process = new ProcessBuilder(executable.toString(), "--plan", planFile.toString()).redirectErrorStream(true).start();
-      job.process = process;
-      try {
-        job.checkCancelled();
-        try (var lines = new BufferedReader(new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-          for (String line; (line = lines.readLine()) != null;) { job.checkCancelled(); job.log(line); }
-        }
-        int code = process.waitFor();
-        if (code != 0) throw new IOException("Dotplot adapter exited with code " + code + "; see job log");
-      } finally { if (process.isAlive()) ProcessTree.stop(process); }
+      runAdapter(job, executable, planFile);
+      verifyLevels(output, job.request.getJsonArray("overviewLevels").stream().map(n -> ((Number)n).longValue()).toList());
       stamp.check(fasta); templateStamp.check(template); job.checkCancelled();
       if (!Files.isRegularFile(output)) throw new IOException("Dotplot did not create its sidecar");
       job.elapsedNs = System.nanoTime() - timer;
@@ -823,6 +929,18 @@ public final class SequenceAnalysisHandlersHolder extends HandlersHolder impleme
       trimCompletedJobs();
       Thread.interrupted();
     }
+  }
+  private static void runAdapter(Job job, Path executable, Path planFile) throws Exception {
+    var process = new ProcessBuilder(executable.toString(), "--plan", planFile.toString()).redirectErrorStream(true).start();
+      job.process = process;
+      try {
+        job.checkCancelled();
+        try (var lines = new BufferedReader(new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+          for (String line; (line = lines.readLine()) != null;) { job.checkCancelled(); job.log(line); }
+        }
+        int code = process.waitFor();
+        if (code != 0) throw new IOException("Dotplot adapter exited with code " + code + "; see job log");
+      } finally { if (process.isAlive()) ProcessTree.stop(process); job.process = null; }
   }
   private void trimCompletedJobs() {
     jobs.values().stream().filter(j -> j.finished > 0).sorted(Comparator.comparingLong((Job j) -> j.finished).reversed())

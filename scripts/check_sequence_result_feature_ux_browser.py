@@ -143,6 +143,8 @@ def main():
             assert dialog.locator("#dotplot-display").input_value() == "below"
             dialog.get_by_label("Analysis scope", exact=True).select_option("selection")
             assert dialog.locator("#dotplot-display").input_value() == "overlay"
+            if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                dialog.get_by_text("Advanced", exact=True).click()
             dialog.get_by_label("Worker threads", exact=True).fill("2")
             with page.expect_response(
                 lambda response: response.url.endswith("/sequence/moddotplot/jobs")

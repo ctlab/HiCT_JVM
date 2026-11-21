@@ -120,13 +120,15 @@ def _create_empty(source, dest, resolutions):
 
 class OverlayWriter:
     """Append bounded physical-block patches to a never-before-existing file."""
-    def __init__(self, source_path, output_path, resolutions, settings, previous=None, unit='identity_percent', scale=SCALE):
+    def __init__(self, source_path, output_path, resolutions, settings, previous=None, unit='identity_percent', scale=SCALE, overviews=()):
         self.path = Path(output_path)
         self.handle = None
         if unit not in ('identity_percent', 'alignment_sample_count') or scale < 1:
             raise ValueError('Unsupported overlay score unit/scale')
         self.unit, self.scale = unit, scale
-        self.resolutions = sorted(set(map(int, resolutions)))
+        self.direct = sorted(set(map(int, resolutions)))
+        self.overviews = sorted(set(overviews) - set(self.direct))
+        self.resolutions = sorted(self.direct + self.overviews)
         if not self.resolutions or any(r <= 0 for r in self.resolutions):
             raise ValueError('Choose positive map resolutions')
         # h5py mode x makes accidental overwrite impossible, even after a race.
@@ -134,6 +136,8 @@ class OverlayWriter:
             identity = _metadata_digest(source, self.resolutions)
             compatibility = dict(schema=SCHEMA, sourceMetadataSha256=identity,
                                  resolutions=self.resolutions, settings=settings, scale=scale, unit=unit)
+            if self.overviews:
+                compatibility["analysisLevels"] = self.direct
             self.compatibility = canonical_json(compatibility)
             if previous:
                 with h5py.File(previous, 'r') as old:
@@ -158,13 +162,14 @@ class OverlayWriter:
         self.handle = h5py.File(self.path, 'r+')
         self.handle['sequence_analysis'].attrs['complete'] = False
         self.update = self.handle['sequence_analysis/updates'].create_group(str(uuid.uuid4()))
-        self.cursors = {}
+        for bp in self.direct:
+            self.handle[f"resolutions/{bp}"].attrs["method"] = "direct"
         self.capacities = {}
 
-    def record_coverage(self, resolution, rows, columns, provenance):
+    def record_coverage(self, resolution, rows, columns, provenance, update=None):
         """Axes contain physical (stripe, bin) pairs, in frozen assembly order."""
         rows, columns = self._axis(resolution, rows), self._axis(resolution, columns)
-        group = self.update.create_group(str(int(resolution)))
+        group = (self.update if update is None else update).create_group(str(int(resolution)))
         group.create_dataset('provenance', data=canonical_json(provenance), dtype=h5py.string_dtype('utf-8'))
         for name, axis in (('row_bins', rows), ('column_bins', columns)):
             group.create_dataset(name, data=axis, compression='gzip', shuffle=True)
@@ -266,7 +271,8 @@ class OverlayWriter:
 
     def close(self, success=True):
         if self.handle is not None:
-            self.handle['sequence_analysis'].attrs['complete'] = bool(success)
+            if 'sequence_analysis' in self.handle:
+                self.handle['sequence_analysis'].attrs['complete'] = bool(success)
             self.handle.flush()
             self.handle.close()
             self.handle = None
@@ -275,4 +281,14 @@ class OverlayWriter:
         return self
 
     def __exit__(self, kind, value, traceback):
+        try:
+            if kind is None and self.overviews:
+                from overview import summarize
+                for bp in self.overviews:
+                    source = max(r for r in self.direct if r < bp)
+                    print(f'Building {bp} bp overview from {source} bp scores', flush=True)
+                    summarize(self, source, bp)
+        except BaseException:
+            self.close(success=False)
+            raise
         self.close(success=kind is None)

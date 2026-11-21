@@ -13,6 +13,9 @@ from overlay_store import OverlayWriter
 def run(plan_path):
     plan_path = Path(plan_path)
     plan = json.loads(plan_path.read_text())
+    if plan.get('kind') == 'overview-cache':
+        from overview import cache_existing
+        return cache_existing(plan)
     if plan.get('kind') == 'dotplot':
         from dotplot_kernel import run as alignment_dotplot
         return alignment_dotplot(plan, log=lambda message: print(message, flush=True))
@@ -26,7 +29,7 @@ def run(plan_path):
     resolutions = [level['resolution'] for level in plan['levels']]
     source = PreparedFasta(plan['input'], plan['inputLength'])
     try:
-        with OverlayWriter(plan['template'], plan['output'], resolutions, settings, previous=plan.get('previous')) as writer:
+        with OverlayWriter(plan['template'], plan['output'], resolutions, settings, overviews=plan.get('overviewLevels', ()), previous=plan.get('previous')) as writer:
             for level in plan['levels']:
                 r, c = np.asarray(level['rows'], dtype=np.int64), np.asarray(level['columns'], dtype=np.int64)
                 if r.ndim != 2 or c.ndim != 2 or r.shape[1] not in (4, 6) or c.shape[1] != r.shape[1]:

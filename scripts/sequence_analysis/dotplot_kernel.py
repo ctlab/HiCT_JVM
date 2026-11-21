@@ -87,7 +87,7 @@ def run(plan, log=print):
                 process.kill()
                 process.wait()
     with OverlayWriter(plan['template'], plan['output'], [x['resolution'] for x in plan['levels']], settings,
-                       previous=plan.get('previous'), unit='alignment_sample_count', scale=1) as writer:
+                       overviews=plan.get('overviewLevels', ()), previous=plan.get('previous'), unit='alignment_sample_count', scale=1) as writer:
         for level in plan['levels']:
             resolution = level['resolution']
             rows, cols = np.asarray(level['rows'], dtype=np.int64), np.asarray(level['columns'], dtype=np.int64)

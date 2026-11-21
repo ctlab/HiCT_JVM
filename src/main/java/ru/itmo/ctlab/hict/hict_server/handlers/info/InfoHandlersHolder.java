@@ -43,6 +43,7 @@ public class InfoHandlersHolder extends HandlersHolder {
         .setStatusCode(200)
         .end(Json.encode(Map.of(
           "version", version,
+          "backendRevision", readBackendRevision(),
           "webuiVersion", webuiVersion
         )));
     });
@@ -142,6 +143,14 @@ public class InfoHandlersHolder extends HandlersHolder {
       // ignore
     }
     return "unknown";
+  }
+
+  private String readBackendRevision() {
+    try (var stream = getClass().getResourceAsStream("/backend-revision.txt")) {
+      return stream == null ? "unknown" : new String(stream.readAllBytes(), StandardCharsets.UTF_8).trim();
+    } catch (java.io.IOException failure) {
+      return "unknown";
+    }
   }
 
   private @NotNull String readChangelog() {

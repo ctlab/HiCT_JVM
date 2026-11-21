@@ -2335,6 +2335,74 @@ paths:
         '400': { description: Invalid job ID or result format }
         '404': { description: Unknown remote BLAST job }
         '409': { description: Results not ready }
+  /sequence/moddotplot/estimate:
+    post:
+      tags: [Sequence analysis]
+      operationId: estimateModDotPlot
+      summary: Estimate the requested analysis and overview pyramid before starting a job
+      requestBody:
+        $ref: '#/paths/~1sequence~1moddotplot~1jobs/post/requestBody'
+      responses:
+        '200':
+          description: Selected spans, direct and overview levels, upper storage estimate and first level over budget
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rowBp, columnBp, requestedLevels, overviewLevels, estimatedBytes]
+                properties:
+                  rowBp: {type: integer, format: int64}
+                  columnBp: {type: integer, format: int64}
+                  requestedLevels: {type: array, items: {type: integer, format: int64}}
+                  overviewLevels: {type: array, items: {type: integer, format: int64}}
+                  estimatedBytes: {type: integer, format: int64}
+                  limitingLevel: {type: integer, format: int64}
+        '400': {description: Invalid parameters or selection}
+        '409': {description: Active map or FASTA unavailable}
+        '413': {description: Estimate outside representable range}
+  /sequence/dotplot/estimate:
+    post:
+      tags: [Sequence analysis]
+      operationId: estimateAlignmentDotplot
+      summary: Estimate the requested analysis and overview pyramid before starting a job
+      requestBody:
+        $ref: '#/paths/~1sequence~1dotplot~1jobs/post/requestBody'
+      responses:
+        '200':
+          description: Selected spans, direct and overview levels, upper storage estimate and first level over budget
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rowBp, columnBp, requestedLevels, overviewLevels, estimatedBytes]
+                properties:
+                  rowBp: {type: integer, format: int64}
+                  columnBp: {type: integer, format: int64}
+                  requestedLevels: {type: array, items: {type: integer, format: int64}}
+                  overviewLevels: {type: array, items: {type: integer, format: int64}}
+                  estimatedBytes: {type: integer, format: int64}
+                  limitingLevel: {type: integer, format: int64}
+        '400': {description: Invalid parameters or selection}
+        '409': {description: Active map or FASTA unavailable}
+        '413': {description: Estimate outside representable range}
+  /sequence/overview/jobs:
+    post:
+      tags: [Sequence analysis]
+      operationId: buildOverlayOverview
+      summary: Build or reuse an overview cache for the attached secondary source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceFilename]
+              properties:
+                sourceFilename: {type: string}
+      responses:
+        '200': {description: Cache job status and completed output filename when available}
+        '409': {description: Attachment changed or pyramid already complete}
+        '429': {description: Analysis queue is full}
   /sequence/moddotplot/jobs:
     post:
       tags: [Sequence analysis]

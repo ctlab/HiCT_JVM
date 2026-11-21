@@ -110,6 +110,8 @@ def main():
                 for checkbox in dialog.locator(".resolution-options input").all():
                     checkbox.uncheck()
                 dialog.locator('.resolution-options input[value="5000"]').check()
+                if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                    dialog.get_by_text("Advanced", exact=True).click()
                 page.get_by_label("Worker threads").fill("4")
                 start = time.monotonic()
                 dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()

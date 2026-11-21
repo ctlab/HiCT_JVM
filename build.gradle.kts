@@ -69,7 +69,18 @@ val doOnChange = "${projectDir}/gradlew classes"
 val versionFile = file("${project.projectDir}/version.txt")
 val changelogFile = file("${project.projectDir}/CHANGELOG.md")
 
-val webUIRefOverride = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
+val releaseWebUIPin = file("webui-revision.txt").readText().trim().also {
+  require(it.matches(Regex("[0-9a-f]{40}"))) { "Invalid release WebUI revision" }
+}
+val requestedWebUI = providers.gradleProperty("webuiRef").orNull ?: System.getenv("HICT_WEBUI_REF")
+val releaseWebUIRequired = (providers.gradleProperty("requireBundledWebUI").orNull ?: System.getenv("HICT_REQUIRE_BUNDLED_WEBUI"))
+  ?.lowercase() in setOf("true", "1", "yes")
+val webUIRefOverride = if (releaseWebUIRequired) {
+  require(requestedWebUI == null || requestedWebUI == "same-as-jvm" || requestedWebUI == releaseWebUIPin) {
+    "The requested WebUI differs from webui-revision.txt"
+  }
+  releaseWebUIPin
+} else requestedWebUI
 val explicitWebUIRef = !webUIRefOverride.isNullOrBlank() && !webUIRefOverride.trim().equals("same-as-jvm", ignoreCase = true)
 val webUICloneDirectory = layout.buildDirectory.dir("webui").get()
 val localWebUIRepositoryDirectory = layout.projectDirectory.dir("../HiCT_WebUI")
@@ -1209,6 +1220,12 @@ tasks.named<ProcessResources>("processResources") {
   from(webUIRepositoryDirectory.file("package.json")) {
     rename { "webui-package.json" }
   }
+  val backendRevision = providers.exec {
+    commandLine("git", "rev-parse", "HEAD")
+  }.standardOutput.asText.map { it.trim() }
+  inputs.property("backendRevision", backendRevision)
+  from(files("CITATION.cff", "docs/user-guide.md", "docs/file-destinations.md", "docs/observed-expected-palettes.md", "docs/alignment-preview.md", "docs/repeat-measurement.md", "docs/remote-blast.md", "docs/figure-capture.md")) { into("webui/docs") }
+  doLast { destinationDir.resolve("backend-revision.txt").writeText(backendRevision.get() + "\n") }
   inputs.file(versionFile)
   mustRunAfter("incrementPatchVersion")
   if (completeNativeBuildRequested) dependsOn(prepareBundledTools)

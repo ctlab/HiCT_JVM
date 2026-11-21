@@ -58,17 +58,23 @@ def main():
     else:
         raise AssertionError("A persistent cleanup failure must fail the verifier")
 
-    if os.name != "nt":
-        return
 
     verifier = Path(__file__).with_name("check_packaged_server.py").resolve()
     with tempfile.TemporaryDirectory(prefix="HiCT smoke & test ") as work:
-        launcher = Path(work) / "run.cmd"
-        launcher.write_text('@echo off\n"%HICT_TEST_PYTHON%" "%HICT_TEST_FIXTURE%" %*\n', encoding="ascii")
+        launcher = Path(work) / ("run.cmd" if os.name == "nt" else "run.sh")
+        if os.name == 'nt':
+            launcher.write_text('@echo off\n"%HICT_TEST_PYTHON%" "%HICT_TEST_FIXTURE%" %*\n', encoding="ascii")
+        else:
+            launcher.write_text('#!/bin/sh\nexec "$HICT_TEST_PYTHON" "$HICT_TEST_FIXTURE" "$@"\n')
+            launcher.chmod(0o755)
         env = dict(os.environ, HICT_TEST_PYTHON=sys.executable, HICT_TEST_FIXTURE=str(Path(__file__).resolve()),
                    HICT_WEBUI_REF=REVISION)
         subprocess.run([sys.executable, str(verifier), str(launcher), "2.0.0-test"],
                        env=env, check=True, timeout=35)
+        mismatch = subprocess.run([sys.executable, str(verifier), str(launcher), "2.0.0-test"],
+            env={**env, "HICT_WEBUI_REF": "b" * 40}, capture_output=True, text=True, timeout=35)
+        assert mismatch.returncode and "Packaged JavaScript does not contain WebUI revision" in mismatch.stderr
+
 
 
 if __name__ == "__main__":

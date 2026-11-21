@@ -112,6 +112,8 @@ def main():
             check.menu("Tools", "Generate ModDotPlot…")
             dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
             dialog.get_by_label("Analysis scope", exact=True).select_option("selection")
+            if not dialog.get_by_label("Worker threads", exact=True).is_visible():
+                dialog.get_by_text("Advanced", exact=True).click()
             dialog.get_by_label("Worker threads", exact=True).fill("2")
             dialog.get_by_role("button", name="Generate ModDotPlot", exact=True).click()
             dialog.locator("footer").get_by_role(

@@ -192,3 +192,41 @@ def test_alignment_sample_counts_are_replaced_not_accumulated_and_retries_are_sa
             out.patch(2, rows, cols, np.array([[1.5, 2], [3, 4]]))
         with pytest.raises(ValueError):
             out.patch(2, rows, cols, np.array([[-1, 2], [3, 4]]))
+
+
+@pytest.mark.parametrize('presence', [False, True])
+def test_overview_nondivisible_reversed_partial_extension(tmp_path, presence):
+    source = template(tmp_path/'template')
+    with h5py.File(source, 'r+') as f:
+        f['resolutions/2/contigs/atl'] = [[0, 0], [1, 1]]
+    previous = None
+    raw = np.zeros((8, 8))
+    for step, (rows, cols, values) in enumerate([
+        ([0, 1, 2], [0, 1, 2], [[50, 70, 0], [70, 95, 80], [0, 80, 20]]),
+        ([1], [0, 1], [[0, 40]]),
+        ([0, 1, 2], [0, 1, 2], np.zeros((3, 3))),
+    ]):
+        path = tmp_path/f'version-{step}'
+        # Native ATUs run backwards. The 3 bp overview uses forward synthetic ATUs.
+        axis = lambda indices: [[0, 3-i] for i in indices]
+        with OverlayWriter(source, path, [2], {}, previous=previous, overviews=[3],
+                           unit='alignment_sample_count' if presence else 'identity_percent',
+                           scale=1 if presence else SCALE) as w:
+            w.record_coverage(2, axis(rows), axis(cols), {})
+            w.patch(2, axis(rows), axis(cols), values)
+        for a, row in enumerate(rows):
+            for b, col in enumerate(cols):
+                raw[row*2:row*2+2, col*2:col*2+2] = values[a][b]
+                raw[col*2:col*2+2, row*2:row*2+2] = values[a][b]
+        with h5py.File(path) as f:
+            group = f['resolutions/3']
+            assert group.attrs['source_resolution'] == 2
+            block = OverlayWriter._read_block(group['treap_coo'], 0, 256)
+            for r in range(3):
+                for c in range(r, 3):
+                    bases = raw[3*r:3*r+3, 3*c:3*c+3]
+                    positive = bases[bases > 0]
+                    expected = bool(len(positive)) if presence else round(positive.mean()*SCALE) if len(positive) else 0
+                    assert block[r,c] == expected
+            assert all('3' in update for update in f['sequence_analysis/updates'].values())
+        previous = path
