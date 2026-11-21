@@ -33,7 +33,7 @@ def main():
         default=[],
         help="Physically copy a map into disposable DATA",
     )
-    parser.add_argument("--borrelia-dir", required=True, type=Path, help="Prepared Borrelia example directory")
+    parser.add_argument("--borrelia-dir", type=Path, default=Path(os.environ.get("HICT_BORRELIA_DIR", "/mnt/Models/HiCT/examples/geo-borrelia")), help="Prepared Borrelia example directory")
     parser.add_argument("--webui-commit", required=True)
     parser.add_argument(
         "--browser-python",
@@ -92,6 +92,9 @@ def main():
             stdout=log,
             stderr=subprocess.STDOUT,
         )
+    subprocess.run(["java", "--class-path", str(jar),
+                    "src/test/java/ru/itmo/ctlab/hict/fixtures/ReinforcementHdf5Fixture.java",
+                    str(data)], check=True)
     from check_structural_edits_browser import prepare_fixture
 
     prepare_fixture(data, jar)
@@ -243,6 +246,7 @@ def main():
                 ["--file", "structural.hict.hdf5"],
             )
             stage("fine-overlay", "check_fine_sequence_overlay_browser.py", [])
+            stage("boundaries", "check_release_boundaries.py", ["--data-dir", str(data)])
             stage("structural", "check_structural_edits_browser.py", [])
             stage("incomplete-open", "check_incomplete_map_browser.py", [])
             stage("offline", "check_offline_browser.py", [])

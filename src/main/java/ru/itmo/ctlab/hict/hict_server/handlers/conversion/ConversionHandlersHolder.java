@@ -51,6 +51,14 @@ import java.util.regex.Pattern;
 @Slf4j
 public class ConversionHandlersHolder extends HandlersHolder implements AutoCloseable {
 
+    private static int boundedInteger(io.vertx.core.json.JsonObject json, String key, int fallback, int min, int max) {
+        Object value = json.getValue(key, fallback);
+        if (!(value instanceof Number number) || !Double.isFinite(number.doubleValue())
+            || number.doubleValue() != number.intValue() || number.intValue() < min || number.intValue() > max)
+            throw new IllegalArgumentException(key + " must be a whole number from " + min + " to " + max);
+        return number.intValue();
+    }
+
     private final Vertx vertx;
     public static final String UPLOAD_DIRECTORY_NAME = ".hict-uploads";
     private static final long MAX_UPLOAD_BYTES = 2L * 1024 * 1024 * 1024;
@@ -318,10 +326,10 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                     if (filename == null || filename.isBlank()) {
                         throw new IllegalArgumentException("filename is required");
                     }
-                    final var parallelism = requestJson.getInteger("parallelism", defaultConversionParallelism());
+                    final var parallelism = boundedInteger(requestJson, "parallelism", defaultConversionParallelism(), -1, Integer.MAX_VALUE);
                     final var overwrite = requestJson.getBoolean("overwrite", false);
                     final var resolutions = parseResolutions(requestJson.getString("resolutions"));
-                    final var compression = requestJson.getInteger("compression", 6);
+                    final var compression = boundedInteger(requestJson, "compression", 6, 0, 9);
                     final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
                     final var chunkSize = requestJson.getInteger("chunkSize", 8192);
                     final var assemblyFilename = requestJson.getString("assemblyFilename", "");
@@ -416,10 +424,10 @@ public class ConversionHandlersHolder extends HandlersHolder implements AutoClos
                         throw new IllegalArgumentException("files is required");
                     }
                     final var parallelJobs = Math.max(1, requestJson.getInteger("parallelJobs", 1));
-                    final var parallelism = requestJson.getInteger("parallelism", defaultConversionParallelism());
+                    final var parallelism = boundedInteger(requestJson, "parallelism", defaultConversionParallelism(), -1, Integer.MAX_VALUE);
                     final var overwrite = requestJson.getBoolean("overwrite", false);
                     final var resolutions = parseResolutions(requestJson.getString("resolutions"));
-                    final var compression = requestJson.getInteger("compression", 6);
+                    final var compression = boundedInteger(requestJson, "compression", 6, 0, 9);
                     final var compressionAlgorithm = ConversionOptions.CompressionAlgorithm.parse(requestJson.getString("compressionAlgorithm", "deflate"));
                     final var chunkSize = requestJson.getInteger("chunkSize", 8192);
                     final var assemblyFilename = requestJson.getString("assemblyFilename", "");

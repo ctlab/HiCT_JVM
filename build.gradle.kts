@@ -1224,7 +1224,11 @@ tasks.named<ProcessResources>("processResources") {
     commandLine("git", "rev-parse", "HEAD")
   }.standardOutput.asText.map { it.trim() }
   inputs.property("backendRevision", backendRevision)
-  from(files("CITATION.cff", "docs/user-guide.md", "docs/file-destinations.md", "docs/observed-expected-palettes.md", "docs/alignment-preview.md", "docs/repeat-measurement.md", "docs/remote-blast.md", "docs/figure-capture.md")) { into("webui/docs") }
+  from("CITATION.cff") {
+    into("webui/docs")
+    filter { line -> if (line.startsWith("version: ")) "version: '${versionFile.readText().trim()}'" else line }
+  }
+  from(files("docs/user-guide.md", "docs/file-destinations.md", "docs/observed-expected-palettes.md", "docs/alignment-preview.md", "docs/repeat-measurement.md", "docs/remote-blast.md", "docs/figure-capture.md")) { into("webui/docs") }
   doLast { destinationDir.resolve("backend-revision.txt").writeText(backendRevision.get() + "\n") }
   inputs.file(versionFile)
   mustRunAfter("incrementPatchVersion")
