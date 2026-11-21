@@ -157,7 +157,7 @@ bundle_appimage_glibc_runtime() {
 
   while IFS= read -r -d '' candidate; do
     queue_elf_for_glibc_scan "${candidate}"
-  done < <(find "${APPDIR}/usr/lib/hict" -type f -print0)
+  done < <(find "${APPDIR}/usr/lib/hict" -path "${APPDIR}/usr/lib/hict/browsers" -prune -o -type f -print0)
 
   local elf real_elf
   while [[ ${#APPIMAGE_GLIBC_QUEUE[@]} -gt 0 ]]; do
@@ -335,11 +335,9 @@ EOF
       install_glibc_exec_wrapper "${candidate}"
     done < <(find "${APPDIR}/usr/lib/hict/toolchains/linux_x86_64/bin" -maxdepth 1 -type f -perm -0100 -print0)
   fi
-  if [[ -d "${APPDIR}/usr/lib/hict/browsers/linux_x86_64" ]]; then
-    while IFS= read -r -d '' candidate; do
-      install_glibc_exec_wrapper "${candidate}"
-    done < <(find "${APPDIR}/usr/lib/hict/browsers/linux_x86_64" -type f -perm -0100 -print0)
-  fi
+  # Tauri loads the host GTK/WebKit stack. Electron resolves its sibling helper
+  # executables, libraries and resources relative to its executable directory.
+  # Keep the native desktop payloads in their original layout and loader context.
 }
 
 if [[ "${HICT_SKIP_PORTABLE:-0}" != "1" || ! -x "${PORTABLE_APP_DIR}/bin/hict" ]]; then
@@ -457,8 +455,8 @@ if [[ "${HICT_APPIMAGE_BUNDLE_GLIBC}" == "1" || "${HICT_APPIMAGE_BUNDLE_GLIBC}" 
     echo "=============================="
     echo
     echo "This AppImage includes a glibc dynamic loader and runtime library closure"
-    echo "under usr/lib/hict/glibc. AppRun starts HiCT through that bundled loader,"
-    echo "and bundled executable tool/browser payloads are wrapped to do the same."
+    echo "under usr/lib/hict/glibc. AppRun can start the JVM through that loader."
+    echo "Native tool launchers use the bundled loader. Desktop shells use the host loader."
     echo "The glibc runtime is redistributed under the GNU LGPL/GPL notices supplied"
     echo "by the build distribution. Keep the bundled glibc manifest and license files"
     echo "with redistributed AppImage artifacts."
