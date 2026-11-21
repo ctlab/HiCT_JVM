@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check export controls, source extrema, and edited search boundaries in a running candidate."""
 import argparse
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -39,6 +40,7 @@ def main():
         dialog = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="Export matrix to Cooler"))
         inputs = dialog.locator("input[type=number]")
         submit = dialog.get_by_role("button", name="Export Cooler", exact=True)
+        before_jobs = post("/convert/jobs/list", {})
         for idx, key, invalid, valid in (
             (0, "compression", ["", "-1", "10", "2.5"], ["0", "9"]),
             (1, "parallelism", ["", "-2", "1.5", "2147483648"], ["-1", "0", "1", "2147483647"]),
@@ -53,6 +55,7 @@ def main():
                 inputs.nth(idx).fill(value)
                 assert submit.is_enabled(), (key,value)
             results.append({"field":key,"rejected":invalid,"accepted":valid})
+        assert post("/convert/jobs/list", {}) == before_jobs
         page.keyboard.press("Escape")
         post("/secondary/open", {"filename":"tiny-extrema.hict.hdf5"})
         for side, maximum in (("PRIMARY",11),("SECONDARY",83)):
@@ -60,6 +63,23 @@ def main():
                 "expression":{"type":"source","source":side}})
             assert [stats["count"],stats["min"],stats["max"]] == [25,0,maximum], stats
             results.append({"source":side,"expected":[0,maximum],"observed":[stats["min"],stats["max"]]})
+        legacy = data/"tiny-fine.hict.hdf5"
+        before_hash = hashlib.sha256(legacy.read_bytes()).hexdigest()
+        post("/secondary/open", {"filename":legacy.name})
+        cache_request = {"sourceFilename":legacy.name}
+        cached = post("/sequence/overview/jobs", cache_request)
+        deadline = time.monotonic()+60
+        while time.monotonic()<deadline:
+            cached = next(j for j in post("/sequence/jobs/list", {}) if j["jobId"] == cached["jobId"])
+            if cached["status"] in ("finished","failed","cancelled"):
+                break
+            time.sleep(.2)
+        assert cached["status"]=="finished", cached
+        assert post("/sequence/overview/jobs",cache_request)["outputFile"] == cached["outputFile"]
+        status = post("/secondary/open", {"filename":cached["outputFile"]})
+        assert sorted(status["compatibility"]["secondaryResolutions"]) == [1,4,10], status
+        assert hashlib.sha256(legacy.read_bytes()).hexdigest() == before_hash
+        results.append({"cache":cached["outputFile"],"originalSha256":before_hash,"levels":[1,4,10],"progress":cached["logs"]})
         post("/open", {"filename":source})
         post("/link_fasta", {"fastaFilename":"tiny.fa"})
         raw = "ACGTRYMKSWBDHVNAC"

@@ -80,7 +80,7 @@ def main():
                   const m=window.__hictBenchmark.manager(), l=m.viewAndLayersManager;
                   if (whole) l.fitViewToActiveExtent();
                   else l.restoreViewPosition({centerBp:[x+0.5,y+0.5],
-                      resolution:l.getPixelResolutionForBpResolution(bp)/(letters ? 16 : 1)});
+                      resolution:l.getPixelResolutionForBpResolution(bp)/(letters ? 24 : 1)});
                   m.getMap().renderSync();
                   return {center:l.captureViewPosition().centerBp,
                       primary:l.getNativeResolutionDescriptor('PRIMARY').bpResolution,
@@ -135,6 +135,8 @@ def main():
                     return l.hicDataLayers.filter(layer=>layer.getVisible()).map(layer=>({source:layer.get('sourceName'),bp:layer.get('bpResolution'),projection:layer.get('projectionKey')}))
                 }""")
 
+            if letters:
+                assert sorted(row["source"] for row in visible()) == ["PRIMARY", "SECONDARY"], visible()
             assert letters or any(
                 row.get("projection") == f"{primary}/{expected}/{sample}"
                 for row in visible()
@@ -166,7 +168,7 @@ def main():
             )
             if nan.is_visible():
                 nan.click()
-            select(613568, 620534)
+            select(435400, 436376, 438700, 439700)
             check.menu("Tools", "Generate ModDotPlot…")
             dialog = page.get_by_role("dialog", name="Generate ModDotPlot", exact=True)
             sizes = dialog.get_by_label("ModDotPlot window sizes (bp)", exact=True)
@@ -218,8 +220,12 @@ def main():
                     levels.append(anchor)
                 return levels
             overview = pyramid([37, 50])
-            observe("moddotplot", overview, 1, 1000, (617000,617000), "below")
-            observe("moddotplot", overview, 20, 50, (617000,617000), "below")
+            for mode in ("below","overlay","above"):
+                page.get_by_label("Sequence overlay view").select_option(mode)
+                position = (439080,435835) if mode == "above" else (435835,439080)
+                observe("moddotplot", overview, 1, 1000, position, mode, whole=True)
+                observe("moddotplot", overview, 20, 50, position, mode)
+                observe("moddotplot", overview, 55, 37, position, mode)
             # Ch1 has identical 601 bp intervals at offsets 435535 and 438780.
             # Their separation makes the hit visible on either side of the diagonal.
             select(435535, 436136, 438780, 439381)
@@ -272,6 +278,37 @@ def main():
             chosen.value.set_files(saved)
             page.get_by_text("Session restored. Undo history starts from the restored assembly.").wait_for()
             observe("dotplot", levels, 1, 1000, (435835,439080), "restored")
+            previous = request("/secondary/status", {})["filename"]
+            retry = submitted.value.request.post_data_json.copy()
+            retry.update(mergeCompatible=True, region={"rowStart":435535,"rowEnd":436136,
+                                                      "columnStart":438780,"columnEnd":439381})
+            pending = request("/sequence/dotplot/jobs", retry)["jobId"]
+            stopped = page.request.post(args.api+f"/sequence/jobs/{pending}/stop", data={})
+            assert stopped.ok, stopped.text()
+            deadline = time.monotonic()+30
+            while time.monotonic()<deadline:
+                row = next(j for j in request("/sequence/jobs/list", {}) if j["jobId"]==pending)
+                if row["status"] in ("cancelled","finished","failed"):
+                    break
+                time.sleep(.1)
+            assert row["status"]=="cancelled" and not row["outputFile"], row
+            assert request("/secondary/status", {})["filename"] == previous
+            checks.append({"cancelled":pending,"retainedOverlay":previous})
+            # Reverse the chromosome containing both landmarks and follow the
+            # mirrored source bases into the same lower-triangle alignment.
+            length = 910724
+            seq = request("/sequence/region", {"startBp":435830,"endBp":435840})["sequence"]
+            page.evaluate("""n=>window.__hictBenchmark.manager().viewAndLayersManager.selectEntityRangeByBp(0,n)""",length)
+            with page.expect_response("**/reverse_selection_range") as edit:
+                page.get_by_role("button",name="Reverse Selection",exact=True).click()
+            assert edit.value.ok,edit.value.text()
+            check.settle()
+            reverse = seq.translate(str.maketrans("ACGT", "TGCA"))[::-1]
+            assert request("/sequence/region", {"startBp":length-435840,"endBp":length-435830})["sequence"] == reverse
+            observe("dotplot", levels, 1000, 1, (length-1-439080,length-1-435835), "reversed", letters=True)
+            fetched_native = {(v.get("source"),v.get("bpResolution"),v.get("sequenceScale")) for v in fetched}
+            assert {("PRIMARY","1000","true"),("SECONDARY","1","true")} <= fetched_native
+            assert any(s=="SECONDARY" and int(bp or 0)>=1000 for s,bp,_ in fetched_native)
             assert not errors and not tile_failures, (errors, tile_failures)
         finally:
             (out / "results.json").write_text(

@@ -230,3 +230,34 @@ def test_overview_nondivisible_reversed_partial_extension(tmp_path, presence):
                     assert block[r,c] == expected
             assert all('3' in update for update in f['sequence_analysis/updates'].values())
         previous = path
+
+
+@pytest.mark.parametrize('external', [True, False])
+def test_legacy_cache_keeps_original_bytes_and_direct_values(tmp_path, external):
+    from overview import cache_existing
+    source = template(tmp_path / 'template')
+    with h5py.File(source, 'r+') as f:
+        f['resolutions/2/contigs/atl'] = [[0, 0], [1, 1]]
+    legacy = tmp_path / 'legacy'
+    with OverlayWriter(source, legacy, [2], {}, scale=1) as writer:
+        writer.record_coverage(2, [[0, 3]], [[0, 1]], {})
+        writer.patch(2, [[0, 3]], [[0, 1]], [[9]])
+    if external:
+        with h5py.File(legacy, 'r+') as f:
+            del f['sequence_analysis']
+    digest = hashlib.sha256(legacy.read_bytes()).digest()
+    output = tmp_path / 'cached'
+    cache_existing(dict(source=legacy, template=source, output=output, directLevels=[2],
+                        overviewLevels=[3], unit='counts' if external else 'identity_percent'))
+    assert hashlib.sha256(legacy.read_bytes()).digest() == digest
+    np.testing.assert_array_equal(read_matrix(output), read_matrix(legacy))
+    with h5py.File(output) as f:
+        root = f['resolutions/3/treap_coo']
+        offset = int(root['block_offset'][0])
+        # Source intervals [0,2) and [4,6) land wholly in coarse bins 0 and 1.
+        assert int(root['block_length'][0]) == 1
+        assert (root['block_rows'][offset],root['block_cols'][offset],root['block_vals'][offset]) == (0,1,9)
+        if external:
+            assert 'sequence_analysis' not in f
+        else:
+            assert all('3' in update for update in f['sequence_analysis/updates'].values())
