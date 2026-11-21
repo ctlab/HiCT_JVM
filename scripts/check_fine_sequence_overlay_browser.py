@@ -69,7 +69,7 @@ def main():
                 [start, end, row_start or start, row_end or end],
             )
 
-        def observe(kind, numeric_levels, sample, expected, position, mode, letters=False, whole=False):
+        def observe(kind, numeric_levels, sample, expected, position, mode, letters=False, whole=False, wide=False):
             state = request("/secondary/status", {})
             actual = sorted(state["compatibility"]["secondaryResolutions"])
             assert state["attached"] and actual == numeric_levels, state
@@ -83,6 +83,7 @@ def main():
                       resolution:l.getPixelResolutionForBpResolution(bp)/(letters ? 24 : 1)});
                   m.getMap().renderSync();
                   return {center:l.captureViewPosition().centerBp,
+                      viewport:m.getMap().getSize(),
                       primary:l.getNativeResolutionDescriptor('PRIMARY').bpResolution,
                       secondary:l.getNativeResolutionDescriptor('SECONDARY').bpResolution};
                 }""", [expected,x,y,letters,whole])
@@ -90,6 +91,23 @@ def main():
             if whole:
                 expected = view["secondary"]
                 assert expected >= 1000 and expected == view["primary"], view
+                if wide:
+                    assert expected == 1000, view
+                    # Frame the real assembly, including its final contig. The rendering
+                    # extent can also include empty padding to a coarser native grid.
+                    source_bp, full_extent, viewport_extent = page.evaluate("""()=>{
+                        const m=window.__hictBenchmark.manager(), h=m.contigDimensionHolder;
+                        const l=m.viewAndLayersManager, d=l.currentViewState.resolutionDesciptor;
+                        const last=h.prefix_sum_bp[h.contig_count]-1;
+                        const edge=(h.getFractionalPxOfBp(last,d.bpResolution)+1/d.bpResolution)*d.pixelResolution;
+                        return [last+1,[0,-edge,edge,0],m.getView().calculateExtent(m.getMap().getSize())];
+                    }""")
+                    assert source_bp == 1453623, source_bp
+                    view["assemblyLengthBp"] = source_bp
+                    assert all(viewport_extent[i] <= full_extent[i]+1 for i in (0,1)), (viewport_extent,full_extent)
+                    assert all(viewport_extent[i] >= full_extent[i]-1 for i in (2,3)), (viewport_extent,full_extent)
+                    view["fullExtent"] = full_extent
+                    view["viewportExtent"] = viewport_extent
                 sample = 1
             else:
                 assert view["primary"] == 1000 and view["secondary"] == expected, view
@@ -125,6 +143,8 @@ def main():
             }""", [x,y])
             assert painted, (kind, mode, expected, position, view)
             suffix = 'whole' if whole else 'letters' if letters else str(expected)
+            if wide:
+                suffix += "-wide"
             page.locator("#hic-contact-map").screenshot(
                 path=str(out / f"{kind}-{mode}-{suffix}-view.png")
             )
@@ -274,6 +294,17 @@ def main():
                     observe("dotplot", levels, sample, expected, position, mode)
                 observe("dotplot", levels, 1000, 1, position, mode, letters=True)
                 observe("dotplot", levels, 1, 1000, position, mode, whole=True)
+            # The complete Borrelia extent also fits at the primary 1 kb level on a larger display.
+            page.set_viewport_size({"width": 2100, "height": 1620})
+            check.settle()
+            for mode in ("above", "overlay", "below"):
+                page.get_by_label("Sequence overlay view").select_option(mode)
+                position = (435835,439080) if mode == "below" else (439080,435835)
+                observe("dotplot", levels, 1, 1000, position, mode, whole=True, wide=True)
+                observe("dotplot", levels, 1000, 1, position, mode, letters=True, wide=True)
+                observe("dotplot", levels, 1, 1000, position, mode, whole=True, wide=True)
+            page.set_viewport_size({"width": 1440, "height": 900})
+            check.settle()
             with page.expect_download() as download:
                 check.menu("File", "Save session")
             saved = out/"fine-overlay-session.json"
