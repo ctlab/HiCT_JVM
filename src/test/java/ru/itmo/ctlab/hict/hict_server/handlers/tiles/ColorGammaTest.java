@@ -82,6 +82,24 @@ class ColorGammaTest {
     assertThrows(IllegalArgumentException.class,()->SimpleLinearGradient.validateCurve(java.util.List.of(0.7,1.0,0.5,0.1)));
   }
 
+  @Test void identityCurveChangesColorWhilePreservingThePercentageThreshold() {
+    var expr = new JsonObject().put("type", "colormap").put("mode", "MODDOTPLOT_IDENTITY")
+      .put("input", new JsonObject().put("type", "source").put("source", "PRIMARY"))
+      .put("minSignal", 80).put("maxSignal", 100);
+    var graph = RenderPipelineConfig.fromJson(new JsonObject().put("enabled", true)
+      .put("upperExpression", expr.copy().put("curve", new io.vertx.core.json.JsonArray(java.util.List.of(0.25, 0.75))))
+      .put("lowerExpression", expr));
+    var options = new SimpleVisualizationOptions(-1,-1,false,false,false,
+      new SimpleLinearGradient(32,Color.WHITE,Color.BLACK,80,100));
+    var pixel = new RenderPipelineConfig.MutablePixelContext();
+    pixel.primaryValue = 85;
+    int curved = graph.evaluateArgb(true, pixel, options);
+    pixel.primaryValue = 95;
+    assertEquals(graph.evaluateArgb(false, pixel, options), curved);
+    pixel.primaryValue = 79;
+    assertEquals(0, graph.evaluateArgb(true, pixel, options));
+  }
+
   @Test void nativeAndJavaGammaColorsAgreeAndNeverModifyTheirInput() {
     var service = NativeProcessingService.getInstance();
     try {

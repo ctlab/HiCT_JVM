@@ -38,7 +38,7 @@ def main():
             ),
         )
         check = BrowserCheck(page, output)
-        dialog = page.locator('.track-manager-root')
+        dialog = page.locator('.track-manager-root [role=dialog]').first
         def switch_manager(name):
             if dialog.get_by_role('heading',name=name,exact=True).is_visible(): return
             close_manager()

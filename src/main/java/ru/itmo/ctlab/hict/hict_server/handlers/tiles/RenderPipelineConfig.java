@@ -740,7 +740,7 @@ public final class RenderPipelineConfig {
           yield context -> {
             final var value = inputExpression.eval(context);
             if (context.signalStatistics != null) context.signalStatistics.signal(expressionKey).accept(value);
-            return mapIdentityColor(value, minExpression.eval(context), maxExpression.eval(context));
+            return mapIdentityColor(value, minExpression.eval(context), maxExpression.eval(context), gamma, curve);
           };
         }
         if ("OBSERVED_OVER_EXPECTED".equalsIgnoreCase(node.getString("mode", "LINEAR"))) {
@@ -921,11 +921,11 @@ public final class RenderPipelineConfig {
     0xffabd9e9, 0xffe0f3f8, 0xffffffbf, 0xfffee090, 0xfffdae61,
     0xfff46d43, 0xffd73027, 0xffa50026};
 
-  private static int mapIdentityColor(double value, double minimum, double maximum) {
+  private static int mapIdentityColor(double value, double minimum, double maximum, double gamma, java.util.List<Double> curve) {
     if (!Double.isFinite(value) || !Double.isFinite(minimum) || !Double.isFinite(maximum)
         || value <= 0 || value < minimum || minimum < 0 || maximum < minimum) return 0;
     final double fraction = maximum == minimum ? 1 : Math.min(1, (value - minimum) / (maximum - minimum));
-    final double index = fraction * (IDENTITY_COLORS.length - 1);
+    final double index = SimpleLinearGradient.transfer(fraction, gamma, curve) * (IDENTITY_COLORS.length - 1);
     final int left = Math.min(IDENTITY_COLORS.length - 2, (int) index);
     final double mix = index - left;
     final int a = IDENTITY_COLORS[left], b = IDENTITY_COLORS[left + 1];

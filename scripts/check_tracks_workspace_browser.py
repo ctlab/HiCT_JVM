@@ -52,7 +52,7 @@ with h5py.File(sys.argv[1],'r+') as f:
                 page.set_default_timeout(30000);page.add_init_script('window.__HICT_BENCHMARK_ENABLED__=true')
                 page.add_init_script("window.__workspaceErrors=[];window.addEventListener('error',event=>{if(event instanceof ErrorEvent)window.__workspaceErrors.push(event.message);},true)")
                 page.route('http://localhost:5000/**',lambda r:r.continue_(url=api.url+r.request.url.removeprefix('http://localhost:5000')))
-                check=BrowserCheck(page,out);dialog=page.locator('.track-manager-root')
+                check=BrowserCheck(page,out);dialog=page.locator('.track-manager-root [role=dialog]').first
                 def manager():check.menu('View','1D tracks…');dialog.wait_for()
                 def tab(name):
                     if dialog.get_by_role('heading',name=name,exact=True).is_visible(): return
