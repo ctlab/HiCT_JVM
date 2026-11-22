@@ -24,6 +24,9 @@
 
 package ru.itmo.ctlab.hict.hict_server.tracks;
 
+import ru.itmo.ctlab.hict.fixtures.ReinforcementHdf5Fixture;
+import ru.itmo.ctlab.hict.hict_library.chunkedfile.ChunkedFile;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -48,6 +51,25 @@ class Track1DManagerValidationTest {
   private String write(final String name, final String content) throws IOException {
     Files.writeString(tempDir.resolve(name), content);
     return name;
+  }
+
+  @Test
+  void indexedDensityTracksHalfOpenSourceIntervalsAcrossSplitAndReverse() throws Exception {
+    final var map = ReinforcementHdf5Fixture.create(tempDir, "density", List.of(4L));
+    try (var file = new ChunkedFile(new ChunkedFile.ChunkedFileOptions(map, 1, 2)); var tracks = manager()) {
+      final String feature = "tiny\t4\t11\tinterval\t0\t-\n";
+      tracks.openTrack(write("dense.bed", feature.repeat(12_001) + "tiny\t0\t17\tall\n"), null, null);
+      for (int state = 0; state < 3; state++) {
+        if (state == 1) file.scaffoldingOperations().splitContigAtBp(0, 7);
+        if (state == 2) file.scaffoldingOperations().reverseSelectionRangeBp(0, 17);
+        var bins = tracks.querySequenceTracks(file, null, 0, 17, 17, 4).getTracks().getFirst().getBins();
+        assertEquals(17, bins.size());
+        for (int bp = 0; bp < 17; bp++) {
+          int source = state == 2 ? 16 - bp : bp;
+          assertEquals(source >= 4 && source < 11 ? 12_002 : 1, bins.get(bp).getCount());
+        }
+      }
+    }
   }
 
   @Test

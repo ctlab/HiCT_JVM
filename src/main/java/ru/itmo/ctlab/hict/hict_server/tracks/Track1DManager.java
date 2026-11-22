@@ -90,10 +90,7 @@ public class Track1DManager implements AutoCloseable {
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ab"
   );
   private static final int MAX_FEATURES_PER_QUERY = 250_000;
-  private static final int FEATURE_DIRECT_RENDER_MIN_FEATURES = 1_024;
   private static final int FEATURE_DIRECT_RENDER_MAX_FEATURES = 12_000;
-  private static final int FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL = 6;
-  private static final int FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL = 2;
   private static final int FEATURE_DENSITY_MAX_BINS = 2_500;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_PRIMARY = "__internal__/cooler_weights/PRIMARY";
@@ -4037,13 +4034,6 @@ public class Track1DManager implements AutoCloseable {
                                                      final int widthPx,
                                                      final long bpResolution) {
       final int safeWidth = Math.max(1, widthPx);
-      final int maxDirectFeatures = Math.max(
-        FEATURE_DIRECT_RENDER_MIN_FEATURES,
-        Math.min(
-          Math.min(MAX_FEATURES_PER_QUERY, FEATURE_DIRECT_RENDER_MAX_FEATURES),
-          safeWidth * FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL
-        )
-      );
       long overlaps = 0;
       for (var source : featuresBySource.keySet()) {
         for (var segment : sourceToAssemblySegments.getOrDefault(source, List.of())) {
@@ -4056,8 +4046,7 @@ public class Track1DManager implements AutoCloseable {
         forEachProjectedFeature(sourceToAssemblySegments, queryStartPx, queryEndPx, bpResolution,
           projected::add, FEATURE_DIRECT_RENDER_MAX_FEATURES);
         projected.sort(Comparator.comparingLong(ProjectedFeature::startPx).thenComparingLong(ProjectedFeature::endPx));
-        return projected.size() <= maxDirectFeatures ? toBins(projected)
-          : downsampleFeatureBins(projected, queryStartPx, queryEndPx, safeWidth);
+        return toBins(projected);
       }
       long span = Math.max(1L, queryEndPx - queryStartPx);
       int buckets = (int) Math.min(span, Math.min(safeWidth, FEATURE_DENSITY_MAX_BINS));
@@ -4086,99 +4075,6 @@ public class Track1DManager implements AutoCloseable {
         bins.add(aggregateSignalBin(orderedSegments, bpResolution, left, right, counts[i], counts[i], null));
       }
       return bins;
-    }
-
-    private static @NotNull List<TrackBin> downsampleFeatureBins(final @NotNull List<ProjectedFeature> projected,
-                                                                 final long queryStartPx,
-                                                                 final long queryEndPx,
-                                                                 final int widthPx) {
-      if (projected.isEmpty()) {
-        return List.of();
-      }
-      final int bucketCount = Math.max(1, widthPx);
-      final double bucketSpan = Math.max(1.0d, Math.max(1L, queryEndPx - queryStartPx) / (double) bucketCount);
-      final int maxFeaturesPerBucket = FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL;
-      @SuppressWarnings("unchecked")
-      final ArrayList<ProjectedFeature>[] byBucket = new ArrayList[bucketCount];
-      for (final var feature : projected) {
-        if (feature.endPx() <= queryStartPx || feature.startPx() >= queryEndPx) {
-          continue;
-        }
-        final var centerPx = feature.startPx() + Math.max(0L, (feature.endPx() - feature.startPx()) / 2L);
-        final int bucket = Math.max(
-          0,
-          Math.min(
-            bucketCount - 1,
-            (int) Math.floor((centerPx - queryStartPx) / bucketSpan)
-          )
-        );
-        var list = byBucket[bucket];
-        if (list == null) {
-          list = new ArrayList<>(maxFeaturesPerBucket + 1);
-          byBucket[bucket] = list;
-        }
-        list.add(feature);
-      }
-
-      final var selected = new ArrayList<ProjectedFeature>(bucketCount * maxFeaturesPerBucket);
-      for (final var bucketFeatures : byBucket) {
-        if (bucketFeatures == null || bucketFeatures.isEmpty()) {
-          continue;
-        }
-        bucketFeatures.sort(InMemoryTrackDataSource::compareProjectedFeaturesForDisplay);
-        for (int idx = 0; idx < Math.min(maxFeaturesPerBucket, bucketFeatures.size()); idx++) {
-          selected.add(bucketFeatures.get(idx));
-        }
-      }
-      selected.sort(
-        Comparator.comparingLong(ProjectedFeature::startPx)
-          .thenComparingInt(feature -> featureHierarchyDepth(feature.featureType()))
-          .thenComparingLong(ProjectedFeature::endPx)
-      );
-      return toBins(selected);
-    }
-
-    private static int compareProjectedFeaturesForDisplay(final @NotNull ProjectedFeature left,
-                                                          final @NotNull ProjectedFeature right) {
-      final int depthCmp = Integer.compare(
-        featureHierarchyDepth(right.featureType()),
-        featureHierarchyDepth(left.featureType())
-      );
-      if (depthCmp != 0) {
-        return depthCmp;
-      }
-      final int blockCmp = Integer.compare(right.blocks().size(), left.blocks().size());
-      if (blockCmp != 0) {
-        return blockCmp;
-      }
-      final long leftSpan = Math.max(1L, left.endPx() - left.startPx());
-      final long rightSpan = Math.max(1L, right.endPx() - right.startPx());
-      final int spanCmp = Long.compare(rightSpan, leftSpan);
-      if (spanCmp != 0) {
-        return spanCmp;
-      }
-      final int startCmp = Long.compare(left.startPx(), right.startPx());
-      if (startCmp != 0) {
-        return startCmp;
-      }
-      return Long.compare(left.endPx(), right.endPx());
-    }
-
-    private static int featureHierarchyDepth(final @Nullable String featureType) {
-      if (featureType == null || featureType.isBlank()) {
-        return 1;
-      }
-      final var normalized = featureType.trim().toLowerCase(Locale.ROOT);
-      if (isGffGeneLikeFeature(normalized)) {
-        return 0;
-      }
-      if (isGffTranscriptLikeFeature(normalized)) {
-        return 1;
-      }
-      if (isGffBlockLikeFeature(normalized)) {
-        return 2;
-      }
-      return 1;
     }
 
     private static List<FeatureBlock> parseBedBlocks(String[] fields, long start, long end, Long thickStart,

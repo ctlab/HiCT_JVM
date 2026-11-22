@@ -424,6 +424,27 @@ def main():
                 record(
                     "session-save-and-restore-preserve-midpoints-and-rendered-pixels"
                 )
+                page.get_by_role("button", name="Reset curve", exact=True).click()
+                page.get_by_role("button", name="Focus range", exact=True).click()
+                wait()
+                editor = page.locator(".curve-editor")
+                editor.scroll_into_view_if_needed()
+                box = editor.bounding_box()
+                points = editor.locator(".curve-point")
+                for count, (x, y) in enumerate([(0.22, 0.68), (0.77, 0.18)], 2):
+                    editor.dblclick(position={"x": box["width"] * x, "y": box["height"] * y})
+                    expect(points).to_have_count(count)
+                page.get_by_role("button", name="Apply", exact=True).click()
+                wait()
+                assert len(options()["colormap"]["curve"]) == 6
+                points.nth(1).click(button="right")
+                expect(points).to_have_count(2)
+                page.get_by_role("slider", name="Curve point 1", exact=True).click(button="right")
+                expect(points).to_have_count(1)
+                page.get_by_role("button", name="Reset curve", exact=True).click()
+                wait()
+                assert "curve" not in options()["colormap"]
+                record("histogram-points-and-slider-projections-edit-the-rendered-curve")
                 page.set_viewport_size({"width": 640, "height": 800})
                 check.settle()
                 midpoint.scroll_into_view_if_needed()

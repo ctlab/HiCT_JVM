@@ -71,6 +71,17 @@ with sync_playwright() as pw:
     }""",
         timeout=30000,
     )
+    minimum = page.get_by_role("spinbutton", name="Minimum alignment length (bp)")
+    assert minimum.input_value() == "10"
+    requests = []
+    page.on("request", lambda r: requests.append(r.url) if r.url.endswith("/sequence/alignment_detail") else None)
+    minimum.fill("8192")
+    minimum.press("Tab")
+    page.get_by_text("No alignment meets the minimum length in these regions.", exact=True).wait_for()
+    minimum.fill("10")
+    minimum.press("Tab")
+    page.wait_for_function("window.__hictBenchmark.manager().alignmentDetail.source.getFeatures().length > 0")
+    assert not requests, requests
     detail = page.evaluate("""()=>{
       const m=window.__hictBenchmark.manager(),l=m.alignmentDetail;
       const colors=l.source.getFeatures().map(f=>f.getStyle().at(-1).getStroke()?.getColor() ?? "");

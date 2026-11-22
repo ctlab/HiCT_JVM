@@ -309,7 +309,8 @@ tiny\t5\tlandmark\tA\tG\t.\tPASS\t.
                                 linear.drawTrackCanvas(canvas,orientation,{tracks:[{...track,color}]},viewport,undefined,false);
                                 const range=linear.resolveSignalRange(summary,track.bins,viewport,1);
                                 const transform=linear.buildScaleTransform(range.min,range.max,log,10);
-                                result.push({orientation,fills,zero:cross-2-(cross-4)*transform.normalize(0),range,
+                                // The plot reserves a 16 px title strip and a 2 px inset on both edges.
+                                result.push({orientation,fills,zero:cross-2-(cross-20)*transform.normalize(0),range,
                                     png:canvas.toDataURL('image/png')});
                             }
                             return result;
