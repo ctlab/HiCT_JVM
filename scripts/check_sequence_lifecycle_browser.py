@@ -441,7 +441,8 @@ class OverlayFixture { public static void main(String[] a) {
             for format in ('PNG', 'SVG', 'PDF'):
                 context = menu()
                 with page.expect_download(timeout=90000) as download:
-                    context.get_by_role('menuitem', name=f'Export selection as {format}', exact=True).click()
+                    context.get_by_role('menuitem', name='Export selection as', exact=True).click()
+                    context.get_by_role('menuitem', name=format, exact=True).click()
                 path = out / ('selection.' + format.lower())
                 download.value.save_as(path)
                 assert path.stat().st_size > 200, str(path)
