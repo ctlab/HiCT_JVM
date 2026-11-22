@@ -74,7 +74,13 @@ common_docker_args=(
 
 run_manylinux() {
   local ml_target="$1"
-  docker run "${common_docker_args[@]}" \
+  local -a revision_args=()
+  if [[ "${ml_target}" == "fatjar" ]]; then
+    local backend_revision
+    backend_revision="$(git rev-parse HEAD)"
+    revision_args=(-e "HICT_BACKEND_REVISION=${backend_revision}")
+  fi
+  docker run "${common_docker_args[@]}" "${revision_args[@]}" \
     -e HICT_CONTAINER_TARGET="${ml_target}" \
     -e HICT_STATIC_MUSL="0" \
     -e HICT_STATIC_MIMALLOC="0" \

@@ -1220,9 +1220,13 @@ tasks.named<ProcessResources>("processResources") {
   from(webUIRepositoryDirectory.file("package.json")) {
     rename { "webui-package.json" }
   }
-  val backendRevision = providers.exec {
-    commandLine("git", "rev-parse", "HEAD")
-  }.standardOutput.asText.map { it.trim() }
+  val backendRevision = providers.environmentVariable("HICT_BACKEND_REVISION")
+    .orElse(providers.exec {
+      commandLine("git", "rev-parse", "HEAD")
+    }.standardOutput.asText)
+    .map { revision ->
+      revision.trim().also { require(it.matches(Regex("[0-9a-f]{40}"))) { "Invalid JVM revision" } }
+    }
   inputs.property("backendRevision", backendRevision)
   from("CITATION.cff") {
     into("webui/docs")
