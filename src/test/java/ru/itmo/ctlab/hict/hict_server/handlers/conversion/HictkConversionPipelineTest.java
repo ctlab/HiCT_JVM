@@ -75,7 +75,7 @@ class HictkConversionPipelineTest {
         ## pairs format v1.0.0
         #chromsize: chr1 20000
         #columns: readID chr1 pos1 chr2 pos2 strand1 strand2
-        r1\tchr1\t1\tchr1\t9500\t+\t-
+        r1\tchr1\t9500\tchr1\t1\t+\t-
         """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
     for (final long expected : List.of(1000L, 2000L)) {

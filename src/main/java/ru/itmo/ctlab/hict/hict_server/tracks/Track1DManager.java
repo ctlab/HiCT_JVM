@@ -95,7 +95,6 @@ public class Track1DManager implements AutoCloseable {
   private static final int FEATURE_DIRECT_RENDER_FEATURES_PER_PIXEL = 6;
   private static final int FEATURE_DOWNSAMPLED_FEATURES_PER_PIXEL = 2;
   private static final int FEATURE_DENSITY_MAX_BINS = 2_500;
-  private static final long BED_FEATURE_STYLE_MAX_FEATURES = 50_000L;
   private static final String COOLER_WEIGHTS_SOURCE_FILE = "__internal__/cooler_weights";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_PRIMARY = "__internal__/cooler_weights/PRIMARY";
   private static final String COOLER_WEIGHTS_SOURCE_FILE_SECONDARY = "__internal__/cooler_weights/SECONDARY";
@@ -3640,9 +3639,7 @@ public class Track1DManager implements AutoCloseable {
       long total = 0L;
       boolean hasSignalValues = false;
       boolean hasStructuredFeatures = false;
-      boolean hasStrandFeatures = false;
-      boolean hasThickFeatures = false;
-      boolean hasBed12Rows = false;
+      boolean annotationRows = false;
       final var report = new ParseReport();
       try (final BufferedReader reader = openMaybeGzipReader(filePath)) {
         String line;
@@ -3697,7 +3694,6 @@ public class Track1DManager implements AutoCloseable {
               if (clampedThickEnd > clampedThickStart) {
                 thickStart = clampedThickStart;
                 thickEnd = clampedThickEnd;
-                hasThickFeatures = true;
               }
             } catch (final NumberFormatException ignored) {
               // Optional BED fields, ignore malformed thickStart/thickEnd.
@@ -3724,8 +3720,8 @@ public class Track1DManager implements AutoCloseable {
           if (fields.length >= 5 && !fields[4].isBlank()) {
             attributes.put("score", fields[4]);
           }
-          if (hasStrand) {
-            attributes.put("strand", Objects.requireNonNull(strand));
+          if (strand != null) {
+            attributes.put("strand", strand);
           }
           if (thickStart != null && thickEnd != null) {
             attributes.put("thickStart", Long.toString(thickStart));
@@ -3742,19 +3738,15 @@ public class Track1DManager implements AutoCloseable {
           for (int fieldIndex = 12; fieldIndex < fields.length; fieldIndex++) {
             attributes.put("field" + (fieldIndex + 1), fields[fieldIndex]);
           }
-          if (fields.length >= 12) {
-            hasBed12Rows = true;
-          }
+          annotationRows |= fields.length != 4 || col4Numeric == null;
+          final var blocks = fields.length >= 12 ? parseBedBlocks(fields, start, end, thickStart, thickEnd, report, lineNo) : List.<FeatureBlock>of();
           features.computeIfAbsent(sourceName, ignored -> new ArrayList<>())
-            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType, List.of(), attributes));
+            .add(new FeatureRange(start, end, value, label, strand, thickStart, thickEnd, featureType, blocks, attributes));
           if (Math.abs(value - 1.0d) > 1e-9) {
             hasSignalValues = true;
           }
           if (strand != null || (thickStart != null && thickEnd != null)) {
             hasStructuredFeatures = true;
-            if (strand != null) {
-              hasStrandFeatures = true;
-            }
           }
           total++;
         }
@@ -3767,7 +3759,7 @@ public class Track1DManager implements AutoCloseable {
         total,
         hasSignalValues,
         hasStructuredFeatures,
-        resolveBedRenderStyle(total, hasStrandFeatures, hasThickFeatures, hasBed12Rows),
+        annotationRows ? RenderStyle.FEATURE : RenderStyle.SIGNAL,
         report
       );
     }
@@ -4178,17 +4170,26 @@ public class Track1DManager implements AutoCloseable {
       return 1;
     }
 
-    private static @NotNull RenderStyle resolveBedRenderStyle(final long featureCount,
-                                                              final boolean hasStrandFeatures,
-                                                              final boolean hasThickFeatures,
-                                                              final boolean hasBed12Rows) {
-      if (hasThickFeatures || hasBed12Rows) {
-        return RenderStyle.FEATURE;
+    private static List<FeatureBlock> parseBedBlocks(String[] fields, long start, long end, Long thickStart,
+                                                       Long thickEnd, ParseReport report, long line) {
+      try {
+        int count = Integer.parseInt(fields[9]);
+        String[] sizes = fields[10].split(","), offsets = fields[11].split(",");
+        if (count <= 0 || sizes.length != count || offsets.length != count) throw new IllegalArgumentException();
+        var blocks = new ArrayList<FeatureBlock>(count);
+        for (int i = 0; i < count; i++) {
+          long left = Math.addExact(start, Long.parseLong(offsets[i]));
+          long right = Math.addExact(left, Long.parseLong(sizes[i]));
+          if (left < start || right > end || left >= right) throw new IllegalArgumentException();
+          blocks.add(new FeatureBlock(left, right, false));
+          if (thickStart != null && thickEnd != null && left < thickEnd && right > thickStart)
+            blocks.add(new FeatureBlock(Math.max(left, thickStart), Math.min(right, thickEnd), true));
+        }
+        return List.copyOf(blocks);
+      } catch (IllegalArgumentException | ArithmeticException ex) {
+        report.correct(line, "invalid BED12 blocks; displaying the feature interval");
+        return List.of();
       }
-      if (!hasStrandFeatures) {
-        return RenderStyle.SIGNAL;
-      }
-      return featureCount <= BED_FEATURE_STYLE_MAX_FEATURES ? RenderStyle.FEATURE : RenderStyle.SIGNAL;
     }
 
     private void forEachProjectedFeature(final @NotNull Map<String, List<AssemblySegment>> sourceToAssemblySegments,

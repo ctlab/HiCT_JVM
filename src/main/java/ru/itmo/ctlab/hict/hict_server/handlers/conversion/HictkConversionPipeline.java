@@ -829,7 +829,7 @@ public final class HictkConversionPipeline {
     if (loadOptions.countAsFloat()) {
       command.add("--count-as-float");
     }
-    if (direction == ConversionDirection.COO_TO_HICT || direction == ConversionDirection.HICPRO_MATRIX_TO_HICT) {
+    if (direction == ConversionDirection.PAIRS_TO_HICT || direction == ConversionDirection.COO_TO_HICT || direction == ConversionDirection.HICPRO_MATRIX_TO_HICT) {
       command.add("--transpose-lower-triangular-pixels");
     }
     return command;
