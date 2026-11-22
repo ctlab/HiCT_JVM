@@ -298,6 +298,7 @@ public final class HictLauncherGui {
     private JButton webUiLinkButton;
     private JLabel browserStatusLabel;
     private JButton startButton;
+    private JButton backToStartButton;
     private JButton stopButton;
     private JButton openWebUiButton;
     private JButton configureButton;
@@ -496,29 +497,24 @@ public final class HictLauncherGui {
 
     private JPanel createLaunchPlaceholderPanel() {
       final var panel = new JPanel(new GridBagLayout());
-      panel.setBorder(BorderFactory.createCompoundBorder(
-        BorderFactory.createTitledBorder("HiCT server log"),
-        BorderFactory.createEmptyBorder(this.uiScale.gapLarge(), this.uiScale.gapLarge(), this.uiScale.gapLarge(), this.uiScale.gapLarge())
-      ));
       final var content = new JPanel(new GridBagLayout());
       final var gbc = new GridBagConstraints();
       gbc.gridx = 0;
       gbc.gridy = 0;
-      gbc.insets = new Insets(0, 0, this.uiScale.gapLarge(), 0);
-      final var title = new JLabel("Start HiCT to open the WebUI.");
-      title.setFont(title.getFont().deriveFont(Font.BOLD, (float) this.uiScale.heroFontSize()));
-      content.add(title, gbc);
-
-      gbc.gridy = 1;
-      gbc.insets = new Insets(0, 0, this.uiScale.gapLarge(), 0);
+      gbc.insets = new Insets(0, 0, this.uiScale.gap(), 0);
       content.add(createDataFolderRow(), gbc);
 
-      gbc.gridy = 2;
+      gbc.gridy++;
       gbc.insets = new Insets(this.uiScale.gap(), 0, 0, 0);
       final var duplicateStartButton = new JButton("Start HiCT");
       duplicateStartButton.addActionListener(ignored -> startHiCT());
       styleHeroButton(duplicateStartButton);
       content.add(duplicateStartButton, gbc);
+
+      gbc.gridy++;
+      final var viewLog = new JButton("View console log");
+      viewLog.addActionListener(ignored -> showActivityCard("log"));
+      content.add(viewLog, gbc);
 
       panel.add(content);
       return panel;
@@ -858,6 +854,9 @@ public final class HictLauncherGui {
       row.add(copy);
       row.add(save);
       row.add(clear);
+      this.backToStartButton = new JButton("Back to start");
+      this.backToStartButton.addActionListener(ignored -> showActivityCard("start"));
+      row.add(this.backToStartButton);
       this.uiScale.applyFonts(row);
       return row;
     }
@@ -1025,13 +1024,13 @@ public final class HictLauncherGui {
       return panel;
     }
 
-    private void showActivityCard() {
+    private void showActivityCard(final String card) {
       if (this.configurationPanel != null) {
         final var body = this.configurationPanel.getParent();
         ((CardLayout) body.getLayout()).show(body, "activity");
       }
       this.configureButton.setText("Show Configuration");
-      showLogPanel();
+      ((CardLayout) this.logCardsPanel.getLayout()).show(this.logCardsPanel, card);
       if (this.frame != null) {
         this.frame.revalidate();
         this.frame.repaint();
@@ -1145,7 +1144,7 @@ public final class HictLauncherGui {
 
     private void startHiCT() {
       if (isProcessAlive()) {
-        showActivityCard();
+        showActivityCard("log");
         appendLauncherLog("HiCT is already running.");
         return;
       }
@@ -1170,7 +1169,7 @@ public final class HictLauncherGui {
         return;
       }
       saveSettings();
-      showActivityCard();
+      showActivityCard("log");
 
       final Path dataDir;
       final Path tempDir;
@@ -1305,16 +1304,6 @@ public final class HictLauncherGui {
         ) == JOptionPane.YES_OPTION;
       }
       return true;
-    }
-
-    private void showLogPanel() {
-      if (this.logCardsPanel == null) {
-        return;
-      }
-      final var layout = (CardLayout) this.logCardsPanel.getLayout();
-      layout.show(this.logCardsPanel, "log");
-      this.logCardsPanel.revalidate();
-      this.logCardsPanel.repaint();
     }
 
     private List<String> buildServerCommand(final Path tempDir) {
@@ -1620,7 +1609,12 @@ public final class HictLauncherGui {
             this.serverProcess = null;
           }
           stopBundledBrowsers("because the HiCT server process exited");
-          SwingUtilities.invokeLater(this::updateButtons);
+          SwingUtilities.invokeLater(() -> {
+            if (!this.stopRequested && !this.closing && this.serverProcess == null) {
+              showActivityCard("start");
+            }
+            updateButtons();
+          });
         }
       });
     }
@@ -1729,10 +1723,7 @@ public final class HictLauncherGui {
             // Do not hide a failed shutdown behind the ready-to-start card.
             if ((this.serverProcess == null || !this.serverProcess.isAlive())
               && this.browserProcesses.stream().noneMatch(Process::isAlive)) {
-              showActivityCard();
-              ((CardLayout) this.logCardsPanel.getLayout()).show(this.logCardsPanel, "start");
-              this.logCardsPanel.revalidate();
-              this.logCardsPanel.repaint();
+              showActivityCard("start");
               updateButtons();
             }
           });
@@ -1922,6 +1913,7 @@ public final class HictLauncherGui {
 
     private void updateButtons() {
       final var alive = isProcessAlive();
+      this.backToStartButton.setVisible(!alive && !this.closing);
       this.startButton.setVisible(!alive && this.startAttempted && !this.closing);
       this.startButton.setEnabled(!alive && !this.closing);
       this.stopButton.setVisible(alive && !this.closing);
@@ -2966,12 +2958,8 @@ public final class HictLauncherGui {
       return Math.max(13, scaled(13));
     }
 
-    private int heroFontSize() {
-      return Math.max(18, scaled(18));
-    }
-
     private int primaryButtonFontSize() {
-      return Math.max(20, scaled(22));
+      return 2 * Math.max(20, scaled(22));
     }
 
     private int logFontSize() {
@@ -3001,7 +2989,7 @@ public final class HictLauncherGui {
     }
 
     private Dimension heroButtonMinimumSize() {
-      return new Dimension(scaled(260), scaled(72));
+      return new Dimension(2 * scaled(260), 2 * scaled(72));
     }
 
     private Insets actionButtonInsets() {

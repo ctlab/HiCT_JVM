@@ -293,7 +293,37 @@ class LauncherResetAcceptance {
         return start.isShowing() && start.isEnabled();
       }), "Stop did not restore the Start action");
       ImageIO.write(new Robot().createScreenCapture(edt(() -> frame.getBounds())), "png", output.resolve("after-stop.png").toFile());
-      results.add("Stop returns to the simple launcher with configuration and logs hidden");
+      edt(() -> {
+        var card = (Container) ((Container) field("logCardsPanel")).getComponent(0);
+        var hero = button(card, "Start HiCT");
+        require(hero.isShowing() && frame.getBounds().contains(
+          new java.awt.Rectangle(hero.getLocationOnScreen(), hero.getSize())), "Large Start button is clipped");
+        var logs = button(card, "View console log");
+        require(logs.isShowing() && logs.getVisibleRect().getSize().equals(logs.getSize()), "Stopped launcher clips console access");
+        logs.doClick();
+        var console = (javax.swing.JTextArea) field("logArea");
+        require(console.isShowing() && console.getText().contains("Stopping HiCT server process"), "Stop log missing");
+        button(frame, "Back to start").doClick();
+        require(hero.isShowing(), "Cannot return to Start after viewing logs");
+        fields.get("HICT_JAVA_OPTS").setText("-XX:HictInvalidOptionForTest");
+        hero.doClick();
+        return null;
+      });
+      deadline = System.nanoTime() + 15_000_000_000L;
+      while (!edt(() -> field("lastExitCode") != null && button(frame, "View console log").isShowing())
+        && System.nanoTime() < deadline) Thread.sleep(20);
+      edt(() -> {
+        require(field("lastExitCode") instanceof Integer code && code != 0, "Expected failed child exit");
+        var logs = button(frame, "View console log");
+        require(logs.isShowing(), "Failed session hides console access");
+        logs.doClick();
+        var console = (javax.swing.JTextArea) field("logArea");
+        require(console.isShowing() && console.getText().contains("Unrecognized VM option")
+          && console.getText().contains("exited with code " + field("lastExitCode")), "Failed child diagnostics missing");
+        require(console.getText().contains("Stopping HiCT server process"), "Restart discarded previous log");
+        return null;
+      });
+      results.add("Manual stop and failed restart retain console output, exit diagnostics and navigation");
       Files.write(output.resolve("results.txt"), results);
       results.forEach(System.out::println);
     } finally {
